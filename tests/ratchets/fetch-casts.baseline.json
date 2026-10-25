@@ -53,7 +53,6 @@
   "app/pages/[slug].vue": 3,
   "app/pages/about.vue": 1,
   "app/pages/admin/ai/index.vue": 2,
-  "app/pages/admin/ai/moderation.vue": 12,
   "app/pages/admin/analytics.vue": 2,
   "app/pages/admin/chatbot/knowledge/[id].vue": 3,
   "app/pages/admin/chatbot/knowledge/index.vue": 6,

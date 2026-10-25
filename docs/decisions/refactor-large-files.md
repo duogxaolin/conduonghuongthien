@@ -143,3 +143,42 @@ Sau rollback `8ea5662`:
 - `admin-bulk-selection` báo `should have 2 row-checkbox site(s), found 0` — đã tách desktop table + mobile card ra component con, mất `selection.toggle(Number(`.
 - `analytics-live-dashboard-ui` báo `assert.match(template, ...)` fail — đã tách template panel ra component con.
 - `analytics-live-dashboard-ui` báo `assert.match(script, ...)` fail — đã tách script ra composable/util (normalizeFilter/normalizeScope).
+
+---
+
+## Lần tách 2026-10-25 — `pages/admin/ai/moderation.vue` (1155 → 367)
+
+Wave 3, task 4.1 + 7.1. Lần này bản tách được giữ lại (không rollback như lần thử 2026-10).
+
+- **Đường tách:** 4 panel trình bày trong `app/components/admin/ai/moderation/`:
+  - `ModerationSettingsPanel` (146 dòng);
+  - `ModerationQueuePanel` (172);
+  - `ModerationRulesPanel` (135);
+  - `ModerationWorkerPanel` (255).
+
+  Ngoài ra:
+  - logic tab worker (trạng thái, quét lại + hỏi lại mỗi 3 giây, hai nút khởi động lại) → `app/composables/useModerationWorker.ts` (210). `toast`/`confirm` được truyền vào, nên test import thẳng được;
+  - kiểu suy ra từ handler (`Payload<…>`, cùng kỹ thuật với `admin-api.ts`) → `app/types/moderation.ts`;
+  - hai hàm định dạng thuần → `app/utils/moderation-format.ts`.
+- **Giữ ở cha:**
+  - state, mọi request và `loadData`;
+  - MỌI nhánh lỗi kèm nút "Thử lại", có hai cấp:
+    - lượt tải TRANG (`error`, ô cảnh báo trên dải tab, "Thử lại" = `loadData`) — kể cả khi hàng đợi hỏng ngay lúc mở trang, như trước khi tách;
+    - đọc lại SAU lần tải đầu (`queueError`/`settingsError`/`rulesError`: hàng đợi đổi bộ lọc/trang, cài đặt/quy tắc sau khi ghi) → ô cảnh báo trên chính tab đó, "Thử lại" chỉ đọc lại tab đó (`loadQueue`/`reloadSettings`/`reloadRules`).
+
+    Markup của ô cảnh báo tab do trang cấp qua slot `#error` của panel, nên `admin-error-retry-ui` ghim cả bốn ref/retry ở file trang. Lý do: ô cảnh báo trang che MỌI tab, và "Thử lại" của nó (`loadData`) đọc lại cấu hình đè lên chỗ đang sửa — một bộ lọc hỏng không được làm mất chỗ sửa ở tab cài đặt;
+  - skeleton `v-if="loading"`;
+  - dải tab (`v-if="t.badge !== null && t.badge > 0"` đang bị ghim).
+
+  Các panel không tự fetch, nên cổng phủ của `admin-error-retry-ui`/`skeleton-loading-ui` không cần liệt kê chúng.
+- **Hàng đợi đối soát dùng `useAdminList`** (bộ lọc + phân trang + chỉ lượt mới nhất được ghi + hỏi lại trang cuối còn hàng). Hàng đợi hỏng lúc mở trang vẫn hiện ở ô cảnh báo trang với đúng câu cũ (`errorFallback`).
+- **Ghi thành công thì toast thành công đứng yên:** lượt đọc lại sau khi ghi (lưu cài đặt, thêm/xoá quy tắc, xử lý đối soát) mà hỏng thì báo trên tab, không thành toast "Không thể lưu/thêm/xoá".
+- **12 chỗ ép kiểu `($fetch as …)` → `adminFetch<T>()`.** `T` suy ra từ handler. `settings.get.ts` khai kiểu `mode: 'ai' | 'keyword_only'` — chỉ đổi kiểu, không đổi gì lúc chạy — vì object literal nới `mode` thành `string`.
+- **Tên component:**
+  - trang import panel tường minh như `ai/index.vue` (`<ModerationQueuePanel>`);
+  - tên auto-import toàn cục là `AdminAiModerationQueuePanel`. Nuxt bỏ đoạn `moderation` lặp, nên KHÔNG phải `…ModerationModeration…`.
+- **Test đọc mã nguồn, chuyển sang đọc đúng phần đang chứa đoạn bị ghim** (`tests/_moderation-page-parts.ts`):
+  - `admin-moderation-summary` (worker-status → composable; `queueTotalFilter` suy từ `queueList.result`);
+  - `moderation-rescan-summary` (dòng cảnh báo AI `role="status"` → `ModerationWorkerPanel`).
+- **Hành vi:** `tests/admin-moderation-page.test.ts` mount trang thật cùng các panel trên một DOM tối giản (`tests/_sfc-mount.ts`) và bấm đúng các nút thật. Cùng tệp test xanh trên bản gốc (trừ các test ghi "RED trên bản gốc") và xanh sau khi tách.
+- **Mã màu hex:** 213 class được dời đi, không thêm mới. Trang giữ 17; 4 panel được thêm vào ratchet hex bằng `--raise` (37/26/42/91). Đợt chuyển sang token màu (3.3/3.4) sẽ hạ dần các con số này.

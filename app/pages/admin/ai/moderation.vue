@@ -12,10 +12,10 @@
       </p>
     </header>
 
-    <!-- Error Alert -->
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
+    <!-- Error Alert — the page load (loadData). Later re-reads fail on their own tab (#error slots below). -->
+    <div v-if="error" :class="ALERT_CLASS" role="alert">
       <strong>Lỗi:</strong> {{ error }}
-      <button type="button" class="font-bold underline text-[#4A6741] ml-2 cursor-pointer" @click="loadData">Thử lại</button>
+      <button type="button" :class="RETRY_CLASS" @click="loadData">Thử lại</button>
     </div>
 
     <!-- Tab navigation -->
@@ -58,701 +58,175 @@
     <!-- Skeleton Loading -->
     <div v-if="loading" role="status" aria-busy="true" class="flex flex-col gap-4">
       <span class="sr-only">Đang tải dữ liệu kiểm duyệt an ninh</span>
-      <div v-for="n in 3" :key="n" class="h-28 rounded-xl bg-white border border-[#e2ece3] animate-pulse motion-reduce:animate-none"></div>
+      <div v-for="n in 3" :key="n" class="h-28 rounded-xl bg-white border border-[#e2ece3] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
     </div>
 
-    <!-- Main Content Tabs -->
+    <!-- Main Content Tabs — each tab is a presentational panel; state and requests stay here. -->
     <template v-else-if="!error">
-      <!-- ─── TAB 1: CÀI ĐẶT KIỂM DUYỆT AI (SETTINGS) ─── -->
-      <form v-if="activeTab === 'settings'" class="flex flex-col gap-5" @submit.prevent="saveSettings">
-        <!-- Chế độ kiểm duyệt -->
-        <section class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-5">
-          <div>
-            <h2 class="m-0 text-base font-extrabold text-[#122815]">Chế độ kiểm duyệt an ninh</h2>
-            <p class="m-0 mt-1 text-sm text-[#667768]">Lựa chọn phương thức bảo vệ an ninh và rà soát nội dung trên Cổng thông tin.</p>
+      <ModerationSettingsPanel
+        v-if="activeTab === 'settings'"
+        v-model:enabled="form.enabled"
+        v-model:mode="form.mode"
+        v-model:provider="form.provider"
+        v-model:model="form.model"
+        v-model:system-prompt="form.systemPrompt"
+        :default-system-prompt="form.defaultSystemPrompt"
+        :active-providers="activeProviders"
+        :active-models="activeModels"
+        :saving="saving"
+        @save="saveSettings"
+      >
+        <template v-if="settingsError" #error>
+          <div :class="ALERT_CLASS" role="alert">
+            <strong>Lỗi:</strong> {{ settingsError }}
+            <button type="button" :class="RETRY_CLASS" @click="reloadSettings">Thử lại</button>
           </div>
+        </template>
+      </ModerationSettingsPanel>
 
-          <label class="flex items-center gap-3 text-sm font-semibold">
-            <input v-model="form.enabled" type="checkbox" class="h-4 w-4 accent-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/30" />
-            <span>Kích hoạt tính năng Kiểm duyệt an ninh tự động</span>
-          </label>
-
-          <div class="grid gap-3 sm:grid-cols-2">
-            <label
-              class="flex cursor-pointer flex-col gap-1 rounded-xl border p-3.5 transition-all"
-              :class="form.mode === 'keyword_only' ? 'border-[#2c6e33] bg-[#f0f7f1] shadow-xs' : 'border-[#c8d6c9] hover:bg-[#f8faf8]'"
-            >
-              <span class="flex items-center gap-2 text-sm font-bold text-[#122815]">
-                <input v-model="form.mode" type="radio" value="keyword_only" class="h-4 w-4 accent-[#2c6e33]" />
-                Chỉ dùng bộ lọc từ khóa (Không AI)
-              </span>
-              <span class="pl-6 text-xs text-[#667768] leading-relaxed">
-                Quét nhanh các từ khóa cấm theo danh mục. Phản hồi tức thì, hoàn toàn không tốn chi phí gọi AI, nhưng có thể bị lách chữ hoặc khóa nhầm câu lành tính.
-              </span>
-            </label>
-
-            <label
-              class="flex cursor-pointer flex-col gap-1 rounded-xl border p-3.5 transition-all"
-              :class="form.mode === 'ai' ? 'border-[#2c6e33] bg-[#f0f7f1] shadow-xs' : 'border-[#c8d6c9] hover:bg-[#f8faf8]'"
-            >
-              <span class="flex items-center gap-2 text-sm font-bold text-[#122815]">
-                <input v-model="form.mode" type="radio" value="ai" class="h-4 w-4 accent-[#2c6e33]" />
-                Kết hợp AI đọc hiểu ngữ cảnh (Khuyên dùng)
-              </span>
-              <span class="pl-6 text-xs text-[#667768] leading-relaxed">
-                AI phân tích ý đồ ngữ cảnh câu văn để phân biệt giữa tuyên truyền chống phá (vi phạm -> ẩn ngay) và người dân cảnh giác/phản bác (an toàn -> cho phép hiển thị).
-              </span>
-            </label>
+      <ModerationQueuePanel
+        v-else-if="activeTab === 'queue'"
+        :queue="queue"
+        :queue-status-filter="queueList.filters.status"
+        :queue-page="queuePage"
+        :queue-total-pages="queueTotalPages"
+        :queue-total="queueTotal"
+        @select-filter="selectQueueFilter"
+        @change-page="queueList.goToPage"
+        @resolve="resolveItem"
+      >
+        <template v-if="queueError" #error>
+          <div :class="ALERT_CLASS" role="alert">
+            <strong>Lỗi:</strong> {{ queueError }}
+            <button type="button" :class="RETRY_CLASS" @click="loadQueue">Thử lại</button>
           </div>
-        </section>
+        </template>
+      </ModerationQueuePanel>
 
-        <!-- Cấu hình AI & Prompt cho Kiểm duyệt -->
-        <section v-if="form.mode === 'ai'" class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-5">
-          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#e2ece3] pb-3">
-            <div>
-              <h2 class="m-0 text-base font-extrabold text-[#122815]">Cấu hình AI & Prompt cho Trợ lý Kiểm duyệt</h2>
-              <p class="m-0 mt-0.5 text-xs text-[#667768]">
-                Đồng bộ với <nuxt-link to="/admin/ai" class="font-bold text-[#2c6e33] underline">AI Panel</nuxt-link>. Bạn sửa ở đây hoặc sửa trong AI Panel đều có hiệu lực ngay lập tức.
-              </p>
-            </div>
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#122815] hover:bg-[#f0f7f1] transition-colors cursor-pointer"
-              @click="restoreDefaultPrompt"
-            >
-              <i class="fa-solid fa-rotate-left mr-1" aria-hidden="true"></i> Khôi phục prompt kiểm duyệt mặc định C11
-            </button>
+      <ModerationRulesPanel
+        v-else-if="activeTab === 'rules'"
+        v-model:category="newRuleForm.category"
+        v-model:pattern="newRuleForm.pattern"
+        v-model:action="newRuleForm.action"
+        :rules="rules"
+        @add="addRule"
+        @toggle="toggleRule"
+        @delete="deleteRule"
+      >
+        <template v-if="rulesError" #error>
+          <div :class="ALERT_CLASS" role="alert">
+            <strong>Lỗi:</strong> {{ rulesError }}
+            <button type="button" :class="RETRY_CLASS" @click="reloadRules">Thử lại</button>
           </div>
+        </template>
+      </ModerationRulesPanel>
 
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label class="flex flex-col gap-1.5 text-sm font-bold">
-              Nhà cung cấp (Provider)
-              <select v-model="form.provider" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20 bg-white">
-                <option v-for="p in activeProviders" :key="p.provider" :value="p.provider">{{ p.label }} ({{ p.provider }})</option>
-                <option v-if="!activeProviders.some(p => p.provider === form.provider)" :value="form.provider">{{ form.provider }}</option>
-              </select>
-            </label>
-
-            <label class="flex flex-col gap-1.5 text-sm font-bold">
-              Model sử dụng
-              <select v-if="activeModelsForCurrentProvider.length > 0" v-model="form.model" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20 bg-white">
-                <option v-for="m in activeModelsForCurrentProvider" :key="m.model" :value="m.model">
-                  {{ m.model }} {{ m.label ? `(${m.label})` : '' }} — ${{ m.promptCostPerMillion }} in / ${{ m.completionCostPerMillion }} out
-                </option>
-              </select>
-              <input
-                v-else
-                v-model="form.model"
-                type="text"
-                placeholder="delify-5.5, flash..."
-                class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]"
-              />
-            </label>
-          </div>
-
-          <!-- System Prompt Textarea -->
-          <label class="flex flex-col gap-1.5 text-sm font-bold">
-            <div class="flex items-center justify-between">
-              <span>Chỉ dẫn hệ thống (System Prompt) cho AI Kiểm duyệt</span>
-              <span class="text-xs font-normal text-[#667768]">{{ form.systemPrompt.length }} ký tự</span>
-            </div>
-            <textarea
-              v-model="form.systemPrompt"
-              rows="9"
-              placeholder="Nhập prompt chỉ dẫn cho sĩ quan an ninh mạng kiểm duyệt..."
-              class="rounded-lg border border-[#c8d6c9] px-3.5 py-2.5 font-normal font-sans text-xs leading-relaxed outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
-            ></textarea>
-          </label>
-        </section>
-
-        <!-- Save button -->
-        <div class="flex items-center justify-end gap-3 bg-white p-4 rounded-xl border border-[#e2ece3]">
-          <button
-            type="submit"
-            :disabled="saving"
-            class="px-6 py-2.5 rounded-lg bg-[#2c6e33] hover:bg-[#1e4620] text-white text-sm font-bold transition-all border-none cursor-pointer shadow-sm disabled:opacity-50"
-          >
-            {{ saving ? 'Đang lưu...' : 'Lưu cấu hình kiểm duyệt' }}
-          </button>
-        </div>
-      </form>
-
-      <!-- ─── TAB 2: SỔ ĐỐI SOÁT NỘI DUNG BỊ ẨN (REVIEW QUEUE) ─── -->
-      <div v-else-if="activeTab === 'queue'" class="flex flex-col gap-4">
-        <!-- Status Filter -->
-        <div class="flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border border-[#e2ece3]">
-          <span class="text-xs font-bold text-[#667768]">Lọc trạng thái:</span>
-          <button
-            v-for="s in [
-              { key: 'pending', label: 'Chờ đối soát' },
-              { key: 'approved', label: 'Đã duyệt an toàn' },
-              { key: 'rejected', label: 'Đã xóa' },
-              { key: 'banned', label: 'Đã cấm IP' },
-              { key: 'all', label: 'Tất cả' }
-            ]"
-            :key="s.key"
-            type="button"
-            class="px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer border"
-            :class="queueStatusFilter === s.key ? 'bg-[#2c6e33] text-white border-[#2c6e33]' : 'bg-white text-[#667768] border-[#d0ddd1] hover:bg-[#f0f7f1]'"
-            @click="queueStatusFilter = s.key; queuePage = 1; loadQueue()"
-          >
-            {{ s.label }}
-          </button>
-        </div>
-
-        <!-- Empty state -->
-        <div v-if="queue.length === 0" class="rounded-xl border border-[#e2ece3] bg-white p-12 text-center text-sm text-[#667768]">
-          <i class="fa-solid fa-shield-check text-4xl text-[#2c6e33] mb-3 block"></i>
-          Không có mục nào trong danh sách đối soát. Hệ thống an ninh đang hoạt động tốt.
-        </div>
-
-        <!-- Queue table -->
-        <div v-else class="rounded-xl border border-[#e2ece3] bg-white overflow-x-auto shadow-xs">
-          <table class="w-full text-xs">
-            <thead class="bg-[#f7faf7] text-left">
-              <tr>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Thời gian</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Nguồn & Vị trí ẩn</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Người gửi / IP</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Nội dung vi phạm</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Lý do phân tích</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Mức độ</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Trạng thái</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815] text-right">Thao tác đối soát</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in queue" :key="item.id" class="border-t border-[#e2ece3] hover:bg-[#fcfdfc]">
-                <td class="px-3.5 py-2.5 whitespace-nowrap text-[#667768]">{{ formatTime(item.createdAt) }}</td>
-                <td class="px-3.5 py-2.5">
-                  <span class="inline-block px-2 py-0.5 rounded font-bold uppercase text-[0.65rem]" :class="item.targetType === 'comment' ? 'bg-blue-100 text-blue-800' : item.targetType === 'chat' ? 'bg-purple-100 text-purple-800' : item.targetType === 'livestream_chat' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'">
-                    {{ item.targetType === 'comment' ? 'Bình luận' : item.targetType === 'chat' ? 'Chat AI' : item.targetType === 'livestream_chat' ? 'Livestream' : 'Bài viết' }}
-                  </span>
-                  <!-- Vị trí cụ thể: bài viết / video / phiên chat -->
-                  <div v-if="item.contextTitle" class="mt-1 max-w-[220px]">
-                    <a v-if="item.contextUrl" :href="item.contextUrl" target="_blank" class="block font-bold text-[#1e4620] hover:underline truncate text-xs" :title="item.contextTitle">
-                      {{ item.contextTitle }}
-                    </a>
-                    <span v-else class="block font-bold text-[#1e4620] truncate text-xs" :title="item.contextTitle">
-                      {{ item.contextTitle }}
-                    </span>
-                  </div>
-                  <!-- Session ID nếu có -->
-                  <div v-if="item.sessionId" class="mt-0.5">
-                    <nuxt-link :to="`/admin/chatbot/sessions?search=${encodeURIComponent(item.sessionId)}`" class="text-[0.68rem] font-mono text-[#6b7280] hover:text-[#1e4620] underline">
-                      Session: {{ item.sessionId.slice(0, 8) }}...
-                    </nuxt-link>
-                  </div>
-                </td>
-                <td class="px-3.5 py-2.5 whitespace-nowrap">
-                  <strong class="text-[#122815]">{{ item.authorName || 'Khách' }}</strong>
-                  <div v-if="item.authorIp" class="flex items-center gap-1.5 mt-0.5">
-                    <span class="text-[0.68rem] text-[#667768] font-mono">{{ item.authorIp }}</span>
-                    <span v-if="item.isIpBanned" class="px-1.5 py-px rounded text-[0.62rem] font-bold bg-red-100 text-red-700 border border-red-200">
-                      Đã cấm
-                    </span>
-                  </div>
-                </td>
-                <td class="px-3.5 py-2.5 max-w-xs break-words">
-                  <p class="m-0 text-red-900 bg-red-50 p-2.5 rounded border border-red-200 text-xs leading-relaxed font-medium">
-                    {{ item.contentSnippet }}
-                  </p>
-                </td>
-                <td class="px-3.5 py-2.5 max-w-[240px] break-words text-xs text-[#b42318] leading-relaxed">
-                  {{ item.flaggedReason }}
-                </td>
-                <td class="px-3.5 py-2.5 whitespace-nowrap">
-                  <span class="px-2 py-0.5 rounded-full font-bold text-[0.65rem] uppercase" :class="item.severity === 'critical' ? 'bg-red-600 text-white' : item.severity === 'high' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'">
-                    {{ item.severity === 'critical' ? 'Nguy hiểm' : item.severity === 'high' ? 'Cao' : 'Trung bình' }}
-                  </span>
-                </td>
-                <td class="px-3.5 py-2.5 whitespace-nowrap">
-                  <span class="px-2 py-0.5 rounded-full font-bold text-[0.65rem]" :class="item.status === 'pending' ? 'bg-orange-100 text-orange-800 border border-orange-300' : item.status === 'approved' ? 'bg-green-100 text-green-800' : item.status === 'banned' ? 'bg-gray-800 text-white' : 'bg-red-100 text-red-800'">
-                    {{ item.status === 'pending' ? 'Đã ẩn (Chờ duyệt)' : item.status === 'approved' ? 'Đã duyệt an toàn' : item.status === 'banned' ? 'Đã cấm IP' : 'Đã xóa' }}
-                  </span>
-                </td>
-                <td class="px-3.5 py-2.5 whitespace-nowrap text-right">
-                  <div class="flex items-center justify-end gap-1.5 flex-wrap">
-                    <button
-                      v-if="item.status === 'pending'"
-                      type="button"
-                      class="px-2.5 py-1 rounded bg-[#2c6e33] hover:bg-[#1e4620] text-white text-[0.7rem] font-bold cursor-pointer border-none shadow-2xs"
-                      title="Duyệt nội dung an toàn và cho phép hiển thị lại"
-                      @click="resolveItem(item, 'approve')"
-                    >
-                      <i class="fa-solid fa-check mr-1"></i> Bỏ ẩn
-                    </button>
-                    <button
-                      v-if="item.status !== 'rejected'"
-                      type="button"
-                      class="px-2.5 py-1 rounded bg-[#fee2e2] hover:bg-[#fca5a5] text-[#b42318] text-[0.7rem] font-bold cursor-pointer border-none shadow-2xs"
-                      title="Xóa vĩnh viễn nội dung vi phạm"
-                      @click="resolveItem(item, 'reject_delete')"
-                    >
-                      <i class="fa-solid fa-trash-can mr-1"></i> Xóa
-                    </button>
-                    <button
-                      v-if="item.authorIp"
-                      type="button"
-                      class="px-2.5 py-1 rounded text-[0.7rem] font-bold cursor-pointer border flex items-center gap-1 shadow-2xs transition-colors"
-                      :class="item.isIpBanned
-                        ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
-                        : 'bg-[#991b1b] hover:bg-[#7f1d1d] text-white border-transparent'"
-                      :disabled="item.isIpBanned"
-                      :title="item.isIpBanned ? 'Địa chỉ IP này đã bị cấm' : `Cấm địa chỉ IP ${item.authorIp}`"
-                      @click="resolveItem(item, 'ban_ip')"
-                    >
-                      <i class="fa-solid fa-ban"></i>
-                      <span>{{ item.isIpBanned ? 'Đã cấm IP' : 'Cấm IP' }}</span>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Phân trang queue — server trả page/total/totalPages, không viết tay.
-             Trang 1/1 không có gì để chuyển nên ẩn luôn. -->
-        <div v-if="queueTotalPages > 1" class="px-1">
-          <AdminPagination
-            :page="queuePage"
-            :total-pages="queueTotalPages"
-            :total="queueTotal"
-            item-label="mục"
-            @update:page="changeQueuePage"
-          />
-        </div>
-      </div>
-
-      <!-- ─── TAB 3: QUY TẮC & TỪ KHÓA AN NINH (RULES ENGINE) ─── -->
-      <div v-else-if="activeTab === 'rules'" class="flex flex-col gap-5">
-        <!-- Add Rule Form -->
-        <div class="rounded-xl border border-[#c8d6c9] bg-[#f0f7f1] p-4 flex flex-col gap-3 shadow-xs">
-          <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
-            <i class="fa-solid fa-plus-circle text-[#2c6e33]"></i>
-            Thêm quy tắc / Từ khóa kiểm duyệt an ninh mới
-          </h3>
-          <form class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end" @submit.prevent="addRule">
-            <label class="flex flex-col gap-1 text-xs font-bold text-[#122815]">
-              Nhóm vi phạm
-              <select v-model="newRuleForm.category" class="rounded-lg border border-[#c8d6c9] px-2.5 py-2 text-xs bg-white">
-                <option value="hostile_forces">Thế lực thù địch / Phản động</option>
-                <option value="anti_state">Chống phá / Xuyên tạc chính sách</option>
-                <option value="defamation">Bôi nhọ / Xúc phạm uy tín</option>
-                <option value="spam_fraud">Spam / Cờ bạc / Lừa đảo</option>
-                <option value="profanity">Từ ngữ thô tục</option>
-                <option value="custom">Tùy biến</option>
-              </select>
-            </label>
-
-            <label class="flex flex-col gap-1 text-xs font-bold text-[#122815] lg:col-span-2">
-              Từ khóa / Mẫu nhận diện (Pattern)
-              <input
-                v-model="newRuleForm.pattern"
-                type="text"
-                placeholder="Nhập từ khóa hoặc cụm từ vi phạm..."
-                class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-xs bg-white outline-none focus:border-[#2c6e33]"
-                required
-              />
-            </label>
-
-            <label class="flex flex-col gap-1 text-xs font-bold text-[#122815]">
-              Hành động xử lý
-              <select v-model="newRuleForm.action" class="rounded-lg border border-[#c8d6c9] px-2.5 py-2 text-xs bg-white">
-                <option value="auto_hide">Tự động ẩn ngay lập tức</option>
-                <option value="flag_only">Chỉ gắn cờ cảnh báo</option>
-              </select>
-            </label>
-
-            <button
-              type="submit"
-              class="px-4 py-2 rounded-lg bg-[#2c6e33] hover:bg-[#1e4620] text-white text-xs font-bold cursor-pointer border-none shadow-xs"
-            >
-              + Thêm quy tắc
-            </button>
-          </form>
-        </div>
-
-        <!-- Rules List Table -->
-        <div class="rounded-xl border border-[#e2ece3] bg-white overflow-x-auto shadow-xs">
-          <table class="w-full text-xs">
-            <thead class="bg-[#f7faf7] text-left">
-              <tr>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Nhóm danh mục</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Từ khóa / Mẫu nhận diện</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Hành động</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Mức độ</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Trạng thái</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815] text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in rules" :key="r.id" class="border-t border-[#e2ece3] hover:bg-[#fcfdfc]">
-                <td class="px-3.5 py-2.5 font-bold text-[#122815]">
-                  {{ RULE_CATEGORY_LABELS[r.category] || r.category }}
-                </td>
-                <td class="px-3.5 py-2.5 font-mono text-[#b42318] font-bold">
-                  "{{ r.pattern }}"
-                </td>
-                <td class="px-3.5 py-2.5">
-                  <span class="px-2 py-0.5 rounded text-[0.68rem] font-bold" :class="r.action === 'auto_hide' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'">
-                    {{ r.action === 'auto_hide' ? 'Tự động ẩn ngay' : 'Chỉ cảnh báo' }}
-                  </span>
-                </td>
-                <td class="px-3.5 py-2.5">
-                  <span class="px-2 py-0.5 rounded-full text-[0.65rem] font-bold uppercase" :class="r.severity === 'critical' ? 'bg-red-600 text-white' : r.severity === 'high' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'">
-                    {{ r.severity }}
-                  </span>
-                </td>
-                <td class="px-3.5 py-2.5">
-                  <button
-                    type="button"
-                    class="px-2.5 py-1 rounded text-xs font-semibold cursor-pointer border"
-                    :class="r.isEnabled ? 'bg-green-100 text-green-800 border-green-300' : 'bg-gray-100 text-gray-500 border-gray-300'"
-                    @click="toggleRule(r)"
-                  >
-                    {{ r.isEnabled ? 'Đang bật' : 'Đã tắt' }}
-                  </button>
-                </td>
-                <td class="px-3.5 py-2.5 text-right">
-                  <button
-                    type="button"
-                    class="text-xs text-[#b42318] hover:underline cursor-pointer border-none bg-transparent"
-                    @click="deleteRule(r)"
-                  >
-                    Xóa
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- ─── TAB 4: TRẠNG THÁI WORKER & HỆ THỐNG (WORKER STATUS & RESTART) ─── -->
-      <div v-else-if="activeTab === 'worker'" class="flex flex-col gap-5">
-        <!-- Worker Status Banner -->
-        <div
-          class="rounded-xl border p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
-          :class="workerData?.status === 'active'
-            ? 'border-[#8ed694] bg-[#f0f7f1]'
-            : 'border-[#f1b8b5] bg-[#fff4f3]'"
-        >
-          <div class="flex items-center gap-3">
-            <span
-              class="w-10 h-10 rounded-full flex items-center justify-center text-white text-base shadow-xs"
-              :class="workerData?.status === 'active' ? 'bg-[#2c6e33]' : 'bg-[#d12420]'"
-            >
-              <i :class="workerData?.status === 'active' ? 'fa-solid fa-shield-check' : 'fa-solid fa-triangle-exclamation'"></i>
-            </span>
-            <div>
-              <div class="flex items-center gap-2">
-                <h2 class="m-0 text-base font-extrabold text-[#122815]">Moderation Worker: {{ workerData?.status === 'active' ? 'Đang hoạt động bình thường' : 'Có lỗi phát sinh' }}</h2>
-                <span
-                  class="px-2 py-0.5 rounded-full text-[0.68rem] font-bold uppercase tracking-wider"
-                  :class="workerData?.status === 'active' ? 'bg-[#2c6e33] text-white' : 'bg-[#d12420] text-white'"
-                >
-                  {{ workerData?.status === 'active' ? 'HEALTHY' : 'DEGRADED' }}
-                </span>
-              </div>
-              <p class="m-0 mt-0.5 text-xs text-[#667768]">
-                Thời gian hoạt động liên tục: <strong class="text-[#122815]">{{ formatUptime(workerData?.uptimeSeconds || 0) }}</strong>
-                • Khởi động lúc: {{ formatTime(workerData?.startedAt || null) }}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            class="px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#f0f7f1] transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
-            :disabled="workerLoading"
-            @click="loadWorkerStatus"
-          >
-            <i class="fa-solid fa-rotate text-xs" :class="workerLoading ? 'animate-spin' : ''"></i>
-            <span>Cập nhật số liệu</span>
-          </button>
-        </div>
-
-        <!-- Metrics Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-1 shadow-xs">
-            <span class="text-xs font-semibold text-[#667768]">Tổng lượt quét an ninh</span>
-            <span class="text-2xl font-extrabold text-[#122815]">{{ workerData?.totalScanned ?? 0 }}</span>
-            <span class="text-[0.7rem] text-[#2c6e33] font-medium">Bình luận, chat, livestream</span>
-          </div>
-
-          <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-1 shadow-xs">
-            <span class="text-xs font-semibold text-[#667768]">Chặn tức thì (0ms)</span>
-            <span class="text-2xl font-extrabold text-[#d12420]">{{ workerData?.blockedInstant ?? 0 }}</span>
-            <span class="text-[0.7rem] text-[#667768]">Từ khóa thô tục, chống phá</span>
-          </div>
-
-          <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-1 shadow-xs">
-            <span class="text-xs font-semibold text-[#667768]">Chặn bởi AI ngữ cảnh</span>
-            <span class="text-2xl font-extrabold text-[#b78103]">{{ workerData?.blockedAi ?? 0 }}</span>
-            <span class="text-[0.7rem] text-[#667768]">Độ trễ AI: ~{{ workerData?.lastAiLatencyMs ?? 0 }}ms</span>
-          </div>
-
-          <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-1 shadow-xs">
-            <span class="text-xs font-semibold text-[#667768]">Nội dung an toàn</span>
-            <span class="text-2xl font-extrabold text-[#2c6e33]">{{ workerData?.allowedCount ?? 0 }}</span>
-            <span class="text-[0.7rem] text-[#667768]">Cho phép hiển thị công khai</span>
-          </div>
-        </div>
-
-        <!-- System Resources & Diagnostics -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3 shadow-xs">
-            <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
-              <i class="fa-solid fa-microchip text-[#2c6e33]"></i>
-              Bộ nhớ & Hạ tầng Worker
-            </h3>
-            <div class="flex flex-col gap-2 text-xs">
-              <div class="flex flex-col gap-1.5 py-1 border-b border-[#e2ece3]">
-                <div class="flex items-center justify-between">
-                  <span class="text-[#667768]">Bộ nhớ RAM Heap (Đang dùng / Giới hạn thật):</span>
-                  <span class="font-bold text-[#122815]">{{ workerData?.memoryUsageMb?.heapUsed ?? 0 }} MB / {{ workerData?.memoryUsageMb?.heapLimit ? workerData.memoryUsageMb.heapLimit + ' MB' : '—' }}</span>
-                </div>
-                <div class="h-1.5 w-full rounded-full bg-[#e2ece3] overflow-hidden" role="progressbar" :aria-valuenow="workerData?.memoryUsageMb?.heapUsedPercent ?? 0" aria-valuemin="0" aria-valuemax="100">
-                  <div
-                    class="h-full rounded-full transition-all"
-                    :class="(workerData?.memoryUsageMb?.heapUsedPercent ?? 0) >= 85 ? 'bg-[#d12420]' : (workerData?.memoryUsageMb?.heapUsedPercent ?? 0) >= 60 ? 'bg-[#e0a800]' : 'bg-[#2c6e33]'"
-                    :style="{ width: `${Math.min(100, Math.max(0, workerData?.memoryUsageMb?.heapUsedPercent ?? 0))}%` }"
-                  ></div>
-                </div>
-                <span class="text-[0.66rem] text-[#8a9a8b]">Đang dùng {{ workerData?.memoryUsageMb?.heapUsedPercent ?? 0 }}% giới hạn V8 (heap ceil do <code class="text-[0.64rem]">--max-old-space-size</code>).</span>
-              </div>
-              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
-                <span class="text-[#667768]">Cấp phát Heap V8 (tự kéo theo nhu cầu):</span>
-                <span class="font-medium text-[#667768]">{{ workerData?.memoryUsageMb?.heapTotal ?? 0 }} MB</span>
-              </div>
-              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
-                <span class="text-[#667768]">Bộ nhớ RAM tiến trình (RSS):</span>
-                <span class="font-bold text-[#122815]">{{ workerData?.memoryUsageMb?.rss ?? 0 }} MB</span>
-              </div>
-              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
-                <span class="text-[#667768]">Mô hình AI kiểm duyệt:</span>
-                <span class="font-bold text-[#2c6e33]">{{ workerData?.aiProvider }} / {{ workerData?.aiModel }} ({{ workerData?.aiServiceActive ? 'Đang hoạt động' : 'Tắt' }})</span>
-              </div>
-              <div class="flex items-center justify-between py-1">
-                <span class="text-[#667768]">Quy tắc trong bộ nhớ đệm:</span>
-                <span class="font-bold text-[#122815]">{{ workerData?.cachedRulesCount ?? 0 }} quy tắc</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3 shadow-xs">
-            <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
-              <i class="fa-solid fa-heart-pulse text-[#d12420]"></i>
-              Nhật ký chẩn đoán & Sức khỏe
-            </h3>
-            <div class="flex flex-col gap-2 text-xs">
-              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
-                <span class="text-[#667768]">Số lỗi kiểm duyệt phát sinh:</span>
-                <span class="font-bold" :class="workerData?.errorCount ? 'text-[#d12420]' : 'text-[#2c6e33]'">{{ workerData?.errorCount ?? 0 }} lần</span>
-              </div>
-              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
-                <span class="text-[#667768]">Lần quét gần nhất:</span>
-                <span class="font-bold text-[#122815]">{{ formatTime(workerData?.lastScannedAt || null) }}</span>
-              </div>
-              <div class="flex items-center justify-between py-1">
-                <span class="text-[#667768]">Lỗi gần nhất:</span>
-                <span class="font-medium text-[#667768] truncate max-w-[240px]">{{ workerData?.lastError || 'Không có lỗi' }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Emergency Actions Card -->
-        <div class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-4 shadow-xs">
-          <div>
-            <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
-              <i class="fa-solid fa-wrench text-[#2c6e33]"></i>
-              Thao tác Khẩn cấp & Khởi động lại
-            </h3>
-            <p class="m-0 mt-1 text-xs text-[#667768]">Các công cụ quản trị giúp phục hồi hệ thống khi phát hiện lỗi hoặc dọn dẹp nội dung xấu độc còn sót.</p>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <!-- Rescan All -->
-            <div class="rounded-lg border border-[#c8d6c9] bg-[#f8faf8] p-4 flex flex-col justify-between gap-3">
-              <div>
-                <h4 class="m-0 text-xs font-bold text-[#1e4620] flex items-center gap-1.5">
-                  <i class="fa-solid fa-broom"></i> Quét & Dọn sạch nội dung cũ
-                </h4>
-                <p class="m-0 mt-1 text-[0.72rem] text-[#667768]">
-                  Rà soát lại toàn bộ bình luận bài viết, video và tin chat trực tiếp trong CSDL. Tự động ẩn hoặc xóa mọi nội dung vi phạm.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="w-full px-3 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 border-none"
-                :disabled="rescanBusy"
-                @click="triggerRescanAll"
-              >
-                <i class="fa-solid fa-play text-xs" :class="rescanBusy ? 'animate-spin motion-reduce:animate-none' : ''" aria-hidden="true"></i>
-                <span>{{ rescanBusy ? 'Đang quét...' : 'Quét & Dọn ngay' }}</span>
-              </button>
-              <p
-                v-if="rescanProgressText"
-                class="m-0 text-[0.72rem] text-[#667768]"
-                role="status"
-                aria-live="polite"
-              >
-                {{ rescanProgressText }}
-              </p>
-              <!-- Lượt quét vừa xong KHÔNG có AI (chưa cấu hình) → chỉ quét bằng luật. -->
-              <p
-                v-if="rescanAiUnavailableText"
-                class="m-0 rounded-lg border border-[#f3d48a] bg-[#fff8e6] px-2.5 py-1.5 text-[0.72rem] font-semibold text-[#7a4f00] flex items-start gap-1.5"
-                role="status"
-              >
-                <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
-                <span>{{ rescanAiUnavailableText }}</span>
-              </p>
-            </div>
-
-            <!-- Restart Worker -->
-            <div class="rounded-lg border border-[#e2ece3] bg-[#fcfdfc] p-4 flex flex-col justify-between gap-3">
-              <div>
-                <h4 class="m-0 text-xs font-bold text-[#122815] flex items-center gap-1.5">
-                  <i class="fa-solid fa-arrows-rotate"></i> Khởi động lại Worker
-                </h4>
-                <p class="m-0 mt-1 text-[0.72rem] text-[#667768]">
-                  Làm mới bộ đệm quy tắc trong RAM, đặt lại bộ đếm lỗi và kết nối lại AI Gateway mà không làm gián đoạn website.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="w-full px-3 py-2 rounded-lg border border-[#2c6e33] bg-white text-[#2c6e33] hover:bg-[#f0f7f1] text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
-                :disabled="restartingWorker"
-                @click="triggerRestartWorker"
-              >
-                <i class="fa-solid fa-rotate text-xs" :class="restartingWorker ? 'animate-spin' : ''"></i>
-                <span>{{ restartingWorker ? 'Đang khởi động...' : 'Khởi động lại Worker' }}</span>
-              </button>
-            </div>
-
-            <!-- Restart Server Process -->
-            <div class="rounded-lg border border-[#f1b8b5] bg-[#fff5f4] p-4 flex flex-col justify-between gap-3">
-              <div>
-                <h4 class="m-0 text-xs font-bold text-[#d12420] flex items-center gap-1.5">
-                  <i class="fa-solid fa-power-off"></i> Khởi động lại Website
-                </h4>
-                <p class="m-0 mt-1 text-[0.72rem] text-[#8c231f]">
-                  Khởi động lại toàn bộ tiến trình máy chủ website (process exit / supervisor restart). Website gián đoạn 3-5 giây.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="w-full px-3 py-2 rounded-lg bg-[#d12420] hover:bg-[#a81c19] text-white text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 border-none"
-                :disabled="restartingServer"
-                @click="triggerRestartServer"
-              >
-                <i class="fa-solid fa-power-off text-xs" :class="restartingServer ? 'animate-spin' : ''"></i>
-                <span>{{ restartingServer ? 'Đang khởi động lại...' : 'Khởi động lại Website' }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ModerationWorkerPanel
+        v-else-if="activeTab === 'worker'"
+        :worker-data="workerData"
+        :worker-loading="workerLoading"
+        :rescan-busy="rescanBusy"
+        :rescan-progress-text="rescanProgressText"
+        :rescan-ai-unavailable-text="rescanAiUnavailableText"
+        :restarting-worker="restartingWorker"
+        :restarting-server="restartingServer"
+        @refresh="loadWorkerStatus"
+        @rescan-all="triggerRescanAll"
+        @restart-worker="triggerRestartWorker"
+        @restart-server="triggerRestartServer"
+      />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
-import { rescanAiNotice, rescanFinishedToast, rescanSummaryText, type RescanSummary } from '~/utils/moderation-rescan-summary'
+import { ref, reactive, computed, onMounted, type Ref } from 'vue'
 import { pendingBadgeCount } from '~/utils/moderation-summary'
+import { useModerationWorker } from '~/composables/useModerationWorker'
+import type { AdminListPage } from '~/composables/useAdminList'
+import type {
+  ModerationMode, ModerationModelOption, ModerationProviderOption, ModerationQueueItem, ModerationQueueResponse,
+  ModerationResolveAction, ModerationResolveResponse, ModerationRule, ModerationRuleCreateResponse,
+  ModerationRuleDeleteResponse, ModerationRuleUpdateResponse, ModerationRulesResponse, ModerationSettingsResponse,
+  ModerationSettingsSaveResponse, ModerationTabKey,
+} from '~/types/moderation'
+import ModerationSettingsPanel from '~/components/admin/ai/moderation/ModerationSettingsPanel.vue'
+import ModerationQueuePanel from '~/components/admin/ai/moderation/ModerationQueuePanel.vue'
+import ModerationRulesPanel from '~/components/admin/ai/moderation/ModerationRulesPanel.vue'
+import ModerationWorkerPanel from '~/components/admin/ai/moderation/ModerationWorkerPanel.vue'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
+
+/**
+ * The four tabs are presentational panels (`app/components/admin/ai/moderation/*`); the
+ * worker tab's status, rescan and restarts are `useModerationWorker`. This page keeps the
+ * state, every request and every error branch with its retry — tests/admin-error-retry-ui
+ * reads this file. Two kinds of failure, kept apart on purpose:
+ *   - the PAGE load (`loadData`) → `error`, the alert above the tabs, "Thử lại" = loadData;
+ *   - a re-read AFTER it (queue filter/page/reload, settings or rules after a write) → the
+ *     alert on that tab only (`#error` slot): the other tabs, and unsaved edits in them, stay.
+ * Behaviour: tests/admin-moderation-page.test.ts. Why: docs/decisions/refactor-large-files.md.
+ */
 
 const toast = useToast()
 const { confirm } = useConfirm()
 
-type TabKey = 'settings' | 'queue' | 'rules' | 'worker'
-const activeTab = ref<TabKey>('settings')
+const activeTab = ref<ModerationTabKey>('settings')
 
 const loading = ref(true)
 const error = ref('')
+const settingsError = ref('')
+const rulesError = ref('')
 const saving = ref(false)
+/** The page alert and each tab's alert look the same. */
+const ALERT_CLASS = 'rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]'
+const RETRY_CLASS = 'font-bold underline text-[#4A6741] ml-2 cursor-pointer'
 
 const form = reactive({
   enabled: true,
-  mode: 'ai' as 'ai' | 'keyword_only',
+  mode: 'ai' as ModerationMode,
   provider: 'delify',
   model: 'delify-5.5',
   systemPrompt: '',
   defaultSystemPrompt: '',
 })
 
-interface ProviderOption {
-  provider: string
-  label: string
-  isActive: boolean
-}
-
-interface ModelPricingOption {
-  model: string
-  provider: string
-  label: string | null
-  promptCostPerMillion: number
-  completionCostPerMillion: number
-}
-
-const activeProviders = ref<ProviderOption[]>([])
-const activeModels = ref<ModelPricingOption[]>([])
-
-const activeModelsForCurrentProvider = computed(() => {
-  return activeModels.value.filter(m => m.provider === form.provider)
-})
-
-interface ModerationRule {
-  id: number
-  category: string
-  ruleType: string
-  pattern: string
-  action: string
-  severity: string
-  isEnabled: boolean
-  createdAt: string
-}
-
-interface ModerationQueueItem {
-  id: number
-  targetType: string
-  targetId: number | null
-  authorName: string | null
-  authorIp: string | null
-  contentSnippet: string
-  flaggedReason: string
-  matchedRules: string[] | null
-  severity: string
-  status: string
-  contextTitle?: string | null
-  contextUrl?: string | null
-  sessionId?: string | null
-  isIpBanned?: boolean
-  createdAt: string
-}
-
+const activeProviders = ref<ModerationProviderOption[]>([])
+const activeModels = ref<ModerationModelOption[]>([])
 const rules = ref<ModerationRule[]>([])
-const queue = ref<ModerationQueueItem[]>([])
-const queueStatusFilter = ref('pending')
-// Phân trang queue — trang 1/perPage 20 mặc định. Server nay trả page/total/totalPages.
-const queuePage = ref(1)
-const queuePerPage = ref(20)
-const queueTotalPages = ref(1)
-const queueTotal = ref(0)
+
+/**
+ * Review queue: status filter + paging, 20 per page. `useAdminList` lets only the LATEST
+ * request write the rows (an older filter's answer landing last used to replace them),
+ * and asks once more for the last page when the one shown has emptied. `status` travels
+ * with each answer — the filter of THAT request, snapshotted when it was sent.
+ */
+const QUEUE_PER_PAGE = 20
+type QueuePage = AdminListPage<ModerationQueueItem> & { status: string }
+const queueList = useAdminList<ModerationQueueItem, { status: string }, QueuePage>({
+  filters: { status: 'pending' },
+  // The page load's own fallback: a queue failing on mount reads as it always did.
+  errorFallback: 'Không thể tải cấu hình kiểm duyệt an ninh.',
+  load: async ({ page, filters, signal }) => {
+    const res = await adminFetch<ModerationQueueResponse>('/api/admin/ai/moderation/queue', {
+      query: { status: filters.status, page, perPage: QUEUE_PER_PAGE },
+      signal,
+    })
+    return { ...res, status: filters.status }
+  },
+})
+const { items: queue, page: queuePage, totalPages: queueTotalPages, total: queueTotal } = queueList
+const queueError = computed(() => queueList.error.value)
+
+const {
+  workerData, workerLoading, workerPendingCount, rescanBusy, rescanProgressText, rescanAiUnavailableText,
+  restartingWorker, restartingServer, loadWorkerStatus, triggerRestartWorker, triggerRescanAll, triggerRestartServer,
+} = useModerationWorker({ toast, confirm, onRescanFinished: () => { void loadQueue() } })
 
 // Tổng của máy chủ, không đếm trên trang 20 dòng (lỗi trần 20) — cùng con số với bản
 // tóm tắt ở tab AI Panel. `queueTotalFilter` = bộ lọc mà `queueTotal` ĐÃ TẢI thuộc về
-// (đặt khi phản hồi về), để vừa bấm đổi bộ lọc không hiện tổng của bộ lọc trước.
-// `workerPendingCount` = `pendingQueueCount` của worker-status, `null` khi lượt đọc hỏng
-// (huy hiệu ẩn, không hiện "0").
-const queueTotalFilter = ref<string | null>(null)
-const workerPendingCount = ref<number | null>(null)
+// (theo phản hồi, không theo nút vừa bấm), để vừa đổi bộ lọc không hiện tổng của bộ lọc trước.
+const queueTotalFilter = computed(() => queueList.result.value?.status ?? null)
 const pendingQueueCount = computed(() => pendingBadgeCount({ queueTotal: queueTotal.value, queueTotalFilter: queueTotalFilter.value, workerPending: workerPendingCount.value }))
 
 const newRuleForm = reactive({
@@ -763,32 +237,8 @@ const newRuleForm = reactive({
   severity: 'critical',
 })
 
-const RULE_CATEGORY_LABELS: Record<string, string> = {
-  hostile_forces: 'Thế lực thù địch / Phản động',
-  anti_state: 'Chống phá / Xuyên tạc chính sách',
-  defamation: 'Bôi nhọ / Xúc phạm uy tín',
-  spam_fraud: 'Spam / Cờ bạc / Lừa đảo',
-  profanity: 'Từ ngữ thô tục',
-  custom: 'Tùy biến',
-}
-
-function restoreDefaultPrompt() {
-  form.systemPrompt = form.defaultSystemPrompt
-}
-
-function formatTime(dateStr: string | null): string {
-  if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  return d.toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
-}
-
 async function loadSettings() {
-  const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-    ok: boolean
-    settings: typeof form
-    activeProviders: ProviderOption[]
-    activeModels: ModelPricingOption[]
-  }>)('/api/admin/ai/moderation/settings')
+  const res = await adminFetch<ModerationSettingsResponse>('/api/admin/ai/moderation/settings')
 
   form.enabled = res.settings.enabled
   form.mode = res.settings.mode
@@ -801,35 +251,31 @@ async function loadSettings() {
   activeModels.value = res.activeModels
 }
 
+/** Re-read the current queue page (also its tab's "Thử lại"); never rejects — the failure is `queueError`. */
 async function loadQueue() {
-  const filter = queueStatusFilter.value
-  const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: ModerationQueueItem[]; page: number; perPage: number; total: number; totalPages: number }>)('/api/admin/ai/moderation/queue', {
-    params: { status: filter, page: queuePage.value, perPage: queuePerPage.value },
-  })
-  queue.value = res.items
-  queuePage.value = res.page
-  queuePerPage.value = res.perPage
-  queueTotal.value = res.total
-  queueTotalFilter.value = filter
-  queueTotalPages.value = res.totalPages
+  await queueList.reload()
 }
 
-async function changeQueuePage(p: number) {
-  if (p < 1 || p > queueTotalPages.value || p === queuePage.value) return
-  queuePage.value = p
-  await loadQueue()
+function selectQueueFilter(status: string) {
+  queueList.filters.status = status
+  void queueList.applyFilters()
 }
 
 async function loadRules() {
-  const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; rules: ModerationRule[] }>)(`/api/admin/ai/moderation/rules`)
+  const res = await adminFetch<ModerationRulesResponse>('/api/admin/ai/moderation/rules')
   rules.value = res.rules
 }
 
 async function loadData() {
   loading.value = true
   error.value = ''
+  settingsError.value = ''
+  rulesError.value = ''
   try {
     await Promise.all([loadSettings(), loadQueue(), loadRules(), loadWorkerStatus()])
+    // The list keeps its failure (`loadQueue` never rejects); on the PAGE load a failed
+    // queue is a failed page load, as it always was.
+    if (queueError.value) error.value = queueError.value
   } catch (err: unknown) {
     error.value = errorMessage(err, 'Không thể tải cấu hình kiểm duyệt an ninh.')
   } finally {
@@ -837,26 +283,51 @@ async function loadData() {
   }
 }
 
+/**
+ * Re-read one tab after the page load — after a write, or its own "Thử lại". A failure
+ * stays on that tab: never the page alert, which hides every tab and whose "Thử lại"
+ * (loadData) would overwrite unsaved edits in the others.
+ */
+async function reloadInto(failure: Ref<string>, load: () => Promise<void>, fallback: string) {
+  failure.value = ''
+  try {
+    await load()
+  } catch (err: unknown) {
+    failure.value = errorMessage(err, fallback)
+  }
+}
+const reloadSettings = () => reloadInto(settingsError, loadSettings, 'Không thể tải lại cấu hình kiểm duyệt an ninh.')
+const reloadRules = () => reloadInto(rulesError, loadRules, 'Không thể tải lại danh sách quy tắc.')
+
+/**
+ * One write. A failure toasts the server's sentence (or `fallback`) and gives `false`.
+ * The re-read after a success is NOT part of it: its failure is a re-read failure, shown
+ * on the tab, never "the write failed" under the success toast.
+ */
+async function write(request: () => Promise<unknown>, fallback: string): Promise<boolean> {
+  try {
+    await request()
+    return true
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, fallback))
+    return false
+  }
+}
+
 async function saveSettings() {
   saving.value = true
-  try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/moderation/settings', {
-      method: 'PUT',
-      body: {
-        enabled: form.enabled,
-        mode: form.mode,
-        provider: form.provider,
-        model: form.model,
-        systemPrompt: form.systemPrompt,
-      },
-    })
-    toast.success('Đã lưu cấu hình kiểm duyệt an ninh!')
-    await loadSettings()
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể lưu cấu hình.'))
-  } finally {
-    saving.value = false
+  const body = {
+    enabled: form.enabled,
+    mode: form.mode,
+    provider: form.provider,
+    model: form.model,
+    systemPrompt: form.systemPrompt,
   }
+  if (await write(() => adminFetch<ModerationSettingsSaveResponse>('/api/admin/ai/moderation/settings', { method: 'PUT', body }), 'Không thể lưu cấu hình.')) {
+    toast.success('Đã lưu cấu hình kiểm duyệt an ninh!')
+    await reloadSettings()
+  }
+  saving.value = false
 }
 
 async function addRule() {
@@ -864,22 +335,15 @@ async function addRule() {
     toast.warning('Vui lòng nhập từ khóa hoặc mẫu nhận diện.')
     return
   }
-  try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/moderation/rules', {
-      method: 'POST',
-      body: newRuleForm,
-    })
-    toast.success('Đã thêm quy tắc an ninh mới!')
-    newRuleForm.pattern = ''
-    await loadRules()
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể thêm quy tắc.'))
-  }
+  if (!(await write(() => adminFetch<ModerationRuleCreateResponse>('/api/admin/ai/moderation/rules', { method: 'POST', body: newRuleForm }), 'Không thể thêm quy tắc.'))) return
+  toast.success('Đã thêm quy tắc an ninh mới!')
+  newRuleForm.pattern = ''
+  await reloadRules()
 }
 
 async function toggleRule(rule: ModerationRule) {
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/moderation/rules/${rule.id}`, {
+    await adminFetch<ModerationRuleUpdateResponse>(`/api/admin/ai/moderation/rules/${rule.id}`, {
       method: 'PUT',
       body: { isEnabled: !rule.isEnabled },
     })
@@ -899,16 +363,12 @@ async function deleteRule(rule: ModerationRule) {
   })
   if (!ok) return
 
-  try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/moderation/rules/${rule.id}`, { method: 'DELETE' })
-    toast.success('Đã xóa quy tắc.')
-    await loadRules()
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể xóa quy tắc.'))
-  }
+  if (!(await write(() => adminFetch<ModerationRuleDeleteResponse>(`/api/admin/ai/moderation/rules/${rule.id}`, { method: 'DELETE' }), 'Không thể xóa quy tắc.'))) return
+  toast.success('Đã xóa quy tắc.')
+  await reloadRules()
 }
 
-async function resolveItem(item: ModerationQueueItem, action: 'approve' | 'reject_delete' | 'ban_ip') {
+async function resolveItem(item: ModerationQueueItem, action: ModerationResolveAction) {
   let confirmMsg = 'Xác nhận xử lý?'
   if (action === 'approve') confirmMsg = 'Xác nhận nội dung này an toàn và hiển thị công khai lại?'
   else if (action === 'reject_delete') confirmMsg = 'Xác nhận nội dung vi phạm và xóa vĩnh viễn?'
@@ -922,233 +382,12 @@ async function resolveItem(item: ModerationQueueItem, action: 'approve' | 'rejec
   })
   if (!ok) return
 
-  try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/moderation/queue/${item.id}/resolve`, {
-      method: 'POST',
-      body: { action },
-    })
-    toast.success('Đã xử lý đối soát thành công!')
-    // Số "pending" của worker-status cũng đổi (huy hiệu khi đang lọc trạng thái khác).
-    await Promise.all([loadQueue(), loadWorkerStatus()])
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể xử lý đối soát.'))
-  }
-}
-
-// ─── TAB 4: WORKER STATUS & EMERGENCY ACTIONS ───────────────────────────
-interface WorkerStatusData {
-  status: 'active' | 'degraded' | 'idle'
-  startedAt: string
-  uptimeSeconds: number
-  totalScanned: number
-  blockedInstant: number
-  blockedAi: number
-  allowedCount: number
-  errorCount: number
-  lastScannedAt: string | null
-  lastError: string | null
-  lastErrorAt: string | null
-  lastAiLatencyMs: number
-  pendingQueueCount: number
-  cachedRulesCount: number
-  aiServiceActive: boolean
-  aiProvider: string
-  aiModel: string
-  memoryUsageMb: {
-    heapUsed: number
-    heapTotal: number
-    rss: number
-    heapLimit: number
-    heapUsedPercent: number
-  }
-}
-
-/** Lượt "Quét & dọn" chạy nền — hình dạng `rescan` của worker-status. */
-interface RescanStatusData {
-  /** `stopped`: lượt quét tự dừng trước lô kế tiếp vì không còn giữ khoá (`stopReason: 'lock_lost'`). */
-  state: 'idle' | 'running' | 'completed' | 'failed' | 'stopped'
-  stopReason?: 'lock_lost' | null
-  startedAt: string | null
-  finishedAt: string | null
-  error: string | null
-  limits?: { batchSize: number; maxComments: number; maxMessages: number }
-  progress: {
-    phase: 'comments' | 'messages' | 'done'
-    totalComments: number
-    totalMessages: number
-    scannedComments: number
-    hiddenComments: number
-    failedComments: number
-    scannedMessages: number
-    deletedMessages: number
-    failedMessages: number
-  } | null
-  /** `aiUnavailable`: AI kiểm duyệt chưa cấu hình, lượt quét chỉ áp luật. */
-  summary: RescanSummary | null
-}
-
-/** Lượt quét tự dừng giữa chừng (máy chủ mất khoá đơn luồng) — phần đã quét giữ nguyên, lượt sau quét tiếp. */
-const RESCAN_STOPPED_TEXT = 'Lượt quét gần nhất đã tạm dừng vì máy chủ mất kết nối giữa chừng. Chạy lại để quét tiếp phần còn lại.'
-
-const workerData = ref<WorkerStatusData | null>(null)
-const workerLoading = ref(false)
-const rescanning = ref(false)
-const rescanStatus = ref<RescanStatusData | null>(null)
-// Nút khoá cả khi request đang gửi lẫn khi job nền đang chạy (kể cả sau khi tải lại trang).
-const rescanBusy = computed(() => rescanning.value || rescanStatus.value?.state === 'running')
-const rescanProgressText = computed(() => {
-  const s = rescanStatus.value
-  if (!s) return ''
-  if (s.state === 'running') {
-    const p = s.progress
-    if (!p) return 'Đang chuẩn bị quét...'
-    return p.phase === 'messages'
-      ? `Đang quét tin chat trực tiếp ${p.scannedMessages}/${p.totalMessages} · đã xóa ${p.deletedMessages}${p.failedMessages ? ` · lỗi ${p.failedMessages}` : ''}`
-      : `Đang quét bình luận ${p.scannedComments}/${p.totalComments} · đã ẩn ${p.hiddenComments}${p.failedComments ? ` · lỗi ${p.failedComments}` : ''}`
-  }
-  if (s.state === 'completed' && s.summary) return rescanSummaryText(s.summary)
-  if (s.state === 'failed') return 'Lượt quét gần nhất bị dừng do lỗi. Có thể chạy lại.'
-  if (s.state === 'stopped') return RESCAN_STOPPED_TEXT
-  return ''
-})
-const rescanAiUnavailableText = computed(() =>
-  rescanStatus.value?.state === 'completed' ? rescanAiNotice(rescanStatus.value.summary) : '',
-)
-let rescanPollTimer: ReturnType<typeof setTimeout> | null = null
-let pageUnmounted = false
-const restartingWorker = ref(false)
-const restartingServer = ref(false)
-
-function formatUptime(seconds: number): string {
-  if (!seconds || seconds < 60) return `${seconds || 0} giây`
-  const mins = Math.floor(seconds / 60)
-  if (mins < 60) return `${mins} phút ${seconds % 60} giây`
-  const hours = Math.floor(mins / 60)
-  return `${hours} giờ ${mins % 60} phút`
-}
-
-async function loadWorkerStatus() {
-  workerLoading.value = true
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; worker: WorkerStatusData; rescan?: RescanStatusData }>)(`/api/admin/ai/moderation/worker-status`)
-    if (res.ok) {
-      workerData.value = res.worker
-      workerPendingCount.value = res.worker.pendingQueueCount
-      applyRescanStatus(res.rescan ?? null)
-    }
-  } catch {
-    // Non-blocking status lookup — nhưng số "pending" cũ không còn đáng tin: ẩn huy hiệu.
-    workerPendingCount.value = null
-  } finally {
-    workerLoading.value = false
-  }
-  scheduleRescanPoll()
-}
-
-/** Cập nhật trạng thái job; khi job vừa chạy xong thì báo kết quả và tải lại hàng đợi. */
-function applyRescanStatus(next: RescanStatusData | null) {
-  const wasRunning = rescanStatus.value?.state === 'running'
-  rescanStatus.value = next
-  if (!wasRunning || !next || next.state === 'running') return
-  if (next.state === 'completed' && next.summary) {
-    const done = rescanFinishedToast(next.summary)
-    if (done.type === 'warning') toast.warning(done.message)
-    else toast.success(done.message)
-  } else if (next.state === 'failed') {
-    toast.error('Lượt quét lại bị dừng do lỗi. Vui lòng thử lại.')
-  } else if (next.state === 'stopped') {
-    toast.warning(RESCAN_STOPPED_TEXT)
-  }
-  void loadQueue()
-}
-
-/** Hỏi lại trạng thái mỗi 3 giây, chỉ khi job nền đang chạy. */
-function scheduleRescanPoll() {
-  // `pageUnmounted`: một lượt fetch trạng thái còn bay lúc rời trang không được
-  // hẹn lại timer sau khi onBeforeUnmount đã dọn.
-  if (pageUnmounted || rescanPollTimer || rescanStatus.value?.state !== 'running') return
-  rescanPollTimer = setTimeout(() => {
-    rescanPollTimer = null
-    void loadWorkerStatus()
-  }, 3000)
-}
-
-onBeforeUnmount(() => {
-  pageUnmounted = true
-  if (rescanPollTimer) clearTimeout(rescanPollTimer)
-  rescanPollTimer = null
-})
-
-async function triggerRestartWorker() {
-  const ok = await confirm({
-    title: 'Khởi động lại Moderation Worker',
-    message: 'Khởi động lại worker sẽ làm mới bộ đệm quy tắc trong RAM và đặt lại bộ đếm lỗi. Tiếp tục?',
-    confirmText: 'Khởi động lại Worker',
-    tone: 'primary',
-  })
-  if (!ok) return
-
-  restartingWorker.value = true
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/ai/moderation/restart-worker`, { method: "POST" })
-    toast.success(res.message || 'Đã khởi động lại Moderation Worker.')
-    await loadWorkerStatus()
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể khởi động lại worker.'))
-  } finally {
-    restartingWorker.value = false
-  }
-}
-
-async function triggerRescanAll() {
-  const ok = await confirm({
-    title: 'Quét & dọn sạch nội dung bẩn cũ',
-    message: `Hệ thống sẽ quét lại ở nền các bình luận bài viết, video (qua AI, tối đa ${rescanStatus.value?.limits?.maxComments ?? 'một số'} bình luận mỗi lượt, mới nhất trước) và tin chat trực tiếp đang hiển thị. Nội dung vi phạm sẽ được tự động ẩn hoặc xóa. Tiến độ hiện ngay dưới nút. Tiếp tục?`,
-    confirmText: 'Bắt đầu quét & dọn dẹp',
-    tone: 'danger',
-  })
-  if (!ok) return
-
-  rescanning.value = true
-  try {
-    // 202: job đã bắt đầu ở nền — tiến độ x/y hiện dưới nút, cập nhật bằng polling.
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string; rescan: RescanStatusData }>)(`/api/admin/ai/moderation/rescan-all`, { method: "POST" })
-    toast.info(res.message)
-    rescanStatus.value = res.rescan
-    scheduleRescanPoll()
-  } catch (err: unknown) {
-    if (errorStatus(err) === 409) {
-      // Đã có lượt khác chạy: không phải lỗi của cán bộ — hiện tiến độ của lượt đó.
-      toast.warning(errorMessage(err, 'Đang có một lượt quét lại chạy.'))
-      await loadWorkerStatus()
-    } else {
-      toast.error(errorMessage(err, 'Không thể quét lại nội dung.'))
-    }
-  } finally {
-    rescanning.value = false
-  }
-}
-
-async function triggerRestartServer() {
-  const ok = await confirm({
-    title: 'Khởi động lại máy chủ Website',
-    message: 'CẢNH BÁO: Thao tác này sẽ gửi tín hiệu khởi động lại tiến trình máy chủ website (process restart). Website có thể gián đoạn trong 3-5 giây. Bạn có chắc chắn?',
-    confirmText: 'Khởi động lại Website',
-    tone: 'danger',
-  })
-  if (!ok) return
-
-  restartingServer.value = true
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/ai/moderation/restart-server`, { method: "POST" })
-    toast.success(res.message)
-    setTimeout(() => {
-      window.location.replace('/admin/ai/moderation')
-    }, 4000)
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể gửi lệnh khởi động lại.'))
-    restartingServer.value = false
-  }
+  const body = { action }
+  if (!(await write(() => adminFetch<ModerationResolveResponse>(`/api/admin/ai/moderation/queue/${item.id}/resolve`, { method: 'POST', body }), 'Không thể xử lý đối soát.'))) return
+  toast.success('Đã xử lý đối soát thành công!')
+  // Số "pending" của worker-status cũng đổi (huy hiệu khi đang lọc trạng thái khác).
+  // Hàng đợi tải lại hỏng hiện trên tab của nó (`queueError`), không thành toast "không xử lý được".
+  await Promise.all([loadQueue(), loadWorkerStatus()])
 }
 
 onMounted(loadData)
