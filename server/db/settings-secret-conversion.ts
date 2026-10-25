@@ -22,8 +22,11 @@
  *
  * Hai nơi gọi, mỗi nơi tự ghi log theo ngữ cảnh của mình (hàm này không log):
  *  - `applyAdditiveMigrations` lúc khởi động (`db.migration.settings_secret_*`);
- *  - `services/backup-restore.ts` ngay sau một lượt khôi phục CSDL thành công —
- *    bản dump trước 2A mang bí mật nguyên văn về (kiểm chứng 2A, W4).
+ *  - `sealRestoredCredentials` (`services/backup-restore-recovery.ts`), gọi từ
+ *    `services/backup-restore.ts` trên MỌI lối mà một bản dump đã chạy (thành công, dump
+ *    chết giữa chừng, bước cấu trúc hỏng), ngay SAU bước cấu trúc và TRƯỚC gắn lại/audit
+ *    — bản dump trước 2A mang bí mật nguyên văn về (kiểm chứng 2A, W3/W4; thứ tự:
+ *    CHANGELOG § 38 B).
  */
 import type { Connection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { readAffectedRows } from '../utils/affected-rows'
