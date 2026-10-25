@@ -129,6 +129,7 @@ test('the alert list is the D-ALERT subset, and nothing else alerts', () => {
     'auth.mfa_challenge_locked',
     'backup.restore_failed',
     'backup.restore_refused',
+    'backup.scheduler_blocked',
     'backup.slot_abandoned',
     'db.migration.media_category_fk_blocked',
     'security.cross_site_refused',

@@ -28,7 +28,9 @@
  * Khi tới lượt: `runBackup('all', 'scheduled')`. Lỗi trong tick nuốt thành
  * `backup.scheduler_failed` — không sập worker. Bị từ chối vì bận (một lượt sao lưu
  * khác, hoặc đang khôi phục CSDL — `BackupLockBusyError`, trước `onStarted`) không phải
- * một lần thử: log `backup.scheduler_busy`, tick kế tiếp thử lại.
+ * một lần thử: log `backup.scheduler_busy`, tick kế tiếp thử lại. Bận liên tiếp suốt cửa
+ * sổ của khe (`BUSY_ALERT_AFTER_TICKS` tick) → một dòng warn `backup.scheduler_blocked`
+ * (thư cảnh báo) — không thì khoá bị giữ mãi làm mất mọi khe mà không ai biết.
  */
 import { eq } from 'drizzle-orm'
 import { getDb } from '../utils/db'
@@ -64,6 +66,21 @@ export const MAX_SLOT_ATTEMPTS = 3
 export const CATCH_UP_LOOKBACK_MS = 8 * DAY_MS
 /** Khoá settings giữ trạng thái của scheduler. Không ai ngoài scheduler ghi nó. */
 export const BACKUP_SCHEDULER_STATE_KEY = 'backup_scheduler_state'
+/**
+ * Số tick tới hạn LIÊN TIẾP bị từ chối vì bận (`BackupLockBusyError`: một lượt sao lưu
+ * khác giữ khoá chạy, hoặc đang khôi phục CSDL) thì cảnh báo `backup.scheduler_blocked`
+ * (warn, trong `ALERT_EVENTS` → thư tới OPS_ALERT_EMAIL) — một lần mỗi chuỗi.
+ *
+ * = `SLOT_WINDOW_MS / TICK_MS` = 60 / 15 = 4: một khe chỉ được thử trong 60 phút đầu, tức
+ * nhiều nhất 4 tick. Bốn lần bận liền nhau là cả cửa sổ của khe đã trôi qua (≈ 1 giờ: lần
+ * đầu ở đầu cửa sổ, lần thứ tư 45 phút sau) — tick kế tiếp là `outside_slot`, khe mất mà
+ * không có lượt thử nào để đếm, không thử lại, không bù. Lớn hơn 4 thì một khe bị chặn trọn
+ * cửa sổ KHÔNG BAO GIỜ gửi thư (chuỗi chỉ tới 4); nhỏ hơn thì gửi khi khe còn cơ hội chạy.
+ * Ở chế độ thử lại (sau một lượt hỏng, mỗi tick đều tới hạn) cũng là 4 lần × 15 phút.
+ * Scheduler khởi động giữa cửa sổ chỉ còn 1–3 tick: chuỗi không xoá ở tick không tới hạn,
+ * nên khe kế tiếp còn bận thì gửi ở đó.
+ */
+export const BUSY_ALERT_AFTER_TICKS = Math.ceil(SLOT_WINDOW_MS / TICK_MS)
 
 export type BackupPolicy = { enabled: boolean; hour: number; days: number[] }
 /**
@@ -255,15 +272,26 @@ let partialSweep: NodeJS.Timeout | null = null
 let ticking = false
 /** Lúc tiến trình này khởi động scheduler — khe rơi trước mốc này là khe lỡ vì máy chủ tắt. */
 let schedulerBootedAt: Date | null = null
+/**
+ * Chuỗi tick tới hạn liên tiếp bị từ chối vì bận (`BUSY_ALERT_AFTER_TICKS`); `null` = không
+ * có chuỗi. Xoá khi một lượt BẮT ĐẦU (giữ được khoá — mọi lượt thành công đều qua đây; lượt
+ * bắt đầu rồi hỏng không còn là "bận", đã có `attempts`/`backup.slot_abandoned` lo) và khi
+ * công tắc tự động tắt. Trong bộ nhớ: khởi động lại tiến trình thì đếm lại từ đầu.
+ */
+let busyStreak: { count: number; since: string } | null = null
 
 /** Một tick (xuất ra để kiểm thử). Không bao giờ ném. */
 export async function backupSchedulerTick(now: Date = new Date(), bootedAt: Date | null = schedulerBootedAt): Promise<void> {
   // Một lượt sao lưu dài hơn khoảng tick: tick kế tiếp không được mở lượt thứ hai.
   if (ticking) return
   ticking = true
+  let dueSlot: string | null = null
   try {
     const { policy, state } = await loadSchedulerInputs()
-    if (!policy.enabled) return
+    if (!policy.enabled) {
+      busyStreak = null
+      return
+    }
     const decision = isBackupDue(policy, now, state, bootedAt)
     if (decision.reason === 'slot_abandoned' && state && state.outcome !== 'abandoned') {
       // Lượt thứ ba bị cắt ngang (không kịp ghi kết quả): bỏ khe ở đây, log một lần.
@@ -274,10 +302,12 @@ export async function backupSchedulerTick(now: Date = new Date(), bootedAt: Date
     logInfo({ event: 'backup.scheduler_due', reason: decision.reason, slot: decision.slot.toISOString(), hour: policy.hour })
 
     const slot = decision.slot.toISOString()
+    dueSlot = slot
     const started: { state: BackupSchedulerState | null } = { state: null }
     try {
       await runBackup('all', 'scheduled', null, {
         onStarted: async () => {
+          busyStreak = null
           started.state = {
             slot,
             attempts: (state && state.slot === slot ? state.attempts : 0) + 1,
@@ -305,8 +335,13 @@ export async function backupSchedulerTick(now: Date = new Date(), bootedAt: Date
         .catch((stateErr: unknown) => logStateUnwritten(stateErr, 'done'))
     }
   } catch (err) {
-    if (err instanceof BackupLockBusyError) logInfo({ event: 'backup.scheduler_busy', reason: err.message })
-    else logWarn({ event: 'backup.scheduler_failed', error: err instanceof Error ? err.message : String(err) })
+    if (err instanceof BackupLockBusyError) {
+      busyStreak = { count: (busyStreak?.count ?? 0) + 1, since: busyStreak?.since ?? now.toISOString() }
+      logInfo({ event: 'backup.scheduler_busy', reason: err.message, consecutive: busyStreak.count })
+      if (busyStreak.count === BUSY_ALERT_AFTER_TICKS) {
+        logWarn({ event: 'backup.scheduler_blocked', consecutiveBusyTicks: busyStreak.count, since: busyStreak.since, slot: dueSlot, reason: err.message })
+      }
+    } else logWarn({ event: 'backup.scheduler_failed', error: err instanceof Error ? err.message : String(err) })
   } finally {
     ticking = false
   }
