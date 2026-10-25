@@ -35,8 +35,9 @@ import { reportPublicReadFailure } from '../../../utils/public-read-failure'
 // in this process invalidate it on commit.
 import { getActiveLivestreamCached } from '../../../services/livestream'
 
-/** Địa chỉ phát của buổi phát, **trên chính cổng này**. Xem `media-portal.ts`
- *  cho cùng lý do: đưa vị trí kho cho trình duyệt là đưa luôn cấu trúc kho. */
+/** Địa chỉ phát của buổi phát, **trên chính cổng này**. Xem `buildMediaStreamPath`
+ *  (`server/services/media-portal-public.ts`) cho cùng lý do: đưa vị trí kho cho
+ *  trình duyệt là đưa luôn cấu trúc kho. */
 const LIVESTREAM_STREAM_PATH = '/api/public/livestream'
 
 export default defineEventHandler(async (event) => {

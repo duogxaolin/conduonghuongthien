@@ -575,10 +575,15 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   // thích và hỏi một câu mà câu trả lời đúng là "không có lượt ghi nào để bọc".
   //
   // Hành động đáng ghi kiểm toán là **lượt tải lên**, và cặp hàng + nhật ký đó
-  // nằm trong transaction của `completeUpload` (`server/services/chunked-upload.ts`).
+  // nằm trong transaction của `completeUpload` (`server/services/chunked-upload-completion.ts`,
+  // xuất lại qua barrel `chunked-upload.ts`).
   // Một lượt chuyển mã chạy hàng chục phút là sự kiện của máy, không phải hành
   // động của cán bộ, nên nó không có cặp hàng + audit nào để bọc.
-  'video-processing.ts': 'holds no row+audit pair; the upload audit lives in chunked-upload.ts own transaction',
+  //
+  // Mục này từng mang tên `video-processing.ts`. Từ khi tách tệp (wave2 5.4), tệp
+  // đó chỉ còn là cửa vào re-export; `processMediaItem` và phần đầu tệp giải thích
+  // (thứ cổng quét bắt) sống ở `video-transcode-pipeline.ts`.
+  'video-transcode-pipeline.ts': 'holds no row+audit pair; the upload audit lives in chunked-upload-completion.ts own transaction',
   'media-processing-reaper.ts': 'holds no row+audit pair; a reclaim is a machine event, not an officer action',
   // `bulkTriggerTranslation` chỉ ghi MỘT dòng audit "đã yêu cầu dịch hàng loạt" rồi
   // đẩy việc sang nền; không có hàng nghiệp vụ nào được ghi cùng lúc để giữ nguyên

@@ -2,10 +2,12 @@
  * Sinh slug duy nhất cho một mục media.
  *
  * **Tham số đầu tiên là client giao dịch (`tx`), không phải `db`.** Đó là ràng
- * buộc, không phải sở thích: cả hai đường gọi đều ở trong một transaction —
- * `server/services/media-portal.ts` tạo hàng `media_items` cùng dòng audit, và
- * đường "lưu buổi phát thành bản ghi" tạo mục media rồi ghi `saved_media_id` trở
- * lại phiên. Nhận `db` ở đây sẽ khiến lượt `SELECT` kiểm trùng chạy trên **pool**,
+ * buộc, không phải sở thích: mọi đường gọi đều ở trong một transaction —
+ * `createMediaItem` (`server/services/media-portal-admin-write.ts`) và
+ * `completeUpload` (`server/services/chunked-upload-completion.ts`) tạo hàng
+ * `media_items` cùng dòng audit, còn đường "lưu buổi phát thành bản ghi" tạo mục
+ * media rồi ghi `saved_media_id` trở lại phiên. Nhận `db` ở đây sẽ khiến lượt
+ * `SELECT` kiểm trùng chạy trên **pool**,
  * ngoài transaction: nó đọc một ảnh chụp khác với ảnh chụp mà lượt `INSERT` sắp
  * ghi vào, và hai lượt tạo cùng lúc có thể cùng thấy "slug còn trống". Cột `slug`
  * có UNIQUE nên lượt thứ hai **ném ra**, transaction rollback, và cán bộ nhận một
