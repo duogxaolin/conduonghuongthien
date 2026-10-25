@@ -275,7 +275,8 @@ Folder **`production/`** trong repo là một cửa vào để deploy/update/mig
 
 ```
 production/
-├─ manage.sh           # script menu 3 chức năng (Deploy/Update/Migrate)
+├─ manage.sh           # cửa vào (menu 1–6 / tham số) — nạp lib/ bên cạnh; đừng chép riêng manage.sh
+├─ lib/                # mã của manage.sh (common/deploy/update/migrate/… *.sh, mỗi tệp ≤ 400 dòng) — phải nằm cạnh manage.sh
 ├─ README.md           # hướng dẫn luồng đầy đủ
 └─ migrations/          # thả file .sql INSERT-only vào đây, script hỏi import
    └─ .imported-*       # đánh dấu đã import (tự tạo, xoá để re-import)

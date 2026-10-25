@@ -186,7 +186,7 @@ fix_uploads_ownership() {
 # mới nhất khác (đích lùi tay), xét theo thời điểm tạo; chỉ xét thẻ `sha-*` của
 # CHÍNH repo image này, nên thẻ lùi `cdkt-rollback/app:*` của manage.sh không bao giờ
 # lọt vào. `docker image rm` không `-f`: image còn container dùng thì Docker từ chối,
-# và lời từ chối đó đúng. Cùng hàm với production/manage.sh (Update).
+# và lời từ chối đó đúng. Cùng hàm với production/lib/update-image.sh (manage.sh Update).
 #
 # Không lệnh nào ở đây được làm hỏng một lượt deploy đã thành công: hàm được gọi
 # với `|| true`, mọi lỗi chỉ thành cảnh báo.
@@ -337,7 +337,7 @@ predeploy_dump() {
 # tệp này), và tự gỡ CHÍNH tệp đó khi journald đã có. Tệp override không mang dấu
 # (người vận hành tự viết) không bao giờ bị đụng — nhưng nếu cấu hình compose HIỆU LỰC
 # vẫn để app ghi vào journald thì dừng trước khi chạm container (`ensure_log_driver`
-# trả 1). Ba hàm dưới giống HỆT bản trong production/manage.sh (tests/ops-scripts.test.ts
+# trả 1). Ba hàm dưới giống HỆT bản trong production/lib/log-driver.sh (tests/ops-scripts.test.ts
 # so từng chữ). Tệp tạm của bản override (LOG_FALLBACK_TMP) được dọn ở `cleanup`.
 LOG_FALLBACK_MARKER='# cdkt-log-fallback — sinh bởi production/manage.sh / scripts/deploy-remote.sh; đừng sửa tay'
 LOG_WARN_PREFIX='::warning::'
