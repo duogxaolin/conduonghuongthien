@@ -7,7 +7,7 @@
  *
  *   • `defaultProcessRunner` — spawn, giữ cả hai luồng ra có trần, giết khi hủy.
  *   • `ffmpegArgs` — bọc `nice`/`cpulimit`; phép dò `cpulimit` chạy MỘT lần lúc
- *     import, và chỉ ở tệp này.
+ *     import, và chỉ ở tệp này (test ép nhánh qua `setCpulimitAvailableForTests`).
  *   • Lệnh của từng bước: `probeMedia` (ffprobe), `transcodeRendition` (HLS).
  *     Hai lệnh trích ảnh đại diện ở `video-thumbnail-frame.ts`.
  *   • Từ vựng lỗi chung của một lượt xử lý: `ProcessFailureCode`,
@@ -139,13 +139,25 @@ export function ffmpegArgs(args: string[], cpuLimitPercent = 100): { command: st
   return { command: 'nice', args: ['-n', '19', 'ffmpeg', ...args] }
 }
 
-// Phát hiện `cpulimit` một lần lúc import — khôngговорит mỗi lượt transcode.
-let cpulimitAvailable = false
+// Phát hiện `cpulimit` một lần lúc import — không dò lại ở mỗi lượt chuyển mã.
+let cpulimitDetected = false
 try {
   execSync('command -v cpulimit', { stdio: 'ignore' })
-  cpulimitAvailable = true
+  cpulimitDetected = true
 } catch {
-  cpulimitAvailable = false
+  cpulimitDetected = false
+}
+let cpulimitAvailable = cpulimitDetected
+
+/**
+ * Chỉ cho test: ép nhánh `cpulimit` có/không. `null` = trả về kết quả dò lúc import.
+ *
+ * Máy dev và CI không có `cpulimit`, còn image chạy thật luôn có (Dockerfile cài
+ * nó, giới hạn CPU mặc định 50) — nên không có điểm tiêm này thì argv của nhánh
+ * chạy ở production không test nào chạm tới được.
+ */
+export function setCpulimitAvailableForTests(next: boolean | null): void {
+  cpulimitAvailable = next ?? cpulimitDetected
 }
 
 export function lastLine(text: string): string {

@@ -9,9 +9,11 @@
  * ghi đè hàng của người giữ chỗ mới. Nhịp tim không cập nhật được hàng nào
  * (`affectedRowsOrZero` = 0) thì huỷ lượt ghép đang chạy.
  *
- * Tệp này import `video-processing` (đẩy xử lý sau commit, dừng lượt chuyển mã
- * của tệp bị thay) — vòng `video-processing → chunked-upload` có sẵn từ trước
- * nên chỉ được dùng các tên đó BÊN TRONG thân hàm, không ở mức module.
+ * Tệp này import cửa vào `video-processing` (đẩy xử lý sau commit, dừng lượt
+ * chuyển mã của tệp bị thay). Vòng `video-processing → chunked-upload` có từ
+ * trước đã được cắt (`video-disk-guard.ts` nay lấy `formatBytes` từ
+ * `chunked-upload-core.ts`), nhưng vẫn chỉ dùng các tên đó BÊN TRONG thân hàm,
+ * không ở mức module — nếu một vòng như vậy quay lại thì nó vẫn vô hại.
  */
 import { createReadStream, createWriteStream } from 'node:fs'
 import { promises as fs } from 'node:fs'

@@ -2,16 +2,19 @@
  * Phép kiểm dung lượng đĩa của đường ống chuyển mã: một lần trước khi bắt đầu,
  * và chạy nền suốt lượt chuyển mã.
  *
- * Tách từ `video-processing.ts` (wave2 5.4). Vòng import có từ trước và giữ
- * nguyên: tệp này import `formatBytes` từ `chunked-upload.ts`, và
- * `chunked-upload.ts` import `video-processing.ts`. Vô hại vì `formatBytes` chỉ
- * được gọi trong thân hàm, không bao giờ ở cấp module.
+ * Tách từ `video-processing.ts` (wave2 5.4). `formatBytes` lấy thẳng từ
+ * `chunked-upload-core.ts` (lá của nhóm tải lên, không import tệp `video-*` nào),
+ * không qua barrel `chunked-upload.ts`: barrel kéo theo
+ * `chunked-upload-completion.ts`, tệp đó import cửa vào `video-processing.ts`,
+ * và cửa vào lại import tệp này — một vòng import chỉ vô hại chừng nào không ai
+ * gọi `formatBytes` ở cấp module. Đây là tệp duy nhất ngoài nhóm `chunked-upload*`
+ * được import lõi, và chỉ lấy đúng tên này (`tests/service-split-boundaries.test.ts`).
  */
 import fs from 'node:fs/promises'
 // Dùng lại bản của đường tải lên thay vì viết bản thứ hai: hai bản định dạng
 // dung lượng chỉ được đối chiếu khi một trong hai đọc sai, và lúc đó cán bộ đã
 // đọc hai con số khác nhau cho cùng một tệp.
-import { formatBytes } from './chunked-upload'
+import { formatBytes } from './chunked-upload-core'
 
 /** Chu kỳ kiểm dung lượng đĩa. Một phút là đủ dày so với một lượt chuyển mã. */
 export const DISK_CHECK_INTERVAL_MS = 60 * 1000

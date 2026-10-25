@@ -32,13 +32,14 @@
  *     nằm cạnh nhau.
  *
  * Tệp này là **lá** của nhóm: không import `video-processing` hay
- * `media-asset-cleanup`, nên nó luôn được đánh giá xong trước khi vòng import
- * `video-processing ↔ chunked-upload` (có sẵn từ trước) đọc tới hằng số nào.
+ * `media-asset-cleanup`. Nhờ vậy `video-disk-guard.ts` lấy `formatBytes` từ đây
+ * mà không sinh vòng import nào giữa nhóm `video-*` và nhóm `chunked-upload*`.
  *
  * Một số tên ở đây (`NOT_FOUND`, `toView`, `deps`, `admitDisk`, `findOwned`,
  * `syncDirectory`, `UploadDatabase`) được `export` chỉ để ba tệp anh em dùng
- * chung — barrel `chunked-upload.ts` **không** xuất lại chúng, và nơi gọi bên
- * ngoài không import thẳng tệp này.
+ * chung — barrel `chunked-upload.ts` **không** xuất lại chúng. Ngoài nhóm
+ * `chunked-upload*`, chỉ `video-disk-guard.ts` import thẳng tệp này, và chỉ lấy
+ * `formatBytes` (`tests/service-split-boundaries.test.ts`).
  */
 import { promises as fs } from 'node:fs'
 import path from 'node:path'

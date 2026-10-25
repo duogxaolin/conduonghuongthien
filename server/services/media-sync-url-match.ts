@@ -70,7 +70,8 @@ export interface ReferenceTarget {
  *    `og_image_url` chọn từ thư viện (`/admin/settings/general`), và các khoá JSON
  *    (menu, bố cục) có thể nhúng URL — dạng `json` phủ cả hai.
  *  - `social_links.icon` (icon kiểu ảnh/SVG chọn từ thư viện) và `.url`.
- *  - `media_items.thumbnail_url` (ảnh bìa video chọn từ thư viện, `media-portal.ts`),
+ *  - `media_items.thumbnail_url` (ảnh bìa video chọn từ thư viện, `setMediaThumbnail`
+ *    trong `media-portal-thumbnail-override.ts`),
  *    `livestream_sessions.thumbnail_url`, và mô tả của hai bảng đó.
  *  - `chat_messages.content`: câu trả lời chatbot (markdown ảnh từ kho) được lưu và
  *    hiển thị lại khi người dùng mở lại lịch sử.

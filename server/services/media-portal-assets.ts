@@ -107,7 +107,7 @@ export function resolveMediaDirectory(
  *
  * Trả đường dẫn tuyệt đối tới tệp đầu tiên khớp `original.*`, hoặc `null` khi thư
  * mục không tồn tại / không có tệp gốc. Giống `locateOriginal` trong
- * `video-processing.ts` nhưng ở đây để **phục vụ** tệp, không để FFmpeg đọc. Không
+ * `video-processing-job.ts` nhưng ở đây để **phục vụ** tệp, không để FFmpeg đọc. Không
  * dùng lại hàm đó: nó là hàm nội bộ của pipeline chuyển mã, và phụ thuộc chỉ đi một
  * chiều — cổng media (`media-portal-admin-write.ts`, `media-portal-public.ts`)
  * import `video-processing.ts`, không bao giờ ngược lại.

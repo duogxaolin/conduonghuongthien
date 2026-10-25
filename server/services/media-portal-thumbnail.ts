@@ -69,7 +69,7 @@ export async function resolveThumbnailTarget(
 
   // R2 thumbnail — cùng key prefix với rendition, tệp `thumb.jpg`. Pipeline lưu
   // thumb ở `${stored}/generations/<claim>/thumb.jpg` (`processMediaItem` trong
-  // video-processing đặt `published` sâu hơn `assetRoot`), nên phải **list** keys để tìm nó thay
+  // `video-transcode-pipeline.ts` đặt `published` sâu hơn `assetRoot`), nên phải **list** keys để tìm nó thay
   // vì đoán cấp. Ưu tiên `thumb.jpg` ở cấp gốc (cho deployment sửa sau này), rồi
   // mới tới `generations/<claim>/thumb.jpg` (kiểu present).
   if (row.storageProvider === 'r2') {

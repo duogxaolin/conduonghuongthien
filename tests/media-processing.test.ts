@@ -71,6 +71,9 @@ import {
   type ProcessRunner,
   type ProcessingDeps,
 } from '../server/services/video-processing.ts'
+// Không qua cửa vào: `ffmpegArgs` là nội bộ của nhóm `video-*`, còn điểm tiêm
+// `setCpulimitAvailableForTests` chỉ dành cho test — cửa vào giữ đúng API công khai.
+import { ffmpegArgs, setCpulimitAvailableForTests } from '../server/services/video-process-runner.ts'
 import {
   REAP_BATCH_LIMIT,
   TICK_INTERVAL_MS,
@@ -2165,21 +2168,100 @@ describe('lệnh FFmpeg mà đường ống dựng', () => {
     }
   })
 
-  it('CPU dưới 100 %: mỗi bản một luồng, mỗi lúc một bản, bọc qua `cpulimit` hoặc lùi về `nice`', async () => {
-    const run = await capture('lenh-ffmpeg-gioi-han', { processingCpuLimit: 50 }, { delayForRendition: () => 5 })
+  // `cpulimit` có trong image chạy thật (Dockerfile cài nó, trần CPU mặc định 50)
+  // nhưng không có trên máy dev lẫn CI. Bản trước chấp nhận "nhánh nào cũng được",
+  // nên argv của nhánh production chưa từng được chạy qua: bỏ `-z` vẫn xanh. Hai
+  // test dưới ép từng nhánh bằng `setCpulimitAvailableForTests`, và một lượt ép
+  // `true` xanh cũng chứng minh điểm tiêm chạm đúng module mà đường ống dùng.
+  it('CPU dưới 100 %, có `cpulimit` (image chạy thật): argv đầy đủ `cpulimit -l 50 -z ffmpeg …`, một luồng, tuần tự', async () => {
+    setCpulimitAvailableForTests(true)
     try {
-      assert.equal(run.result.ok, true, JSON.stringify(run.result))
-      const hls = run.calls.filter(call => call.args.includes('-hls_segment_filename'))
-      assert.equal(hls.length, 3)
-      assert.equal(run.peak, 1, 'giới hạn CPU phải chạy tuần tự')
-      for (const call of hls) {
-        assert.equal(call.args[call.args.indexOf('-threads') + 1], '1')
-        // `cpulimit` có trong image Docker, không có trên máy dev — cả hai nhánh đều đúng.
-        const head = [call.command, ...call.args.slice(0, 4)].join(' ')
-        assert.ok(head === 'cpulimit -l 50 -z ffmpeg' || head.startsWith('nice -n 19 ffmpeg'), head)
+      const run = await capture('lenh-ffmpeg-cpulimit', { processingCpuLimit: 50 }, {
+        delayForRendition: () => 5,
+        probe: { durationSeconds: 20, width: 1920, height: 1080 },
+      })
+      try {
+        assert.equal(run.result.ok, true, JSON.stringify(run.result))
+        const hls = run.calls.filter(call => call.args.includes('-hls_segment_filename'))
+        assert.equal(hls.length, 3)
+        assert.equal(run.peak, 1, 'giới hạn CPU phải chạy tuần tự')
+        for (const call of hls) {
+          assert.equal(call.command, 'cpulimit')
+          assert.deepEqual(call.args.slice(0, 4), ['-l', '50', '-z', 'ffmpeg'])
+        }
+        const first = hls.find(call => call.args.includes('scale=-2:360'))!
+        const scratch = path.join(path.resolve(run.workdirB, 'processing'), `1-${first.claim}`)
+        // Nguyên argv của nhánh production, kể cả `-z` (cpulimit thoát khi tiến
+        // trình đích không còn): bỏ, đổi chỗ hay đổi giá trị một cờ đều làm đỏ.
+        assert.deepEqual(first.args, [
+          '-l', '50', '-z', 'ffmpeg',
+          '-hide_banner', '-nostdin', '-y',
+          '-i', run.original,
+          '-vf', 'scale=-2:360',
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-profile:v', 'main', '-pix_fmt', 'yuv420p',
+          '-threads', '1',
+          '-force_key_frames', 'expr:gte(t,n_forced*4)',
+          '-c:a', 'aac', '-b:a', '96k', '-ac', '2',
+          '-f', 'hls',
+          '-hls_time', '4',
+          '-hls_playlist_type', 'vod',
+          '-hls_flags', 'independent_segments',
+          '-hls_segment_filename', path.join(scratch, '360p', 'seg_%03d.ts'),
+          path.join(scratch, '360p', 'index.m3u8'),
+        ])
+
+        // Hành vi hiện có, ghim lại: lượt trích ảnh đại diện gọi `ffmpegArgs` không
+        // kèm trần CPU (một khung hình, vài trăm mili giây), nên vẫn đi qua `nice`.
+        const thumb = run.calls.find(call => call.args[call.args.length - 1]!.endsWith('thumb.jpg'))!
+        assert.equal(thumb.command, 'nice')
+        assert.deepEqual(thumb.args.slice(0, 3), ['-n', '19', 'ffmpeg'])
+      } finally {
+        await fs.rm(run.workdirB, { recursive: true, force: true })
       }
     } finally {
-      await fs.rm(run.workdirB, { recursive: true, force: true })
+      setCpulimitAvailableForTests(null)
+    }
+  })
+
+  it('CPU dưới 100 %, không có `cpulimit` (máy dev): lùi về `nice -n 19 ffmpeg`, một luồng, tuần tự', async () => {
+    setCpulimitAvailableForTests(false)
+    try {
+      const run = await capture('lenh-ffmpeg-gioi-han', { processingCpuLimit: 50 }, { delayForRendition: () => 5 })
+      try {
+        assert.equal(run.result.ok, true, JSON.stringify(run.result))
+        const hls = run.calls.filter(call => call.args.includes('-hls_segment_filename'))
+        assert.equal(hls.length, 3)
+        assert.equal(run.peak, 1, 'giới hạn CPU phải chạy tuần tự')
+        for (const call of hls) {
+          assert.equal(call.command, 'nice')
+          assert.deepEqual(call.args.slice(0, 4), ['-n', '19', 'ffmpeg', '-hide_banner'])
+          assert.equal(call.args[call.args.indexOf('-threads') + 1], '1')
+        }
+      } finally {
+        await fs.rm(run.workdirB, { recursive: true, force: true })
+      }
+    } finally {
+      setCpulimitAvailableForTests(null)
+    }
+  })
+
+  it('`ffmpegArgs`: chỉ trần < 100 VÀ có `cpulimit` mới bọc qua `cpulimit`; còn lại luôn `nice`', () => {
+    try {
+      setCpulimitAvailableForTests(true)
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4', 'out.ts'], 50), {
+        command: 'cpulimit', args: ['-l', '50', '-z', 'ffmpeg', '-i', 'in.mp4', 'out.ts'],
+      })
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4'], 99), {
+        command: 'cpulimit', args: ['-l', '99', '-z', 'ffmpeg', '-i', 'in.mp4'],
+      })
+      // Biên: 100 % là "không giới hạn" — có `cpulimit` cũng không bọc.
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4'], 100), { command: 'nice', args: ['-n', '19', 'ffmpeg', '-i', 'in.mp4'] })
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4']), { command: 'nice', args: ['-n', '19', 'ffmpeg', '-i', 'in.mp4'] })
+
+      setCpulimitAvailableForTests(false)
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4'], 50), { command: 'nice', args: ['-n', '19', 'ffmpeg', '-i', 'in.mp4'] })
+    } finally {
+      setCpulimitAvailableForTests(null)
     }
   })
 
@@ -2418,16 +2500,35 @@ describe('bộ chạy tiến trình mặc định', () => {
 /**
  * Các tệp của đường ống + bộ thu hồi.
  *
- * Đường ống là cửa vào `video-processing.ts` **cộng mọi tệp nó re-export** — suy
- * từ chính cửa vào chứ không chép tay: từ khi tách tệp (5.4) mã nằm ở sáu tệp
- * `video-*`, và một danh sách viết tay xanh vĩnh viễn với tệp thứ bảy không ai
- * nhớ thêm vào.
+ * Suy ra từ HAI nguồn rồi đối chiếu với một danh sách ghim:
+ *   • mọi `server/services/video-*.ts` trên đĩa (trừ `video-r2-sync.ts` — tầng lưu
+ *     trữ R2 dùng chung, cổng media cũng gọi nó, không phải mã của cửa vào), và
+ *   • mọi tệp mà cửa vào `video-processing.ts` re-export,
+ * cộng `media-processing-reaper.ts`.
+ *
+ * Chỉ suy từ cửa vào thì một tệp bị bỏ khỏi re-export (mã dời sang tệp mới mà
+ * cửa vào chưa xuất lại) rơi khỏi tập quét mà không có gì đỏ; chỉ suy từ thư mục
+ * thì một tệp đổi tiền tố cũng vậy. Ghim danh sách đầy đủ bằng `deepEqual` nghĩa
+ * là thêm, bớt hay đổi tên một tệp đều làm ĐỎ ở đây — người sửa phải quyết định
+ * tệp mới có thuộc đường ống không, thay vì tập quét tự co lại.
  */
+const AUDIT_SCOPED_FILES = [
+  'media-processing-reaper.ts',
+  'video-disk-guard.ts',
+  'video-process-runner.ts',
+  'video-processing-job.ts',
+  'video-processing.ts',
+  'video-renditions.ts',
+  'video-thumbnail-frame.ts',
+  'video-transcode-pipeline.ts',
+]
+
 function auditScopedFiles(): string[] {
-  const barrel = readFileSync('server/services/video-processing.ts', 'utf8')
-  const parts = [...barrel.matchAll(/from '\.\/([a-z0-9-]+)'/g)].map(match => `${match[1]}.ts`)
-  const files = ['video-processing.ts', ...new Set(parts), 'media-processing-reaper.ts']
-  assert.ok(files.length >= 8, `cửa vào phải re-export từ các tệp đã tách, thấy ${JSON.stringify(files)}`)
+  const onDisk = readdirSync('server/services').filter(name => /^video-.*\.ts$/.test(name) && name !== 'video-r2-sync.ts')
+  const entry = readFileSync('server/services/video-processing.ts', 'utf8')
+  const reExported = [...entry.matchAll(/from '\.\/([a-z0-9-]+)(?:\.ts)?'/g)].map(match => `${match[1]}.ts`)
+  const files = [...new Set([...onDisk, ...reExported, 'media-processing-reaper.ts'])].sort()
+  assert.deepEqual(files, AUDIT_SCOPED_FILES, 'tập tệp của đường ống đổi — cập nhật AUDIT_SCOPED_FILES sau khi xét tệp mới/mất')
   return files
 }
 
@@ -2475,6 +2576,6 @@ describe('đường ống và bộ thu hồi không ghi nhật ký kiểm toán'
         `lý do miễn trừ của ${file} phải nói ra hình dạng thật: không có cặp hàng + audit nào`,
       )
     }
-    assert.deepEqual(flagged, ['video-transcode-pipeline.ts', 'media-processing-reaper.ts'])
+    assert.deepEqual(flagged, ['media-processing-reaper.ts', 'video-transcode-pipeline.ts'])
   })
 })

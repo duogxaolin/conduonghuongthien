@@ -976,6 +976,68 @@ Mỗi mục có test đỏ trước khi sửa.
   - Bộ đọc import bằng AST được tách sang `tests/_module-references.ts`, dùng chung với `server-no-app-imports`.
 - **Kiểm chứng:** 5 lượt `npm run build` sạch liên tiếp (xoá `.output` và `node_modules/.cache/nuxt` giữa các lượt) đều xanh. Đầu ra SSR không còn chuỗi `"../…shared/"` nào, và `link-policy` được nạp bằng đường tuyệt đối. `npm test` 4414 / 4387 pass / 0 fail / 27 skip (+20). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh.
 
+### 41. Đợt 2 — 5.3/5.4/5.6 tách service lớn (2026-10-24)
+
+OpenSpec `wave2-hardening` task 5.3 / 5.4 / 5.6, design D-SPLIT. Không đổi hành vi, không đổi đường import của nơi gọi. Ba tệp lớn nay chỉ còn là barrel/cửa vào: chúng xuất lại bằng **danh sách tên tường minh** (không `export *`, để helper nội bộ không thành API), còn mã nằm ở tệp con, tách theo đường nối. Tập export chạy và kiểu trước/sau khớp nhau. Mỗi nhánh có test hành vi viết **trước** khi tách, và xanh trên mã gốc. Số dòng đo bằng `wc -l` sau các vòng sửa:
+
+- **5.3 `server/services/media-portal.ts`** 1208 → 74 (barrel: 44 tên chạy + 23 kiểu).
+  - `media-portal-assets.ts` (150): thư mục/đường dẫn tài nguyên đã kiểm.
+  - `media-portal-stream.ts` (348): `resolveStreamTarget`.
+  - `media-portal-thumbnail.ts` (151): `resolveThumbnailTarget`.
+  - `media-portal-admin-write.ts` (294): tạo/sửa/xoá mục, audit trong cùng transaction.
+  - `media-portal-thumbnail-override.ts` (291): `setMediaThumbnail`/`clearMediaThumbnail`.
+  - Có từ trước, vẫn xuất lại qua barrel: `-constants`/`-public`/`-admin-read`, `media-validation.ts`, `media-views.ts`.
+  - 44 test mới: `media-portal-asset-targets` (25), `media-portal-admin-write-behavior` (19). Trước đó `clearMediaThumbnail` chưa có test nào.
+- **5.4 `server/services/video-processing.ts`** 1168 → 38 (cửa vào: 23 tên chạy + 13 kiểu).
+  - `video-transcode-pipeline.ts` (397): `processMediaItem` giữ nguyên văn.
+  - `video-process-runner.ts` (280): chạy tiến trình, argv FFmpeg/ffprobe, dò `cpulimit`.
+  - `video-renditions.ts` (232), `video-thumbnail-frame.ts` (88), `video-disk-guard.ts` (111), `video-processing-job.ts` (186).
+  - Mỗi trạng thái cấp module chỉ có một chủ: `activeClaims` ở `-job` (không xuất Map ra ngoài), `cpulimitAvailable` ở `-runner`.
+  - 24 test hành vi mới ở `media-processing` và `video-processing-r2-publish`: hủy/dừng lượt đang chạy, tiến độ, argv đầy đủ, CPU < 100 %, `autoTranscode`, nhánh R2 hỏng và thành công.
+- **5.6 `server/services/chunked-upload.ts`** 923 → 47 (barrel: 22 tên chạy + 12 kiểu).
+  - `chunked-upload-core.ts` (349): hàm thuần, helper dùng chung, và **một** hằng `NOT_FOUND` duy nhất.
+  - `chunked-upload-session.ts` (275), `chunked-upload-receipt.ts` (171), `chunked-upload-completion.ts` (256).
+  - 45 khai báo cấp đỉnh giống bản gốc từng byte (so bằng AST).
+  - 22 test mới: `chunkBodyLimit`, rào hoàn tất, thay tệp, `housekeepUploads`.
+- **Guard đổi theo:**
+  - `AUDITED_SERVICES` nay trỏ đúng tệp ghi audit thật: `chunked-upload-session`/`-completion`, `media-portal-admin-write`/`-thumbnail-override`.
+  - `SERVICE_EXEMPTIONS` chuyển từ `video-processing.ts` sang `video-transcode-pipeline.ts`, giữ nguyên lý do.
+  - `WRITE_SITE`/`NAME_SITE` trỏ sang tệp mới.
+- **Kiểm chứng độc lập:** cả ba nhánh đều được kiểm riêng và ra 0 CRITICAL.
+  - Vòng 1 của 5.3 có **một CRITICAL**: tập quét của guard ảnh YouTube bị **thu hẹp**. Trước khi tách, guard quét cả 1208 dòng; sau khi tách chỉ còn 3 tệp, nên chuỗi `i.ytimg.com` đặt vào `-admin-write`/`-stream` lọt qua.
+  - Đã sửa ở 2126ade: tập quét suy từ thư mục, vá luôn lỗ cũ ở `media-portal-admin-read.ts`.
+
+#### Sửa sau kiểm chứng (2026-10-24, nhánh `wave2/5-split-services`)
+- **Argv `cpulimit` của production nay có test.** Máy dev/CI không có `cpulimit`, nhưng image chạy thật luôn có (Dockerfile cài nó, trần CPU mặc định 50). Test cũ chấp nhận "nhánh nào cũng được", nên bỏ `-z` vẫn xanh.
+  - Điểm tiêm `setCpulimitAvailableForTests(next | null)` ở `video-process-runner.ts` theo lối `setModerationRegexTimingForTests`. Phép dò vẫn chạy một lần lúc import; `null` trả về kết quả dò.
+  - Ba test thay một test cũ: ép có `cpulimit` → ghim nguyên argv `cpulimit -l 50 -z ffmpeg …` của bản 360p; ép không có → `nice -n 19 ffmpeg`, một luồng; và `ffmpegArgs` ở biên 99/100.
+  - Đột biến đều đỏ: bỏ `-z` (2 test), `< 100` → `<= 100` (2 test), `transcodeRendition` thôi truyền trần CPU (1 test — test cũ xanh với cả ba đột biến).
+- **Cắt vòng import** `video-disk-guard → chunked-upload → chunked-upload-completion → video-processing → video-disk-guard`.
+  - `video-disk-guard.ts` lấy `formatBytes` từ `chunked-upload-core.ts`, không qua barrel. Một lượt dò SCC bằng `tests/_module-references.ts` không còn thấy vòng nào giữa các nhóm `video-*`/`chunked-upload*`/`media-portal*`.
+  - Chú thích ở năm tệp từng nói "vòng có sẵn, giữ nguyên" đã được sửa.
+- **Guard mới `tests/service-split-boundaries.test.ts`** (17 test, đọc bằng TypeScript AST, quét `server/`, `scripts/`, `shared/`).
+  - Luật 1: tệp con không import barrel/cửa vào của **chính** nhóm mình. Nhóm = tiền tố ∪ đích barrel xuất lại, nên `media-validation.ts`/`media-views.ts` và `video-r2-sync.ts` cũng bị tính.
+  - Luật 2: `chunked-upload-core.ts` chỉ nhóm `chunked-upload*` import. Ngoại lệ nêu tên duy nhất là `video-disk-guard.ts`, và chỉ cho đúng `formatBytes`. Nhập thêm tên khác thì đỏ; ngoại lệ chết (quay lại lấy qua barrel) cũng đỏ.
+  - Luật 3: `trackProcessingClaim`/`forgetProcessingClaim` chỉ `video-transcode-pipeline.ts` được nhập. Cả nhập namespace, xuất lại từ cửa vào và nhập ở reaper đều bị bắt; guard cũng đòi đường ống thật sự nhập hai tên này, để không kiểm rỗng.
+  - 12 bằng chứng đột biến nằm ngay trong bộ test. Thêm vào đó, đột biến thật trên đĩa (tệp con `media-portal-thumbnail.ts` import barrel, `video-disk-guard.ts` quay lại barrel, reaper nhập `forgetProcessingClaim`) làm đỏ đúng luật tương ứng.
+- **Guard ảnh YouTube (`tests/media-youtube-parser.test.ts`) quét toàn bộ `server/` + `app/`** (864 tệp, sàn ≥ 800), chỉ cho phép `server/utils/youtube-parser.ts`. Mẫu bắt cả `*.ytimg.com` và `img.youtube.com`.
+  - Có danh sách tệp bắt buộc phải nằm trong tập quét, gồm `media-validation.ts`, `MediaPlayer.vue`, `app/pages/media/index.vue`.
+  - Chèn chuỗi máy chủ ảnh vào `media-validation.ts`: guard mới đỏ, guard cũ xanh.
+  - Chú thích HTML ở `app/pages/media/index.vue` nay trỏ `YOUTUBE_THUMBNAIL_HOST` thay vì nêu thẳng host, nên không cần mục miễn trừ nào.
+- **`auditScopedFiles` (`tests/media-processing.test.ts`)** = mọi `video-*.ts` trên đĩa (trừ `video-r2-sync.ts`, tầng R2 dùng chung) ∪ đích cửa vào xuất lại ∪ reaper, rồi so bằng `deepEqual` với danh sách ghim.
+  - Thêm một `video-*.ts` không được cửa vào xuất lại mà có ghi `activityLogs`: guard mới đỏ, guard cũ xanh.
+  - Khẳng định `flagged` vẫn chính xác (nay theo thứ tự đã sắp).
+- **Chú thích cũ** chỉ sửa chữ, không đổi lệnh nào. Các chú thích nay trỏ tên hàm + tệp đang giữ mã (không ghi số dòng):
+  - `MediaProcessingTimeline.vue`, `activity.vue`, `video-mime.ts`, `unique-media-slug.ts`.
+  - `housekeep.post.ts`, `livestream/active.get.ts`, `media-sync-url-match.ts`, `media-config-service.ts`.
+  - Các tệp con `media-portal-*` và `video-transcode-pipeline.ts`: "bốn quyết định", và câu "không cần `SERVICE_EXEMPTIONS`" vốn sai.
+  - `Dockerfile`, `production/manage.sh` (`bash -n` xanh), `docs/decisions/media-storage.md`, `docs/decisions/data-layer.md`.
+  - `video-process-runner.ts`: sửa chữ "khôngговорит" bị lẫn ký tự.
+- **Kiểm chứng:**
+  - `npm test` 4528 / 4501 pass / 0 fail / 27 skip (+19: 2 ở `media-processing`, 17 ở `service-split-boundaries`).
+  - Typecheck 0 lỗi, eslint 0 error / 16 warning, `npm run build` xanh.
+  - Integration trên MySQL dev (`127.0.0.1:33069`, TZ `Asia/Ho_Chi_Minh`): `media-queue`, `upload-concurrency`, `livestream-toggle` mỗi suite 1/1, không sót DB nào của lượt chạy.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

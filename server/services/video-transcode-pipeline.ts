@@ -12,8 +12,9 @@
  *   6. Ghi `master.m3u8` — qua tệp tạm rồi `rename`, không bao giờ ghi tại chỗ.
  *   7. Dọn thư mục nháp, đánh dấu `ready`.
  *
- * Bốn quyết định trong tệp này đều có một kiểu hỏng **không nhìn thấy được**, và
- * đó là lý do chúng được viết ra thành lời:
+ * Bốn quyết định của đường ống (thực thi từ `processMediaItem`; mã của quyết định
+ * thứ ba ở `writeManifestAtomically`, `video-renditions.ts`) đều có một kiểu hỏng
+ * **không nhìn thấy được**, và đó là lý do chúng được viết ra thành lời:
  *
  *   • **Nhả kết nối trước khi spawn (giai đoạn 3).** Một lượt chuyển mã chạy hàng
  *     chục phút. Giữ một kết nối trong pool suốt thời gian đó — hoặc giữ khoá
@@ -37,11 +38,11 @@
  *
  * **Tệp này cố ý KHÔNG chạm `activity_logs`.** Hành động đáng ghi vào nhật ký
  * kiểm toán là **lượt tải lên**, và cặp hàng + nhật ký đó đã nằm trong
- * transaction của `completeUpload` (`chunked-upload.ts`). Một lượt chuyển mã là
- * sự kiện của máy, không phải hành động của cán bộ; chép nó vào bảng kiểm toán
- * làm loãng đúng những dòng bảng đó tồn tại để giữ. Vì thế tệp này không cần
- * một mục nào trong `SERVICE_EXEMPTIONS` — cổng quét chỉ hỏi những tệp có chạm
- * `activityLogs`, và đây không phải một trong số đó.
+ * transaction của `completeUpload` (`chunked-upload-completion.ts`). Một lượt
+ * chuyển mã là sự kiện của máy, không phải hành động của cán bộ; chép nó vào bảng
+ * kiểm toán làm loãng đúng những dòng bảng đó tồn tại để giữ. Tệp này VẪN có
+ * mục trong `SERVICE_EXEMPTIONS`: cổng quét khớp chuỗi `activityLogs` cả trong
+ * chú thích, nên chính đoạn này bị bắt (`tests/media-processing.test.ts` khoá).
  */
 import fs from 'node:fs/promises'
 import path from 'node:path'

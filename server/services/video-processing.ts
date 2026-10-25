@@ -13,9 +13,11 @@
  *   • `video-disk-guard.ts` — phép kiểm dung lượng đĩa.
  *   • `video-processing-job.ts` — hợp đồng, danh tính + sổ lượt đang chạy, thử lại.
  *
- * Các tệp trên không bao giờ import trực tiếp tệp này. Vòng gián tiếp duy nhất
- * có từ trước khi tách và giữ nguyên: `video-disk-guard.ts` → `chunked-upload.ts`
- * → tệp này (xem ghi chú đầu `video-disk-guard.ts`).
+ * Các tệp trên không bao giờ import trực tiếp tệp này
+ * (`tests/service-split-boundaries.test.ts`). Vòng gián tiếp có từ trước khi tách
+ * (`video-disk-guard.ts` → barrel `chunked-upload.ts` → `chunked-upload-completion.ts`
+ * → tệp này) đã được cắt: `video-disk-guard.ts` nay lấy `formatBytes` từ
+ * `chunked-upload-core.ts`, tệp không import gì thuộc nhóm `video-*`.
  */
 export { TRANSCODE_LOCK_NAME, processMediaItem } from './video-transcode-pipeline'
 export { defaultProcessRunner, parseProbeJson } from './video-process-runner'

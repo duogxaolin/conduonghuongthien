@@ -160,6 +160,9 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 - `app/layouts/default.vue` (1301 → 401, `wc -l` 2026-10-14): tách 7 component `app/components/layout/Default*.vue` + 5 composable (`useLayoutNav`/`useSiteSettings`/`useLiveSearch`/`useReaderMenu`/`useMobileMenu`) + skip-link a11y + `id="main-content"`; guard test ghép nguồn qua `tests/_layout-parts.ts` (→ CHANGELOG § 7).
 - `app/composables/useChatbot.ts` (939→740, nay lại 857) → `useChatbotTypewriter.ts`.
 - `app/pages/admin/profile.vue` (1076→875) → `ProfileActivityHistory.vue`.
+- `server/services/media-portal.ts` (1208 → 74, barrel, wave2 5.3) → `media-portal-{assets,stream,thumbnail,admin-write,thumbnail-override}.ts` (+ `-constants`/`-public`/`-admin-read`/`media-validation`/`media-views` có từ trước); nơi gọi vẫn import barrel, tệp con không import ngược barrel (`tests/service-split-boundaries.test.ts`). Guard ảnh YouTube quét toàn bộ `server/`+`app/`, không theo danh sách tên (→ CHANGELOG § 41).
+- `server/services/video-processing.ts` (1168 → 38, cửa vào, 5.4) → `video-{transcode-pipeline,process-runner,renditions,thumbnail-frame,disk-guard,processing-job}.ts`; chỉ đường ống được `trackProcessingClaim`/`forgetProcessingClaim`; argv `cpulimit` của production ghim qua `setCpulimitAvailableForTests`.
+- `server/services/chunked-upload.ts` (923 → 47, barrel, 5.6) → `chunked-upload-{core,session,receipt,completion}.ts`; `-core` chỉ nhóm `chunked-upload*` import, ngoại lệ nêu tên duy nhất `video-disk-guard.ts` lấy đúng `formatBytes` (cắt vòng import với `video-processing`).
 - `AnalyticsLiveDashboard.client.vue` cố ý chỉ tách 2 hàm thuần (`analytics-noc.ts` — `safeDetails` là bộ lọc PII). NOC template giữ nguyên (22 định danh cha).
 
 ### Hạn chế đã biết

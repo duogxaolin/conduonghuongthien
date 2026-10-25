@@ -13,7 +13,7 @@
  * chối là cán bộ dán đúng địa chỉ họ đang có và nhận câu "không nhận ra video".
  */
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import {
@@ -185,7 +185,7 @@ describe('ảnh thu nhỏ — không hot-link', () => {
     assert.equal(buildYouTubeThumbnailUpstreamUrl('short'), null)
   })
 
-  it('máy chủ ảnh của nền tảng chỉ được NÊU TÊN trong tệp này, và không tệp công khai nào dùng nó', async () => {
+  it('máy chủ ảnh của nền tảng chỉ được NÊU TÊN trong youtube-parser.ts — không tệp nào khác của server/ hay app/', async () => {
     // Hằng số tồn tại để địa chỉ đó chỉ có một bản sao trong toàn dự án. Một bản
     // thứ hai chỉ được đối chiếu khi một trong hai đã lọt ra ngoài.
     const parser = readFileSync(new URL('../server/utils/youtube-parser.ts', import.meta.url), 'utf8')
@@ -199,45 +199,61 @@ describe('ảnh thu nhỏ — không hot-link', () => {
     // thư mục `media/` không tồn tại; tệp thật là `app/components/MediaPlayer.vue`).
     // Hệ quả: `readFileSync` ném, `continue` nuốt lượt đọc, và guard **xanh suốt
     // vòng đời vì không tìm thấy tệp**, không phải vì tệp sạch — một guard kiểm
-    // rỗng mà không có gì nói ra. Đổi tên hay di chuyển một trong hai tệp nay làm
-    // ĐỎ test này, và đó đúng là điều nên xảy ra: guard phải nói được rằng nó vừa
+    // rỗng mà không có gì nói ra. Đổi tên hay di chuyển một tệp trong danh sách bắt
+    // buộc bên dưới nay làm ĐỎ test này, và đó đúng là điều nên xảy ra: guard phải nói được rằng nó vừa
     // thôi bảo vệ thứ nó khai, thay vì im lặng thu về không kiểm gì.
     //
-    // Cổng media không còn là MỘT tệp: `media-portal.ts` là barrel, mã thật nằm ở
-    // các tệp `media-portal-*.ts`. Một danh sách tên viết tay ở đây từng chỉ kiểm
-    // barrel + vài tệp con, nên chuỗi máy chủ ảnh đặt vào tệp con KHÔNG được liệt
-    // kê (stream, admin-write, admin-read…) vẫn xanh — trong khi trước khi tách cả
-    // 1208 dòng đều bị quét. Tập quét vì thế được SUY từ thư mục: mọi
-    // `server/services/media-portal*.ts`, kể cả tệp con thêm sau này.
-    const servicesDir = new URL('../server/services/', import.meta.url)
-    const portalFiles = readdirSync(servicesDir)
-      .filter(name => /^media-portal.*\.ts$/.test(name))
-      .sort()
-    // Tập suy ra không được rỗng và phải chứa đủ các tệp đang mang mã của cổng —
-    // đổi tên/di chuyển một tệp làm ĐỎ ở đây, không âm thầm thu hẹp tập quét.
+    // Tập quét là TOÀN BỘ `server/` và `app/`, không phải một danh sách tên.
+    //
+    // Hai lần trước guard này thu hẹp âm thầm. Lần đầu: danh sách tên viết tay chỉ
+    // kiểm barrel `media-portal.ts` + vài tệp con, nên sau khi tách cổng media
+    // (5.3) chuỗi máy chủ ảnh đặt vào `media-portal-stream.ts`/`-admin-write.ts`
+    // vẫn xanh — trong khi trước khi tách cả 1208 dòng đều bị quét. Lần hai: suy
+    // từ thư mục nhưng chỉ `media-portal*.ts`, nên `media-validation.ts` (barrel
+    // xuất lại nó) và mọi tệp khác của máy chủ vẫn nằm ngoài. Câu hỏi thật của
+    // guard là "có nơi nào ngoài hằng số kia nêu tên máy chủ ảnh không", nên tập
+    // quét là mọi tệp mã nguồn của hai phía, và chỉ `youtube-parser.ts` được phép.
+    //
+    // Mẫu bắt cả các máy chủ anh em (`i9.ytimg.com`, `img.youtube.com`): chúng
+    // phục vụ cùng ảnh thu nhỏ, và rò IP/referrer người đọc y như nhau.
+    const IMAGE_HOST = /(?:[a-z0-9-]+\.)?ytimg\.com|img\.youtube\.com/i
+    const ALLOWED = new Set(['server/utils/youtube-parser.ts'])
+    const repoRoot = new URL('../', import.meta.url)
+    const scanned: string[] = []
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(new URL(dir, repoRoot), { withFileTypes: true })) {
+        const rel = `${dir}/${entry.name}`
+        if (entry.isDirectory()) walk(rel)
+        else if (entry.isFile() && /\.(?:[cm]?[jt]s|vue|json|css|html)$/.test(entry.name)) scanned.push(rel)
+      }
+    }
+    walk('server')
+    walk('app')
+
+    // Tập quét không được rỗng hay teo lại, và phải chứa các tệp từng lọt khỏi
+    // guard — đổi tên/di chuyển một tệp làm ĐỎ ở đây, không âm thầm thu hẹp.
+    assert.ok(scanned.length >= 800, `tập quét chỉ có ${scanned.length} tệp — guard đang kiểm gần như rỗng`)
     for (const expected of [
-      'media-portal.ts',
-      'media-portal-admin-read.ts',
-      'media-portal-admin-write.ts',
-      'media-portal-assets.ts',
-      'media-portal-public.ts',
-      'media-portal-stream.ts',
-      'media-portal-thumbnail.ts',
-      'media-portal-thumbnail-override.ts',
+      'server/services/media-portal.ts',
+      'server/services/media-portal-admin-read.ts',
+      'server/services/media-portal-admin-write.ts',
+      'server/services/media-portal-assets.ts',
+      'server/services/media-portal-public.ts',
+      'server/services/media-portal-stream.ts',
+      'server/services/media-portal-thumbnail.ts',
+      'server/services/media-portal-thumbnail-override.ts',
+      'server/services/media-validation.ts',
+      'server/api/public/media/[shortId]/thumb.get.ts',
+      'app/components/MediaPlayer.vue',
+      'app/pages/media/index.vue',
     ]) {
-      assert.ok(portalFiles.includes(expected), `${expected} vắng khỏi tập quét ${JSON.stringify(portalFiles)}`)
+      assert.ok(scanned.includes(expected), `${expected} vắng khỏi tập quét`)
     }
-    for (const file of [
-      ...portalFiles.map(name => `../server/services/${name}`),
-      '../app/components/MediaPlayer.vue',
-    ]) {
-      const path = new URL(file, import.meta.url)
-      assert.ok(existsSync(path), `${file} không tồn tại — guard này đang kiểm rỗng`)
-      assert.doesNotMatch(
-        readFileSync(path, 'utf8'),
-        /i\.ytimg\.com/,
-        `${file} trỏ thẳng vào máy chủ ảnh của nền tảng`,
-      )
-    }
+    for (const allowed of ALLOWED) assert.ok(scanned.includes(allowed), `${allowed} vắng khỏi tập quét`)
+
+    const offenders = scanned
+      .filter(file => !ALLOWED.has(file))
+      .filter(file => IMAGE_HOST.test(readFileSync(new URL(file, repoRoot), 'utf8')))
+    assert.deepEqual(offenders, [], 'các tệp này nêu thẳng máy chủ ảnh của nền tảng — dùng YOUTUBE_THUMBNAIL_HOST / buildMediaThumbnailPath')
   })
 })
