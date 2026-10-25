@@ -32,15 +32,15 @@ const RULE_CATEGORY_LABELS: Record<string, string> = {
 <template>
   <div class="flex flex-col gap-5">
     <!-- Add Rule Form -->
-    <div class="rounded-xl border border-[#c8d6c9] bg-[#f0f7f1] p-4 flex flex-col gap-3 shadow-xs">
-      <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
-        <i class="fa-solid fa-plus-circle text-[#2c6e33]"></i>
+    <div class="rounded-xl border border-line-strong bg-surface-tint p-4 flex flex-col gap-3 shadow-xs">
+      <h3 class="m-0 text-sm font-extrabold text-brand-950 flex items-center gap-2">
+        <i class="fa-solid fa-plus-circle text-brand-700"></i>
         Thêm quy tắc / Từ khóa kiểm duyệt an ninh mới
       </h3>
       <form class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end" @submit.prevent="emit('add')">
-        <label class="flex flex-col gap-1 text-xs font-bold text-[#122815]">
+        <label class="flex flex-col gap-1 text-xs font-bold text-brand-950">
           Nhóm vi phạm
-          <select v-model="category" class="rounded-lg border border-[#c8d6c9] px-2.5 py-2 text-xs bg-white">
+          <select v-model="category" class="rounded-lg border border-line-strong px-2.5 py-2 text-xs bg-white">
             <option value="hostile_forces">Thế lực thù địch / Phản động</option>
             <option value="anti_state">Chống phá / Xuyên tạc chính sách</option>
             <option value="defamation">Bôi nhọ / Xúc phạm uy tín</option>
@@ -50,20 +50,20 @@ const RULE_CATEGORY_LABELS: Record<string, string> = {
           </select>
         </label>
 
-        <label class="flex flex-col gap-1 text-xs font-bold text-[#122815] lg:col-span-2">
+        <label class="flex flex-col gap-1 text-xs font-bold text-brand-950 lg:col-span-2">
           Từ khóa / Mẫu nhận diện (Pattern)
           <input
             v-model="pattern"
             type="text"
             placeholder="Nhập từ khóa hoặc cụm từ vi phạm..."
-            class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-xs bg-white outline-none focus:border-[#2c6e33]"
+            class="rounded-lg border border-line-strong px-3 py-2 text-xs bg-white outline-none focus:border-brand-700"
             required
           />
         </label>
 
-        <label class="flex flex-col gap-1 text-xs font-bold text-[#122815]">
+        <label class="flex flex-col gap-1 text-xs font-bold text-brand-950">
           Hành động xử lý
-          <select v-model="action" class="rounded-lg border border-[#c8d6c9] px-2.5 py-2 text-xs bg-white">
+          <select v-model="action" class="rounded-lg border border-line-strong px-2.5 py-2 text-xs bg-white">
             <option value="auto_hide">Tự động ẩn ngay lập tức</option>
             <option value="flag_only">Chỉ gắn cờ cảnh báo</option>
           </select>
@@ -71,7 +71,7 @@ const RULE_CATEGORY_LABELS: Record<string, string> = {
 
         <button
           type="submit"
-          class="px-4 py-2 rounded-lg bg-[#2c6e33] hover:bg-[#1e4620] text-white text-xs font-bold cursor-pointer border-none shadow-xs"
+          class="px-4 py-2 rounded-lg bg-brand-700 hover:bg-brand-900 text-white text-xs font-bold cursor-pointer border-none shadow-xs"
         >
           + Thêm quy tắc
         </button>
@@ -82,21 +82,21 @@ const RULE_CATEGORY_LABELS: Record<string, string> = {
     <slot v-if="$slots.error" name="error" />
 
     <!-- Rules List Table -->
-    <div v-else class="rounded-xl border border-[#e2ece3] bg-white overflow-x-auto shadow-xs">
+    <div v-else class="rounded-xl border border-line bg-white overflow-x-auto shadow-xs">
       <table class="w-full text-xs">
         <thead class="bg-[#f7faf7] text-left">
           <tr>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Nhóm danh mục</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Từ khóa / Mẫu nhận diện</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Hành động</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Mức độ</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Trạng thái</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815] text-right">Thao tác</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Nhóm danh mục</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Từ khóa / Mẫu nhận diện</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Hành động</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Mức độ</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Trạng thái</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950 text-right">Thao tác</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in rules" :key="r.id" class="border-t border-[#e2ece3] hover:bg-[#fcfdfc]">
-            <td class="px-3.5 py-2.5 font-bold text-[#122815]">
+          <tr v-for="r in rules" :key="r.id" class="border-t border-line hover:bg-[#fcfdfc]">
+            <td class="px-3.5 py-2.5 font-bold text-brand-950">
               {{ RULE_CATEGORY_LABELS[r.category] || r.category }}
             </td>
             <td class="px-3.5 py-2.5 font-mono text-[#b42318] font-bold">

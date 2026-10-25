@@ -26,8 +26,8 @@ const emit = defineEmits<{
 <template>
   <div class="flex flex-col gap-4">
     <!-- Status Filter -->
-    <div class="flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border border-[#e2ece3]">
-      <span class="text-xs font-bold text-[#667768]">Lọc trạng thái:</span>
+    <div class="flex flex-wrap items-center gap-2 bg-white p-3 rounded-xl border border-line">
+      <span class="text-xs font-bold text-ink-muted">Lọc trạng thái:</span>
       <button
         v-for="s in [
           { key: 'pending', label: 'Chờ đối soát' },
@@ -39,7 +39,7 @@ const emit = defineEmits<{
         :key="s.key"
         type="button"
         class="px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer border"
-        :class="queueStatusFilter === s.key ? 'bg-[#2c6e33] text-white border-[#2c6e33]' : 'bg-white text-[#667768] border-[#d0ddd1] hover:bg-[#f0f7f1]'"
+        :class="queueStatusFilter === s.key ? 'bg-brand-700 text-white border-[#2c6e33]' : 'bg-white text-ink-muted border-[#d0ddd1] hover:bg-surface-tint'"
         @click="emit('select-filter', s.key)"
       >
         {{ s.label }}
@@ -51,53 +51,53 @@ const emit = defineEmits<{
     <slot v-if="$slots.error" name="error" />
 
     <!-- Empty state -->
-    <div v-else-if="queue.length === 0" class="rounded-xl border border-[#e2ece3] bg-white p-12 text-center text-sm text-[#667768]">
-      <i class="fa-solid fa-shield-check text-4xl text-[#2c6e33] mb-3 block"></i>
+    <div v-else-if="queue.length === 0" class="rounded-xl border border-line bg-white p-12 text-center text-sm text-ink-muted">
+      <i class="fa-solid fa-shield-check text-4xl text-brand-700 mb-3 block"></i>
       Không có mục nào trong danh sách đối soát. Hệ thống an ninh đang hoạt động tốt.
     </div>
 
     <!-- Queue table -->
-    <div v-else class="rounded-xl border border-[#e2ece3] bg-white overflow-x-auto shadow-xs">
+    <div v-else class="rounded-xl border border-line bg-white overflow-x-auto shadow-xs">
       <table class="w-full text-xs">
         <thead class="bg-[#f7faf7] text-left">
           <tr>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Thời gian</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Nguồn & Vị trí ẩn</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Người gửi / IP</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Nội dung vi phạm</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Lý do phân tích</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Mức độ</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815]">Trạng thái</th>
-            <th class="px-3.5 py-3 font-bold text-[#122815] text-right">Thao tác đối soát</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Thời gian</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Nguồn & Vị trí ẩn</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Người gửi / IP</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Nội dung vi phạm</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Lý do phân tích</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Mức độ</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950">Trạng thái</th>
+            <th class="px-3.5 py-3 font-bold text-brand-950 text-right">Thao tác đối soát</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in queue" :key="item.id" class="border-t border-[#e2ece3] hover:bg-[#fcfdfc]">
-            <td class="px-3.5 py-2.5 whitespace-nowrap text-[#667768]">{{ formatTime(item.createdAt) }}</td>
+          <tr v-for="item in queue" :key="item.id" class="border-t border-line hover:bg-[#fcfdfc]">
+            <td class="px-3.5 py-2.5 whitespace-nowrap text-ink-muted">{{ formatTime(item.createdAt) }}</td>
             <td class="px-3.5 py-2.5">
               <span class="inline-block px-2 py-0.5 rounded font-bold uppercase text-[0.65rem]" :class="item.targetType === 'comment' ? 'bg-blue-100 text-blue-800' : item.targetType === 'chat' ? 'bg-purple-100 text-purple-800' : item.targetType === 'livestream_chat' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'">
                 {{ item.targetType === 'comment' ? 'Bình luận' : item.targetType === 'chat' ? 'Chat AI' : item.targetType === 'livestream_chat' ? 'Livestream' : 'Bài viết' }}
               </span>
               <!-- Vị trí cụ thể: bài viết / video / phiên chat -->
               <div v-if="item.contextTitle" class="mt-1 max-w-[220px]">
-                <a v-if="item.contextUrl" :href="item.contextUrl" target="_blank" class="block font-bold text-[#1e4620] hover:underline truncate text-xs" :title="item.contextTitle">
+                <a v-if="item.contextUrl" :href="item.contextUrl" target="_blank" class="block font-bold text-brand-900 hover:underline truncate text-xs" :title="item.contextTitle">
                   {{ item.contextTitle }}
                 </a>
-                <span v-else class="block font-bold text-[#1e4620] truncate text-xs" :title="item.contextTitle">
+                <span v-else class="block font-bold text-brand-900 truncate text-xs" :title="item.contextTitle">
                   {{ item.contextTitle }}
                 </span>
               </div>
               <!-- Session ID nếu có -->
               <div v-if="item.sessionId" class="mt-0.5">
-                <nuxt-link :to="`/admin/chatbot/sessions?search=${encodeURIComponent(item.sessionId)}`" class="text-[0.68rem] font-mono text-[#6b7280] hover:text-[#1e4620] underline">
+                <nuxt-link :to="`/admin/chatbot/sessions?search=${encodeURIComponent(item.sessionId)}`" class="text-[0.68rem] font-mono text-[#6b7280] hover:text-brand-900 underline">
                   Session: {{ item.sessionId.slice(0, 8) }}...
                 </nuxt-link>
               </div>
             </td>
             <td class="px-3.5 py-2.5 whitespace-nowrap">
-              <strong class="text-[#122815]">{{ item.authorName || 'Khách' }}</strong>
+              <strong class="text-brand-950">{{ item.authorName || 'Khách' }}</strong>
               <div v-if="item.authorIp" class="flex items-center gap-1.5 mt-0.5">
-                <span class="text-[0.68rem] text-[#667768] font-mono">{{ item.authorIp }}</span>
+                <span class="text-[0.68rem] text-ink-muted font-mono">{{ item.authorIp }}</span>
                 <span v-if="item.isIpBanned" class="px-1.5 py-px rounded text-[0.62rem] font-bold bg-red-100 text-red-700 border border-red-200">
                   Đã cấm
                 </span>
@@ -126,7 +126,7 @@ const emit = defineEmits<{
                 <button
                   v-if="item.status === 'pending'"
                   type="button"
-                  class="px-2.5 py-1 rounded bg-[#2c6e33] hover:bg-[#1e4620] text-white text-[0.7rem] font-bold cursor-pointer border-none shadow-2xs"
+                  class="px-2.5 py-1 rounded bg-brand-700 hover:bg-brand-900 text-white text-[0.7rem] font-bold cursor-pointer border-none shadow-2xs"
                   title="Duyệt nội dung an toàn và cho phép hiển thị lại"
                   @click="emit('resolve', item, 'approve')"
                 >

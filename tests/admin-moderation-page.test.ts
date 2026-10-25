@@ -51,6 +51,10 @@ import { rescanAiNotice, rescanFinishedToast, rescanSummaryText } from '../app/u
 import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
 import { moderationPageSource, readModerationPart } from './_moderation-page-parts.ts'
 import { byText, click, findAll, fire, input, mountSfc, textOf, type MiniElement, type MountedSfc } from './_sfc-mount.ts'
+import { COLOR_TOKENS } from '../shared/color-tokens.ts'
+
+/** The active status filter is brand green — by token name, or by the token's hex value in an arbitrary class. */
+const ACTIVE_FILTER = new RegExp(`bg-(?:brand-700|\\[${COLOR_TOKENS['brand-700']}\\]) text-white`, 'i')
 
 const PAGE = fileURLToPath(new URL('../app/pages/admin/ai/moderation.vue', import.meta.url))
 
@@ -656,7 +660,7 @@ describe('moderation page — review queue tab', () => {
     await click(button(page.root, 'Đã duyệt an toàn'))
     await settle()
     assert.deepEqual(sentFrom(calls, from), [`GET ${API}/queue?status=approved&page=1&perPage=20`])
-    assert.match(String(button(page.root, 'Đã duyệt an toàn').props.class), /bg-\[#2c6e33\] text-white/, 'the clicked filter is the active one')
+    assert.match(String(button(page.root, 'Đã duyệt an toàn').props.class), ACTIVE_FILTER, 'the clicked filter is the active one')
     assert.equal(pendingBadge(page), '25', 'the loaded total is still the pending one')
 
     held!.respond(json({ ok: true, count: 2, items: server.state.queue.approved, page: 1, perPage: 20, total: 2, totalPages: 1 }))
@@ -1083,7 +1087,7 @@ describe('moderation page — the review queue follows the latest request (RED o
     approved.respond(answerFor(server, 'approved'))
     await settle()
     assert.deepEqual(shownQueueIds(page), [41], 'the rows of "Đã xóa", the filter shown as active')
-    assert.match(String(button(page.root, 'Đã xóa').props.class), /bg-\[#2c6e33\] text-white/)
+    assert.match(String(button(page.root, 'Đã xóa').props.class), ACTIVE_FILTER)
   })
 
   it('an older answer arriving FIRST does not paint its rows under the newer filter (base: it did)', async () => {
