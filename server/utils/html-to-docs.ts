@@ -20,7 +20,14 @@
  *  - `CreateParagraphBulletsRequest` — bullet/numbering.
  *  - `InsertInlineImageRequest` — ảnh (cần objectId từ upload).
  *  - `InsertTableRequest` — bảng.
+ *
+ * Text: mọi đoạn text đi vào Doc đều ĐÃ GIẢI MÃ entity (`decodeHtmlEntities` cho
+ * text inline, `htmlFragmentToText` cho ô bảng và khối code). Thân `batchUpdate` là
+ * JSON chở text thuần — Docs không bao giờ hiểu markup hay entity — nên `<`/`&` sau
+ * giải mã không cần escape gì; để nguyên entity thì Doc hiện đúng chữ `R&amp;D`.
  */
+import { decodeHtmlEntities } from './decode-html-entities'
+import { headingLevel, htmlFragmentToText } from './html-fragment-text'
 
 /** Một ảnh cần upload lên Drive trước khi chèn vào Doc. */
 export interface DocsImageToUpload {
@@ -75,26 +82,6 @@ function createBullets(index: number, length: number, bulletPreset: string): unk
   }
 }
 
-/** Lấy text thuần của một đoạn HTML (bỏ tag). */
-function stripTags(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&[a-z]+;/g, '')
-    .trim()
-}
-
-/** Mức tiêu đề từ tag h1-h6. */
-function headingLevel(tag: string): number {
-  const m = tag.match(/^h([1-6])$/i)
-  return m ? Number(m[1]) : 0
-}
-
 /**
  * Inline style ranges — thu thập (offset, length, style) cho từng tag inline
  * trong một đoạn text, để áp UpdateTextStyle sau khi insert.
@@ -118,12 +105,14 @@ function convertInline(
   let rest = html
   while (rest.length) {
     const openMatch = rest.match(/<([a-zA-Z0-9]+)(\s[^>]*)?(\s*\/?)>/)
+    // Giải mã từng đoạn text TRƯỚC khi nối: offset của style range và placeholder
+    // ảnh đo trên `text.length`, nên phải đo trên chữ mà Doc thật sự nhận.
     if (!openMatch) {
-      text += rest
+      text += decodeHtmlEntities(rest)
       break
     }
     const before = rest.slice(0, openMatch.index)
-    text += before
+    text += decodeHtmlEntities(before)
     const tag = (openMatch[1] || '').toLowerCase()
     const selfClosing = openMatch[3]?.includes('/')
     const tagEnd = (openMatch.index || 0) + openMatch[0].length
@@ -323,6 +312,18 @@ function convertBlock(
         idx += textWithNewline.length
         break
       }
+      case 'pre': {
+        // Khối code: chữ nguyên văn, giữ xuống dòng (mỗi `\n` là một đoạn trong Doc).
+        // Trước đây `pre` rơi vào nhánh wrapper, nhánh đó bỏ qua text trần — cả khối
+        // code biến mất khỏi Doc.
+        const code = htmlFragmentToText(inner)
+        if (code) {
+          const textWithNewline = code + '\n'
+          requests.push(insertText(idx, textWithNewline))
+          idx += textWithNewline.length
+        }
+        break
+      }
       case 'table': {
         // Insert table đơn giản: tạo table rồi fill text cells.
         // Đếm rows + cols.
@@ -338,7 +339,7 @@ function convertBlock(
           for (const row of rowsMatch) {
             const cells = row.match(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi) || []
             for (const cell of cells) {
-              const cellText = stripTags(cell)
+              const cellText = htmlFragmentToText(cell)
               if (cellText) {
                 requests.push(insertText(cellIdx, cellText))
                 cellIdx += cellText.length
