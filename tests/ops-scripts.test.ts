@@ -46,6 +46,15 @@ test('a backup is verified before it is trusted', () => {
   assert.match(script, /PLAIN_BYTES.*-ge/s, 'no size floor')
 })
 
+test('restore-db trusts only an anchored completion marker, and never `grep -q` in a pipe', () => {
+  const script = read('scripts/restore-db.sh')
+  // Behaviour (a dump cut off inside a row holding the marker text is refused, for the
+  // dump to restore and for the pre-restore dump) is in tests/ops-scripts-sandbox.test.ts.
+  assert.match(script, /^DUMP_MARKER='\^-- Dump completed'$/m, 'the marker is not anchored to the start of a line')
+  assert.equal((script.match(/has_completion_marker "\$(ARCHIVE|PRE_DUMP)"/g) ?? []).length, 2, 'both the dump to restore and the pre-restore dump are checked')
+  assert.doesNotMatch(script, /\| *grep -q/, '`grep -q` in a pipe under pipefail: SIGPIPE makes the pipeline lie')
+})
+
 test('a rejected backup is deleted, not left looking valid', () => {
   // Found by running the script against a stubbed docker: a failed verification
   // used to leave the bad archive in the backup directory. The archive is now

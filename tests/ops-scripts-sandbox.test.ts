@@ -939,6 +939,9 @@ test('restore-db refuses a dump that is truncated, too small, or picks its own d
     const tables = Array.from({ length: 25 }, (_, i) => `CREATE TABLE t${i} (id int);`).join('\n')
     const cases: Array<[string, string, RegExp]> = [
       ['truncated', `${tables}\n`, /truncated/],
+      // Cut off inside a row whose text holds the marker: in the last 5 lines, not at a line start.
+      ['marker mid-line', `${tables}\nINSERT INTO t0 VALUES (1,'note -- Dump completed on x');\n`, /truncated/],
+      ['marker indented', `${tables}\n  -- Dump completed on x\n`, /truncated/],
       ['few tables', 'CREATE TABLE a (id int);\n-- Dump completed on x\n', /only 1 tables/],
       ['USE statement', `USE \`other_db\`;\n${tables}\n-- Dump completed on x\n`, /selects its own database/],
       ['CREATE DATABASE', `CREATE DATABASE other_db;\n${tables}\n-- Dump completed on x\n`, /selects its own database/],
@@ -987,6 +990,13 @@ test('restore-db restores nothing if the pre-restore dump cannot be taken (exit 
     const truncated = sb.run('scripts/restore-db.sh', [file, 'cdkt_admin', '--replace'], { env: { FAKE_DUMP_TRUNCATED: '1' } })
     assert.equal(truncated.status, 3)
     assert.ok(!readdirSync(sb.dir).some((f) => f.startsWith('mysql.stdin.')))
+
+    // …and so is one cut off inside a row whose text holds the marker (not at a line start).
+    const midLine = sb.run('scripts/restore-db.sh', [file, 'cdkt_admin', '--replace'], { env: { FAKE_DUMP_MARKER_MIDLINE: '1' } })
+    assert.equal(midLine.status, 3, midLine.stdout + midLine.stderr)
+    assert.match(midLine.stderr, /nothing was restored/)
+    assert.ok(!readdirSync(sb.dir).some((f) => f.startsWith('mysql.stdin.')), 'restored over a pre-dump that was cut off')
+    assert.ok(readdirSync(sb.path('backups')).every((f) => !f.startsWith('cdkt-prerestore-')), 'the cut-off pre-dump was kept as if valid')
   } finally {
     cleanup(sb)
   }

@@ -28,7 +28,11 @@ dump() {
   for i in $(seq 1 25); do printf 'CREATE TABLE `t%s` (id int);\n' "$i"; done
   head -c 60000 /dev/zero | tr '\0' 'x'
   printf '\n'
-  if [ "${FAKE_DUMP_TRUNCATED:-0}" != 1 ]; then echo '-- Dump completed on 2026-01-01 00:00:00'; fi
+  # FAKE_DUMP_MARKER_MIDLINE=1: cut off inside an INSERT whose data holds the marker
+  # text — the last lines contain "Dump completed", but not at the start of a line.
+  if [ "${FAKE_DUMP_MARKER_MIDLINE:-0}" = 1 ]; then
+    echo "INSERT INTO \`t1\` VALUES (1,'see -- Dump completed on 2026-01-01 00:00:00 in the log');"
+  elif [ "${FAKE_DUMP_TRUNCATED:-0}" != 1 ]; then echo '-- Dump completed on 2026-01-01 00:00:00'; fi
 }
 
 case "$cmd" in
