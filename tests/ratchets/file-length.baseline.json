@@ -27,8 +27,8 @@
     "value": 1272,
     "reason": "Unsplittable: tests/admin-bulk-selection-ui.test.ts pins selection.* in this file's template, desktop table and mobile card both (docs/decisions/refactor-large-files.md). Allowed above the 400-line default, but capped: it may only shrink."
   },
-  "app/pages/admin/content/categories/index.vue": 555,
-  "app/pages/admin/content/content-types.vue": 595,
+  "app/pages/admin/content/categories/index.vue": 551,
+  "app/pages/admin/content/content-types.vue": 594,
   "app/pages/admin/content/navigation/navbar.vue": 425,
   "app/pages/admin/content/pages/[id].vue": 795,
   "app/pages/admin/index.vue": 567,
