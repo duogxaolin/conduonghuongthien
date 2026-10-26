@@ -19,6 +19,7 @@ import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
 import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+import { COLOR_TOKENS, type ColorToken } from '../shared/color-tokens.ts'
 
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
@@ -271,6 +272,19 @@ function tagsWithPulse(template: string): string[] {
   return (template.match(/<[^>]*animate-pulse[^>]*>/g) ?? [])
 }
 
+/**
+ * The dashboard's "Live" badge dot (the one decorative pulse in `pages/admin/index.vue`):
+ * a round dot in the admin primary green — by token name (`bg-brand-700`) or by that
+ * token's value in an arbitrary class. The hex is read from COLOR_TOKENS and the name is
+ * checked against its keys (`satisfies ColorToken`), so neither form can drift from the
+ * token table.
+ */
+const LIVE_DOT_TOKEN = 'brand-700' satisfies ColorToken
+const LIVE_DOT = new RegExp(
+  `(?:^|[\\s"'])rounded-full bg-(?:${LIVE_DOT_TOKEN}|\\[${COLOR_TOKENS[LIVE_DOT_TOKEN]}\\])(?=[\\s"']|$)`,
+  'i',
+)
+
 test('every animated placeholder stops animating under prefers-reduced-motion', async () => {
   const files = [
     ...SKELETON_COMPONENTS,
@@ -295,6 +309,7 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
     // keeps the dot out of the assertion.
   ]
 
+  let exemptLiveDots = 0
   for (const file of files) {
     assert.ok(
       !(file in DECORATIVE_PULSE_FILES) || file === 'pages/admin/index.vue',
@@ -308,7 +323,10 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
     for (const tag of tagsWithPulse(template)) {
       // The one exempt element in this file is the "Live" badge dot, which is a
       // status indicator rather than a placeholder.
-      if (file === 'pages/admin/index.vue' && tag.includes('rounded-full bg-[#2c6e33]')) continue
+      if (file === 'pages/admin/index.vue' && LIVE_DOT.test(tag)) {
+        exemptLiveDots += 1
+        continue
+      }
 
       assert.ok(
         tag.includes('motion-reduce:animate-none'),
@@ -316,6 +334,9 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
       )
     }
   }
+  // Exactly the one dot: 0 means the pattern no longer finds it (the exemption guards
+  // nothing), 2+ means it is now waving real placeholders through.
+  assert.equal(exemptLiveDots, 1, 'pages/admin/index.vue: the "Live" badge dot exemption must match exactly one element')
 })
 
 test('the decorative pulses stay exempt and stay documented', async () => {

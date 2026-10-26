@@ -77,9 +77,9 @@ export const MODEL_ARTICLE_VARIANTS: Record<ModelArticleVariant, ModelArticleVar
       card: 'border-[#E2E8DF] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342]',
       cardBadge: 'bg-[#EEF4EC] text-[#3A6033] text-[0.68rem] px-2 py-0.5 rounded',
       cardTitle: 'group-hover:text-[#2D5A27]',
-      pageStep: 'hover:border-[#4A6741] hover:text-[#4A6741] hover:bg-[#F2F7F0]',
+      pageStep: 'hover:border-[#4A6741] hover:text-brand-600 hover:bg-[#F2F7F0]',
       pageActive: 'bg-[#4A6741] text-white shadow-sm border border-[#4A6741]',
-      pageIdle: 'bg-white border border-[#D5E1D3] text-[#4A5545] hover:border-[#4A6741] hover:text-[#4A6741] hover:bg-[#F2F7F0]',
+      pageIdle: 'bg-white border border-[#D5E1D3] text-[#4A5545] hover:border-[#4A6741] hover:text-brand-600 hover:bg-[#F2F7F0]',
     },
   },
   reintegration: {

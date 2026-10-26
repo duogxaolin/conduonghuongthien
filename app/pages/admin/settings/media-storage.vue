@@ -147,11 +147,11 @@ onMounted(() => { fetchSettings() })
     <!-- Page Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Cấu Hình Lưu Trữ Media (Local vs Cloudflare R2)</h1>
-        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Tùy chọn lưu trữ file trực tiếp trên Server VPS hoặc Cloudflare R2 Cloud Storage</p>
+        <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">Cấu Hình Lưu Trữ Media (Local vs Cloudflare R2)</h1>
+        <p class="text-[0.85rem] text-ink-muted mt-1 mb-0">Tùy chọn lưu trữ file trực tiếp trên Server VPS hoặc Cloudflare R2 Cloud Storage</p>
       </div>
       <button
-        class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+        class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
         :disabled="saving"
         @click="handleSave"
       >
@@ -161,7 +161,7 @@ onMounted(() => { fetchSettings() })
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" role="status" aria-busy="true" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+    <div v-if="loading" role="status" aria-busy="true" class="bg-white rounded-xl border border-line p-6">
       <span class="sr-only">Đang tải cấu hình lưu trữ media</span>
       <div class="flex flex-col gap-4 animate-pulse motion-reduce:animate-none">
         <div v-for="n in 5" :key="n">
@@ -174,44 +174,44 @@ onMounted(() => { fetchSettings() })
     <!-- Error -->
     <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-      {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchSettings()">thử lại</button>.
+      {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchSettings()">thử lại</button>.
     </div>
 
     <div v-else class="flex flex-col gap-5">
       <!-- Provider Selector -->
-      <div class="bg-white rounded-xl border border-[#e2ece3] p-6">
-        <h3 class="text-[1.05rem] font-bold text-[#122815] m-0 mb-4">Chế độ lưu trữ hiện tại</h3>
+      <div class="bg-white rounded-xl border border-line p-6">
+        <h3 class="text-[1.05rem] font-bold text-brand-950 m-0 mb-4">Chế độ lưu trữ hiện tại</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <label
             class="flex gap-4 border-2 rounded-xl p-5 cursor-pointer transition-all"
-            :class="settings.media_provider === 'local' ? 'border-[#2c6e33] bg-[#f8faf8]' : 'border-[#e2ece3] hover:border-[#8ed694]'"
+            :class="settings.media_provider === 'local' ? 'border-brand-700 bg-[#f8faf8]' : 'border-line hover:border-[#8ed694]'"
           >
-            <input type="radio" value="local" v-model="settings.media_provider" class="mt-1 accent-[#2c6e33] shrink-0" />
+            <input type="radio" value="local" v-model="settings.media_provider" class="mt-1 accent-brand-700 shrink-0" />
             <div>
-              <strong class="block text-[0.95rem] text-[#122815] mb-1">📁 Máy chủ Local (VPS)</strong>
-              <p class="m-0 text-[0.82rem] text-[#667768]">Lưu vào thư mục <code class="bg-[#f0f7f1] px-1 rounded text-xs">/public/uploads/</code> trên máy chủ. Nhẹ, tiện lợi, không cần tài khoản cloud.</p>
+              <strong class="block text-[0.95rem] text-brand-950 mb-1">📁 Máy chủ Local (VPS)</strong>
+              <p class="m-0 text-[0.82rem] text-ink-muted">Lưu vào thư mục <code class="bg-surface-tint px-1 rounded text-xs">/public/uploads/</code> trên máy chủ. Nhẹ, tiện lợi, không cần tài khoản cloud.</p>
             </div>
           </label>
 
           <label
             class="flex gap-4 border-2 rounded-xl p-5 cursor-pointer transition-all"
-            :class="settings.media_provider === 'r2' ? 'border-[#2c6e33] bg-[#f8faf8]' : 'border-[#e2ece3] hover:border-[#8ed694]'"
+            :class="settings.media_provider === 'r2' ? 'border-brand-700 bg-[#f8faf8]' : 'border-line hover:border-[#8ed694]'"
           >
-            <input type="radio" value="r2" v-model="settings.media_provider" class="mt-1 accent-[#2c6e33] shrink-0" />
+            <input type="radio" value="r2" v-model="settings.media_provider" class="mt-1 accent-brand-700 shrink-0" />
             <div>
-              <strong class="block text-[0.95rem] text-[#122815] mb-1">☁️ Cloudflare R2 (Object Storage)</strong>
-              <p class="m-0 text-[0.82rem] text-[#667768]">Lưu trực tiếp lên Cloudflare R2. Tải nhanh toàn cầu, băng thông miễn phí (10GB/tháng free).</p>
+              <strong class="block text-[0.95rem] text-brand-950 mb-1">☁️ Cloudflare R2 (Object Storage)</strong>
+              <p class="m-0 text-[0.82rem] text-ink-muted">Lưu trực tiếp lên Cloudflare R2. Tải nhanh toàn cầu, băng thông miễn phí (10GB/tháng free).</p>
             </div>
           </label>
         </div>
       </div>
 
       <!-- R2 Credentials Form -->
-      <div v-if="settings.media_provider === 'r2'" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+      <div v-if="settings.media_provider === 'r2'" class="bg-white rounded-xl border border-line p-6">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <h3 class="text-[1.05rem] font-bold text-[#122815] m-0">Thông số kết nối Cloudflare R2</h3>
+          <h3 class="text-[1.05rem] font-bold text-brand-950 m-0">Thông số kết nối Cloudflare R2</h3>
           <button
-            class="inline-flex items-center gap-2 bg-[#f0f7f1] text-[#2c6e33] border border-[#8ed694] px-3.5 py-2 rounded-lg font-bold cursor-pointer text-[0.82rem] hover:bg-[#e4f2e5] transition-colors disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+            class="inline-flex items-center gap-2 bg-surface-tint text-brand-700 border border-[#8ed694] px-3.5 py-2 rounded-lg font-bold cursor-pointer text-[0.82rem] hover:bg-[#e4f2e5] transition-colors disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
             :disabled="testingR2"
             @click="handleTestR2"
           >
@@ -220,32 +220,32 @@ onMounted(() => { fetchSettings() })
           </button>
         </div>
 
-        <div v-if="testMessage" role="status" class="bg-[#e4f2e5] text-[#2c6e33] px-4 py-3 rounded-lg text-[0.9rem] font-bold mb-4">{{ testMessage }}</div>
-        <div v-if="testError" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-3 rounded-lg text-[0.85rem] mb-4">{{ testError }}</div>
+        <div v-if="testMessage" role="status" class="bg-[#e4f2e5] text-brand-700 px-4 py-3 rounded-lg text-[0.9rem] font-bold mb-4">{{ testMessage }}</div>
+        <div v-if="testError" role="alert" class="bg-[#ffebe9] text-danger px-4 py-3 rounded-lg text-[0.85rem] mb-4">{{ testError }}</div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div class="flex flex-col gap-1.5">
             <label for="r2-account-id" class="text-[0.82rem] font-bold text-[#2c3e2e]">Cloudflare Account ID (*)</label>
-            <input id="r2-account-id" type="text" v-model="settings.r2_account_id" placeholder="32 ký tự hex, vd: 4f8b9…c312" maxlength="32" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(accountIdError)" aria-describedby="r2-account-id-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm font-mono outline-none focus:border-[#2c6e33] box-border" :class="accountIdError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <input id="r2-account-id" type="text" v-model="settings.r2_account_id" placeholder="32 ký tự hex, vd: 4f8b9…c312" maxlength="32" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(accountIdError)" aria-describedby="r2-account-id-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm font-mono outline-none focus:border-brand-700 box-border" :class="accountIdError ? 'border-[#B04A4A]' : 'border-line-strong'" />
             <span id="r2-account-id-hint" class="text-[0.75rem]" :class="accountIdError ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">{{ accountIdError || 'Đúng 32 ký tự hex (0-9, a-f). Đổi Account ID thì phải nhập lại Secret Access Key.' }}</span>
           </div>
           <div class="flex flex-col gap-1.5">
             <label for="r2-bucket" class="text-[0.82rem] font-bold text-[#2c3e2e]">Bucket Name (*)</label>
-            <input id="r2-bucket" type="text" v-model="settings.r2_bucket" placeholder="eg: cdkt-uploads" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(bucketError)" :aria-describedby="bucketError ? 'r2-bucket-error' : undefined" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" :class="bucketError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <input id="r2-bucket" type="text" v-model="settings.r2_bucket" placeholder="eg: cdkt-uploads" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(bucketError)" :aria-describedby="bucketError ? 'r2-bucket-error' : undefined" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 box-border" :class="bucketError ? 'border-[#B04A4A]' : 'border-line-strong'" />
             <span v-if="bucketError" id="r2-bucket-error" class="text-[0.75rem] text-[#B04A4A] font-semibold">{{ bucketError }}</span>
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Access Key ID (*)</label>
-            <input type="text" v-model="settings.r2_access_key" placeholder="eg: a1b2c3d4e5f6..." class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
+            <input type="text" v-model="settings.r2_access_key" placeholder="eg: a1b2c3d4e5f6..." class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
             <label for="r2-secret" class="text-[0.82rem] font-bold text-[#2c3e2e]">Secret Access Key (*)</label>
-            <input id="r2-secret" type="password" v-model="settings.r2_secret_key" placeholder="••••••••••••••••" autocomplete="new-password" :aria-invalid="Boolean(secretError)" aria-describedby="r2-secret-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" :class="secretError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <input id="r2-secret" type="password" v-model="settings.r2_secret_key" placeholder="••••••••••••••••" autocomplete="new-password" :aria-invalid="Boolean(secretError)" aria-describedby="r2-secret-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 box-border" :class="secretError ? 'border-[#B04A4A]' : 'border-line-strong'" />
             <span id="r2-secret-hint" class="text-[0.75rem]" :class="secretError || (secretNeedsReentry && !secretRetyped) ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">{{ secretHint }}</span>
           </div>
           <div class="flex flex-col gap-1.5 sm:col-span-2">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Public Domain / R2 Public URL (*)</label>
-            <input type="text" v-model="settings.r2_public_url" placeholder="eg: https://cdn.conduonghuongthien.com.vn" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
+            <input type="text" v-model="settings.r2_public_url" placeholder="eg: https://cdn.conduonghuongthien.com.vn" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border" />
             <span class="text-[0.75rem] text-[#888]">Tên miền công khai được gắn vào R2 bucket (Custom Domain hoặc pub-xxx.r2.dev)</span>
           </div>
         </div>

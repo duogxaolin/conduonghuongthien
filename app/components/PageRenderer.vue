@@ -38,7 +38,7 @@
       Không thể tải nội dung trang.
       <template v-if="onRetry">
         Vui lòng
-        <button type="button" class="font-bold text-[#4A6741] underline" @click="onRetry()">thử lại</button>.
+        <button type="button" class="font-bold text-brand-600 underline" @click="onRetry()">thử lại</button>.
       </template>
     </div>
   </div>

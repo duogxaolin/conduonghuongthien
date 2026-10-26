@@ -26,7 +26,7 @@
     class="mt-12 border-t border-[#E2E8DF] pt-8"
     aria-labelledby="comments-heading"
   >
-    <h2 id="comments-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-[#1E251C]">
+    <h2 id="comments-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-ink">
       <i class="fa-solid fa-comments mr-2 text-[#7CB342]" aria-hidden="true"></i>{{ t('comments') }}
       <span v-if="total" class="ml-1 text-[0.95rem] font-semibold text-[#5A6C58]">({{ total }})</span>
     </h2>
@@ -58,7 +58,7 @@
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ errorMessage }} Vui lòng
-      <button type="button" class="text-[#4A6741] font-bold underline" @click="loadThread()">thử lại</button>.
+      <button type="button" class="text-brand-600 font-bold underline" @click="loadThread()">thử lại</button>.
     </div>
 
     <template v-else>
@@ -69,7 +69,7 @@
         class="mb-5 rounded-lg border border-[#f0c0c0] bg-[#fff5f4] p-3.5 text-xs text-[#a32924] flex items-center justify-between gap-3 animate-fade-slide-up"
       >
         <div class="flex items-center gap-2">
-          <i class="fa-solid fa-triangle-exclamation text-base shrink-0 text-[#d12420]" aria-hidden="true"></i>
+          <i class="fa-solid fa-triangle-exclamation text-base shrink-0 text-danger" aria-hidden="true"></i>
           <span><strong>{{ t('c_revoked_label') }}</strong> {{ revokedNotice }}</span>
         </div>
         <button
@@ -81,7 +81,7 @@
       </div>
 
       <!-- 3. Chưa có bình luận -->
-      <p v-if="!comments.length" class="bg-[#F7FAF6] border border-[#E2E8DF] rounded-lg px-6 py-8 text-center text-[0.95rem] text-[#4A5545] m-0 mb-6">
+      <p v-if="!comments.length" class="bg-[#F7FAF6] border border-[#E2E8DF] rounded-lg px-6 py-8 text-center text-[0.95rem] text-ink-secondary m-0 mb-6">
         {{ t('no_comments_yet') || 'Chưa có bình luận nào. Hãy là người đầu tiên đặt câu hỏi hoặc chia sẻ ý kiến về nội dung này.' }}
       </p>
 
@@ -98,10 +98,10 @@
               <ReaderAvatar :initials="comment.initials" :is-admin="comment.isAdminReply" />
               <div class="flex-grow min-w-0">
                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
-                  <span class="font-bold text-[0.92rem] text-[#1E251C]">{{ comment.authorName }}</span>
+                  <span class="font-bold text-[0.92rem] text-ink">{{ comment.authorName }}</span>
                   <span
                     v-if="comment.isAdminReply"
-                    class="px-2 py-0.5 rounded-full bg-[#4A6741] text-white text-[0.7rem] font-bold uppercase tracking-wide"
+                    class="px-2 py-0.5 rounded-full bg-brand-600 text-white text-[0.7rem] font-bold uppercase tracking-wide"
                   >{{ t('admin_badge') || 'Ban quản trị' }}</span>
                   <span class="text-[0.78rem] text-[#5A6C58]">{{ formatDateVN(comment.createdAt) }}</span>
                 </div>
@@ -111,7 +111,7 @@
                   <button
                     v-if="isSignedIn && enabled"
                     type="button"
-                    class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
+                    class="text-[0.82rem] font-semibold text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
                     @click="toggleReply(comment.id)"
                   >
                     <i class="fa-solid fa-reply mr-1" aria-hidden="true"></i>{{ t('reply') || 'Trả lời' }}
@@ -120,7 +120,7 @@
                        neo `#qa-<id>` của /qa-documents. -->
                   <button
                     type="button"
-                    class="text-[0.82rem] font-semibold text-[#5A6C58] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
+                    class="text-[0.82rem] font-semibold text-[#5A6C58] hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
                     @click="copyLink(comment.id)"
                   >
                     <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
@@ -151,10 +151,10 @@
                       <ReaderAvatar :initials="reply.initials" :is-admin="reply.isAdminReply" size="sm" />
                       <div class="flex-grow min-w-0">
                         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
-                          <span class="font-bold text-[0.86rem] text-[#1E251C]">{{ reply.authorName }}</span>
+                          <span class="font-bold text-[0.86rem] text-ink">{{ reply.authorName }}</span>
                           <span
                             v-if="reply.isAdminReply"
-                            class="px-2 py-0.5 rounded-full bg-[#4A6741] text-white text-[0.68rem] font-bold uppercase tracking-wide"
+                            class="px-2 py-0.5 rounded-full bg-brand-600 text-white text-[0.68rem] font-bold uppercase tracking-wide"
                           >{{ t('admin_badge') }}</span>
                           <span class="text-[0.75rem] text-[#5A6C58]">{{ formatDateVN(reply.createdAt) }}</span>
                         </div>
@@ -162,7 +162,7 @@
                         <div class="mt-1.5 flex flex-wrap items-center gap-3">
                           <button
                             type="button"
-                            class="text-[0.8rem] font-semibold text-[#5A6C58] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
+                            class="text-[0.8rem] font-semibold text-[#5A6C58] hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
                             @click="copyLink(reply.id)"
                           >
                             <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
@@ -192,13 +192,13 @@
                     :maxlength="MAX_LENGTH"
                     :disabled="submitting"
                     :placeholder="t('c_reply_placeholder')"
-                    class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-[0.92rem] outline-none focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/15 box-border resize-y"
+                    class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-[0.92rem] outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 box-border resize-y"
                   ></textarea>
                   <div class="mt-2 flex flex-wrap items-center gap-2">
                     <button type="submit" class="btn btn-primary text-[0.85rem]" :disabled="submitting || !replyBody.trim()">
                       {{ submitting ? t('sending') : t('c_send_reply') }}
                     </button>
-                    <button type="button" class="text-[0.85rem] font-semibold text-[#4A5545] hover:underline" @click="cancelReply">{{ t('c_cancel') }}</button>
+                    <button type="button" class="text-[0.85rem] font-semibold text-ink-secondary hover:underline" @click="cancelReply">{{ t('c_cancel') }}</button>
                   </div>
                 </form>
               </div>
@@ -229,7 +229,7 @@
             </div>
             <p class="m-0 text-[0.95rem] leading-[1.6] text-[#2C3529] whitespace-pre-line break-words">{{ p.body }}</p>
             <div v-if="p.status === 'error'" class="mt-2 flex gap-3">
-              <button type="button" class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded" @click="retryPendingComment(p.tempId)">
+              <button type="button" class="text-[0.82rem] font-semibold text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded" @click="retryPendingComment(p.tempId)">
                 <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>{{ t('retry') || 'Thử lại' }}
               </button>
               <button type="button" class="text-[0.82rem] font-semibold text-[#5A6C58] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded" @click="dismissPendingComment(p.tempId)">
@@ -243,14 +243,14 @@
       <div v-if="totalPages > 1" class="mb-6 flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
-          class="px-3 py-1.5 rounded-lg border border-[#E2E8DF] bg-white text-[0.85rem] font-semibold text-[#4A5545] disabled:opacity-50"
+          class="px-3 py-1.5 rounded-lg border border-[#E2E8DF] bg-white text-[0.85rem] font-semibold text-ink-secondary disabled:opacity-50"
           :disabled="page <= 1 || pending"
           @click="goToPage(page - 1)"
         >{{ t('page_prev') || 'Trang trước' }}</button>
-        <span class="text-[0.85rem] text-[#4A5545]">{{ t('page_of') || 'Trang' }} {{ page }} / {{ totalPages }}</span>
+        <span class="text-[0.85rem] text-ink-secondary">{{ t('page_of') || 'Trang' }} {{ page }} / {{ totalPages }}</span>
         <button
           type="button"
-          class="px-3 py-1.5 rounded-lg border border-[#E2E8DF] bg-white text-[0.85rem] font-semibold text-[#4A5545] disabled:opacity-50"
+          class="px-3 py-1.5 rounded-lg border border-[#E2E8DF] bg-white text-[0.85rem] font-semibold text-ink-secondary disabled:opacity-50"
           :disabled="page >= totalPages || pending"
           @click="goToPage(page + 1)"
         >{{ t('page_next') || 'Trang sau' }}</button>
@@ -269,11 +269,11 @@
         <p v-if="sessionLapsed" role="alert" class="m-0 mb-3 text-[0.92rem] font-semibold text-[#B04A4A]">
           <i class="fa-solid fa-circle-exclamation mr-1.5" aria-hidden="true"></i>
           {{ t('c_session_lapsed') }}
-          <span v-if="body.trim()" class="block mt-1 font-normal text-[#4A5545]">
+          <span v-if="body.trim()" class="block mt-1 font-normal text-ink-secondary">
             {{ t('c_session_lapsed_keep') }}
           </span>
         </p>
-        <p class="m-0 mb-3 text-[0.95rem] text-[#4A5545]">
+        <p class="m-0 mb-3 text-[0.95rem] text-ink-secondary">
           {{ t('c_google_login_desc') }}
         </p>
         <button type="button" class="btn btn-primary" @click="signIn()">
@@ -291,7 +291,7 @@
           :maxlength="MAX_LENGTH"
           :disabled="submitting"
           :placeholder="t('c_placeholder')"
-          class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-[0.95rem] outline-none focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/15 box-border resize-y"
+          class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-[0.95rem] outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 box-border resize-y"
         ></textarea>
 
         <p v-if="submitError" role="alert" class="mt-2 mb-0 text-[0.88rem] text-[#B04A4A]">

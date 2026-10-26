@@ -74,11 +74,41 @@ describe('slugify', () => {
 })
 
 /**
- * Không endpoint nào được tự khai lại `slugify`.
+ * Bản "đang gõ" cho ô slug ở trang quản trị: cùng luật ký tự, chỉ khác là GIỮ một
+ * gạch cuối — cắt nó mỗi lần gõ phím thì cán bộ không gõ nổi `tin-nong`. Bản chuẩn
+ * (`slugify`) áp lúc rời ô, lúc lưu và cho slug sinh từ tên.
+ */
+describe('slugifyDraft (shared/slugify.ts) — ô slug đang gõ', () => {
+  it('giữ một gạch cuối để gõ tiếp từ sau', async () => {
+    const { slugifyDraft } = await import('../shared/slugify.ts')
+    assert.equal(slugifyDraft('tin-'), 'tin-')
+    assert.equal(slugifyDraft('Tin nóng-'), 'tin-nong-')
+    assert.equal(slugifyDraft('tin---'), 'tin-')
+  })
+
+  it('gạch đầu bị cắt ngay — không bao giờ hợp lệ, không cần để gõ tiếp', async () => {
+    const { slugifyDraft } = await import('../shared/slugify.ts')
+    assert.equal(slugifyDraft('-tin'), 'tin')
+    assert.equal(slugifyDraft('  ---  '), '')
+  })
+
+  it('khác slugify đúng ở gạch cuối, không ở chỗ nào khác', async () => {
+    const { slugify: canonical, slugifyDraft } = await import('../shared/slugify.ts')
+    for (const input of ['Mô hình tái hòa nhập', 'Đường hướng thiện-', '-- Tin nong --', 'Tin    nong', 'Tin---nong', '— Tin nóng —', 'R&D_2026!', '', '!!!']) {
+      assert.equal(canonical(input), slugifyDraft(input).replace(/-+$/, ''), input)
+    }
+  })
+})
+
+/**
+ * Chỉ còn MỘT định nghĩa logic slugify, ở `shared/slugify.ts` — máy chủ re-export
+ * (`server/utils/slug.ts`), trang quản trị import qua `~~/shared/slugify`.
  *
  * Guard chặn bản sao thứ hai. Nó soi văn bản mã nguồn nên **không** chứng minh
- * endpoint xử lý đúng — nó chỉ chặn đúng hình dạng đã sai một lần, và chính hình
- * dạng đó là thứ khiến hai bản trôi xa nhau mà không ai đối chiếu.
+ * nơi gọi xử lý đúng — nó chỉ chặn đúng hình dạng đã sai hai lần: endpoint tạo bài
+ * viết từng có `function slugify` riêng, rồi ba trang quản trị có
+ * `const slugifyLocal = (text) => …` (dạng arrow, nên guard cũ chỉ tìm
+ * `function slugify` trong `server/` để lọt), cả bốn thiếu phép cắt gạch treo.
  */
 describe('chỉ còn MỘT định nghĩa slugify', () => {
   function walk(dir: string): string[] {
@@ -86,16 +116,39 @@ describe('chỉ còn MỘT định nghĩa slugify', () => {
     for (const entry of readdirSync(dir)) {
       const full = join(dir, entry)
       if (statSync(full).isDirectory()) out.push(...walk(full))
-      else if (full.endsWith('.ts')) out.push(full)
+      else if (/\.(ts|vue|js|mjs)$/.test(full)) out.push(full)
     }
     return out
   }
+  const sources = () => ['app', 'server', 'shared'].flatMap(walk)
 
-  it('không tệp nào ngoài server/utils/slug.ts khai `function slugify`', () => {
-    const defs = [...walk('server/api'), ...walk('server/utils'), ...walk('server/services')]
-      .filter(file => /function slugify/.test(readFileSync(file, 'utf8')))
-    assert.deepEqual(defs, ['server/utils/slug.ts'],
+  /** Hàm kiểu slug có hợp đồng KHÁC, cố ý giữ riêng — nêu tên kèm lý do. */
+  const NOT_A_SLUGIFY_COPY: Record<string, string> = {
+    'app/utils/toc.ts': '`slugifyHeading` sinh id neo cho mục lục: mọi chuỗi ký tự không phải chữ/số thành `-` '
+      + '(`R&D` → `r-d`, còn slugify ra `rd`), cắt 80 ký tự. Liên kết `#…` đã chia sẻ phụ thuộc vào nó; không phải slug lưu CSDL.',
+  }
+
+  it('không tệp nào ngoài shared/slugify.ts khai hàm tên slugify… (function hay arrow)', () => {
+    const defs = sources()
+      .filter(file => /\bfunction\s+slugify\w*|\b(?:const|let|var)\s+slugify\w*\s*=/.test(readFileSync(file, 'utf8')))
+      .filter(file => !NOT_A_SLUGIFY_COPY[file])
+    assert.deepEqual(defs, ['shared/slugify.ts'],
       'một bản sao thứ hai là chỗ thứ hai để phép cắt gạch treo bị bỏ sót — '
       + 'và `articles/[id].put.ts` không slugify lại, nên slug sai là vĩnh viễn')
+  })
+
+  it('không tệp nào khác chứa logic kiểu slugify (NFD + thay bằng "-"), dù đặt tên gì', () => {
+    const copies = sources()
+      .filter((file) => {
+        const source = readFileSync(file, 'utf8')
+        return /\.normalize\(\s*['"]NFD['"]\s*\)/.test(source) && /\.replace\([^)]*,\s*['"]-['"]\s*\)/.test(source)
+      })
+      .filter(file => !NOT_A_SLUGIFY_COPY[file])
+    assert.deepEqual(copies, ['shared/slugify.ts'], 'đổi tên bản chép không làm nó hết là bản chép')
+  })
+
+  it('server/utils/slug.ts dùng chính slugify của shared/', async () => {
+    const shared = await import('../shared/slugify.ts')
+    assert.equal(slugify, shared.slugify)
   })
 })

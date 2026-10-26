@@ -21,7 +21,7 @@
       :inert="!isChatbotOpen"
     >
       <!-- Header -->
-      <div class="flex-shrink-0 bg-[#1e4620] px-4 pt-[calc(env(safe-area-inset-top,0px)+12px)] pb-3 md:pt-3 md:rounded-t-2xl">
+      <div class="flex-shrink-0 bg-brand-900 px-4 pt-[calc(env(safe-area-inset-top,0px)+12px)] pb-3 md:pt-3 md:rounded-t-2xl">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <button class="md:hidden w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[1rem] border-none cursor-pointer transition-[background-color,transform] active:scale-90" @click="closeChatbot" :aria-label="t('cw_back')">
@@ -67,7 +67,7 @@
       <div v-if="isConversationListOpen" class="flex-shrink-0 border-b border-[#e1e8e0] bg-white max-h-[40%] overflow-y-auto overscroll-contain">
         <div class="flex items-center justify-between px-3 py-2 border-b border-[#f0f4ef]">
           <span class="text-[0.72rem] font-bold uppercase tracking-wide text-[#6b7280]">Cuộc trò chuyện</span>
-          <button type="button" class="flex items-center gap-1 rounded-full bg-[#1e4620] px-2.5 py-1 text-[0.7rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317]" @click="onCreateConversation">
+          <button type="button" class="flex items-center gap-1 rounded-full bg-brand-900 px-2.5 py-1 text-[0.7rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317]" @click="onCreateConversation">
             <i class="fa-solid fa-plus text-[0.6rem]" aria-hidden="true"></i> Tạo mới
           </button>
         </div>
@@ -97,15 +97,15 @@
              (ảnh tải xong, chi tiết công cụ hiện ra) và giữ khung bám đáy. -->
         <div ref="chatContent" class="flex flex-col gap-4">
         <div v-if="chatMessages.length <= 1" class="mx-auto mt-4 mb-2 max-w-[280px] text-center">
-          <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-[#1e4620]/10 flex items-center justify-center">
-            <i class="fa-solid fa-shield-halved text-[#1e4620] text-[1.4rem]"></i>
+          <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-brand-900/10 flex items-center justify-center">
+            <i class="fa-solid fa-shield-halved text-brand-900 text-[1.4rem]"></i>
           </div>
-          <p class="text-[0.82rem] text-[#4A5545] leading-relaxed m-0">Xin chào! Tôi hỗ trợ tra cứu thông tin từ kho dữ liệu đã được <strong class="text-[#1e4620]">Cục C11</strong> phê duyệt.</p>
+          <p class="text-[0.82rem] text-ink-secondary leading-relaxed m-0">Xin chào! Tôi hỗ trợ tra cứu thông tin từ kho dữ liệu đã được <strong class="text-brand-900">Cục C11</strong> phê duyệt.</p>
         </div>
 
         <template v-for="(msg, index) in chatMessages" :key="msg.id || index">
           <div v-if="msg.id !== 'welcome'" class="flex gap-2.5" :class="msg.sender === 'user' ? 'justify-end' : 'justify-start'" :data-chat-anchor="msg.sender === 'user' ? '' : undefined">
-            <div v-if="msg.sender === 'bot'" class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm" aria-hidden="true">
+            <div v-if="msg.sender === 'bot'" class="w-7 h-7 rounded-full bg-brand-900 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm" aria-hidden="true">
               <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
             </div>
             <div
@@ -127,7 +127,7 @@
               <div v-if="msg.status === 'error' && msg.error" class="mt-1 flex items-center gap-2 text-[0.72rem]" role="alert">
                 <i class="fa-solid fa-circle-exclamation text-[0.65rem]" aria-hidden="true"></i>
                 {{ msg.error }}
-                <button type="button" class="underline font-semibold text-[#1e4620] bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">Thử lại</button>
+                <button type="button" class="underline font-semibold text-brand-900 bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">Thử lại</button>
               </div>
               <div v-if="msg.sender === 'bot' && !msg.isStreaming" class="mt-2 flex items-center justify-between gap-2 border-t border-[#e1e8e0] pt-1.5 text-[0.7rem]">
                 <span v-if="msg.kind" class="flex items-center gap-1 font-semibold" :class="messageKindClass(msg.kind)" role="status">
@@ -137,7 +137,7 @@
                 <span v-else></span>
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1 text-[0.7rem] text-[#6b7280] hover:text-[#1e4620] bg-transparent border-none cursor-pointer p-0.5 rounded transition-colors"
+                  class="inline-flex items-center gap-1 text-[0.7rem] text-[#6b7280] hover:text-brand-900 bg-transparent border-none cursor-pointer p-0.5 rounded transition-colors"
                   @click="copyMessageText(msg.text, msg.id)"
                   :title="copiedMsgId === msg.id ? 'Đã sao chép' : 'Sao chép câu trả lời'"
                 >
@@ -146,9 +146,9 @@
                 </button>
               </div>
               <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 space-y-1 border-t border-[#e1e8e0] pt-1.5 list-none pl-0" :aria-label="t('cw_sources')">
-                <li v-for="source in msg.sources" :key="source.id" class="text-[0.68rem] leading-snug text-[#4A5545]">
+                <li v-for="source in msg.sources" :key="source.id" class="text-[0.68rem] leading-snug text-ink-secondary">
                   <i class="fa-solid fa-link text-[0.5rem] text-[#7CB342] mr-1" aria-hidden="true"></i>
-                  <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
+                  <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-brand-900 underline underline-offset-2">{{ source.label }}</a>
                   <span v-else class="font-semibold">{{ source.label }}</span>
                   <span v-if="source.reference" class="text-[#6b7280]"> — {{ source.reference }}</span>
 
@@ -157,7 +157,7 @@
                   <button
                     v-if="source.entryId !== null"
                     type="button"
-                    class="ml-1 inline-flex items-center gap-0.5 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-1.5 py-px text-[0.62rem] font-semibold text-[#1e4620] cursor-pointer transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                    class="ml-1 inline-flex items-center gap-0.5 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-1.5 py-px text-[0.62rem] font-semibold text-brand-900 cursor-pointer transition-colors hover:bg-brand-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                     :aria-expanded="isSourceExpanded(source.entryId)"
                     @click="toggleSourceDetail(source.entryId)"
                   >
@@ -166,34 +166,34 @@
                   </button>
 
                   <div v-if="isSourceExpanded(source.entryId)" class="mt-1 rounded-lg border border-[#e1e8e0] bg-[#f8faf8] px-2 py-1.5">
-                    <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.64rem] text-[#667768]" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
+                    <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.64rem] text-ink-muted" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
                     <div v-else-if="sourceDetailOf(source.entryId)?.status === 'error'" role="alert">
                       <p class="m-0 text-[0.64rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
-                      <button type="button" class="mt-1 rounded-full bg-[#1e4620] px-2 py-0.5 text-[0.62rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-1" @click="retrySourceDetail(source.entryId)">Thử lại</button>
+                      <button type="button" class="mt-1 rounded-full bg-brand-900 px-2 py-0.5 text-[0.62rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-1" @click="retrySourceDetail(source.entryId)">Thử lại</button>
                     </div>
                     <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
-                      <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.66rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
+                      <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.66rem] font-bold text-brand-900">{{ sourceDetailOf(source.entryId)?.question }}</p>
                       <p class="m-0 whitespace-pre-wrap text-[0.66rem] leading-[1.55] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
-                      <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.6rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
+                      <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.6rem] font-bold text-brand-900 underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
                     </template>
                   </div>
                 </li>
               </ul>
               <div v-if="msg.askContact && msg.lead && !msg.isStreaming" class="mt-3 border-t border-[#e1e8e0] pt-3">
-                <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-[#1e4620]"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!</p>
+                <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-brand-900"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!</p>
                 <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
                   <p class="m-0 text-[0.75rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
                   <!-- Nhãn sr-only: placeholder biến mất khi gõ và không phải tên truy cập đáng tin. -->
                   <label :for="leadFieldId(uid, msg.id || index, 'name')" class="sr-only">{{ t('cw_lead_name') }}</label>
-                  <input :id="leadFieldId(uid, msg.id || index, 'name')" v-model="msg.lead.name" type="text" autocomplete="name" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                  <input :id="leadFieldId(uid, msg.id || index, 'name')" v-model="msg.lead.name" type="text" autocomplete="name" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-brand-900" />
                   <label :for="leadFieldId(uid, msg.id || index, 'phone')" class="sr-only">{{ t('cw_lead_phone') }}</label>
-                  <input :id="leadFieldId(uid, msg.id || index, 'phone')" v-model="msg.lead.phone" type="tel" autocomplete="tel" :placeholder="t('cw_lead_phone')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
+                  <input :id="leadFieldId(uid, msg.id || index, 'phone')" v-model="msg.lead.phone" type="tel" autocomplete="tel" :placeholder="t('cw_lead_phone')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-brand-900" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
                   <label :for="leadFieldId(uid, msg.id || index, 'email')" class="sr-only">{{ t('cw_lead_email') }}</label>
-                  <input :id="leadFieldId(uid, msg.id || index, 'email')" v-model="msg.lead.email" type="email" autocomplete="email" :placeholder="t('cw_lead_email')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
+                  <input :id="leadFieldId(uid, msg.id || index, 'email')" v-model="msg.lead.email" type="email" autocomplete="email" :placeholder="t('cw_lead_email')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-brand-900" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
                   <label :for="leadFieldId(uid, msg.id || index, 'question')" class="sr-only">{{ t('cw_lead_question') }}</label>
-                  <textarea :id="leadFieldId(uid, msg.id || index, 'question')" v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
+                  <textarea :id="leadFieldId(uid, msg.id || index, 'question')" v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-brand-900"></textarea>
                   <p v-if="msg.lead.error" :id="leadFieldId(uid, msg.id || index, 'error')" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
-                  <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
+                  <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-brand-900 px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
                 </form>
               </div>
             </div>
@@ -212,26 +212,26 @@
              is not in the transcript yet, so this never sits beside an empty
              bubble. -->
         <div v-if="isAwaitingFirstWord" class="flex gap-2.5 justify-start">
-          <div class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 shadow-sm" aria-hidden="true">
+          <div class="w-7 h-7 rounded-full bg-brand-900 flex items-center justify-center flex-shrink-0 shadow-sm" aria-hidden="true">
             <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
           </div>
           <div class="bg-white px-3.5 py-2.5 rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)] border border-[#e8efe8] max-w-xs" role="status" aria-live="polite">
             <span class="sr-only">Trợ lý đang soạn câu trả lời</span>
-            <div class="flex items-center gap-1.5 text-[0.72rem] font-semibold text-[#2c6e33]">
+            <div class="flex items-center gap-1.5 text-[0.72rem] font-semibold text-brand-700">
               <span class="relative flex h-2 w-2">
                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#7CB342] opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2 w-2 bg-[#2c6e33]"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-brand-700"></span>
               </span>
               <span>Đang suy nghĩ &amp; tra cứu...</span>
             </div>
             <div class="flex gap-1 items-center mt-1.5" aria-hidden="true">
-              <span class="w-1.5 h-1.5 bg-[#1e4620] rounded-full animate-typing-dot motion-reduce:animate-none motion-reduce:opacity-60"></span>
-              <span class="w-1.5 h-1.5 bg-[#1e4620] rounded-full animate-typing-dot [animation-delay:200ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
-              <span class="w-1.5 h-1.5 bg-[#1e4620] rounded-full animate-typing-dot [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
+              <span class="w-1.5 h-1.5 bg-brand-900 rounded-full animate-typing-dot motion-reduce:animate-none motion-reduce:opacity-60"></span>
+              <span class="w-1.5 h-1.5 bg-brand-900 rounded-full animate-typing-dot [animation-delay:200ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
+              <span class="w-1.5 h-1.5 bg-brand-900 rounded-full animate-typing-dot [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
             </div>
             <!-- Sau ~20 giây: nói rõ lần chờ này dài hơn thường. Nằm trong vùng role="status"
                  nên trình đọc màn hình cũng được báo; cuộc gọi không bị huỷ. -->
-            <p v-if="isSlowWait" class="m-0 mt-1.5 text-[0.72rem] leading-snug text-[#667768]">Đang chờ lâu hơn bình thường, xin anh/chị chờ thêm…</p>
+            <p v-if="isSlowWait" class="m-0 mt-1.5 text-[0.72rem] leading-snug text-ink-muted">Đang chờ lâu hơn bình thường, xin anh/chị chờ thêm…</p>
           </div>
         </div>
         </div>
@@ -243,7 +243,7 @@
            because the chips themselves are the visible answer. -->
       <p
         v-if="quickQuestionState !== 'success'"
-        class="flex-shrink-0 m-0 border-t border-[#e1e8e0] bg-white px-4 py-2 text-[0.72rem] text-[#667768]"
+        class="flex-shrink-0 m-0 border-t border-[#e1e8e0] bg-white px-4 py-2 text-[0.72rem] text-ink-muted"
         role="status"
         aria-live="polite"
       >{{ quickQuestionStatusText }}</p>
@@ -251,7 +251,7 @@
 
       <!-- Quick questions -->
       <div v-if="quickQuestionState === 'success' && quickQuestions.length" class="flex-shrink-0 border-t border-[#e1e8e0]">
-        <button type="button" class="w-full px-4 py-2 bg-white text-[0.75rem] font-semibold text-[#4A5545] flex items-center justify-between border-none cursor-pointer transition-all hover:bg-[#f8faf8]" @click="isQuickQuestionsExpanded = !isQuickQuestionsExpanded">
+        <button type="button" class="w-full px-4 py-2 bg-white text-[0.75rem] font-semibold text-ink-secondary flex items-center justify-between border-none cursor-pointer transition-all hover:bg-[#f8faf8]" @click="isQuickQuestionsExpanded = !isQuickQuestionsExpanded">
           <span class="flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-[#7CB342] text-[0.7rem]" aria-hidden="true"></i> Câu hỏi gợi ý</span>
           <i class="fa-solid fa-chevron-up text-[0.6rem] transition-transform duration-200" :class="{ 'rotate-180': !isQuickQuestionsExpanded }" aria-hidden="true"></i>
         </button>
@@ -263,7 +263,7 @@
               type="button"
               :disabled="isSubmitting"
               @click="askBot(question.question)"
-              class="bg-[#f0f6ef] border border-[#d4e4d2] text-[#2d4a2d] px-2.5 py-1 rounded-full text-[0.72rem] font-medium whitespace-nowrap cursor-pointer transition-all hover:bg-[#1e4620] hover:text-white hover:border-[#1e4620] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              class="bg-[#f0f6ef] border border-[#d4e4d2] text-[#2d4a2d] px-2.5 py-1 rounded-full text-[0.72rem] font-medium whitespace-nowrap cursor-pointer transition-all hover:bg-brand-900 hover:text-white hover:border-brand-900 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
             >{{ question.question }}</button>
           </div>
         </div>
@@ -287,13 +287,13 @@
               :aria-describedby="botInputError ? 'public-chatbot-error public-chatbot-counter' : 'public-chatbot-counter'"
               :aria-invalid="Boolean(botInputError)"
               :disabled="isSubmitting"
-              class="w-full px-4 py-3 rounded-full border border-[#d4e4d2] text-base md:text-[0.88rem] outline-none bg-[#f8faf8] transition-all focus:border-[#1e4620] focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
+              class="w-full px-4 py-3 rounded-full border border-[#d4e4d2] text-base md:text-[0.88rem] outline-none bg-[#f8faf8] transition-all focus:border-brand-900 focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
             />
             <div v-if="botInputError" class="mt-1 px-4">
               <p id="public-chatbot-error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ botInputError }}</p>
             </div>
           </div>
-          <button type="submit" :disabled="isSubmitting || !botInput.trim()" class="w-11 h-11 rounded-full bg-[#1e4620] text-white border-none flex flex-shrink-0 items-center justify-center cursor-pointer transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:bg-[#a0b89e]" :aria-label="t('cw_send_aria')">
+          <button type="submit" :disabled="isSubmitting || !botInput.trim()" class="w-11 h-11 rounded-full bg-brand-900 text-white border-none flex flex-shrink-0 items-center justify-center cursor-pointer transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:bg-[#a0b89e]" :aria-label="t('cw_send_aria')">
             <i class="fa-solid fa-paper-plane text-[0.85rem]"></i>
           </button>
         </form>
@@ -315,7 +315,7 @@
       </div>
       <button
         ref="chatToggleButton"
-        class="chatbot-toggle-btn flex bg-[#1e4620] text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer items-center gap-2 font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#1e4620] motion-reduce:transition-none"
+        class="chatbot-toggle-btn flex bg-brand-900 text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer items-center gap-2 font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-900 motion-reduce:transition-none"
         aria-controls="public-chatbot-dialog"
         :aria-expanded="isChatbotOpen"
         @click="toggleChatbot"

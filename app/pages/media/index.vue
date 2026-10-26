@@ -28,7 +28,7 @@
   phát có thể bắt đầu hoặc kết thúc bên trong cửa sổ đó.
 -->
 <template>
-  <div class="bg-[#F8FAF7]">
+  <div class="bg-surface">
     <!-- Hero: buổi phát trực tiếp nếu đang có, ngược lại là hero mặc định. Tự hỏi
          trạng thái sau mount — xem `LiveHero.vue` cho lý do đầy đủ. -->
     <LiveHero />
@@ -38,7 +38,7 @@
         <!-- Bộ lọc. `@submit.prevent` vì đây là một form: bấm Enter trong ô tìm
              kiếm phải lọc, và một lượt submit thật sẽ tải lại cả trang. -->
         <form
-          class="flex flex-col lg:flex-row gap-3 bg-white p-2 rounded-xl border border-[#D5E1D3] shadow-sm focus-within:border-[#4A6741] transition-all"
+          class="flex flex-col lg:flex-row gap-3 bg-white p-2 rounded-xl border border-[#D5E1D3] shadow-sm focus-within:border-brand-600 transition-all"
           @submit.prevent="applySearch"
         >
           <label class="sr-only" for="media-search">{{ t('m_search_aria') }}</label>
@@ -66,7 +66,7 @@
           <select
             id="media-category"
             :value="categoryFilter"
-            class="lg:w-56 px-3 py-2 rounded-lg border border-[#DCE5DB] bg-white text-[0.9rem] font-semibold text-[#3A4638] cursor-pointer outline-none focus:border-[#4A6741]"
+            class="lg:w-56 px-3 py-2 rounded-lg border border-[#DCE5DB] bg-white text-[0.9rem] font-semibold text-[#3A4638] cursor-pointer outline-none focus:border-brand-600"
             @change="applyCategory(($event.target as HTMLSelectElement).value)"
           >
             <option value="">{{ t('m_all_categories') }}</option>
@@ -77,7 +77,7 @@
 
           <button
             type="submit"
-            class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none flex items-center justify-center gap-1.5 shadow-sm shrink-0"
+            class="bg-brand-600 hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none flex items-center justify-center gap-1.5 shadow-sm shrink-0"
           >
             <span>{{ t('m_search_btn') }}</span>
             <i class="fa-solid fa-arrow-right text-[0.7rem]" aria-hidden="true"></i>
@@ -86,7 +86,7 @@
 
         <div class="flex items-center justify-between pt-5 pb-3 border-b-2 border-[#E1EADF] mt-6">
           <div class="flex items-center gap-2.5">
-            <span class="w-2.5 h-6 rounded-sm bg-[#4A6741]" aria-hidden="true"></span>
+            <span class="w-2.5 h-6 rounded-sm bg-brand-600" aria-hidden="true"></span>
             <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
               {{ t('m_list_title') }}
             </h2>
@@ -131,10 +131,10 @@
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
           </div>
           <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('m_error_title') }}</h3>
-          <p class="text-sm text-[#667768] m-0 mb-4">{{ t('m_error_desc') }}</p>
+          <p class="text-sm text-ink-muted m-0 mb-4">{{ t('m_error_desc') }}</p>
           <button
             type="button"
-            class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2"
+            class="bg-brand-600 hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2"
             @click="reload"
           >
             <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -144,7 +144,7 @@
 
         <!-- 3. Rỗng. Phân biệt được với lỗi: máy chủ đã trả `ok: true`. -->
         <div v-else-if="!items.length" class="mt-6 bg-white border border-[#E2E8DF] rounded-2xl px-6 py-14 text-center shadow-sm">
-          <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-xl">
+          <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-brand-600 flex items-center justify-center mx-auto mb-4 text-xl">
             <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
           </div>
           <!-- `?page=` vượt trang cuối (link cũ, gõ tay): thư viện CÓ video, chỉ là
@@ -155,7 +155,7 @@
             </p>
             <button
               type="button"
-              class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+              class="bg-brand-600 hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
               @click="goFirstPage"
             >
               <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
@@ -163,7 +163,7 @@
             </button>
           </template>
           <template v-else>
-          <h3 class="text-base font-extrabold text-[#1E251C] m-0 mb-1">
+          <h3 class="text-base font-extrabold text-ink m-0 mb-1">
             {{ hasFilters ? t('m_empty_filtered_title') : t('m_empty_updating') }}
           </h3>
           <p class="text-sm text-[#5A6655] m-0 mb-5 max-w-md mx-auto">
@@ -172,7 +172,7 @@
           <button
             v-if="hasFilters"
             type="button"
-            class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2"
+            class="bg-brand-600 hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2"
             @click="clearSearch"
           >
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
@@ -187,7 +187,7 @@
             <li v-for="entry in items" :key="entry.id">
               <nuxt-link
                 :to="`/media/${entry.shortId}`"
-                class="group flex flex-col h-full bg-white rounded-2xl border border-[#E2E8DF] shadow-sm overflow-hidden no-underline transition-all hover:border-[#4A6741] hover:shadow-md"
+                class="group flex flex-col h-full bg-white rounded-2xl border border-[#E2E8DF] shadow-sm overflow-hidden no-underline transition-all hover:border-brand-600 hover:shadow-md"
               >
                 <span class="relative block w-full aspect-video bg-[#EEF2EC] overflow-hidden">
                   <!-- Ảnh thu nhỏ luôn đến từ **chính cổng này** (`/api/public/media/<slug>/thumb`),
@@ -219,12 +219,12 @@
                 <span class="flex flex-col gap-2 p-4 flex-grow">
                   <span
                     v-if="entry.categoryName"
-                    class="inline-flex items-center gap-1.5 text-[0.68rem] font-extrabold uppercase tracking-wide text-[#4A6741]"
+                    class="inline-flex items-center gap-1.5 text-[0.68rem] font-extrabold uppercase tracking-wide text-brand-600"
                   >
                     <i class="fa-solid fa-tag text-[0.6rem]" aria-hidden="true"></i>
                     {{ entry.categoryName }}
                   </span>
-                  <span class="text-[0.95rem] font-bold text-[#1E251C] leading-snug line-clamp-2 group-hover:text-[#4A6741] transition-colors">
+                  <span class="text-[0.95rem] font-bold text-ink leading-snug line-clamp-2 group-hover:text-brand-600 transition-colors">
                     {{ entry.title }}
                   </span>
                   <span class="mt-auto text-[0.7rem] text-[#8A9A88] inline-flex items-center gap-1.5">
@@ -249,7 +249,7 @@
             <div class="flex items-center gap-1.5">
               <button
                 type="button"
-                class="w-9 h-9 rounded-lg border border-[#DCE5DB] bg-white text-[#4A5545] flex items-center justify-center cursor-pointer transition-all hover:border-[#4A6741] hover:bg-[#F2F7F0] disabled:opacity-40 disabled:cursor-not-allowed"
+                class="w-9 h-9 rounded-lg border border-[#DCE5DB] bg-white text-ink-secondary flex items-center justify-center cursor-pointer transition-all hover:border-brand-600 hover:bg-[#F2F7F0] disabled:opacity-40 disabled:cursor-not-allowed"
                 :disabled="pagination.page <= 1 || pending"
                 :aria-label="t('page_prev')"
                 @click="setPage(pagination.page - 1)"
@@ -264,8 +264,8 @@
                 :class="[
                   'min-w-9 h-9 px-2 rounded-lg border text-xs font-extrabold cursor-pointer transition-all',
                   page === pagination.page
-                    ? 'bg-[#4A6741] text-white border-[#4A6741]'
-                    : 'bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]',
+                    ? 'bg-brand-600 text-white border-[#4A6741]'
+                    : 'bg-white text-ink-secondary border-[#DCE5DB] hover:border-brand-600 hover:bg-[#F2F7F0]',
                 ]"
                 :aria-current="page === pagination.page ? 'page' : undefined"
                 :aria-label="t('m_page_aria').replace('{n}', String(page))"
@@ -276,7 +276,7 @@
 
               <button
                 type="button"
-                class="w-9 h-9 rounded-lg border border-[#DCE5DB] bg-white text-[#4A5545] flex items-center justify-center cursor-pointer transition-all hover:border-[#4A6741] hover:bg-[#F2F7F0] disabled:opacity-40 disabled:cursor-not-allowed"
+                class="w-9 h-9 rounded-lg border border-[#DCE5DB] bg-white text-ink-secondary flex items-center justify-center cursor-pointer transition-all hover:border-brand-600 hover:bg-[#F2F7F0] disabled:opacity-40 disabled:cursor-not-allowed"
                 :disabled="pagination.page >= pagination.totalPages || pending"
                 :aria-label="t('page_next')"
                 @click="setPage(pagination.page + 1)"

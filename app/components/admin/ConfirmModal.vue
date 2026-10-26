@@ -161,7 +161,7 @@ function onTrapTab(event: KeyboardEvent) {
               <h3
                 v-if="confirmState.options.title"
                 id="confirm-title"
-                class="m-0 text-[1rem] font-extrabold text-[#122815] leading-tight"
+                class="m-0 text-[1rem] font-extrabold text-brand-950 leading-tight"
               >
                 {{ confirmState.options.title }}
               </h3>
@@ -177,7 +177,7 @@ function onTrapTab(event: KeyboardEvent) {
 
           <!-- Ô nhập (chỉ với prompt) -->
           <div v-if="confirmState.input" class="px-5 pb-4">
-            <label for="confirm-input" class="block mb-1.5 text-[0.85rem] font-semibold text-[#122815]">
+            <label for="confirm-input" class="block mb-1.5 text-[0.85rem] font-semibold text-brand-950">
               {{ confirmState.input.label }}
             </label>
             <input
@@ -186,7 +186,7 @@ function onTrapTab(event: KeyboardEvent) {
               v-model="confirmState.input.value"
               type="text"
               :placeholder="confirmState.input.placeholder"
-              class="w-full rounded-lg border border-[#dce8dd] px-3 py-2 text-sm text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
+              class="w-full rounded-lg border border-[#dce8dd] px-3 py-2 text-sm text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700"
               @keydown.enter="onPromptEnter"
             >
           </div>
@@ -196,7 +196,7 @@ function onTrapTab(event: KeyboardEvent) {
             <button
               ref="cancelBtn"
               type="button"
-              class="inline-flex items-center gap-2 rounded-lg border border-[#dce8dd] bg-white px-4 py-2 text-sm font-semibold text-[#4a5e4d] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] transition-colors"
+              class="inline-flex items-center gap-2 rounded-lg border border-[#dce8dd] bg-white px-4 py-2 text-sm font-semibold text-[#4a5e4d] hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
               @click="cancel"
             >
               {{ confirmState.options.cancelLabel || 'Hủy' }}
@@ -207,7 +207,7 @@ function onTrapTab(event: KeyboardEvent) {
               class="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors"
               :class="confirmState.options.danger
                 ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
-                : 'bg-[#2c6e33] hover:bg-[#245b2a] focus:ring-[#2c6e33]'"
+                : 'bg-brand-700 hover:bg-[#245b2a] focus:ring-brand-700'"
               @click="accept"
             >
               {{ confirmState.options.confirmLabel || 'Xác nhận' }}

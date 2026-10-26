@@ -2,7 +2,7 @@
   <div class="app-layout" :style="containerStyleVar">
     <!-- Skip link: bàn phím/tab qua header tới nội dung chính — yêu cầu a11y
          cho cổng thông tin nhà nước (Luật Người khuyết tật 2010 / NĐ 28/2012). -->
-    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-[#2c6e33] focus:text-white focus:rounded-lg">Bỏ qua tới nội dung</a>
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-brand-700 focus:text-white focus:rounded-lg">Bỏ qua tới nội dung</a>
     <!-- Thanh tiến trình chuyển trang. Điều hướng client-side phải chờ dữ liệu
          của trang đích, và trong khoảng đó trình duyệt không vẽ gì cả — bấm một
          liên kết trông y hệt như bấm hụt. Đây là phản hồi tức thì cho lần bấm. -->

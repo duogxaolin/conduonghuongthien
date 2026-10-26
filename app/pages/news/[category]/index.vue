@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-[#F8FAF7]">
+  <div class="bg-surface">
     <!-- Branch 1: [category] là category slug → list theo category (path segment mode) -->
     <ContentTypeListSection
       v-if="isCategoryView"

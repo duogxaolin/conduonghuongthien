@@ -8,7 +8,7 @@
           <div class="flex-shrink-0 p-3 border-b border-[#e8efe8] bg-[#fcfdfc]">
             <button
               type="button"
-              class="w-full flex items-center justify-between gap-2 rounded-xl bg-[#1e4620] hover:bg-[#153317] text-white px-3.5 py-2.5 text-[0.84rem] font-bold shadow-sm transition-all active:scale-[0.98] border-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+              class="w-full flex items-center justify-between gap-2 rounded-xl bg-brand-900 hover:bg-[#153317] text-white px-3.5 py-2.5 text-[0.84rem] font-bold shadow-sm transition-all active:scale-[0.98] border-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
               @click="onCreateConversation"
             >
               <span class="flex items-center gap-2">
@@ -31,12 +31,12 @@
                 <div
                   class="group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all border"
                   :class="conversation.id === activeId
-                    ? 'bg-[#f0f7f1] border-[#c8dcc9] shadow-xs'
-                    : 'bg-white hover:bg-[#f8faf8] border-transparent hover:border-[#e2ece3]'"
+                    ? 'bg-surface-tint border-[#c8dcc9] shadow-xs'
+                    : 'bg-white hover:bg-[#f8faf8] border-transparent hover:border-line'"
                 >
                   <button
                     type="button"
-                    class="flex flex-1 min-w-0 items-center gap-2.5 p-0 m-0 bg-transparent border-none text-left font-[inherit] cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+                    class="flex flex-1 min-w-0 items-center gap-2.5 p-0 m-0 bg-transparent border-none text-left font-[inherit] cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
                     :aria-current="conversation.id === activeId ? 'true' : undefined"
                     @click="onSwitchConversation(conversation.id)"
                   >
@@ -53,7 +53,7 @@
                     <span class="flex-1 min-w-0">
                       <span
                         class="block truncate text-[0.82rem] font-bold leading-tight"
-                        :class="conversation.id === activeId ? 'text-[#1e4620]' : 'text-[#2d3748] group-hover:text-[#122815]'"
+                        :class="conversation.id === activeId ? 'text-[#1e4620]' : 'text-[#2d3748] group-hover:text-brand-950'"
                       >
                         {{ conversation.title }}
                       </span>
@@ -66,7 +66,7 @@
                   <!-- Delete button (sleek on hover) -->
                   <button
                     type="button"
-                    class="w-6 h-6 flex-shrink-0 rounded-md bg-transparent border-none text-[#5A6C58] hover:text-[#b42318] hover:bg-[#fee2e2] flex items-center justify-center cursor-pointer transition-all opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                    class="w-6 h-6 flex-shrink-0 rounded-md bg-transparent border-none text-[#5A6C58] hover:text-[#b42318] hover:bg-[#fee2e2] flex items-center justify-center cursor-pointer transition-all opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                     @click.stop="deleteConversation(conversation.id)"
                     :aria-label="`${t('asst_delete_conv_aria')} ${conversation.title}`"
                     :title="t('asst_delete_conv')"
@@ -88,7 +88,7 @@
         <!-- Main chat column -->
         <section class="flex flex-col h-full rounded-xl md:rounded-2xl border border-[#e1e8e0] bg-white overflow-hidden shadow-sm">
           <!-- Header -->
-          <header class="flex-shrink-0 flex items-center justify-between gap-3 border-b border-[#e1e8e0] bg-[#1e4620] px-4 py-3">
+          <header class="flex-shrink-0 flex items-center justify-between gap-3 border-b border-[#e1e8e0] bg-brand-900 px-4 py-3">
             <div class="flex min-w-0 items-center gap-3">
               <div class="w-10 h-10 flex-shrink-0 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center">
                 <i class="fa-solid fa-robot text-white text-[1.05rem]" aria-hidden="true"></i>
@@ -117,16 +117,16 @@
           <div ref="chatContainer" class="flex-1 overflow-y-auto overscroll-contain bg-[#f8faf8] px-4 py-6 md:px-8" aria-live="polite" aria-relevant="additions text">
             <div ref="chatContent" class="mx-auto flex max-w-[760px] flex-col gap-5">
               <div v-if="chatMessages.filter(m => m.id !== 'welcome').length === 0" class="mx-auto mt-6 max-w-[420px] text-center">
-                <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#1e4620]/10">
-                  <i class="fa-solid fa-shield-halved text-[1.6rem] text-[#1e4620]" aria-hidden="true"></i>
+                <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-brand-900/10">
+                  <i class="fa-solid fa-shield-halved text-[1.6rem] text-brand-900" aria-hidden="true"></i>
                 </div>
-                <p class="m-0 text-[0.95rem] leading-relaxed text-[#4A5545]">
+                <p class="m-0 text-[0.95rem] leading-relaxed text-ink-secondary">
                   Xin chào! Tôi hỗ trợ tra cứu thông tin từ kho dữ liệu đã được
-                  <strong class="text-[#1e4620]">Cục C11</strong> phê duyệt.
+                  <strong class="text-brand-900">Cục C11</strong> phê duyệt.
                 </p>
                 <p
                   v-if="quickQuestionState !== 'success'"
-                  class="m-0 mt-5 text-[0.8rem] text-[#667768]"
+                  class="m-0 mt-5 text-[0.8rem] text-ink-muted"
                   role="status"
                   aria-live="polite"
                 >{{ quickQuestionStatusText }}</p>
@@ -136,7 +136,7 @@
                     :key="question.id"
                     type="button"
                     :disabled="isSubmitting"
-                    class="cursor-pointer rounded-full border border-[#d4e4d2] bg-white px-3.5 py-1.5 text-[0.78rem] font-medium text-[#2d4a2d] transition-all hover:border-[#1e4620] hover:bg-[#1e4620] hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                    class="cursor-pointer rounded-full border border-[#d4e4d2] bg-white px-3.5 py-1.5 text-[0.78rem] font-medium text-[#2d4a2d] transition-all hover:border-brand-900 hover:bg-brand-900 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                     @click="askBot(question.question)"
                   >{{ question.question }}</button>
                 </div>
@@ -144,7 +144,7 @@
 
               <template v-for="(msg, index) in chatMessages" :key="msg.id || index">
                 <div v-if="msg.id !== 'welcome'" class="flex gap-3" :class="msg.sender === 'user' ? 'justify-end' : 'justify-start'" :data-chat-anchor="msg.sender === 'user' ? '' : undefined">
-                  <div v-if="msg.sender === 'bot'" class="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#1e4620] shadow-sm" aria-hidden="true">
+                  <div v-if="msg.sender === 'bot'" class="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-900 shadow-sm" aria-hidden="true">
                     <i class="fa-solid fa-robot text-[0.7rem] text-white"></i>
                   </div>
                   <div
@@ -166,7 +166,7 @@
                     <div v-if="msg.status === 'error' && msg.error" class="mt-1 flex items-center gap-2 text-[0.72rem]" role="alert">
                       <i class="fa-solid fa-circle-exclamation text-[0.65rem]" aria-hidden="true"></i>
                       {{ msg.error }}
-                      <button type="button" class="underline font-semibold text-[#1e4620] bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">Thử lại</button>
+                      <button type="button" class="underline font-semibold text-brand-900 bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">Thử lại</button>
                     </div>
                     <div v-if="msg.sender === 'bot' && !msg.isStreaming" class="mt-2 flex items-center justify-between gap-2 border-t border-[#e1e8e0] pt-1.5 text-[0.72rem]">
                       <span v-if="msg.kind" class="flex items-center gap-1 font-semibold" :class="messageKindClass(msg.kind)" role="status">
@@ -176,7 +176,7 @@
                       <span v-else></span>
                       <button
                         type="button"
-                        class="inline-flex items-center gap-1 text-[0.72rem] text-[#6b7280] hover:text-[#1e4620] bg-transparent border-none cursor-pointer p-0.5 rounded transition-colors"
+                        class="inline-flex items-center gap-1 text-[0.72rem] text-[#6b7280] hover:text-brand-900 bg-transparent border-none cursor-pointer p-0.5 rounded transition-colors"
                         @click="copyMessageText(msg.text, msg.id)"
                         :title="copiedMsgId === msg.id ? 'Đã sao chép' : 'Sao chép câu trả lời'"
                       >
@@ -185,15 +185,15 @@
                       </button>
                     </div>
                     <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 list-none space-y-1 border-t border-[#e1e8e0] pl-0 pt-1.5" :aria-label="t('cw_sources')">
-                      <li v-for="source in msg.sources" :key="source.id" class="text-[0.7rem] leading-snug text-[#4A5545]">
+                      <li v-for="source in msg.sources" :key="source.id" class="text-[0.7rem] leading-snug text-ink-secondary">
                         <i class="fa-solid fa-link mr-1 text-[0.54rem] text-[#7CB342]" aria-hidden="true"></i>
-                        <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
+                        <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-brand-900 underline underline-offset-2">{{ source.label }}</a>
                         <span v-else class="font-semibold">{{ source.label }}</span>
 
                         <button
                           v-if="source.entryId !== null"
                           type="button"
-                          class="ml-1 inline-flex cursor-pointer items-center gap-0.5 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-2 py-px text-[0.66rem] font-semibold text-[#1e4620] transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                          class="ml-1 inline-flex cursor-pointer items-center gap-0.5 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-2 py-px text-[0.66rem] font-semibold text-brand-900 transition-colors hover:bg-brand-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                           :aria-expanded="isSourceExpanded(source.entryId)"
                           @click="toggleSourceDetail(source.entryId)"
                         >
@@ -202,21 +202,21 @@
                         </button>
 
                         <div v-if="isSourceExpanded(source.entryId)" class="mt-1 rounded-lg border border-[#e1e8e0] bg-[#f8faf8] px-2.5 py-1.5">
-                          <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.68rem] text-[#667768]" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
+                          <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.68rem] text-ink-muted" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
                           <div v-else-if="sourceDetailOf(source.entryId)?.status === 'error'" role="alert">
                             <p class="m-0 text-[0.68rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
-                            <button type="button" class="mt-1 cursor-pointer rounded-full border-none bg-[#1e4620] px-2.5 py-0.5 text-[0.66rem] font-bold text-white hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]" @click="retrySourceDetail(source.entryId)">Thử lại</button>
+                            <button type="button" class="mt-1 cursor-pointer rounded-full border-none bg-brand-900 px-2.5 py-0.5 text-[0.66rem] font-bold text-white hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600" @click="retrySourceDetail(source.entryId)">Thử lại</button>
                           </div>
                           <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
-                            <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.72rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
+                            <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.72rem] font-bold text-brand-900">{{ sourceDetailOf(source.entryId)?.question }}</p>
                             <p class="m-0 whitespace-pre-wrap text-[0.72rem] leading-[1.55] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
-                            <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.68rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
+                            <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.68rem] font-bold text-brand-900 underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
                           </template>
                         </div>
                       </li>
                     </ul>
                     <div v-if="msg.askContact && msg.lead && !msg.isStreaming" class="mt-3 border-t border-[#e1e8e0] pt-3">
-                      <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.82rem] font-semibold text-[#1e4620]">
+                      <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.82rem] font-semibold text-brand-900">
                         <i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i>
                         Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!
                       </p>
@@ -224,15 +224,15 @@
                         <p class="m-0 text-[0.8rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
                         <!-- Nhãn sr-only: placeholder biến mất khi gõ và không phải tên truy cập đáng tin. -->
                         <label :for="leadFieldId(uid, msg.id || index, 'name')" class="sr-only">{{ t('cw_lead_name') }}</label>
-                        <input :id="leadFieldId(uid, msg.id || index, 'name')" v-model="msg.lead.name" type="text" autocomplete="name" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-[#1e4620]" />
+                        <input :id="leadFieldId(uid, msg.id || index, 'name')" v-model="msg.lead.name" type="text" autocomplete="name" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-brand-900" />
                         <label :for="leadFieldId(uid, msg.id || index, 'phone')" class="sr-only">{{ t('cw_lead_phone') }}</label>
-                        <input :id="leadFieldId(uid, msg.id || index, 'phone')" v-model="msg.lead.phone" type="tel" autocomplete="tel" :placeholder="t('cw_lead_phone')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-[#1e4620]" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
+                        <input :id="leadFieldId(uid, msg.id || index, 'phone')" v-model="msg.lead.phone" type="tel" autocomplete="tel" :placeholder="t('cw_lead_phone')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-brand-900" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
                         <label :for="leadFieldId(uid, msg.id || index, 'email')" class="sr-only">{{ t('cw_lead_email') }}</label>
-                        <input :id="leadFieldId(uid, msg.id || index, 'email')" v-model="msg.lead.email" type="email" autocomplete="email" :placeholder="t('cw_lead_email')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-[#1e4620]" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
+                        <input :id="leadFieldId(uid, msg.id || index, 'email')" v-model="msg.lead.email" type="email" autocomplete="email" :placeholder="t('cw_lead_email')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-brand-900" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
                         <label :for="leadFieldId(uid, msg.id || index, 'question')" class="sr-only">{{ t('cw_lead_question') }}</label>
-                        <textarea :id="leadFieldId(uid, msg.id || index, 'question')" v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-[#1e4620]"></textarea>
+                        <textarea :id="leadFieldId(uid, msg.id || index, 'question')" v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-brand-900"></textarea>
                         <p v-if="msg.lead.error" :id="leadFieldId(uid, msg.id || index, 'error')" class="m-0 text-[0.74rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
-                        <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.82rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">
+                        <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-brand-900 px-4 py-1.5 text-[0.82rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">
                           {{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}
                         </button>
                       </form>
@@ -253,25 +253,25 @@
                    message is not in the transcript yet, so this never sits beside
                    an empty bubble. -->
               <div v-if="isAwaitingFirstWord" class="flex justify-start gap-3">
-                <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#1e4620] shadow-sm" aria-hidden="true">
+                <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-brand-900 shadow-sm" aria-hidden="true">
                   <i class="fa-solid fa-robot text-[0.7rem] text-white"></i>
                 </div>
                 <div class="rounded-[4px_18px_18px_18px] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)] border border-[#e8efe8] max-w-sm" role="status" aria-live="polite">
                   <span class="sr-only">Trợ lý đang soạn câu trả lời</span>
-                  <div class="flex items-center gap-2 text-xs font-semibold text-[#2c6e33]">
+                  <div class="flex items-center gap-2 text-xs font-semibold text-brand-700">
                     <span class="relative flex h-2 w-2">
                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#7CB342] opacity-75"></span>
-                      <span class="relative inline-flex rounded-full h-2 w-2 bg-[#2c6e33]"></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-brand-700"></span>
                     </span>
                     <span>Trợ lý đang suy nghĩ &amp; tra cứu dữ liệu...</span>
                   </div>
                   <div class="flex items-center gap-1.5 mt-2" aria-hidden="true">
-                    <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] motion-reduce:animate-none motion-reduce:opacity-60"></span>
-                    <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] [animation-delay:200ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
-                    <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
+                    <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-brand-900 motion-reduce:animate-none motion-reduce:opacity-60"></span>
+                    <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-brand-900 [animation-delay:200ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
+                    <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-brand-900 [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
                   </div>
                   <!-- Sau ~20 giây: nói rõ lần chờ này dài hơn thường (trong vùng role="status"). -->
-                  <p v-if="isSlowWait" class="m-0 mt-2 text-[0.78rem] leading-snug text-[#667768]">Đang chờ lâu hơn bình thường, xin anh/chị chờ thêm…</p>
+                  <p v-if="isSlowWait" class="m-0 mt-2 text-[0.78rem] leading-snug text-ink-muted">Đang chờ lâu hơn bình thường, xin anh/chị chờ thêm…</p>
                 </div>
               </div>
             </div>
@@ -294,7 +294,7 @@
                   :aria-describedby="botInputError ? 'tro-ly-error tro-ly-counter' : 'tro-ly-counter'"
                   :aria-invalid="Boolean(botInputError)"
                   :disabled="isSubmitting"
-                  class="max-h-[160px] w-full resize-none rounded-2xl border border-[#d4e4d2] bg-[#f8faf8] px-4 py-3 text-base md:text-[0.92rem] leading-relaxed outline-none transition-all focus:border-[#1e4620] focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
+                  class="max-h-[160px] w-full resize-none rounded-2xl border border-[#d4e4d2] bg-[#f8faf8] px-4 py-3 text-base md:text-[0.92rem] leading-relaxed outline-none transition-all focus:border-brand-900 focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
                   @keydown.enter.exact.prevent="sendBotMessage"
                   @input="autoGrow"
                 ></textarea>
@@ -303,7 +303,7 @@
               <button
                 type="submit"
                 :disabled="isSubmitting || !botInput.trim()"
-                class="flex h-12 w-12 flex-shrink-0 cursor-pointer items-center justify-center rounded-2xl border-none bg-[#1e4620] text-white transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:bg-[#a0b89e] disabled:opacity-40"
+                class="flex h-12 w-12 flex-shrink-0 cursor-pointer items-center justify-center rounded-2xl border-none bg-brand-900 text-white transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:bg-[#a0b89e] disabled:opacity-40"
                 :aria-label="t('cw_send_aria')"
               >
                 <i class="fa-solid fa-paper-plane text-[0.9rem]" aria-hidden="true"></i>
