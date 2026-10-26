@@ -21,6 +21,7 @@ import {
   parseTrustedProxies,
   resolveClientIp,
 } from '../server/utils/client-ip.ts'
+import { chatPolicyDeclaration, chatPolicyPart, chatPolicySource, chatPolicySourceWith, readRepoFile } from './_chat-policy-family.ts'
 
 const NGINX = '172.18.0.1'
 const VISITOR = '203.0.113.45'
@@ -300,10 +301,29 @@ describe('call sites', () => {
     )
   })
 
+  // `chat-policy.ts` is a barrel since wave3 4.3 (D-SPLIT). The key is built by
+  // `clientKey` (in `server/services/chat-policy-rate-limit.ts`): read that declaration for
+  // "is present", and every file of the policy family for "is absent" (`_chat-policy-family.ts`).
   it('the chat rate-limit key is derived from the resolved client address', () => {
-    const source = read('server/utils/chatbot/chat-policy.ts')
-    assert.match(source, /getClientIp\(event\)/)
-    assert.doesNotMatch(source, /xForwardedFor/)
+    assert.match(chatPolicyDeclaration('clientKey').text, /getClientIp\(event\)/)
+    assert.doesNotMatch(chatPolicySource(), /xForwardedFor/)
+  })
+
+  it('injection proof: the xForwardedFor ban reads every file of the chat-policy family, and only it', () => {
+    const planted = '\nexport const _peer = { xForwardedFor: true }\n'
+    for (const overrides of [
+      { [chatPolicyPart('answer')]: `${readRepoFile(chatPolicyPart('answer'))}${planted}` },
+      { [chatPolicyPart('extra')]: planted },
+    ])
+      assert.match(chatPolicySourceWith(overrides), /xForwardedFor/, JSON.stringify(Object.keys(overrides)))
+    assert.equal(chatPolicySourceWith({ 'server/utils/chatbot/chat-turns.ts': planted }), chatPolicySource())
+    // "Is present" reads the key builder itself: a raw peer read there turns it red even
+    // though `getClientIp(event)` is still named in a comment of the same file.
+    const file = chatPolicyPart('rate-limit')
+    const source = readRepoFile(file)
+    assert.ok(source.includes('getClientIp(event)'), `${file} no longer has getClientIp(event) to mutate`)
+    const overrides = { [file]: `// getClientIp(event)\n${source.replace('getClientIp(event)', 'String(event.node.req.socket.remoteAddress)')}` }
+    assert.doesNotMatch(chatPolicyDeclaration('clientKey', overrides).text, /getClientIp\(event\)/)
   })
 
   it('logout no longer trusts the raw header for its audit row', () => {

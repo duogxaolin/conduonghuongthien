@@ -153,16 +153,29 @@ export function sourceFileOf(sources: Sources, target: string): string | null {
 
 export interface Family {
   barrel: string
-  /** Tên tệp (trong `server/services/`) thuộc nhóm theo tiền tố. */
+  /** Tên tệp thuộc nhóm theo tiền tố, trong thư mục `familyHome(family)`. */
   prefix: RegExp
+  /**
+   * Thư mục chứa tệp con, khi khác thư mục của barrel. `chat-policy`: barrel ở
+   * `server/utils/chatbot/` (đường cũ), tệp con ở `server/services/` — Nitro tự import mọi
+   * export của `server/utils/**`, nên tệp con ở đó xuất tên của API lần thứ hai.
+   */
+  dir?: string
 }
 
-/** Thành viên của nhóm = tệp theo tiền tố ∪ đích mà barrel xuất lại (suy ra, không chép tay). */
+/** Thư mục chứa tệp con của nhóm: `family.dir`, mặc định thư mục của barrel. */
+export const familyHome = (family: Family): string => family.dir ?? path.posix.dirname(family.barrel)
+
+/**
+ * Thành viên của nhóm = tệp theo tiền tố trong `familyHome(family)` ∪ đích mà barrel xuất
+ * lại (suy ra, không chép tay). Tệp cùng tiền tố ở thư mục khác không thuộc nhóm.
+ */
 export function familyMembers(sources: Sources, family: Family): string[] {
   const members = new Set<string>()
+  const home = familyHome(family)
   for (const file of sources.keys()) {
     if (
-      path.posix.dirname(file) === SERVICES &&
+      path.posix.dirname(file) === home &&
       family.prefix.test(path.posix.basename(file)) &&
       file !== family.barrel
     ) {

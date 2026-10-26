@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { issueSessionToken, verifySessionToken } from '../server/utils/chatbot/session-token'
 import { normalizeVietnamesePhone, detectPhone, detectName } from '../server/utils/chatbot/contact-detect'
 import { summarizeUserAgent } from '../server/utils/chatbot/user-agent'
+import { chatPolicyDeclaration, chatPolicyPart, chatPolicySource, chatPolicySourceWith, readRepoFile } from './_chat-policy-family.ts'
 
 const SECRET = 'test-secret-not-a-real-key-0123456789abcdef'
 
@@ -264,13 +265,34 @@ test('the transcript is ordered oldest-first with a stable tie-break', () => {
   )
 })
 
+// `chat-policy.ts` is a barrel since wave3 4.3 (D-SPLIT): "is present" reads the quota
+// declaration itself (`enforceAiQuota`, in `server/services/chat-policy-rate-limit.ts`),
+// "is absent" reads every file of the policy family (`_chat-policy-family.ts`).
+const IN_PROCESS_BUCKET = /new Map\(\)[\s\S]{0,40}rateBucket/i
+
 test('the AI quota is charged per session at the provider call, not per request', () => {
-  const policy = readFileSync('server/utils/chatbot/chat-policy.ts', 'utf8')
-  assert.match(policy, /chat-ai:\$\{sessionId\}/, 'quota key is the session')
+  const quota = chatPolicyDeclaration('enforceAiQuota').text
+  assert.match(quota, /chat-ai:\$\{sessionId\}/, 'quota key is the session')
   // Charging at the top of the handler would spend a visitor's allowance on
   // curated answers that never reach a provider.
-  assert.match(policy, /enforceAiQuota/, 'quota helper exists')
+  assert.match(quota, /^export async function enforceAiQuota\(/, 'quota helper exists')
   const durable = /recordRateLimitHit/
-  assert.match(policy, durable, 'counts through the durable store, not a local Map')
-  assert.doesNotMatch(policy, /new Map\(\)[\s\S]{0,40}rateBucket/i, 'the in-process bucket is gone')
+  assert.match(quota, durable, 'counts through the durable store, not a local Map')
+  assert.doesNotMatch(chatPolicySource(), IN_PROCESS_BUCKET, 'the in-process bucket is gone')
+})
+
+test('injection proof: the in-process bucket ban reads every file of the chat-policy family, and only it', () => {
+  const planted = '\nconst _buckets = { store: new Map(), rateBucket: 1 }\n'
+  for (const overrides of [
+    { [chatPolicyPart('fallbacks')]: `${readRepoFile(chatPolicyPart('fallbacks'))}${planted}` },
+    { [chatPolicyPart('extra')]: planted },
+  ])
+    assert.match(chatPolicySourceWith(overrides), IN_PROCESS_BUCKET, JSON.stringify(Object.keys(overrides)))
+  assert.equal(chatPolicySourceWith({ 'server/utils/chatbot/chat-turns.ts': planted }), chatPolicySource())
+  // A quota keyed on something else, with the old key left in a comment, is red.
+  const file = chatPolicyPart('rate-limit')
+  const source = readRepoFile(file)
+  assert.ok(source.includes('`chat-ai:${sessionId}`'), `${file} no longer has the session key to mutate`)
+  const overrides = { [file]: `// chat-ai:\${sessionId}\n${source.replace('`chat-ai:${sessionId}`', '`chat-ai:${Date.now()}`')}` }
+  assert.doesNotMatch(chatPolicyDeclaration('enforceAiQuota', overrides).text, /chat-ai:\$\{sessionId\}/)
 })
