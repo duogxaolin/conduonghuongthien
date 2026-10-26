@@ -12,7 +12,9 @@
  * colour utilities with the same variants and prefix are compared pairwise: if a
  * rewrite flips the ASCII order of a pair, both members keep their original text. This
  * is conservative (two branches of a ternary never apply together, but are compared
- * anyway) — never the other way round.
+ * anyway) — never the other way round. Classes written ELSEWHERE that meet on one
+ * element (a `:class` variable or helper, a module, a component root, a prop) join extra
+ * "merge" groups built by scripts/codemod-hex-tokens-reach.ts; see `CascadeMember`.
  *
  * Imports nothing from the codemod: the codemod imports this module, never the reverse.
  */
@@ -92,7 +94,7 @@ function scopeResolver(source: string, isSfc: boolean): (index: number) => strin
 }
 
 /** The variants and `!` written before a utility (`hover:!`, `md:`), up to the start of the class. */
-function variantsBefore(source: string, start: number): string {
+export function variantsBefore(source: string, start: number): string {
   let i = start
   while (i > 0 && !IS_END.test(source[i - 1]!)) i--
   return source.slice(i, start)
@@ -108,35 +110,74 @@ export function cascadeGroups(source: string, isSfc: boolean): (index: number, p
   return (index, prefix) => `${scopeOf(index)}|${variantsBefore(source, index)}|${prefix}`
 }
 
-/** A colour utility in the source: its text now (`before`) and after the planned rewrite (`after`). */
-export interface CascadeMember { readonly group: string; readonly before: string; after: string }
+/**
+ * A colour utility: its text now (`before`) and after the planned rewrite (`after`).
+ *
+ * `group` is the element (or line) it is written on. `extraGroups` are the merge groups of
+ * scripts/codemod-hex-tokens-reach.ts — elements it can ALSO land on through a `:class`
+ * variable, a helper, a component root or a prop. A `fixed` member lives in another file:
+ * this run cannot revert it, and it may still be in either state there (`before`, or `later`
+ * once its own file is rewritten), so a pair with it must keep its order in both.
+ */
+export interface CascadeMember {
+  readonly group: string
+  readonly extraGroups?: readonly string[]
+  readonly before: string
+  after: string
+  readonly fixed?: boolean
+  readonly later?: string
+  /** The colour it sets, spelling aside (`#4a5545`, `#4a5545/30`, `red-50`): two members that set the same one never conflict. */
+  readonly colour?: string
+}
+
+/** Merge-group keys start with this; primary keys (one tag, one line) never do. */
+export const MERGE_GROUP = 'M:'
+
+const sign = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+const states = (member: CascadeMember) => (member.fixed ? [member.before, member.later ?? member.before] : [member.after])
 
 /**
  * Keeps every pair's ASCII order (= CSS order, = which colour wins) as it is today:
  * when a pair in one group would flip, every member of it that was going to change is
- * reverted (`after = before`) and reported through `onRevert`, once. Repeats until no
- * pair flips — reverting only moves back toward the source, so it terminates.
+ * reverted (`after = before`) and reported through `onRevert`, once, with the group and the
+ * other member of the pair. Primary groups are settled first, so a pair that also shares a
+ * tag or line is reported as such. Repeats until no pair flips — reverting only moves back
+ * toward the source, so it terminates.
  */
-export function keepCascadeOrder<T extends CascadeMember>(members: readonly T[], onRevert: (member: T) => void): void {
+export function keepCascadeOrder<T extends CascadeMember>(
+  members: readonly T[],
+  onRevert: (member: T, cause: { group: string; partner: T }) => void,
+): void {
   const groups = new Map<string, T[]>()
-  for (const member of members) groups.set(member.group, [...(groups.get(member.group) ?? []), member])
-  const sign = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-  for (let changed = true; changed;) {
-    changed = false
-    for (const list of groups.values()) {
-      for (let i = 0; i < list.length; i++) {
-        for (let j = i + 1; j < list.length; j++) {
-          const a = list[i]!
-          const b = list[j]!
-          if (sign(a.before, b.before) === sign(a.after, b.after)) continue
-          for (const member of [a, b]) {
-            if (member.after === member.before) continue
-            onRevert(member)
-            member.after = member.before
-            changed = true
+  for (const member of members) {
+    for (const key of new Set([member.group, ...(member.extraGroups ?? [])])) groups.set(key, [...(groups.get(key) ?? []), member])
+  }
+  const flips = (a: T, b: T) => {
+    if (a.colour !== undefined && a.colour === b.colour) return false // same declaration whichever wins
+    const was = sign(a.before, b.before)
+    return states(a).some((x) => states(b).some((y) => sign(x, y) !== was))
+  }
+  const settle = (lists: Array<[string, T[]]>) => {
+    for (let changed = true; changed;) {
+      changed = false
+      for (const [key, list] of lists) {
+        for (let i = 0; i < list.length; i++) {
+          for (let j = i + 1; j < list.length; j++) {
+            const a = list[i]!
+            const b = list[j]!
+            if (!flips(a, b)) continue
+            for (const [member, partner] of [[a, b], [b, a]] as const) {
+              if (member.fixed || member.after === member.before) continue
+              onRevert(member, { group: key, partner })
+              member.after = member.before
+              changed = true
+            }
           }
         }
       }
     }
   }
+  const all = [...groups]
+  settle(all.filter(([key]) => !key.startsWith(MERGE_GROUP)))
+  settle(all)
 }

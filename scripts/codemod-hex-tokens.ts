@@ -29,6 +29,10 @@
  *   no-colour-prefix  `[#hex]` that is not the value of a colour utility (`xbg-[#…]`)
  *   order             renaming would change which of two colour classes on one element
  *                     wins the cascade — see scripts/codemod-hex-tokens-order.ts
+ *   order-merge       the same, for two classes written in different places that meet on
+ *                     one element: a `:class` variable/computed/helper, an imported module,
+ *                     a child component's root, a prop (reported `via` the source kind) —
+ *                     see scripts/codemod-hex-tokens-reach.ts
  * A hex that is not in Tailwind arbitrary-value brackets (CSS, chart configs, SVG
  * attributes) is never even looked at.
  */
@@ -36,7 +40,8 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from '
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { COLOR_TOKENS } from '../shared/color-tokens.ts'
-import { END_CHARS, IS_END, cascadeGroups, inRanges, keepCascadeOrder, type CascadeMember, type Range } from './codemod-hex-tokens-order.ts'
+import { END_CHARS, IS_END, MERGE_GROUP, cascadeGroups, inRanges, keepCascadeOrder, variantsBefore, type CascadeMember, type Range } from './codemod-hex-tokens-order.ts'
+import { mergeGroups, nodeFs, type Project, type SourceKind } from './codemod-hex-tokens-reach.ts'
 
 /** Every Tailwind v3 utility whose arbitrary value can be a colour. */
 export const COLOR_PREFIXES: readonly string[] = Object.freeze([
@@ -46,11 +51,18 @@ export const COLOR_PREFIXES: readonly string[] = Object.freeze([
   'fill', 'stroke', 'placeholder', 'caret', 'accent', 'decoration', 'shadow',
 ])
 
-export type LeaveReason = 'unmapped' | 'alpha' | 'invalid' | 'suffix' | 'style' | 'type-hint' | 'no-colour-prefix' | 'order'
+export type LeaveReason = 'unmapped' | 'alpha' | 'invalid' | 'suffix' | 'style' | 'type-hint' | 'no-colour-prefix' | 'order' | 'order-merge'
 export interface Rewrite { index: number; from: string; to: string; value: string; token: string }
-export interface LeftAlone { index: number; text: string; value: string; reason: LeaveReason }
+/** `via` / `partner` (order-merge only): how the other class reaches the element, and its text. */
+export interface LeftAlone { index: number; text: string; value: string; reason: LeaveReason; via?: SourceKind; partner?: string }
 export interface RewriteResult { output: string; rewrites: Rewrite[]; leftAlone: LeftAlone[] }
-export interface RewriteOptions { fileName?: string; tokens?: Readonly<Record<string, string>> }
+/**
+ * `project`: where the merge analysis reads other files (components, modules, parents) —
+ * this repository by default; `false` turns the analysis off (same-tag/line order only).
+ */
+export interface RewriteOptions { fileName?: string; tokens?: Readonly<Record<string, string>>; project?: Project | false }
+
+const REPO_PROJECT: Project = { root: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), fs: nodeFs }
 
 const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\/-]/g, '\\$&')
 const byLengthDesc = (a: string, b: string) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0)
@@ -83,16 +95,23 @@ export function buildHexMap(tokens: Readonly<Record<string, string>>): Map<strin
   return map
 }
 
-interface Prepared { hexMap: Map<string, string>; named: RegExp }
+interface Prepared { hexMap: Map<string, string>; named: RegExp; colourOfNamed: (prefix: string, text: string) => string }
 const preparedCache = new WeakMap<object, Prepared>()
 function prepare(tokens: Readonly<Record<string, string>>): Prepared {
   let prepared = preparedCache.get(tokens)
   if (!prepared) {
     const hexMap = buildHexMap(tokens)
-    const tokenAlt = Object.keys(tokens).sort(byLengthDesc).map(escapeRe).join('|')
+    const names = Object.keys(tokens).sort(byLengthDesc)
+    const tokenAlt = names.map(escapeRe).join('|')
     const colour = tokenAlt ? `(?:${tokenAlt}|${DEFAULT_COLOURS})` : DEFAULT_COLOURS
     const named = new RegExp(`(?<![\\w-])(${PREFIX_ALT})-${colour}${OPACITY_SOURCE}(?=[${END_CHARS}]|$)`, 'g')
-    prepared = { hexMap, named }
+    /** `bg-ink-secondary/30` → `#4a5545/30` (same spelling as a hex member's colour); `bg-red-50` → `red-50`. */
+    const colourOfNamed = (prefix: string, text: string) => {
+      const rest = text.slice(prefix.length + 1)
+      const token = names.find((n) => rest === n || rest.startsWith(`${n}/`))
+      return token ? `${tokens[token]!.toLowerCase()}${rest.slice(token.length)}` : rest
+    }
+    prepared = { hexMap, named, colourOfNamed }
     preparedCache.set(tokens, prepared)
   }
   return prepared
@@ -119,15 +138,68 @@ function expandHex(hex: string): string {
   const lower = hex.toLowerCase()
   return lower.length === 3 ? [...lower].map((c) => c + c).join('') : lower
 }
+/** The colour a `[#hex]<tail>` sets, spelling aside (`#4A5545` and `#4a5545` are one colour). */
+const hexColour = (hex: string, tail: string) => `#${expandHex(hex)}${tail}`
 
 interface Member extends CascadeMember {
   index: number
   end: number
   rewrite?: Rewrite
+  extraGroups: string[]
+  /** Merge group → how this class reaches that element (for the `order-merge` report). */
+  via: Map<string, SourceKind>
+}
+
+/** The token form of one `<prefix>-[#hex]<tail>`, or why it keeps its text. */
+function plan(prefix: string, hex: string, tail: string, hexMap: Map<string, string>): { to: string; value: string; token: string } | LeaveReason {
+  if (!OPACITY_SUFFIX.test(tail)) return 'suffix'
+  if (hex.length === 4 || hex.length === 8) return 'alpha'
+  if (hex.length !== 3 && hex.length !== 6) return 'invalid'
+  const value = `#${expandHex(hex)}`
+  const token = hexMap.get(value)
+  return token ? { to: `${prefix}-${token}${tail}`, value, token } : 'unmapped'
+}
+
+/**
+ * Members for the classes of other files that meet this file's classes on one element
+ * (scripts/codemod-hex-tokens-reach.ts). They are `fixed` — another file — and checked in
+ * both states that file can be in: as written, and as this codemod would write it.
+ */
+function mergeMembers(source: string, isSfc: boolean, options: RewriteOptions, members: Member[], prepared: Prepared): Member[] {
+  if (options.project === false) return []
+  const project = options.project ?? REPO_PROJECT
+  const file = options.fileName ? path.resolve(options.fileName) : path.join(project.root, isSfc ? 'inline.vue' : 'inline.ts')
+  const external: Member[] = []
+  for (const group of mergeGroups(file, source, project)) {
+    const key = `${MERGE_GROUP}${group.key}`
+    for (const piece of group.pieces) {
+      if (piece.file === file) {
+        for (const m of members) {
+          if (m.index < piece.range[0] || m.index >= piece.range[1]) continue
+          const g = key + m.group.slice(m.group.indexOf('|'))
+          if (!m.via.has(g)) { m.extraGroups.push(g); m.via.set(g, piece.kind) }
+        }
+        continue
+      }
+      const masked = styleRanges(piece.text)
+      const add = (index: number, before: string, prefix: string, later: string, colour: string) => {
+        if (inRanges(index, masked)) return
+        const g = `${key}|${variantsBefore(piece.text, index)}|${prefix}`
+        external.push({ index: -1, end: -1, group: g, before, after: before, fixed: true, later, colour, extraGroups: [], via: new Map([[g, piece.kind]]) })
+      }
+      for (const m of piece.text.matchAll(HEX_UTILITY)) {
+        const planned = plan(m[1]!, m[2]!, m[3] ?? '', prepared.hexMap)
+        add(m.index, m[0], m[1]!, typeof planned === 'string' ? m[0] : planned.to, hexColour(m[2]!, m[3] ?? ''))
+      }
+      for (const m of piece.text.matchAll(prepared.named)) add(m.index, m[0], m[1]!, m[0], prepared.colourOfNamed(m[1]!, m[0]))
+    }
+  }
+  return external
 }
 
 export function rewriteSource(source: string, options: RewriteOptions = {}): RewriteResult {
-  const { hexMap, named } = prepare(options.tokens ?? COLOR_TOKENS)
+  const prepared = prepare(options.tokens ?? COLOR_TOKENS)
+  const { hexMap, named } = prepared
   const isSfc = options.fileName ? options.fileName.endsWith('.vue') : /<template[\s>]/.test(source)
   const masked = styleRanges(source)
   const groupOf = cascadeGroups(source, isSfc)
@@ -138,23 +210,16 @@ export function rewriteSource(source: string, options: RewriteOptions = {}): Rew
   for (const m of source.matchAll(HEX_UTILITY)) {
     const text = m[0]
     const prefix = m[1]!
-    const hex = m[2]!
-    const tail = m[3] ?? ''
     const index = m.index
     coveredBrackets.add(index + prefix.length + 1)
-    const value = `#${hex.toLowerCase()}`
-    const leave = (reason: LeaveReason) => leftAlone.push({ index, text, value, reason })
-    if (inRanges(index, masked)) { leave('style'); continue }
-    const member: Member = { index, end: index + text.length, group: groupOf(index, prefix), before: text, after: text }
+    const value = `#${m[2]!.toLowerCase()}`
+    if (inRanges(index, masked)) { leftAlone.push({ index, text, value, reason: 'style' }); continue }
+    const member: Member = { index, end: index + text.length, group: groupOf(index, prefix), before: text, after: text, colour: hexColour(m[2]!, m[3] ?? ''), extraGroups: [], via: new Map() }
     members.push(member)
-    if (!OPACITY_SUFFIX.test(tail)) { leave('suffix'); continue }
-    if (hex.length === 4 || hex.length === 8) { leave('alpha'); continue }
-    if (hex.length !== 3 && hex.length !== 6) { leave('invalid'); continue }
-    const normalized = `#${expandHex(hex)}`
-    const token = hexMap.get(normalized)
-    if (!token) { leave('unmapped'); continue }
-    member.after = `${prefix}-${token}${tail}`
-    member.rewrite = { index, from: text, to: member.after, value: normalized, token }
+    const planned = plan(prefix, m[2]!, m[3] ?? '', hexMap)
+    if (typeof planned === 'string') { leftAlone.push({ index, text, value, reason: planned }); continue }
+    member.after = planned.to
+    member.rewrite = { index, from: text, to: planned.to, value: planned.value, token: planned.token }
   }
 
   for (const m of source.matchAll(RATCHET_HEX)) {
@@ -173,12 +238,18 @@ export function rewriteSource(source: string, options: RewriteOptions = {}): Rew
   // Named colour utilities share the cascade with the hex ones (they never change).
   for (const m of source.matchAll(named)) {
     if (inRanges(m.index, masked)) continue
-    members.push({ index: m.index, end: m.index + m[0].length, group: groupOf(m.index, m[1]!), before: m[0], after: m[0] })
+    members.push({ index: m.index, end: m.index + m[0].length, group: groupOf(m.index, m[1]!), before: m[0], after: m[0], colour: prepared.colourOfNamed(m[1]!, m[0]), extraGroups: [], via: new Map() })
   }
 
-  // A rewrite that would change which colour wins on an element is undone (see the order module).
-  keepCascadeOrder(members, (member) => {
-    leftAlone.push({ index: member.index, text: member.before, value: member.rewrite!.value, reason: 'order' })
+  // A rewrite that would change which colour wins on an element is undone (see the order
+  // module) — on one tag/line (`order`), or where classes from elsewhere meet (`order-merge`).
+  const external = mergeMembers(source, isSfc, options, members, prepared)
+  keepCascadeOrder([...members, ...external], (member, { group, partner }) => {
+    const merge = group.startsWith(MERGE_GROUP)
+    const partnerVia = partner.via.get(group)
+    const via = partnerVia && partnerVia !== 'self' ? partnerVia : member.via.get(group) ?? partnerVia
+    const value = member.rewrite!.value
+    leftAlone.push(merge ? { index: member.index, text: member.before, value, reason: 'order-merge', ...(via ? { via } : {}), partner: partner.before } : { index: member.index, text: member.before, value, reason: 'order' })
     member.rewrite = undefined
   })
 
@@ -211,7 +282,7 @@ export function formatFileReport(file: string, result: RewriteResult): string {
     head += ` (${tally(rewrites, (r) => `${r.value}→${r.token}`).map(([key, n]) => `${key} ×${n}`).join(', ')})`
   }
   if (!leftAlone.length) return head
-  const left = tally(leftAlone, (e) => `${e.value}\u0000${e.reason}`)
+  const left = tally(leftAlone, (e) => `${e.value}\u0000${e.reason}${e.via ? ` via ${e.via}` : ''}`)
     .map(([key, n]) => {
       const [value, reason] = key.split('\u0000')
       return `${value} ×${n} ${reason}`
@@ -244,6 +315,8 @@ export function formatSummary(entries: ReadonlyArray<{ file: string; result: Rew
       lines.push(`  ${dir}: ${plural(row.rewrites, 'replacement')} in ${plural(row.files, 'file')} (${row.left} left alone)`)
     }
   }
+  const merged = tally(leftAlone.filter((e) => e.reason === 'order-merge'), (e) => e.via ?? 'self')
+  if (merged.length) lines.push(`order-merge by source: ${merged.map(([via, n]) => `${via} ${n}`).join(', ')}`)
   const unmapped = tally(leftAlone.filter((e) => e.reason === 'unmapped'), (e) => e.value).slice(0, 20)
   if (unmapped.length) {
     lines.push('top unmapped values:')
