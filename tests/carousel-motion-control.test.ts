@@ -5,6 +5,10 @@ import { createCarouselAutoplay } from '../app/utils/carousel-autoplay'
 import { hardcodedDictionary } from '../app/composables/i18n-default-dictionary'
 import { DEFAULT_TRANSLATIONS_SEED } from '../server/data/default-translations-seed'
 import { renderSfcTemplate } from './_render-sfc-template'
+import { COLOR_TOKENS } from '../shared/color-tokens.ts'
+
+/** The focus ring in the primary green `#4A6741` — as the token (`ring-brand-600`) or its hex in an arbitrary class. */
+const PRIMARY_RING = new RegExp(`focus-visible:ring-(?:brand-600|\\[${COLOR_TOKENS['brand-600']}\\])(?![\\w-])`, 'i')
 
 /**
  * Motion the visitor controls (spec public-accessibility, design D23).
@@ -176,7 +180,7 @@ test('the arrow and dot buttons show a focus ring', () => {
   assert.ok(buttons.length >= 6, 'expected pause/play, two arrow pairs and the dots')
   for (const button of buttons) {
     assert.match(button, /focus-visible:ring-2/, `button without a focus ring: ${button.slice(0, 120)}`)
-    assert.match(button, /focus-visible:ring-\[#4A6741\]/)
+    assert.match(button, PRIMARY_RING)
   }
 })
 

@@ -2,9 +2,9 @@
   <section class="section bg-white">
     <div class="container">
       <div class="text-center max-w-[600px] mx-auto mb-[40px]">
-        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
-        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || t('block_reintegration_title') }}</h2>
-        <p v-if="d.description" class="text-[0.95rem] text-[#4A5545] leading-[1.5]">{{ d.description }}</p>
+        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
+        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-ink mb-3">{{ d.title || t('block_reintegration_title') }}</h2>
+        <p v-if="d.description" class="text-[0.95rem] text-ink-secondary leading-[1.5]">{{ d.description }}</p>
       </div>
 
       <!-- Lưới 3 cột thẻ ảnh — khác biệt trực quan với carousel "Tấm Gương":
@@ -28,14 +28,14 @@
             />
           </nuxt-link>
           <div class="p-4 flex flex-col gap-2 flex-1">
-            <span v-if="item.location" class="inline-block self-start bg-[#EDF3EA] text-[#4A6741] text-[0.68rem] font-bold uppercase tracking-[0.3px] px-2 py-[3px] rounded-sm">{{ item.location }}</span>
+            <span v-if="item.location" class="inline-block self-start bg-[#EDF3EA] text-brand-600 text-[0.68rem] font-bold uppercase tracking-[0.3px] px-2 py-[3px] rounded-sm">{{ item.location }}</span>
             <h3 class="text-[0.95rem] font-extrabold leading-[1.4] m-0">
               <nuxt-link
                 :to="`/reintegration-models/${item.id}`"
-                class="no-underline text-[#1E251C] transition-colors duration-300 hover:text-[#4A6741]"
+                class="no-underline text-ink transition-colors duration-300 hover:text-brand-600"
               >{{ item.name }}</nuxt-link>
             </h3>
-            <p v-if="item.desc" class="text-[0.85rem] text-[#4A5545] leading-[1.55] m-0 line-clamp-2">{{ item.desc }}</p>
+            <p v-if="item.desc" class="text-[0.85rem] text-ink-secondary leading-[1.55] m-0 line-clamp-2">{{ item.desc }}</p>
           </div>
         </article>
       </div>
@@ -58,7 +58,7 @@
       <div v-if="list.length" class="text-center mt-[36px]">
         <nuxt-link
           to="/reintegration-models"
-          class="inline-flex items-center gap-2 bg-[#4A6741] text-white px-6 py-3 rounded-lg text-[0.9rem] font-bold no-underline transition-colors duration-300 hover:bg-[#385130]"
+          class="inline-flex items-center gap-2 bg-brand-600 text-white px-6 py-3 rounded-lg text-[0.9rem] font-bold no-underline transition-colors duration-300 hover:bg-[#385130]"
         >{{ t('view_all_models') || 'Xem tất cả mô hình' }} <i class="fa-solid fa-arrow-right text-[0.78rem]" aria-hidden="true"></i></nuxt-link>
       </div>
     </div>
