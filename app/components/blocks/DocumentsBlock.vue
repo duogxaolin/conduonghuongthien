@@ -1,10 +1,10 @@
 <template>
-  <section class="section bg-[#F8FAF7] border-t border-[#E2E8DF] py-12 sm:py-16">
+  <section class="section bg-surface border-t border-[#E2E8DF] py-12 sm:py-16">
     <div class="container">
       <!-- Section Header with Left-Right Layout -->
       <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 sm:mb-10 pb-4 border-b border-[#E2E8DF]">
         <div>
-          <span class="block text-[0.78rem] font-extrabold text-[#4A6741] uppercase tracking-[1.2px] mb-1.5">
+          <span class="block text-[0.78rem] font-extrabold text-brand-600 uppercase tracking-[1.2px] mb-1.5">
             {{ t('guidance_and_direction') || 'Chỉ đạo & Điều hành' }}
           </span>
           <h2 class="text-2xl sm:text-3xl font-black text-[#172516] tracking-tight m-0 mb-2">
@@ -17,7 +17,7 @@
 
         <nuxt-link
           :to="d.btnLink || '/documents'"
-          class="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-[#D5E1D3] hover:border-[#4A6741] hover:bg-[#F2F7F0] text-[#385932] text-xs font-extrabold transition-all no-underline shrink-0 shadow-sm group/btn"
+          class="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-[#D5E1D3] hover:border-brand-600 hover:bg-[#F2F7F0] text-[#385932] text-xs font-extrabold transition-all no-underline shrink-0 shadow-sm group/btn"
         >
           <span>{{ d.btnText || t('block_docs_btn') }}</span>
           <i class="fa-solid fa-arrow-right text-[0.7rem] transition-transform duration-200 group-hover/btn:translate-x-1" aria-hidden="true"></i>
@@ -120,7 +120,7 @@
       <div class="mt-7 text-center sm:hidden">
         <nuxt-link
           :to="d.btnLink || '/documents'"
-          class="inline-flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-[#4A6741] text-white text-xs font-extrabold no-underline shadow-sm"
+          class="inline-flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-brand-600 text-white text-xs font-extrabold no-underline shadow-sm"
         >
           <span>{{ d.btnText || t('block_docs_btn') }}</span>
           <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>

@@ -27,6 +27,10 @@
  * không bị tính. Ghi qua khoá tính toán trên namespace của một module có xuất trạng
  * thái (`ns[k] = …`) không biết được tên nên bị coi là vi phạm.
  *
+ * Ngoại lệ nêu tên (`SharedStateWriters`): trạng thái mà nhiều tệp ghi CÓ CHỦ ĐÍCH từ
+ * trước khi tách — hôm nay chỉ `moderation-stats.ts#workerStats` (bộ đếm của worker kiểm
+ * duyệt). Chỉ đúng các tệp nêu tên được ghi; mục chết thì đỏ.
+ *
  * Giới hạn đã biết (phân tích tĩnh): một hàm của chủ trả về chính đối tượng trạng
  * thái (`getClaims().set(…)`), hay module object được truyền đi qua tham số, thì
  * không lần được. Vì thế trạng thái thật (`activeClaims`, `cpulimitAvailable`) cố
@@ -379,11 +383,22 @@ export interface StateOwnerResult {
   inventory: string[]
   /** `tệp ← chủ#tên`: lượt nhập tĩnh giải tới trạng thái của tệp khác — luật không kiểm rỗng. */
   stateImports: string[]
+  /** `chủ#tên ← tệp`: lượt ghi được `shared` cho phép — để khẳng định ngoại lệ còn sống. */
+  sharedWrites: string[]
 }
+
+/**
+ * Trạng thái mà nhiều tệp ghi CÓ CHỦ ĐÍCH, có từ trước khi tách: `chủ#tên` → đúng những
+ * tệp (ngoài chủ) được ghi. Chỉ nới phần "chỉ chủ ghi" cho đúng các tệp nêu tên — tệp
+ * khác ghi vẫn đỏ, bản khai thứ hai vẫn đỏ. Mục chết (tệp nêu tên thôi ghi, hay tên
+ * không còn là trạng thái của nhóm nào) cũng đỏ: danh sách không mục được.
+ */
+export type SharedStateWriters = Readonly<Record<string, { writers: readonly string[], reason: string }>>
 
 export function stateOwnerCheck(
   sources: Sources,
   families: Record<string, Family>,
+  shared: SharedStateWriters = {},
 ): StateOwnerResult {
   const violations: string[] = []
   const owners = new Map<string, { family: string; binding: StateBinding }>()
@@ -409,6 +424,7 @@ export function stateOwnerCheck(
   const stateOf = (resolved: Resolved | null) =>
     resolved ? owners.get(`${resolved.file}#${resolved.local}`) : undefined
   const stateImports = new Set<string>()
+  const sharedWrites = new Map<string, Set<string>>()
   for (const [file, source] of sources) {
     for (const imported of moduleTable(file, source).imports.values()) {
       const from = moduleFile(sources, file, imported.specifier)
@@ -439,14 +455,34 @@ export function stateOwnerCheck(
       }
       const owner = stateOf(resolveExport(sources, from, name))
       if (!owner || owner.binding.file === file) continue
+      const key = `${owner.binding.file}#${owner.binding.name}`
+      if (shared[key]?.writers.includes(file)) {
+        sharedWrites.set(key, (sharedWrites.get(key) ?? new Set()).add(file))
+        continue
+      }
       violations.push(
         `[${owner.family}] ${at} ghi vào '${owner.binding.name}' của ${owner.binding.file} — chỉ tệp khai báo được ghi trạng thái cấp module của nó`,
       )
     }
   }
+  for (const [key, entry] of Object.entries(shared)) {
+    if (!owners.has(key)) {
+      violations.push(
+        `ngoại lệ chết: ${key} không còn là trạng thái cấp module của nhóm nào — sửa hoặc bỏ mục trong danh sách người ghi chung`,
+      )
+      continue
+    }
+    const used = [...(sharedWrites.get(key) ?? [])].sort()
+    const listed = [...entry.writers].sort()
+    if (JSON.stringify(used) !== JSON.stringify(listed))
+      violations.push(
+        `ngoại lệ chết: ${key} khai người ghi ${JSON.stringify(listed)} nhưng thực tế ghi ${JSON.stringify(used)} — sửa mục trong danh sách người ghi chung`,
+      )
+  }
   return {
     violations,
     inventory: [...owners.keys()].sort(),
     stateImports: [...stateImports].sort(),
+    sharedWrites: [...sharedWrites].flatMap(([key, files]) => [...files].map(file => `${key} ← ${file}`)).sort(),
   }
 }

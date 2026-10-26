@@ -5,13 +5,13 @@ import type { IncomingMessage } from 'node:http'
 import type { RequestOptions } from 'node:https'
 import {
   ChatbotOutboundError,
-  isPublicIpAddress,
   normalizeProviderUrl,
   redactOutboundError,
   resolvePublicProviderAddresses,
   safeProviderRequest,
   type ProviderRequest,
 } from '../server/utils/chatbot/outbound.ts'
+import { isPublicIpAddress } from '../server/utils/chatbot/public-ip.ts'
 
 const ALLOWED_HOSTS = ['api.provider.example']
 const PUBLIC_DNS = async () => [{ address: '8.8.8.8', family: 4 as const }]

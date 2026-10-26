@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import test from 'node:test'
+
+import { moderationPageSource, readModerationPart } from './_moderation-page-parts.ts'
 
 import {
   RESCAN_AI_UNAVAILABLE_NOTICE,
@@ -61,14 +62,18 @@ test('chưa có kết quả → không có cảnh báo', () => {
 
 // Hành vi hiển thị nằm trong template — đây là phần duy nhất phải đọc chữ: dòng
 // cảnh báo có `role="status"` và đọc từ chính hàm thuần ở trên.
-test('moderation.vue: dòng cảnh báo AI là role="status", đọc từ rescanAiNotice của lượt đã xong', () => {
-  const source = readFileSync(new URL('../app/pages/admin/ai/moderation.vue', import.meta.url), 'utf8')
-  assert.match(source, /from '~\/utils\/moderation-rescan-summary'/)
-  const block = source.match(/<p\s+v-if="rescanAiUnavailableText"[\s\S]*?<\/p>/)
+// Trang đã tách (wave3 4.1): dòng hiển thị ở ModerationWorkerPanel.vue, phép tính và toast
+// ở composables/useModerationWorker.ts (tests/_moderation-page-parts.ts). Hành vi thật
+// (dòng role="status" hiện đúng chữ khi lượt quét xong): tests/admin-moderation-page.test.ts.
+test('trang kiểm duyệt: dòng cảnh báo AI là role="status", đọc từ rescanAiNotice của lượt đã xong', () => {
+  const panel = readModerationPart('workerPanel')
+  const worker = readModerationPart('worker')
+  assert.match(worker, /from '\.\.\/utils\/moderation-rescan-summary'/)
+  const block = panel.match(/<p\s+v-if="rescanAiUnavailableText"[\s\S]*?<\/p>/)
   assert.ok(block, 'thiếu dòng cảnh báo AI trong vùng trạng thái quét')
   assert.match(block![0], /role="status"/)
   assert.match(block![0], /\{\{ rescanAiUnavailableText \}\}/)
-  assert.match(source, /rescanAiUnavailableText = computed\(\(\) =>[\s\S]{0,160}rescanAiNotice\(/)
-  assert.doesNotMatch(source, /function rescanSummaryText/, 'tóm tắt chỉ có một bản (utils)')
-  assert.match(source, /rescanFinishedToast\(next\.summary\)/, 'toast khi xong dùng hàm thuần (cảnh báo khi chỉ quét bằng luật)')
+  assert.match(worker, /rescanAiUnavailableText = computed\(\(\) =>[\s\S]{0,160}rescanAiNotice\(/)
+  assert.doesNotMatch(moderationPageSource(), /function rescanSummaryText/, 'tóm tắt chỉ có một bản (utils)')
+  assert.match(worker, /rescanFinishedToast\(next\.summary\)/, 'toast khi xong dùng hàm thuần (cảnh báo khi chỉ quét bằng luật)')
 })

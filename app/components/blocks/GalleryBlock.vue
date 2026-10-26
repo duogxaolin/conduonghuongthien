@@ -1,8 +1,8 @@
 <template>
-  <section class="section bg-[#F8FAF7]" role="region" :aria-label="d.title || 'Thư viện hình ảnh'">
+  <section class="section bg-surface" role="region" :aria-label="d.title || 'Thư viện hình ảnh'">
     <div class="container">
       <div v-if="d.title" class="text-center max-w-[600px] mx-auto mb-[50px]">
-        <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold text-[#1E251C]">{{ d.title }}</h2>
+        <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold text-ink">{{ d.title }}</h2>
       </div>
 
       <div v-if="items.length" class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4" role="list">

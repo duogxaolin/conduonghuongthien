@@ -36,7 +36,7 @@
                 <div>
                   <span class="text-[0.72rem] text-[#5A6C58] font-bold block mb-1">{{ formatDate(item.publishedAt || item.createdAt) }}</span>
                   <h3 class="text-[0.88rem] font-bold leading-[1.35] m-0 line-clamp-3">
-                    <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ item.title }}</nuxt-link>
+                    <nuxt-link :to="`/news/${item.slug}`" class="text-ink no-underline transition hover:text-brand-600" :title="item.title">{{ item.title }}</nuxt-link>
                   </h3>
                 </div>
               </div>
@@ -63,10 +63,10 @@
 
         <div class="flex flex-col" role="list">
           <div v-for="item in trending" :key="item.id" role="listitem" class="flex gap-3 py-[14px] border-b border-[#E2E8DF] last:border-b-0">
-            <div class="w-[6px] h-[6px] rounded-full bg-[#4A6741] mt-2 flex-shrink-0"></div>
+            <div class="w-[6px] h-[6px] rounded-full bg-brand-600 mt-2 flex-shrink-0"></div>
             <div class="flex-1 min-w-0">
               <h3 class="text-[0.88rem] font-bold leading-[1.4] m-0 mb-[6px] line-clamp-2">
-                <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ item.title }}</nuxt-link>
+                <nuxt-link :to="`/news/${item.slug}`" class="text-ink no-underline transition hover:text-brand-600" :title="item.title">{{ item.title }}</nuxt-link>
               </h3>
               <span class="text-[0.72rem] text-[#5A6C58] font-semibold"><span aria-hidden="true">📅</span> {{ formatDate(item.publishedAt || item.createdAt) }}</span>
             </div>

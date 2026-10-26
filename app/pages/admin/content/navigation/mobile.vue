@@ -141,19 +141,19 @@ onMounted(loadMenu)
     <div class="flex items-center justify-between flex-wrap gap-3">
       <div>
         <div class="flex items-center gap-2 mb-1">
-          <nuxt-link to="/admin/content/navigation/navbar" class="text-[0.78rem] text-[#667768] hover:text-[#2c6e33] font-medium">Menu chính (Navbar + ☰)</nuxt-link>
-          <span class="text-[#c8d6c9] text-xs">|</span>
-          <span class="text-[0.78rem] font-bold text-[#2c6e33]">Thanh điều hướng Mobile</span>
+          <nuxt-link to="/admin/content/navigation/navbar" class="text-[0.78rem] text-ink-muted hover:text-brand-700 font-medium">Menu chính (Navbar + ☰)</nuxt-link>
+          <span class="text-line-strong text-xs">|</span>
+          <span class="text-[0.78rem] font-bold text-brand-700">Thanh điều hướng Mobile</span>
         </div>
-        <h1 class="text-[1.25rem] font-extrabold text-[#122815] m-0">Thanh điều hướng Mobile</h1>
-        <p class="text-[0.82rem] text-[#667768] mt-1 m-0">Thanh nổi cố định ở đáy màn hình điện thoại — tối đa 5 mục, 1 mục có thể làm nút tròn trung tâm.</p>
+        <h1 class="text-[1.25rem] font-extrabold text-brand-950 m-0">Thanh điều hướng Mobile</h1>
+        <p class="text-[0.82rem] text-ink-muted mt-1 m-0">Thanh nổi cố định ở đáy màn hình điện thoại — tối đa 5 mục, 1 mục có thể làm nút tròn trung tâm.</p>
       </div>
       <div class="flex gap-2 flex-wrap">
-        <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] bg-white px-4 py-2 text-sm font-semibold text-[#667768] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="resetToDefault">
+        <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink-muted hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700" @click="resetToDefault">
           <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
           Khôi phục mặc định
         </button>
-        <button v-if="canEdit" type="button" :disabled="saving" class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2 text-sm font-bold text-white hover:bg-[#245b2a] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2" @click="saveMenu">
+        <button v-if="canEdit" type="button" :disabled="saving" class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white hover:bg-[#245b2a] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2" @click="saveMenu">
           <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'" aria-hidden="true"></i>
           {{ saving ? 'Đang lưu…' : 'Lưu cấu hình' }}
         </button>
@@ -168,7 +168,7 @@ onMounted(loadMenu)
         <div
           v-for="n in 5"
           :key="'mb-' + n"
-          class="rounded-xl border border-[#e2ece3] bg-white shadow-sm overflow-hidden"
+          class="rounded-xl border border-line bg-white shadow-sm overflow-hidden"
         >
           <div class="flex items-start gap-3 px-4 py-3">
             <div class="w-6 h-11 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none shrink-0"></div>
@@ -186,7 +186,7 @@ onMounted(loadMenu)
           </div>
         </div>
       </div>
-      <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-3" aria-hidden="true">
+      <div class="rounded-xl border border-line bg-white p-4 flex flex-col gap-3" aria-hidden="true">
         <div class="h-3 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
         <div class="h-[220px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
       </div>
@@ -195,7 +195,7 @@ onMounted(loadMenu)
     <!-- Error -->
     <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-      {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="loadMenu()">thử lại</button>.
+      {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="loadMenu()">thử lại</button>.
     </div>
 
     <template v-else>
@@ -204,8 +204,8 @@ onMounted(loadMenu)
         <!-- ============ LEFT: config ============ -->
         <div class="flex flex-col gap-3">
           <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2 text-[0.72rem] font-bold text-[#667768] uppercase tracking-wide">
-              <i class="fa-solid fa-sliders text-[#2c6e33]" aria-hidden="true"></i>
+            <div class="flex items-center gap-2 text-[0.72rem] font-bold text-ink-muted uppercase tracking-wide">
+              <i class="fa-solid fa-sliders text-brand-700" aria-hidden="true"></i>
               Cấu hình các mục ({{ menu.length }}/5)
             </div>
           </div>
@@ -214,43 +214,43 @@ onMounted(loadMenu)
             v-for="(item, idx) in menu"
             :key="item.id"
             class="rounded-xl border bg-white shadow-sm overflow-hidden"
-            :class="item.featured ? 'border-[#2c6e33] ring-1 ring-[#2c6e33]/20' : 'border-[#e2ece3]'"
+            :class="item.featured ? 'border-brand-700 ring-1 ring-brand-700/20' : 'border-line'"
           >
             <div class="flex items-start gap-3 px-4 py-3">
               <!-- Reorder -->
               <div class="flex flex-col gap-0.5 shrink-0 pt-1.5">
-                <button type="button" :disabled="idx === 0" class="w-6 h-5 flex items-center justify-center rounded text-[#667768] hover:bg-[#e2ece3] disabled:opacity-30 focus:outline-none" @click="moveItem(idx, -1)" aria-label="Sang trái">
+                <button type="button" :disabled="idx === 0" class="w-6 h-5 flex items-center justify-center rounded text-ink-muted hover:bg-line disabled:opacity-30 focus:outline-none" @click="moveItem(idx, -1)" aria-label="Sang trái">
                   <i class="fa-solid fa-chevron-left text-[0.6rem]" aria-hidden="true"></i>
                 </button>
-                <button type="button" :disabled="idx === menu.length - 1" class="w-6 h-5 flex items-center justify-center rounded text-[#667768] hover:bg-[#e2ece3] disabled:opacity-30 focus:outline-none" @click="moveItem(idx, 1)" aria-label="Sang phải">
+                <button type="button" :disabled="idx === menu.length - 1" class="w-6 h-5 flex items-center justify-center rounded text-ink-muted hover:bg-line disabled:opacity-30 focus:outline-none" @click="moveItem(idx, 1)" aria-label="Sang phải">
                   <i class="fa-solid fa-chevron-right text-[0.6rem]" aria-hidden="true"></i>
                 </button>
               </div>
 
               <!-- Icon preview -->
-              <div class="w-10 h-10 rounded-xl bg-[#f0f7f1] border border-[#e2ece3] flex items-center justify-center shrink-0 mt-0.5">
-                <i :class="item.icon || 'fa-solid fa-circle'" class="text-[#2c6e33] text-base" aria-hidden="true"></i>
+              <div class="w-10 h-10 rounded-xl bg-surface-tint border border-line flex items-center justify-center shrink-0 mt-0.5">
+                <i :class="item.icon || 'fa-solid fa-circle'" class="text-brand-700 text-base" aria-hidden="true"></i>
               </div>
 
               <!-- Fields -->
               <div class="flex-1 min-w-0 flex flex-col gap-2">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input v-model="item.label" type="text" placeholder="Nhãn (vd: Trang chủ)" maxlength="40" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#122815] font-semibold focus:outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" :disabled="!canEdit" />
-                  <input v-model="item.icon" type="text" placeholder="Icon (fa-solid fa-house)" maxlength="60" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#334e36] font-mono focus:outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" :disabled="!canEdit" />
+                  <input v-model="item.label" type="text" placeholder="Nhãn (vd: Trang chủ)" maxlength="40" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-brand-950 font-semibold focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit" />
+                  <input v-model="item.icon" type="text" placeholder="Icon (fa-solid fa-house)" maxlength="60" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#334e36] font-mono focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit" />
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <select v-model="item.type" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#334e36] font-semibold focus:outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 bg-white" :disabled="!canEdit">
+                  <select v-model="item.type" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#334e36] font-semibold focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 bg-white" :disabled="!canEdit">
                     <option v-for="opt in TYPE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
                   </select>
-                  <input v-if="item.type === 'link'" v-model="item.url" type="text" placeholder="URL (vd: /news)" maxlength="512" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#334e36] font-mono focus:outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" :disabled="!canEdit" />
+                  <input v-if="item.type === 'link'" v-model="item.url" type="text" placeholder="URL (vd: /news)" maxlength="512" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#334e36] font-mono focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit" />
                   <div v-else class="flex items-center px-3 py-1.5 rounded-lg bg-[#f7fbf7] border border-dashed border-[#dce8dd] text-xs text-[#8ea98f] italic">
                     {{ TYPE_OPTIONS.find(o => o.value === item.type)?.hint }}
                   </div>
                 </div>
-                <label class="flex items-center gap-2 text-xs text-[#667768] cursor-pointer select-none w-fit">
-                  <input type="checkbox" :checked="item.featured" :disabled="!canEdit" class="w-3.5 h-3.5 accent-[#2c6e33]" @change="setFeatured(idx, ($event.target as HTMLInputElement).checked)" />
+                <label class="flex items-center gap-2 text-xs text-ink-muted cursor-pointer select-none w-fit">
+                  <input type="checkbox" :checked="item.featured" :disabled="!canEdit" class="w-3.5 h-3.5 accent-brand-700" @change="setFeatured(idx, ($event.target as HTMLInputElement).checked)" />
                   <span class="font-semibold">Nút tròn nổi trung tâm</span>
-                  <i class="fa-solid fa-circle-up text-[#2c6e33]" aria-hidden="true"></i>
+                  <i class="fa-solid fa-circle-up text-brand-700" aria-hidden="true"></i>
                 </label>
               </div>
 
@@ -262,26 +262,26 @@ onMounted(loadMenu)
           </div>
 
           <div v-if="canEdit && menu.length < 5" class="flex flex-wrap items-center gap-2">
-            <button type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#afc8b1] bg-white px-5 py-3.5 text-sm font-bold text-[#2c6e33] hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="addItem">
+            <button type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#afc8b1] bg-white px-5 py-3.5 text-sm font-bold text-brand-700 hover:border-brand-700 hover:bg-surface-tint transition focus:outline-none focus:ring-2 focus:ring-brand-700" @click="addItem">
               <i class="fa-solid fa-plus" aria-hidden="true"></i>
               Thêm mục ({{ menu.length }}/5)
             </button>
-            <button type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#7fa8c0] bg-white px-5 py-3.5 text-sm font-bold text-[#2c6e33] hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="showPicker = true">
+            <button type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#7fa8c0] bg-white px-5 py-3.5 text-sm font-bold text-brand-700 hover:border-brand-700 hover:bg-surface-tint transition focus:outline-none focus:ring-2 focus:ring-brand-700" @click="showPicker = true">
               <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
               Chọn Thể loại
             </button>
           </div>
 
-          <div class="rounded-lg bg-[#f7fbf7] border border-[#e2ece3] px-3.5 py-2.5 text-[0.72rem] text-[#8ea98f] flex items-start gap-2">
-            <i class="fa-solid fa-lightbulb text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
+          <div class="rounded-lg bg-[#f7fbf7] border border-line px-3.5 py-2.5 text-[0.72rem] text-[#8ea98f] flex items-start gap-2">
+            <i class="fa-solid fa-lightbulb text-brand-700 mt-0.5" aria-hidden="true"></i>
             <span>Tìm tên icon tại <span class="font-mono text-[#334e36]">fontawesome.com/icons</span>. Ví dụ: <span class="font-mono">fa-solid fa-house</span>, <span class="font-mono">fa-solid fa-bars</span>.</span>
           </div>
         </div>
 
         <!-- ============ RIGHT: live phone bottom-nav preview ============ -->
         <div class="flex flex-col gap-3 xl:sticky xl:top-6">
-          <div class="flex items-center gap-2 text-[0.72rem] font-bold text-[#667768] uppercase tracking-wide">
-            <i class="fa-solid fa-eye text-[#2c6e33]" aria-hidden="true"></i>
+          <div class="flex items-center gap-2 text-[0.72rem] font-bold text-ink-muted uppercase tracking-wide">
+            <i class="fa-solid fa-eye text-brand-700" aria-hidden="true"></i>
             Xem trước website (mobile)
           </div>
 
@@ -299,12 +299,12 @@ onMounted(loadMenu)
                   <!-- Header -->
                   <div class="bg-white border-b border-[#E2E8DF] px-3 py-2.5 flex items-center gap-2 shrink-0">
                     <div class="w-7 h-7 rounded-full bg-[#e4f0e2] flex items-center justify-center">
-                      <i class="fa-solid fa-shield-halved text-[#4A6741] text-[0.7rem]" aria-hidden="true"></i>
+                      <i class="fa-solid fa-shield-halved text-brand-600 text-[0.7rem]" aria-hidden="true"></i>
                     </div>
-                    <div class="text-[0.68rem] font-extrabold text-[#4A6741] tracking-wide">CON ĐƯỜNG HƯỚNG THIỆN</div>
+                    <div class="text-[0.68rem] font-extrabold text-brand-600 tracking-wide">CON ĐƯỜNG HƯỚNG THIỆN</div>
                   </div>
                   <!-- Page body -->
-                  <div class="flex-1 bg-[#f8faf7] p-3 space-y-2 overflow-hidden">
+                  <div class="flex-1 bg-surface p-3 space-y-2 overflow-hidden">
                     <div class="h-24 rounded-lg bg-gradient-to-r from-[#e4f0e2] to-[#f0f6ef] flex items-center justify-center">
                       <span class="text-[0.6rem] text-[#8ea98f] italic">Nội dung trang</span>
                     </div>
@@ -356,10 +356,10 @@ onMounted(loadMenu)
           </p>
 
           <!-- Info note -->
-          <div class="rounded-xl border border-[#e2ece3] bg-[#f7fbf7] p-3.5 text-[0.78rem] text-[#667768] leading-relaxed">
-            <i class="fa-solid fa-circle-info text-[#2c6e33] mr-1.5" aria-hidden="true"></i>
-            Thanh này chỉ hiển thị trên <strong class="text-[#122815]">màn hình điện thoại</strong>. Menu ngang trên desktop quản lý riêng tại trang
-            <nuxt-link to="/admin/content/navigation/navbar" class="text-[#2c6e33] font-semibold hover:underline">Menu chính (Navbar + ☰)</nuxt-link>.
+          <div class="rounded-xl border border-line bg-[#f7fbf7] p-3.5 text-[0.78rem] text-ink-muted leading-relaxed">
+            <i class="fa-solid fa-circle-info text-brand-700 mr-1.5" aria-hidden="true"></i>
+            Thanh này chỉ hiển thị trên <strong class="text-brand-950">màn hình điện thoại</strong>. Menu ngang trên desktop quản lý riêng tại trang
+            <nuxt-link to="/admin/content/navigation/navbar" class="text-brand-700 font-semibold hover:underline">Menu chính (Navbar + ☰)</nuxt-link>.
           </div>
         </div>
 

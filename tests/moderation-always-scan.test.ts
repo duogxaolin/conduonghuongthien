@@ -21,12 +21,24 @@
  * người dùng thấy, nhưng ở đây đúng là cấu trúc điều khiển đang được canh.
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
+import {
+  moderationFileDeclaring,
+  moderationWorkerSource,
+  moderationWorkerSourceWith,
+} from './_moderation-worker-family.ts'
 
-const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
+// `moderation-worker.ts` là barrel từ wave3 4.3: mã nằm ở cả nhóm tệp. Hai khẳng định
+// "đã biến mất" đọc TOÀN nhóm (suy từ thư mục — đọc riêng barrel thì xanh trên rỗng);
+// hai khẳng định "vẫn còn" đọc đúng tệp khai báo hàm đó (`moderationFileDeclaring`).
+const modWorkerSource = moderationWorkerSource()
+const checkSource = moderationFileDeclaring('checkAndModerateContent').source
+const preModerateSource = moderationFileDeclaring('fastPreModerate').source
 
-const modWorkerSource = read('server/services/moderation-worker.ts')
+/** Ngưỡng cũ `content.length >= 5`. */
+const OLD_LENGTH_FLOOR = /content\.length\s*>=\s*5/
+/** Biểu thức ngưỡng cũ `matchedKeywords.length > 0 || content.length >= N`. */
+const OLD_THRESHOLD_EXPR = /matchedKeywords\.length\s*>\s*0\s*\|\|\s*content\.length/
 
 function stripComments(src: string): string {
   // Bỏ comment dòng và block trước khi tìm, để lời giải thích "vì sao có ngưỡng"
@@ -42,7 +54,7 @@ describe('moderation-always-scan — lớp AI quét lọc mọi comment', () => 
     // Ngưỡng cũ: `content.length >= 5` (đã bị xoá). Nếu quay lại, comment ngắn
     // 1-4 ký tự lại bị bỏ qua AI — đúng cái bài test này tồn tại để chặn.
     assert.ok(
-      !/content\.length\s*>=\s*5/.test(stripped),
+      !OLD_LENGTH_FLOOR.test(stripped),
       'Ngưỡng `content.length >= 5` đã quay lại — bình luận ngắn sẽ bị bỏ qua AI. ' +
         'Người dùng yêu cầu MỌI comment qua AI một lược.',
     )
@@ -53,14 +65,46 @@ describe('moderation-always-scan — lớp AI quét lọc mọi comment', () => 
     // Toàn bộ biểu thức ngưỡng cũ phải biến mất. Nếu ai thêm lại dưới dạng tương
     // đương (đổi 5 thành 3, hoặc thêm `||` khác), comment ngắn vẫn lọt.
     assert.ok(
-      !/matchedKeywords\.length\s*>\s*0\s*\|\|\s*content\.length/.test(stripped),
+      !OLD_THRESHOLD_EXPR.test(stripped),
       'Biểu thức ngưỡng `matchedKeywords.length > 0 || content.length >= N` đã quay lại. ' +
         'Comment ngắn không khớp keyword sẽ bị bỏ qua AI.',
     )
   })
 
+  it('bằng chứng tiêm: hai khẳng định "đã biến mất" thấy ngưỡng cũ ở MỌI tệp của nhóm, kể cả tệp con mới', () => {
+    // Ngưỡng cũ quay lại ở tệp KHÔNG khai báo checkAndModerateContent, và ở một tệp con
+    // chưa ai liệt kê: cả hai phải đỏ — tập quét không được thu hẹp về một tệp.
+    const old = '\nexport const _gate = (matchedKeywords: unknown[], content: string) => matchedKeywords.length > 0 || content.length >= 5\n'
+    const rescan = 'moderation-worker-rescan.ts'
+    const cases: Array<[string, Record<string, string>]> = [
+      [
+        'tệp con không khai báo checkAndModerateContent',
+        { [rescan]: `${moderationFileDeclaring('rescanExistingContent').source}${old}` },
+      ],
+      ['tệp con mới, chưa ai liệt kê', { 'moderation-worker-extra.ts': old }],
+    ]
+    for (const [label, overrides] of cases) {
+      const stripped = stripComments(moderationWorkerSourceWith(overrides))
+      assert.ok(OLD_LENGTH_FLOOR.test(stripped), `${label}: không thấy \`content.length >= 5\``)
+      assert.ok(OLD_THRESHOLD_EXPR.test(stripped), `${label}: không thấy biểu thức ngưỡng cũ`)
+    }
+    // Nhắc tới ngưỡng trong chú thích thì không đỏ (lời giải thích không phải mã).
+    const commented = stripComments(
+      moderationWorkerSourceWith({
+        'moderation-worker-extra.ts':
+          '// trước đây: matchedKeywords.length > 0 || content.length >= 5\n/* content.length >= 5 */\nexport const _x = 1\n',
+      }),
+    )
+    assert.ok(!OLD_LENGTH_FLOOR.test(commented) && !OLD_THRESHOLD_EXPR.test(commented))
+    // Anh em không thuộc nhóm: tệp tên lạ không lọt vào tập quét qua lối tiêm.
+    assert.equal(
+      moderationWorkerSourceWith({ 'moderation-regex.ts': old }),
+      moderationWorkerSource(),
+    )
+  })
+
   it('checkAndModerateContent chạy AI cho mọi content không rỗng', () => {
-    const stripped = stripComments(modWorkerSource)
+    const stripped = stripComments(checkSource)
     // Sau khi bỏ ngưỡng, điều kiện `if` đi tới khối AI phải là `content.length > 0`
     // (hoặc tương đương luôn-true cho content đã qua trim). Đọc bằng cách tìm
     // khối `if (content.length > 0)` ngay trước lời gọi callAi.
@@ -75,7 +119,7 @@ describe('moderation-always-scan — lớp AI quét lọc mọi comment', () => 
     // Lớp 1 không bị xoá — nó là cổng chặn tức thì. Đây là assertion "vẫn còn",
     // không phải "đã biến mất".
     assert.ok(
-      /export\s+async\s+function\s+fastPreModerate/.test(modWorkerSource),
+      /export\s+async\s+function\s+fastPreModerate/.test(preModerateSource),
       'fastPreModerate phải còn — lớp chặn tức thì (< 1ms) dựa trên regex cứng + DB rules.',
     )
   })

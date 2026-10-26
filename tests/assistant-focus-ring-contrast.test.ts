@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { solidFocusRings } from './_focus-rings.ts'
 
 /**
  * /assistant: every solid focus ring (`focus-visible:ring-[#hex]`) must reach 3:1
@@ -27,7 +28,8 @@ const SURFACES = ['FFFFFF', 'FCFDFC', 'F0F7F1', 'F8FAF8', 'F0F6EF']
 
 test('assistant.vue: every solid focus ring reaches 3:1 on the page\'s light surfaces', () => {
   const source = readFileSync(new URL('../app/pages/assistant.vue', import.meta.url), 'utf8')
-  const rings = [...source.matchAll(/focus-visible:ring-\[#([0-9A-Fa-f]{6})\](?!\/)/g)].map((m) => m[1]!)
+  // Hex or token (`ring-brand-600`), resolved through COLOR_TOKENS: see tests/_focus-rings.ts.
+  const rings = solidFocusRings(source)
   assert.ok(rings.length >= 5, `expected the switch/delete/new-chat/chip/retry rings, found ${rings.length}`)
   for (const hex of rings) {
     for (const surface of SURFACES) {

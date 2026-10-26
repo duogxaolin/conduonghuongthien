@@ -3,14 +3,16 @@ import { getDb } from '../../../../utils/db'
 import { aiProviders, aiUsageLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { decryptAiSecret } from '../../../../utils/ai/crypto'
+import { DelifyUsageError, fetchDelifyUsage, type DelifyUsagePath } from '../../../../utils/ai/delify-usage'
+import { checkProviderBaseUrl } from '../../../../utils/ai/provider-url'
 
 const ALLOWED_PERIODS = new Set(['1h', '24h', '7d', '30d', 'all'])
 
 /**
- * Fetch real-time status, budget, and receipts breakdown from Delify Router API.
- * Calls:
- * 1. https://router.delify.vn/api/usage/key?key=... (key info, total budget, used, remaining)
- * 2. https://router.delify.vn/api/usage/key/receipts?key=...&period=... (breakdown by period)
+ * Fetch real-time status, budget, and receipts breakdown from Delify Router API, on the
+ * delify provider's host, through `fetchDelifyUsage` (outbound.ts — never a bare fetch):
+ * 1. /api/usage/key (key info, total budget, used, remaining)
+ * 2. /api/usage/key/receipts?period=... (breakdown by period)
  */
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -51,9 +53,8 @@ export default defineEventHandler(async (event) => {
   }
 
   // 3. Query Delify Key endpoint and Receipts endpoint in parallel
-  const encodedKey = encodeURIComponent(apiKey)
-  const keyUrl = `https://router.delify.vn/api/usage/key?key=${encodedKey}`
-  const receiptsUrl = `https://router.delify.vn/api/usage/key/receipts?key=${encodedKey}&period=${period}&page=1&pageSize=20`
+  const ask = (path: DelifyUsagePath, params?: Record<string, string>) =>
+    fetchDelifyUsage({ baseUrl: delifyProvider.baseUrl, secret: apiKey, path, params })
 
   interface DelifyKeyData {
     name?: string
@@ -116,24 +117,24 @@ export default defineEventHandler(async (event) => {
   let receiptsData: DelifyReceiptsData | null = null
   let fetchError: string | null = null
 
-  try {
-    const [keyResp, receiptsResp] = await Promise.all([
-      fetch(keyUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10_000) }),
-      fetch(receiptsUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10_000) }),
-    ])
+  // Settled separately: the key card needs only the key answer, and a bad receipts
+  // answer (down, not JSON) must not take it down — the breakdown is just left empty.
+  const [keyResult, receiptsResult] = await Promise.allSettled([
+    ask('/api/usage/key'),
+    ask('/api/usage/key/receipts', { period, page: '1', pageSize: '20' }),
+  ])
 
-    if (keyResp.ok) {
-      keyData = (await keyResp.json()) as DelifyKeyData
-    } else {
-      fetchError = `Key API trả HTTP ${keyResp.status}`
-    }
+  if (keyResult.status === 'rejected') {
+    // A fixed sentence (the old one appended the driver's own message).
+    fetchError = keyResult.reason instanceof DelifyUsageError ? keyResult.reason.message : 'Không thể kết nối tới Delify Router API.'
+  } else if (keyResult.value.data && typeof keyResult.value.data === 'object') {
+    keyData = keyResult.value.data as DelifyKeyData
+  } else {
+    fetchError = `Key API trả HTTP ${keyResult.value.status}`
+  }
 
-    if (receiptsResp.ok) {
-      receiptsData = (await receiptsResp.json()) as DelifyReceiptsData
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Lỗi kết nối'
-    fetchError = `Không thể kết nối tới Delify API: ${msg}`
+  if (receiptsResult.status === 'fulfilled' && receiptsResult.value.data && typeof receiptsResult.value.data === 'object') {
+    receiptsData = receiptsResult.value.data as DelifyReceiptsData
   }
 
   if (!keyData) {
@@ -163,6 +164,8 @@ export default defineEventHandler(async (event) => {
   return {
     ok: true,
     configured: true,
+    // The host actually asked (the delify row's base URL) — the dashboard shows it.
+    host: ((target) => (target.ok ? target.hostname : null))(checkProviderBaseUrl(delifyProvider.baseUrl)),
     keyInfo: {
       name: keyData.name ?? 'Delify Key',
       groupName: keyData.groupName ?? 'Default',
