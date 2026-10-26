@@ -1,6 +1,6 @@
 <template>
   <div
-    class="flex flex-col gap-5 rounded-xl border border-[#e2ece3] bg-white p-5"
+    class="flex flex-col gap-5 rounded-xl border border-line bg-white p-5"
     role="status"
     aria-busy="true"
   >

@@ -31,7 +31,9 @@
  *      danh sách tệp chưa nạp và các tệp đã nạp ít được phủ nhất. Có
  *      `$GITHUB_STEP_SUMMARY` thì ghi thêm vào đó.
  *
- * CHỈ báo cáo, không chặn: chưa có ngưỡng nào. Wave 3 đặt ngưỡng trên các số này.
+ * CHỈ báo cáo, không chặn, không có ngưỡng tuyệt đối. Cổng là `scripts/coverage-ratchet.ts`
+ * (wave3 D-R): cột "lines, all files" theo thư mục, tính bằng chính các hàm ở đây, không
+ * được tụt quá 0,5 điểm so với `tests/ratchets/coverage.baseline.json`.
  *
  *   node --experimental-strip-types scripts/coverage-summary.ts <lcov> [--root <thư mục repo>]
  *
@@ -270,7 +272,7 @@ export function renderCoverageSummary(files: FileCoverage[], options: { limit?: 
     '',
     `**${percent(all.lines)} of lines across all ${all.files} source files** (${all.neverLoaded} never loaded by a test count as 0 %) · ${percent(all.loadedLines)} of lines in loaded files · ${percent(all.functions)} functions · ${percent(all.branches)} branches (functions and branches: loaded files only).`,
     '',
-    '_Report only — no threshold is enforced. Sources: `server/`, `shared/`, `app/utils/`, `app/composables/` (not `server/db/schema-tables/`). Duplicate lcov records of one file are merged; a file no test loads counts its non-blank, non-comment lines as uncovered._',
+    '_Report only — this table enforces no threshold; the gate is the coverage ratchet (`scripts/coverage-ratchet.ts`: no directory may drop more than 0.5 point below `tests/ratchets/coverage.baseline.json`). Sources: `server/`, `shared/`, `app/utils/`, `app/composables/` (not `server/db/schema-tables/`). Duplicate lcov records of one file are merged; a file no test loads counts its non-blank, non-comment lines as uncovered._',
     '',
     '| directory | files | never loaded | lines, all files | lines, loaded files | functions | branches |',
     '|---|---|---|---|---|---|---|',

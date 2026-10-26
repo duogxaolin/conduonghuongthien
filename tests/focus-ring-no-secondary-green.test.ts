@@ -16,6 +16,7 @@
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import test from 'node:test'
+import { COLOR_TOKENS } from '../shared/color-tokens.ts'
 
 const repo = new URL('../', import.meta.url)
 const root = new URL('app/', repo)
@@ -44,16 +45,25 @@ test('no focus ring, outline or focus border uses #7CB342', () => {
   assert.deepEqual(offenders, [], 'use #4A6741 (white ring + dark offset on dark green)')
 })
 
+/**
+ * The launchers' dark green `#1e4620` — written as its token (`brand-900`) or as that token's
+ * hex in an arbitrary class; both read from COLOR_TOKENS, so neither spelling is pinned here.
+ */
+const DARK_GREEN = `(?:brand-900|\\[${COLOR_TOKENS['brand-900']}\\])`
+
 test('the two dark launchers carry a white ring with a dark offset', () => {
+  let launchers = 0
   for (const [file, marker] of [
-    ['components/ChatWidget.vue', 'chatbot-toggle-btn'],
-    ['components/SocialBubble.client.vue', 'from-[#1e4620] to-[#153317]'],
+    ['components/ChatWidget.vue', /chatbot-toggle-btn/],
+    ['components/SocialBubble.client.vue', new RegExp(`from-${DARK_GREEN} to-\\[#153317\\]`, 'i')],
   ] as const) {
     const source = readFileSync(new URL(file, root), 'utf8')
-    const classLine = source.split('\n').find(line => line.includes(marker) && line.includes('class='))
+    const classLine = source.split('\n').find(line => marker.test(line) && line.includes('class='))
     assert.ok(classLine, `${file}: launcher class not found`)
+    launchers += 1
     assert.match(classLine!, /focus-visible:ring-white\b/, `${file}: launcher focus ring is not white`)
     assert.match(classLine!, /focus-visible:ring-offset-2\b/)
-    assert.match(classLine!, /focus-visible:ring-offset-\[#1e4620\]/)
+    assert.match(classLine!, new RegExp(`focus-visible:ring-offset-${DARK_GREEN}(?![\\w-])`, 'i'))
   }
+  assert.equal(launchers, 2, 'both launchers were found and checked')
 })

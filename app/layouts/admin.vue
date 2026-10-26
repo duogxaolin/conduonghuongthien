@@ -368,7 +368,7 @@ const filteredMenuGroups = computed(() => {
       <div class="h-16 flex items-center justify-between px-3.5 border-b border-white/10 shrink-0 bg-black/10">
         <!-- Brand / Logo (Expanded) -->
         <div v-if="!isSidebarCollapsed" class="flex items-center gap-3 overflow-hidden min-w-0">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#2c6e33] to-[#1a441e] border border-[#8ed694]/30 shadow-[0_2px_10px_rgba(44,110,51,0.3)] flex items-center justify-center text-[#8ed694] shrink-0">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-700 to-[#1a441e] border border-[#8ed694]/30 shadow-[0_2px_10px_rgba(44,110,51,0.3)] flex items-center justify-center text-[#8ed694] shrink-0">
             <i class="fa-solid fa-leaf text-base"></i>
           </div>
           <div class="flex flex-col min-w-0">
@@ -378,7 +378,7 @@ const filteredMenuGroups = computed(() => {
         </div>
 
         <!-- Brand / Logo (Collapsed) -->
-        <div v-else class="w-9 h-9 mx-auto rounded-xl bg-gradient-to-br from-[#2c6e33] to-[#1a441e] border border-[#8ed694]/30 shadow-[0_2px_10px_rgba(44,110,51,0.3)] flex items-center justify-center text-[#8ed694] shrink-0 cursor-pointer" @click="toggleSidebar" title="Mở rộng menu">
+        <div v-else class="w-9 h-9 mx-auto rounded-xl bg-gradient-to-br from-brand-700 to-[#1a441e] border border-[#8ed694]/30 shadow-[0_2px_10px_rgba(44,110,51,0.3)] flex items-center justify-center text-[#8ed694] shrink-0 cursor-pointer" @click="toggleSidebar" title="Mở rộng menu">
           <i class="fa-solid fa-leaf text-base"></i>
         </div>
 
@@ -522,7 +522,7 @@ const filteredMenuGroups = computed(() => {
                             ? 'w-10 h-10 mx-auto justify-center text-white/70 hover:text-white hover:bg-white/[0.08]'
                             : 'px-2.5 py-1.5 text-white/70 hover:text-white hover:bg-white/[0.07] text-[0.82rem]'
                         ]"
-                        active-class="!bg-gradient-to-r !from-[#2c6e33] !to-[#1f5225] !text-white !font-semibold shadow-[0_2px_8px_rgba(44,110,51,0.35)] border border-[#8ed694]/30 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-[#8ed694] before:rounded-r-full"
+                        active-class="!bg-gradient-to-r !from-brand-700 !to-[#1f5225] !text-white !font-semibold shadow-[0_2px_8px_rgba(44,110,51,0.35)] border border-[#8ed694]/30 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-[#8ed694] before:rounded-r-full"
                         :title="item.label"
                       >
                         <i :class="item.icon" class="text-[0.92rem] shrink-0 w-4 text-center text-[#8ed694]/70 group-hover:text-[#8ed694] group-[.router-link-active]:text-white transition-colors"></i>
@@ -555,8 +555,8 @@ const filteredMenuGroups = computed(() => {
                       ? 'w-10 h-10 mx-auto justify-center text-white/70 hover:text-white hover:bg-white/[0.08]'
                       : 'gap-3 px-3 py-2 text-white/70 hover:text-white hover:bg-white/[0.07] text-[0.84rem]'
                   ]"
-                  :active-class="item.path === '/admin' ? '' : '!bg-gradient-to-r !from-[#2c6e33] !to-[#1f5225] !text-white !font-semibold shadow-[0_3px_12px_rgba(44,110,51,0.35)] border border-[#8ed694]/30 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:bg-[#8ed694] before:rounded-r-full'"
-                  :exact-active-class="'!bg-gradient-to-r !from-[#2c6e33] !to-[#1f5225] !text-white !font-semibold shadow-[0_3px_12px_rgba(44,110,51,0.35)] border border-[#8ed694]/30 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:bg-[#8ed694] before:rounded-r-full'"
+                  :active-class="item.path === '/admin' ? '' : '!bg-gradient-to-r !from-brand-700 !to-[#1f5225] !text-white !font-semibold shadow-[0_3px_12px_rgba(44,110,51,0.35)] border border-[#8ed694]/30 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:bg-[#8ed694] before:rounded-r-full'"
+                  :exact-active-class="'!bg-gradient-to-r !from-brand-700 !to-[#1f5225] !text-white !font-semibold shadow-[0_3px_12px_rgba(44,110,51,0.35)] border border-[#8ed694]/30 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:bg-[#8ed694] before:rounded-r-full'"
                   :title="item.label"
                 >
                   <i :class="item.icon" class="text-[0.98rem] shrink-0 w-5 text-center text-[#8ed694]/75 group-hover:text-[#8ed694] group-[.router-link-active]:text-white transition-colors"></i>
@@ -578,7 +578,7 @@ const filteredMenuGroups = computed(() => {
             title="Trang tài khoản của tôi"
           >
             <div class="relative shrink-0">
-              <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#2c6e33] to-[#3a8b43] text-white flex items-center justify-center font-bold text-sm shadow-sm border border-[#8ed694]/30">
+              <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-700 to-[#3a8b43] text-white flex items-center justify-center font-bold text-sm shadow-sm border border-[#8ed694]/30">
                 {{ user.username.charAt(0).toUpperCase() }}
               </div>
               <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-[#4caf50] rounded-full border-2 border-[#0d1f11]" title="Đang trực tuyến"></span>
@@ -608,7 +608,7 @@ const filteredMenuGroups = computed(() => {
         <div v-else class="flex flex-col items-center gap-2">
           <nuxt-link
             to="/admin/profile"
-            class="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#2c6e33] to-[#3a8b43] text-white flex items-center justify-center font-bold text-sm shadow-sm border border-[#8ed694]/30 no-underline"
+            class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 to-[#3a8b43] text-white flex items-center justify-center font-bold text-sm shadow-sm border border-[#8ed694]/30 no-underline"
             :title="`${user.username} (${user.isSuperAdmin ? 'SuperAdmin' : user.roleName}) - Tài khoản`"
           >
             {{ user.username.charAt(0).toUpperCase() }}
@@ -628,25 +628,25 @@ const filteredMenuGroups = computed(() => {
     <!-- Main Content Area -->
     <div class="main-content flex flex-col min-h-screen min-w-0 max-w-full overflow-x-hidden" :class="{ 'sidebar-collapsed': isSidebarCollapsed }">
       <!-- Topbar -->
-      <header class="h-16 bg-white border-b border-[#e2ece3] flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
+      <header class="h-16 bg-white border-b border-line flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
         <div class="flex items-center gap-3">
           <button
-            class="flex lg:hidden w-9 h-9 items-center justify-center rounded-lg bg-[#f0f7f1] text-[#2c6e33] cursor-pointer border-0 hover:bg-[#e1f0e2]"
+            class="flex lg:hidden w-9 h-9 items-center justify-center rounded-lg bg-surface-tint text-brand-700 cursor-pointer border-0 hover:bg-[#e1f0e2]"
             @click="toggleMobileMenu"
           >
             <i class="fa-solid fa-bars"></i>
           </button>
-          <div class="flex items-center gap-2 text-[0.88rem] text-[#667768]">
+          <div class="flex items-center gap-2 text-[0.88rem] text-ink-muted">
             <span class="hidden sm:inline">Con Đường Hướng Thiện</span>
             <span class="hidden sm:inline">/</span>
-            <span class="text-[#122815] font-bold">{{ currentAdminPageTitle }}</span>
+            <span class="text-brand-950 font-bold">{{ currentAdminPageTitle }}</span>
           </div>
         </div>
         <!-- Topbar right: clear-cache button + user chip with dropdown (desktop) -->
         <div class="flex items-center gap-2">
           <!-- Nút xoá cache SWR: sửa nội dung xong là khách thấy ngay, không chờ 60s -->
           <button
-            class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md bg-[#f0f7f1] hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0 text-[#2c6e33]"
+            class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md bg-surface-tint hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0 text-brand-700"
             :disabled="isClearingCache"
             :class="{ 'opacity-60 cursor-wait': isClearingCache }"
             :title="isClearingCache ? 'Đang xoá cache…' : 'Xoá cache trang công khai — nội dung vừa sửa hiện ngay, không chờ 60 giây'"
@@ -660,7 +660,7 @@ const filteredMenuGroups = computed(() => {
           <div v-if="user" class="flex sm:hidden items-center gap-1.5">
             <nuxt-link
               to="/admin/profile"
-              class="w-8 h-8 rounded-full bg-[#2c6e33] text-white text-xs font-bold flex items-center justify-center no-underline"
+              class="w-8 h-8 rounded-full bg-brand-700 text-white text-xs font-bold flex items-center justify-center no-underline"
               :title="`${user.username} - Tài khoản`"
             >
               {{ user.username.charAt(0).toUpperCase() }}
@@ -675,24 +675,24 @@ const filteredMenuGroups = computed(() => {
             </button>
           </div>
           <div v-if="user" class="relative group hidden sm:flex">
-            <button class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#f0f7f1] hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0">
-              <div class="w-8 h-8 rounded-full bg-[#2c6e33] text-white text-sm font-bold flex items-center justify-center shrink-0">
+            <button class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-surface-tint hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0">
+              <div class="w-8 h-8 rounded-full bg-brand-700 text-white text-sm font-bold flex items-center justify-center shrink-0">
                 {{ user.username.charAt(0).toUpperCase() }}
               </div>
-              <span class="text-[0.85rem] font-semibold text-[#122815] truncate max-w-[100px]">{{ user.username }}</span>
-              <i class="fa-solid fa-caret-down text-[#2c6e33] text-xs"></i>
+              <span class="text-[0.85rem] font-semibold text-brand-950 truncate max-w-[100px]">{{ user.username }}</span>
+              <i class="fa-solid fa-caret-down text-brand-700 text-xs"></i>
             </button>
             <!-- Dropdown panel -->
-            <div class="absolute top-full right-0 mt-1 w-52 bg-white border border-[#e2ece3] rounded-lg shadow-lg z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150">
+            <div class="absolute top-full right-0 mt-1 w-52 bg-white border border-line rounded-lg shadow-lg z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150">
               <div class="px-4 py-3">
-                <div class="text-[0.85rem] font-bold text-[#122815]">{{ user.username }}</div>
-                <div class="text-[0.75rem] text-[#667768]">{{ user.isSuperAdmin ? 'SuperAdmin' : user.roleName }}</div>
+                <div class="text-[0.85rem] font-bold text-brand-950">{{ user.username }}</div>
+                <div class="text-[0.75rem] text-ink-muted">{{ user.isSuperAdmin ? 'SuperAdmin' : user.roleName }}</div>
               </div>
-              <div class="border-t border-[#e2ece3]"></div>
+              <div class="border-t border-line"></div>
               <div class="px-2 py-2 flex flex-col gap-1">
                 <nuxt-link
                   to="/admin/profile"
-                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-[#122815] font-semibold no-underline hover:bg-[#f0f7f1] transition-colors"
+                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-brand-950 font-semibold no-underline hover:bg-surface-tint transition-colors"
                 >
                   <i class="fa-solid fa-user-gear w-4 text-center" aria-hidden="true"></i>
                   <span>Tài khoản của tôi</span>
@@ -700,13 +700,13 @@ const filteredMenuGroups = computed(() => {
                 <nuxt-link
                   to="/"
                   target="_blank"
-                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-[#2c6e33] font-semibold no-underline hover:bg-[#f0f7f1] transition-colors"
+                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-brand-700 font-semibold no-underline hover:bg-surface-tint transition-colors"
                 >
                   <i class="fa-solid fa-globe w-4 text-center"></i>
                   <span>Xem Website ↗</span>
                 </nuxt-link>
                 <button
-                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-[#2c6e33] font-semibold hover:bg-[#f0f7f1] transition-colors cursor-pointer border-0 w-full text-left"
+                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-brand-700 font-semibold hover:bg-surface-tint transition-colors cursor-pointer border-0 w-full text-left"
                   :disabled="isClearingCache"
                   @click="clearPublicCache"
                 >

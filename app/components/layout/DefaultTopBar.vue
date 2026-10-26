@@ -24,13 +24,13 @@
           <!-- Dropdown Popover: Premium, spacious card with crystal-clear contrast and flags -->
           <div
             v-if="isLangMenuOpen"
-            class="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white text-[#1E251C] shadow-[0_20px_50px_rgba(15,35,18,0.22),0_4px_12px_rgba(0,0,0,0.06)] border border-[#c8d6c9] p-2 z-[10006] flex flex-col gap-1 animate-fade-slide-up"
+            class="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white text-ink shadow-[0_20px_50px_rgba(15,35,18,0.22),0_4px_12px_rgba(0,0,0,0.06)] border border-line-strong p-2 z-[10006] flex flex-col gap-1 animate-fade-slide-up"
             role="menu"
           >
             <!-- Popover Header -->
             <div class="px-2.5 py-1.5 flex items-center justify-between border-b border-[#f0f4f0] mb-1">
               <span class="text-[0.68rem] font-extrabold text-[#5A6C58] uppercase tracking-wider">{{ t('language') || 'Ngôn ngữ' }}</span>
-              <span class="px-1.5 py-px rounded-full bg-[#f0f4f0] text-[#2c6e33] text-[0.62rem] font-bold">{{ locales.length }} ngôn ngữ</span>
+              <span class="px-1.5 py-px rounded-full bg-[#f0f4f0] text-brand-700 text-[0.62rem] font-bold">{{ locales.length }} ngôn ngữ</span>
             </div>
 
             <!-- Language Options List -->
@@ -43,19 +43,19 @@
                 class="w-full text-left px-2.5 py-2 text-xs font-semibold rounded-xl transition-all border cursor-pointer flex items-center justify-between"
                 :class="currentLang === locale.code
                   ? 'text-[#1e4620] font-bold bg-[#e4f2e5] border-[#c8dcc9] shadow-2xs'
-                  : 'text-[#2C3529] hover:bg-[#f0f7f1] border-transparent hover:border-[#e2ece3]'"
+                  : 'text-[#2C3529] hover:bg-surface-tint border-transparent hover:border-line'"
                 @click="$emit('set-lang', locale.code)"
               >
                 <span class="flex items-center gap-2.5 min-w-0">
-                  <span class="w-7 h-7 rounded-lg bg-white border border-[#e2ece3] flex items-center justify-center text-sm shadow-2xs shrink-0">
+                  <span class="w-7 h-7 rounded-lg bg-white border border-line flex items-center justify-center text-sm shadow-2xs shrink-0">
                     {{ getFlagEmoji(locale.code) }}
                   </span>
                   <span class="flex flex-col min-w-0">
                     <span class="truncate font-bold text-xs">{{ locale.name }}</span>
-                    <span class="text-[0.65rem] text-[#667768] font-mono uppercase">{{ locale.code }}</span>
+                    <span class="text-[0.65rem] text-ink-muted font-mono uppercase">{{ locale.code }}</span>
                   </span>
                 </span>
-                <i v-if="currentLang === locale.code" class="fa-solid fa-circle-check text-sm text-[#2c6e33] shrink-0 ml-2"></i>
+                <i v-if="currentLang === locale.code" class="fa-solid fa-circle-check text-sm text-brand-700 shrink-0 ml-2"></i>
               </button>
             </div>
           </div>

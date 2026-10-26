@@ -67,9 +67,10 @@ const editingModel = ref<PricingRow | null>(null)
 const editModelForm = ref({ label: '', promptCostPerMillion: 0, completionCostPerMillion: 0, isActive: true })
 const savingModelEdit = ref(false)
 
-// Delify sync state
+// Delify sync state — shape of `delifyUsage` in server/api/admin/ai/delify/sync.post.ts.
+type DelifyUsage = { windowCostUsd: number | null; windowRequests: number | null; allowedModels: string[] | null }
 const syncingDelify = ref(false)
-const delifyUsage = ref<{ windowCostUsd: number | null; windowRequests: number | null; allowedModels: string[] | null } | null>(null)
+const delifyUsage = ref<DelifyUsage | null>(null)
 
 // ── Bulk selection for providers ──────────────────────────────────────
 const selectedProviderIds = ref<Set<number>>(new Set())
@@ -100,7 +101,7 @@ async function bulkDeleteProviders() {
 
   deletingBulkProviders.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; deleted: number }>)('/api/admin/ai/providers/bulk-delete', {
+    const res = await adminFetch<{ ok: true; deleted: number }>('/api/admin/ai/providers/bulk-delete', {
       method: 'POST',
       body: { ids },
     })
@@ -155,7 +156,7 @@ async function bulkDeleteModels() {
 
   deletingBulkModels.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; deleted: number }>)('/api/admin/ai/pricing/bulk-delete', {
+    const res = await adminFetch<{ ok: true; deleted: number }>('/api/admin/ai/pricing/bulk-delete', {
       method: 'POST',
       body: { models },
     })
@@ -174,8 +175,8 @@ async function loadProviders() {
   providersLoading.value = true
   try {
     const [pData, prData] = await Promise.all([
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ providers: ProviderRow[] }>)('/api/admin/ai/providers'),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: PricingRow[] }>)('/api/admin/ai/pricing'),
+      adminFetch<{ ok: true; providers: ProviderRow[] }>('/api/admin/ai/providers'),
+      adminFetch<{ ok: true; pricing: PricingRow[] }>('/api/admin/ai/pricing'),
     ])
     providers.value = pData.providers
     pricingRows.value = prData.pricing
@@ -184,13 +185,6 @@ async function loadProviders() {
   } finally {
     providersLoading.value = false
   }
-}
-
-async function loadPricing() {
-  try {
-    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: PricingRow[] }>)('/api/admin/ai/pricing')
-    pricingRows.value = data.pricing
-  } catch { /* optional */ }
 }
 
 function openProviderEdit(p: ProviderRow) {
@@ -203,7 +197,7 @@ async function saveProvider() {
   if (!editingProvider.value) return
   savingProvider.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/providers/${editingProvider.value.id}`, {
+    await adminFetch<{ ok: true; message?: string }>(`/api/admin/ai/providers/${editingProvider.value.id}`, {
       method: 'PUT',
       body: {
         label: providerForm.value.label,
@@ -226,7 +220,7 @@ async function testProvider(id: number) {
   testingProvider.value = id
   testResult.value = null
   try {
-    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; model?: string; error?: string }>)(`/api/admin/ai/providers/${id}/test`, {
+    const result = await adminFetch<{ ok: true; model?: string } | { ok: false; error: string }>(`/api/admin/ai/providers/${id}/test`, {
       method: 'POST',
     })
     if (result.ok) {
@@ -263,7 +257,7 @@ async function createProvider() {
   savingNewProvider.value = true
   newProviderError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/providers', {
+    await adminFetch<{ ok: true; id?: number }>('/api/admin/ai/providers', {
       method: 'POST',
       body: {
         provider: newProviderForm.value.provider,
@@ -287,7 +281,7 @@ async function deleteProvider(p: ProviderRow) {
   if (!await confirm({ title: 'Xoá nhà cung cấp', message: `Xoá "${p.label}"? Dịch vụ đang dùng nhà cung cấp này sẽ cần gán lại.`, danger: true, confirmLabel: 'Xoá' })) return
   deletingProviderId.value = p.id
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/providers/${p.id}`, { method: 'DELETE' })
+    await adminFetch<{ ok: true }>(`/api/admin/ai/providers/${p.id}`, { method: 'DELETE' })
     toast.success('Đã xoá nhà cung cấp.')
     await loadProviders()
   } catch (err: unknown) {
@@ -304,7 +298,7 @@ async function toggleModelActive(m: PricingRow) {
   const original = m.isActive
   m.isActive = !original
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, {
+    await adminFetch<{ ok: true; message?: string }>(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, {
       method: 'PUT',
       body: { isActive: m.isActive },
     })
@@ -330,7 +324,7 @@ async function addModelToProvider() {
   savingNewModel.value = true
   newModelError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/pricing', {
+    await adminFetch<{ ok: true }>('/api/admin/ai/pricing', {
       method: 'POST',
       body: {
         model: newModelForm.value.model.trim(),
@@ -365,7 +359,7 @@ async function saveEditModel() {
   if (!editingModel.value) return
   savingModelEdit.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/pricing/${encodeURIComponent(editingModel.value.model)}`, {
+    await adminFetch<{ ok: true; message?: string }>(`/api/admin/ai/pricing/${encodeURIComponent(editingModel.value.model)}`, {
       method: 'PUT',
       body: {
         label: editModelForm.value.label.trim() || null,
@@ -387,7 +381,7 @@ async function saveEditModel() {
 async function deleteModel(m: PricingRow) {
   if (!await confirm({ title: 'Xoá Model', message: `Xoá model "${m.model}" khỏi ${m.provider}?`, danger: true, confirmLabel: 'Xoá' })) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, { method: 'DELETE' })
+    await adminFetch<{ ok: true }>(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, { method: 'DELETE' })
     toast.success(`Đã xoá model "${m.model}".`)
     await loadProviders()
   } catch (err: unknown) {
@@ -410,15 +404,11 @@ const modelTestModal = ref<{
 async function testCallModel(provider: string, model: string) {
   testingModelKey.value = model
   try {
-    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      model?: string
-      reply?: string
-      durationMs?: number
-      usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
-      costVnd?: number
-      error?: string
-    }>)('/api/admin/ai/test-call', {
+    // server/api/admin/ai/test-call.post.ts: a failed call answers 200 `{ ok: false, error }`.
+    const result = await adminFetch<{
+      ok: true; model: string; provider: string; reply: string; durationMs: number
+      usage: { promptTokens: number; completionTokens: number; totalTokens: number }; costVnd: number
+    } | { ok: false; model?: string; durationMs?: number; error: string }>('/api/admin/ai/test-call', {
       method: 'POST',
       body: {
         provider,
@@ -468,13 +458,9 @@ async function testCallModel(provider: string, model: string) {
 async function syncDelifyPricing() {
   syncingDelify.value = true
   try {
-    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      upserted: number
-      syncedLogs: number
-      totalFromApi: number
-      delifyUsage: { windowCostUsd: number | null; windowRequests: number | null; allowedModels: string[] | null } | null
-    }>)('/api/admin/ai/delify/sync', {
+    const result = await adminFetch<{
+      ok: true; upserted: number; skipped: number; syncedLogs: number; totalFromApi: number; delifyUsage: DelifyUsage | null
+    }>('/api/admin/ai/delify/sync', {
       method: 'POST',
     })
     if (result.delifyUsage) {
@@ -517,25 +503,25 @@ defineExpose<{
   <div class="flex flex-col gap-5">
     <div v-if="providersError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
       <strong>Lỗi:</strong> {{ providersError }}
-      <button type="button" class="font-bold underline text-[#4A6741] ml-2" @click="loadProviders()">Thử lại</button>
+      <button type="button" class="font-bold underline text-brand-600 ml-2" @click="loadProviders()">Thử lại</button>
     </div>
 
     <div v-if="providersLoading" class="flex items-center justify-center py-12" role="status" aria-busy="true">
       <span class="sr-only">Đang tải danh sách nhà cung cấp</span>
       <div class="flex gap-1.5" aria-hidden="true">
-        <span class="w-2.5 h-2.5 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none"></span>
-        <span class="w-2.5 h-2.5 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none" style="animation-delay: 0.15s"></span>
-        <span class="w-2.5 h-2.5 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none" style="animation-delay: 0.3s"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none" style="animation-delay: 0.15s"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none" style="animation-delay: 0.3s"></span>
       </div>
     </div>
 
     <template v-if="!providersLoading && !providersError">
       <!-- Header action bar -->
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <p class="m-0 text-sm text-[#667768]">
+        <p class="m-0 text-sm text-ink-muted">
           Quản lý API Key, kết nối và cấu hình từng model được phép dùng cho mỗi Nhà cung cấp.
         </p>
-        <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="openCreateProvider()">
+        <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="openCreateProvider()">
           <i class="fa-solid fa-plus mr-1.5" aria-hidden="true"></i> Thêm nhà cung cấp
         </button>
       </div>
@@ -543,7 +529,7 @@ defineExpose<{
       <!-- Provider Bulk Action Bar -->
       <div v-if="selectedProviderIds.size > 0" class="rounded-xl border border-red-200 bg-red-50/80 p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
         <div class="flex items-center gap-2">
-          <i class="fa-solid fa-circle-check text-[#d12420]" aria-hidden="true"></i>
+          <i class="fa-solid fa-circle-check text-danger" aria-hidden="true"></i>
           <span class="text-xs font-bold text-[#a32924]">
             Đã chọn <strong>{{ selectedProviderIds.size }}</strong> nhà cung cấp
           </span>
@@ -551,14 +537,14 @@ defineExpose<{
         <div class="flex items-center gap-2">
           <button
             type="button"
-            class="px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-[#f0f4f0]"
+            class="px-3 py-1.5 rounded-lg border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-[#f0f4f0]"
             @click="selectedProviderIds.clear()"
           >
             Bỏ chọn
           </button>
           <button
             type="button"
-            class="px-3.5 py-1.5 rounded-lg bg-[#d12420] text-white text-xs font-bold hover:bg-[#b01e1a] shadow-sm transition-colors"
+            class="px-3.5 py-1.5 rounded-lg bg-danger text-white text-xs font-bold hover:bg-[#b01e1a] shadow-sm transition-colors"
             :disabled="deletingBulkProviders"
             @click="bulkDeleteProviders()"
           >
@@ -573,23 +559,23 @@ defineExpose<{
         <div
           v-for="p in providers"
           :key="p.id"
-          class="rounded-xl border border-[#e2ece3] bg-white overflow-hidden shadow-sm transition-all"
+          class="rounded-xl border border-line bg-white overflow-hidden shadow-sm transition-all"
         >
           <!-- Provider Card Header -->
-          <div class="p-4 sm:p-5 flex flex-col gap-3 border-b border-[#e2ece3] bg-[#fafcfa]">
+          <div class="p-4 sm:p-5 flex flex-col gap-3 border-b border-line bg-[#fafcfa]">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex items-center gap-3">
                 <!-- Checkbox to select provider -->
                 <label class="flex items-center cursor-pointer p-0.5" title="Chọn nhà cung cấp này để xoá">
                   <input
                     type="checkbox"
-                    class="w-4 h-4 accent-[#2c6e33] rounded cursor-pointer"
+                    class="w-4 h-4 accent-brand-700 rounded cursor-pointer"
                     :checked="selectedProviderIds.has(p.id)"
                     @change="toggleSelectProvider(p.id)"
                   />
                 </label>
                 <!-- Provider Icon -->
-                <div class="w-10 h-10 rounded-xl bg-[#e4f0e2] text-[#2c6e33] flex items-center justify-center text-lg font-bold">
+                <div class="w-10 h-10 rounded-xl bg-[#e4f0e2] text-brand-700 flex items-center justify-center text-lg font-bold">
                   <i v-if="p.provider === 'delify'" class="fa-solid fa-bolt" aria-hidden="true"></i>
                   <i v-else-if="p.provider === 'google'" class="fa-brands fa-google" aria-hidden="true"></i>
                   <i v-else-if="p.provider === 'openai'" class="fa-solid fa-brain" aria-hidden="true"></i>
@@ -598,8 +584,8 @@ defineExpose<{
                 </div>
                 <div>
                   <div class="flex items-center gap-2">
-                    <h2 class="m-0 text-base font-extrabold text-[#122815]">{{ p.label }}</h2>
-                    <span class="text-xs font-mono text-[#667768] bg-[#f0f4f0] px-2 py-0.5 rounded">({{ p.provider }})</span>
+                    <h2 class="m-0 text-base font-extrabold text-brand-950">{{ p.label }}</h2>
+                    <span class="text-xs font-mono text-ink-muted bg-[#f0f4f0] px-2 py-0.5 rounded">({{ p.provider }})</span>
                     <span
                       class="px-2 py-0.5 rounded-full text-xs font-semibold"
                       :class="p.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'"
@@ -607,8 +593,8 @@ defineExpose<{
                       {{ p.isActive ? 'Hoạt động' : 'Tắt' }}
                     </span>
                   </div>
-                  <p class="m-0 mt-0.5 text-xs text-[#667768] flex items-center gap-2 flex-wrap">
-                    <span>Base URL: <code class="text-[#2c6e33]">{{ p.baseUrl ?? 'Chưa cấu hình' }}</code></span>
+                  <p class="m-0 mt-0.5 text-xs text-ink-muted flex items-center gap-2 flex-wrap">
+                    <span>Base URL: <code class="text-brand-700">{{ p.baseUrl ?? 'Chưa cấu hình' }}</code></span>
                     <span>•</span>
                     <span>API Key: <code>{{ p.apiKeyLastFour ? '••••' + p.apiKeyLastFour : 'Chưa nhập' }}</code></span>
                   </p>
@@ -619,7 +605,7 @@ defineExpose<{
               <div class="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
-                  class="px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#122815] hover:bg-[#f0f7f1]"
+                  class="px-3 py-1.5 rounded-lg border border-line-strong bg-white text-xs font-semibold text-brand-950 hover:bg-surface-tint"
                   :disabled="testingProvider === p.id"
                   @click="testProvider(p.id)"
                 >
@@ -628,14 +614,14 @@ defineExpose<{
                 </button>
                 <button
                   type="button"
-                  class="px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#122815] hover:bg-[#f0f7f1]"
+                  class="px-3 py-1.5 rounded-lg border border-line-strong bg-white text-xs font-semibold text-brand-950 hover:bg-surface-tint"
                   @click="openProviderEdit(p)"
                 >
                   <i class="fa-solid fa-gear mr-1" aria-hidden="true"></i> Cài đặt
                 </button>
                 <button
                   type="button"
-                  class="px-2.5 py-1.5 rounded-lg border border-transparent text-xs font-semibold text-[#d12420] hover:bg-red-50"
+                  class="px-2.5 py-1.5 rounded-lg border border-transparent text-xs font-semibold text-danger hover:bg-red-50"
                   :disabled="deletingProviderId === p.id"
                   @click="deleteProvider(p)"
                 >
@@ -643,7 +629,7 @@ defineExpose<{
                 </button>
                 <button
                   type="button"
-                  class="p-1.5 rounded-lg text-[#667768] hover:bg-[#e4ece4]"
+                  class="p-1.5 rounded-lg text-ink-muted hover:bg-[#e4ece4]"
                   :title="isProviderPanelOpen(p.provider) ? 'Thu gọn models' : 'Mở rộng models'"
                   @click="toggleProviderPanel(p.provider)"
                 >
@@ -663,10 +649,10 @@ defineExpose<{
               <!-- Models Sub-Header -->
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="flex items-center gap-2">
-                  <span class="text-xs font-bold text-[#122815] uppercase tracking-wide">
+                  <span class="text-xs font-bold text-brand-950 uppercase tracking-wide">
                     Danh sách Models của {{ p.label }}
                   </span>
-                  <span class="text-xs text-[#667768]">
+                  <span class="text-xs text-ink-muted">
                     ({{ modelsForProvider(p.provider).length }} models, {{ modelsForProvider(p.provider).filter(m => m.isActive).length }} đang bật)
                   </span>
                 </div>
@@ -676,7 +662,7 @@ defineExpose<{
                   <button
                     v-if="p.provider === 'delify'"
                     type="button"
-                    class="px-3 py-1.5 rounded-lg border border-[#2c6e33] bg-[#f0f7f1] text-xs font-bold text-[#2c6e33] hover:bg-[#e4f0e2]"
+                    class="px-3 py-1.5 rounded-lg border border-brand-700 bg-surface-tint text-xs font-bold text-brand-700 hover:bg-[#e4f0e2]"
                     :disabled="syncingDelify"
                     @click="syncDelifyPricing()"
                   >
@@ -687,7 +673,7 @@ defineExpose<{
                   <!-- Add Model to this provider -->
                   <button
                     type="button"
-                    class="px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#122815] hover:bg-[#f0f7f1]"
+                    class="px-3 py-1.5 rounded-lg border border-line-strong bg-white text-xs font-semibold text-brand-950 hover:bg-surface-tint"
                     @click="openAddModel(p.provider)"
                   >
                     <i class="fa-solid fa-plus mr-1" aria-hidden="true"></i> Thêm Model
@@ -705,14 +691,14 @@ defineExpose<{
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    class="px-2.5 py-1 rounded border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-[#f0f4f0]"
+                    class="px-2.5 py-1 rounded border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-[#f0f4f0]"
                     @click="modelsForProvider(p.provider).forEach(m => selectedModelKeys.delete(m.model))"
                   >
                     Bỏ chọn
                   </button>
                   <button
                     type="button"
-                    class="px-3 py-1 rounded bg-[#d12420] text-white text-xs font-bold hover:bg-[#b01e1a] shadow-sm transition-colors"
+                    class="px-3 py-1 rounded bg-danger text-white text-xs font-bold hover:bg-[#b01e1a] shadow-sm transition-colors"
                     :disabled="deletingBulkModels"
                     @click="bulkDeleteModels()"
                   >
@@ -723,7 +709,7 @@ defineExpose<{
               </div>
 
               <!-- Models Table -->
-              <div v-if="modelsForProvider(p.provider).length === 0" class="rounded-lg border border-dashed border-[#c8d6c9] p-6 text-center text-xs text-[#667768]">
+              <div v-if="modelsForProvider(p.provider).length === 0" class="rounded-lg border border-dashed border-line-strong p-6 text-center text-xs text-ink-muted">
                 Chưa có model nào cho nhà cung cấp này.
                 <template v-if="p.provider === 'delify'">
                   Bấm nút <strong>"⚡ Tải model & giá từ Delify API"</strong> ở trên để nạp tự động toàn bộ model của Delify!
@@ -733,39 +719,39 @@ defineExpose<{
                 </template>
               </div>
 
-              <div v-else class="rounded-lg border border-[#e2ece3] overflow-x-auto">
+              <div v-else class="rounded-lg border border-line overflow-x-auto">
                 <table class="w-full text-xs">
                   <thead class="bg-[#f7faf7] text-left">
                     <tr>
                       <th class="px-2.5 py-2 w-8 text-center">
                         <input
                           type="checkbox"
-                          class="w-3.5 h-3.5 accent-[#2c6e33] rounded cursor-pointer"
+                          class="w-3.5 h-3.5 accent-brand-700 rounded cursor-pointer"
                           :checked="isAllModelsSelectedForProvider(p.provider)"
                           title="Chọn tất cả model của nhà cung cấp này"
                           @change="toggleSelectAllModelsForProvider(p.provider)"
                         />
                       </th>
-                      <th class="px-3 py-2 font-bold text-[#122815]">Trạng thái</th>
-                      <th class="px-3 py-2 font-bold text-[#122815]">Mã Model (API)</th>
-                      <th class="px-3 py-2 font-bold text-[#122815]">Tên hiển thị</th>
-                      <th class="px-3 py-2 font-bold text-[#122815] text-right">Giá Input ($/1M)</th>
-                      <th class="px-3 py-2 font-bold text-[#122815] text-right">Giá Output ($/1M)</th>
-                      <th class="px-3 py-2 font-bold text-[#122815] text-right">Ước tính / call</th>
-                      <th class="px-3 py-2 font-bold text-[#122815] text-center">Thao tác</th>
+                      <th class="px-3 py-2 font-bold text-brand-950">Trạng thái</th>
+                      <th class="px-3 py-2 font-bold text-brand-950">Mã Model (API)</th>
+                      <th class="px-3 py-2 font-bold text-brand-950">Tên hiển thị</th>
+                      <th class="px-3 py-2 font-bold text-brand-950 text-right">Giá Input ($/1M)</th>
+                      <th class="px-3 py-2 font-bold text-brand-950 text-right">Giá Output ($/1M)</th>
+                      <th class="px-3 py-2 font-bold text-brand-950 text-right">Ước tính / call</th>
+                      <th class="px-3 py-2 font-bold text-brand-950 text-center">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr
                       v-for="m in modelsForProvider(p.provider)"
                       :key="m.model"
-                      class="border-t border-[#e2ece3] hover:bg-[#fafcfa] transition-colors"
+                      class="border-t border-line hover:bg-[#fafcfa] transition-colors"
                       :class="!m.isActive ? 'opacity-50 bg-[#fafafa]' : ''"
                     >
                       <td class="px-2.5 py-2 text-center">
                         <input
                           type="checkbox"
-                          class="w-3.5 h-3.5 accent-[#2c6e33] rounded cursor-pointer"
+                          class="w-3.5 h-3.5 accent-brand-700 rounded cursor-pointer"
                           :checked="isModelSelected(m.model)"
                           @change="toggleSelectModel(m.model)"
                         />
@@ -775,7 +761,7 @@ defineExpose<{
                         <button
                           type="button"
                           class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-                          :class="m.isActive ? 'bg-[#2c6e33]' : 'bg-gray-300'"
+                          :class="m.isActive ? 'bg-brand-700' : 'bg-gray-300'"
                           :title="m.isActive ? 'Bấm để tắt model này' : 'Bấm để bật model này'"
                           @click="toggleModelActive(m)"
                         >
@@ -786,17 +772,17 @@ defineExpose<{
                           ></span>
                         </button>
                       </td>
-                      <td class="px-3 py-2 font-mono font-bold text-[#122815]">{{ m.model }}</td>
-                      <td class="px-3 py-2 text-[#667768]">{{ m.label ?? '—' }}</td>
-                      <td class="px-3 py-2 text-right font-mono text-[#2c6e33]">${{ m.promptCostPerMillion }}</td>
-                      <td class="px-3 py-2 text-right font-mono text-[#2c6e33]">${{ m.completionCostPerMillion }}</td>
-                      <td class="px-3 py-2 text-right text-[#667768] font-mono">
+                      <td class="px-3 py-2 font-mono font-bold text-brand-950">{{ m.model }}</td>
+                      <td class="px-3 py-2 text-ink-muted">{{ m.label ?? '—' }}</td>
+                      <td class="px-3 py-2 text-right font-mono text-brand-700">${{ m.promptCostPerMillion }}</td>
+                      <td class="px-3 py-2 text-right font-mono text-brand-700">${{ m.completionCostPerMillion }}</td>
+                      <td class="px-3 py-2 text-right text-ink-muted font-mono">
                         {{ estimatedCostVnd(m.promptCostPerMillion, m.completionCostPerMillion) }}
                       </td>
                       <td class="px-3 py-2 text-center whitespace-nowrap">
                         <button
                           type="button"
-                          class="px-2 py-0.5 rounded border border-[#c8d6c9] bg-white text-xs font-bold text-[#2c6e33] hover:bg-[#f0f7f1] mr-2 transition-colors inline-flex items-center gap-1"
+                          class="px-2 py-0.5 rounded border border-line-strong bg-white text-xs font-bold text-brand-700 hover:bg-surface-tint mr-2 transition-colors inline-flex items-center gap-1"
                           :disabled="testingModelKey === m.model"
                           title="Gọi thử nghiệm model này (Xin chào...)"
                           @click="testCallModel(p.provider, m.model)"
@@ -804,10 +790,10 @@ defineExpose<{
                           <i class="fa-solid fa-bolt text-[0.65rem]" aria-hidden="true"></i>
                           {{ testingModelKey === m.model ? 'Đang gọi...' : 'Test' }}
                         </button>
-                        <button type="button" class="text-[#2c6e33] font-semibold hover:underline mr-2" @click="openEditModel(m)">
+                        <button type="button" class="text-brand-700 font-semibold hover:underline mr-2" @click="openEditModel(m)">
                           Sửa giá
                         </button>
-                        <button type="button" class="text-[#d12420] font-semibold hover:underline" @click="deleteModel(m)">
+                        <button type="button" class="text-danger font-semibold hover:underline" @click="deleteModel(m)">
                           Xoá
                         </button>
                       </td>
@@ -825,36 +811,36 @@ defineExpose<{
         <AdminModal :open="showCreateForm" title="Thêm nhà cung cấp mới" :busy="savingNewProvider" @close="showCreateForm = false">
           <div class="flex flex-col gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Loại nhà cung cấp</span>
+              <span class="text-brand-950">Loại nhà cung cấp</span>
               <select v-model="newProviderForm.provider" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm bg-white" @change="onNewProviderPresetChange()">
                 <option v-for="preset in PROVIDER_PRESETS" :key="preset.value" :value="preset.value">{{ preset.label }}</option>
               </select>
-              <span v-if="PROVIDER_PRESETS.find(p => p.value === newProviderForm.provider)?.hint" class="text-xs text-[#667768] font-normal">
+              <span v-if="PROVIDER_PRESETS.find(p => p.value === newProviderForm.provider)?.hint" class="text-xs text-ink-muted font-normal">
                 {{ PROVIDER_PRESETS.find(p => p.value === newProviderForm.provider)?.hint }}
               </span>
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Nhãn hiển thị</span>
+              <span class="text-brand-950">Nhãn hiển thị</span>
               <input v-model="newProviderForm.label" type="text" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Base URL</span>
+              <span class="text-brand-950">Base URL</span>
               <input v-model="newProviderForm.baseUrl" type="text" placeholder="https://..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
             </label>
             <label class="flex items-center gap-3 text-sm font-semibold">
-              <input v-model="newProviderForm.isActive" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />
-              <span class="text-[#122815]">Kích hoạt nhà cung cấp</span>
+              <input v-model="newProviderForm.isActive" type="checkbox" class="w-4 h-4 accent-brand-700" />
+              <span class="text-brand-950">Kích hoạt nhà cung cấp</span>
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">API Key</span>
+              <span class="text-brand-950">API Key</span>
               <input v-model="newProviderForm.apiKey" type="password" placeholder="Nhập API key" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
-              <span class="text-xs text-[#667768] font-normal">Có thể nhập sau nếu chưa có.</span>
+              <span class="text-xs text-ink-muted font-normal">Có thể nhập sau nếu chưa có.</span>
             </label>
             <div v-if="newProviderError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ newProviderError }}</div>
           </div>
           <template #footer>
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="showCreateForm = false">Huỷ</button>
-              <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="createProvider()" :disabled="savingNewProvider">
+              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="showCreateForm = false">Huỷ</button>
+              <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="createProvider()" :disabled="savingNewProvider">
                 {{ savingNewProvider ? 'Đang thêm...' : 'Thêm' }}
               </button>
           </template>
@@ -869,31 +855,31 @@ defineExpose<{
         >
           <div v-if="editingProvider" class="flex flex-col gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Nhãn hiển thị</span>
+              <span class="text-brand-950">Nhãn hiển thị</span>
               <input v-model="providerForm.label" type="text" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Base URL</span>
+              <span class="text-brand-950">Base URL</span>
               <input v-model="providerForm.baseUrl" type="text" placeholder="https://..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
-              <span class="text-xs text-[#667768] font-normal">Chỉ nhận https:// với tên miền công khai. Đổi Base URL thì phải nhập lại API key bên dưới.</span>
+              <span class="text-xs text-ink-muted font-normal">Chỉ nhận https:// với tên miền công khai. Đổi Base URL thì phải nhập lại API key bên dưới.</span>
             </label>
             <label class="flex items-center gap-3 text-sm font-semibold">
-              <input v-model="providerForm.isActive" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />
-              <span class="text-[#122815]">Kích hoạt nhà cung cấp</span>
+              <input v-model="providerForm.isActive" type="checkbox" class="w-4 h-4 accent-brand-700" />
+              <span class="text-brand-950">Kích hoạt nhà cung cấp</span>
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">API Key mới</span>
+              <span class="text-brand-950">API Key mới</span>
               <input v-model="providerForm.apiKey" type="password" :placeholder="editingProvider.apiKeyLastFour ? '••••' + editingProvider.apiKeyLastFour + ' (đã lưu)' : 'Nhập API key'" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
-              <span class="text-xs text-[#667768] font-normal">Để trống để giữ nguyên key hiện tại.</span>
+              <span class="text-xs text-ink-muted font-normal">Để trống để giữ nguyên key hiện tại.</span>
             </label>
             <div v-if="testResult" class="rounded-lg p-3 text-sm" :class="testResult.includes('Thất bại') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'" role="status">{{ testResult }}</div>
           </div>
           <template #footer>
-              <button v-if="editingProvider" type="button" class="mr-auto px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="testProvider(editingProvider.id)" :disabled="!!testingProvider">
+              <button v-if="editingProvider" type="button" class="mr-auto px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="testProvider(editingProvider.id)" :disabled="!!testingProvider">
                 {{ testingProvider ? 'Đang kiểm tra...' : 'Kiểm tra kết nối' }}
               </button>
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="editingProvider = null">Huỷ</button>
-              <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="saveProvider()" :disabled="savingProvider">
+              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="editingProvider = null">Huỷ</button>
+              <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="saveProvider()" :disabled="savingProvider">
                 {{ savingProvider ? 'Đang lưu...' : 'Lưu' }}
               </button>
           </template>
@@ -908,32 +894,32 @@ defineExpose<{
         >
           <div class="flex flex-col gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Mã Model (ID gọi API)</span>
+              <span class="text-brand-950">Mã Model (ID gọi API)</span>
               <input v-model="newModelForm.model" type="text" placeholder="flash, glm-5.3, gpt-4o..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm font-mono" />
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Tên hiển thị (Label)</span>
+              <span class="text-brand-950">Tên hiển thị (Label)</span>
               <input v-model="newModelForm.label" type="text" placeholder="GLM 5.3 Thông minh..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
             </label>
             <div class="grid grid-cols-2 gap-3">
               <label class="flex flex-col gap-1.5 text-sm font-bold">
-                <span class="text-[#122815]">Giá Input ($ / 1M)</span>
+                <span class="text-brand-950">Giá Input ($ / 1M)</span>
                 <input v-model.number="newModelForm.promptCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
               </label>
               <label class="flex flex-col gap-1.5 text-sm font-bold">
-                <span class="text-[#122815]">Giá Output ($ / 1M)</span>
+                <span class="text-brand-950">Giá Output ($ / 1M)</span>
                 <input v-model.number="newModelForm.completionCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
               </label>
             </div>
             <label class="flex items-center gap-3 text-sm font-semibold">
-              <input v-model="newModelForm.isActive" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />
-              <span class="text-[#122815]">Kích hoạt model (cho phép các dịch vụ sử dụng)</span>
+              <input v-model="newModelForm.isActive" type="checkbox" class="w-4 h-4 accent-brand-700" />
+              <span class="text-brand-950">Kích hoạt model (cho phép các dịch vụ sử dụng)</span>
             </label>
             <div v-if="newModelError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ newModelError }}</div>
           </div>
           <template #footer>
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="showAddModelModal = false">Huỷ</button>
-              <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="addModelToProvider()" :disabled="savingNewModel">
+              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="showAddModelModal = false">Huỷ</button>
+              <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="addModelToProvider()" :disabled="savingNewModel">
                 {{ savingNewModel ? 'Đang thêm...' : 'Thêm Model' }}
               </button>
           </template>
@@ -947,29 +933,29 @@ defineExpose<{
           @close="editingModel = null"
         >
           <div v-if="editingModel" class="flex flex-col gap-4">
-            <p class="m-0 text-xs text-[#667768]">Nhà cung cấp: <strong>{{ editingModel.provider }}</strong></p>
+            <p class="m-0 text-xs text-ink-muted">Nhà cung cấp: <strong>{{ editingModel.provider }}</strong></p>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Tên hiển thị</span>
+              <span class="text-brand-950">Tên hiển thị</span>
               <input v-model="editModelForm.label" type="text" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
             </label>
             <div class="grid grid-cols-2 gap-3">
               <label class="flex flex-col gap-1.5 text-sm font-bold">
-                <span class="text-[#122815]">Giá Input ($ / 1M)</span>
+                <span class="text-brand-950">Giá Input ($ / 1M)</span>
                 <input v-model.number="editModelForm.promptCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
               </label>
               <label class="flex flex-col gap-1.5 text-sm font-bold">
-                <span class="text-[#122815]">Giá Output ($ / 1M)</span>
+                <span class="text-brand-950">Giá Output ($ / 1M)</span>
                 <input v-model.number="editModelForm.completionCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
               </label>
             </div>
             <label class="flex items-center gap-3 text-sm font-semibold">
-              <input v-model="editModelForm.isActive" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />
-              <span class="text-[#122815]">Kích hoạt model này</span>
+              <input v-model="editModelForm.isActive" type="checkbox" class="w-4 h-4 accent-brand-700" />
+              <span class="text-brand-950">Kích hoạt model này</span>
             </label>
           </div>
           <template #footer>
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="editingModel = null">Huỷ</button>
-              <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="saveEditModel()" :disabled="savingModelEdit">
+              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="editingModel = null">Huỷ</button>
+              <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="saveEditModel()" :disabled="savingModelEdit">
                 {{ savingModelEdit ? 'Đang lưu...' : 'Lưu' }}
               </button>
           </template>
@@ -985,7 +971,7 @@ defineExpose<{
         >
           <div v-if="modelTestModal" class="flex flex-col gap-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <p class="m-0 text-xs text-[#667768]">Nhà cung cấp: <strong>{{ modelTestModal.provider }}</strong></p>
+              <p class="m-0 text-xs text-ink-muted">Nhà cung cấp: <strong>{{ modelTestModal.provider }}</strong></p>
               <span
                 class="px-2.5 py-1 rounded-full text-xs font-bold"
                 :class="!modelTestModal.error ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'"
@@ -997,23 +983,23 @@ defineExpose<{
             <!-- Metrics if success -->
             <div v-if="!modelTestModal.error" class="grid grid-cols-3 gap-2 p-3 rounded-xl bg-[#f4f7f4] text-xs">
               <div>
-                <span class="text-[#667768]">Thời gian</span>
-                <p class="m-0 font-bold text-[#122815] font-mono">{{ modelTestModal.durationMs }}ms</p>
+                <span class="text-ink-muted">Thời gian</span>
+                <p class="m-0 font-bold text-brand-950 font-mono">{{ modelTestModal.durationMs }}ms</p>
               </div>
               <div>
-                <span class="text-[#667768]">Tokens tiêu thụ</span>
-                <p class="m-0 font-bold text-[#122815] font-mono">{{ modelTestModal.usage.totalTokens }} ({{ modelTestModal.usage.promptTokens }} in / {{ modelTestModal.usage.completionTokens }} out)</p>
+                <span class="text-ink-muted">Tokens tiêu thụ</span>
+                <p class="m-0 font-bold text-brand-950 font-mono">{{ modelTestModal.usage.totalTokens }} ({{ modelTestModal.usage.promptTokens }} in / {{ modelTestModal.usage.completionTokens }} out)</p>
               </div>
               <div>
-                <span class="text-[#667768]">Chi phí ước tính</span>
-                <p class="m-0 font-bold text-[#2c6e33] font-mono">{{ formatVnd(modelTestModal.costVnd) }}</p>
+                <span class="text-ink-muted">Chi phí ước tính</span>
+                <p class="m-0 font-bold text-brand-700 font-mono">{{ formatVnd(modelTestModal.costVnd) }}</p>
               </div>
             </div>
 
             <!-- Response text or error -->
             <div v-if="!modelTestModal.error" class="flex flex-col gap-1.5">
-              <span class="text-xs font-bold text-[#667768] uppercase">Phản hồi từ Model:</span>
-              <div class="rounded-xl border border-[#c8d6c9] bg-[#fafcfa] p-3.5 text-sm text-[#122815] whitespace-pre-wrap font-sans leading-relaxed max-h-[220px] overflow-y-auto">
+              <span class="text-xs font-bold text-ink-muted uppercase">Phản hồi từ Model:</span>
+              <div class="rounded-xl border border-line-strong bg-[#fafcfa] p-3.5 text-sm text-brand-950 whitespace-pre-wrap font-sans leading-relaxed max-h-[220px] overflow-y-auto">
                 {{ modelTestModal.reply }}
               </div>
             </div>
@@ -1022,7 +1008,7 @@ defineExpose<{
             </div>
           </div>
           <template #footer>
-              <button type="button" class="px-5 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="modelTestModal = null">
+              <button type="button" class="px-5 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="modelTestModal = null">
                 Đóng
               </button>
           </template>

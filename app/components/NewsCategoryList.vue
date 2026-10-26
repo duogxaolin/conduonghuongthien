@@ -1,30 +1,30 @@
 <template>
-  <div class="bg-[#F8FAF7]">
+  <div class="bg-surface">
     <!-- Page Header (đồng bộ 100% với /news) -->
     <section class="border-b border-[#E2E8DF] bg-white">
       <div class="container pt-7 sm:pt-9 pb-5">
         <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-[#5A6C58] mb-3">
-          <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
+          <nuxt-link to="/" class="hover:text-brand-600 transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
             <span>{{ t('home') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
-          <nuxt-link to="/news" class="hover:text-[#4A6741] transition-colors no-underline text-[#556450]">
+          <nuxt-link to="/news" class="hover:text-brand-600 transition-colors no-underline text-[#556450]">
             <span>{{ t('news') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
           <span class="text-[#2D5A27] font-bold">{{ heading }}</span>
         </nav>
 
-        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#4A6741] m-0 mb-1">{{ t('news_category_title') }}</p>
-        <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-[#1E251C] leading-[1.2] m-0">{{ heading }}</h1>
+        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-brand-600 m-0 mb-1">{{ t('news_category_title') }}</p>
+        <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-ink leading-[1.2] m-0">{{ heading }}</h1>
         <p v-if="subheading" class="text-[0.95rem] text-[#5A6655] mt-2 mb-5 leading-relaxed">{{ subheading }}</p>
 
         <!-- Category Nav Chips -->
         <nav :aria-label="t('news_nav_aria')" class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
           <nuxt-link
             to="/news"
-            class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 no-underline bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]"
+            class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 no-underline bg-white text-ink-secondary border-[#DCE5DB] hover:border-brand-600 hover:bg-[#F2F7F0]"
           >
             <i class="fa-solid fa-layer-group text-[0.7rem]" aria-hidden="true"></i>
             <span>{{ t('all_news') }}</span>
@@ -36,8 +36,8 @@
             :class="[
               'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 no-underline',
               categorySlug === cat.slug
-                ? 'bg-[#4A6741] text-white border-[#4A6741] shadow-sm'
-                : 'bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]'
+                ? 'bg-brand-600 text-white border-[#4A6741] shadow-sm'
+                : 'bg-white text-ink-secondary border-[#DCE5DB] hover:border-brand-600 hover:bg-[#F2F7F0]'
             ]"
           >
             <i :class="cat.icon" class="text-[0.7rem]" aria-hidden="true"></i>
@@ -55,7 +55,7 @@
           <!-- Section Divider Header -->
           <div class="flex items-center justify-between pt-1 pb-3 border-b-2 border-[#E1EADF] mb-1">
             <div class="flex items-center gap-2.5">
-              <span class="w-2.5 h-6 rounded-sm bg-[#4A6741]" aria-hidden="true"></span>
+              <span class="w-2.5 h-6 rounded-sm bg-brand-600" aria-hidden="true"></span>
               <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
                 {{ heading }}
               </h2>
@@ -63,7 +63,7 @@
                 {{ t('n_count_suffix').replace('{n}', String(newsList.length)) }}
               </span>
             </div>
-            <nuxt-link to="/news" class="text-xs text-[#4A6741] font-bold hover:underline flex items-center gap-1 no-underline">
+            <nuxt-link to="/news" class="text-xs text-brand-600 font-bold hover:underline flex items-center gap-1 no-underline">
               <span>{{ t('n_view_all') }}</span>
               <i class="fa-solid fa-arrow-right text-[0.65rem]" aria-hidden="true"></i>
             </nuxt-link>
@@ -92,10 +92,10 @@
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
             <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('n_load_error_title') }}</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">{{ t('n_load_error_desc') }}</p>
+            <p class="text-sm text-ink-muted m-0 mb-4">{{ t('n_load_error_desc') }}</p>
             <button
               type="button"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
               @click="() => refresh()"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -108,14 +108,14 @@
             v-else-if="newsList.length === 0"
             class="bg-white border border-[#E2E8DF] rounded-2xl p-10 text-center shadow-sm"
           >
-            <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-2xl">
+            <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-brand-600 flex items-center justify-center mx-auto mb-4 text-2xl">
               <i class="fa-regular fa-newspaper" aria-hidden="true"></i>
             </div>
             <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">{{ emptyText }}</h3>
             <p class="text-sm text-[#556450] m-0 mb-5">{{ t('n_empty_desc') }}</p>
             <nuxt-link
               to="/news"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all no-underline"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all no-underline"
             >
               <span>{{ t('n_view_all_list') }}</span>
               <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
@@ -185,7 +185,7 @@
         <aside class="flex flex-col gap-6 min-w-0 lg:sticky lg:top-[90px]">
           <!-- Widget 1: Đọc nhiều (thiết kế nguyên bản tinh tế) -->
           <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
-            <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('most_read') }}</h2>
+            <h2 class="text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('most_read') }}</h2>
 
             <div v-if="mostReadPending" role="status" aria-busy="true" class="py-2">
               <span class="sr-only">{{ t('n_loading_most_read') }}</span>
@@ -210,7 +210,7 @@
                 <h3 class="text-[0.9rem] font-bold leading-[1.4] m-0 min-w-0">
                   <nuxt-link
                     :to="`/news/${item.slug}`"
-                    class="text-[#1E251C] hover:text-[#4A6741] transition-colors no-underline line-clamp-2"
+                    class="text-ink hover:text-brand-600 transition-colors no-underline line-clamp-2"
                   >{{ item.title }}</nuxt-link>
                 </h3>
               </li>

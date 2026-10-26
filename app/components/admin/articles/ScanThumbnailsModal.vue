@@ -213,7 +213,7 @@ watch(() => props.open, (v) => {
               <!-- Summary -->
               <div class="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 text-sm">
                 <span class="font-semibold text-gray-700">
-                  Đã quét: <span class="text-[#1e4620]">{{ report.scanned }}</span> bài
+                  Đã quét: <span class="text-brand-900">{{ report.scanned }}</span> bài
                 </span>
                 <span class="text-gray-300">·</span>
                 <span class="font-semibold" :class="report.brokenCount > 0 ? 'text-red-600' : 'text-green-700'">
@@ -263,7 +263,7 @@ watch(() => props.open, (v) => {
 
                   <button
                     type="button"
-                    class="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-[#1e4620] px-4 py-2 text-sm font-bold text-white hover:bg-[#2c6e33] disabled:cursor-not-allowed disabled:opacity-50"
+                    class="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-brand-900 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="!someSelected || fixing"
                     @click="runFix"
                   >

@@ -11,10 +11,10 @@
       <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
     </div>
     <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ title }}</h3>
-    <p class="text-sm text-[#667768] m-0 mb-4">{{ description }}</p>
+    <p class="text-sm text-ink-muted m-0 mb-4">{{ description }}</p>
     <button
       type="button"
-      class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2 disabled:opacity-60 disabled:cursor-wait"
+      class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-60 disabled:cursor-wait"
       :disabled="retrying"
       :aria-busy="retrying ? 'true' : undefined"
       @click="emit('retry')"

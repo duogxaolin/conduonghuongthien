@@ -22,7 +22,7 @@
           </div>
           <div class="min-w-0">
             <!-- Brand, not a heading (design D22): each page supplies its one <h1>. -->
-            <p class="text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</p>
+            <p class="text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-brand-600 tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</p>
             <p class="hidden lg:block text-[0.68rem] xl:text-[0.72rem] font-semibold text-[#5A6C58] uppercase pt-[0.2em] max-w-[280px] xl:max-w-[440px] 2xl:max-w-none leading-snug line-clamp-2">
               {{ t('portal_subtitle') }}
             </p>
@@ -32,8 +32,8 @@
         <!-- Top Actions -->
         <div class="flex items-center gap-2 sm:gap-3">
           <button
-            class="bg-[#F8FAF7] border border-[#E2E8DF] w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center cursor-pointer text-xs sm:text-[0.95rem] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
-            :class="{ 'bg-[#4A6741] text-white border-[#4A6741]': isSearchActive }"
+            class="bg-surface border border-[#E2E8DF] w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center cursor-pointer text-xs sm:text-[0.95rem] transition-all hover:bg-brand-600 hover:text-white hover:border-brand-600"
+            :class="{ 'bg-brand-600 text-white border-[#4A6741]': isSearchActive }"
             @click="$emit('toggle-search')"
             :aria-label="isSearchActive ? t('search_close') : t('search_open')"
             :aria-expanded="isSearchActive">
@@ -68,7 +68,7 @@
               <div v-if="reader" ref="readerMenuRef" class="relative">
                 <button
                   type="button"
-                  class="flex items-center gap-2 bg-[#F8FAF7] border border-[#E2E8DF] pl-1.5 pr-2.5 py-1.5 rounded-full transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                  class="flex items-center gap-2 bg-surface border border-[#E2E8DF] pl-1.5 pr-2.5 py-1.5 rounded-full transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                   :aria-expanded="isReaderMenuOpen"
                   aria-haspopup="menu"
                   @click="$emit('toggle-reader-menu')"
@@ -90,7 +90,7 @@
                   <nuxt-link
                     to="/profile"
                     role="menuitem"
-                    class="mt-1 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.85rem] font-semibold text-[#1E251C] no-underline transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                    class="mt-1 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.85rem] font-semibold text-ink no-underline transition-colors hover:bg-[#F3F7F1] hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                     @click="$emit('close-reader-menu')"
                   >
                     <i class="fa-solid fa-user w-4 text-center text-[#7CB342]" aria-hidden="true"></i> {{ t('profile') }}
@@ -98,7 +98,7 @@
                   <button
                     type="button"
                     role="menuitem"
-                    class="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[0.85rem] font-semibold text-[#1E251C] transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                    class="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[0.85rem] font-semibold text-ink transition-colors hover:bg-[#F3F7F1] hover:text-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                     @click="onReaderSignOut"
                   >
                     <i class="fa-solid fa-right-from-bracket w-4 text-center text-[#5A6C58]" aria-hidden="true"></i> {{ t('logout') }}
@@ -109,7 +109,7 @@
               <button
                 v-else
                 type="button"
-                class="inline-flex items-center gap-2 bg-[#F8FAF7] border border-[#E2E8DF] px-3.5 py-2 rounded-sm text-[0.82rem] font-semibold text-[#385130] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                class="inline-flex items-center gap-2 bg-surface border border-[#E2E8DF] px-3.5 py-2 rounded-sm text-[0.82rem] font-semibold text-[#385130] transition-all hover:bg-brand-600 hover:text-white hover:border-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                 @click="readerSignIn()"
               >
                 <i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> {{ t('login') }}
@@ -118,7 +118,7 @@
           </client-only>
           <!-- Mobile/iPad Toggle — opens drawer on screens < xl (including tablets/iPad) -->
           <button
-            class="xl:hidden flex flex-col justify-center items-center gap-1 w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all hover:bg-[#e4f0e2]"
+            class="xl:hidden flex flex-col justify-center items-center gap-1 w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-brand-900 cursor-pointer transition-all hover:bg-[#e4f0e2]"
             @click="$emit('toggle-mobile-menu')"
             :aria-label="t('menu_open')"
             aria-controls="mobile-drawer"

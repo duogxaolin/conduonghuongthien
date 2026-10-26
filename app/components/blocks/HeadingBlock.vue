@@ -13,7 +13,7 @@
     <div class="container pt-6 sm:pt-8 pb-6 sm:pb-7">
       <div class="max-w-2xl">
         <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-3 shadow-sm">
-          <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+          <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
           <span>{{ t('portal_agency_badge') || 'Cổng Thông Tin Điện Tử C11 • Bộ Công An' }}</span>
         </div>
         <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem] text-[#172516] tracking-tight leading-tight">{{ d.text || 'Tiêu đề mục' }}</h2>
@@ -26,8 +26,8 @@
   <section v-else class="section bg-white">
     <div class="container">
       <div class="max-w-[720px] mx-auto" :class="alignClass">
-        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
-        <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold text-[#1E251C]">{{ d.text || 'Tiêu đề mục' }}</h2>
+        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
+        <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold text-ink">{{ d.text || 'Tiêu đề mục' }}</h2>
       </div>
     </div>
   </section>

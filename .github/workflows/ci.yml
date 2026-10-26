@@ -322,8 +322,11 @@ jobs:
       # Unit + contract tests — mọi tệp trừ *-integration (chúng cần MySQL và
       # chạy ở job integration-tests bên dưới). Lọc bằng find để không phụ thuộc
       # shell glob của runner. Bỏ qua 22 tệp integration để job này không cần
-      # service container và chạy nhanh hơn.
+      # service container và chạy nhanh hơn. `tests/ratchets/` (wave3 D-R: màu hex,
+      # độ dài tệp, ép kiểu `$fetch`, logic so độ phủ) chạy cùng — cùng tập tệp với
+      # `npm test` / `npm run test:coverage` (tests/ops-scripts.test.ts canh).
       - name: Unit and contract tests (no DB)
+        id: unit
         env:
           # Run at the deployment's timezone, not the runner's UTC. Xem lý do
           # đầy đủ ở job integration-tests bên dưới — tóm lại: scheduler ngày
@@ -332,7 +335,7 @@ jobs:
         run: |
           set -euo pipefail
           # Liệt kê mọi tệp *.test.ts KHÔNG kết thúc bằng -integration.test.ts
-          files=$(find tests -maxdepth 1 -name '*.test.ts' ! -name '*-integration.test.ts' | sort)
+          files=$(find tests tests/ratchets -maxdepth 1 -name '*.test.ts' ! -name '*-integration.test.ts' | sort)
           echo "Running $(echo "$files" | wc -l) unit test files"
           # `--experimental-test-coverage` adds ~5% to the run. The spec reporter keeps the
           # log as before; the lcov reporter writes the raw coverage for the summary step
@@ -342,9 +345,9 @@ jobs:
           # handlers such as `server/api/admin/settings/test-r2.post.ts`.
           node --experimental-strip-types --experimental-test-module-mocks --experimental-test-coverage --test-coverage-exclude='tests/**' --import ./scripts/ts-resolver.mjs --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=/tmp/unit-test.lcov --test $files
 
-      # Báo cáo độ phủ — CHỈ báo cáo, không chặn: chưa có ngưỡng nào, vì một con số chọn
-      # trước khi ai đó thấy mức nền chỉ là cách mới để CI đỏ. `continue-on-error` ở đây
-      # đúng chỗ (bước này không phải cổng); cổng Typecheck bên dưới thì không có.
+      # Báo cáo độ phủ — CHỈ báo cáo, không chặn: bảng này không có ngưỡng tuyệt đối nào.
+      # `continue-on-error` ở đây đúng chỗ (bước này không phải cổng). Cổng là bước
+      # "Coverage ratchet" bên dưới, chỉ so với mức nền theo thư mục.
       # Script gộp các bản ghi lcov trùng, thêm mọi tệp nguồn không test nào nạp ở 0 %, và
       # tự ghi vào $GITHUB_STEP_SUMMARY (docs/test-coverage-baseline-2026-10.md).
       - name: Coverage summary
@@ -377,6 +380,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           tail -80 /tmp/tsc.log
           exit $status
+
+      # Cổng CHẶN độ phủ (wave3 D-R): đỏ khi một thư mục (server/api, server/services, …,
+      # shared, app/utils, app/composables) tụt QUÁ 0,5 điểm so với
+      # tests/ratchets/coverage.baseline.json, khi mức nền còn ghi một thư mục không còn, hoặc
+      # khi một thư mục chưa có trong mức nền (thêm có chủ đích: --update --add-dir <thư mục>).
+      # Không có ngưỡng tuyệt đối. Không nuốt lỗi (khác bước tóm tắt ở trên), không
+      # `always()`: chỉ chạy khi bước test xanh (lcov của một lượt đỏ là lcov dở), kể cả
+      # khi Typecheck đỏ — nên đứng sau Typecheck để một lần tụt độ phủ không che kết quả
+      # kiểu. Thiếu/rỗng lcov → đỏ. tests/ops-scripts.test.ts canh bước này.
+      - name: Coverage ratchet
+        if: ${{ !cancelled() && steps.unit.outcome == 'success' }}
+        run: node --experimental-strip-types scripts/coverage-ratchet.ts /tmp/unit-test.lcov
 
   # ── Integration tests (cần MySQL) ──────────────────────────────────────────
   # 22 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
@@ -882,6 +897,19 @@ jobs:
       - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
         with:
           scandir: ./scripts
+          severity: warning
+
+      # production/manage.sh nạp production/lib/*.sh: kiểm cả bộ như MỘT chương trình, bắt
+      # đầu từ cửa vào. `-x` theo các dòng `.` (chỉ thị `# shellcheck source=lib/…`), `-a`
+      # báo cả cảnh báo NẰM TRONG lib — thiếu `-a` thì lỗi ở lib im lặng. Action không tự
+      # thêm hai cờ đó; chính shellcheck đọc SHELLCHECK_OPTS. lib/ bị loại khỏi lượt tìm
+      # tệp: kiểm từng lib một mình là kiểm nó không có biến của common.sh.
+      - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        env:
+          SHELLCHECK_OPTS: -x -a
+        with:
+          scandir: ./production
+          ignore_paths: production/lib
           severity: warning
 
   # ── Triển khai ──────────────────────────────────────────────────────────────
