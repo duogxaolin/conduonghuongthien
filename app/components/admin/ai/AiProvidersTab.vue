@@ -187,13 +187,6 @@ async function loadProviders() {
   }
 }
 
-async function loadPricing() {
-  try {
-    const data = await adminFetch<{ ok: true; pricing: PricingRow[] }>('/api/admin/ai/pricing')
-    pricingRows.value = data.pricing
-  } catch { /* optional */ }
-}
-
 function openProviderEdit(p: ProviderRow) {
   editingProvider.value = p
   providerForm.value = { label: p.label, baseUrl: p.baseUrl ?? '', isActive: p.isActive, apiKey: '' }

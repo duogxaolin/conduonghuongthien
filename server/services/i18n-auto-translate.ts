@@ -16,6 +16,7 @@
  */
 import { callAi } from './ai-gateway'
 import { upsertTranslations, DEFAULT_LANGUAGES } from './languages'
+import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../utils/ai/model-translations'
 import { logWarn } from '../utils/logger'
 import type { ActorLike } from '../utils/permissions'
 
@@ -46,22 +47,13 @@ async function translateBatchForLang(
 ): Promise<Array<{ group: string; key: string; value: string }>> {
   const promptLines = viItems.map((it, i) => `[${i + 1}] key=${it.key} value=${it.value}`)
   const prompt = `Dịch các chuỗi giao diện sau sang ${langName}.
-Giữ nguyên placeholder như {name}, {0}, %s. Trả về JSON array, mỗi phần tử {"key":"...", "value":"..."}:
+Giữ nguyên placeholder như {name}, {0}, %s. Trả về JSON array, mỗi phần tử ${MODEL_TRANSLATION_ANSWER_FORMAT} — n là số trong ngoặc vuông [n] của dòng đó:
 ${promptLines.join('\n')}`
 
   const result = await callAi('translation_ui', { prompt, userId })
   if (!result.ok || !result.text) return []
-
-  try {
-    const raw = result.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
-    const parsed = JSON.parse(raw) as Array<{ key: string; value: string }>
-    const map = new Map(parsed.map((p) => [p.key, p.value]))
-    return viItems
-      .map((it) => ({ group: it.group, key: it.key, value: map.get(it.key) ?? '' }))
-      .filter((it) => it.value.trim() !== '')
-  } catch {
-    return []
-  }
+  // Only text for the keys asked for — a model "null" is not a translation.
+  return readModelTranslations(result.text, viItems)
 }
 
 /**

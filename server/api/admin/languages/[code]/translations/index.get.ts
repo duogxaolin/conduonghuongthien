@@ -1,5 +1,24 @@
+import { z } from 'zod'
 import { requireResourcePermission } from '../../../../../utils/permissions'
-import { listTranslations, listTranslationGroups } from '../../../../../services/languages'
+import { readValidatedQuery } from '../../../../../utils/request-body'
+import { listTranslations, listTranslationGroups } from '../../../../../services/translation-list'
+import { requireLanguage } from '../../../../../services/languages'
+
+/**
+ * Every translation of one language, plus the vi keys it has no row for (`id: null`) —
+ * a deliberate full load (~630 rows; see `services/translation-list.ts`). It used to cap
+ * at 200 (500 at most) and search in JS after the cut. `limit`/`offset` are no longer
+ * read: a client still sending `?limit=500` gets every row. The search runs in SQL.
+ *
+ * A repeated `?search=`/`?group=` (h3 gives an array) takes the first value — the page
+ * sends one; the handler before the schema ignored an array instead of failing.
+ */
+const firstValue = (value: unknown) => (Array.isArray(value) ? value[0] : value)
+const querySchema = z.object({
+  group: z.preprocess(firstValue, z.string().max(50)).optional(),
+  // MAX_LIKE_QUERY_CHARS: `containsPattern` would cut a longer one silently.
+  search: z.preprocess(firstValue, z.string().max(200)).optional(),
+})
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -8,14 +27,11 @@ export default defineEventHandler(async (event) => {
   const code = getRouterParam(event, 'code')
   if (!code) throw createError({ statusCode: 400, statusMessage: 'Mã ngôn ngữ bắt buộc.' })
 
-  const query = getQuery(event)
-  const group = typeof query.group === 'string' ? query.group : undefined
-  const search = typeof query.search === 'string' ? query.search : undefined
-  const limit = query.limit ? Math.max(1, Math.min(500, Number(query.limit) || 200)) : 200
-  const offset = query.offset ? Math.max(0, Number(query.offset) || 0) : 0
-
+  const { group, search } = await readValidatedQuery(event, querySchema)
+  // An unknown code is a 404, not a virtual row per vi key.
+  await requireLanguage(code)
   const [items, groups] = await Promise.all([
-    listTranslations(code, { group, search, limit, offset }),
+    listTranslations(code, { group, search }),
     listTranslationGroups(code),
   ])
 
