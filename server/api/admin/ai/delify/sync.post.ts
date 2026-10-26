@@ -3,11 +3,12 @@ import { getDb } from '../../../../utils/db'
 import { aiProviders, aiModelPricing, aiUsageLogs, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { decryptAiSecret } from '../../../../utils/ai/crypto'
+import { DelifyUsageError, fetchDelifyUsage } from '../../../../utils/ai/delify-usage'
 import { logInfo } from '../../../../utils/logger'
 
 /**
  * Sync model pricing AND request history from Delify Router API.
- * Calls https://router.delify.vn/api/usage/key/receipts with the stored API key
+ * Calls `/api/usage/key/receipts` on the delify provider's host with the stored API key
  * to get `availableModels` AND `history` requests,
  * then upserts models into `ai_model_pricing` AND merges router history into `ai_usage_logs`.
  */
@@ -45,25 +46,24 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: 'Không thể giải mã API key. Vui lòng cấu hình lại.' })
   }
 
-  // 3. Call Delify API to get available models with pricing AND history
-  const receiptsUrl = `https://router.delify.vn/api/usage/key/receipts?key=${encodeURIComponent(apiKey)}&period=all&page=1&pageSize=100`
-
-  let response: Response
+  // 3. Call Delify API to get available models with pricing AND history — through
+  //    `fetchDelifyUsage` (host from the stored base URL, outbound.ts), never a bare fetch.
+  let response: { status: number, data: unknown }
   try {
-    response = await fetch(receiptsUrl, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(15_000),
+    response = await fetchDelifyUsage({
+      baseUrl: delifyProvider.baseUrl, secret: apiKey, path: '/api/usage/key/receipts',
+      params: { period: 'all', page: '1', pageSize: '100' }, timeoutMs: 15_000,
     })
-  } catch {
-    throw createError({ statusCode: 502, statusMessage: 'Không thể kết nối tới Delify Router API.' })
+  } catch (error) {
+    if (!(error instanceof DelifyUsageError)) throw error
+    throw createError({ statusCode: error.reason === 'provider_url_rejected' ? 400 : 502, statusMessage: error.message })
   }
 
-  if (!response.ok) {
+  if (response.data === null || typeof response.data !== 'object') {
     throw createError({ statusCode: 502, statusMessage: `Delify API trả lỗi HTTP ${response.status}.` })
   }
 
-  const data = await response.json() as {
+  const data = response.data as {
     availableModels?: Array<{
       name: string
       input: number
@@ -193,15 +193,8 @@ export default defineEventHandler(async (event) => {
   }
   let delifyUsage: DelifyKeyResponse | null = null
   try {
-    const keyUrl = `https://router.delify.vn/api/usage/key?key=${encodeURIComponent(apiKey)}`
-    const keyResp = await fetch(keyUrl, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(10_000),
-    })
-    if (keyResp.ok) {
-      delifyUsage = (await keyResp.json()) as DelifyKeyResponse
-    }
+    const keyResp = await fetchDelifyUsage({ baseUrl: delifyProvider.baseUrl, secret: apiKey, path: '/api/usage/key' })
+    if (keyResp.data && typeof keyResp.data === 'object') delifyUsage = keyResp.data as DelifyKeyResponse
   } catch {
     // Usage info is optional
   }

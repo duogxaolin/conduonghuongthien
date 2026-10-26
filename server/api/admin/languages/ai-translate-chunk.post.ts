@@ -1,74 +1,55 @@
-import { createError } from 'h3'
+import { z } from 'zod'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { readValidated } from '../../../utils/request-body'
 import { callAi } from '../../../services/ai-gateway'
-import { upsertTranslations } from '../../../services/languages'
+import { requireLanguage, upsertTranslations } from '../../../services/languages'
+import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../../../utils/ai/model-translations'
+
+const LANG_CODE_REQUIRED = 'Mã ngôn ngữ bắt buộc.'
+
+/** One chunk of the "Dịch AI còn thiếu" run (the page sends 10 keys at a time). */
+const bodySchema = z.object({
+  langCode: z.string({ error: LANG_CODE_REQUIRED }).trim().toLowerCase().min(1, LANG_CODE_REQUIRED).max(10),
+  langName: z.string().trim().max(100).optional(),
+  items: z.array(z.object({
+    group: z.string().trim().min(1).max(50),
+    key: z.string().trim().min(1).max(200),
+    sourceText: z.string().max(10_000).optional(),
+  })).max(100),
+})
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'update')
 
-  const body = await readBody(event).catch(() => ({}))
-  if (!body || typeof body !== 'object') {
-    throw createError({ statusCode: 400, statusMessage: 'Dữ liệu không hợp lệ.' })
-  }
-
-  const langCode = String(body.langCode || '').trim().toLowerCase()
-  const langName = String(body.langName || langCode)
-  const items: Array<{ key: string; group: string; sourceText?: string }> = Array.isArray(body.items)
-    ? (body.items as Array<{ key: string; group: string; sourceText?: string }>)
-    : []
-
-  if (!langCode) {
-    throw createError({ statusCode: 400, statusMessage: 'Mã ngôn ngữ bắt buộc.' })
-  }
-
-  if (items.length === 0) {
-    return { ok: true, translated: [] }
-  }
+  const { langCode, langName, items } = await readValidated(event, bodySchema)
+  // Refuse an unknown language before paying for an AI call (the write checks again, locked).
+  await requireLanguage(langCode)
+  if (items.length === 0) return { ok: true, translated: [] }
 
   const promptLines = items.map(
     (item, idx) => `[${idx + 1}] key="${item.key}" group="${item.group}" text="${item.sourceText || item.key}"`,
   )
 
   const prompt = `Bạn là biên dịch viên chuyên nghiệp giao diện phần mềm.
-Dịch các chuỗi giao diện người dùng sau sang ${langName}.
+Dịch các chuỗi giao diện người dùng sau sang ${langName || langCode}.
 Yêu cầu:
 1. Chuẩn xác, ngắn gọn, phù hợp nút bấm / nhãn phần mềm.
 2. Giữ nguyên mọi placeholder như {0}, {name}, %s.
-3. Trả về DUY NHẤT một JSON array hợp lệ, mỗi phần tử là {"key":"...", "value":"..."}:
+3. Trả về DUY NHẤT một JSON array hợp lệ, mỗi phần tử là ${MODEL_TRANSLATION_ANSWER_FORMAT} — n là số trong ngoặc vuông [n] của dòng đó (cùng một key có thể ở nhiều nhóm):
 ${promptLines.join('\n')}`
 
   const result = await callAi('translation_ui', { prompt, userId: adminUser?.id ?? null })
 
-  const translatedList: Array<{ group: string; key: string; value: string }> = []
-
-  if (result.ok && result.text) {
-    try {
-      const raw = result.text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '').trim()
-      const parsed = JSON.parse(raw) as Array<{ key: string; value: string }>
-      if (Array.isArray(parsed)) {
-        for (const p of parsed) {
-          const matched = items.find((it) => it.key === p.key)
-          if (matched && p.value) {
-            translatedList.push({
-              group: matched.group,
-              key: matched.key,
-              value: String(p.value).trim(),
-            })
-          }
-        }
-      }
-    } catch {
-      // Fallback: parse failure
-    }
-  }
-
-  if (translatedList.length > 0) {
-    await upsertTranslations(adminUser, langCode, translatedList, true)
+  // Only text for keys that were asked for (`readModelTranslations`): a value the
+  // model sent as null/an object/a number used to be stored as `String(p.value)`.
+  const translated = result.ok && result.text ? readModelTranslations(result.text, items) : []
+  if (translated.length > 0) {
+    await upsertTranslations(adminUser, langCode, translated, true)
   }
 
   return {
     ok: true,
-    translated: translatedList,
+    translated,
   }
 })

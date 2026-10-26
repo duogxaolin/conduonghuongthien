@@ -146,8 +146,8 @@ onMounted(load)
 <template>
   <div class="flex flex-col gap-5">
     <div>
-      <h1 class="m-0 text-[1.35rem] font-extrabold text-[#122815]">Đăng nhập Google cho người đọc</h1>
-      <p class="m-0 mt-1 text-sm text-[#667768]">
+      <h1 class="m-0 text-[1.35rem] font-extrabold text-brand-950">Đăng nhập Google cho người đọc</h1>
+      <p class="m-0 mt-1 text-sm text-ink-muted">
         Cho phép khách đăng nhập bằng tài khoản Google để bình luận. Cổng thông tin không lưu mật khẩu của họ.
       </p>
     </div>
@@ -171,7 +171,7 @@ onMounted(load)
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="load">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="load">Thử lại</button>
     </div>
 
     <template v-else-if="settings">
@@ -193,16 +193,16 @@ onMounted(load)
       </div>
 
       <!-- Redirect URI: chỉ đọc, có nút sao chép -->
-      <section class="rounded-xl border border-[#e2ece3] bg-white p-5">
-        <h2 class="m-0 text-[1rem] font-extrabold text-[#122815]">Redirect URI</h2>
-        <p class="m-0 mt-1 text-sm text-[#667768]">
+      <section class="rounded-xl border border-line bg-white p-5">
+        <h2 class="m-0 text-[1rem] font-extrabold text-brand-950">Redirect URI</h2>
+        <p class="m-0 mt-1 text-sm text-ink-muted">
           Dán đúng chuỗi này vào mục “Authorized redirect URIs” của OAuth client trong Google Cloud Console. Google so khớp từng ký tự, kể cả dấu gạch chéo cuối.
         </p>
         <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-          <code class="min-w-0 flex-1 select-all break-all rounded-lg border border-[#c8d6c9] bg-[#f8faf8] px-3 py-2.5 text-sm text-[#122815]">{{ settings.redirectUri }}</code>
+          <code class="min-w-0 flex-1 select-all break-all rounded-lg border border-line-strong bg-[#f8faf8] px-3 py-2.5 text-sm text-brand-950">{{ settings.redirectUri }}</code>
           <button
             type="button"
-            class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2.5 text-sm font-semibold hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30"
+            class="rounded-lg border border-line-strong bg-white px-3 py-2.5 text-sm font-semibold hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700/30"
             @click="copyRedirectUri"
           >{{ copied ? 'Đã sao chép' : 'Sao chép' }}</button>
         </div>
@@ -214,14 +214,14 @@ onMounted(load)
           </p>
           <p class="m-0 mt-1">Đăng nhập luôn dùng tên miền của yêu cầu hiện tại — một codebase phục vụ nhiều tên miền, mỗi tên miền cần đăng ký riêng trong Google Console.</p>
         </div>
-        <p v-else class="m-0 mt-2 text-xs text-[#667768]">
+        <p v-else class="m-0 mt-2 text-xs text-ink-muted">
           <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
           Redirect URI lấy theo tên miền của yêu cầu hiện tại. Một codebase phục vụ nhiều tên miền, mỗi tên miền cần đăng ký riêng trong Google Console.
         </p>
       </section>
 
-      <form class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-5" @submit.prevent="save">
-        <h2 class="m-0 text-[1rem] font-extrabold text-[#122815]">Thông tin OAuth client</h2>
+      <form class="flex flex-col gap-4 rounded-xl border border-line bg-white p-5" @submit.prevent="save">
+        <h2 class="m-0 text-[1rem] font-extrabold text-brand-950">Thông tin OAuth client</h2>
 
         <label class="flex flex-col gap-1.5 text-sm font-bold">
           Client ID
@@ -229,13 +229,13 @@ onMounted(load)
             v-model="form.clientId"
             autocomplete="off"
             placeholder="123456789-abcdef.apps.googleusercontent.com"
-            class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+            class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"
           />
         </label>
 
         <div class="flex flex-col gap-1.5">
           <label for="google-client-secret" class="text-sm font-bold">Client secret mới</label>
-          <span class="text-sm text-[#667768]">
+          <span class="text-sm text-ink-muted">
             {{ settings.hasClientSecret ? `Đang cấu hình ${settings.clientSecretMasked || '••••'}` : 'Chưa cấu hình' }}. Để trống để giữ nguyên.
           </span>
           <div class="flex flex-col gap-2 sm:flex-row">
@@ -245,11 +245,11 @@ onMounted(load)
               :type="secretVisible ? 'text' : 'password'"
               autocomplete="new-password"
               placeholder="Nhập secret mới khi cần thay thế"
-              class="min-w-0 flex-1 rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+              class="min-w-0 flex-1 rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"
             />
             <button
               type="button"
-              class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2.5 text-sm font-semibold hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30"
+              class="rounded-lg border border-line-strong bg-white px-3 py-2.5 text-sm font-semibold hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700/30"
               :aria-label="secretVisible ? 'Ẩn client secret mới' : 'Hiện client secret mới'"
               @click="secretVisible = !secretVisible"
             >{{ secretVisible ? 'Ẩn' : 'Hiện' }}</button>
@@ -260,43 +260,43 @@ onMounted(load)
           v-if="settings.hasClientSecret || secretUnreadable"
           type="button"
           :disabled="clearing || saving"
-          class="self-start rounded-lg border border-[#d12420] px-3 py-2 text-sm font-bold text-[#d12420] hover:bg-[#fff4f3] focus:outline-none focus:ring-2 focus:ring-[#d12420]/30 disabled:cursor-not-allowed disabled:opacity-60"
+          class="self-start rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] focus:outline-none focus:ring-2 focus:ring-danger/30 disabled:cursor-not-allowed disabled:opacity-60"
           @click="clearSecret"
         >{{ clearing ? 'Đang xoá…' : 'Xoá Client secret' }}</button>
 
-        <label class="flex items-start gap-3 border-t border-[#e2ece3] pt-4 text-sm font-semibold">
-          <input v-model="form.isEnabled" type="checkbox" class="mt-0.5 h-4 w-4 accent-[#2c6e33]" />
+        <label class="flex items-start gap-3 border-t border-line pt-4 text-sm font-semibold">
+          <input v-model="form.isEnabled" type="checkbox" class="mt-0.5 h-4 w-4 accent-brand-700" />
           <span>
             Bật đăng nhập Google<br />
-            <span class="font-normal text-[#667768]">Tắt công tắc này dừng cả đăng nhập lẫn việc gửi bình luận mới, nhưng không xoá tài khoản hay bình luận nào — bật lại thì mọi thứ trở về như cũ.</span>
+            <span class="font-normal text-ink-muted">Tắt công tắc này dừng cả đăng nhập lẫn việc gửi bình luận mới, nhưng không xoá tài khoản hay bình luận nào — bật lại thì mọi thứ trở về như cũ.</span>
           </span>
         </label>
 
         <label class="flex items-start gap-3 text-sm font-semibold">
-          <input v-model="form.defaultCommentsEnabled" type="checkbox" class="mt-0.5 h-4 w-4 accent-[#2c6e33]" />
+          <input v-model="form.defaultCommentsEnabled" type="checkbox" class="mt-0.5 h-4 w-4 accent-brand-700" />
           <span>
             Bài viết mới mặc định mở bình luận<br />
-            <span class="font-normal text-[#667768]">Chỉ áp dụng cho bài tạo về sau. Bài viết đã có vẫn đang đóng và được bật riêng tại danh sách bài viết.</span>
+            <span class="font-normal text-ink-muted">Chỉ áp dụng cho bài tạo về sau. Bài viết đã có vẫn đang đóng và được bật riêng tại danh sách bài viết.</span>
           </span>
         </label>
 
-        <div class="flex flex-wrap gap-3 border-t border-[#e2ece3] pt-4">
+        <div class="flex flex-wrap gap-3 border-t border-line pt-4">
           <button
             type="submit"
             :disabled="saving || clearing"
-            class="rounded-lg bg-[#1e4620] px-5 py-2.5 font-bold text-white hover:bg-[#2c6e33] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/40 disabled:cursor-not-allowed disabled:opacity-60"
+            class="rounded-lg bg-brand-900 px-5 py-2.5 font-bold text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-700/40 disabled:cursor-not-allowed disabled:opacity-60"
           >{{ saving ? 'Đang lưu…' : 'Lưu cấu hình' }}</button>
         </div>
       </form>
 
-      <section class="rounded-xl border border-[#e2ece3] bg-[#f8faf8] p-5 text-sm text-[#3d4f3f]">
-        <h2 class="m-0 text-[1rem] font-extrabold text-[#122815]">Thứ tự thiết lập</h2>
+      <section class="rounded-xl border border-line bg-[#f8faf8] p-5 text-sm text-[#3d4f3f]">
+        <h2 class="m-0 text-[1rem] font-extrabold text-brand-950">Thứ tự thiết lập</h2>
         <ol class="m-0 mt-2 list-decimal pl-5 flex flex-col gap-1">
-          <li>Cấp quyền <strong>readers</strong> và <strong>comments</strong> cho vai trò kiểm duyệt tại <nuxt-link to="/admin/users/roles" class="font-semibold text-[#2c6e33] underline">Phân quyền</nuxt-link> — hai tài nguyên này mặc định chưa cấp cho vai trò nào.</li>
+          <li>Cấp quyền <strong>readers</strong> và <strong>comments</strong> cho vai trò kiểm duyệt tại <nuxt-link to="/admin/users/roles" class="font-semibold text-brand-700 underline">Phân quyền</nuxt-link> — hai tài nguyên này mặc định chưa cấp cho vai trò nào.</li>
           <li>Dán Redirect URI ở trên vào Google Cloud Console.</li>
           <li>Lưu Client ID và Client secret tại trang này.</li>
           <li>Bật công tắc đăng nhập Google.</li>
-          <li>Mở bình luận cho từng bài viết tại <nuxt-link to="/admin/content/articles" class="font-semibold text-[#2c6e33] underline">Quản lý bài viết</nuxt-link>.</li>
+          <li>Mở bình luận cho từng bài viết tại <nuxt-link to="/admin/content/articles" class="font-semibold text-brand-700 underline">Quản lý bài viết</nuxt-link>.</li>
         </ol>
       </section>
     </template>

@@ -3,6 +3,7 @@ import { getDb, type Database } from '../utils/db'
 import { articles, articleTranslations, languages, langTranslations, pageBlocks } from '../db/schema'
 import { callAi } from './ai-gateway'
 import { upsertTranslations } from './languages'
+import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../utils/ai/model-translations'
 import { runTranslationWorker } from './article-translations'
 import type { ActorLike } from '../utils/permissions'
 import type { BlockData } from '../../shared/blocks/types'
@@ -443,21 +444,14 @@ export async function startUniversalAutoTranslate(
             universalTaskState.currentItem = `Dịch UI ${lang.name}: ${chunk.map(c => c.key).slice(0, 3).join(', ')}...`
 
             const promptLines = chunk.map((item, idx) => `[${idx + 1}] key="${item.key}" group="${item.group}" text="${item.value || item.key}"`)
-            const prompt = `Translate software UI strings to ${lang.name}. Return ONLY valid JSON array [{"key":"...", "value":"..."}]:\n${promptLines.join('\n')}`
+            const prompt = `Translate software UI strings to ${lang.name}. Return ONLY valid JSON array [${MODEL_TRANSLATION_ANSWER_FORMAT}] — n is the line's [n] number (a key can be in several groups):\n${promptLines.join('\n')}`
 
             const res = await callAi('translation_ui', { prompt, userId: actor.id ?? null })
-            if (res.ok && res.text) {
-              try {
-                const raw = res.text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '').trim()
-                const parsed = JSON.parse(raw) as Array<{ key: string; value: string }>
-                const itemsToSave = parsed.map((p) => {
-                  const m = chunk.find(c => c.key === p.key)
-                  return { group: m?.group || 'general', key: p.key, value: String(p.value).trim() }
-                })
-                if (itemsToSave.length > 0) {
-                  await upsertTranslations(actor, lang.code, itemsToSave, true)
-                }
-              } catch {}
+            // Only text for keys in this chunk: stringifying the model's value stored
+            // "null"/"undefined", and a key the model invented became a row under "general".
+            const itemsToSave = res.ok && res.text ? readModelTranslations(res.text, chunk) : []
+            if (itemsToSave.length > 0) {
+              await upsertTranslations(actor, lang.code, itemsToSave, true)
             }
             universalTaskState.processedItems++
             universalTaskState.percent = Math.min(99, Math.round((universalTaskState.processedItems / universalTaskState.totalItems) * 100))

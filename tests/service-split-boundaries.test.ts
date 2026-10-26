@@ -1,5 +1,6 @@
 /**
- * Ranh giới của năm nhóm service đã tách (wave2-hardening 5.3 / 5.4 / 5.5 / 5.6 + `backup.ts`).
+ * Ranh giới của sáu nhóm service đã tách (wave2-hardening 5.3 / 5.4 / 5.5 / 5.6 + `backup.ts`,
+ * wave3-long-term 4.3 `moderation-worker.ts`).
  *
  *   • `media-portal.ts`     — barrel; mã ở `media-portal-*.ts` (+ `media-validation.ts`,
  *     `media-views.ts` mà barrel xuất lại).
@@ -12,8 +13,13 @@
  *     `backup-sql.ts`…) là ANH EM, không thuộc nhóm: chúng import barrel đúng chủ đích.
  *     Mẫu tệp `BACKUP_PART` dựng từ danh sách anh em ở `_backup-service-family.ts` — một
  *     nguồn với các guard đọc mã sao lưu.
+ *   • `moderation-worker.ts` — barrel; mã ở `moderation-worker-*.ts` + ba tệp tách từ
+ *     trước (`moderation-instant.ts`, `moderation-rules-cache.ts`, `moderation-stats.ts`).
+ *     `moderation-regex.ts` và `moderation-rescan-job.ts` là ANH EM (rescan-job import
+ *     barrel đúng chủ đích). Mẫu `MODERATION_WORKER_PART` ở `_moderation-worker-family.ts`
+ *     — một nguồn với guard đọc mã kiểm duyệt (`moderation-always-scan`).
  *
- * Năm luật, mỗi luật chặn một kiểu hỏng không có triệu chứng lúc viết:
+ * Sáu luật, mỗi luật chặn một kiểu hỏng không có triệu chứng lúc viết:
  *
  *   1. **Tệp con không bao giờ import barrel/cửa vào của chính nhóm mình**, dù bằng
  *      dạng nào (`import`, `import type`, `export … from`, `import()`, `require()`,
@@ -37,6 +43,9 @@
  *      không khai hai bản cùng tên trong một nhóm, và không tệp nào ngoài tệp khai báo
  *      ghi vào nó — kể cả ghi qua khoá tính toán `X[k] = …`, `delete`, `++`, phương
  *      thức đổi nội dung (`.set`/`.push`…) hay `Object.assign`, qua barrel hay namespace.
+ *      MỘT ngoại lệ nêu tên, có từ trước khi tách (`SHARED_STATE_WRITERS`): bộ đếm
+ *      `workerStats` của `moderation-stats.ts` do đúng bốn tệp kiểm duyệt cùng ghi.
+ *      Tệp khác ghi vẫn đỏ; tệp nêu tên thôi ghi cũng đỏ (mục chết).
  *   5. **API công khai của barrel `comments.ts` giữ đúng 17 tên giá trị + 17 tên kiểu
  *      như trước khi tách** — bỏ, đổi tên hay đổi loại một export là đỏ; xuất thêm
  *      (helper nội bộ thành API) cũng đỏ. Hình dạng barrel (chỉ `export { … } from
@@ -46,9 +55,17 @@
  *      `Object.keys` lúc chạy + TS type checker (giá trị/kiểu qua alias) — mạnh hơn phép
  *      đọc AST của luật 5, nên không chép danh sách thứ hai. Hình dạng barrel `backup.ts`
  *      (chỉ re-export từ `./backup-*`, không import) do `_backup-service-family.ts` canh.
+ *      Barrel `moderation-worker.ts`: cùng luật 5, 9 giá trị + 11 kiểu (ghim từ `9905d0d`);
+ *      hình dạng (chỉ `export { … } from` tệp con của nhóm) do
+ *      `moderationWorkerBarrelProblems` canh ngay ở đây.
+ *   6. **Ngoài nhóm `moderation-worker`, mã chỉ tới các tệp của nhóm qua barrel.** Bảy tệp
+ *      test `mock.module('…/moderation-worker')` thay lớp kiểm duyệt cho endpoint chatbot,
+ *      bình luận, chat livestream. Một nơi gọi import thẳng tệp con (`moderation-worker-
+ *      prescreen`…) thì lọt khỏi mock đó: test chạy kiểm duyệt thật và hoặc đỏ vì lý do
+ *      khác, hoặc xanh mà không còn kiểm điều nó định kiểm.
  *
- * Luật 2 và 3 không lặp theo nhóm: chúng canh một tệp/một sổ cụ thể của nhóm
- * `chunked-upload`/`video-processing`, nên không áp cho nhóm khác.
+ * Luật 2, 3 và 6 không lặp theo nhóm: chúng canh một tệp/một sổ/một đường mock cụ thể
+ * của nhóm `chunked-upload`/`video-processing`/`moderation-worker`.
  *
  * Đọc bằng TypeScript AST (`_module-references.ts` cho đường dẫn module, một lượt
  * AST nhỏ ở `_service-split-sources.ts` cho tên được nhập): chú thích nhắc tới
@@ -75,6 +92,15 @@ import {
   commentServiceFiles,
   isCommentServiceFile,
 } from './_comments-service-source.ts'
+import {
+  EXPECTED_MODERATION_WORKER_FAMILY,
+  MODERATION_SIBLINGS,
+  MODERATION_WORKER_BARREL,
+  MODERATION_WORKER_PART,
+  isModerationWorkerFile,
+  moderationWorkerBarrelProblems,
+  moderationWorkerFiles,
+} from './_moderation-worker-family.ts'
 import { exportedApi } from './_service-split-modules.ts'
 import {
   PRODUCTION_DIRS,
@@ -86,10 +112,11 @@ import {
   importSites,
   inject,
   moduleOf,
+  sourceFileOf,
   where,
   withOverrides,
 } from './_service-split-sources.ts'
-import { stateOwnerCheck } from './_service-split-state.ts'
+import { type SharedStateWriters, stateOwnerCheck } from './_service-split-state.ts'
 
 // ─── Luật 1: tệp con không import barrel/cửa vào của nhóm mình ──────────────
 
@@ -121,6 +148,13 @@ const FAMILIES: Record<string, Family> = {
   backup: {
     barrel: BACKUP_BARREL,
     prefix: BACKUP_PART,
+  },
+  // `moderation-*.ts` TRỪ anh em (`MODERATION_SIBLINGS`): `moderation-rescan-job.ts` import
+  // barrel đúng chủ đích, `moderation-regex.ts` là module riêng. Gồm cả ba tệp tách từ
+  // trước wave3 (barrel xuất lại chúng) và `moderation-worker-persist.ts` (không xuất lại).
+  'moderation-worker': {
+    barrel: MODERATION_WORKER_BARREL,
+    prefix: MODERATION_WORKER_PART,
   },
 }
 
@@ -253,7 +287,32 @@ function claimRegistryCheck(sources: Sources): { violations: string[]; importers
 
 // ─── Luật 4: trạng thái cấp module có một chủ (`_service-split-state.ts`) ────
 
-const stateViolations = (sources: Sources) => stateOwnerCheck(sources, FAMILIES).violations
+/**
+ * Trạng thái nhiều tệp cùng ghi có chủ đích — đúng một mục, có từ trước khi tách.
+ *
+ * `workerStats` là bộ đếm của worker kiểm duyệt (`moderation-stats.ts`, xuất ra để
+ * `fastPreModerate`, `checkAndModerateContent`, `recordInstantBlock` cùng cộng vào MỘT
+ * đối tượng — chú thích đầu tệp đó). Lần tách trước (`moderation-instant.ts`) đã ghi
+ * nó từ ngoài chủ; wave3 4.3 chuyển nguyên văn các lượt ghi của `moderation-worker.ts`
+ * sang ba tệp con. Gói lượt ghi vào hàm của chủ là đổi khai báo — ngoài phạm vi một lần
+ * tách giữ nguyên từng byte, nên để lại làm việc tiếp theo. Tới lúc đó: đúng những tệp
+ * dưới đây được ghi; tệp khác (lượt quét lại, endpoint) ghi là đỏ, bản khai thứ hai là đỏ.
+ */
+const SHARED_STATE_WRITERS: SharedStateWriters = {
+  'server/services/moderation-stats.ts#workerStats': {
+    writers: [
+      'server/services/moderation-instant.ts',
+      'server/services/moderation-worker-check.ts',
+      'server/services/moderation-worker-persist.ts',
+      'server/services/moderation-worker-prescreen.ts',
+    ],
+    reason:
+      'bộ đếm dùng chung của worker kiểm duyệt, có từ trước khi tách; gói vào hàm của chủ là việc tiếp theo',
+  },
+}
+
+const stateViolations = (sources: Sources, shared: SharedStateWriters = SHARED_STATE_WRITERS) =>
+  stateOwnerCheck(sources, FAMILIES, shared).violations
 
 // ─── Luật 5: API công khai của barrel comments.ts giữ đúng như trước khi tách ─
 //
@@ -316,26 +375,138 @@ const PRE_SPLIT_COMMENTS_API = {
   ],
 }
 
-function commentsApiViolations(sources: Sources): string[] {
-  const api = exportedApi(COMMENTS_BARREL, sources.get(COMMENTS_BARREL)!)
+/** Barrel `barrel` xuất đúng `expected` (tên + loại) — chung cho comments và moderation-worker. */
+function apiPinViolations(
+  sources: Sources,
+  barrel: string,
+  expected: { values: string[]; types: string[] },
+  listName: string,
+): string[] {
+  const api = exportedApi(barrel, sources.get(barrel)!)
   const violations: string[] = []
   for (const [kind, label] of [
     ['values', 'giá trị'],
     ['types', 'kiểu'],
   ] as const) {
-    const expected = PRE_SPLIT_COMMENTS_API[kind]
-    for (const name of expected)
+    for (const name of expected[kind])
       if (!api[kind].includes(name))
         violations.push(
-          `${COMMENTS_BARREL} thiếu ${label} '${name}' — có trong API trước khi tách, nơi gọi import nó sẽ hỏng`,
+          `${barrel} thiếu ${label} '${name}' — có trong API trước khi tách, nơi gọi import nó sẽ hỏng`,
         )
     for (const name of api[kind])
-      if (!expected.includes(name))
+      if (!expected[kind].includes(name))
         violations.push(
-          `${COMMENTS_BARREL} xuất thêm ${label} '${name}' — không có trong API trước khi tách; đổi API có chủ đích thì sửa PRE_SPLIT_COMMENTS_API`,
+          `${barrel} xuất thêm ${label} '${name}' — không có trong API trước khi tách; đổi API có chủ đích thì sửa ${listName}`,
         )
   }
   return violations
+}
+
+const commentsApiViolations = (sources: Sources) =>
+  apiPinViolations(sources, COMMENTS_BARREL, PRE_SPLIT_COMMENTS_API, 'PRE_SPLIT_COMMENTS_API')
+
+/**
+ * API của `server/services/moderation-worker.ts` ngay trước khi tách (wave3 4.3): bản ở
+ * `9905d0d` (`wave3/integration`). Suy bằng `exportedApi` (cùng phép đọc AST của luật 5)
+ * từ `git show 9905d0d:server/services/moderation-worker.ts`: 9 giá trị + 11 kiểu, gồm
+ * cả các tên xuất lại từ `moderation-rules-cache`/`-stats`/`-instant` có từ trước. Chép
+ * cứng vì CI checkout nông (xem `PRE_SPLIT_COMMENTS_API`).
+ */
+const PRE_SPLIT_MODERATION_WORKER_API = {
+  values: [
+    'MODERATION_RESCAN_LIMITS',
+    'checkAndModerateContent',
+    'fastPreModerate',
+    'getActiveModerationRules',
+    'getWorkerStats',
+    'invalidateModerationRulesCache',
+    'matchInstantRule',
+    'rescanExistingContent',
+    'resetWorkerStats',
+  ],
+  types: [
+    'FastPreModerateResult',
+    'InstantRuleMatch',
+    'ModerationCheckInput',
+    'ModerationCheckOptions',
+    'ModerationCheckOutput',
+    'ModerationPersistFailure',
+    'RescanCounts',
+    'RescanCursor',
+    'RescanOptions',
+    'RescanProgress',
+    'RescanSummary',
+  ],
+}
+
+const moderationApiViolations = (sources: Sources) =>
+  apiPinViolations(
+    sources,
+    MODERATION_WORKER_BARREL,
+    PRE_SPLIT_MODERATION_WORKER_API,
+    'PRE_SPLIT_MODERATION_WORKER_API',
+  )
+
+// ─── Luật 6: ngoài nhóm moderation-worker, chỉ barrel được import ─────────────
+
+/**
+ * `{ violations, barrelImporters }` — mọi tệp chạy thật NGOÀI nhóm import một tệp của nhóm
+ * (tệp con mới, hay ba tệp tách từ trước) thay vì barrel thì đỏ, ở mọi dạng import (kể cả
+ * `import type`: một quy tắc, không có ngoại lệ để mục). `barrelImporters` để khẳng định
+ * luật không kiểm rỗng: các nơi gọi mà bảy tệp test mock phải đang đi qua barrel.
+ */
+function moderationConsumerCheck(sources: Sources): {
+  violations: string[]
+  barrelImporters: string[]
+} {
+  const family = FAMILIES['moderation-worker']!
+  const members = familyMembers(sources, family)
+  const memberModules = new Set(members.map(moduleOf))
+  const barrelModule = moduleOf(family.barrel)
+  const inside = new Set([family.barrel, ...members])
+  const violations: string[] = []
+  const barrelImporters = new Set<string>()
+  for (const [file, source] of sources) {
+    if (inside.has(file)) continue
+    for (const site of importSites(file, source)) {
+      if (site.target === barrelModule) barrelImporters.add(file)
+      else if (site.target && memberModules.has(site.target))
+        violations.push(
+          `[moderation-worker] ${where(site)} import ${site.target}.ts — ngoài nhóm chỉ đi qua barrel ${family.barrel} (bảy tệp test mock.module đúng đường đó)`,
+        )
+    }
+  }
+  return { violations, barrelImporters: [...barrelImporters].sort() }
+}
+
+/**
+ * Vòng import tĩnh (`import`, `import type`, `export … from`) đi qua một tệp của nhóm,
+ * dò từ barrel. Luật 1 chỉ thấy tệp con nhập ngược barrel; vòng qua một anh em mà nhóm
+ * import (`moderation-regex.ts` nhập barrel → barrel → prescreen → regex) thì không —
+ * phép dò này thấy. `import()` / `require()` không tính: nạp lười là cách cắt vòng.
+ */
+function familyImportCycles(sources: Sources, family: Family): string[] {
+  const inFamily = new Set([family.barrel, ...familyMembers(sources, family)])
+  const state = new Map<string, 'open' | 'done'>()
+  const stack: string[] = []
+  const cycles: string[] = []
+  const visit = (file: string) => {
+    state.set(file, 'open')
+    stack.push(file)
+    for (const site of importSites(file, sources.get(file)!)) {
+      if (site.form !== 'import' && site.form !== 'export … from') continue
+      const next = site.target && sourceFileOf(sources, site.target)
+      if (!next) continue
+      if (state.get(next) === 'open') {
+        const cycle = [...stack.slice(stack.indexOf(next)), next]
+        if (cycle.some((member) => inFamily.has(member))) cycles.push(cycle.join(' → '))
+      } else if (!state.has(next)) visit(next)
+    }
+    stack.pop()
+    state.set(file, 'done')
+  }
+  visit(family.barrel)
+  return cycles
 }
 
 // ─── Test trên mã thật ───────────────────────────────────────────────────────
@@ -381,9 +552,14 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       comments: EXPECTED_COMMENT_SERVICE_FILES.filter((file) => file !== 'comments.ts'),
       // Cùng danh sách mà các guard đọc mã sao lưu dùng (`_backup-service-family.ts`).
       backup: EXPECTED_BACKUP_FAMILY.filter((file) => file !== 'backup.ts'),
+      // Cùng danh sách mà guard đọc mã kiểm duyệt dùng (`_moderation-worker-family.ts`).
+      'moderation-worker': EXPECTED_MODERATION_WORKER_FAMILY.filter(
+        (file) => file !== 'moderation-worker.ts',
+      ),
     }
     assert.equal(expected.comments!.length, 7)
     assert.equal(expected.backup!.length, 6)
+    assert.equal(expected['moderation-worker']!.length, 8)
     for (const [name, family] of Object.entries(FAMILIES)) {
       const members = familyMembers(REPO, family)
       for (const file of expected[name]!) {
@@ -423,8 +599,30 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     assert.deepEqual(backupFamilyDrift(REPO, FAMILIES.backup!), [])
   })
 
+  it('nhóm moderation-worker và guard đọc mã kiểm duyệt là cùng một tập tệp; anh em không thuộc nhóm', () => {
+    // Một mẫu, không hai bản chép.
+    assert.equal(FAMILIES['moderation-worker']!.prefix, MODERATION_WORKER_PART)
+    assert.equal(FAMILIES['moderation-worker']!.barrel, MODERATION_WORKER_BARREL)
+    for (const file of EXPECTED_MODERATION_WORKER_FAMILY.filter((name) => name !== 'moderation-worker.ts'))
+      assert.ok(MODERATION_WORKER_PART.test(file), `${file} phải là tệp con của nhóm moderation-worker`)
+    for (const file of ['moderation-worker-extra.ts', 'moderation-v2.ts'])
+      assert.ok(MODERATION_WORKER_PART.test(file), `${file}: tệp con mới (chưa xuất lại) vẫn thuộc nhóm`)
+    for (const name of [...MODERATION_SIBLINGS, 'moderation-worker.ts', 'moderation-.ts', 'moderation-x.js', 'moderationx.ts'])
+      assert.ok(!MODERATION_WORKER_PART.test(name), `${name} không phải tệp con của nhóm moderation-worker`)
+    assert.ok(isModerationWorkerFile('moderation-worker.ts'))
+    // Tập của guard này (barrel + tiền tố ∪ đích barrel xuất lại) = tập guard đọc mã quét.
+    assert.deepEqual(
+      [MODERATION_WORKER_BARREL, ...familyMembers(REPO, FAMILIES['moderation-worker']!)].sort(),
+      moderationWorkerFiles(),
+    )
+  })
+
   it('luật 1: không tệp con nào import barrel/cửa vào của chính nhóm mình', () => {
     assert.deepEqual(selfImportViolations(REPO), [])
+  })
+
+  it('luật 1: không vòng import tĩnh nào đi qua nhóm moderation-worker (dò từ barrel, kể cả qua anh em)', () => {
+    assert.deepEqual(familyImportCycles(REPO, FAMILIES['moderation-worker']!), [])
   })
 
   it('luật 2: chunked-upload-core.ts chỉ nhóm chunked-upload* import (+ video-disk-guard.ts lấy đúng formatBytes)', () => {
@@ -442,8 +640,25 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
   })
 
   it('luật 4: trạng thái cấp module của mọi nhóm có một chủ — một bản, chỉ chủ ghi', () => {
-    const { violations, inventory, stateImports } = stateOwnerCheck(REPO, FAMILIES)
+    const { violations, inventory, stateImports, sharedWrites } = stateOwnerCheck(
+      REPO,
+      FAMILIES,
+      SHARED_STATE_WRITERS,
+    )
     assert.deepEqual(violations, [])
+    // Ngoại lệ duy nhất còn sống, đúng bốn người ghi — không hơn (đỏ ở trên), không kém (mục chết).
+    assert.deepEqual(
+      sharedWrites,
+      SHARED_STATE_WRITERS['server/services/moderation-stats.ts#workerStats']!.writers.map(
+        (file) => `server/services/moderation-stats.ts#workerStats ← ${file}`,
+      ),
+    )
+    // Không có ngoại lệ thì chính mã thật đỏ, đúng ở bốn tệp đó — ngoại lệ là phần chịu lực.
+    const bare = stateOwnerCheck(REPO, FAMILIES).violations
+    assert.deepEqual(
+      [...new Set(bare.map((v) => /^\[moderation-worker\] (\S+):\d+ .* ghi vào 'workerStats'/.exec(v)?.[1]))].sort(),
+      [...SHARED_STATE_WRITERS['server/services/moderation-stats.ts#workerStats']!.writers].sort(),
+    )
     // Không kiểm rỗng: kho có trạng thái thật của từng nhóm…
     for (const state of [
       'server/services/video-processing-job.ts#activeClaims',
@@ -456,6 +671,10 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       // (`LOCK_RUN`/`LOCK_RESTORE`) là `const` chuỗi — không ghi được, nên không phải trạng thái.
       'server/services/backup-run.ts#currentBackupStatus',
       'server/services/backup-locks.ts#activeRestoreTargets',
+      // Nhóm moderation-worker: bộ đếm, cache luật, cột hàng chờ (không `export`).
+      'server/services/moderation-stats.ts#workerStats',
+      'server/services/moderation-rules-cache.ts#cachedRules',
+      'server/services/moderation-worker-persist.ts#QUEUE_COLUMNS',
     ])
       assert.ok(inventory.includes(state), `${state} vắng khỏi kho ${JSON.stringify(inventory)}`)
     // …và phép giải tên thật sự đi tới trạng thái, cả thẳng lẫn qua barrel. Nhóm
@@ -465,6 +684,7 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/services/chunked-upload-session.ts ← server/services/chunked-upload-core.ts#NOT_FOUND',
       'server/api/admin/media-portal/[id]/process.post.ts ← server/services/video-renditions.ts#RENDITIONS',
       'server/services/backup-sweep.ts ← server/services/backup-names.ts#STALE_PARTIAL',
+      'server/services/moderation-worker-prescreen.ts ← server/services/moderation-stats.ts#workerStats',
     ])
       assert.ok(stateImports.includes(edge), `${edge} vắng khỏi ${JSON.stringify(stateImports)}`)
   })
@@ -478,6 +698,36 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
   it('luật 5: tên giá trị lúc chạy của comments.ts khớp danh sách (phép đọc AST không lệch)', async () => {
     const surface = await import('../server/services/comments.ts')
     assert.deepEqual(Object.keys(surface).sort(), [...PRE_SPLIT_COMMENTS_API.values].sort())
+  })
+
+  it('luật 5: moderation-worker.ts xuất đúng 9 giá trị + 11 kiểu của API trước khi tách', () => {
+    assert.equal(PRE_SPLIT_MODERATION_WORKER_API.values.length, 9)
+    assert.equal(PRE_SPLIT_MODERATION_WORKER_API.types.length, 11)
+    assert.deepEqual(moderationApiViolations(REPO), [])
+  })
+
+  it('luật 5: tên giá trị lúc chạy của moderation-worker.ts khớp danh sách (phép đọc AST không lệch)', async () => {
+    const surface = await import('../server/services/moderation-worker.ts')
+    assert.deepEqual(Object.keys(surface).sort(), [...PRE_SPLIT_MODERATION_WORKER_API.values].sort())
+  })
+
+  it('luật 5: barrel moderation-worker.ts chỉ gồm `export { … } from` tệp con của nhóm', () => {
+    assert.deepEqual(moderationWorkerBarrelProblems(REPO.get(MODERATION_WORKER_BARREL)!), [])
+  })
+
+  it('luật 6: ngoài nhóm moderation-worker, mã chỉ tới nhóm qua barrel (đường mà các test mock)', () => {
+    const { violations, barrelImporters } = moderationConsumerCheck(REPO)
+    assert.deepEqual(violations, [])
+    // Không kiểm rỗng: các nơi gọi mà bảy tệp test thay bằng mock đang đi qua barrel.
+    for (const file of [
+      'server/api/chat.post.ts',
+      'server/api/public/chatbot/index.post.ts',
+      'server/services/comments-posting.ts',
+      'server/services/comments-reply-email.ts',
+      'server/services/livestream-chat.ts',
+      'server/services/moderation-rescan-job.ts',
+    ])
+      assert.ok(barrelImporters.includes(file), `${file} vắng khỏi ${JSON.stringify(barrelImporters)}`)
   })
 })
 
@@ -1153,6 +1403,357 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
     assert.match(
       violations[0]!,
       /^\[backup\] server\/services\/backup-restore\.ts:\d+ \(\.push\(\)\) ghi vào 'BACKUP_TRIGGERS' của server\/services\/backup-names\.ts/,
+    )
+  })
+
+  // ─── Nhóm moderation-worker ────────────────────────────────────────────────
+
+  it('luật 1 đỏ khi tệp của nhóm moderation-worker nạp barrel, ở mọi dạng — kể cả tệp tách từ trước và tệp barrel không xuất lại', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'import',
+        inject(
+          'server/services/moderation-worker-check.ts',
+          "import { fastPreModerate as _f } from './moderation-worker'",
+        ),
+        /^\[moderation-worker\] server\/services\/moderation-worker-check\.ts:1 \(import\) import ngược server\/services\/moderation-worker\.ts$/,
+      ],
+      [
+        'import type, có đuôi .ts',
+        inject(
+          'server/services/moderation-worker-rescan.ts',
+          "import type { ModerationCheckOutput as _O } from './moderation-worker.ts'",
+        ),
+        /^\[moderation-worker\] server\/services\/moderation-worker-rescan\.ts:1 \(import\)/,
+      ],
+      [
+        'export … from',
+        inject(
+          'server/services/moderation-worker-prescreen.ts',
+          "export { checkAndModerateContent as _c } from './moderation-worker'",
+        ),
+        /^\[moderation-worker\] server\/services\/moderation-worker-prescreen\.ts:1 \(export … from\)/,
+      ],
+      [
+        'import() động, trong tệp barrel không xuất lại (đường ghi)',
+        append(
+          'server/services/moderation-worker-persist.ts',
+          "export async function _lazy() { return (await import('./moderation-worker')).fastPreModerate }",
+        ),
+        /^\[moderation-worker\] server\/services\/moderation-worker-persist\.ts:\d+ \(import\(\)\)/,
+      ],
+      [
+        'tệp tách từ trước wave3 (moderation-instant.ts)',
+        inject(
+          'server/services/moderation-instant.ts',
+          "import { getWorkerStats as _g } from './moderation-worker'",
+        ),
+        /^\[moderation-worker\] server\/services\/moderation-instant\.ts:1 \(import\)/,
+      ],
+      [
+        'typeof import() qua alias #server',
+        append(
+          'server/services/moderation-stats.ts',
+          "export type _Api = typeof import('#server/services/moderation-worker')",
+        ),
+        /^\[moderation-worker\] server\/services\/moderation-stats\.ts:\d+ \(import\(\) type\)/,
+      ],
+      [
+        'tệp con mới mà barrel chưa xuất lại (thuộc nhóm nhờ mẫu tệp)',
+        {
+          'server/services/moderation-worker-extra.ts':
+            "import { fastPreModerate } from './moderation-worker'\nexport const _f = fastPreModerate\n",
+        },
+        /^\[moderation-worker\] server\/services\/moderation-worker-extra\.ts:1 \(import\) import ngược server\/services\/moderation-worker\.ts$/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = selfImportViolations(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 1 KHÔNG nhầm `./moderation-worker-check` với barrel, và anh em import barrel thì không đỏ', () => {
+    assert.deepEqual(
+      selfImportViolations(
+        withOverrides({
+          ...inject(
+            'server/services/moderation-worker-rescan.ts',
+            "import { checkAndModerateContent as _c } from './moderation-worker-check'",
+          ),
+          // Anh em (nơi gọi): import barrel là đúng chủ đích — chính `rescanExistingContent` đi đường này.
+          ...inject(
+            'server/services/moderation-rescan-job.ts',
+            "import { fastPreModerate as _f } from './moderation-worker'",
+          ),
+        }),
+      ),
+      [],
+    )
+  })
+
+  it('bỏ phần loại anh em khỏi mẫu nhóm moderation-worker thì chính mã thật đỏ — ranh giới anh em là phần chịu lực', () => {
+    const naive: Family = { barrel: MODERATION_WORKER_BARREL, prefix: /^moderation-[\w-]+\.ts$/ }
+    const flagged = selfImportViolations(REPO, { ...FAMILIES, 'moderation-worker': naive })
+      .map((violation) => /^\[moderation-worker\] (\S+):/.exec(violation)?.[1])
+      .sort()
+    assert.deepEqual(flagged, ['server/services/moderation-rescan-job.ts'])
+  })
+
+  it('vòng import qua anh em mà nhóm import thì đỏ — luật 1 không thấy, phép dò vòng thấy', () => {
+    const override = inject(
+      'server/services/moderation-regex.ts',
+      "import { getWorkerStats as _g } from './moderation-worker'",
+    )
+    // Anh em không thuộc nhóm: luật 1 im lặng…
+    assert.deepEqual(selfImportViolations(withOverrides(override)), [])
+    // …nhưng barrel → tệp con → moderation-regex → barrel là một vòng.
+    const cycles = familyImportCycles(withOverrides(override), FAMILIES['moderation-worker']!)
+    assert.ok(cycles.length > 0, 'không thấy vòng')
+    for (const cycle of cycles)
+      assert.match(
+        cycle,
+        /^server\/services\/moderation-worker\.ts → .*server\/services\/moderation-regex\.ts → server\/services\/moderation-worker\.ts$/,
+      )
+  })
+
+  it('luật 4 đỏ khi bộ đếm workerStats hay cột hàng chờ bị chép sang tệp con thứ hai', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'bộ đếm chép sang lượt quét lại',
+        inject('server/services/moderation-worker-rescan.ts', 'const workerStats = { errorCount: 0 }'),
+        /^\[moderation-worker\] 'workerStats' khai ở 2 tệp \(server\/services\/moderation-stats\.ts:\d+, server\/services\/moderation-worker-rescan\.ts:1\)/,
+      ],
+      [
+        'cột hàng chờ chép sang lượt kiểm',
+        inject('server/services/moderation-worker-check.ts', "const QUEUE_COLUMNS = ['target_type'] as const"),
+        /^\[moderation-worker\] 'QUEUE_COLUMNS' khai ở 2 tệp \(server\/services\/moderation-worker-check\.ts:1, server\/services\/moderation-worker-persist\.ts:\d+\)/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = stateViolations(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 4 đỏ khi tệp KHÔNG nêu tên ghi bộ đếm — ngoại lệ chỉ cho đúng bốn tệp', () => {
+    const rescan = 'server/services/moderation-worker-rescan.ts'
+    const endpoint = 'server/api/admin/ai/moderation/worker-status.get.ts'
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'lượt quét lại (thuộc nhóm, không nêu tên)',
+        {
+          [rescan]: `import { workerStats } from './moderation-stats'\n${REPO.get(rescan)}\nexport function _zero() { workerStats.errorCount = 0 }\n`,
+        },
+        /^\[moderation-worker\] server\/services\/moderation-worker-rescan\.ts:\d+ \(gán\) ghi vào 'workerStats' của server\/services\/moderation-stats\.ts/,
+      ],
+      [
+        'endpoint (ngoài nhóm), khoá tính toán',
+        {
+          [endpoint]: `import { workerStats } from '../../../../services/moderation-stats'\n${REPO.get(endpoint)}\nexport function _reset(key: 'errorCount') { workerStats[key] = 0 }\n`,
+        },
+        /^\[moderation-worker\] server\/api\/admin\/ai\/moderation\/worker-status\.get\.ts:\d+ \(gán, khoá tính toán\) ghi vào 'workerStats'/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = stateViolations(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 4 đỏ khi lượt kiểm ghi vào QUEUE_COLUMNS của đường ghi (mở export rồi `.push()`)', () => {
+    const check = 'server/services/moderation-worker-check.ts'
+    const violations = stateViolations(
+      withOverrides({
+        ...replaceIn(
+          'server/services/moderation-worker-persist.ts',
+          'const QUEUE_COLUMNS = [',
+          'export const QUEUE_COLUMNS = [',
+        ),
+        [check]: `import { QUEUE_COLUMNS } from './moderation-worker-persist'\n${REPO.get(check)}\nexport function _grow() { (QUEUE_COLUMNS as unknown as string[]).push('x') }\n`,
+      }),
+    )
+    assert.equal(violations.length, 1, JSON.stringify(violations))
+    assert.match(
+      violations[0]!,
+      /^\[moderation-worker\] server\/services\/moderation-worker-check\.ts:\d+ \(\.push\(\)\) ghi vào 'QUEUE_COLUMNS' của server\/services\/moderation-worker-persist\.ts/,
+    )
+  })
+
+  it('ngoại lệ người ghi chung chết thì đỏ: tệp nêu tên thôi ghi, hoặc tên không còn là trạng thái', () => {
+    const stopped = stateViolations(
+      withOverrides(replaceIn('server/services/moderation-instant.ts', '  workerStats.blockedInstant++\n', '')),
+    )
+    assert.equal(stopped.length, 1, JSON.stringify(stopped))
+    assert.match(
+      stopped[0]!,
+      /^ngoại lệ chết: server\/services\/moderation-stats\.ts#workerStats khai người ghi .*moderation-instant\.ts.* nhưng thực tế ghi \[(?!.*moderation-instant)/,
+    )
+    const gone = stateViolations(REPO, {
+      ...SHARED_STATE_WRITERS,
+      'server/services/moderation-stats.ts#lastSeen': { writers: [], reason: 'không tồn tại' },
+    })
+    assert.equal(gone.length, 1, JSON.stringify(gone))
+    assert.match(gone[0]!, /^ngoại lệ chết: server\/services\/moderation-stats\.ts#lastSeen không còn là trạng thái/)
+  })
+
+  it('luật 5 đỏ khi barrel moderation-worker.ts bỏ, đổi tên, đổi loại hay xuất thêm một tên', () => {
+    const barrel = MODERATION_WORKER_BARREL
+    const cases: Array<[string, Record<string, string>, string[]]> = [
+      [
+        'bỏ matchInstantRule',
+        replaceIn(barrel, 'export { matchInstantRule, fastPreModerate }', 'export { fastPreModerate }'),
+        [`${barrel} thiếu giá trị 'matchInstantRule'`],
+      ],
+      [
+        'đổi tên RescanSummary',
+        replaceIn(barrel, '  RescanSummary,\n', '  RescanSummary as ModerationRescanSummary,\n'),
+        [`${barrel} thiếu kiểu 'RescanSummary'`, `${barrel} xuất thêm kiểu 'ModerationRescanSummary'`],
+      ],
+      [
+        'giá trị thành kiểu',
+        replaceIn(
+          barrel,
+          "export { checkAndModerateContent } from './moderation-worker-check'",
+          "export type { checkAndModerateContent } from './moderation-worker-check'",
+        ),
+        [
+          `${barrel} thiếu giá trị 'checkAndModerateContent'`,
+          `${barrel} xuất thêm kiểu 'checkAndModerateContent'`,
+        ],
+      ],
+      [
+        'lộ helper nội bộ của đường ghi',
+        append(barrel, "export { applyAutoHide } from './moderation-worker-persist'"),
+        [`${barrel} xuất thêm giá trị 'applyAutoHide'`],
+      ],
+      [
+        'export *',
+        append(barrel, "export * from './moderation-worker-check'"),
+        [`${barrel} xuất thêm giá trị '* from './moderation-worker-check''`],
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = moderationApiViolations(withOverrides(override))
+      assert.deepEqual(
+        violations.map((violation) => violation.split(' — ')[0]),
+        expected,
+        label,
+      )
+    }
+  })
+
+  it('hình dạng barrel moderation-worker.ts đỏ khi có mã, import, export *, hay nguồn ngoài nhóm', () => {
+    const base = REPO.get(MODERATION_WORKER_BARREL)!
+    const swap = (from: string, to: string) => {
+      assert.ok(base.includes(from), `barrel không còn đoạn ${JSON.stringify(from)} để đột biến`)
+      return base.replace(from, to)
+    }
+    const cases: Array<[string, string, RegExp]> = [
+      // Luật 5 vẫn xanh với ca này (cùng tên, cùng loại) — chỉ phép kiểm hình dạng bắt.
+      [
+        'mã cùng tên dời về barrel',
+        swap(
+          "export { checkAndModerateContent } from './moderation-worker-check'",
+          'export async function checkAndModerateContent() { return null }',
+        ),
+        /^not a re-export: export async function checkAndModerateContent/,
+      ],
+      ['import', `import { workerStats } from './moderation-stats'\n${base}`, /^not a re-export: import/],
+      ['export *', `${base}\nexport * from './moderation-worker-check'\n`, /^not a named re-export/],
+      ['export * as', `${base}\nexport * as check from './moderation-worker-check'\n`, /^not a named re-export/],
+      [
+        'anh em moderation-regex',
+        `${base}\nexport { checkModerationPattern } from './moderation-regex'\n`,
+        /^not re-exported from a part of the family/,
+      ],
+      [
+        'ngoài server/services',
+        `${base}\nexport { logInfo } from '../utils/logger'\n`,
+        /^not re-exported from a part of the family/,
+      ],
+      ['export { … } không có module', `${base}\nexport { getWorkerStats as _g }\n`, /^a re-export without a module/],
+      ['rỗng', '', /^the barrel exports nothing$/],
+    ]
+    for (const [label, source, expected] of cases) {
+      const problems = moderationWorkerBarrelProblems(source)
+      assert.equal(problems.length, 1, `${label}: ${JSON.stringify(problems)}`)
+      assert.match(problems[0]!, expected, label)
+    }
+    // Ca đầu: luật 5 đúng là không thấy gì.
+    assert.deepEqual(
+      moderationApiViolations(withOverrides({ [MODERATION_WORKER_BARREL]: cases[0]![1] })),
+      [],
+    )
+  })
+
+  it('luật 6 đỏ khi nơi gọi ngoài nhóm import thẳng một tệp của nhóm, ở mọi dạng', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'endpoint chat nhập tệp con thay vì barrel (lọt khỏi mock của test chatbot)',
+        replaceIn(
+          'server/api/chat.post.ts',
+          "from '../services/moderation-worker'",
+          "from '../services/moderation-worker-prescreen'",
+        ),
+        /^\[moderation-worker\] server\/api\/chat\.post\.ts:\d+ \(import\) import server\/services\/moderation-worker-prescreen\.ts/,
+      ],
+      [
+        'import type từ tệp kiểu',
+        replaceIn(
+          'server/services/comments-reply-email.ts',
+          "import type { ModerationCheckOutput } from './moderation-worker'",
+          "import type { ModerationCheckOutput } from './moderation-worker-types'",
+        ),
+        /^\[moderation-worker\] server\/services\/comments-reply-email\.ts:\d+ \(import\) import server\/services\/moderation-worker-types\.ts/,
+      ],
+      [
+        'job quét lại nhập thẳng lượt quét',
+        inject(
+          'server/services/moderation-rescan-job.ts',
+          "import { rescanExistingContent as _r } from './moderation-worker-rescan'",
+        ),
+        /^\[moderation-worker\] server\/services\/moderation-rescan-job\.ts:1 \(import\) import server\/services\/moderation-worker-rescan\.ts/,
+      ],
+      [
+        'tệp tách từ trước (moderation-stats) qua namespace',
+        inject(
+          'server/api/admin/ai/moderation/worker-status.get.ts',
+          "import * as _stats from '../../../../services/moderation-stats'",
+        ),
+        /^\[moderation-worker\] server\/api\/admin\/ai\/moderation\/worker-status\.get\.ts:1 \(import\) import server\/services\/moderation-stats\.ts/,
+      ],
+      [
+        'import() động',
+        append('server/services/livestream-chat.ts', "export const _lazy = () => import('./moderation-worker-check')"),
+        /^\[moderation-worker\] server\/services\/livestream-chat\.ts:\d+ \(import\(\)\) import server\/services\/moderation-worker-check\.ts/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const { violations } = moderationConsumerCheck(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 6 KHÔNG đỏ: tệp con nhập tệp con, nơi gọi nhập barrel hay anh em moderation-regex', () => {
+    assert.deepEqual(
+      moderationConsumerCheck(
+        withOverrides({
+          ...inject(
+            'server/services/moderation-worker-rescan.ts',
+            "import { matchInstantRule as _m } from './moderation-worker-prescreen'",
+          ),
+          ...inject(
+            'server/api/admin/ai/moderation/worker-status.get.ts',
+            "import { checkModerationPattern as _c } from '../../../../services/moderation-regex'",
+          ),
+        }),
+      ).violations,
+      [],
     )
   })
 })
