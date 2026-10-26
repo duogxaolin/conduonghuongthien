@@ -15,7 +15,7 @@
               :value="searchQuery"
               @input="$emit('search-input', ($event.target as HTMLInputElement).value)"
               :ref="mountInput"
-              class="w-full py-3 pl-11 pr-10 rounded-lg border border-[#4A6741] bg-white font-[inherit] text-[0.95rem] text-[#172516] outline-none focus:ring-2 focus:ring-[#4A6741] shadow-inner"
+              class="w-full py-3 pl-11 pr-10 rounded-lg border border-brand-600 bg-white font-[inherit] text-[0.95rem] text-[#172516] outline-none focus:ring-2 focus:ring-brand-600 shadow-inner"
             />
             <button
               v-if="searchQuery"
@@ -54,7 +54,7 @@
         >
           <!-- Header -->
           <div class="px-4 py-2.5 bg-[#F7FAF6] border-b border-[#E8EFE6] flex items-center justify-between text-xs font-semibold text-[#556450]">
-            <span v-if="isSearchingLive" class="flex items-center gap-2 text-[#4A6741]">
+            <span v-if="isSearchingLive" class="flex items-center gap-2 text-brand-600">
               <i class="fa-solid fa-circle-notch animate-spin text-sm" aria-hidden="true"></i>
               <span>Đang tìm kiếm...</span>
             </span>
@@ -74,7 +74,7 @@
             <span class="block mb-3 font-semibold">{{ t('search_live_error') }}</span>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4A6741] text-white text-xs font-bold border-none cursor-pointer hover:bg-[#385132] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-bold border-none cursor-pointer hover:bg-[#385132] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
               @click="$emit('search-input', searchQuery)"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -94,7 +94,7 @@
               <div v-if="item.thumbnailUrl" class="w-12 h-12 rounded-lg overflow-hidden bg-[#EBF1EA] shrink-0 border border-[#E2E8DF]">
                 <NuxtImg :src="item.thumbnailUrl" :alt="item.title" width="48" height="48" sizes="48px" format="webp" class="w-full h-full object-cover" />
               </div>
-              <div v-else class="w-10 h-10 rounded-lg bg-[#EBF1EA] text-[#4A6741] flex items-center justify-center shrink-0 text-sm">
+              <div v-else class="w-10 h-10 rounded-lg bg-[#EBF1EA] text-brand-600 flex items-center justify-center shrink-0 text-sm">
                 <i :class="item.typeIcon" aria-hidden="true"></i>
               </div>
 
