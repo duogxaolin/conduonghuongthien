@@ -484,13 +484,13 @@ onMounted(() => {
     <!-- Page Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Quản lý Ngôn ngữ</h1>
-        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Quản lý ngôn ngữ và bản dịch giao diện</p>
+        <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">Quản lý Ngôn ngữ</h1>
+        <p class="text-[0.85rem] text-ink-muted mt-1 mb-0">Quản lý ngôn ngữ và bản dịch giao diện</p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <button
           type="button"
-          class="px-3 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#1e4620] hover:bg-[#f0f7f1] text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
+          class="px-3 py-2 rounded-lg border border-line-strong bg-white text-brand-900 hover:bg-surface-tint text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
           :disabled="syncing"
           title="Đồng bộ tất cả các key từ ngôn ngữ mặc định sang các ngôn ngữ khác"
           @click="syncAllLanguages"
@@ -501,7 +501,7 @@ onMounted(() => {
 
         <button
           type="button"
-          class="px-3 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors border-none disabled:opacity-50 shadow-xs"
+          class="px-3 py-2 rounded-lg bg-brand-900 hover:bg-[#153317] text-white text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors border-none disabled:opacity-50 shadow-xs"
           :disabled="translatingAll"
           title="Dịch AI tất cả các key còn thiếu cho mọi ngôn ngữ đang hoạt động"
           @click="translateAllLanguagesMissing"
@@ -512,7 +512,7 @@ onMounted(() => {
 
         <button
           type="button"
-          class="px-3 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f0f7f1] text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
+          class="px-3 py-2 rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-surface-tint text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
           :disabled="seedingDefault"
           title="Khôi phục hoặc nạp lại bản dịch mặc định ban đầu"
           @click="seedDefaultTranslations"
@@ -524,14 +524,14 @@ onMounted(() => {
     </div>
 
     <!-- Info Banner -->
-    <div class="rounded-xl border border-[#c8dcc9] bg-[#f0f7f1] p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#1e4620]">
+    <div class="rounded-xl border border-[#c8dcc9] bg-surface-tint p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-brand-900">
       <div class="flex items-center gap-2">
-        <i class="fa-solid fa-circle-info text-base text-[#2c6e33] shrink-0"></i>
+        <i class="fa-solid fa-circle-info text-base text-brand-700 shrink-0"></i>
         <span><strong>Lưu ý:</strong> Sửa hoặc nạp bản dịch xong sẽ lưu ngay vào CSDL. Phía trang công khai sẽ tự động cập nhật khi người đọc tải lại trang hoặc chuyển ngôn ngữ.</span>
       </div>
       <button
         type="button"
-        class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#e4ece4] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
+        class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-brand-900 hover:bg-[#e4ece4] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
         @click="loadData"
       >
         <i class="fa-solid fa-arrows-rotate text-[0.7rem]" :class="loading ? 'animate-spin' : ''"></i>
@@ -540,24 +540,24 @@ onMounted(() => {
     </div>
 
     <!-- Tab Switcher -->
-    <div class="flex gap-1 border-b border-[#e2ece3]">
+    <div class="flex gap-1 border-b border-line">
       <button
         class="px-4 py-2.5 text-sm font-bold border-b-2 transition-colors cursor-pointer bg-transparent"
-        :class="activeTab === 'languages' ? 'border-[#2c6e33] text-[#2c6e33]' : 'border-transparent text-[#667768] hover:text-[#122815]'"
+        :class="activeTab === 'languages' ? 'border-brand-700 text-brand-700' : 'border-transparent text-ink-muted hover:text-brand-950'"
         @click="activeTab = 'languages'"
       >
         <i class="fa-solid fa-globe mr-1.5"></i> Ngôn ngữ
       </button>
       <button
         class="px-4 py-2.5 text-sm font-bold border-b-2 transition-colors cursor-pointer bg-transparent"
-        :class="activeTab === 'translations' ? 'border-[#2c6e33] text-[#2c6e33]' : 'border-transparent text-[#667768] hover:text-[#122815]'"
+        :class="activeTab === 'translations' ? 'border-brand-700 text-brand-700' : 'border-transparent text-ink-muted hover:text-brand-950'"
         @click="activeTab = 'translations'; fetchTranslations()"
       >
         <i class="fa-solid fa-language mr-1.5"></i> Bản dịch UI
       </button>
       <button
         class="px-4 py-2.5 text-sm font-bold border-b-2 transition-colors cursor-pointer bg-transparent flex items-center gap-1.5"
-        :class="activeTab === 'universal' ? 'border-[#2c6e33] text-[#2c6e33]' : 'border-transparent text-[#667768] hover:text-[#122815]'"
+        :class="activeTab === 'universal' ? 'border-brand-700 text-brand-700' : 'border-transparent text-ink-muted hover:text-brand-950'"
         @click="activeTab = 'universal'"
       >
         <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
@@ -567,9 +567,9 @@ onMounted(() => {
 
     <!-- Skeleton + Error (Languages tab — guard ghim ở file gốc) -->
     <SkeletonTable v-if="loading && activeTab === 'languages'" label="Đang tải danh sách ngôn ngữ" :rows="4" :cols="5" />
-    <div v-else-if="loadError && activeTab === 'languages'" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+    <div v-else-if="loadError && activeTab === 'languages'" role="alert" class="bg-[#ffebe9] text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
       <span>{{ loadError }}</span>
-      <button type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchLanguages">Thử lại</button>
+      <button type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchLanguages">Thử lại</button>
     </div>
 
     <!-- Languages Tab -->
@@ -615,9 +615,9 @@ onMounted(() => {
     >
       <template #status>
         <SkeletonTable v-if="translationsLoading" label="Đang tải bản dịch" :rows="8" :cols="4" />
-        <div v-else-if="translationsError" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+        <div v-else-if="translationsError" role="alert" class="bg-[#ffebe9] text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
           <span>{{ translationsError }}</span>
-          <button type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchTranslations">Thử lại</button>
+          <button type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchTranslations">Thử lại</button>
         </div>
       </template>
     </TranslationsTab>
@@ -635,7 +635,7 @@ onMounted(() => {
       @close="showMoveModal = false"
     >
         <div v-if="movingLang">
-          <p class="text-xs text-[#667768] mb-2.5">
+          <p class="text-xs text-ink-muted mb-2.5">
             Bấm chọn số thứ tự bên dưới để chuyển ngôn ngữ <strong>{{ movingLang.name }}</strong> đến vị trí đó:
           </p>
           <div class="grid grid-cols-4 sm:grid-cols-6 gap-2">
@@ -645,8 +645,8 @@ onMounted(() => {
               type="button"
               class="py-2.5 px-3 rounded-lg font-bold text-sm cursor-pointer transition-all border flex flex-col items-center justify-center gap-0.5"
               :class="languages[idx]?.code === movingLang.code
-                ? 'bg-[#1e4620] text-white border-[#1e4620] shadow-sm'
-                : 'bg-white hover:bg-[#f0f7f1] text-[#122815] border-[#c8d6c9] hover:border-[#2c6e33]'"
+                ? 'bg-brand-900 text-white border-brand-900 shadow-sm'
+                : 'bg-white hover:bg-surface-tint text-brand-950 border-line-strong hover:border-brand-700'"
               @click="moveLanguageToPosition(idx)"
             >
               <span>{{ idx + 1 }}</span>
@@ -660,7 +660,7 @@ onMounted(() => {
         <template #footer>
           <button
             type="button"
-            class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-[#f8faf8] cursor-pointer"
+            class="px-4 py-2 rounded-lg border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-[#f8faf8] cursor-pointer"
             @click="showMoveModal = false"
           >
             Đóng
@@ -678,49 +678,49 @@ onMounted(() => {
       @close="showTranslateProgressModal = false"
     >
       <div class="flex flex-col gap-4">
-        <p class="m-0 text-xs text-[#667768]">Dịch tự động các chuỗi giao diện qua AI Gateway</p>
+        <p class="m-0 text-xs text-ink-muted">Dịch tự động các chuỗi giao diện qua AI Gateway</p>
 
-        <div class="flex flex-col gap-2 bg-[#f8faf7] p-3.5 rounded-lg border border-[#e8efe6]">
+        <div class="flex flex-col gap-2 bg-surface p-3.5 rounded-lg border border-[#e8efe6]">
           <div class="flex items-center justify-between text-xs font-bold">
-            <span class="text-[#122815]">
+            <span class="text-brand-950">
               {{ progressStats.finished ? '✓ Hoàn tất bản dịch' : (progressStats.stopped ? '⏹ Đã dừng tiến trình' : 'Đang xử lý...') }}
             </span>
-            <span class="text-[#1e4620] text-sm">{{ progressStats.percent }}%</span>
+            <span class="text-brand-900 text-sm">{{ progressStats.percent }}%</span>
           </div>
 
-          <div class="w-full h-2.5 bg-[#e2ece3] rounded-full overflow-hidden">
+          <div class="w-full h-2.5 bg-line rounded-full overflow-hidden">
             <div
-              class="h-full bg-[#2c6e33] transition-all duration-300 rounded-full"
+              class="h-full bg-brand-700 transition-all duration-300 rounded-full"
               :class="!progressStats.finished && !progressStats.stopped ? 'animate-pulse motion-reduce:animate-none' : ''"
               :style="{ width: `${progressStats.percent}%` }"
             ></div>
           </div>
 
-          <div class="flex items-center justify-between text-[0.72rem] text-[#667768]">
-            <span>Đã dịch: <strong class="text-[#122815]">{{ progressStats.done }} / {{ progressStats.total }}</strong> key</span>
+          <div class="flex items-center justify-between text-[0.72rem] text-ink-muted">
+            <span>Đã dịch: <strong class="text-brand-950">{{ progressStats.done }} / {{ progressStats.total }}</strong> key</span>
             <span class="truncate max-w-[220px]" :title="progressStats.currentKey">{{ progressStats.currentKey }}</span>
           </div>
         </div>
 
         <div>
-          <h4 class="text-xs font-bold text-[#122815] mb-1.5 flex items-center justify-between">
+          <h4 class="text-xs font-bold text-brand-950 mb-1.5 flex items-center justify-between">
             <span>Nhật ký dịch theo thời gian thực ({{ progressLog.length }} mục)</span>
-            <span v-if="!progressStats.finished && !progressStats.stopped" class="text-[0.68rem] text-[#2c6e33] font-normal flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-[#2c6e33] animate-ping"></span> Đang nạp...
+            <span v-if="!progressStats.finished && !progressStats.stopped" class="text-[0.68rem] text-brand-700 font-normal flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-brand-700 animate-ping"></span> Đang nạp...
             </span>
           </h4>
-          <div class="h-44 overflow-y-auto border border-[#e2ece3] rounded-lg p-2 bg-[#fcfdfc] flex flex-col gap-1 text-xs font-mono">
+          <div class="h-44 overflow-y-auto border border-line rounded-lg p-2 bg-[#fcfdfc] flex flex-col gap-1 text-xs font-mono">
             <div
               v-for="(item, idx) in progressLog"
               :key="idx"
               class="px-2 py-1 rounded bg-white border flex items-start gap-1.5"
-              :class="item.success ? 'border-[#e2ece3] text-[#122815]' : 'border-[#ffebe9] text-[#d12420]'"
+              :class="item.success ? 'border-[#e2ece3] text-brand-950' : 'border-[#ffebe9] text-danger'"
             >
-              <span class="font-bold shrink-0" :class="item.success ? 'text-[#2c6e33]' : 'text-[#d12420]'">
+              <span class="font-bold shrink-0" :class="item.success ? 'text-brand-700' : 'text-danger'">
                 {{ item.success ? '✓' : '✗' }}
               </span>
-              <span class="font-semibold shrink-0 text-[#4A5545]">{{ item.key }}:</span>
-              <span class="truncate text-[#667768]">{{ item.value }}</span>
+              <span class="font-semibold shrink-0 text-ink-secondary">{{ item.key }}:</span>
+              <span class="truncate text-ink-muted">{{ item.value }}</span>
             </div>
             <div v-if="progressLog.length === 0" class="text-center py-6 text-[#999] text-xs font-sans">
               Chưa có khóa nào được dịch trong phiên này...
@@ -733,7 +733,7 @@ onMounted(() => {
           <button
             v-if="!progressStats.finished && !progressStats.stopped"
             type="button"
-            class="mr-auto px-3.5 py-2 rounded-lg border border-[#e2c8c8] bg-white text-xs font-bold text-[#d12420] hover:bg-[#fff5f4] cursor-pointer flex items-center gap-1.5"
+            class="mr-auto px-3.5 py-2 rounded-lg border border-[#e2c8c8] bg-white text-xs font-bold text-danger hover:bg-[#fff5f4] cursor-pointer flex items-center gap-1.5"
             @click="stopTranslate"
           >
             <i class="fa-solid fa-stop" aria-hidden="true"></i>
@@ -744,8 +744,8 @@ onMounted(() => {
             type="button"
             class="px-4 py-2 rounded-lg text-xs font-bold cursor-pointer"
             :class="progressStats.finished || progressStats.stopped
-              ? 'bg-[#1e4620] hover:bg-[#153317] text-white border-0'
-              : 'border border-[#c8d6c9] bg-white text-[#667768]'"
+              ? 'bg-brand-900 hover:bg-[#153317] text-white border-0'
+              : 'border border-line-strong bg-white text-ink-muted'"
             @click="showTranslateProgressModal = false"
           >
             {{ progressStats.finished ? 'Hoàn tất & Đóng' : 'Đóng cửa sổ' }}

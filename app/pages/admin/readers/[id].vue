@@ -237,7 +237,7 @@ onMounted(load)
 
 <template>
   <div class="flex flex-col gap-5">
-    <nuxt-link to="/admin/readers" class="text-sm font-semibold text-[#2c6e33] no-underline hover:underline">&larr; Danh sách người đọc</nuxt-link>
+    <nuxt-link to="/admin/readers" class="text-sm font-semibold text-brand-700 no-underline hover:underline">&larr; Danh sách người đọc</nuxt-link>
 
     <!-- Đang tải -->
     <div v-if="loading" role="status" aria-busy="true" class="flex flex-col gap-3">
@@ -258,24 +258,24 @@ onMounted(load)
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="load">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="load">Thử lại</button>
     </div>
 
     <template v-else-if="reader">
-      <section class="rounded-xl border border-[#e2ece3] bg-white p-5">
+      <section class="rounded-xl border border-line bg-white p-5">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="flex items-center gap-3">
             <ReaderAvatar :initials="(reader.displayName || '?').slice(0, 1)" />
             <div>
-              <h1 class="m-0 text-[1.2rem] font-extrabold text-[#122815]">{{ reader.displayName || 'Chưa có tên' }}</h1>
-              <p class="m-0 text-sm text-[#667768]">{{ reader.email || '—' }}</p>
+              <h1 class="m-0 text-[1.2rem] font-extrabold text-brand-950">{{ reader.displayName || 'Chưa có tên' }}</h1>
+              <p class="m-0 text-sm text-ink-muted">{{ reader.email || '—' }}</p>
             </div>
           </div>
           <span
             v-if="reader.isBanned"
             class="rounded-full bg-[#fdecec] px-3 py-1 text-[0.8rem] font-bold text-[#b0403c]"
           >Đã chặn</span>
-          <span v-else class="rounded-full bg-[#eef7ef] px-3 py-1 text-[0.8rem] font-bold text-[#2c6e33]">Hoạt động</span>
+          <span v-else class="rounded-full bg-[#eef7ef] px-3 py-1 text-[0.8rem] font-bold text-brand-700">Hoạt động</span>
         </div>
 
         <dl class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
@@ -287,40 +287,40 @@ onMounted(load)
           <div v-if="reader.isBanned && reader.banReason"><dt class="font-bold text-[#2c3e2e]">Lý do</dt><dd class="m-0 whitespace-pre-line text-[#3d4f3f]">{{ reader.banReason }}</dd></div>
         </dl>
 
-        <div class="mt-4 flex flex-wrap gap-2 border-t border-[#e2ece3] pt-4">
+        <div class="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
           <button
             v-if="!reader.isBanned"
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-[#d12420] px-3 py-2 text-sm font-bold text-[#d12420] hover:bg-[#fff4f3] disabled:opacity-60"
+            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] disabled:opacity-60"
             @click="banReader"
           >Chặn tài khoản</button>
           <button
             v-else
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2 text-sm font-bold text-[#2c3e2e] hover:bg-[#f0f7f1] disabled:opacity-60"
+            class="rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-bold text-[#2c3e2e] hover:bg-surface-tint disabled:opacity-60"
             @click="unbanReader"
           >Bỏ chặn</button>
           <button
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-[#d12420] px-3 py-2 text-sm font-bold text-[#d12420] hover:bg-[#fff4f3] disabled:opacity-60"
+            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] disabled:opacity-60"
             @click="purgeComments"
           >Xoá toàn bộ bình luận</button>
           <button
             type="button"
             :disabled="busy"
-            class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b] disabled:opacity-60"
+            class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b] disabled:opacity-60"
             @click="deleteAccount"
           >Xoá tài khoản</button>
         </div>
       </section>
 
-      <section class="rounded-xl border border-[#e2ece3] bg-white p-5">
-        <h2 class="m-0 text-[1rem] font-extrabold text-[#122815]">
+      <section class="rounded-xl border border-line bg-white p-5">
+        <h2 class="m-0 text-[1rem] font-extrabold text-brand-950">
           Bình luận đã viết
-          <span class="ml-1 text-sm font-semibold text-[#667768]">({{ impact.comments }})</span>
+          <span class="ml-1 text-sm font-semibold text-ink-muted">({{ impact.comments }})</span>
         </h2>
         <p v-if="impact.adminReplies > 0 || impact.otherReaderReplies > 0" class="m-0 mt-1 text-sm text-[#8a7320]">
           <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
@@ -331,14 +331,14 @@ onMounted(load)
           — tất cả sẽ bị xoá theo nếu bạn chặn hoặc xoá tài khoản này.
         </p>
 
-        <p v-if="!comments.length" class="m-0 mt-4 rounded-lg bg-[#f8faf8] px-4 py-6 text-center text-sm text-[#667768]">
+        <p v-if="!comments.length" class="m-0 mt-4 rounded-lg bg-[#f8faf8] px-4 py-6 text-center text-sm text-ink-muted">
           Người đọc này chưa viết bình luận nào.
         </p>
 
         <ul v-else class="m-0 mt-4 flex list-none flex-col gap-3 p-0">
           <li v-for="comment in comments" :key="comment.id" class="rounded-lg border border-[#eef3ee] p-3.5">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="text-[0.8rem] text-[#667768]">
+              <div class="text-[0.8rem] text-ink-muted">
                 <span v-if="comment.parentId !== null" class="mr-1.5 rounded-full bg-[#eef3ee] px-2 py-0.5 font-bold text-[#3d4f3f]">Phản hồi</span>
                 {{ formatMoment(comment.createdAt) }}
                 <span v-if="comment.articleTitle"> — Bài viết: {{ comment.articleTitle }}</span>

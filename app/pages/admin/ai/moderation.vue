@@ -2,12 +2,12 @@
   <div class="flex flex-col gap-5">
     <header class="flex flex-col gap-1">
       <div class="flex items-center gap-2">
-        <span class="w-8 h-8 rounded-lg bg-[#1e4620] text-white flex items-center justify-center text-sm shadow-xs">
+        <span class="w-8 h-8 rounded-lg bg-brand-900 text-white flex items-center justify-center text-sm shadow-xs">
           <i class="fa-solid fa-shield-halved"></i>
         </span>
-        <h1 class="m-0 text-[1.35rem] font-extrabold text-[#122815]">Kiểm duyệt An ninh & An toàn Nội dung</h1>
+        <h1 class="m-0 text-[1.35rem] font-extrabold text-brand-950">Kiểm duyệt An ninh & An toàn Nội dung</h1>
       </div>
-      <p class="m-0 mt-1 text-sm text-[#667768]">
+      <p class="m-0 mt-1 text-sm text-ink-muted">
         Hệ thống kiểm duyệt an ninh tự động: đọc hiểu ngữ cảnh AI, tự động phát hiện và ẩn nội dung xấu độc, thù địch, chống phá, lừa đảo theo quy định của Cục C11 - Bộ Công an.
       </p>
     </header>
@@ -19,7 +19,7 @@
     </div>
 
     <!-- Tab navigation -->
-    <nav class="flex flex-wrap gap-2 bg-white p-2 rounded-xl border border-[#e2ece3]">
+    <nav class="flex flex-wrap gap-2 bg-white p-2 rounded-xl border border-line">
       <button
         v-for="t in ([
           { key: 'settings', label: '⚙️ Cài đặt Kiểm duyệt AI', icon: 'fa-solid fa-sliders', badge: 0, count: undefined as number | undefined },
@@ -31,8 +31,8 @@
         type="button"
         class="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer border"
         :class="activeTab === t.key
-          ? 'bg-[#1e4620] text-white border-[#1e4620] shadow-xs'
-          : 'bg-white text-[#667768] border-transparent hover:bg-[#f0f7f1] hover:text-[#1e4620]'"
+          ? 'bg-brand-900 text-white border-brand-900 shadow-xs'
+          : 'bg-white text-ink-muted border-transparent hover:bg-surface-tint hover:text-brand-900'"
         @click="activeTab = t.key"
       >
         <span>{{ t.label }}</span>
@@ -46,7 +46,7 @@
 
       <button
         type="button"
-        class="ml-auto px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#1e4620] hover:bg-[#f0f7f1] transition-colors cursor-pointer flex items-center gap-1.5"
+        class="ml-auto px-3 py-1.5 rounded-lg border border-line-strong bg-white text-xs font-semibold text-brand-900 hover:bg-surface-tint transition-colors cursor-pointer flex items-center gap-1.5"
         :disabled="loading"
         @click="loadData"
       >
@@ -58,7 +58,7 @@
     <!-- Skeleton Loading -->
     <div v-if="loading" role="status" aria-busy="true" class="flex flex-col gap-4">
       <span class="sr-only">Đang tải dữ liệu kiểm duyệt an ninh</span>
-      <div v-for="n in 3" :key="n" class="h-28 rounded-xl bg-white border border-[#e2ece3] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+      <div v-for="n in 3" :key="n" class="h-28 rounded-xl bg-white border border-line animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
     </div>
 
     <!-- Main Content Tabs — each tab is a presentational panel; state and requests stay here. -->
@@ -180,7 +180,7 @@ const rulesError = ref('')
 const saving = ref(false)
 /** The page alert and each tab's alert look the same. */
 const ALERT_CLASS = 'rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]'
-const RETRY_CLASS = 'font-bold underline text-[#4A6741] ml-2 cursor-pointer'
+const RETRY_CLASS = 'font-bold underline text-brand-600 ml-2 cursor-pointer'
 
 const form = reactive({
   enabled: true,

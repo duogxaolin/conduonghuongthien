@@ -410,20 +410,20 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   <div class="flex flex-col gap-6">
     <!-- Header -->
     <div>
-      <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Tài khoản của tôi</h1>
-      <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">
+      <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">Tài khoản của tôi</h1>
+      <p class="text-[0.85rem] text-ink-muted mt-1 mb-0">
         Đổi mật khẩu, bật xác thực hai bước và xem lịch sử truy cập của chính bạn.
       </p>
     </div>
 
     <!-- Thông tin tài khoản -->
-    <div class="rounded-xl border border-[#e2ece3] bg-white p-5 flex items-center gap-4 flex-wrap">
-      <div class="w-12 h-12 rounded-full bg-[#2c6e33] text-white flex items-center justify-center font-extrabold text-lg shrink-0">
+    <div class="rounded-xl border border-line bg-white p-5 flex items-center gap-4 flex-wrap">
+      <div class="w-12 h-12 rounded-full bg-brand-700 text-white flex items-center justify-center font-extrabold text-lg shrink-0">
         {{ (user?.username || '?').charAt(0).toUpperCase() }}
       </div>
       <div class="min-w-0">
-        <div class="text-[1rem] font-extrabold text-[#122815]">{{ user?.username }}</div>
-        <div class="text-[0.82rem] text-[#667768]">
+        <div class="text-[1rem] font-extrabold text-brand-950">{{ user?.username }}</div>
+        <div class="text-[0.82rem] text-ink-muted">
           {{ user?.isSuperAdmin ? 'SuperAdmin (Toàn quyền)' : (user?.roleName || 'Chưa gán vai trò') }}
           <template v-if="mfa?.email"> · {{ mfa.email }}</template>
         </div>
@@ -438,17 +438,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     </div>
 
     <!-- ── Đổi mật khẩu ──────────────────────────────────────────────── -->
-    <section class="rounded-xl border border-[#e2ece3] bg-white p-5">
+    <section class="rounded-xl border border-line bg-white p-5">
       <div class="flex items-center gap-3 mb-4">
-        <span class="w-1 h-5 rounded-full bg-[#2c6e33]" aria-hidden="true"></span>
-        <h2 class="text-[1rem] font-extrabold text-[#122815] m-0">Đổi mật khẩu</h2>
+        <span class="w-1 h-5 rounded-full bg-brand-700" aria-hidden="true"></span>
+        <h2 class="text-[1rem] font-extrabold text-brand-950 m-0">Đổi mật khẩu</h2>
       </div>
-      <p class="text-[0.82rem] text-[#667768] mt-0 mb-4">
+      <p class="text-[0.82rem] text-ink-muted mt-0 mb-4">
         Tối thiểu 12 ký tự, có đủ 3 trong 4 nhóm (chữ thường, chữ hoa, số, ký tự đặc biệt) và không chứa tên đăng nhập.
         Sau khi đổi, các phiên đăng nhập khác sẽ bị thu hồi.
       </p>
 
-      <div v-if="pwError" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-[#d12420] px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="alert">
+      <div v-if="pwError" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="alert">
         <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
         <span>{{ pwError }}</span>
       </div>
@@ -457,21 +457,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         <div>
           <label for="pw-current" class="block text-[0.8rem] font-bold text-[#2c3e2e] mb-1.5">Mật khẩu hiện tại</label>
           <input id="pw-current" v-model="pw.current" type="password" autocomplete="current-password"
-                 class="w-full px-3 py-2.5 rounded-lg border border-[#c8d6c9] text-[0.9rem] outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
+                 class="w-full px-3 py-2.5 rounded-lg border border-line-strong text-[0.9rem] outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" />
         </div>
         <div>
           <label for="pw-next" class="block text-[0.8rem] font-bold text-[#2c3e2e] mb-1.5">Mật khẩu mới</label>
           <input id="pw-next" v-model="pw.next" type="password" autocomplete="new-password"
-                 class="w-full px-3 py-2.5 rounded-lg border border-[#c8d6c9] text-[0.9rem] outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
+                 class="w-full px-3 py-2.5 rounded-lg border border-line-strong text-[0.9rem] outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" />
         </div>
         <div>
           <label for="pw-confirm" class="block text-[0.8rem] font-bold text-[#2c3e2e] mb-1.5">Nhập lại mật khẩu mới</label>
           <input id="pw-confirm" v-model="pw.confirm" type="password" autocomplete="new-password"
-                 class="w-full px-3 py-2.5 rounded-lg border border-[#c8d6c9] text-[0.9rem] outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
+                 class="w-full px-3 py-2.5 rounded-lg border border-line-strong text-[0.9rem] outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" />
         </div>
         <div class="md:col-span-3">
           <button type="submit" :disabled="pwSaving"
-                  class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] hover:bg-[#2c6e33] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2">
+                  class="inline-flex items-center gap-2 rounded-lg bg-brand-900 hover:bg-brand-700 px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2">
             <i class="fa-solid" :class="pwSaving ? 'fa-spinner fa-spin' : 'fa-key'" aria-hidden="true"></i>
             {{ pwSaving ? 'Đang đổi…' : 'Đổi mật khẩu' }}
           </button>
@@ -481,12 +481,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
     <!-- ── Xác thực hai bước ─────────────────────────────────────────── -->
     <!-- `#security`: đích chuyển trang của chính sách bắt buộc MFA (middleware + banner). -->
-    <section id="security" class="rounded-xl border border-[#e2ece3] bg-white p-5 scroll-mt-4">
+    <section id="security" class="rounded-xl border border-line bg-white p-5 scroll-mt-4">
       <div class="flex items-center gap-3 mb-4">
-        <span class="w-1 h-5 rounded-full bg-[#2c6e33]" aria-hidden="true"></span>
-        <h2 class="text-[1rem] font-extrabold text-[#122815] m-0">Xác thực hai bước</h2>
+        <span class="w-1 h-5 rounded-full bg-brand-700" aria-hidden="true"></span>
+        <h2 class="text-[1rem] font-extrabold text-brand-950 m-0">Xác thực hai bước</h2>
       </div>
-      <p class="text-[0.82rem] text-[#667768] mt-0 mb-4">
+      <p class="text-[0.82rem] text-ink-muted mt-0 mb-4">
         Tự nguyện — bật cái nào cũng được, bật nhiều cái thì lúc đăng nhập chỉ cần vượt qua một trong số đó.
         Bật hoặc tắt sẽ thu hồi các phiên đăng nhập khác.
       </p>
@@ -497,7 +497,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         <div
           v-for="n in 3"
           :key="'mf-' + n"
-          class="rounded-xl border border-[#e2ece3] bg-white p-4 flex items-start gap-4 flex-wrap"
+          class="rounded-xl border border-line bg-white p-4 flex items-start gap-4 flex-wrap"
           aria-hidden="true"
         >
           <div class="w-10 h-10 rounded-xl bg-[#dfe9e0] animate-pulse motion-reduce:animate-none shrink-0"></div>
@@ -513,11 +513,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       </div>
 
       <!-- Error -->
-      <div v-else-if="mfaError" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-[#d12420] px-3.5 py-3 rounded-lg text-[0.84rem]" role="alert">
+      <div v-else-if="mfaError" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-3 rounded-lg text-[0.84rem]" role="alert">
         <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
         <div>
           <div>{{ mfaError }}</div>
-          <button type="button" class="mt-2 text-[0.82rem] font-bold underline bg-transparent border-0 cursor-pointer text-[#d12420] rounded focus:outline-none focus:ring-2 focus:ring-[#d12420]/40" @click="loadMfa">Thử lại</button>
+          <button type="button" class="mt-2 text-[0.82rem] font-bold underline bg-transparent border-0 cursor-pointer text-danger rounded focus:outline-none focus:ring-2 focus:ring-danger/40" @click="loadMfa">Thử lại</button>
         </div>
       </div>
 
@@ -536,14 +536,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             v-for="f in mfa.factors"
             :key="f.factorType"
             class="rounded-xl border p-4 flex items-start gap-4 flex-wrap"
-            :class="f.state === 'active' ? 'border-[#cce5cd] bg-[#fafcfa]' : 'border-[#e2ece3] bg-white'"
+            :class="f.state === 'active' ? 'border-[#cce5cd] bg-[#fafcfa]' : 'border-line bg-white'"
           >
-            <div class="w-10 h-10 rounded-xl bg-[#f0f7f1] border border-[#e2ece3] flex items-center justify-center shrink-0">
-              <i :class="FACTOR_META[f.factorType].icon" class="text-[#2c6e33]" aria-hidden="true"></i>
+            <div class="w-10 h-10 rounded-xl bg-surface-tint border border-line flex items-center justify-center shrink-0">
+              <i :class="FACTOR_META[f.factorType].icon" class="text-brand-700" aria-hidden="true"></i>
             </div>
             <div class="flex-1 min-w-[220px]">
               <div class="flex items-center gap-2 flex-wrap">
-                <strong class="text-[0.9rem] text-[#122815]">{{ FACTOR_META[f.factorType].label }}</strong>
+                <strong class="text-[0.9rem] text-brand-950">{{ FACTOR_META[f.factorType].label }}</strong>
                 <!-- Trạng thái mang cả icon + chữ, không chỉ dựa vào màu -->
                 <span
                   class="inline-flex items-center gap-1 text-[0.7rem] font-bold px-2 py-0.5 rounded-full border"
@@ -557,13 +557,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                   {{ f.state === 'active' ? 'Đang bật' : f.state === 'pending' ? 'Chờ xác nhận' : 'Đang tắt' }}
                 </span>
                 <span v-if="f.state === 'active' && !f.usable"
-                      class="inline-flex items-center gap-1 text-[0.7rem] font-bold px-2 py-0.5 rounded-full border bg-[#ffebe9] border-[#ffc1ba] text-[#d12420]">
+                      class="inline-flex items-center gap-1 text-[0.7rem] font-bold px-2 py-0.5 rounded-full border bg-[#ffebe9] border-[#ffc1ba] text-danger">
                   <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
                   Không dùng được
                 </span>
               </div>
-              <p class="text-[0.8rem] text-[#667768] mt-1 mb-0">{{ FACTOR_META[f.factorType].desc }}</p>
-              <p v-if="f.state === 'active' && !f.usable" class="text-[0.78rem] text-[#d12420] mt-1.5 mb-0">
+              <p class="text-[0.8rem] text-ink-muted mt-1 mb-0">{{ FACTOR_META[f.factorType].desc }}</p>
+              <p v-if="f.state === 'active' && !f.usable" class="text-[0.78rem] text-danger mt-1.5 mb-0">
                 Bí mật lưu trữ không giải mã được (thường do khóa JWT_SECRET đã bị đổi). Hãy tắt rồi bật lại yếu tố này.
               </p>
               <p v-if="f.factorType === 'email_otp' && !canEnroll('email_otp')" class="text-[0.78rem] text-[#8a6412] mt-1.5 mb-0">
@@ -580,7 +580,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 v-if="f.state !== 'active'"
                 type="button"
                 :disabled="!canEnroll(f.factorType)"
-                class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] hover:bg-[#2c6e33] px-3.5 py-2 text-[0.84rem] font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
+                class="inline-flex items-center gap-2 rounded-lg bg-brand-900 hover:bg-brand-700 px-3.5 py-2 text-[0.84rem] font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
                 @click="openEnroll(f.factorType)"
               >
                 <i class="fa-solid fa-plus" aria-hidden="true"></i>
@@ -589,7 +589,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <button
                 v-else
                 type="button"
-                class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-[#d12420] hover:bg-red-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-danger hover:bg-red-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
                 @click="openDisable(f.factorType)"
               >
                 <i class="fa-solid fa-power-off" aria-hidden="true"></i>
@@ -600,21 +600,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         </div>
 
         <!-- Mã dự phòng -->
-        <div class="mt-5 rounded-xl border border-[#e2ece3] bg-[#fafcfa] p-4">
+        <div class="mt-5 rounded-xl border border-line bg-[#fafcfa] p-4">
           <div class="flex items-start gap-4 flex-wrap">
-            <div class="w-10 h-10 rounded-xl bg-[#f0f7f1] border border-[#e2ece3] flex items-center justify-center shrink-0">
-              <i class="fa-solid fa-life-ring text-[#2c6e33]" aria-hidden="true"></i>
+            <div class="w-10 h-10 rounded-xl bg-surface-tint border border-line flex items-center justify-center shrink-0">
+              <i class="fa-solid fa-life-ring text-brand-700" aria-hidden="true"></i>
             </div>
             <div class="flex-1 min-w-[220px]">
               <div class="flex items-center gap-2 flex-wrap">
-                <strong class="text-[0.9rem] text-[#122815]">Mã dự phòng</strong>
+                <strong class="text-[0.9rem] text-brand-950">Mã dự phòng</strong>
                 <span class="inline-flex items-center gap-1 text-[0.7rem] font-bold px-2 py-0.5 rounded-full border"
-                      :class="mfa.recoveryCodesEnabled ? 'bg-[#eef7ee] border-[#cce5cd] text-[#1e4620]' : 'bg-[#f4f7f4] border-[#dce8dd] text-[#667768]'">
+                      :class="mfa.recoveryCodesEnabled ? 'bg-[#eef7ee] border-[#cce5cd] text-brand-900' : 'bg-[#f4f7f4] border-[#dce8dd] text-ink-muted'">
                   <i class="fa-solid" :class="mfa.recoveryCodesEnabled ? 'fa-circle-check' : 'fa-circle-minus'" aria-hidden="true"></i>
                   {{ mfa.recoveryCodesEnabled ? `Còn ${mfa.recoveryCodesRemaining} mã` : 'Đang tắt' }}
                 </span>
               </div>
-              <p class="text-[0.8rem] text-[#667768] mt-1 mb-0">
+              <p class="text-[0.8rem] text-ink-muted mt-1 mb-0">
                 10 mã dùng một lần, để vào được hệ thống khi mất thiết bị xác thực. Tuỳ chọn — bật/tắt lúc nào cũng được.
               </p>
               <p v-if="activeFactors.length === 0" class="text-[0.78rem] text-[#8a6412] mt-1.5 mb-0">
@@ -624,13 +624,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </div>
             <div class="flex items-center gap-2 shrink-0 flex-wrap">
               <button type="button" :disabled="activeFactors.length === 0"
-                      class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] hover:bg-[#2c6e33] px-3.5 py-2 text-[0.84rem] font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
+                      class="inline-flex items-center gap-2 rounded-lg bg-brand-900 hover:bg-brand-700 px-3.5 py-2 text-[0.84rem] font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
                       @click="openRecovery('create')">
                 <i class="fa-solid fa-rotate" aria-hidden="true"></i>
                 {{ mfa.recoveryCodesEnabled ? 'Tạo lại mã' : 'Tạo mã dự phòng' }}
               </button>
               <button v-if="mfa.recoveryCodesEnabled" type="button"
-                      class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-[#d12420] hover:bg-red-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                      class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-danger hover:bg-red-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
                       @click="openRecovery('delete')">
                 <i class="fa-solid fa-trash" aria-hidden="true"></i>
                 Tắt
@@ -646,20 +646,20 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </div>
             <ul class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 list-none p-0 m-0">
               <li v-for="c in revealedCodes" :key="c"
-                  class="rounded-lg border border-[#e2ece3] bg-white px-2.5 py-2 text-center font-mono text-[0.85rem] font-bold text-[#122815] tracking-wide">
+                  class="rounded-lg border border-line bg-white px-2.5 py-2 text-center font-mono text-[0.85rem] font-bold text-brand-950 tracking-wide">
                 {{ c }}
               </li>
             </ul>
             <div class="flex items-center gap-2 mt-3 flex-wrap">
-              <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-[#2c6e33] bg-white px-3.5 py-2 text-[0.84rem] font-bold text-[#2c6e33] hover:bg-[#f0f7f1] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="copyCodes">
+              <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-brand-700 bg-white px-3.5 py-2 text-[0.84rem] font-bold text-brand-700 hover:bg-surface-tint cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700" @click="copyCodes">
                 <i class="fa-solid fa-copy" aria-hidden="true"></i>
                 Copy toàn bộ
               </button>
-              <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-[#2c6e33] bg-white px-3.5 py-2 text-[0.84rem] font-bold text-[#2c6e33] hover:bg-[#f0f7f1] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="downloadCodes">
+              <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-brand-700 bg-white px-3.5 py-2 text-[0.84rem] font-bold text-brand-700 hover:bg-surface-tint cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700" @click="downloadCodes">
                 <i class="fa-solid fa-download" aria-hidden="true"></i>
                 Tải về tệp .txt
               </button>
-              <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-transparent border-0 px-2 py-2 text-[0.84rem] font-semibold text-[#667768] hover:text-[#2c6e33] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33] rounded-lg" @click="revealedCodes = []">
+              <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-transparent border-0 px-2 py-2 text-[0.84rem] font-semibold text-ink-muted hover:text-brand-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700 rounded-lg" @click="revealedCodes = []">
                 Tôi đã lưu, ẩn đi
               </button>
             </div>
@@ -682,41 +682,41 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <!-- ── Modal: bật một yếu tố ─────────────────────────────────────── -->
     <div v-if="enrollDialog.open" class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" @click.self="closeEnroll">
       <div class="w-full max-w-lg rounded-xl bg-white shadow-xl mt-10" role="dialog" aria-modal="true" aria-labelledby="enroll-title">
-        <div class="flex items-center gap-3 px-5 py-4 border-b border-[#e2ece3]">
-          <i :class="FACTOR_META[enrollDialog.factorType].icon" class="text-[#2c6e33]" aria-hidden="true"></i>
-          <h3 id="enroll-title" class="text-[0.95rem] font-extrabold text-[#122815] m-0 flex-1">
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-line">
+          <i :class="FACTOR_META[enrollDialog.factorType].icon" class="text-brand-700" aria-hidden="true"></i>
+          <h3 id="enroll-title" class="text-[0.95rem] font-extrabold text-brand-950 m-0 flex-1">
             Bật {{ FACTOR_META[enrollDialog.factorType].label }}
           </h3>
           <button type="button" aria-label="Đóng"
-                  class="w-8 h-8 rounded-lg border-0 bg-transparent text-[#667768] hover:bg-[#f0f7f1] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
+                  class="w-8 h-8 rounded-lg border-0 bg-transparent text-ink-muted hover:bg-surface-tint cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700"
                   @click="closeEnroll">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </div>
 
         <div class="px-5 py-4 flex flex-col gap-3.5">
-          <div v-if="enrollDialog.error" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-[#d12420] px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
+          <div v-if="enrollDialog.error" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
             <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
             <span>{{ enrollDialog.error }}</span>
           </div>
 
           <!-- Bước 1: xác nhận mật khẩu hiện tại -->
           <template v-if="enrollDialog.stage === 'password'">
-            <p class="text-[0.83rem] text-[#667768] m-0">
+            <p class="text-[0.83rem] text-ink-muted m-0">
               {{ FACTOR_META[enrollDialog.factorType].desc }}
               Nhập mật khẩu hiện tại để xác nhận đây đúng là bạn.
             </p>
             <div>
               <label for="enroll-pw" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu hiện tại</label>
               <input id="enroll-pw" v-model="enrollDialog.currentPassword" type="password" autocomplete="current-password"
-                     class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
+                     class="w-full rounded-lg border border-line px-3.5 py-2.5 text-[0.88rem] text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:border-brand-700"
                      @keydown.enter="submitOnEnter($event, submitEnroll)" />
             </div>
             <template v-if="enrollDialog.factorType === 'second_password'">
               <div>
                 <label for="enroll-sp" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu cấp 2</label>
                 <input id="enroll-sp" v-model="enrollDialog.secondPassword" type="password" autocomplete="new-password"
-                       class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]" />
+                       class="w-full rounded-lg border border-line px-3.5 py-2.5 text-[0.88rem] text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:border-brand-700" />
                 <p class="text-[0.76rem] text-[#8ea98f] mt-1.5 mb-0">
                   Cùng yêu cầu độ mạnh như mật khẩu đăng nhập, và phải khác mật khẩu đăng nhập.
                 </p>
@@ -724,7 +724,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <div>
                 <label for="enroll-sp2" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Nhập lại mật khẩu cấp 2</label>
                 <input id="enroll-sp2" v-model="enrollDialog.secondPasswordConfirm" type="password" autocomplete="new-password"
-                       class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
+                       class="w-full rounded-lg border border-line px-3.5 py-2.5 text-[0.88rem] text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:border-brand-700"
                        @keydown.enter="submitOnEnter($event, submitEnroll)" />
               </div>
             </template>
@@ -734,7 +734,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <template v-else>
             <!-- TOTP: hiện bí mật để nhập tay, không sinh QR qua bên thứ ba -->
             <template v-if="enrollDialog.factorType === 'totp'">
-              <p class="text-[0.83rem] text-[#667768] m-0">
+              <p class="text-[0.83rem] text-ink-muted m-0">
                 Mở Google Authenticator (hoặc app tương tự) → <strong>Thêm tài khoản</strong> → <strong>Nhập khoá thủ công</strong>,
                 rồi dán chuỗi dưới đây.
               </p>
@@ -742,11 +742,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
                 <span>Chuỗi này chỉ hiện <strong>một lần</strong>. Đóng cửa sổ mà chưa thêm vào app thì phải bật lại từ đầu.</span>
               </div>
-              <div class="rounded-lg border border-[#e2ece3] bg-[#fafcfa] px-3.5 py-3">
-                <div class="text-[0.74rem] font-bold text-[#667768] uppercase tracking-wide mb-1">Khoá bí mật</div>
-                <code class="block font-mono text-[0.95rem] font-bold text-[#122815] break-all leading-relaxed">{{ enrollDialog.totpSecret }}</code>
+              <div class="rounded-lg border border-line bg-[#fafcfa] px-3.5 py-3">
+                <div class="text-[0.74rem] font-bold text-ink-muted uppercase tracking-wide mb-1">Khoá bí mật</div>
+                <code class="block font-mono text-[0.95rem] font-bold text-brand-950 break-all leading-relaxed">{{ enrollDialog.totpSecret }}</code>
                 <a v-if="otpauthLink" :href="otpauthLink"
-                   class="inline-flex items-center gap-2 mt-2.5 text-[0.8rem] font-bold text-[#2c6e33] no-underline hover:underline focus:outline-none focus:ring-2 focus:ring-[#2c6e33] rounded">
+                   class="inline-flex items-center gap-2 mt-2.5 text-[0.8rem] font-bold text-brand-700 no-underline hover:underline focus:outline-none focus:ring-2 focus:ring-brand-700 rounded">
                   <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
                   Mở bằng app trên thiết bị này
                 </a>
@@ -755,18 +755,18 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
             <!-- Email OTP -->
             <template v-else-if="enrollDialog.factorType === 'email_otp'">
-              <p class="text-[0.83rem] text-[#667768] m-0" role="status">
+              <p class="text-[0.83rem] text-ink-muted m-0" role="status">
                 Đã gửi mã 6 số tới <strong>{{ enrollDialog.sentTo || mfa?.email }}</strong>. Mã sống 10 phút.
               </p>
               <button type="button" :disabled="enrollDialog.busy"
-                      class="self-start inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] bg-white px-3 py-2 text-[0.82rem] font-semibold text-[#2c6e33] hover:bg-[#f0f7f1] cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
+                      class="self-start inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-[0.82rem] font-semibold text-brand-700 hover:bg-surface-tint cursor-pointer disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-brand-700"
                       @click="resendEnrollCode">
                 <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
                 Gửi lại mã
               </button>
             </template>
 
-            <p v-else class="text-[0.83rem] text-[#667768] m-0">
+            <p v-else class="text-[0.83rem] text-ink-muted m-0">
               Nhập lại mật khẩu cấp 2 một lần nữa để chắc chắn bạn đã ghi nhớ đúng.
             </p>
 
@@ -774,13 +774,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <label for="enroll-code" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mã xác thực</label>
               <input id="enroll-code" v-model="enrollDialog.code" type="text" inputmode="numeric"
                      autocomplete="one-time-code" maxlength="8"
-                     class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[1rem] font-mono tracking-[0.3em] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
+                     class="w-full rounded-lg border border-line px-3.5 py-2.5 text-[1rem] font-mono tracking-[0.3em] text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:border-brand-700"
                      @keydown.enter="submitOnEnter($event, submitConfirm)" />
             </div>
             <div v-else>
               <label for="enroll-sp-confirm" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu cấp 2</label>
               <input id="enroll-sp-confirm" v-model="enrollDialog.secondPassword" type="password" autocomplete="off"
-                     class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
+                     class="w-full rounded-lg border border-line px-3.5 py-2.5 text-[0.88rem] text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:border-brand-700"
                      @keydown.enter="submitOnEnter($event, submitConfirm)" />
             </div>
 
@@ -791,12 +791,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           </template>
         </div>
 
-        <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#e2ece3]">
-          <button type="button" class="rounded-lg border border-[#e2ece3] bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-[#3d4a3e] hover:bg-[#f0f7f1] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="closeEnroll">
+        <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-line">
+          <button type="button" class="rounded-lg border border-line bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-[#3d4a3e] hover:bg-surface-tint cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700" @click="closeEnroll">
             Huỷ
           </button>
           <button type="button" :disabled="enrollDialog.busy"
-                  class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] hover:bg-[#2c6e33] px-4 py-2 text-[0.84rem] font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
+                  class="inline-flex items-center gap-2 rounded-lg bg-brand-900 hover:bg-brand-700 px-4 py-2 text-[0.84rem] font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
                   @click="enrollDialog.stage === 'password' ? submitEnroll() : submitConfirm()">
             <i v-if="enrollDialog.busy" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
             {{ enrollDialog.stage === 'password' ? 'Tiếp tục' : 'Xác nhận bật' }}
@@ -808,38 +808,38 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <!-- ── Modal: tắt một yếu tố ─────────────────────────────────────── -->
     <div v-if="disableDialog.open" class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" @click.self="closeDisable">
       <div class="w-full max-w-md rounded-xl bg-white shadow-xl mt-16" role="dialog" aria-modal="true" aria-labelledby="disable-title">
-        <div class="flex items-center gap-3 px-5 py-4 border-b border-[#e2ece3]">
-          <i class="fa-solid fa-shield-halved text-[#d12420]" aria-hidden="true"></i>
-          <h3 id="disable-title" class="text-[0.95rem] font-extrabold text-[#122815] m-0 flex-1">
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-line">
+          <i class="fa-solid fa-shield-halved text-danger" aria-hidden="true"></i>
+          <h3 id="disable-title" class="text-[0.95rem] font-extrabold text-brand-950 m-0 flex-1">
             Tắt {{ FACTOR_META[disableDialog.factorType].label }}
           </h3>
           <button type="button" aria-label="Đóng"
-                  class="w-8 h-8 rounded-lg border-0 bg-transparent text-[#667768] hover:bg-[#f0f7f1] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
+                  class="w-8 h-8 rounded-lg border-0 bg-transparent text-ink-muted hover:bg-surface-tint cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700"
                   @click="closeDisable">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </div>
         <div class="px-5 py-4 flex flex-col gap-3.5">
-          <div v-if="disableDialog.error" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-[#d12420] px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
+          <div v-if="disableDialog.error" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
             <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
             <span>{{ disableDialog.error }}</span>
           </div>
-          <p class="text-[0.83rem] text-[#667768] m-0">
+          <p class="text-[0.83rem] text-ink-muted m-0">
             Tắt yếu tố này thì tài khoản của bạn sẽ giảm một lớp bảo vệ. Nhập mật khẩu hiện tại để xác nhận.
           </p>
           <div>
             <label for="disable-pw" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu hiện tại</label>
             <input id="disable-pw" v-model="disableDialog.currentPassword" type="password" autocomplete="current-password"
-                   class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
+                   class="w-full rounded-lg border border-line px-3.5 py-2.5 text-[0.88rem] text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:border-brand-700"
                    @keydown.enter="submitOnEnter($event, submitDisable)" />
           </div>
         </div>
-        <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#e2ece3]">
-          <button type="button" class="rounded-lg border border-[#e2ece3] bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-[#3d4a3e] hover:bg-[#f0f7f1] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="closeDisable">
+        <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-line">
+          <button type="button" class="rounded-lg border border-line bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-[#3d4a3e] hover:bg-surface-tint cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700" @click="closeDisable">
             Huỷ
           </button>
           <button type="button" :disabled="disableDialog.busy"
-                  class="inline-flex items-center gap-2 rounded-lg bg-[#d12420] hover:bg-[#b31d19] px-4 py-2 text-[0.84rem] font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
+                  class="inline-flex items-center gap-2 rounded-lg bg-danger hover:bg-[#b31d19] px-4 py-2 text-[0.84rem] font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2"
                   @click="submitDisable">
             <i v-if="disableDialog.busy" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
             Xác nhận tắt
@@ -851,23 +851,23 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <!-- ── Modal: mã dự phòng ────────────────────────────────────────── -->
     <div v-if="recoveryDialog.open" class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" @click.self="closeRecovery">
       <div class="w-full max-w-md rounded-xl bg-white shadow-xl mt-16" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
-        <div class="flex items-center gap-3 px-5 py-4 border-b border-[#e2ece3]">
-          <i class="fa-solid fa-life-ring text-[#2c6e33]" aria-hidden="true"></i>
-          <h3 id="recovery-title" class="text-[0.95rem] font-extrabold text-[#122815] m-0 flex-1">
+        <div class="flex items-center gap-3 px-5 py-4 border-b border-line">
+          <i class="fa-solid fa-life-ring text-brand-700" aria-hidden="true"></i>
+          <h3 id="recovery-title" class="text-[0.95rem] font-extrabold text-brand-950 m-0 flex-1">
             {{ recoveryDialog.mode === 'create' ? 'Tạo mã dự phòng' : 'Tắt mã dự phòng' }}
           </h3>
           <button type="button" aria-label="Đóng"
-                  class="w-8 h-8 rounded-lg border-0 bg-transparent text-[#667768] hover:bg-[#f0f7f1] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
+                  class="w-8 h-8 rounded-lg border-0 bg-transparent text-ink-muted hover:bg-surface-tint cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700"
                   @click="closeRecovery">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </div>
         <div class="px-5 py-4 flex flex-col gap-3.5">
-          <div v-if="recoveryDialog.error" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-[#d12420] px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
+          <div v-if="recoveryDialog.error" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
             <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
             <span>{{ recoveryDialog.error }}</span>
           </div>
-          <p class="text-[0.83rem] text-[#667768] m-0">
+          <p class="text-[0.83rem] text-ink-muted m-0">
             <template v-if="recoveryDialog.mode === 'create'">
               Hệ thống sinh 10 mã mới, mỗi mã dùng một lần.
               <strong v-if="mfa?.recoveryCodesEnabled">Toàn bộ mã cũ sẽ hết hiệu lực ngay.</strong>
@@ -879,17 +879,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           <div>
             <label for="recovery-pw" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu hiện tại</label>
             <input id="recovery-pw" v-model="recoveryDialog.currentPassword" type="password" autocomplete="current-password"
-                   class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
+                   class="w-full rounded-lg border border-line px-3.5 py-2.5 text-[0.88rem] text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:border-brand-700"
                    @keydown.enter="submitOnEnter($event, submitRecovery)" />
           </div>
         </div>
-        <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#e2ece3]">
-          <button type="button" class="rounded-lg border border-[#e2ece3] bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-[#3d4a3e] hover:bg-[#f0f7f1] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="closeRecovery">
+        <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-line">
+          <button type="button" class="rounded-lg border border-line bg-white px-3.5 py-2 text-[0.84rem] font-semibold text-[#3d4a3e] hover:bg-surface-tint cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700" @click="closeRecovery">
             Huỷ
           </button>
           <button type="button" :disabled="recoveryDialog.busy"
                   class="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-[0.84rem] font-bold text-white border-0 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2"
-                  :class="recoveryDialog.mode === 'create' ? 'bg-[#1e4620] hover:bg-[#2c6e33] focus:ring-[#2c6e33]' : 'bg-[#d12420] hover:bg-[#b31d19] focus:ring-red-400'"
+                  :class="recoveryDialog.mode === 'create' ? 'bg-brand-900 hover:bg-[#2c6e33] focus:ring-brand-700' : 'bg-danger hover:bg-[#b31d19] focus:ring-red-400'"
                   @click="submitRecovery">
             <i v-if="recoveryDialog.busy" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
             {{ recoveryDialog.mode === 'create' ? 'Tạo mã' : 'Xác nhận tắt' }}
