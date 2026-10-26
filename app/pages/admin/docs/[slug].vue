@@ -38,7 +38,7 @@ onMounted(() => {
 <template>
   <div v-if="doc" class="flex flex-col gap-6">
     <!-- Back link -->
-    <NuxtLink to="/admin/docs" class="inline-flex items-center gap-2 text-[0.82rem] font-semibold text-[#2c6e33] hover:underline w-fit">
+    <NuxtLink to="/admin/docs" class="inline-flex items-center gap-2 text-[0.82rem] font-semibold text-brand-700 hover:underline w-fit">
       <i class="fa-solid fa-arrow-left text-xs" aria-hidden="true"></i>
       Tài liệu hệ thống
     </NuxtLink>
@@ -46,14 +46,14 @@ onMounted(() => {
     <!-- Title section -->
     <div>
       <div class="flex items-center gap-3 mb-2">
-        <div class="w-12 h-12 rounded-xl bg-[#f0f7f1] flex items-center justify-center text-[#2c6e33]">
+        <div class="w-12 h-12 rounded-xl bg-surface-tint flex items-center justify-center text-brand-700">
           <i :class="doc.icon" class="text-xl" aria-hidden="true"></i>
         </div>
         <div>
-          <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">{{ doc.title }}</h1>
+          <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">{{ doc.title }}</h1>
           <span
             v-if="categoryMeta"
-            class="inline-flex items-center gap-1 text-[0.72rem] font-semibold text-[#2c6e33] bg-[#f0f7f1] px-2.5 py-0.5 rounded-full"
+            class="inline-flex items-center gap-1 text-[0.72rem] font-semibold text-brand-700 bg-surface-tint px-2.5 py-0.5 rounded-full"
           >
             <i :class="categoryMeta.icon" class="text-[0.6rem]" aria-hidden="true"></i>
             {{ categoryMeta.label }}
@@ -64,9 +64,9 @@ onMounted(() => {
     </div>
 
     <!-- Screenshot -->
-    <div v-if="doc.screenshot" class="bg-white rounded-xl border border-[#e2ece3] p-5">
-      <h2 class="text-[0.95rem] font-bold text-[#122815] m-0 mb-3">Hình ảnh minh họa</h2>
-      <div class="relative rounded-lg overflow-hidden border border-[#e2ece3]">
+    <div v-if="doc.screenshot" class="bg-white rounded-xl border border-line p-5">
+      <h2 class="text-[0.95rem] font-bold text-brand-950 m-0 mb-3">Hình ảnh minh họa</h2>
+      <div class="relative rounded-lg overflow-hidden border border-line">
         <img
           :src="doc.screenshot"
           :alt="doc.title"
@@ -93,26 +93,26 @@ onMounted(() => {
     </div>
 
     <!-- Mermaid diagram -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] p-5">
-      <h2 class="text-[0.95rem] font-bold text-[#122815] m-0 mb-3">Sơ đồ quy trình</h2>
+    <div class="bg-white rounded-xl border border-line p-5">
+      <h2 class="text-[0.95rem] font-bold text-brand-950 m-0 mb-3">Sơ đồ quy trình</h2>
       <AdminDocsMermaidDiagram :source="doc.mermaid" />
     </div>
 
     <!-- Workflow steps -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] p-5">
-      <h2 class="text-[0.95rem] font-bold text-[#122815] m-0 mb-4">Các bước thực hiện</h2>
+    <div class="bg-white rounded-xl border border-line p-5">
+      <h2 class="text-[0.95rem] font-bold text-brand-950 m-0 mb-4">Các bước thực hiện</h2>
       <AdminDocsWorkflowSteps :steps="doc.workflow" />
     </div>
 
     <!-- Related links -->
-    <div v-if="doc.links && doc.links.length > 0" class="bg-white rounded-xl border border-[#e2ece3] p-5">
-      <h2 class="text-[0.95rem] font-bold text-[#122815] m-0 mb-3">Trang liên quan</h2>
+    <div v-if="doc.links && doc.links.length > 0" class="bg-white rounded-xl border border-line p-5">
+      <h2 class="text-[0.95rem] font-bold text-brand-950 m-0 mb-3">Trang liên quan</h2>
       <div class="flex flex-wrap gap-2">
         <NuxtLink
           v-for="link in doc.links"
           :key="link.href"
           :to="link.href"
-          class="inline-flex items-center gap-1.5 px-3 py-2 bg-[#f0f7f1] border border-[#e2ede3] rounded-lg text-[0.8rem] font-semibold text-[#2c6e33] hover:border-[#2c6e33] hover:bg-[#eaf4ea] transition-colors no-underline"
+          class="inline-flex items-center gap-1.5 px-3 py-2 bg-surface-tint border border-[#e2ede3] rounded-lg text-[0.8rem] font-semibold text-brand-700 hover:border-brand-700 hover:bg-[#eaf4ea] transition-colors no-underline"
         >
           <i class="fa-solid fa-link text-[0.65rem]" aria-hidden="true"></i>
           {{ link.label }}
@@ -122,7 +122,7 @@ onMounted(() => {
 
     <!-- Related docs -->
     <div v-if="relatedDocs.length > 0">
-      <h2 class="text-[0.95rem] font-bold text-[#122815] m-0 mb-3">Tài liệu liên quan</h2>
+      <h2 class="text-[0.95rem] font-bold text-brand-950 m-0 mb-3">Tài liệu liên quan</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <AdminDocsCard v-for="d in relatedDocs" :key="d.slug" :doc="d" />
       </div>

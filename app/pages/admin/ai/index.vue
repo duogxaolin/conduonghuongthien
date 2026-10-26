@@ -100,20 +100,20 @@ watch(activeTab, (tab) => {
 <template>
   <div class="flex flex-col gap-5">
     <header class="flex flex-col gap-1">
-      <h1 class="m-0 text-[1.3rem] font-extrabold text-[#122815]">AI Panel</h1>
-      <p class="m-0 mt-1 text-sm text-[#667768]">Quản lý nhà cung cấp AI, phân bổ model, prompt dịch vụ và theo dõi chi phí tập trung kiểu 9Router.</p>
+      <h1 class="m-0 text-[1.3rem] font-extrabold text-brand-950">AI Panel</h1>
+      <p class="m-0 mt-1 text-sm text-ink-muted">Quản lý nhà cung cấp AI, phân bổ model, prompt dịch vụ và theo dõi chi phí tập trung kiểu 9Router.</p>
     </header>
 
     <!-- Tab navigation -->
-    <nav class="flex flex-wrap gap-1 border-b border-[#e2ece3]">
+    <nav class="flex flex-wrap gap-1 border-b border-line">
       <button
         v-for="tab in tabs"
         :key="tab.key"
         type="button"
         class="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors cursor-pointer bg-transparent"
         :class="activeTab === tab.key
-          ? 'border-[#2c6e33] text-[#2c6e33]'
-          : 'border-transparent text-[#667768] hover:text-[#2c6e33]'"
+          ? 'border-brand-700 text-brand-700'
+          : 'border-transparent text-ink-muted hover:text-brand-700'"
         @click="activeTab = tab.key"
       >
         <i :class="tab.icon" class="text-[0.9rem]"></i>

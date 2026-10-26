@@ -455,10 +455,10 @@ onUnmounted(() => {
     <!-- Page Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">
+        <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">
           {{ isNew ? '✍️ Viết Bài Mới' : '✏️ Chỉnh Sửa Bài Viết' }}
         </h1>
-        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Soạn thảo nội dung tin tức, bài viết bài bản với thư viện ảnh tích hợp</p>
+        <p class="text-[0.85rem] text-ink-muted mt-1 mb-0">Soạn thảo nội dung tin tức, bài viết bài bản với thư viện ảnh tích hợp</p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <!-- Khi tạo mới (isNew): Tích chọn những ngôn ngữ muốn tự động dịch qua -->
@@ -467,8 +467,8 @@ onUnmounted(() => {
             type="button"
             class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border text-sm font-bold cursor-pointer transition-colors"
             :class="autoTranslateLangs.length > 0
-              ? 'border-[#2c6e33] bg-[#f0f7f1] text-[#1e4620]'
-              : 'border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f8faf8]'"
+              ? 'border-brand-700 bg-surface-tint text-brand-900'
+              : 'border-line-strong bg-white text-ink-muted hover:bg-[#f8faf8]'"
             @click="showAutoTranslateMenu = !showAutoTranslateMenu"
           >
             <i class="fa-solid fa-language text-sm"></i>
@@ -479,13 +479,13 @@ onUnmounted(() => {
           <!-- Popover chọn ngôn ngữ -->
           <div
             v-if="showAutoTranslateMenu"
-            class="absolute right-0 top-full mt-1.5 w-60 rounded-xl bg-white border border-[#c8d6c9] shadow-xl p-3 z-30 flex flex-col gap-2"
+            class="absolute right-0 top-full mt-1.5 w-60 rounded-xl bg-white border border-line-strong shadow-xl p-3 z-30 flex flex-col gap-2"
           >
-            <div class="flex items-center justify-between border-b border-[#e2ece3] pb-1.5 text-xs">
-              <span class="font-bold text-[#122815]">Chọn ngôn ngữ dịch tự động:</span>
+            <div class="flex items-center justify-between border-b border-line pb-1.5 text-xs">
+              <span class="font-bold text-brand-950">Chọn ngôn ngữ dịch tự động:</span>
               <button
                 type="button"
-                class="text-[0.68rem] text-[#2c6e33] hover:underline bg-transparent border-0 cursor-pointer p-0"
+                class="text-[0.68rem] text-brand-700 hover:underline bg-transparent border-0 cursor-pointer p-0"
                 @click="autoTranslateLangs = autoTranslateLangs.length === availableLanguages.length ? [] : availableLanguages.map(l => l.code)"
               >
                 {{ autoTranslateLangs.length === availableLanguages.length ? 'Bỏ chọn' : 'Tất cả' }}
@@ -495,19 +495,19 @@ onUnmounted(() => {
               <label
                 v-for="l in availableLanguages"
                 :key="l.code"
-                class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[#f0f7f1] cursor-pointer text-xs font-semibold text-[#122815]"
+                class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-surface-tint cursor-pointer text-xs font-semibold text-brand-950"
               >
                 <input
                   type="checkbox"
                   :value="l.code"
                   v-model="autoTranslateLangs"
-                  class="h-3.5 w-3.5 accent-[#2c6e33] rounded"
+                  class="h-3.5 w-3.5 accent-brand-700 rounded"
                 />
                 <span>{{ l.flag }}</span>
                 <span>{{ l.label }}</span>
               </label>
             </div>
-            <p class="m-0 text-[0.68rem] text-[#667768] border-t border-[#e2ece3] pt-1.5">
+            <p class="m-0 text-[0.68rem] text-ink-muted border-t border-line pt-1.5">
               Sau khi lưu bài gốc, hệ thống sẽ tự động kích hoạt dịch sang các ngôn ngữ đã chọn trong nền.
             </p>
           </div>
@@ -517,7 +517,7 @@ onUnmounted(() => {
         <button
           v-else
           type="button"
-          class="inline-flex items-center gap-1.5 bg-white border border-[#c8d6c9] text-[#1e4620] hover:bg-[#f0f7f1] px-3.5 py-2.5 rounded-lg text-sm font-bold cursor-pointer transition-colors"
+          class="inline-flex items-center gap-1.5 bg-white border border-line-strong text-brand-900 hover:bg-surface-tint px-3.5 py-2.5 rounded-lg text-sm font-bold cursor-pointer transition-colors"
           @click="scrollToTranslations"
         >
           <i class="fa-solid fa-language text-sm"></i>
@@ -525,10 +525,10 @@ onUnmounted(() => {
         </button>
         <nuxt-link
           to="/admin/content/articles"
-          class="inline-flex items-center bg-white border border-[#c8d6c9] text-[#667768] no-underline px-4 py-2.5 rounded-lg font-semibold hover:bg-[#f8faf8] transition-colors"
+          class="inline-flex items-center bg-white border border-line-strong text-ink-muted no-underline px-4 py-2.5 rounded-lg font-semibold hover:bg-[#f8faf8] transition-colors"
         >Hủy & Quay lại</nuxt-link>
         <button
-          class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed"
+          class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed"
           :disabled="saving"
           @click="handleSave"
         >
@@ -538,9 +538,9 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="errorMsg" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+    <div v-if="errorMsg" role="alert" class="bg-[#ffebe9] text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
       <span>{{ errorMsg }}</span>
-      <button v-if="!loading && !saving" type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline whitespace-nowrap" @click="fetchArticle">Thử lại</button>
+      <button v-if="!loading && !saving" type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline whitespace-nowrap" @click="fetchArticle">Thử lại</button>
     </div>
 
     <!-- Loading — shaped like the editor grid below, which is `v-else`, so the
@@ -552,7 +552,7 @@ onUnmounted(() => {
          that is about to be unmounted. -->
     <div v-if="loading" class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5" role="status" aria-busy="true">
       <span class="sr-only">Đang tải nội dung bài viết</span>
-      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-5" aria-hidden="true">
+      <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-5" aria-hidden="true">
         <div class="flex flex-col gap-1.5">
           <div class="h-3 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
           <div class="h-[50px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
@@ -566,7 +566,7 @@ onUnmounted(() => {
           <div class="min-h-[700px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
         </div>
       </div>
-      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-4 self-start" aria-hidden="true">
+      <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-4 self-start" aria-hidden="true">
         <div class="h-4 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
         <div v-for="n in 3" :key="'sf-' + n" class="flex flex-col gap-1.5">
           <div class="h-3 w-28 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
@@ -584,7 +584,7 @@ onUnmounted(() => {
     <!-- Two-column editor grid -->
     <div v-else class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5">
       <!-- Main Form -->
-      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-5">
+      <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-5">
         <!-- AI Editorial Toolbar (gợi ý tiêu đề / tóm tắt / soát lỗi) — tách vào
              ArticleAIPanel.vue. Con truyền kết quả về qua update:title/excerpt. -->
         <ArticleAIPanel
@@ -600,7 +600,7 @@ onUnmounted(() => {
             type="text"
             v-model="form.title"
             placeholder="Nhập tiêu đề hấp dẫn..."
-            class="w-full px-3.5 py-3 border border-[#c8d6c9] rounded-lg text-[1.1rem] font-bold outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border"
+            class="w-full px-3.5 py-3 border border-line-strong rounded-lg text-[1.1rem] font-bold outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border"
           />
         </div>
 
@@ -610,7 +610,7 @@ onUnmounted(() => {
             v-model="form.excerpt"
             rows="3"
             placeholder="Nhập đoạn tóm tắt ngắn hiển thị ở trang danh sách..."
-            class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border resize-none font-[inherit]"
+            class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border resize-none font-[inherit]"
           ></textarea>
         </div>
 
@@ -618,7 +618,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Nội dung chi tiết (HTML / Editor)</label>
             <button
-              class="inline-flex items-center gap-1.5 bg-[#f0f7f1] text-[#2c6e33] border border-[#8ed694] px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
+              class="inline-flex items-center gap-1.5 bg-surface-tint text-brand-700 border border-[#8ed694] px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
               @click="openMediaPicker('content')"
             >
               <i class="fa-regular fa-images"></i> Chèn Ảnh Từ Thư Viện
@@ -629,12 +629,12 @@ onUnmounted(() => {
       </div>
 
       <!-- Meta Sidebar -->
-      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-4 self-start">
-        <h3 class="text-[1rem] font-bold text-[#122815] m-0">Cấu hình xuất bản</h3>
+      <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-4 self-start">
+        <h3 class="text-[1rem] font-bold text-brand-950 m-0">Cấu hình xuất bản</h3>
 
         <div class="flex flex-col gap-1.5">
           <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Thể loại bài viết (*)</label>
-          <select v-model="form.type" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
+          <select v-model="form.type" class="w-full px-3 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border">
             <option v-for="ct in contentTypes" :key="ct.id" :value="ct.slug">
               {{ ct.icon ? ct.icon.replace('fa-solid ', '').replace('fa-regular ', '') : '' }} {{ ct.name }}
             </option>
@@ -645,9 +645,9 @@ onUnmounted(() => {
         <div v-if="availableCategories.length > 0" class="flex flex-col gap-1.5">
           <label class="text-[0.82rem] font-bold text-[#2c3e2e]">
             Danh mục
-            <span class="font-normal text-[#667768]">— tùy chọn</span>
+            <span class="font-normal text-ink-muted">— tùy chọn</span>
           </label>
-          <select v-model="form.categoryId" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
+          <select v-model="form.categoryId" class="w-full px-3 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border">
             <option :value="null">— Không có danh mục —</option>
             <template v-for="cat in availableCategories" :key="cat.id">
               <option v-if="!cat.parentId" :value="cat.id" class="font-bold">{{ cat.name }}</option>
@@ -658,7 +658,7 @@ onUnmounted(() => {
 
         <div class="flex flex-col gap-1.5">
           <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Trạng thái (*)</label>
-          <select v-model="form.status" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
+          <select v-model="form.status" class="w-full px-3 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border">
             <option value="published">🟢 Xuất Bản Ngay</option>
             <option value="draft">🟡 Bản Nháp (Draft)</option>
             <option value="archived">⚪ Lưu Trữ</option>
@@ -667,20 +667,20 @@ onUnmounted(() => {
 
         <div class="flex flex-col gap-2">
           <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Ảnh đại diện (Thumbnail)</label>
-          <div v-if="form.thumbnailUrl" class="relative w-full h-40 rounded-lg overflow-hidden border border-[#e2ece3]">
+          <div v-if="form.thumbnailUrl" class="relative w-full h-40 rounded-lg overflow-hidden border border-line">
             <img :src="form.thumbnailUrl" class="w-full h-full object-cover" />
             <button type="button" aria-label="Xóa ảnh đại diện" class="absolute top-2 right-2 bg-black/70 text-white border-0 w-6 h-6 rounded-full cursor-pointer flex items-center justify-center text-xs" @click="form.thumbnailUrl = ''">
               <i class="fa-solid fa-xmark" aria-hidden="true"></i>
             </button>
           </div>
           <button
-            class="w-full flex items-center justify-center gap-2 bg-[#f0f7f1] border border-[#8ed694] text-[#2c6e33] px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm hover:bg-[#e4f2e5] transition-colors"
+            class="w-full flex items-center justify-center gap-2 bg-surface-tint border border-[#8ed694] text-brand-700 px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm hover:bg-[#e4f2e5] transition-colors"
             @click="openMediaPicker('thumbnail')"
           >
             <i class="fa-regular fa-images"></i> {{ form.thumbnailUrl ? 'Đổi từ thư viện' : 'Chọn từ thư viện' }}
           </button>
           <label
-            class="w-full flex items-center justify-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm transition-colors"
+            class="w-full flex items-center justify-center gap-2 bg-brand-900 hover:bg-brand-700 text-white px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm transition-colors"
             :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploadingThumb }"
           >
             <i class="fa-regular" :class="uploadingThumb ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i>
@@ -717,18 +717,18 @@ onUnmounted(() => {
       @close="showReTranslateModal = false"
     >
       <div class="flex flex-col gap-4">
-        <p class="m-0 text-xs text-[#667768]">
+        <p class="m-0 text-xs text-ink-muted">
           Bài viết gốc Tiếng Việt vừa được cập nhật nội dung mới. Bạn có muốn AI tự động cập nhật và dịch lại toàn bộ các ngôn ngữ quốc tế khác không?
         </p>
 
         <!-- Target languages preview -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-bold text-[#122815]">Các ngôn ngữ sẽ được đồng bộ hóa lại:</label>
+          <label class="text-xs font-bold text-brand-950">Các ngôn ngữ sẽ được đồng bộ hóa lại:</label>
           <div class="flex flex-wrap gap-1.5">
             <span
               v-for="l in availableLanguages"
               :key="l.code"
-              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#f0f7f1] border border-[#c8dcc9] text-xs font-bold text-[#1e4620]"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-tint border border-[#c8dcc9] text-xs font-bold text-brand-900"
             >
               <span>{{ l.flag }}</span>
               <span>{{ l.label }}</span>
@@ -737,15 +737,15 @@ onUnmounted(() => {
         </div>
 
         <!-- Publish Option -->
-        <label class="flex items-center gap-2.5 p-3 rounded-xl bg-[#fcfdfc] border border-[#eef2ee] cursor-pointer text-xs text-[#1E251C]">
+        <label class="flex items-center gap-2.5 p-3 rounded-xl bg-[#fcfdfc] border border-[#eef2ee] cursor-pointer text-xs text-ink">
           <input
             type="checkbox"
             v-model="reTranslatePublishImmediately"
-            class="h-4 w-4 accent-[#2c6e33] rounded"
+            class="h-4 w-4 accent-brand-700 rounded"
           />
           <div class="flex flex-col">
             <span class="font-bold">Tự động xuất bản luôn các bản dịch mới</span>
-            <span class="text-[0.68rem] text-[#667768]">Nếu không chọn, bản dịch sẽ lưu ở dạng Bản nháp AI để rà soát trước.</span>
+            <span class="text-[0.68rem] text-ink-muted">Nếu không chọn, bản dịch sẽ lưu ở dạng Bản nháp AI để rà soát trước.</span>
           </div>
         </label>
 
@@ -753,14 +753,14 @@ onUnmounted(() => {
       <template #footer>
           <button
             type="button"
-            class="px-4 py-2.5 rounded-xl border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-50 cursor-pointer"
+            class="px-4 py-2.5 rounded-xl border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-gray-50 cursor-pointer"
             @click="showReTranslateModal = false"
           >
             Để sau / Giữ bản dịch hiện tại
           </button>
           <button
             type="button"
-            class="px-5 py-2.5 rounded-xl bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-extrabold cursor-pointer border-none flex items-center gap-2 shadow-sm transition-all hover:-translate-y-0.5 disabled:opacity-50"
+            class="px-5 py-2.5 rounded-xl bg-brand-900 hover:bg-[#153317] text-white text-xs font-extrabold cursor-pointer border-none flex items-center gap-2 shadow-sm transition-all hover:-translate-y-0.5 disabled:opacity-50"
             :disabled="reTranslateRunning"
             @click="confirmReTranslation"
           >
