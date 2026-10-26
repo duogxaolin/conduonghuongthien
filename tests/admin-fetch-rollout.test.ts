@@ -628,6 +628,22 @@ describe(`${LANGUAGES_PAGE} — actions`, () => {
     assert.equal(lastToast(toasts, 'error'), 'Không thể xoá ngôn ngữ mặc định.')
   })
 
+  it('saving and AI-translating a row go to the language the row was loaded under, not the one selected now (RED before)', async () => {
+    const { page, calls } = await languagesPage()
+    // An en row still on screen while the selection already says fr (C1, verify of 85a22c7).
+    const enRow = page.translations[1]!
+    page.selectedLangCode = 'fr'
+    const from = calls.length
+    await page.saveEdit(enRow, 'News')
+    await page.translateSingleKey(enRow)
+    await settle()
+    const writes = calls.slice(from).filter(call => call.method !== 'GET').map(call => ({ wire: wire(call), body: call.body }))
+    assert.deepEqual(writes, [
+      { wire: 'PUT /api/admin/languages/en/translations', body: { items: [{ group: 'nav', key: 'news', value: 'News' }] } },
+      { wire: 'POST /api/admin/languages/ai-translate-key', body: { langCode: 'en', langName: 'English', group: 'nav', key: 'news', sourceText: 'Tin tức' } },
+    ])
+  })
+
   it('every action sends the same requests as before — method, path, query, body, and the reloads after it', async () => {
     const { page, calls, toasts } = await languagesPage()
     const sent = async (action: () => unknown) => {

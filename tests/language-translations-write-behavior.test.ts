@@ -25,11 +25,13 @@ type Write = { table: string, kind: 'insert' | 'update', values: Record<string, 
 const writes: Write[] = []
 /** Rows the fake DB returns for any `select … from lang_translations`. */
 let selectRows: Array<Record<string, unknown>> = []
+/** Whether `select … from languages` finds the language (S3: an unknown code is a 404). */
+let languageKnown = true
 
 function fakeDb() {
   const select = () => ({
-    from: () => {
-      const rows = () => Promise.resolve(selectRows)
+    from: (table: object) => {
+      const rows = () => Promise.resolve(getTableName(table as never) === 'languages' ? (languageKnown ? [{ id: 1 }] : []) : selectRows)
       const chain = {
         where: () => chain,
         orderBy: () => chain,
@@ -99,6 +101,7 @@ after(() => server.close())
 beforeEach(() => {
   writes.length = 0
   selectRows = []
+  languageKnown = true
   aiAnswer = { ok: true, text: '' }
 })
 
@@ -180,6 +183,22 @@ test('PUT: text is stored as typed — an empty string stays empty, a missing gr
   assert.equal(response.status, 200, response.text)
   assert.equal(response.json().count, 3)
   assert.deepEqual(stored().map(v => [v.group, v.key, v.value]), [['nav', 'home', 'Homepage'], ['nav', 'news', ''], ['general', 'title', 'Portal']])
+})
+
+test('PUT: a language code that does not exist is a 404 and nothing is written — no orphan rows (RED before: 200, rows inserted)', async () => {
+  languageKnown = false
+  const response = await send('PUT', '/api/admin/languages/xx/translations', { items: [{ group: 'nav', key: 'news', value: 'News' }] })
+  assert.equal(response.status, 404, response.text)
+  assert.equal(response.json().statusMessage, 'Ngôn ngữ không tồn tại.')
+  assert.deepEqual(writes, [])
+})
+
+test('the AI paths refuse an unknown language code the same way (one check, in the write service)', async () => {
+  languageKnown = false
+  aiAnswer = { ok: true, text: JSON.stringify([{ i: 1, key: 'news', value: 'News' }]) }
+  const chunk = await send('POST', '/api/admin/languages/ai-translate-chunk', { langCode: 'xx', items: [{ group: 'nav', key: 'news' }] })
+  assert.equal(chunk.status, 404, chunk.text)
+  assert.deepEqual(writes, [])
 })
 
 // ─── AI write paths: only real text from the model is stored ────────────────

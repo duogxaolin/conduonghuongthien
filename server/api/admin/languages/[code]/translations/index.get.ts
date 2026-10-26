@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { readValidatedQuery } from '../../../../../utils/request-body'
 import { listTranslations, listTranslationGroups } from '../../../../../services/translation-list'
+import { requireLanguage } from '../../../../../services/languages'
 
 /**
  * Every translation of one language, plus the vi keys it has no row for (`id: null`) —
@@ -27,6 +28,8 @@ export default defineEventHandler(async (event) => {
   if (!code) throw createError({ statusCode: 400, statusMessage: 'Mã ngôn ngữ bắt buộc.' })
 
   const { group, search } = await readValidatedQuery(event, querySchema)
+  // An unknown code is a 404, not a virtual row per vi key.
+  await requireLanguage(code)
   const [items, groups] = await Promise.all([
     listTranslations(code, { group, search }),
     listTranslationGroups(code),

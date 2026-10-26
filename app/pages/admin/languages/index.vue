@@ -66,7 +66,7 @@ async function fetchLanguages() {
 const translationsLoading = ref(false)
 const translationsError = ref('')
 const translations = ref<Array<{
-  id: number | null; group: string; key: string; value: string; isAiTranslated: boolean
+  id: number | null; langCode: string; group: string; key: string; value: string; isAiTranslated: boolean
 }>>([])
 const translationGroups = ref<string[]>([])
 const selectedGroup = ref('all')
@@ -232,13 +232,13 @@ const translatingSingleKey = ref<string | null>(null)
 async function translateSingleKey(t: typeof translations.value[0]) {
   translatingSingleKey.value = t.key
   const sourceText = viTranslationsMap.value.get(`${t.group}::${t.key}`) || t.key
-  const currentLangObj = languages.value.find((l) => l.code === selectedLangCode.value)
+  const currentLangObj = languages.value.find((l) => l.code === t.langCode) // the ROW's language, not the selection
   try {
     const res = await adminFetch<{ ok: true; group: string; key: string; value: string }>(`/api/admin/languages/ai-translate-key`, {
       method: 'POST',
       body: {
-        langCode: selectedLangCode.value,
-        langName: currentLangObj?.name || selectedLangCode.value,
+        langCode: t.langCode,
+        langName: currentLangObj?.name || t.langCode,
         group: t.group,
         key: t.key,
         sourceText,
@@ -259,7 +259,7 @@ async function translateSingleKey(t: typeof translations.value[0]) {
 
 async function saveEdit(t: typeof translations.value[0], value: string) {
   try {
-    await adminFetch<{ ok: true; count: number }>(`/api/admin/languages/${selectedLangCode.value}/translations`, {
+    await adminFetch<{ ok: true; count: number }>(`/api/admin/languages/${t.langCode}/translations`, {
       method: 'PUT',
       body: { items: [{ group: t.group, key: t.key, value }] },
     })

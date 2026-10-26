@@ -39,10 +39,13 @@ type TNode = {
   getRootNode: () => { activeElement: null }
 }
 
-const node = (kind: TNode['kind'], tag = '', text = ''): TNode => ({
-  kind, tag, text, props: {}, children: [], parent: null,
+// `parent` is NOT enumerable: a failed `assert.deepEqual` on a node once diffed the whole
+// tree through it (every node reaches the root) and the run grew to 8.8 GB. Assertions
+// below compare counts, texts and identity (`===`), never node objects with deepEqual.
+const node = (kind: TNode['kind'], tag = '', text = ''): TNode => Object.defineProperty({
+  kind, tag, text, props: {}, children: [],
   addEventListener() {}, removeEventListener() {}, getRootNode: () => ({ activeElement: null }),
-})
+} as Omit<TNode, 'parent'> as TNode, 'parent', { value: null, writable: true, enumerable: false })
 
 function detach(child: TNode) {
   if (!child.parent) return
@@ -129,10 +132,11 @@ const rowsFor = (langCode: string) => ['home', 'news', 'contact'].map((key, i) =
 function installNetwork() {
   const held: Pending[] = []
   const sent: string[] = []
-  const state = { hold: false, fail: false }
+  /** `answerAs`: answer a list request with another language's rows (an inconsistent server). */
+  const state = { hold: false, fail: false, answerAs: null as string | null }
   const fetchImpl = (input: RequestInfo | URL, init: RequestInit = {}) => new Promise<Response>((resolve, reject) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://admin.test')
-    sent.push(`${init.method ?? 'GET'} ${url.pathname}`)
+    sent.push(`${init.method ?? 'GET'} ${url.pathname}${typeof init.body === 'string' ? ` ${init.body}` : ''}`)
     init.signal?.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError')))
     if (url.pathname === '/api/admin/languages') return resolve(json({ ok: true, items: LANGUAGES }))
     const list = /^\/api\/admin\/languages\/(\w+)\/translations$/.exec(url.pathname)
@@ -140,7 +144,7 @@ function installNetwork() {
       const search = url.searchParams.get('search') ?? ''
       const answer = () => (state.fail
         ? json({ statusCode: 400, statusMessage: 'Mã ngôn ngữ bắt buộc.' }, 400)
-        : json({ ok: true, items: rowsFor(list[1]!).filter(row => row.key.includes(search)), groups: ['nav'] }))
+        : json({ ok: true, items: rowsFor(state.answerAs ?? list[1]!).filter(row => row.key.includes(search)), groups: ['nav'] }))
       if (state.hold) return held.push({ url, respond: () => resolve(answer()) })
       return resolve(answer())
     }
@@ -159,14 +163,15 @@ const settle = async () => {
 
 async function mountPage(options: { manualOpen?: boolean } = {}) {
   const network = installNetwork()
-  const toast = Object.fromEntries(['success', 'error', 'warning', 'info'].map(type => [type, () => {}]))
+  const toasts: string[] = []
+  const toast = Object.fromEntries(['success', 'error', 'warning', 'info'].map(type => [type, (message: string) => { toasts.push(message) }]))
   const auto = {
     definePageMeta: () => {}, useConfirm: () => ({ confirm: async () => true }), adminFetch,
     ref: Vue.ref, reactive: Vue.reactive, computed: Vue.computed, watch: Vue.watch, nextTick: Vue.nextTick,
     onBeforeUnmount: Vue.onBeforeUnmount,
   }
   const stub = Vue.defineComponent({ render: () => null })
-  const tab = await component('components/admin/languages/TranslationsTab.vue', { vue: Vue }, auto)
+  const tab = await component('components/admin/languages/TranslationsTab.vue', { 'vue': Vue, '~/composables/useToast': { useToast: () => toast } }, auto)
   const page = await component('pages/admin/languages/index.vue', {
     'vue': Vue,
     '~/composables/useToast': { useToast: () => toast },
@@ -205,7 +210,7 @@ async function mountPage(options: { manualOpen?: boolean } = {}) {
   const alerts = () => findAll(root, n => n.props.role === 'alert')
   const type = (box: TNode, value: string) => (box.props.onInput as (event: unknown) => void)({ target: { value } })
   const selectWith = (text: string) => findAll(root, n => n.tag === 'select' && textOf(n).includes(text))[0]!
-  return { root, network, button, openTab, searchBoxes, tableRows, emptyRows, skeletons, busyTables, alerts, type, selectWith }
+  return { root, network, toasts, button, openTab, searchBoxes, tableRows, emptyRows, skeletons, busyTables, alerts, type, selectWith }
 }
 
 /** The tab's debounce (TranslationsTab.vue `SEARCH_DEBOUNCE_MS`) plus a margin. */
@@ -259,9 +264,10 @@ describe('pages/admin/languages/index.vue — the translations search box', () =
     assert.equal(view.skeletons().length, 0, 'no skeleton on a reload')
     assert.equal(view.tableRows().length, 3, 'the previous rows stay on screen')
     assert.equal(view.busyTables().length, 1, 'the table is marked aria-busy="true"')
-    const live = findAll(view.busyTables()[0]!, n => n.tag === 'p' && n.props.role === 'status')
+    const live = findAll(view.root, n => n.tag === 'p' && n.props.role === 'status')
     assert.equal(live.length, 1)
     assert.match(textOf(live[0]!), /Đang tải lại/, 'screen readers are told the list is reloading')
+    assert.equal(findAll(view.busyTables()[0]!, n => n === live[0]).length, 0, 'the live region sits outside the aria-busy table, whose updates are held back (RED before: inside)')
 
     view.network.held.shift()!.respond(new Response())
     await settle()
@@ -304,6 +310,69 @@ describe('pages/admin/languages/index.vue — the translations search box', () =
     assert.equal(view.selectWith('Tất cả trạng thái').props['aria-label'], 'Trạng thái bản dịch')
   })
 
+  // C1 (verify of 85a22c7): a reload keeps the old table on screen, so during a language
+  // switch the officer could open the editor on an English row, the French rows landed
+  // under it (same `group::key`), and "Lưu" PUT the English text to French.
+  it('a language switch is a first load: no editor can open on the old language\'s rows, and nothing old is saved to the new one (RED before)', async () => {
+    const view = await mountPage()
+    const puts = () => view.network.sent.filter(call => call.startsWith('PUT'))
+    view.network.state.hold = true
+    ;(view.selectWith('English').props.onChange as (event: unknown) => void)({ target: { value: 'fr' } })
+    await settle()
+    assert.equal(view.network.held.length, 1, 'fr is loading')
+    const skeletonWhileSwitching = view.skeletons().length
+    // The verifier's sequence: "Sửa" on an English row while fr loads…
+    const edit = findAll(view.root, n => n.tag === 'button' && n.props.title === 'Sửa bản dịch')[1]
+    if (edit) (edit.props.onClick as () => void)()
+    await settle()
+    // …release fr, then "Lưu" (once) without typing.
+    view.network.held.shift()!.respond(new Response())
+    await settle()
+    const save = findAll(view.root, n => n.tag === 'button' && textOf(n) === 'Lưu')[0]
+    if (save) (save.props.onClick as () => void)()
+    await settle()
+    assert.deepEqual(puts(), [], 'no PUT at all — above all none carrying "en:news" to fr')
+    assert.equal(skeletonWhileSwitching, 1, 'the skeleton replaced the English table while fr loaded')
+    assert.deepEqual(view.tableRows().map(row => textOf(row.children[3]!)), ['fr:home', 'fr:news', 'fr:contact'])
+  })
+
+  it('during a same-language reload the row actions are disabled — no edit starts on rows about to be replaced (RED before)', async () => {
+    const view = await mountPage()
+    view.network.state.hold = true
+    view.type(view.searchBoxes()[0]!, 'o')
+    await pastDebounce()
+    await settle()
+    assert.equal(view.busyTables().length, 1, 'reloading with the old rows on screen')
+    // Desktop buttons by title, mobile cards' by their text.
+    const actions = findAll(view.busyTables()[0]!, n => n.tag === 'button' && (n.props.title === 'Sửa bản dịch' || n.props.title === 'Dịch AI cho riêng khóa này'
+      || ['Sửa', 'Dịch AI'].includes(textOf(n).trim())))
+    assert.equal(actions.length, 12, 'three rows × (edit + translate) × (mobile + desktop)')
+    for (const button of actions) assert.equal(button.props.disabled, true, `"${String(button.props.title ?? textOf(button).trim())}" is disabled while loading`)
+    ;(actions.find(n => n.props.title === 'Sửa bản dịch')!.props.onClick as () => void)()
+    await settle()
+    assert.equal(findAll(view.root, n => n.tag === 'textarea').length, 0, 'even a click that gets through opens no editor')
+    view.network.held.shift()!.respond(new Response())
+    await settle()
+    assert.ok(findAll(view.root, n => n.tag === 'button' && n.props.title === 'Sửa bản dịch').every(n => !n.props.disabled), 'enabled again once loaded')
+  })
+
+  it('an editor opened on one language\'s row never saves onto another language\'s row (RED before)', async () => {
+    const view = await mountPage()
+    ;(findAll(view.root, n => n.tag === 'button' && n.props.title === 'Sửa bản dịch')[1]!.props.onClick as () => void)()
+    await settle()
+    // A same-language reload whose answer carries another language's rows (the binding
+    // must not rest on the language switch alone).
+    view.network.state.answerAs = 'fr'
+    view.type(view.searchBoxes()[0]!, '')
+    await pastDebounce()
+    await settle()
+    ;(findAll(view.root, n => n.tag === 'button' && textOf(n) === 'Lưu')[0]!.props.onClick as () => void)()
+    await settle()
+    assert.deepEqual(view.network.sent.filter(call => call.startsWith('PUT')), [], 'refused: the draft came from the en row')
+    assert.equal(findAll(view.root, n => n.tag === 'textarea').length, 0, 'the editor is closed')
+    assert.match(view.toasts.at(-1) ?? '', /ngôn ngữ/)
+  })
+
   it('vi keys the language has no row for (id null) render as untranslated rows', async () => {
     const view = await mountPage()
     ;(view.selectWith('English').props.onChange as (event: unknown) => void)({ target: { value: 'lo' } })
@@ -343,7 +412,7 @@ describe('pages/admin/languages/index.vue — the translations search box', () =
     await settle()
     assert.equal(view.network.sent.at(-1), 'GET /api/admin/languages/fr/translations')
     assert.deepEqual(view.tableRows().map(row => textOf(row.children[3]!)), ['fr:home', 'fr:news', 'fr:contact'])
-    assert.deepEqual(editors(), [], 'no editor is open on the French rows')
+    assert.equal(editors().length, 0, 'no editor is open on the French rows')
     assert.ok(!view.network.sent.some(call => call.startsWith('PUT')), 'nothing was saved')
   })
 })

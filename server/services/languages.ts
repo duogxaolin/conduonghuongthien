@@ -201,6 +201,16 @@ export async function reorderLanguages(
 
 // The tab's list (`listTranslations`, `listTranslationGroups`) is in `translation-list.ts`.
 
+/**
+ * 404 unless `code` has a `languages` row. The translation list would otherwise answer an
+ * unknown code with a virtual row per vi key, and a write would leave orphan rows that no
+ * language owns (every write path goes through `upsertTranslations`, which checks).
+ */
+export async function requireLanguage(code: string, db: Pick<Database, 'select'> = getDb()): Promise<void> {
+  const [lang] = await db.select({ id: languages.id }).from(languages).where(eq(languages.code, code)).limit(1)
+  if (!lang) throw createError({ statusCode: 404, statusMessage: 'Ngôn ngữ không tồn tại.' })
+}
+
 /** `value: null` clears the row (SQL NULL = untranslated); see the PUT handler. */
 export async function upsertTranslations(
   actor: ActorLike,
@@ -210,6 +220,7 @@ export async function upsertTranslations(
   db: Database = getDb(),
 ) {
   return db.transaction(async (tx) => {
+    await requireLanguage(code, tx)
     for (const item of items) {
       const [existing] = await tx
         .select()

@@ -24,6 +24,9 @@ import { startH3TestServer, type H3TestServer } from './_h3-test-server'
 const sqlite = new DatabaseSync(':memory:')
 sqlite.exec('CREATE TABLE `lang_translations` (`id` INTEGER PRIMARY KEY, `lang_code` TEXT, `group` TEXT, `key` TEXT, `value` TEXT, `is_ai_translated` INTEGER, `created_at` TEXT, `updated_at` TEXT)')
 const insert = sqlite.prepare('INSERT INTO `lang_translations` (`id`, `lang_code`, `group`, `key`, `value`, `is_ai_translated`) VALUES (?, ?, ?, ?, ?, 0)')
+// The languages that exist (S3: any other code is a 404, not ~600 virtual rows).
+sqlite.exec('CREATE TABLE `languages` (`id` INTEGER PRIMARY KEY, `code` TEXT)')
+sqlite.exec("INSERT INTO `languages` (`id`, `code`) VALUES (1, 'vi'), (2, 'en'), (3, 'lo')")
 
 /** 581 keys, as many as the seed had when the bug was found; ids interleave two languages. */
 const KEY_COUNT = 581
@@ -146,6 +149,12 @@ test('the vi-only keys follow the group filter and the search (key), and vi itse
   assert.deepEqual(footer.items.map(row => [row.id, row.key]), [[null, 'key-0580']])
   const vi = await list('/api/admin/languages/vi/translations?search=key-0011')
   assert.deepEqual(vi.items.map(row => row.id), [21])
+})
+
+test('a language code that does not exist is a 404 — not every vi key as a virtual row (RED before: 200 with 581 rows)', async () => {
+  const response = await server.send('GET', '/api/admin/languages/xx/translations')
+  assert.equal(response.status, 404, response.text.slice(0, 200))
+  assert.equal(response.json().statusMessage, 'Ngôn ngữ không tồn tại.')
 })
 
 test('the search is bounded at 200 characters, and a repeated ?search= takes the first (RED before: 200 OK / 400)', async () => {
