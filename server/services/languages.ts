@@ -199,37 +199,28 @@ export async function reorderLanguages(
 
 // ─── UI Translations ─────────────────────────────────────────────────────
 
-export async function listTranslations(
-  code: string,
-  opts: { group?: string; search?: string; limit?: number; offset?: number },
-  db: Database = getDb(),
-) {
-  const conditions = [eq(langTranslations.langCode, code)]
-  if (opts.group && opts.group !== 'all') {
-    conditions.push(eq(langTranslations.group, opts.group))
-  }
+// The tab's list (`listTranslations`, `listTranslationGroups`) is in `translation-list.ts`.
 
-  let query = db.select().from(langTranslations).where(and(...conditions))
-  if (opts.limit) query = query.limit(opts.limit) as typeof query
-  if (opts.offset) query = query.offset(opts.offset) as typeof query
-
-  const rows = await query
-  if (!opts.search) return rows
-
-  const s = opts.search.toLowerCase()
-  return rows.filter(
-    (r) => r.key.toLowerCase().includes(s) || (r.value ?? '').toLowerCase().includes(s),
-  )
+/**
+ * 404 unless `code` has a `languages` row. The translation list would otherwise answer an
+ * unknown code with a virtual row per vi key, and a write would leave orphan rows that no
+ * language owns (every write path goes through `upsertTranslations`, which checks).
+ */
+export async function requireLanguage(code: string, db: Pick<Database, 'select'> = getDb()): Promise<void> {
+  const [lang] = await db.select({ id: languages.id }).from(languages).where(eq(languages.code, code)).limit(1)
+  if (!lang) throw createError({ statusCode: 404, statusMessage: 'Ngôn ngữ không tồn tại.' })
 }
 
+/** `value: null` clears the row (SQL NULL = untranslated); see the PUT handler. */
 export async function upsertTranslations(
   actor: ActorLike,
   code: string,
-  items: Array<{ group: string; key: string; value: string }>,
+  items: Array<{ group: string; key: string; value: string | null }>,
   isAiTranslated: boolean = false,
   db: Database = getDb(),
 ) {
   return db.transaction(async (tx) => {
+    await requireLanguage(code, tx)
     for (const item of items) {
       const [existing] = await tx
         .select()
@@ -266,15 +257,6 @@ export async function upsertTranslations(
       meta: { operation: 'update_translations', langCode: code, count: items.length, isAiTranslated },
     })
   })
-}
-
-export async function listTranslationGroups(code: string, db: Database = getDb()) {
-  const rows = await db
-    .select({ group: langTranslations.group })
-    .from(langTranslations)
-    .where(eq(langTranslations.langCode, code))
-    .groupBy(langTranslations.group)
-  return rows.map((r) => r.group)
 }
 
 /** Get all translations for a language as a flat key→value map, grouped. */

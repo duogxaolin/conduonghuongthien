@@ -24,6 +24,7 @@ import { ref, onMounted } from 'vue'
 import { useToast } from '~/composables/useToast'
 import { errorMessage } from '~/utils/errorMessage'
 import { getFlagEmoji } from '~/utils/language-flags'
+import { missingTranslations } from '~/utils/translation-keys'
 import LanguagesListTab from '~/components/admin/languages/LanguagesListTab.vue'
 import TranslationsTab from '~/components/admin/languages/TranslationsTab.vue'
 import UniversalTab from '~/components/admin/languages/UniversalTab.vue'
@@ -43,13 +44,7 @@ const loadError = ref('')
 const languages = ref<Array<{
   id: number; code: string; name: string; nativeName: string
   isActive: boolean; isDefault: boolean; displayOrder: number
-  stats?: {
-    totalKeys: number
-    translatedKeys: number
-    missingKeys: number
-    aiKeys: number
-    percent: number
-  }
+  stats?: { totalKeys: number; translatedKeys: number; missingKeys: number; aiKeys: number; percent: number }
 }>>([])
 
 const activeTab = ref<'languages' | 'translations' | 'universal'>('languages')
@@ -58,7 +53,7 @@ async function fetchLanguages() {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: typeof languages.value }>)(`/api/admin/languages`)
+    const res = await adminFetch<{ ok: true; items: typeof languages.value }>(`/api/admin/languages`)
     if (res.ok) languages.value = res.items
   } catch (err: unknown) {
     loadError.value = errorMessage(err, 'Không thể tải danh sách ngôn ngữ.')
@@ -71,7 +66,7 @@ async function fetchLanguages() {
 const translationsLoading = ref(false)
 const translationsError = ref('')
 const translations = ref<Array<{
-  id: number; group: string; key: string; value: string; isAiTranslated: boolean
+  id: number | null; langCode: string; group: string; key: string; value: string; isAiTranslated: boolean
 }>>([])
 const translationGroups = ref<string[]>([])
 const selectedGroup = ref('all')
@@ -81,46 +76,51 @@ const statusFilter = ref<'all' | 'untranslated' | 'translated' | 'ai'>('all')
 
 const viTranslationsMap = ref<Map<string, string>>(new Map())
 
+// A `GET …/:code/translations` row: `value` null = untranslated; `id` null = a vi key with no row here yet.
+type TranslationRecord = { id: number | null; langCode: string; group: string; key: string; value: string | null; isAiTranslated: boolean }
+type TranslationList = { ok: true; items: TranslationRecord[]; groups: string[] }
+
+// Every vi key (the server answers a language whole — it used to cap at 500 of ~600).
 async function loadViSourceMap() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ group: string; key: string; value: string }> }>)(`/api/admin/languages/vi/translations?limit=500`)
-    if (res.ok) {
-      const map = new Map<string, string>()
-      for (const item of res.items) {
-        map.set(`${item.group}::${item.key}`, item.value || '')
-      }
-      viTranslationsMap.value = map
-    }
+    const res = await adminFetch<TranslationList>(`/api/admin/languages/vi/translations`)
+    if (res.ok) viTranslationsMap.value = new Map(res.items.map((item): [string, string] => [`${item.group}::${item.key}`, item.value || '']))
   } catch {
     // Non-critical
   }
 }
 
+// Only the latest request writes (as in useAdminList): an older answer for another
+// language/group landing last would show its rows under the new selection.
+let translationsRequest: AbortController | null = null
+
 async function fetchTranslations() {
+  translationsRequest?.abort()
+  const request = (translationsRequest = new AbortController())
   translationsLoading.value = true
   translationsError.value = ''
   try {
-    const params: Record<string, string> = {}
-    if (selectedGroup.value !== 'all') params.group = selectedGroup.value
-    if (searchQuery.value) params.search = searchQuery.value
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean; items: typeof translations.value; groups: string[]
-    }>)(`/api/admin/languages/${selectedLangCode.value}/translations`, { params })
+    const res = await adminFetch<TranslationList>(`/api/admin/languages/${selectedLangCode.value}/translations`, {
+      query: { group: selectedGroup.value !== 'all' ? selectedGroup.value : undefined, search: searchQuery.value || undefined },
+      signal: request.signal,
+    })
+    if (request !== translationsRequest) return
     if (res.ok) {
-      translations.value = res.items
+      // null → '': the tab's editor starts from `value`; an untouched null was saved as "null".
+      translations.value = res.items.map((t) => ({ ...t, value: t.value ?? '' }))
       translationGroups.value = res.groups
     }
   } catch (err: unknown) {
-    translationsError.value = errorMessage(err, 'Không thể tải bản dịch.')
+    if (request === translationsRequest) translationsError.value = errorMessage(err, 'Không thể tải bản dịch.')
   } finally {
-    translationsLoading.value = false
+    if (request === translationsRequest) translationsLoading.value = false
   }
 }
 
 // ─── Mutations (cha xử lý API; con emit) ───────────────────────────────
 async function addLanguage(data: { code: string; name: string; nativeName: string; displayOrder: number }) {
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages`, {
+    await adminFetch<{ ok: true; id: number }>(`/api/admin/languages`, {
       method: 'POST',
       body: data,
     })
@@ -133,7 +133,7 @@ async function addLanguage(data: { code: string; name: string; nativeName: strin
 
 async function toggleActive(lang: typeof languages.value[0]) {
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/${lang.code}`, {
+    await adminFetch<{ ok: true }>(`/api/admin/languages/${lang.code}`, {
       method: 'PUT',
       body: { isActive: !lang.isActive },
     })
@@ -147,7 +147,7 @@ async function toggleActive(lang: typeof languages.value[0]) {
 async function setDefault(lang: typeof languages.value[0]) {
   if (lang.isDefault) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/${lang.code}`, {
+    await adminFetch<{ ok: true }>(`/api/admin/languages/${lang.code}`, {
       method: 'PUT',
       body: { isDefault: true },
     })
@@ -165,7 +165,7 @@ async function deleteLanguage(lang: typeof languages.value[0]) {
     danger: true,
   })) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/${lang.code}`, { method: 'DELETE' })
+    await adminFetch<{ ok: true }>(`/api/admin/languages/${lang.code}`, { method: 'DELETE' })
     toast.success('Đã xoá ngôn ngữ.')
     await fetchLanguages()
   } catch (err: unknown) {
@@ -213,7 +213,7 @@ async function persistOrder(list: typeof languages.value) {
   reordering.value = true
   const orders = list.map((l, idx) => ({ code: l.code, displayOrder: idx }))
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/reorder`, {
+    await adminFetch<{ ok: true; message: string }>(`/api/admin/languages/reorder`, {
       method: 'POST',
       body: { orders },
     })
@@ -232,13 +232,13 @@ const translatingSingleKey = ref<string | null>(null)
 async function translateSingleKey(t: typeof translations.value[0]) {
   translatingSingleKey.value = t.key
   const sourceText = viTranslationsMap.value.get(`${t.group}::${t.key}`) || t.key
-  const currentLangObj = languages.value.find((l) => l.code === selectedLangCode.value)
+  const currentLangObj = languages.value.find((l) => l.code === t.langCode) // the ROW's language, not the selection
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; value: string }>)(`/api/admin/languages/ai-translate-key`, {
+    const res = await adminFetch<{ ok: true; group: string; key: string; value: string }>(`/api/admin/languages/ai-translate-key`, {
       method: 'POST',
       body: {
-        langCode: selectedLangCode.value,
-        langName: currentLangObj?.name || selectedLangCode.value,
+        langCode: t.langCode,
+        langName: currentLangObj?.name || t.langCode,
         group: t.group,
         key: t.key,
         sourceText,
@@ -259,7 +259,7 @@ async function translateSingleKey(t: typeof translations.value[0]) {
 
 async function saveEdit(t: typeof translations.value[0], value: string) {
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/${selectedLangCode.value}/translations`, {
+    await adminFetch<{ ok: true; count: number }>(`/api/admin/languages/${t.langCode}/translations`, {
       method: 'PUT',
       body: { items: [{ group: t.group, key: t.key, value }] },
     })
@@ -336,8 +336,8 @@ async function startBatchTranslateWithProgress(langCode: string, langName: strin
   translatingCards[langCode] = true
 
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: typeof translations.value }>)(`/api/admin/languages/${langCode}/translations?limit=500`)
-    const missing = (res.items || []).filter((item) => !item.value || !item.value.trim())
+    const res = await adminFetch<TranslationList>(`/api/admin/languages/${langCode}/translations`)
+    const missing = missingTranslations(res.items || [], viTranslationsMap.value)
 
     if (missing.length === 0) {
       progressStats.value.currentKey = 'Tất cả các key đã có bản dịch!'
@@ -361,19 +361,13 @@ async function startBatchTranslateWithProgress(langCode: string, langName: strin
       const chunk = missing.slice(i, i + CHUNK_SIZE)
       progressStats.value.currentKey = `Đang dịch: ${chunk.map((c) => c.key).slice(0, 3).join(', ')}...`
 
-      const payloadItems = chunk.map((item) => ({
-        group: item.group,
-        key: item.key,
-        sourceText: viTranslationsMap.value.get(`${item.group}::${item.key}`) || item.key,
-      }))
-
       try {
-        const chunkRes = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; translated: Array<{ group: string; key: string; value: string }> }>)(`/api/admin/languages/ai-translate-chunk`, {
+        const chunkRes = await adminFetch<{ ok: true; translated: Array<{ group: string; key: string; value: string }> }>(`/api/admin/languages/ai-translate-chunk`, {
           method: 'POST',
           body: {
             langCode,
             langName,
-            items: payloadItems,
+            items: chunk,
           },
         })
 
@@ -424,7 +418,7 @@ async function seedDefaultTranslations() {
   })) return
   seedingDefault.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/languages/seed-default`, { method: 'POST' })
+    const res = await adminFetch<{ ok: true; result: { languagesSeeded: number; translationsSeeded: number }; message: string }>(`/api/admin/languages/seed-default`, { method: 'POST' })
     toast.success(res.message || 'Đã nạp bản dịch mặc định thành công!')
     await Promise.all([fetchLanguages(), fetchTranslations()])
   } catch (err: unknown) {
@@ -437,7 +431,7 @@ async function seedDefaultTranslations() {
 async function syncAllLanguages() {
   syncing.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/languages/sync`, { method: 'POST' })
+    const res = await adminFetch<{ ok: true; result: { synced: number; totalViKeys: number }; message: string }>(`/api/admin/languages/sync`, { method: 'POST' })
     toast.success(res.message)
     await loadData()
   } catch (err: unknown) {
@@ -578,16 +572,9 @@ onMounted(() => {
       <button type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchLanguages">Thử lại</button>
     </div>
 
-    <!-- Skeleton + Error (Translations tab — guard ghim translationsError/fetchTranslations ở file gốc) -->
-    <SkeletonTable v-if="translationsLoading && activeTab === 'translations'" label="Đang tải bản dịch" :rows="8" :cols="4" />
-    <div v-else-if="translationsError && activeTab === 'translations'" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
-      <span>{{ translationsError }}</span>
-      <button type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchTranslations">Thử lại</button>
-    </div>
-
     <!-- Languages Tab -->
     <LanguagesListTab
-      v-else-if="activeTab === 'languages'"
+      v-if="activeTab === 'languages'"
       :languages="languages"
       :translating-cards="translatingCards"
       @toggle-active="toggleActive"
@@ -602,9 +589,11 @@ onMounted(() => {
       @add-language="addLanguage"
     />
 
-    <!-- Translations Tab (chỉ mount khi không loading/error — skeleton+error render ở cha) -->
+    <!-- Translations Tab: luôn mount khi mở tab — bộ lọc + ô tìm kiếm giữ nguyên (không mất focus)
+         lúc tải lại; khung chờ/lỗi chỉ thay bảng qua slot #status (guard ghim translationsError/fetchTranslations ở đây) -->
     <TranslationsTab
-      v-if="activeTab === 'translations' && !translationsLoading && !translationsError"
+      v-if="activeTab === 'translations'"
+      :loading="translationsLoading" :failed="!!translationsError"
       :languages="languages"
       :translations="translations"
       :translation-groups="translationGroups"
@@ -623,7 +612,15 @@ onMounted(() => {
       @translate-key="translateSingleKey"
       @ai-translate-all="aiTranslateAll"
       @fetch-translations="fetchTranslations"
-    />
+    >
+      <template #status>
+        <SkeletonTable v-if="translationsLoading" label="Đang tải bản dịch" :rows="8" :cols="4" />
+        <div v-else-if="translationsError" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+          <span>{{ translationsError }}</span>
+          <button type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchTranslations">Thử lại</button>
+        </div>
+      </template>
+    </TranslationsTab>
 
     <!-- Universal Tab (self-contained, tự onMounted loadCoverage khi mount) -->
     <UniversalTab

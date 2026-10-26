@@ -67,9 +67,10 @@ const editingModel = ref<PricingRow | null>(null)
 const editModelForm = ref({ label: '', promptCostPerMillion: 0, completionCostPerMillion: 0, isActive: true })
 const savingModelEdit = ref(false)
 
-// Delify sync state
+// Delify sync state — shape of `delifyUsage` in server/api/admin/ai/delify/sync.post.ts.
+type DelifyUsage = { windowCostUsd: number | null; windowRequests: number | null; allowedModels: string[] | null }
 const syncingDelify = ref(false)
-const delifyUsage = ref<{ windowCostUsd: number | null; windowRequests: number | null; allowedModels: string[] | null } | null>(null)
+const delifyUsage = ref<DelifyUsage | null>(null)
 
 // ── Bulk selection for providers ──────────────────────────────────────
 const selectedProviderIds = ref<Set<number>>(new Set())
@@ -100,7 +101,7 @@ async function bulkDeleteProviders() {
 
   deletingBulkProviders.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; deleted: number }>)('/api/admin/ai/providers/bulk-delete', {
+    const res = await adminFetch<{ ok: true; deleted: number }>('/api/admin/ai/providers/bulk-delete', {
       method: 'POST',
       body: { ids },
     })
@@ -155,7 +156,7 @@ async function bulkDeleteModels() {
 
   deletingBulkModels.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; deleted: number }>)('/api/admin/ai/pricing/bulk-delete', {
+    const res = await adminFetch<{ ok: true; deleted: number }>('/api/admin/ai/pricing/bulk-delete', {
       method: 'POST',
       body: { models },
     })
@@ -174,8 +175,8 @@ async function loadProviders() {
   providersLoading.value = true
   try {
     const [pData, prData] = await Promise.all([
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ providers: ProviderRow[] }>)('/api/admin/ai/providers'),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: PricingRow[] }>)('/api/admin/ai/pricing'),
+      adminFetch<{ ok: true; providers: ProviderRow[] }>('/api/admin/ai/providers'),
+      adminFetch<{ ok: true; pricing: PricingRow[] }>('/api/admin/ai/pricing'),
     ])
     providers.value = pData.providers
     pricingRows.value = prData.pricing
@@ -184,13 +185,6 @@ async function loadProviders() {
   } finally {
     providersLoading.value = false
   }
-}
-
-async function loadPricing() {
-  try {
-    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: PricingRow[] }>)('/api/admin/ai/pricing')
-    pricingRows.value = data.pricing
-  } catch { /* optional */ }
 }
 
 function openProviderEdit(p: ProviderRow) {
@@ -203,7 +197,7 @@ async function saveProvider() {
   if (!editingProvider.value) return
   savingProvider.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/providers/${editingProvider.value.id}`, {
+    await adminFetch<{ ok: true; message?: string }>(`/api/admin/ai/providers/${editingProvider.value.id}`, {
       method: 'PUT',
       body: {
         label: providerForm.value.label,
@@ -226,7 +220,7 @@ async function testProvider(id: number) {
   testingProvider.value = id
   testResult.value = null
   try {
-    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; model?: string; error?: string }>)(`/api/admin/ai/providers/${id}/test`, {
+    const result = await adminFetch<{ ok: true; model?: string } | { ok: false; error: string }>(`/api/admin/ai/providers/${id}/test`, {
       method: 'POST',
     })
     if (result.ok) {
@@ -263,7 +257,7 @@ async function createProvider() {
   savingNewProvider.value = true
   newProviderError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/providers', {
+    await adminFetch<{ ok: true; id?: number }>('/api/admin/ai/providers', {
       method: 'POST',
       body: {
         provider: newProviderForm.value.provider,
@@ -287,7 +281,7 @@ async function deleteProvider(p: ProviderRow) {
   if (!await confirm({ title: 'Xoá nhà cung cấp', message: `Xoá "${p.label}"? Dịch vụ đang dùng nhà cung cấp này sẽ cần gán lại.`, danger: true, confirmLabel: 'Xoá' })) return
   deletingProviderId.value = p.id
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/providers/${p.id}`, { method: 'DELETE' })
+    await adminFetch<{ ok: true }>(`/api/admin/ai/providers/${p.id}`, { method: 'DELETE' })
     toast.success('Đã xoá nhà cung cấp.')
     await loadProviders()
   } catch (err: unknown) {
@@ -304,7 +298,7 @@ async function toggleModelActive(m: PricingRow) {
   const original = m.isActive
   m.isActive = !original
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, {
+    await adminFetch<{ ok: true; message?: string }>(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, {
       method: 'PUT',
       body: { isActive: m.isActive },
     })
@@ -330,7 +324,7 @@ async function addModelToProvider() {
   savingNewModel.value = true
   newModelError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/pricing', {
+    await adminFetch<{ ok: true }>('/api/admin/ai/pricing', {
       method: 'POST',
       body: {
         model: newModelForm.value.model.trim(),
@@ -365,7 +359,7 @@ async function saveEditModel() {
   if (!editingModel.value) return
   savingModelEdit.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/pricing/${encodeURIComponent(editingModel.value.model)}`, {
+    await adminFetch<{ ok: true; message?: string }>(`/api/admin/ai/pricing/${encodeURIComponent(editingModel.value.model)}`, {
       method: 'PUT',
       body: {
         label: editModelForm.value.label.trim() || null,
@@ -387,7 +381,7 @@ async function saveEditModel() {
 async function deleteModel(m: PricingRow) {
   if (!await confirm({ title: 'Xoá Model', message: `Xoá model "${m.model}" khỏi ${m.provider}?`, danger: true, confirmLabel: 'Xoá' })) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, { method: 'DELETE' })
+    await adminFetch<{ ok: true }>(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, { method: 'DELETE' })
     toast.success(`Đã xoá model "${m.model}".`)
     await loadProviders()
   } catch (err: unknown) {
@@ -410,15 +404,11 @@ const modelTestModal = ref<{
 async function testCallModel(provider: string, model: string) {
   testingModelKey.value = model
   try {
-    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      model?: string
-      reply?: string
-      durationMs?: number
-      usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
-      costVnd?: number
-      error?: string
-    }>)('/api/admin/ai/test-call', {
+    // server/api/admin/ai/test-call.post.ts: a failed call answers 200 `{ ok: false, error }`.
+    const result = await adminFetch<{
+      ok: true; model: string; provider: string; reply: string; durationMs: number
+      usage: { promptTokens: number; completionTokens: number; totalTokens: number }; costVnd: number
+    } | { ok: false; model?: string; durationMs?: number; error: string }>('/api/admin/ai/test-call', {
       method: 'POST',
       body: {
         provider,
@@ -468,13 +458,9 @@ async function testCallModel(provider: string, model: string) {
 async function syncDelifyPricing() {
   syncingDelify.value = true
   try {
-    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      upserted: number
-      syncedLogs: number
-      totalFromApi: number
-      delifyUsage: { windowCostUsd: number | null; windowRequests: number | null; allowedModels: string[] | null } | null
-    }>)('/api/admin/ai/delify/sync', {
+    const result = await adminFetch<{
+      ok: true; upserted: number; skipped: number; syncedLogs: number; totalFromApi: number; delifyUsage: DelifyUsage | null
+    }>('/api/admin/ai/delify/sync', {
       method: 'POST',
     })
     if (result.delifyUsage) {

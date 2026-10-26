@@ -43,6 +43,7 @@ const budgetInfo = ref<BudgetInfo | null>(null)
 interface DelifyStatusResponse {
   ok: boolean
   configured: boolean
+  host?: string | null // the host the server asked: the delify provider's base URL
   error?: string
   keyInfo?: {
     name: string
@@ -244,7 +245,7 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
               <p class="m-0 mt-0.5 text-xs text-[#667768] flex items-center gap-2 flex-wrap">
                 <span v-if="delifyStatus?.keyInfo">Key: <strong class="text-[#122815]">{{ delifyStatus.keyInfo.name }}</strong> (Nhóm: {{ delifyStatus.keyInfo.groupName }})</span>
                 <span>•</span>
-                <span>Cập nhật trực tiếp từ <code class="text-[#2c6e33]">router.delify.vn</code></span>
+                <span>Cập nhật trực tiếp từ <code class="text-[#2c6e33]">{{ delifyStatus?.host || 'Delify Router' }}</code></span>
               </p>
             </div>
           </div>
@@ -281,7 +282,7 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
 
         <div v-if="delifyStatusLoading" class="py-6 text-center text-xs text-[#667768]" role="status" aria-busy="true">
           <span class="inline-block w-4 h-4 rounded-full border-2 border-[#2c6e33] border-t-transparent animate-spin mr-2"></span>
-          Đang tải dữ liệu thời gian thực từ router.delify.vn...
+          Đang tải dữ liệu thời gian thực từ Delify Router...
         </div>
 
         <div v-else-if="delifyStatusError" class="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700" role="alert">

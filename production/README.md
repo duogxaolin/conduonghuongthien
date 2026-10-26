@@ -342,6 +342,27 @@ Chạy lại được: lượt sau chỉ báo những hàng còn ở dạng enti
 
 ---
 
+## Xoá chữ "null" lưu nhầm làm bản dịch giao diện (làm một lần, `db:repair-null-translations`)
+
+Trước bản vá, bấm "Lưu" trên một ô trống chưa sửa ở `/admin/languages` → "Bản dịch UI" làm máy chủ lưu **chữ** `null` (không phải ô trống), và các đường dịch AI cũng lưu được `undefined`, `[object Object]`, chữ `NULL` nguyên văn của model hay một con số — trang công khai hiện đúng các chữ đó. Đường ghi đã chặn; lệnh này đưa các hàng đã lưu nhầm về trạng thái "chưa dịch" (NULL, như một khoá mới sau "Đồng bộ key"). Không đụng hàng khác, giữ nguyên `updated_at`. Sau khi CI đã deploy bản có `db:repair-null-translations`:
+
+```bash
+cd /www/wwwroot/conduonghuongthien
+docker exec -it cdkt_app npm run db:repair-null-translations                                # 1. xem trước: liệt kê, KHÔNG ghi
+./scripts/backup-db.sh                                                                       # 2. sao lưu (chỉ hoàn tác được bằng bản này)
+docker exec -it cdkt_app npm run db:repair-null-translations -- --apply                     # 3. ghi nhóm `exact`
+docker exec -it cdkt_app npm run db:repair-null-translations -- --apply --include-review    # 4. (tuỳ) ghi cả nhóm `review` sau khi đã xem
+```
+
+Báo cáo có hai nhóm, mỗi hàng kèm ngôn ngữ, nhóm, khoá, giá trị và lý do:
+- `exact`: đúng chữ `null`/`undefined` — chắc chắn là lỗi, bước 3 ghi.
+- `review`: `NULL`/` null`/`Undefined`… (`null_like`), `[object Object]` (`object_text`), và con số trần khác với bản gốc tiếng Việt (`numeric`) — gần như chắc là lỗi, nhưng đọc danh sách trước; chỉ bước 4 ghi. Thấy hàng nào là bản dịch thật (vd. một con số đúng) thì sửa tay hàng đó trong admin trước khi chạy bước 4.
+- `skipped`: hàng có người vừa sửa giữa lúc đọc và lúc ghi (so từng byte) — không bị đè.
+
+Sau khi ghi, các khoá đó hiện "(chưa dịch)" trong admin: dịch lại bằng tay hoặc "Dịch AI". Chạy lại được: lượt sau không còn gì để đổi.
+
+---
+
 ## Sao lưu tự động trong ứng dụng (scheduler)
 
 Từ đợt wave1 1B, ở production scheduler sao lưu **tự khởi động** (trước đây chỉ khởi động khi `.env` có `BACKUP_SCHEDULER=1`, nên công tắc trong admin bật mà không bao giờ chạy). Có bản sao lưu hay không vẫn do công tắc **"Backup tự động theo lịch"** ở `/admin/settings/backup` quyết định. Công tắc mặc định tắt, nên bản cập nhật này không tự sinh bản sao lưu nào.
