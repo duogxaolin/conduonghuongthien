@@ -217,3 +217,37 @@ Wave 3, task 4.1 + 7.1. Bản tách giữ lại (không rollback). **Khác hình
   Request giống hệt; toast giống hệt, trừ đúng lỗi "Hủy" đã sửa.
 - **Mã màu hex:** đã chạy `scripts/codemod-hex-tokens.ts --write` trên 5 panel VÀ trang. Kết quả 115 thay thế — đúng con số codemod cho ra trên tệp gốc nguyên khối. Trang về 0 hex. 89 hex còn lại là giá trị chưa có token (`#8a6412`, `#cce5cd`, `#a32924`, … — quyết định D-T1) + 3 giữ vì thứ tự cascade. Chúng nằm ở 5 panel, vào ratchet bằng `--raise` (14/9/21/21/24); tổng hex của trang cũ 204 → 89.
 - **Việc sau:** nhánh tách `moderation.vue` có `tests/_sfc-mount.ts` cùng ý tưởng với `tests/_sfc-mount-media-scan.ts`. Khi cả hai đã vào, giữ một.
+
+## 2026-10-26 — `pages/admin/profile.vue` (901 → 277)
+
+Wave 3, task 4.1 + 7.1. Bản tách giữ lại. Khác lần thử 2026-10 (875 → 657, chỉ tách 3 hộp thoại): lần này tách theo cả bốn đường khối — mật khẩu, yếu tố thứ hai, mã dự phòng, lịch sử (đã tách sẵn).
+
+- **Đường tách:**
+  - 6 component chỉ trình bày trong `app/components/admin/profile/` — props vào, emit ra, `defineModel` cho mọi ô nhập, không component nào tự fetch:
+    - `ProfilePasswordSection` (56 dòng);
+    - `ProfileMfaFactorList` (85) — ba thẻ yếu tố;
+    - `ProfileRecoveryCodesCard` (84) — thẻ mã dự phòng + lô mã hiện một lần;
+    - `ProfileEnrollDialog` (170), `ProfileDisableDialog` (66), `ProfileRecoveryDialog` (77).
+  - Luồng của biểu mẫu/hộp thoại → composable; `toast`, hàm đưa tiêu điểm và việc đọc lại sau mỗi thao tác do trang truyền vào (như `useModerationWorker`):
+    - `useProfilePassword` (51);
+    - `useProfileMfaFactors` (239) — `useMfaEnrollDialog` + `useMfaDisableDialog`;
+    - `useProfileRecoveryCodes` (144) — hộp thoại, lô mã, copy, tải về.
+  - Kiểu suy ra từ handler (`Payload<…>`) → `app/types/admin-profile.ts` (52). Nhãn/biểu tượng/mô tả của ba yếu tố + `canEnrollMfaFactor` (hàm thuần) → `app/utils/profile-mfa.ts` (30).
+- **Giữ ở cha:** `mfa`/`mfaLoading`/`mfaError` + `loadMfa` (ghim bởi `admin-error-retry-ui`), khung chờ `v-if="mfaLoading"` vẽ tại chỗ (ghim bởi `skeleton-loading-ui`), ô lỗi `role="alert"` + "Thử lại", cảnh báo mất quyền truy cập (`lockoutRisk` của máy chủ), thẻ tài khoản, `historyRef` + `<AdminProfileActivityHistory>`, phím Escape, `focusFirstField`. Ô lỗi của biểu mẫu mật khẩu và của từng hộp thoại đi theo biểu mẫu/hộp thoại của nó: đó là lỗi gửi biểu mẫu, không phải nhánh lỗi tải mà `admin-error-retry-ui` ghim.
+- **Tên component:** trang import tường minh. Tên auto-import toàn cục là `AdminProfilePasswordSection`, `AdminProfileEnrollDialog`… (Nuxt gộp đoạn `profile` lặp) — không trùng `AdminProfileActivityHistory`.
+- **8 chỗ ép kiểu `($fetch as …)` → `adminFetch<T>()`.** `T` suy ra từ 7 handler dưới `server/api/admin/profile/**`. Enroll trả một union (bí mật TOTP / `sentTo` email / không gì cho mật khẩu cấp 2) nên mã đọc qua `'secret' in res` — cùng giá trị lúc chạy. `mfa/index.get.ts` khai kiểu `email: string | null` — chỉ đổi kiểu: `event.context.adminUser` là `any`, và một trường `any` rơi khỏi kiểu `Serialize<…>`.
+- **Bốn lỗi sửa kèm,** mỗi lỗi có test đỏ trên bản gốc (11 test). Gốc chung: "Huỷ", ✕ và nền đóng được hộp thoại đang bận (chỉ Escape kiểm `busy`), nên một câu trả lời về muộn ghi vào hộp thoại đã mở lại cho yếu tố khác:
+  - lỗi của lượt tắt TOTP hiện trong hộp tắt email; lượt thành công đóng hộp tắt email; lượt enroll TOTP về muộn biến hộp bật email thành bước nhập mã ("Đã gửi mã … tới" khi chưa gửi gì); lượt xác nhận về muộn đóng hộp đang mở. Nay mỗi lần mở/đóng là một phiên mới, câu trả lời của phiên cũ không ghi gì vào hộp thoại — còn việc máy chủ ĐÃ làm (toast, lô mã dự phòng một lần, đọc lại) vẫn diễn ra;
+  - hai lượt đọc trạng thái cùng bay: lượt cũ về sau vẽ lại trạng thái trước khi đổi, lượt cũ về trước tắt khung chờ khi lượt mới còn bay. Nay chỉ lượt gửi sau cùng được ghi;
+  - Enter lần hai khi request còn bay gửi request thứ hai (nút đã khoá, phím Enter thì không) — với "Tạo mã", lô thứ hai thay lô đang hiện;
+  - hai lô mã dự phòng cùng bay, trả lời về ngược thứ tự: lô máy chủ đã huỷ ở lại trên màn hình. Nay mỗi lượt đổi lô giữ một số thứ tự lấy lúc gửi; câu trả lời cũ hơn lô đang hiện không đổi gì.
+
+  Không đổi cách đóng hộp thoại (vẫn đóng được khi bận) — chuyển ba hộp thoại sang `AdminModal` (khoá đóng khi bận, giữ Tab trong hộp) là việc sau, có đổi DOM.
+- **Hành vi:** `tests/admin-profile-page.test.ts` (42 test) mount trang thật cùng các component và composable trên DOM tối giản (`tests/_profile-page-harness.ts` trên `tests/_sfc-mount.ts`), bấm/gõ/nhấn phím trên đúng điều khiển thật. Bản gốc: 31/42 xanh, 11 đỏ đúng là 11 test "fixed by the split". Sau tách: 42/42. `PROFILE_PAGE=<tệp>` chạy cùng bộ test trên một bản khác của trang.
+- **`tests/_sfc-mount.ts` mở rộng** (không thêm bản thứ ba): `env.components` đăng ký component auto-import (`<AdminProfileActivityHistory>` — thiếu nó thì `ref` cầm một phần tử trần và `reload()` ném lỗi), và `env.auto` được đặt lên `globalProperties` — tên chỉ template dùng (`formatDateTimeVN(…)`) biên dịch thành `_ctx.tên`, Nuxt import nó qua bước biến đổi template.
+- **Chốt nguồn đổi theo:** `admin-modal-dialog` ghim `isDeliberateEnter(` trong ba component hộp thoại thay cho `profile.vue`, và chặt hơn trước: MỌI `@keydown.enter` của chúng phải đi qua `submitOnEnter($event…)` (không `keyup`), `profile.vue` không còn ô bắt Enter nào. Bộ chọn mà `tests/e2e/admin-mfa.spec.ts`/`admin-login-challenge.spec.ts`/`admin-dialogs.spec.ts` dùng trên trang này giữ nguyên (DOM không đổi; E2E chưa chạy lại).
+- **Chứng minh DOM không đổi** (chạy một lần, không commit): chạy cả 42 test trên bản gốc và bản tách với `PROFILE_DOM_LOG`, so DOM tuần tự hoá + request + toast sau mỗi bước:
+  - 31 test không đổi hành vi: 173/173 ảnh chụp giống hệt;
+  - 11 test sửa lỗi: 75/75 ảnh chụp giống hệt tới bước ngay trước bước lỗi lộ ra; khác đúng ở bước đó.
+- **Mã màu hex:** codemod `--write` trên trang và 6 component: 0 thay thế, như trên tệp gốc. Tổng vẫn 70 (66 giá trị chưa có token — quyết định D-T1 — + 4 giữ vì thứ tự cascade). Trang 70 → 16; 6 component vào ratchet bằng `--raise` (5/14/15/5/9/6).
+- **Việc sau:** `ProfileActivityHistory.vue` còn 2 chỗ ép kiểu `$fetch` và không chặn lượt đọc cũ khi đổi trang/tài khoản nhanh. Ô `enroll-sp-confirm` (bước 2 của mật khẩu cấp 2) gắn cùng giá trị với ô bước 1 nên hiện sẵn mật khẩu vừa gõ — giữ nguyên ở đây, cần quyết định sản phẩm.

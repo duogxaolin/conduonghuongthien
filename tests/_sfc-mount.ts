@@ -109,6 +109,12 @@ export interface SfcEnv {
   auto: Record<string, unknown>
   /** Import specifiers to replace with a stand-in module. */
   modules?: Record<string, Record<string, unknown>>
+  /**
+   * Components registered on the app, for auto-imported tags the files use without
+   * importing them (`<AdminProfileActivityHistory>`). A tag left out renders as a plain
+   * element — and a template `ref` on it then holds that element, not the component.
+   */
+  components?: Record<string, Vue.Component>
 }
 
 const IMPORT_FROM = /^import\s+([^'"]*?)\s*from\s*['"]([^'"]+)['"];?/gm
@@ -195,7 +201,13 @@ export async function mountSfc(file: string, env: SfcEnv, props?: Record<string,
   const root = createElement('#root')
   const errors: unknown[] = []
   const app = renderer.createApp(component, props)
-  // `<nuxt-link>` and auto-imported components are left unresolved on purpose.
+  // `<nuxt-link>` and auto-imported components are left unresolved on purpose, unless
+  // the test registers one (`env.components`).
+  for (const [name, registered] of Object.entries(env.components ?? {})) app.component(name, registered)
+  // A name only the TEMPLATE uses (`formatDateTimeVN(f.lastUsedAt)`) is compiled to
+  // `_ctx.name`, not to the script's scope; Nuxt's template transform imports it. Here the
+  // instance proxy finds it on globalProperties.
+  Object.assign(app.config.globalProperties, env.auto)
   app.config.warnHandler = () => {}
   app.config.errorHandler = (err) => { errors.push(err) }
   MOUNT_ERRORS.set(root, errors)
