@@ -5,7 +5,7 @@ import { getDb } from '../../../utils/db'
 import { langTranslations } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { callAi } from '../../../services/ai-gateway'
-import { upsertTranslations } from '../../../services/languages'
+import { requireLanguage, upsertTranslations } from '../../../services/languages'
 import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../../../utils/ai/model-translations'
 
 const LANG_CODE_REQUIRED = 'Mã ngôn ngữ bắt buộc.'
@@ -19,6 +19,8 @@ export default defineEventHandler(async (event) => {
   requireResourcePermission(adminUser, 'settings', 'update')
 
   const body = await readValidated(event, bodySchema)
+  // Refuse an unknown language before paying for AI calls (the write checks again, locked).
+  await requireLanguage(body.langCode)
   const langCode = body.langCode
 
   const db = getDb()

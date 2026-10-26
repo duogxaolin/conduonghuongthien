@@ -5,7 +5,8 @@ import { isIP } from 'node:net'
  * unicast address, not loopback, private, link-local, CGNAT, documentation, multicast
  * or reserved space (IPv4, IPv6, IPv4-mapped, NAT64)?
  *
- * Moved verbatim out of `outbound.ts` (which re-exports it) so that file could take the
+ * Moved verbatim out of `outbound.ts` (import it from here — a re-export there made Nitro's
+ * auto-import scan warn "Duplicated imports") so that file could take the
  * DNS-in-deadline fix without growing past its line cap. Pure: no I/O, no state.
  */
 export function isPublicIpAddress(input: string): boolean {
