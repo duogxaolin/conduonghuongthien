@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
+import { slugify, slugifyDraft } from '~~/shared/slugify'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -45,30 +46,22 @@ const form = reactive({
   displayOrder: 0,
 })
 
-// Auto-fill slug from name
-const slugifyLocal = (text: string): string =>
-  text.toString().toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-
+// Slug (`shared/slugify.ts`, cùng luật máy chủ lưu): sinh từ tên, rời ô và lúc lưu
+// dùng bản chuẩn `slugify`; đang gõ dùng `slugifyDraft` — giữ gạch cuối để gõ tiếp.
 watch(() => form.name, (val) => {
   if (modalMode.value === 'create') {
-    form.slug = slugifyLocal(val)
+    form.slug = slugify(val)
   }
 })
 
 /**
  * Validate slug real-time: nếu admin nhập tay ký tự không hợp lệ → slug sau slugify
- * khác input → báo lỗi + auto-clean. Nút Lưu disabled khi slugError truthy.
+ * khác input → báo lỗi + auto-clean. Nút Lưu disabled khi slugError truthy. Đo bằng
+ * bản "đang gõ": gạch cuối chưa gõ xong không phải lỗi (rời ô/lưu sẽ cắt nó).
  */
 const slugError = computed(() => {
   if (!form.slug) return ''
-  const cleaned = slugifyLocal(form.slug)
+  const cleaned = slugifyDraft(form.slug)
   if (cleaned !== form.slug) {
     return 'Định danh chỉ chứa chữ thường, số, gạch ngang. Không dấu, không khoảng trắng, không ký tự lạ.'
   }
@@ -77,10 +70,12 @@ const slugError = computed(() => {
 
 // Auto-clean slug khi admin paste ký tự sai — slug tự đổi + lỗi biến mất.
 watch(() => form.slug, (val) => {
-  if (val && slugifyLocal(val) !== val) {
-    form.slug = slugifyLocal(val)
+  if (val && slugifyDraft(val) !== val) {
+    form.slug = slugifyDraft(val)
   }
 })
+
+const onSlugBlur = () => { form.slug = slugify(form.slug) }
 
 // ─── Computed tree ────────────────────────────────────────────────────────────
 const tree = computed(() => {
@@ -161,7 +156,7 @@ const handleSave = async () => {
   try {
     const payload = {
       name: form.name.trim(),
-      slug: form.slug.trim(),
+      slug: slugify(form.slug),
       type: form.type,
       description: form.description.trim() || null,
       parentId: form.parentId || null,
@@ -235,11 +230,11 @@ onMounted(() => {
     <!-- Page Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Quản lý Danh mục</h1>
-        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Phân loại bài viết theo danh mục cha — con (tối đa 2 cấp)</p>
+        <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">Quản lý Danh mục</h1>
+        <p class="text-[0.85rem] text-ink-muted mt-1 mb-0">Phân loại bài viết theo danh mục cha — con (tối đa 2 cấp)</p>
       </div>
       <button
-        class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors shrink-0"
+        class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors shrink-0"
         @click="openCreate()"
       >
         <i class="fa-solid fa-folder-plus"></i> Tạo Danh Mục Mới
@@ -253,11 +248,11 @@ onMounted(() => {
       noun="danh mục"
       @clear="selection.clear()"
     >
-      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+      <button type="button" class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
 
     <!-- Loading -->
-    <div v-if="loading" role="status" aria-busy="true" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+    <div v-if="loading" role="status" aria-busy="true" class="bg-white rounded-xl border border-line p-6">
       <span class="sr-only">Đang tải danh sách danh mục</span>
       <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
         <div v-for="n in 6" :key="n" class="flex gap-3">
@@ -269,15 +264,15 @@ onMounted(() => {
     <!-- Error -->
     <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-      {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchCategories()">thử lại</button>.
+      {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchCategories()">thử lại</button>.
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="tree.length === 0" class="bg-white rounded-xl border border-[#e2ece3] py-14 flex flex-col items-center gap-3 text-center">
-      <i class="fa-solid fa-folder-open text-4xl text-[#c8d6c9]"></i>
-      <p class="text-[#667768] text-[0.9rem] m-0">Chưa có danh mục nào. Hãy tạo danh mục đầu tiên!</p>
+    <div v-else-if="tree.length === 0" class="bg-white rounded-xl border border-line py-14 flex flex-col items-center gap-3 text-center">
+      <i class="fa-solid fa-folder-open text-4xl text-line-strong"></i>
+      <p class="text-ink-muted text-[0.9rem] m-0">Chưa có danh mục nào. Hãy tạo danh mục đầu tiên!</p>
       <button
-        class="inline-flex items-center gap-2 bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 hover:bg-[#2c6e33] transition-colors"
+        class="inline-flex items-center gap-2 bg-brand-900 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 hover:bg-brand-700 transition-colors"
         @click="openCreate()"
       >
         <i class="fa-solid fa-folder-plus"></i> Tạo Danh Mục
@@ -285,39 +280,39 @@ onMounted(() => {
     </div>
 
     <!-- Tree table -->
-    <div v-else class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
+    <div v-else class="bg-white rounded-xl border border-line overflow-hidden">
       <!-- Mobile Card View -->
       <div class="md:hidden divide-y divide-[#eef2ee]">
         <template v-for="root in tree" :key="'m-'+root.id">
-          <div class="p-4" :class="selection.isSelected(Number(root.id)) ? 'bg-[#f0f7f1]' : ''">
+          <div class="p-4" :class="selection.isSelected(Number(root.id)) ? 'bg-surface-tint' : ''">
             <div class="flex items-center gap-2 mb-1">
               <input
                 type="checkbox"
-                class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                class="h-4 w-4 shrink-0 accent-brand-700"
                 :checked="selection.isSelected(Number(root.id))"
                 :aria-label="`Chọn danh mục ${root.name}`"
                 @change="selection.toggle(Number(root.id))"
               />
-              <i class="fa-solid fa-folder text-[#2c6e33]"></i>
-              <span class="font-bold text-[#122815] text-[0.9rem]">{{ root.name }}</span>
-              <span class="text-[0.68rem] bg-[#f0f7f1] text-[#2c6e33] px-1.5 py-0.5 rounded font-semibold">{{ root.children.length }} con</span>
+              <i class="fa-solid fa-folder text-brand-700"></i>
+              <span class="font-bold text-brand-950 text-[0.9rem]">{{ root.name }}</span>
+              <span class="text-[0.68rem] bg-surface-tint text-brand-700 px-1.5 py-0.5 rounded font-semibold">{{ root.children.length }} con</span>
             </div>
             <div class="flex flex-wrap items-center gap-2 mb-2">
-              <span class="inline-block bg-[#f0f7f1] text-[#2c6e33] px-1.5 py-0.5 rounded text-[0.7rem] font-bold">{{ typeLabels[root.type] || root.type }}</span>
-              <code class="text-[0.72rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ root.slug }}</code>
+              <span class="inline-block bg-surface-tint text-brand-700 px-1.5 py-0.5 rounded text-[0.7rem] font-bold">{{ typeLabels[root.type] || root.type }}</span>
+              <code class="text-[0.72rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ root.slug }}</code>
             </div>
             <div class="flex flex-wrap items-center gap-3">
-              <button class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-add-child-${root.id}`" @click="openCreate(root.id)"><i class="fa-solid fa-folder-plus text-xs"></i> Thêm con</button>
-              <button class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-${root.id}`" @click="openEdit(root)"><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
-              <button class="text-[#d12420] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="deleteCategory(root)"><i class="fa-regular fa-trash text-xs"></i> Xóa</button>
+              <button class="text-brand-700 font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-add-child-${root.id}`" @click="openCreate(root.id)"><i class="fa-solid fa-folder-plus text-xs"></i> Thêm con</button>
+              <button class="text-brand-700 font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-${root.id}`" @click="openEdit(root)"><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
+              <button class="text-danger font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="deleteCategory(root)"><i class="fa-regular fa-trash text-xs"></i> Xóa</button>
             </div>
             <!-- Children inline -->
-            <div v-if="root.children.length" class="mt-3 ml-4 border-l-2 border-[#e2ece3] pl-3 space-y-2">
+            <div v-if="root.children.length" class="mt-3 ml-4 border-l-2 border-line pl-3 space-y-2">
               <div v-for="child in root.children" :key="'mc-'+child.id" class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                    class="h-4 w-4 shrink-0 accent-brand-700"
                     :checked="selection.isSelected(Number(child.id))"
                     :aria-label="`Chọn danh mục ${child.name}`"
                     @change="selection.toggle(Number(child.id))"
@@ -326,8 +321,8 @@ onMounted(() => {
                   <span class="text-[0.82rem] text-[#2c3e2e]">{{ child.name }}</span>
                 </div>
                 <div class="flex items-center gap-2">
-                  <button class="text-[#2c6e33] text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-${child.id}`" @click="openEdit(child)"><i class="fa-solid fa-pen"></i></button>
-                  <button class="text-[#d12420] text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" @click="deleteCategory(child)"><i class="fa-regular fa-trash"></i></button>
+                  <button class="text-brand-700 text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-${child.id}`" @click="openEdit(child)"><i class="fa-solid fa-pen"></i></button>
+                  <button class="text-danger text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" @click="deleteCategory(child)"><i class="fa-regular fa-trash"></i></button>
                 </div>
               </div>
             </div>
@@ -340,21 +335,21 @@ onMounted(() => {
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
-              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-[#e2ece3]">
+              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-line">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.allSelected(visibleIds)"
                   :indeterminate="selection.someSelected(visibleIds)"
                   aria-label="Chọn tất cả danh mục"
                   @change="selection.toggleAll(visibleIds)"
                 />
               </th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Tên danh mục</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Slug</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Loại</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thứ tự</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line">Tên danh mục</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Slug</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Loại</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thứ tự</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -364,7 +359,7 @@ onMounted(() => {
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
                   <input
                     type="checkbox"
-                    class="h-4 w-4 accent-[#2c6e33]"
+                    class="h-4 w-4 accent-brand-700"
                     :checked="selection.isSelected(Number(root.id))"
                     :aria-label="`Chọn danh mục ${root.name}`"
                     @change="selection.toggle(Number(root.id))"
@@ -372,36 +367,36 @@ onMounted(() => {
                 </td>
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
                   <div class="flex items-center gap-2">
-                    <i class="fa-solid fa-folder text-[#2c6e33]"></i>
-                    <span class="font-bold text-[#122815]">{{ root.name }}</span>
-                    <span class="text-[0.72rem] bg-[#f0f7f1] text-[#2c6e33] px-1.5 py-0.5 rounded font-semibold">{{ root.children.length }} con</span>
+                    <i class="fa-solid fa-folder text-brand-700"></i>
+                    <span class="font-bold text-brand-950">{{ root.name }}</span>
+                    <span class="text-[0.72rem] bg-surface-tint text-brand-700 px-1.5 py-0.5 rounded font-semibold">{{ root.children.length }} con</span>
                   </div>
                 </td>
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
-                  <code class="text-[0.78rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ root.slug }}</code>
+                  <code class="text-[0.78rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ root.slug }}</code>
                 </td>
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
-                  <span class="inline-block bg-[#f0f7f1] text-[#2c6e33] px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap">
+                  <span class="inline-block bg-surface-tint text-brand-700 px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap">
                     {{ typeLabels[root.type] || root.type }}
                   </span>
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768]">{{ root.displayOrder }}</td>
+                <td class="px-4 py-3 border-b border-[#eef2ee] text-ink-muted">{{ root.displayOrder }}</td>
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
                   <div class="flex items-center gap-3 flex-wrap">
                     <button
-                      class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
+                      class="inline-flex items-center gap-1 bg-none border-0 text-brand-700 cursor-pointer font-bold text-[0.82rem] hover:underline"
                       :data-admin-modal-opener="`category-add-child-${root.id}`" @click="openCreate(root.id)"
                     ><i class="fa-solid fa-folder-plus text-xs"></i> Thêm con</button>
                     <nuxt-link
                       :to="`/admin/content/articles?categoryId=${root.id}`"
-                      class="inline-flex items-center gap-1 text-[#667768] no-underline font-bold text-[0.82rem] hover:underline"
+                      class="inline-flex items-center gap-1 text-ink-muted no-underline font-bold text-[0.82rem] hover:underline"
                     ><i class="fa-regular fa-newspaper text-xs"></i> Xem bài</nuxt-link>
                     <button
-                      class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
+                      class="inline-flex items-center gap-1 bg-none border-0 text-brand-700 cursor-pointer font-bold text-[0.82rem] hover:underline"
                       :data-admin-modal-opener="`category-${root.id}`" @click="openEdit(root)"
                     ><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
                     <button
-                      class="inline-flex items-center gap-1 bg-none border-0 text-[#d12420] cursor-pointer font-bold text-[0.82rem] hover:underline"
+                      class="inline-flex items-center gap-1 bg-none border-0 text-danger cursor-pointer font-bold text-[0.82rem] hover:underline"
                       @click="deleteCategory(root)"
                     ><i class="fa-regular fa-trash text-xs"></i> Xóa</button>
                   </div>
@@ -412,12 +407,12 @@ onMounted(() => {
                 v-for="child in root.children"
                 :key="child.id"
                 class="hover:bg-[#fafcfa]"
-                :class="selection.isSelected(Number(child.id)) ? 'bg-[#f0f7f1]' : ''"
+                :class="selection.isSelected(Number(child.id)) ? 'bg-surface-tint' : ''"
               >
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
                   <input
                     type="checkbox"
-                    class="h-4 w-4 accent-[#2c6e33]"
+                    class="h-4 w-4 accent-brand-700"
                     :checked="selection.isSelected(Number(child.id))"
                     :aria-label="`Chọn danh mục ${child.name}`"
                     @change="selection.toggle(Number(child.id))"
@@ -430,26 +425,26 @@ onMounted(() => {
                   </div>
                 </td>
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
-                  <code class="text-[0.78rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ child.slug }}</code>
+                  <code class="text-[0.78rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ child.slug }}</code>
                 </td>
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
-                  <span class="inline-block bg-[#f0f7f1] text-[#2c6e33] px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap">
+                  <span class="inline-block bg-surface-tint text-brand-700 px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap">
                     {{ typeLabels[child.type] || child.type }}
                   </span>
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768]">{{ child.displayOrder }}</td>
+                <td class="px-4 py-3 border-b border-[#eef2ee] text-ink-muted">{{ child.displayOrder }}</td>
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
                   <div class="flex items-center gap-3 flex-wrap">
                     <nuxt-link
                       :to="`/admin/content/articles?categoryId=${child.id}`"
-                      class="inline-flex items-center gap-1 text-[#667768] no-underline font-bold text-[0.82rem] hover:underline"
+                      class="inline-flex items-center gap-1 text-ink-muted no-underline font-bold text-[0.82rem] hover:underline"
                     ><i class="fa-regular fa-newspaper text-xs"></i> Xem bài</nuxt-link>
                     <button
-                      class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
+                      class="inline-flex items-center gap-1 bg-none border-0 text-brand-700 cursor-pointer font-bold text-[0.82rem] hover:underline"
                       :data-admin-modal-opener="`category-${child.id}`" @click="openEdit(child)"
                     ><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
                     <button
-                      class="inline-flex items-center gap-1 bg-none border-0 text-[#d12420] cursor-pointer font-bold text-[0.82rem] hover:underline"
+                      class="inline-flex items-center gap-1 bg-none border-0 text-danger cursor-pointer font-bold text-[0.82rem] hover:underline"
                       @click="deleteCategory(child)"
                     ><i class="fa-regular fa-trash text-xs"></i> Xóa</button>
                   </div>
@@ -478,7 +473,7 @@ onMounted(() => {
                 v-model="form.name"
                 type="text"
                 placeholder="Vd: Tin hoạt động C11"
-                class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+                class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
               />
             </div>
             <!-- Slug -->
@@ -488,31 +483,32 @@ onMounted(() => {
                 v-model="form.slug"
                 type="text"
                 placeholder="tin-hoat-dong-c11"
-                class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2c6e33]/15 font-mono"
-                :class="slugError ? 'border-[#d12420] focus:border-[#d12420]' : 'border-[#c8d6c9] focus:border-[#2c6e33]'"
+                class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-brand-700/15 font-mono"
+                :class="slugError ? 'border-[#d12420] focus:border-danger' : 'border-[#c8d6c9] focus:border-brand-700'"
                 :aria-invalid="!!slugError"
+                @blur="onSlugBlur"
               />
-              <p v-if="slugError" role="alert" class="text-[0.73rem] text-[#d12420] m-0 font-semibold flex items-center gap-1.5">
+              <p v-if="slugError" role="alert" class="text-[0.73rem] text-danger m-0 font-semibold flex items-center gap-1.5">
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
                 {{ slugError }}
               </p>
-              <p v-else class="text-[0.73rem] text-[#667768] m-0">Tự động điền từ tên. Có thể chỉnh lại thủ công.</p>
+              <p v-else class="text-[0.73rem] text-ink-muted m-0">Tự động điền từ tên. Có thể chỉnh lại thủ công.</p>
             </div>
             <!-- Loại -->
             <div class="flex flex-col gap-1.5">
               <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Loại nội dung (*)</label>
-              <select v-model="form.type" @change="form.parentId = null" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
+              <select v-model="form.type" @change="form.parentId = null" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700">
                 <option v-for="t in typeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
               </select>
             </div>
             <!-- Danh mục cha -->
             <div class="flex flex-col gap-1.5">
               <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Danh mục cha</label>
-              <select v-model="form.parentId" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
+              <select v-model="form.parentId" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700">
                 <option :value="null">— Không có (Danh mục gốc) —</option>
                 <option v-for="p in parentOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
-              <p class="text-[0.73rem] text-[#667768] m-0">Chỉ hiển thị các danh mục gốc cùng loại.</p>
+              <p class="text-[0.73rem] text-ink-muted m-0">Chỉ hiển thị các danh mục gốc cùng loại.</p>
             </div>
             <!-- Mô tả -->
             <div class="flex flex-col gap-1.5">
@@ -521,7 +517,7 @@ onMounted(() => {
                 v-model="form.description"
                 rows="2"
                 placeholder="Ghi chú ngắn về danh mục này..."
-                class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] resize-none font-[inherit]"
+                class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 resize-none font-[inherit]"
               ></textarea>
             </div>
             <!-- Thứ tự -->
@@ -531,19 +527,19 @@ onMounted(() => {
                 v-model.number="form.displayOrder"
                 type="number"
                 min="0"
-                class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
+                class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700"
               />
             </div>
           </div>
     <template #footer>
             <button
               type="button"
-              class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#667768] font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors"
+              class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors"
               @click="showModal = false"
             >Hủy</button>
             <button
               type="button"
-              class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2 rounded-lg cursor-pointer border-0 transition-colors disabled:opacity-60 disabled:cursor-not-allowed text-sm"
+              class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-5 py-2 rounded-lg cursor-pointer border-0 transition-colors disabled:opacity-60 disabled:cursor-not-allowed text-sm"
               :disabled="saving || !!slugError"
               @click="handleSave"
             >

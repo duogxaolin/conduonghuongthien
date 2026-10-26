@@ -200,7 +200,7 @@ const logContact = async () => {
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
         {{ error }}
         Vui lòng
-        <button type="button" class="font-bold text-[#2c6e33] underline" @click="load()">thử lại</button>.
+        <button type="button" class="font-bold text-brand-700 underline" @click="load()">thử lại</button>.
       </div>
 
       <template v-else-if="submission">
@@ -213,8 +213,8 @@ const logContact = async () => {
             <i :class="SUBMISSION_STATUS_META[currentStatus].icon" aria-hidden="true"></i>
             {{ SUBMISSION_STATUS_META[currentStatus].label }}
           </span>
-          <span class="text-[#667768]">Gửi lúc {{ fmtDate(submission.createdAt) }}</span>
-          <span v-if="submission.formTitle" class="font-medium text-[#2c6e33]">{{ submission.formTitle }}</span>
+          <span class="text-ink-muted">Gửi lúc {{ fmtDate(submission.createdAt) }}</span>
+          <span v-if="submission.formTitle" class="font-medium text-brand-700">{{ submission.formTitle }}</span>
         </div>
 
         <!-- Email notification state. NULL đọc ra là "chưa ai được báo", và trước
@@ -237,42 +237,42 @@ const logContact = async () => {
         <!-- Citizen details -->
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div v-if="submission.fullName" class="flex flex-col gap-1">
-            <span class="text-[0.78rem] font-bold text-[#667768]">Họ và tên:</span>
-            <strong class="text-[#122815]">{{ submission.fullName }}</strong>
+            <span class="text-[0.78rem] font-bold text-ink-muted">Họ và tên:</span>
+            <strong class="text-brand-950">{{ submission.fullName }}</strong>
           </div>
           <div v-if="submission.phone" class="flex flex-col gap-1">
-            <span class="text-[0.78rem] font-bold text-[#667768]">Số điện thoại:</span>
+            <span class="text-[0.78rem] font-bold text-ink-muted">Số điện thoại:</span>
             <code class="self-start rounded bg-[#f4f7f4] px-2 py-1 text-sm">{{ submission.phone }}</code>
           </div>
           <div v-if="submission.email" class="flex flex-col gap-1">
-            <span class="text-[0.78rem] font-bold text-[#667768]">Email:</span>
+            <span class="text-[0.78rem] font-bold text-ink-muted">Email:</span>
             <span>{{ submission.email }}</span>
           </div>
           <div v-if="submission.address" class="flex flex-col gap-1 sm:col-span-2">
-            <span class="text-[0.78rem] font-bold text-[#667768]">Địa chỉ:</span>
+            <span class="text-[0.78rem] font-bold text-ink-muted">Địa chỉ:</span>
             <span>{{ submission.address }}</span>
           </div>
           <div v-if="submission.message" class="flex flex-col gap-1 sm:col-span-2">
-            <span class="text-[0.78rem] font-bold text-[#667768]">Nội dung yêu cầu / Hoàn cảnh:</span>
-            <div class="whitespace-pre-wrap rounded-lg border border-[#e2ece3] bg-[#f8faf8] px-3 py-3 text-[0.9rem] leading-relaxed">{{ submission.message }}</div>
+            <span class="text-[0.78rem] font-bold text-ink-muted">Nội dung yêu cầu / Hoàn cảnh:</span>
+            <div class="whitespace-pre-wrap rounded-lg border border-line bg-[#f8faf8] px-3 py-3 text-[0.9rem] leading-relaxed">{{ submission.message }}</div>
           </div>
           <div v-for="(a, i) in extraAnswers" :key="i" class="flex flex-col gap-1 sm:col-span-2">
-            <span class="text-[0.78rem] font-bold text-[#667768]">{{ a.label }}:</span>
+            <span class="text-[0.78rem] font-bold text-ink-muted">{{ a.label }}:</span>
             <span class="whitespace-pre-wrap">{{ a.value || '—' }}</span>
           </div>
         </div>
 
         <!-- Status actions -->
-        <div class="mt-6 rounded-xl border border-[#e2ece3] p-4">
-          <h4 class="m-0 mb-1 text-[0.92rem] font-bold text-[#122815]">Cập nhật trạng thái</h4>
-          <p class="m-0 mb-3 text-[0.78rem] text-[#667768]">{{ SUBMISSION_STATUS_META[currentStatus].description }}</p>
+        <div class="mt-6 rounded-xl border border-line p-4">
+          <h4 class="m-0 mb-1 text-[0.92rem] font-bold text-brand-950">Cập nhật trạng thái</h4>
+          <p class="m-0 mb-3 text-[0.78rem] text-ink-muted">{{ SUBMISSION_STATUS_META[currentStatus].description }}</p>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="choice in statusChoices"
               :key="choice"
               type="button"
               :disabled="busy !== ''"
-              class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[0.82rem] font-bold transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30 disabled:cursor-not-allowed disabled:opacity-60"
+              class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[0.82rem] font-bold transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-700/30 disabled:cursor-not-allowed disabled:opacity-60"
               :class="SUBMISSION_STATUS_META[choice].badgeClass"
               @click="changeStatus(choice)"
             >
@@ -283,14 +283,14 @@ const logContact = async () => {
         </div>
 
         <!-- Contact log -->
-        <div class="mt-4 rounded-xl border border-[#e2ece3] p-4">
-          <h4 class="m-0 mb-1 text-[0.92rem] font-bold text-[#122815]">Ghi nhận đã liên hệ</h4>
-          <p class="m-0 mb-3 text-[0.78rem] text-[#667768]">Ghi lại việc đã liên hệ người dân. Không tự đổi trạng thái đơn.</p>
+        <div class="mt-4 rounded-xl border border-line p-4">
+          <h4 class="m-0 mb-1 text-[0.92rem] font-bold text-brand-950">Ghi nhận đã liên hệ</h4>
+          <p class="m-0 mb-3 text-[0.78rem] text-ink-muted">Ghi lại việc đã liên hệ người dân. Không tự đổi trạng thái đơn.</p>
           <div class="flex flex-col gap-2 sm:flex-row">
             <select
               v-model="contactChannel"
               aria-label="Hình thức liên hệ"
-              class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+              class="rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
             >
               <option v-for="channel in CONTACT_CHANNELS" :key="channel" :value="channel">
                 {{ CONTACT_CHANNEL_LABELS[channel] }}
@@ -301,12 +301,12 @@ const logContact = async () => {
               type="text"
               placeholder="Kết quả liên hệ (không bắt buộc)"
               :maxlength="SUBMISSION_NOTE_MAX"
-              class="flex-1 rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+              class="flex-1 rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
             />
             <button
               type="button"
               :disabled="busy !== ''"
-              class="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2 text-sm font-bold text-white hover:bg-[#2c6e33] disabled:cursor-not-allowed disabled:opacity-60"
+              class="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-900 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
               @click="logContact"
             >
               <i class="fa-solid fa-check" aria-hidden="true"></i> Ghi nhận
@@ -315,21 +315,21 @@ const logContact = async () => {
         </div>
 
         <!-- Note -->
-        <div class="mt-4 rounded-xl border border-[#e2ece3] p-4">
-          <h4 class="m-0 mb-3 text-[0.92rem] font-bold text-[#122815]">Thêm ghi chú nghiệp vụ</h4>
+        <div class="mt-4 rounded-xl border border-line p-4">
+          <h4 class="m-0 mb-3 text-[0.92rem] font-bold text-brand-950">Thêm ghi chú nghiệp vụ</h4>
           <textarea
             v-model="noteDraft"
             rows="3"
             :maxlength="SUBMISSION_NOTE_MAX"
             placeholder="Ví dụ: đã chuyển hồ sơ cho Công an xã Tam Hưng, chờ phản hồi."
-            class="w-full rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+            class="w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
           ></textarea>
           <div class="mt-2 flex items-center justify-between gap-3">
-            <span class="text-[0.75rem] text-[#667768]">{{ noteDraft.length }}/{{ SUBMISSION_NOTE_MAX }}</span>
+            <span class="text-[0.75rem] text-ink-muted">{{ noteDraft.length }}/{{ SUBMISSION_NOTE_MAX }}</span>
             <button
               type="button"
               :disabled="busy !== ''"
-              class="inline-flex items-center gap-2 rounded-lg border border-[#8ed694] bg-[#f0f7f1] px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-[#e4f2e5] disabled:cursor-not-allowed disabled:opacity-60"
+              class="inline-flex items-center gap-2 rounded-lg border border-[#8ed694] bg-surface-tint px-3 py-2 text-sm font-bold text-brand-700 hover:bg-[#e4f2e5] disabled:cursor-not-allowed disabled:opacity-60"
               @click="saveNote"
             >
               <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Lưu ghi chú
@@ -339,16 +339,16 @@ const logContact = async () => {
 
         <!-- Timeline -->
         <div class="mt-5">
-          <h4 class="m-0 mb-3 text-[0.92rem] font-bold text-[#122815]">Nhật ký xử lý</h4>
-          <p v-if="events.length === 0" class="m-0 text-[0.85rem] text-[#667768]">
+          <h4 class="m-0 mb-3 text-[0.92rem] font-bold text-brand-950">Nhật ký xử lý</h4>
+          <p v-if="events.length === 0" class="m-0 text-[0.85rem] text-ink-muted">
             Chưa có thao tác nào được ghi lại cho đơn này.
           </p>
           <ol v-else class="m-0 flex list-none flex-col gap-3 p-0">
-            <li v-for="e in events" :key="e.id" class="flex gap-3 border-l-2 border-[#e2ece3] pl-3">
-              <i :class="eventIcon(e)" class="mt-0.5 text-[0.8rem] text-[#2c6e33]" aria-hidden="true"></i>
+            <li v-for="e in events" :key="e.id" class="flex gap-3 border-l-2 border-line pl-3">
+              <i :class="eventIcon(e)" class="mt-0.5 text-[0.8rem] text-brand-700" aria-hidden="true"></i>
               <div class="min-w-0 flex-1">
-                <p class="m-0 text-[0.85rem] font-medium text-[#122815]">{{ eventText(e) }}</p>
-                <p class="m-0 text-[0.75rem] text-[#667768]">
+                <p class="m-0 text-[0.85rem] font-medium text-brand-950">{{ eventText(e) }}</p>
+                <p class="m-0 text-[0.75rem] text-ink-muted">
                   {{ e.actorUsername || e.actorName || 'Tài khoản đã xoá' }} · {{ fmtDate(e.createdAt) }}
                 </p>
                 <p v-if="e.note" class="m-0 mt-1 whitespace-pre-wrap text-[0.82rem] text-[#2c3e2e]">{{ e.note }}</p>
@@ -368,7 +368,7 @@ const logContact = async () => {
           <a
             v-if="submission.phone"
             :href="`tel:${submission.phone}`"
-            class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2.5 font-bold text-white no-underline transition-colors hover:bg-[#2c6e33]"
+            class="inline-flex items-center gap-2 rounded-lg bg-brand-900 px-4 py-2.5 font-bold text-white no-underline transition-colors hover:bg-brand-700"
           >
             <i class="fa-solid fa-phone" aria-hidden="true"></i> Gọi Điện Tư Vấn
           </a>
