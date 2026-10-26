@@ -1,6 +1,6 @@
 /**
- * Ranh giới của sáu nhóm service đã tách (wave2-hardening 5.3 / 5.4 / 5.5 / 5.6 + `backup.ts`,
- * wave3-long-term 4.3 `moderation-worker.ts`).
+ * Ranh giới của bảy nhóm tệp đã tách (wave2-hardening 5.3 / 5.4 / 5.5 / 5.6 + `backup.ts`,
+ * wave3-long-term 4.3 `moderation-worker.ts` và `server/utils/chatbot/chat-policy.ts`).
  *
  *   • `media-portal.ts`     — barrel; mã ở `media-portal-*.ts` (+ `media-validation.ts`,
  *     `media-views.ts` mà barrel xuất lại).
@@ -18,6 +18,13 @@
  *     `moderation-regex.ts` và `moderation-rescan-job.ts` là ANH EM (rescan-job import
  *     barrel đúng chủ đích). Mẫu `MODERATION_WORKER_PART` ở `_moderation-worker-family.ts`
  *     — một nguồn với guard đọc mã kiểm duyệt (`moderation-always-scan`).
+ *   • `server/utils/chatbot/chat-policy.ts` — barrel ở đường cũ; mã ở
+ *     `server/services/chat-policy-*.ts` (thư mục KHÁC barrel, `Family.dir`): Nitro tự import mọi
+ *     export của `server/utils/**`, nên tệp con cạnh barrel sẽ xuất mỗi tên của API lần thứ hai
+ *     (`server-utils-unique-exports`). `chat.ts`, `chat-turns.ts`, `input-length.ts` là hàng xóm
+ *     của barrel, không thuộc nhóm (`chat.ts`/`input-length.ts` import barrel đúng chủ đích).
+ *     Mẫu `CHAT_POLICY_PART` + thư mục ở `_chat-policy-family.ts` — một nguồn với ba guard an
+ *     ninh đọc mã chính sách chat (SQL thô, khoá rate limit, hạn mức AI).
  *
  * Sáu luật, mỗi luật chặn một kiểu hỏng không có triệu chứng lúc viết:
  *
@@ -45,7 +52,9 @@
  *      thức đổi nội dung (`.set`/`.push`…) hay `Object.assign`, qua barrel hay namespace.
  *      MỘT ngoại lệ nêu tên, có từ trước khi tách (`SHARED_STATE_WRITERS`): bộ đếm
  *      `workerStats` của `moderation-stats.ts` do đúng bốn tệp kiểm duyệt cùng ghi.
- *      Tệp khác ghi vẫn đỏ; tệp nêu tên thôi ghi cũng đỏ (mục chết).
+ *      Tệp khác ghi vẫn đỏ; tệp nêu tên thôi ghi cũng đỏ (mục chết). Nhóm `chat-policy`:
+ *      hai luật hạn mức AI (`AI_QUOTA_RULE`, `AI_IP_CEILING_RULE`) là object literal — một
+ *      chủ (`chat-policy-rate-limit.ts`); nơi khác nới `limit` là đỏ.
  *   5. **API công khai của barrel `comments.ts` giữ đúng 17 tên giá trị + 17 tên kiểu
  *      như trước khi tách** — bỏ, đổi tên hay đổi loại một export là đỏ; xuất thêm
  *      (helper nội bộ thành API) cũng đỏ. Hình dạng barrel (chỉ `export { … } from
@@ -57,15 +66,17 @@
  *      (chỉ re-export từ `./backup-*`, không import) do `_backup-service-family.ts` canh.
  *      Barrel `moderation-worker.ts`: cùng luật 5, 9 giá trị + 11 kiểu (ghim từ `9905d0d`);
  *      hình dạng (chỉ `export { … } from` tệp con của nhóm) do
- *      `moderationWorkerBarrelProblems` canh ngay ở đây.
- *   6. **Ngoài nhóm `moderation-worker`, mã chỉ tới các tệp của nhóm qua barrel.** Bảy tệp
- *      test `mock.module('…/moderation-worker')` thay lớp kiểm duyệt cho endpoint chatbot,
- *      bình luận, chat livestream. Một nơi gọi import thẳng tệp con (`moderation-worker-
- *      prescreen`…) thì lọt khỏi mock đó: test chạy kiểm duyệt thật và hoặc đỏ vì lý do
- *      khác, hoặc xanh mà không còn kiểm điều nó định kiểm.
+ *      `moderationWorkerBarrelProblems` canh ngay ở đây. Barrel `chat-policy.ts`: 15 giá trị
+ *      + 5 kiểu (ghim từ `0eb97bd`), hình dạng do `chatPolicyBarrelProblems`.
+ *   6. **Ngoài nhóm `moderation-worker` / `chat-policy`, mã chỉ tới các tệp của nhóm qua
+ *      barrel.** Bảy tệp test `mock.module('…/moderation-worker')` thay lớp kiểm duyệt cho
+ *      endpoint chatbot, bình luận, chat livestream; bốn tệp test `mock.module('…/chat-policy')`
+ *      thay rate limit + trần độ dài cho hai endpoint chat (`input-length.ts` đọc `CHAT_LIMITS`
+ *      qua barrel). Một nơi gọi import thẳng tệp con thì lọt khỏi mock đó: test chạy mã thật
+ *      và hoặc đỏ vì lý do khác, hoặc xanh mà không còn kiểm điều nó định kiểm.
  *
- * Luật 2, 3 và 6 không lặp theo nhóm: chúng canh một tệp/một sổ/một đường mock cụ thể
- * của nhóm `chunked-upload`/`video-processing`/`moderation-worker`.
+ * Luật 2, 3 và 6 không lặp theo mọi nhóm: chúng canh một tệp/một sổ/một đường mock cụ thể
+ * của nhóm `chunked-upload`/`video-processing`/`moderation-worker`/`chat-policy`.
  *
  * Đọc bằng TypeScript AST (`_module-references.ts` cho đường dẫn module, một lượt
  * AST nhỏ ở `_service-split-sources.ts` cho tên được nhập): chú thích nhắc tới
@@ -79,6 +90,17 @@
  */
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import {
+  CHAT_POLICY_BARREL,
+  CHAT_POLICY_PART,
+  CHAT_POLICY_PARTS_DIR,
+  EXPECTED_CHAT_POLICY_PARTS,
+  chatPolicyBarrelProblems,
+  chatPolicyFiles,
+  chatPolicyPart,
+  isChatPolicyFile,
+  strayChatPolicyParts,
+} from './_chat-policy-family.ts'
 import {
   BACKUP_BARREL,
   BACKUP_PART,
@@ -108,6 +130,7 @@ import {
   SERVICES,
   type Family,
   type Sources,
+  familyHome,
   familyMembers,
   importSites,
   inject,
@@ -155,6 +178,14 @@ const FAMILIES: Record<string, Family> = {
   'moderation-worker': {
     barrel: MODERATION_WORKER_BARREL,
     prefix: MODERATION_WORKER_PART,
+  },
+  // Barrel ở `server/utils/chatbot/`, tệp con `chat-policy-*.ts` ở `server/services/` (`dir`).
+  // Hàng xóm của barrel `chat.ts`/`input-length.ts` là nơi gọi (import barrel), `chat-turns.ts`
+  // là module riêng mà nhóm import — không tệp nào khớp mẫu.
+  'chat-policy': {
+    barrel: CHAT_POLICY_BARREL,
+    prefix: CHAT_POLICY_PART,
+    dir: CHAT_POLICY_PARTS_DIR,
   },
 }
 
@@ -447,19 +478,58 @@ const moderationApiViolations = (sources: Sources) =>
     'PRE_SPLIT_MODERATION_WORKER_API',
   )
 
-// ─── Luật 6: ngoài nhóm moderation-worker, chỉ barrel được import ─────────────
+/**
+ * API của `server/utils/chatbot/chat-policy.ts` ngay trước khi tách (wave3 4.3): bản ở
+ * `0eb97bd` (`wave3/integration`). Suy bằng `exportedApi` (cùng phép đọc AST của luật 5)
+ * từ `git show 0eb97bd:server/utils/chatbot/chat-policy.ts`: 15 giá trị + 5 kiểu. Chép
+ * cứng vì CI checkout nông (xem `PRE_SPLIT_COMMENTS_API`).
+ */
+const PRE_SPLIT_CHAT_POLICY_API = {
+  values: [
+    'AI_IP_CEILING_RULE',
+    'AI_QUOTA_RULE',
+    'CHAT_LIMITS',
+    'CHAT_RATE_LIMITED_MESSAGE',
+    'HOTLINE',
+    'answerGroundedChat',
+    'approvedFallback',
+    'buildChatHistory',
+    'buildChatMessages',
+    'buildGroundedSystemPrompt',
+    'chargeChatRateLimit',
+    'enforceAiQuota',
+    'enforceChatRateLimit',
+    'validateChatMessages',
+    'validateChatRequestBody',
+  ],
+  types: ['ChatDependencies', 'ChatEvent', 'ChatMessage', 'ChatResult', 'ChatToolCall'],
+}
+
+const chatPolicyApiViolations = (sources: Sources) =>
+  apiPinViolations(sources, CHAT_POLICY_BARREL, PRE_SPLIT_CHAT_POLICY_API, 'PRE_SPLIT_CHAT_POLICY_API')
+
+// ─── Luật 6: ngoài nhóm moderation-worker / chat-policy, chỉ barrel được import ─
+
+/** Vì sao đường qua barrel là phần chịu lực — vào thông báo của luật 6. */
+const MOCKED_BARREL_NOTE: Record<string, string> = {
+  'moderation-worker': 'bảy tệp test mock.module đúng đường đó',
+  'chat-policy': 'bốn tệp test mock.module đúng đường đó',
+}
 
 /**
  * `{ violations, barrelImporters }` — mọi tệp chạy thật NGOÀI nhóm import một tệp của nhóm
- * (tệp con mới, hay ba tệp tách từ trước) thay vì barrel thì đỏ, ở mọi dạng import (kể cả
+ * (tệp con mới, hay tệp tách từ trước) thay vì barrel thì đỏ, ở mọi dạng import (kể cả
  * `import type`: một quy tắc, không có ngoại lệ để mục). `barrelImporters` để khẳng định
- * luật không kiểm rỗng: các nơi gọi mà bảy tệp test mock phải đang đi qua barrel.
+ * luật không kiểm rỗng: các nơi gọi mà các tệp test mock phải đang đi qua barrel.
  */
-function moderationConsumerCheck(sources: Sources): {
+function consumerCheck(
+  sources: Sources,
+  name: 'moderation-worker' | 'chat-policy',
+): {
   violations: string[]
   barrelImporters: string[]
 } {
-  const family = FAMILIES['moderation-worker']!
+  const family = FAMILIES[name]!
   const members = familyMembers(sources, family)
   const memberModules = new Set(members.map(moduleOf))
   const barrelModule = moduleOf(family.barrel)
@@ -472,12 +542,15 @@ function moderationConsumerCheck(sources: Sources): {
       if (site.target === barrelModule) barrelImporters.add(file)
       else if (site.target && memberModules.has(site.target))
         violations.push(
-          `[moderation-worker] ${where(site)} import ${site.target}.ts — ngoài nhóm chỉ đi qua barrel ${family.barrel} (bảy tệp test mock.module đúng đường đó)`,
+          `[${name}] ${where(site)} import ${site.target}.ts — ngoài nhóm chỉ đi qua barrel ${family.barrel} (${MOCKED_BARREL_NOTE[name]})`,
         )
     }
   }
   return { violations, barrelImporters: [...barrelImporters].sort() }
 }
+
+const moderationConsumerCheck = (sources: Sources) => consumerCheck(sources, 'moderation-worker')
+const chatPolicyConsumerCheck = (sources: Sources) => consumerCheck(sources, 'chat-policy')
 
 /**
  * Vòng import tĩnh (`import`, `import type`, `export … from`) đi qua một tệp của nhóm,
@@ -556,19 +629,45 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'moderation-worker': EXPECTED_MODERATION_WORKER_FAMILY.filter(
         (file) => file !== 'moderation-worker.ts',
       ),
+      // Cùng danh sách mà ba guard đọc mã chính sách chat dùng (`_chat-policy-family.ts`).
+      'chat-policy': [...EXPECTED_CHAT_POLICY_PARTS],
     }
     assert.equal(expected.comments!.length, 7)
     assert.equal(expected.backup!.length, 6)
     assert.equal(expected['moderation-worker']!.length, 8)
+    assert.equal(expected['chat-policy']!.length, 7)
     for (const [name, family] of Object.entries(FAMILIES)) {
       const members = familyMembers(REPO, family)
+      // Tệp con nằm ở `familyHome` — thư mục của barrel, hoặc `Family.dir` (chat-policy).
+      const home = familyHome(family)
       for (const file of expected[name]!) {
         assert.ok(
-          members.includes(`${SERVICES}/${file}`),
+          members.includes(`${home}/${file}`),
           `[${name}] ${file} vắng khỏi nhóm ${JSON.stringify(members)}`,
         )
       }
     }
+  })
+
+  it('nhóm chat-policy và ba guard đọc mã chính sách chat là cùng một tập tệp; hàng xóm không thuộc nhóm', () => {
+    // Một mẫu, không hai bản chép.
+    assert.equal(FAMILIES['chat-policy']!.prefix, CHAT_POLICY_PART)
+    assert.equal(FAMILIES['chat-policy']!.barrel, CHAT_POLICY_BARREL)
+    assert.equal(FAMILIES['chat-policy']!.dir, CHAT_POLICY_PARTS_DIR)
+    for (const file of EXPECTED_CHAT_POLICY_PARTS)
+      assert.ok(CHAT_POLICY_PART.test(file), `${file} phải là tệp con của nhóm chat-policy`)
+    assert.ok(isChatPolicyFile(chatPolicyPart('extra')), 'tệp con mới (chưa xuất lại) vẫn thuộc nhóm')
+    for (const name of ['chat-policy.ts', 'chat.ts', 'chat-turns.ts', 'input-length.ts', 'chat-policy-.ts', 'chat-policy-x.js', 'chatpolicy-x.ts'])
+      assert.ok(!CHAT_POLICY_PART.test(name), `${name} không phải tệp con của nhóm chat-policy`)
+    assert.ok(isChatPolicyFile(CHAT_POLICY_BARREL))
+    // Tệp dạng tệp con ở thư mục của barrel KHÔNG thuộc nhóm — và là lỗi (ngoài mọi tập quét).
+    assert.ok(!isChatPolicyFile('server/utils/chatbot/chat-policy-extra.ts'))
+    assert.deepEqual(strayChatPolicyParts(['chat.ts', 'chat-policy.ts', 'chat-policy-extra.ts']), ['chat-policy-extra.ts'])
+    // Tập của guard này (barrel + tiền tố ∪ đích barrel xuất lại) = tập ba guard đọc mã quét.
+    assert.deepEqual(
+      [CHAT_POLICY_BARREL, ...familyMembers(REPO, FAMILIES['chat-policy']!)].sort(),
+      chatPolicyFiles(),
+    )
   })
 
   it('nhóm comments và các guard đọc mã bình luận quét cùng một tập tệp', () => {
@@ -625,6 +724,10 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     assert.deepEqual(familyImportCycles(REPO, FAMILIES['moderation-worker']!), [])
   })
 
+  it('luật 1: không vòng import tĩnh nào đi qua nhóm chat-policy (dò từ barrel, kể cả qua hàng xóm)', () => {
+    assert.deepEqual(familyImportCycles(REPO, FAMILIES['chat-policy']!), [])
+  })
+
   it('luật 2: chunked-upload-core.ts chỉ nhóm chunked-upload* import (+ video-disk-guard.ts lấy đúng formatBytes)', () => {
     assert.deepEqual(uploadCoreViolations(REPO), [])
   })
@@ -675,6 +778,10 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/services/moderation-stats.ts#workerStats',
       'server/services/moderation-rules-cache.ts#cachedRules',
       'server/services/moderation-worker-persist.ts#QUEUE_COLUMNS',
+      // Nhóm chat-policy: hai luật hạn mức AI (object literal). `CHAT_LIMITS` là
+      // `Object.freeze(…)` — không ghi được, nên không phải trạng thái.
+      'server/services/chat-policy-rate-limit.ts#AI_QUOTA_RULE',
+      'server/services/chat-policy-rate-limit.ts#AI_IP_CEILING_RULE',
     ])
       assert.ok(inventory.includes(state), `${state} vắng khỏi kho ${JSON.stringify(inventory)}`)
     // …và phép giải tên thật sự đi tới trạng thái, cả thẳng lẫn qua barrel. Nhóm
@@ -715,6 +822,21 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     assert.deepEqual(moderationWorkerBarrelProblems(REPO.get(MODERATION_WORKER_BARREL)!), [])
   })
 
+  it('luật 5: chat-policy.ts xuất đúng 15 giá trị + 5 kiểu của API trước khi tách', () => {
+    assert.equal(PRE_SPLIT_CHAT_POLICY_API.values.length, 15)
+    assert.equal(PRE_SPLIT_CHAT_POLICY_API.types.length, 5)
+    assert.deepEqual(chatPolicyApiViolations(REPO), [])
+  })
+
+  it('luật 5: tên giá trị lúc chạy của chat-policy.ts khớp danh sách (phép đọc AST không lệch)', async () => {
+    const surface = await import('../server/utils/chatbot/chat-policy.ts')
+    assert.deepEqual(Object.keys(surface).sort(), [...PRE_SPLIT_CHAT_POLICY_API.values].sort())
+  })
+
+  it('luật 5: barrel chat-policy.ts chỉ gồm `export { … } from` tệp con của nhóm', () => {
+    assert.deepEqual(chatPolicyBarrelProblems(REPO.get(CHAT_POLICY_BARREL)!), [])
+  })
+
   it('luật 6: ngoài nhóm moderation-worker, mã chỉ tới nhóm qua barrel (đường mà các test mock)', () => {
     const { violations, barrelImporters } = moderationConsumerCheck(REPO)
     assert.deepEqual(violations, [])
@@ -726,6 +848,22 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/services/comments-reply-email.ts',
       'server/services/livestream-chat.ts',
       'server/services/moderation-rescan-job.ts',
+    ])
+      assert.ok(barrelImporters.includes(file), `${file} vắng khỏi ${JSON.stringify(barrelImporters)}`)
+  })
+
+  it('luật 6: ngoài nhóm chat-policy, mã chỉ tới nhóm qua barrel (đường mà bốn test mock)', () => {
+    const { violations, barrelImporters } = chatPolicyConsumerCheck(REPO)
+    assert.deepEqual(violations, [])
+    // Không kiểm rỗng: bốn nơi gọi mà bốn tệp test mock barrel dựa vào phải đang đi qua
+    // barrel (nơi gọi mới đi qua barrel cũng đúng — kiểm tập con, không ghim đúng bốn).
+    // `input-length.ts` là nơi dễ lọt nhất: nó đọc `CHAT_LIMITS`, mà các test mock barrel
+    // cấp hằng đó cho nó — lọt ra tệp con thì bốn test vẫn xanh (cùng giá trị) mà không ai biết.
+    for (const file of [
+      'server/api/chat.post.ts',
+      'server/api/public/chatbot/index.post.ts',
+      'server/utils/chatbot/chat.ts',
+      'server/utils/chatbot/input-length.ts',
     ])
       assert.ok(barrelImporters.includes(file), `${file} vắng khỏi ${JSON.stringify(barrelImporters)}`)
   })
@@ -1751,6 +1889,255 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
             'server/api/admin/ai/moderation/worker-status.get.ts',
             "import { checkModerationPattern as _c } from '../../../../services/moderation-regex'",
           ),
+        }),
+      ).violations,
+      [],
+    )
+  })
+
+  // ─── Nhóm chat-policy (barrel server/utils/chatbot/, tệp con server/services/) ─
+
+  it('thành viên nhóm ở đúng thư mục tệp con (`familyHome`): tệp cùng tiền tố ở thư mục khác không lọt vào', () => {
+    const sources = withOverrides({
+      'server/services/chat-policy-extra.ts': 'export const _x = 1\n',
+      'server/utils/chatbot/chat-policy-extra.ts': 'export const _z = 1\n',
+      'server/utils/chatbot/media-portal-extra.ts': 'export const _y = 1\n',
+    })
+    const chatPolicy = familyMembers(sources, FAMILIES['chat-policy']!)
+    assert.ok(chatPolicy.includes('server/services/chat-policy-extra.ts'), 'tệp con mới ở server/services thuộc nhóm')
+    assert.ok(!chatPolicy.includes('server/utils/chatbot/chat-policy-extra.ts'), 'cùng tiền tố cạnh barrel không thuộc nhóm (và chatPolicyFiles() đỏ vì nó)')
+    assert.ok(chatPolicy.every((file) => file.startsWith('server/services/chat-policy-')), JSON.stringify(chatPolicy))
+    // Nhóm không khai `dir` vẫn ở thư mục của barrel: không lọt sang thư mục khác.
+    assert.ok(!familyMembers(sources, FAMILIES['media-portal']!).includes('server/utils/chatbot/media-portal-extra.ts'))
+  })
+
+  it('luật 1 đỏ khi tệp con chat-policy-* nạp barrel ../utils/chatbot/chat-policy, ở mọi dạng — kể cả tệp con chưa ai liệt kê', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'import',
+        inject(chatPolicyPart('answer'), "import { HOTLINE as _h } from '../utils/chatbot/chat-policy'"),
+        /^\[chat-policy\] server\/services\/chat-policy-answer\.ts:1 \(import\) import ngược server\/utils\/chatbot\/chat-policy\.ts$/,
+      ],
+      [
+        'import type, có đuôi .ts',
+        inject(chatPolicyPart('provider'), "import type { ChatResult as _R } from '../utils/chatbot/chat-policy.ts'"),
+        /^\[chat-policy\] server\/services\/chat-policy-provider\.ts:1 \(import\)/,
+      ],
+      [
+        'export … from',
+        inject(chatPolicyPart('prompt'), "export { HOTLINE as _H } from '../utils/chatbot/chat-policy'"),
+        /^\[chat-policy\] server\/services\/chat-policy-prompt\.ts:1 \(export … from\)/,
+      ],
+      [
+        'import() động trong hàm',
+        append(
+          chatPolicyPart('fallbacks'),
+          "export async function _lazy() { return (await import('../utils/chatbot/chat-policy')).HOTLINE }",
+        ),
+        /^\[chat-policy\] server\/services\/chat-policy-fallbacks\.ts:\d+ \(import\(\)\)/,
+      ],
+      [
+        'typeof import() qua alias #server',
+        append(chatPolicyPart('contract'), "export type _Api = typeof import('#server/utils/chatbot/chat-policy')"),
+        /^\[chat-policy\] server\/services\/chat-policy-contract\.ts:\d+ \(import\(\) type\)/,
+      ],
+      [
+        'tệp con mới mà barrel chưa xuất lại (thuộc nhóm nhờ mẫu tệp)',
+        { [chatPolicyPart('extra')]: "import { HOTLINE } from '../utils/chatbot/chat-policy'\nexport const _h = HOTLINE\n" },
+        /^\[chat-policy\] server\/services\/chat-policy-extra\.ts:1 \(import\) import ngược server\/utils\/chatbot\/chat-policy\.ts$/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = selfImportViolations(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 1 KHÔNG nhầm `./chat-policy-contract` với barrel, và hàng xóm import barrel thì không đỏ', () => {
+    assert.deepEqual(
+      selfImportViolations(
+        withOverrides({
+          ...inject(chatPolicyPart('answer'), "import { HOTLINE as _h } from './chat-policy-contract'"),
+          // Hàng xóm (không thuộc nhóm): `input-length.ts`/`chat.ts` import barrel đúng chủ đích —
+          // cạnh barrel, và cạnh tệp con ở server/services.
+          ...inject('server/utils/chatbot/session-limit.ts', "import { HOTLINE as _h } from './chat-policy'"),
+          ...inject('server/services/chatbot-settings.ts', "import { HOTLINE as _h } from '../utils/chatbot/chat-policy'"),
+        }),
+      ),
+      [],
+    )
+  })
+
+  it('vòng import qua hàng xóm thì đỏ — luật 1 không thấy, phép dò vòng thấy', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        // Tệp con nhập một nơi gọi của barrel: barrel → answer → input-length → barrel.
+        'tệp con nhập input-length.ts',
+        inject(chatPolicyPart('answer'), "import { chatInputCharLimit as _c } from '../utils/chatbot/input-length'"),
+        /^server\/utils\/chatbot\/chat-policy\.ts → .*server\/utils\/chatbot\/input-length\.ts → server\/utils\/chatbot\/chat-policy\.ts$/,
+      ],
+      [
+        // Module riêng mà nhóm import quay lại nhập barrel: barrel → … → chat-turns → barrel.
+        'chat-turns.ts nhập barrel',
+        inject('server/utils/chatbot/chat-turns.ts', "import { HOTLINE as _h } from './chat-policy'"),
+        /^server\/utils\/chatbot\/chat-policy\.ts → .*server\/utils\/chatbot\/chat-turns\.ts → server\/utils\/chatbot\/chat-policy\.ts$/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      assert.deepEqual(selfImportViolations(withOverrides(override)), [], `${label}: luật 1 im lặng`)
+      const cycles = familyImportCycles(withOverrides(override), FAMILIES['chat-policy']!)
+      assert.ok(cycles.length > 0, `${label}: không thấy vòng`)
+      for (const cycle of cycles) assert.match(cycle, expected, label)
+    }
+  })
+
+  it('luật 4 đỏ khi luật hạn mức AI bị chép sang tệp thứ hai, hay bị nới từ ngoài chủ', () => {
+    const answer = chatPolicyPart('answer')
+    const endpoint = 'server/api/public/chatbot/index.post.ts'
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'trần theo địa chỉ chép sang đường định tuyến',
+        inject(answer, 'const AI_IP_CEILING_RULE = { limit: 1_000_000, windowSeconds: 1 }'),
+        /^\[chat-policy\] 'AI_IP_CEILING_RULE' khai ở 2 tệp \(server\/services\/chat-policy-answer\.ts:1, server\/services\/chat-policy-rate-limit\.ts:\d+\)/,
+      ],
+      [
+        'tệp con nới trần theo địa chỉ',
+        {
+          [answer]: `import { AI_IP_CEILING_RULE } from './chat-policy-rate-limit'\n${REPO.get(answer)}\nexport function _loosen() { AI_IP_CEILING_RULE.limit = Number.MAX_SAFE_INTEGER }\n`,
+        },
+        /^\[chat-policy\] server\/services\/chat-policy-answer\.ts:\d+ \(gán\) ghi vào 'AI_IP_CEILING_RULE' của server\/services\/chat-policy-rate-limit\.ts/,
+      ],
+      [
+        'endpoint nới hạn mức phiên qua barrel',
+        {
+          [endpoint]: `import { AI_QUOTA_RULE } from '../../../utils/chatbot/chat-policy'\n${REPO.get(endpoint)}\nexport function _loosen() { Object.assign(AI_QUOTA_RULE, { limit: 1e9 }) }\n`,
+        },
+        /^\[chat-policy\] server\/api\/public\/chatbot\/index\.post\.ts:\d+ \(Object\.assign\(\)\) ghi vào 'AI_QUOTA_RULE' của server\/services\/chat-policy-rate-limit\.ts/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = stateViolations(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 5 đỏ khi barrel chat-policy.ts bỏ, đổi tên, đổi loại hay xuất thêm một tên', () => {
+    const barrel = CHAT_POLICY_BARREL
+    const cases: Array<[string, Record<string, string>, string[]]> = [
+      [
+        'bỏ approvedFallback',
+        replaceIn(barrel, "export { approvedFallback } from '../../services/chat-policy-fallbacks'\n", ''),
+        [`${barrel} thiếu giá trị 'approvedFallback'`],
+      ],
+      [
+        'đổi tên ChatEvent',
+        replaceIn(barrel, 'ChatEvent, ChatDependencies }', 'ChatEvent as ChatH3Event, ChatDependencies }'),
+        [`${barrel} thiếu kiểu 'ChatEvent'`, `${barrel} xuất thêm kiểu 'ChatH3Event'`],
+      ],
+      [
+        'giá trị thành kiểu',
+        replaceIn(
+          barrel,
+          "export { answerGroundedChat } from '../../services/chat-policy-answer'",
+          "export type { answerGroundedChat } from '../../services/chat-policy-answer'",
+        ),
+        [`${barrel} thiếu giá trị 'answerGroundedChat'`, `${barrel} xuất thêm kiểu 'answerGroundedChat'`],
+      ],
+      [
+        'lộ helper nội bộ của đường gọi AI',
+        append(barrel, "export { callProvider } from '../../services/chat-policy-provider'"),
+        [`${barrel} xuất thêm giá trị 'callProvider'`],
+      ],
+      [
+        'export *',
+        append(barrel, "export * from '../../services/chat-policy-request'"),
+        [`${barrel} xuất thêm giá trị '* from '../../services/chat-policy-request''`],
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = chatPolicyApiViolations(withOverrides(override))
+      assert.deepEqual(
+        violations.map((violation) => violation.split(' — ')[0]),
+        expected,
+        label,
+      )
+    }
+  })
+
+  it('hình dạng barrel chat-policy.ts đỏ khi có mã, import, export *, hay nguồn ngoài nhóm', () => {
+    const base = REPO.get(CHAT_POLICY_BARREL)!
+    const swap = (from: string, to: string) => {
+      assert.ok(base.includes(from), `barrel không còn đoạn ${JSON.stringify(from)} để đột biến`)
+      return base.replace(from, to)
+    }
+    const cases: Array<[string, string, RegExp]> = [
+      // Luật 5 vẫn xanh với ca này (cùng tên, cùng loại) — chỉ phép kiểm hình dạng bắt.
+      [
+        'mã cùng tên dời về barrel',
+        swap(
+          "export { answerGroundedChat } from '../../services/chat-policy-answer'",
+          'export async function answerGroundedChat() { return null }',
+        ),
+        /^not a re-export: export async function answerGroundedChat/,
+      ],
+      ['import', `import { HOTLINE } from '../../services/chat-policy-contract'\n${base}`, /^not a re-export: import/],
+      ['export *', `${base}\nexport * from '../../services/chat-policy-request'\n`, /^not a named re-export/],
+      ['export * as', `${base}\nexport * as request from '../../services/chat-policy-request'\n`, /^not a named re-export/],
+      ['hàng xóm chat-turns', `${base}\nexport { chatTurnText } from './chat-turns'\n`, /^not re-exported from a part of the family/],
+      // Một "tệp con" đặt lại cạnh barrel: ngoài tập quét, Nitro tự import nó.
+      ['tệp con cạnh barrel', `${base}\nexport { HOTLINE as _h } from './chat-policy-contract'\n`, /^not re-exported from a part of the family/],
+      ['service khác', `${base}\nexport { fastPreModerate } from '../../services/moderation-worker'\n`, /^not re-exported from a part of the family/],
+      ['ngoài thư mục', `${base}\nexport { logWarn } from '../logger'\n`, /^not re-exported from a part of the family/],
+      ['export { … } không có module', `${base}\nexport { HOTLINE as _h }\n`, /^a re-export without a module/],
+      ['rỗng', '', /^the barrel exports nothing$/],
+    ]
+    for (const [label, source, expected] of cases) {
+      const problems = chatPolicyBarrelProblems(source)
+      assert.equal(problems.length, 1, `${label}: ${JSON.stringify(problems)}`)
+      assert.match(problems[0]!, expected, label)
+    }
+    // Ca đầu: luật 5 đúng là không thấy gì.
+    assert.deepEqual(chatPolicyApiViolations(withOverrides({ [CHAT_POLICY_BARREL]: cases[0]![1] })), [])
+  })
+
+  it('luật 6 đỏ khi nơi gọi ngoài nhóm chat-policy import thẳng một tệp con, ở mọi dạng', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'input-length.ts lấy CHAT_LIMITS từ tệp hợp đồng (lọt khỏi mock của bốn test)',
+        replaceIn('server/utils/chatbot/input-length.ts', "from './chat-policy'", "from '../../services/chat-policy-contract'"),
+        /^\[chat-policy\] server\/utils\/chatbot\/input-length\.ts:\d+ \(import\) import server\/services\/chat-policy-contract\.ts — .*bốn tệp test mock\.module/,
+      ],
+      [
+        'endpoint chat nhập rate limit thẳng từ tệp con',
+        replaceIn('server/api/chat.post.ts', "from '../utils/chatbot/chat-policy'", "from '../services/chat-policy-rate-limit'"),
+        /^\[chat-policy\] server\/api\/chat\.post\.ts:\d+ \(import\) import server\/services\/chat-policy-rate-limit\.ts/,
+      ],
+      [
+        'import type từ tệp hợp đồng',
+        inject('server/api/public/chatbot/index.post.ts', "import type { ChatEvent as _E } from '../../../services/chat-policy-contract'"),
+        /^\[chat-policy\] server\/api\/public\/chatbot\/index\.post\.ts:1 \(import\) import server\/services\/chat-policy-contract\.ts/,
+      ],
+      [
+        'import() động',
+        append('server/utils/chatbot/chat.ts', "export const _lazy = () => import('../../services/chat-policy-answer')"),
+        /^\[chat-policy\] server\/utils\/chatbot\/chat\.ts:\d+ \(import\(\)\) import server\/services\/chat-policy-answer\.ts/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const { violations } = chatPolicyConsumerCheck(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 6 KHÔNG đỏ (chat-policy): tệp con nhập tệp con, nơi gọi mới nhập barrel', () => {
+    assert.deepEqual(
+      chatPolicyConsumerCheck(
+        withOverrides({
+          ...inject(chatPolicyPart('answer'), "import { HOTLINE as _h } from './chat-policy-contract'"),
+          ...inject('server/api/public/chatbot/session.post.ts', "import { HOTLINE as _h } from '../../../utils/chatbot/chat-policy'"),
         }),
       ).violations,
       [],
