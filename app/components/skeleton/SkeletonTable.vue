@@ -1,12 +1,12 @@
 <template>
   <div
-    class="overflow-hidden rounded-xl border border-[#e2ece3] bg-white"
+    class="overflow-hidden rounded-xl border border-line bg-white"
     role="status"
     aria-busy="true"
   >
     <span class="sr-only">{{ label }}</span>
 
-    <div class="flex gap-4 border-b border-[#e2ece3] bg-[#f4f7f4] px-4 py-3" aria-hidden="true">
+    <div class="flex gap-4 border-b border-line bg-[#f4f7f4] px-4 py-3" aria-hidden="true">
       <div
         v-for="c in cols"
         :key="`h-${c}`"

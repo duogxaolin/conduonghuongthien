@@ -7,7 +7,7 @@
         <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
           <li class="flex items-center gap-1.5">
             <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1">
-              <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
+              <i class="fa-solid fa-house text-[0.7rem] text-brand-600" aria-hidden="true"></i>
               <span>{{ t('home') }}</span>
             </nuxt-link>
           </li>
@@ -20,7 +20,7 @@
 
       <div class="max-w-2xl">
         <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
-          <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+          <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
           <span>{{ t('n_portal_badge') }}</span>
         </div>
         <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
@@ -45,13 +45,13 @@
               type="text"
               :placeholder="t(cfg.keys.searchPlaceholder)"
               :aria-label="t(cfg.keys.searchAria)"
-              class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-[#1E251C] placeholder-[#8A9986] focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/30 focus:outline-none transition-all shadow-sm"
+              class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-ink placeholder-[#8A9986] focus:border-brand-600 focus:ring-2 focus:ring-brand-600/30 focus:outline-none transition-all shadow-sm"
             />
             <button
               v-if="searchInput"
               type="button"
               @click="clearSearchInput"
-              class="absolute right-12 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-[#97A593] hover:text-[#4A5545] text-xs transition-colors"
+              class="absolute right-12 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-[#97A593] hover:text-ink-secondary text-xs transition-colors"
               :title="t(cfg.keys.clearSearch)"
               :aria-label="t(cfg.keys.clearSearch)"
             >
@@ -59,7 +59,7 @@
             </button>
             <button
               type="submit"
-              class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-[#4A6741] hover:bg-[#365130] text-white text-xs font-bold transition-all shadow-sm"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-[#365130] text-white text-xs font-bold transition-all shadow-sm"
             >
               {{ t('n_search_btn_short') }}
             </button>
@@ -79,10 +79,10 @@
           <!-- Active Search Filter Banner -->
           <div
             v-if="searchQuery"
-            class="bg-white border-l-4 border-l-[#4A6741] border border-[#DDE6DC] p-4 rounded-xl shadow-sm flex items-center justify-between gap-3 flex-wrap"
+            class="bg-white border-l-4 border-l-brand-600 border border-[#DDE6DC] p-4 rounded-xl shadow-sm flex items-center justify-between gap-3 flex-wrap"
           >
             <div class="flex items-center gap-2.5">
-              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center text-xs">
+              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-brand-600 flex items-center justify-center text-xs">
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
               </span>
               <span class="text-sm text-[#3E4D3C]">
@@ -92,7 +92,7 @@
             </div>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#D5E1D3] bg-[#F7FAF6] hover:bg-[#EBF3E8] text-xs font-bold text-[#4A6741] transition-all"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#D5E1D3] bg-[#F7FAF6] hover:bg-[#EBF3E8] text-xs font-bold text-brand-600 transition-all"
               @click="clearSearch"
             >
               <i class="fa-solid fa-xmark text-[0.7rem]" aria-hidden="true"></i>
@@ -148,10 +148,10 @@
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
             <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t(cfg.keys.loadErrorTitle) }}</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">{{ t(cfg.keys.loadErrorDesc) }}</p>
+            <p class="text-sm text-ink-muted m-0 mb-4">{{ t(cfg.keys.loadErrorDesc) }}</p>
             <button
               type="button"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4A6741] hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm"
               @click="refresh()"
             >
               <i class="fa-solid fa-rotate-right text-xs" aria-hidden="true"></i>
@@ -164,7 +164,7 @@
             v-else-if="articles.length === 0"
             class="bg-white border-2 border-dashed border-[#DDE6DC] px-6 py-14 rounded-2xl text-center shadow-sm"
           >
-            <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-[#4A6741] flex items-center justify-center mx-auto mb-3.5 text-xl">
+            <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-brand-600 flex items-center justify-center mx-auto mb-3.5 text-xl">
               <i :class="cfg.emptyIcon" aria-hidden="true"></i>
             </div>
             <template v-if="pageOutOfRange">
@@ -173,7 +173,7 @@
               <p class="text-sm text-[#6E7D6B] max-w-md mx-auto m-0 mb-5">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
               <button
                 type="button"
-                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4A6741] hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
                 @click="goFirstPage"
               >
                 <i class="fa-solid fa-arrow-left text-xs" aria-hidden="true"></i>
@@ -188,7 +188,7 @@
               <button
                 v-if="searchQuery"
                 type="button"
-                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4A6741] hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm"
                 @click="clearSearch"
               >
                 <i class="fa-solid fa-arrow-rotate-left text-xs" aria-hidden="true"></i>
@@ -224,7 +224,7 @@
                     <span :class="['inline-block text-white font-extrabold px-2.5 py-0.5 rounded text-[0.7rem] uppercase tracking-wider shadow-sm', cfg.theme.featuredBadge]">
                       {{ t(cfg.keys.featuredBadge) }}
                     </span>
-                    <span class="text-[#4A5545] font-semibold text-[0.82rem]">
+                    <span class="text-ink-secondary font-semibold text-[0.82rem]">
                       {{ t(cfg.keys.categoryLabel) }}
                     </span>
                     <span class="text-[#5a6c58] text-[0.8rem] font-medium">
@@ -340,7 +340,7 @@
               <div class="flex items-center gap-1.5 flex-wrap justify-center order-1 sm:order-2">
                 <button
                   type="button"
-                  :class="['inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed', cfg.theme.pageStep]"
+                  :class="['inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed', cfg.theme.pageStep]"
                   :disabled="pagination.page <= 1"
                   @click="setPage(pagination.page - 1)"
                   :aria-label="t('page_prev')"
@@ -367,7 +367,7 @@
 
                 <button
                   type="button"
-                  :class="['inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed', cfg.theme.pageStep]"
+                  :class="['inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed', cfg.theme.pageStep]"
                   :disabled="pagination.page >= pagination.totalPages"
                   @click="setPage(pagination.page + 1)"
                   :aria-label="t('page_next')"
@@ -383,7 +383,7 @@
         <aside class="flex flex-col gap-6 min-w-0 lg:sticky lg:top-[90px]">
           <!-- Widget 1: Đọc nhiều -->
           <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
-            <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('n_most_read_short') }}</h2>
+            <h2 class="text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('n_most_read_short') }}</h2>
 
             <div v-if="mostReadPending" role="status" aria-busy="true" class="py-2">
               <span class="sr-only">{{ t('n_loading_most_read') }}</span>
@@ -408,7 +408,7 @@
                 <h3 class="text-[0.9rem] font-bold leading-[1.4] m-0 min-w-0">
                   <nuxt-link
                     :to="detailPath(item.slug)"
-                    class="text-[#1E251C] no-underline transition-colors duration-300 hover:text-[#4A6741] line-clamp-2"
+                    class="text-ink no-underline transition-colors duration-300 hover:text-brand-600 line-clamp-2"
                   >{{ item.title }}</nuxt-link>
                 </h3>
               </li>
@@ -450,7 +450,7 @@
           <!-- Widget 3: Chuyên mục liên quan -->
           <div class="bg-white rounded-2xl border border-[#DDE6DC] shadow-sm p-5">
             <div class="flex items-center gap-2 pb-3 border-b border-[#EEF3ED] mb-3">
-              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center text-xs shadow-sm">
+              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-brand-600 flex items-center justify-center text-xs shadow-sm">
                 <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
               </span>
               <h2 class="text-[0.92rem] font-black text-[#172516] uppercase tracking-wide m-0">
