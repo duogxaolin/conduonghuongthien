@@ -9,7 +9,7 @@
       v-for="n in count"
       :key="n"
       aria-hidden="true"
-      class="flex flex-col overflow-hidden rounded-xl border border-[#e2ece3] bg-white"
+      class="flex flex-col overflow-hidden rounded-xl border border-line bg-white"
     >
       <div class="h-[140px] w-full animate-pulse bg-[#f8faf8] motion-reduce:animate-none"></div>
       <div class="flex flex-1 flex-col gap-1 p-3">

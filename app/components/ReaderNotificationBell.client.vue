@@ -112,7 +112,7 @@ defineExpose({ close: () => { isOpen.value = false } })
   <div ref="rootRef" class="relative">
     <button
       type="button"
-      class="relative flex items-center justify-center w-9 h-9 rounded-full bg-[#F8FAF7] border border-[#E2E8DF] text-[#385130] transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+      class="relative flex items-center justify-center w-9 h-9 rounded-full bg-surface border border-[#E2E8DF] text-[#385130] transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
       :aria-expanded="isOpen"
       aria-haspopup="menu"
       :aria-label="unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'"
@@ -137,7 +137,7 @@ defineExpose({ close: () => { isOpen.value = false } })
         <button
           v-if="unreadCount > 0"
           type="button"
-          class="text-[0.75rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
+          class="text-[0.75rem] font-semibold text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
           @click="markAllRead"
         >Đánh dấu đã đọc</button>
       </div>
@@ -154,7 +154,7 @@ defineExpose({ close: () => { isOpen.value = false } })
         <p v-else-if="failed" role="alert" class="m-0 px-3.5 py-6 text-center text-[0.85rem] text-[#B04A4A]">
           <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>
           Không thể tải thông báo.
-          <button type="button" class="font-bold text-[#4A6741] underline" @click="load()">Thử lại</button>.
+          <button type="button" class="font-bold text-brand-600 underline" @click="load()">Thử lại</button>.
         </p>
 
         <p v-else-if="!notifications.length" class="m-0 px-3.5 py-8 text-center text-[0.85rem] text-[#5A6C58]">
@@ -179,11 +179,11 @@ defineExpose({ close: () => { isOpen.value = false } })
                 aria-hidden="true"
               ></span>
               <span class="min-w-0 flex-1">
-                <span class="block text-[0.83rem] leading-snug text-[#1E251C]">
+                <span class="block text-[0.83rem] leading-snug text-ink">
                   <strong class="font-bold">{{ item.authorName }}</strong>
                   đã trả lời bình luận của bạn
                 </span>
-                <span class="mt-0.5 block line-clamp-2 break-words text-[0.8rem] leading-snug text-[#4A5545]">{{ item.excerpt }}</span>
+                <span class="mt-0.5 block line-clamp-2 break-words text-[0.8rem] leading-snug text-ink-secondary">{{ item.excerpt }}</span>
                 <span v-if="item.target" class="mt-1 block truncate text-[0.74rem] text-[#5A6C58]">{{ item.target.articleTitle }}</span>
                 <span v-else class="mt-1 block text-[0.74rem] italic text-[#5A6C58]">Bài viết hiện không mở bình luận</span>
               </span>
@@ -194,7 +194,7 @@ defineExpose({ close: () => { isOpen.value = false } })
 
       <nuxt-link
         to="/profile"
-        class="block border-t border-[#EEF2EC] px-3.5 py-2.5 text-center text-[0.8rem] font-bold text-[#4A6741] no-underline transition-colors hover:bg-[#F7FAF6]"
+        class="block border-t border-[#EEF2EC] px-3.5 py-2.5 text-center text-[0.8rem] font-bold text-brand-600 no-underline transition-colors hover:bg-[#F7FAF6]"
         @click="isOpen = false"
       >Xem tất cả trên trang cá nhân</nuxt-link>
     </div>

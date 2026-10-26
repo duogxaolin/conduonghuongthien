@@ -29,7 +29,7 @@ const CATEGORY_ICON = 'fa-solid fa-folder'
   <aside class="flex flex-col gap-6 min-w-0 lg:sticky lg:top-[90px]">
     <!-- Widget 1: Đọc nhiều -->
     <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
-      <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('n_most_read_short') }}</h2>
+      <h2 class="text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('n_most_read_short') }}</h2>
       <div v-if="mostReadPending" role="status" aria-busy="true" class="py-2">
         <span class="sr-only">{{ t('n_loading_most_read') }}</span>
         <div aria-hidden="true" class="flex flex-col">
@@ -52,7 +52,7 @@ const CATEGORY_ICON = 'fa-solid fa-folder'
           <h3 class="text-[0.9rem] font-bold leading-[1.4] m-0 min-w-0">
             <nuxt-link
               :to="`/${typeSlug}/${item.slug}`"
-              class="text-[#1E251C] no-underline transition-colors duration-300 hover:text-[#4A6741] line-clamp-2"
+              class="text-ink no-underline transition-colors duration-300 hover:text-brand-600 line-clamp-2"
             >{{ item.title }}</nuxt-link>
           </h3>
         </li>
@@ -63,7 +63,7 @@ const CATEGORY_ICON = 'fa-solid fa-folder'
     <!-- Widget 2: Chuyên mục -->
     <div v-if="rootCategories.length" class="bg-white rounded-2xl border border-[#DDE6DC] shadow-sm p-5">
       <div class="flex items-center gap-2 pb-3 border-b border-[#EEF3ED] mb-3">
-        <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center text-xs shadow-sm">
+        <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-brand-600 flex items-center justify-center text-xs shadow-sm">
           <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
         </span>
         <h2 class="text-[0.92rem] font-black text-[#172516] uppercase tracking-wide m-0">
@@ -129,7 +129,7 @@ const CATEGORY_ICON = 'fa-solid fa-folder'
     <!-- Widget 4: Tra cứu nhanh -->
     <div class="bg-white rounded-2xl border border-[#DDE6DC] shadow-sm p-5">
       <div class="flex items-center gap-2 pb-3 border-b border-[#EEF3ED] mb-3">
-        <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center text-xs shadow-sm">
+        <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-brand-600 flex items-center justify-center text-xs shadow-sm">
           <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
         </span>
         <h2 class="text-[0.92rem] font-black text-[#172516] uppercase tracking-wide m-0">
@@ -139,21 +139,21 @@ const CATEGORY_ICON = 'fa-solid fa-folder'
       <div class="flex flex-col gap-2 text-xs">
         <nuxt-link to="/documents" class="flex items-center justify-between p-2.5 rounded-xl bg-[#F7FAF6] hover:bg-[#EEF4EC] text-[#2C3E29] font-bold no-underline transition-all border border-[#E4EDE2]">
           <span class="flex items-center gap-2">
-            <i class="fa-solid fa-file-contract text-[#4A6741]" aria-hidden="true"></i>
+            <i class="fa-solid fa-file-contract text-brand-600" aria-hidden="true"></i>
             <span>Văn bản pháp luật</span>
           </span>
           <i class="fa-solid fa-chevron-right text-[0.65rem] text-[#A0B09C]" aria-hidden="true"></i>
         </nuxt-link>
         <nuxt-link to="/legal-qa" class="flex items-center justify-between p-2.5 rounded-xl bg-[#F7FAF6] hover:bg-[#EEF4EC] text-[#2C3E29] font-bold no-underline transition-all border border-[#E4EDE2]">
           <span class="flex items-center gap-2">
-            <i class="fa-solid fa-circle-question text-[#4A6741]" aria-hidden="true"></i>
+            <i class="fa-solid fa-circle-question text-brand-600" aria-hidden="true"></i>
             <span>Giải đáp pháp luật</span>
           </span>
           <i class="fa-solid fa-chevron-right text-[0.65rem] text-[#A0B09C]" aria-hidden="true"></i>
         </nuxt-link>
         <nuxt-link to="/reintegration-models" class="flex items-center justify-between p-2.5 rounded-xl bg-[#F7FAF6] hover:bg-[#EEF4EC] text-[#2C3E29] font-bold no-underline transition-all border border-[#E4EDE2]">
           <span class="flex items-center gap-2">
-            <i class="fa-solid fa-people-group text-[#4A6741]" aria-hidden="true"></i>
+            <i class="fa-solid fa-people-group text-brand-600" aria-hidden="true"></i>
             <span>Mô hình tái hòa nhập</span>
           </span>
           <i class="fa-solid fa-chevron-right text-[0.65rem] text-[#A0B09C]" aria-hidden="true"></i>

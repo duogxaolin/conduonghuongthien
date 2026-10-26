@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-[#F8FAF7]">
+  <div class="bg-surface">
     <!-- Branch 4 (2-segment /<type>/<X>): dishwasher — category list | article detail -->
     <template v-if="idParam">
       <ContentTypeListSection
@@ -53,8 +53,8 @@
     <!-- Page exists but has no visible blocks yet. -->
     <section v-else-if="isPageBranch && page" class="section">
       <div class="container text-center py-20">
-        <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">{{ page?.title }}</h1>
-        <p class="text-[#4A5545]">Nội dung đang được cập nhật.</p>
+        <h1 class="text-[1.8rem] font-extrabold text-ink mb-3">{{ page?.title }}</h1>
+        <p class="text-ink-secondary">Nội dung đang được cập nhật.</p>
       </div>
     </section>
 

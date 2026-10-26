@@ -74,7 +74,7 @@ export function renderChatMarkdownBlocks(md: string): string[] {
   })
 
   // 3. Inline code (`code`)
-  text = text.replace(/`([^`]+)`/g, '<code class="rounded bg-[#e8efe8] px-1.5 py-0.5 text-xs font-mono text-[#1e4620]">$1</code>')
+  text = text.replace(/`([^`]+)`/g, '<code class="rounded bg-[#e8efe8] px-1.5 py-0.5 text-xs font-mono text-brand-900">$1</code>')
 
   // 4. Bold + Italic (***text*** or ___text___)
   text = text.replace(/(\*\*\*|___)(.*?)\1/g, '<strong><em>$2</em></strong>')
@@ -96,14 +96,14 @@ export function renderChatMarkdownBlocks(md: string): string[] {
     const isVideo = safeUrl.includes('/media/') || safeAlt.toLowerCase().includes('video')
 
     if (isVideo) {
-      return `<div class="chat-media-card chat-video-card my-2.5 overflow-hidden rounded-xl border border-[#c8d6c9] bg-[#f0f7f1] shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="relative block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Video thumbnail'}" width="640" height="360" class="w-full aspect-video object-cover block bg-[#122815]" loading="lazy" decoding="async" onerror="this.style.display='none'" /><div class="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/40 transition-colors"><span class="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><i class="fa-solid fa-play text-sm ml-0.5" aria-hidden="true"></i></span></div></a><div class="p-2.5 flex items-center justify-between gap-2 bg-white"><span class="text-xs font-bold text-[#122815] truncate">${safeAlt || 'Xem Video'}</span><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-[0.72rem] font-bold text-[#2c6e33] underline hover:text-[#1e4620] shrink-0">Xem ngay &rarr;</a></div></div>`
+      return `<div class="chat-media-card chat-video-card my-2.5 overflow-hidden rounded-xl border border-line-strong bg-[#f0f7f1] shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="relative block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Video thumbnail'}" width="640" height="360" class="w-full aspect-video object-cover block bg-[#122815]" loading="lazy" decoding="async" onerror="this.style.display='none'" /><div class="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/40 transition-colors"><span class="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><i class="fa-solid fa-play text-sm ml-0.5" aria-hidden="true"></i></span></div></a><div class="p-2.5 flex items-center justify-between gap-2 bg-white"><span class="text-xs font-bold text-[#122815] truncate">${safeAlt || 'Xem Video'}</span><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-[0.72rem] font-bold text-[#2c6e33] underline hover:text-brand-900 shrink-0">Xem ngay &rarr;</a></div></div>`
     }
 
-    return `<div class="chat-media-card chat-image-card my-2.5 overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Hình ảnh'}" width="640" height="360" class="w-full aspect-video object-cover block bg-[#f0f4ef] group-hover:scale-[1.02] transition-transform duration-300" loading="lazy" decoding="async" /></a>${safeAlt ? `<div class="p-2 text-center text-[0.72rem] font-medium text-[#667768] bg-[#fcfdfc] border-t border-[#f0f4f0]">${safeAlt}</div>` : ''}</div>`
+    return `<div class="chat-media-card chat-image-card my-2.5 overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Hình ảnh'}" width="640" height="360" class="w-full aspect-video object-cover block bg-[#f0f4ef] group-hover:scale-[1.02] transition-transform duration-300" loading="lazy" decoding="async" /></a>${safeAlt ? `<div class="p-2 text-center text-[0.72rem] font-medium text-ink-muted bg-[#fcfdfc] border-t border-[#f0f4f0]">${safeAlt}</div>` : ''}</div>`
   })
 
   // 7b. Links [text](url) — https:// or a single-slash site path (SAFE_URL)
-  text = text.replace(LINK_PATTERN, '<a href="$2" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline hover:text-[#2c6e33]">$1</a>')
+  text = text.replace(LINK_PATTERN, '<a href="$2" target="_blank" rel="noopener noreferrer" class="font-semibold text-brand-900 underline hover:text-brand-700">$1</a>')
 
   // 8. Headers (###, ##, #)
   text = text.replace(/^### (.*$)/gim, '<h4 class="m-0 mt-2 mb-1 text-sm font-bold text-inherit">$1</h4>')
