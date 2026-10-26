@@ -120,8 +120,6 @@ export function normalizeProviderUrl(input: string | URL, policy: ProviderUrlPol
   return url
 }
 
-export { isPublicIpAddress }
-
 /**
  * `deadlineMs` (absolute, `Date.now()` clock): a resolver still out at that moment
  * fails the call with UPSTREAM_TIMEOUT — DNS is inside the call's deadline, not

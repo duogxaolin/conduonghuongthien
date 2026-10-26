@@ -6,7 +6,7 @@
  * `settings` RBAC resource — no new resource needed.
  */
 import { createError } from 'h3'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, ne, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
 import { languages, langTranslations, articleTranslations, pageBlocks, activityLogs } from '../db/schema'
 import type { ActorLike } from '../utils/permissions'
@@ -205,10 +205,26 @@ export async function reorderLanguages(
  * 404 unless `code` has a `languages` row. The translation list would otherwise answer an
  * unknown code with a virtual row per vi key, and a write would leave orphan rows that no
  * language owns (every write path goes through `upsertTranslations`, which checks).
+ *
+ * `lock`: inside a write transaction, read the row `FOR UPDATE`: a concurrent
+ * `deleteLanguage` then waits for the write to commit instead of deleting the language
+ * between this check and the inserts. `FOR UPDATE`, not `FOR SHARE`: MariaDB (which
+ * aaPanel installs may run) rejects `FOR SHARE`, and the rest of the codebase locks with
+ * `.for('update')` too. It also serialises concurrent writers of the same language —
+ * acceptable, translation writes are rare admin actions. Read-only callers (the list GET,
+ * the early refusal before AI calls) take no lock.
  */
-export async function requireLanguage(code: string, db: Pick<Database, 'select'> = getDb()): Promise<void> {
-  const [lang] = await db.select({ id: languages.id }).from(languages).where(eq(languages.code, code)).limit(1)
+export async function requireLanguage(code: string, db: Pick<Database, 'select'> = getDb(), options: { lock?: boolean } = {}): Promise<void> {
+  const query = db.select({ id: languages.id }).from(languages).where(eq(languages.code, code)).limit(1)
+  const [lang] = await (options.lock ? query.for('update') : query)
   if (!lang) throw createError({ statusCode: 404, statusMessage: 'Ngôn ngữ không tồn tại.' })
+}
+
+/** The languages UI strings are machine-translated into: active ones in the database, vi excluded (it is the source). */
+export async function listActiveTranslationTargets(db: Database = getDb()): Promise<Array<{ code: string; name: string }>> {
+  return db.select({ code: languages.code, name: languages.name }).from(languages)
+    .where(and(eq(languages.isActive, true), ne(languages.code, 'vi')))
+    .orderBy(languages.displayOrder, languages.id)
 }
 
 /** `value: null` clears the row (SQL NULL = untranslated); see the PUT handler. */
@@ -220,7 +236,7 @@ export async function upsertTranslations(
   db: Database = getDb(),
 ) {
   return db.transaction(async (tx) => {
-    await requireLanguage(code, tx)
+    await requireLanguage(code, tx, { lock: true })
     for (const item of items) {
       const [existing] = await tx
         .select()

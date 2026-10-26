@@ -14,11 +14,19 @@ import test, { mock } from 'node:test'
 
 const upserts: Array<{ code: string, items: unknown[] }> = []
 let answer = ''
-mock.module('../server/services/ai-gateway', { namedExports: { callAi: async () => ({ ok: true, text: answer }) } })
+let aiCalls = 0
+mock.module('../server/services/ai-gateway', { namedExports: { callAi: async () => { aiCalls++; return { ok: true, text: answer } } } })
+/** The languages the database has, active: `fr` was a default but an admin deleted it. */
+const ACTIVE_IN_DB = [{ code: 'en', name: 'English' }]
 mock.module('../server/services/languages', {
   namedExports: {
-    DEFAULT_LANGUAGES: [{ code: 'vi', name: 'Vietnamese' }, { code: 'en', name: 'English' }],
-    upsertTranslations: async (_actor: unknown, code: string, items: unknown[]) => { upserts.push({ code, items }) },
+    DEFAULT_LANGUAGES: [{ code: 'vi', name: 'Vietnamese' }, { code: 'en', name: 'English' }, { code: 'fr', name: 'French' }],
+    listActiveTranslationTargets: async () => ACTIVE_IN_DB,
+    // Like the real one: a code with no `languages` row is a 404 (`requireLanguage`).
+    upsertTranslations: async (_actor: unknown, code: string, items: unknown[]) => {
+      if (code !== 'vi' && !ACTIVE_IN_DB.some(lang => lang.code === code)) throw Object.assign(new Error('Ngôn ngữ không tồn tại.'), { statusCode: 404 })
+      upserts.push({ code, items })
+    },
   },
 })
 
@@ -109,6 +117,24 @@ test('auto-translation of a new category stores only real text (RED before: the 
     { code: 'vi', items: [{ group: 'categories', key: 'cat_tin-tuc', value: 'Tin tức' }, { group: 'categories', key: 'cat_tin-tuc_desc', value: 'Tin hoạt động' }] },
     { code: 'en', items: [{ group: 'categories', key: 'cat_tin-tuc', value: 'News' }] },
   ])
+})
+
+test('auto-translation targets the languages the database has, active — a deleted default costs no AI call and logs no warning (RED before)', async () => {
+  upserts.length = 0
+  aiCalls = 0
+  answer = JSON.stringify([{ i: 1, key: 'cat_su-kien', value: 'Events' }])
+  const warnings: string[] = []
+  const original = console.error
+  console.error = (...args: unknown[]) => { warnings.push(args.join(' ')) }
+  try {
+    await autoTranslateCategory({ id: 1 } as never, 'su-kien', 'Sự kiện')
+    for (let i = 0; i < 40; i++) await new Promise(resolve => setTimeout(resolve, 0))
+  } finally {
+    console.error = original
+  }
+  assert.equal(aiCalls, 1, 'one AI call: en — none for fr, which is in DEFAULT_LANGUAGES but not in the database')
+  assert.deepEqual(upserts.map(u => u.code), ['vi', 'en'])
+  assert.deepEqual(warnings.filter(line => line.includes('i18n-auto-translate')), [])
 })
 
 test('the universal "Dịch toàn cục" job reads model answers through the same reader (no String(p.value))', () => {

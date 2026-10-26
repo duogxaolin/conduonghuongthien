@@ -35,7 +35,9 @@ function fakeDb() {
       const chain = {
         where: () => chain,
         orderBy: () => chain,
-        limit: rows,
+        limit: () => chain,
+        // The language check inside a write locks the row (`for update`); the SQL is pinned in tests/languages-write-lock.test.ts.
+        for: () => chain,
         then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => rows().then(resolve, reject),
       }
       return chain
@@ -193,11 +195,26 @@ test('PUT: a language code that does not exist is a 404 and nothing is written �
   assert.deepEqual(writes, [])
 })
 
-test('the AI paths refuse an unknown language code the same way (one check, in the write service)', async () => {
+test('the AI paths refuse an unknown language code with a 404 BEFORE spending an AI call (RED before: the model was called, then the write refused)', async () => {
   languageKnown = false
   aiAnswer = { ok: true, text: JSON.stringify([{ i: 1, key: 'news', value: 'News' }]) }
-  const chunk = await send('POST', '/api/admin/languages/ai-translate-chunk', { langCode: 'xx', items: [{ group: 'nav', key: 'news' }] })
-  assert.equal(chunk.status, 404, chunk.text)
+  const outcomes: string[] = []
+  for (const [path, body] of [
+    ['/api/admin/languages/ai-translate-chunk', { langCode: 'xx', items: [{ group: 'nav', key: 'news' }] }],
+    ['/api/admin/languages/ai-translate-key', { langCode: 'xx', group: 'nav', key: 'news', sourceText: 'Tin tức' }],
+    ['/api/admin/languages/ai-translate', { langCode: 'xx' }],
+  ] as const) {
+    // vi has a value, the target none: the bulk path would have keys to send.
+    selectRows = [{ id: 1, group: 'nav', key: 'news', value: null }]
+    const before = prompts.length
+    const response = await send('POST', path, body)
+    outcomes.push(`${path} → ${response.status}, ${prompts.length - before} AI call(s)`)
+  }
+  assert.deepEqual(outcomes, [
+    '/api/admin/languages/ai-translate-chunk → 404, 0 AI call(s)',
+    '/api/admin/languages/ai-translate-key → 404, 0 AI call(s)',
+    '/api/admin/languages/ai-translate → 404, 0 AI call(s)',
+  ])
   assert.deepEqual(writes, [])
 })
 

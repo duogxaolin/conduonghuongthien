@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { readValidated } from '../../../utils/request-body'
 import { callAi } from '../../../services/ai-gateway'
-import { upsertTranslations } from '../../../services/languages'
+import { requireLanguage, upsertTranslations } from '../../../services/languages'
 import { modelSingleTranslation } from '../../../utils/ai/model-translations'
 
 const MISSING = 'Thiếu mã ngôn ngữ hoặc khóa bản dịch.'
@@ -21,6 +21,8 @@ export default defineEventHandler(async (event) => {
   requireResourcePermission(adminUser, 'settings', 'update')
 
   const { langCode, langName, group, key, sourceText } = await readValidated(event, bodySchema)
+  // Refuse an unknown language before paying for an AI call (the write checks again, locked).
+  await requireLanguage(langCode)
 
   const prompt = `Bạn là biên dịch viên chuyên nghiệp.
 Hãy dịch chính xác chuỗi giao diện người dùng sau sang ${langName || langCode}.

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { readValidated } from '../../../utils/request-body'
 import { callAi } from '../../../services/ai-gateway'
-import { upsertTranslations } from '../../../services/languages'
+import { requireLanguage, upsertTranslations } from '../../../services/languages'
 import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../../../utils/ai/model-translations'
 
 const LANG_CODE_REQUIRED = 'Mã ngôn ngữ bắt buộc.'
@@ -23,6 +23,8 @@ export default defineEventHandler(async (event) => {
   requireResourcePermission(adminUser, 'settings', 'update')
 
   const { langCode, langName, items } = await readValidated(event, bodySchema)
+  // Refuse an unknown language before paying for an AI call (the write checks again, locked).
+  await requireLanguage(langCode)
   if (items.length === 0) return { ok: true, translated: [] }
 
   const promptLines = items.map(

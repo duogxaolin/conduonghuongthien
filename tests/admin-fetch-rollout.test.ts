@@ -628,6 +628,24 @@ describe(`${LANGUAGES_PAGE} — actions`, () => {
     assert.equal(lastToast(toasts, 'error'), 'Không thể xoá ngôn ngữ mặc định.')
   })
 
+  it('deleting the language the translations tab is on moves the tab to a language that exists (RED before: it stayed on the deleted one and 404ed)', async () => {
+    const deleted = new Set<string>()
+    const { page } = await languagesPage((call) => {
+      const route = `${call.method} ${call.url.pathname}`
+      const removed = /^DELETE \/api\/admin\/languages\/(\w+)$/.exec(route)
+      if (removed) { deleted.add(removed[1]!); return json({ ok: true }) }
+      if (route === 'GET /api/admin/languages') {
+        return json({ ok: true, items: LANGUAGE_ROWS.filter(l => !deleted.has(l.code)).map(l => ({ ...l, createdAt: null, updatedAt: null })) })
+      }
+      return undefined
+    })
+    assert.equal(page.selectedLangCode, 'en')
+    await page.deleteLanguage(page.languages.find(l => l.code === 'fr')!)
+    assert.equal(page.selectedLangCode, 'en', 'deleting another language leaves the selection alone')
+    await page.deleteLanguage(page.languages.find(l => l.code === 'en')!)
+    assert.equal(page.selectedLangCode, 'vi', 'the first remaining language (only vi is left)')
+  })
+
   it('saving and AI-translating a row go to the language the row was loaded under, not the one selected now (RED before)', async () => {
     const { page, calls } = await languagesPage()
     // An en row still on screen while the selection already says fr (C1, verify of 85a22c7).

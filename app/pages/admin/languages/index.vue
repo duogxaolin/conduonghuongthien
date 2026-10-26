@@ -168,6 +168,7 @@ async function deleteLanguage(lang: typeof languages.value[0]) {
     await adminFetch<{ ok: true }>(`/api/admin/languages/${lang.code}`, { method: 'DELETE' })
     toast.success('Đã xoá ngôn ngữ.')
     await fetchLanguages()
+    if (selectedLangCode.value === lang.code) selectDefaultTranslationLanguage() // the tab must not stay on a deleted language (404)
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể xoá.'))
   }
@@ -469,13 +470,12 @@ async function loadData() {
 // Universal tab self-contained: tự `onMounted(loadCoverage)` khi mount, cha
 // không cần ref hay trigger — chỉ mount khi `activeTab === 'universal'`.
 
+/** The language the "Bản dịch UI" tab opens on (mount, after a delete): the first active one other than vi, else vi. */
+function selectDefaultTranslationLanguage() {
+  selectedLangCode.value = languages.value.find((l) => l.code !== 'vi' && l.isActive)?.code ?? 'vi'
+}
 onMounted(() => {
-  loadData().then(() => {
-    if (languages.value.length > 0) {
-      const nonDefault = languages.value.find((l) => l.code !== 'vi' && l.isActive)
-      if (nonDefault) selectedLangCode.value = nonDefault.code
-    }
-  })
+  loadData().then(selectDefaultTranslationLanguage)
 })
 </script>
 
