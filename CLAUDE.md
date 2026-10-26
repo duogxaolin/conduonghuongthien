@@ -23,7 +23,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 | Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 222 · 209 |
 | Tệp import `rateLimitDeps` | 22 |
 | Suite `*-integration` (so matrix CI) | 22 (khớp) |
-| Dòng `default.vue` · `init.ts` · `useI18n.ts` · `useChatbot.ts` · `admin/profile.vue` | 401 · 80 · 265 · 857 · 901 |
+| Dòng `default.vue` · `init.ts` · `useI18n.ts` · `useChatbot.ts` · `admin/profile.vue` | 401 · 80 · 265 · 857 · 277 |
 | i18n seed: key · hàng · fallback `vi` | 583 · 631 · 426 |
 | Page Builder: section · content · layout | 9 · 7 · 3 |
 | Mục small talk mặc định | 122 |
@@ -195,7 +195,7 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 - `server/db/init.ts` (1302 → 73 dòng; sau thêm `try/finally` nhả kết nối khi khôi phục CSDL gọi nó trong tiến trình server): 7 file `schema-tables/*.ts` theo domain giữ mọi `CREATE TABLE`; `init.ts` chỉ còn thứ tự gọi (ràng buộc FK thật). `db:drift` đọc cả 9 tệp như một nguồn DDL duy nhất.
 - `app/layouts/default.vue` (1301 → 401, `wc -l` 2026-10-14): tách 7 component `app/components/layout/Default*.vue` + 5 composable (`useLayoutNav`/`useSiteSettings`/`useLiveSearch`/`useReaderMenu`/`useMobileMenu`) + skip-link a11y + `id="main-content"`; guard test ghép nguồn qua `tests/_layout-parts.ts` (→ CHANGELOG § 7).
 - `app/composables/useChatbot.ts` (939→740, lớn lại sau đó) → `useChatbotTypewriter.ts`.
-- `app/pages/admin/profile.vue` (1076→875, lớn lại sau 2A + 2D) → `ProfileActivityHistory.vue`, gọi bằng `<AdminProfileActivityHistory>` — component trong `components/<thư mục>/` mang tiền tố thư mục; tên trần không phân giải và Vue chỉ cảnh báo (khối lịch sử từng vắng từ lần tách tới 2A, CHANGELOG § 33).
+- `app/pages/admin/profile.vue` (1076→875, lớn lại sau 2A + 2D tới 901; tách lần 2 ngày 2026-10-26 → 277: 6 component hiển thị `components/admin/profile/` + `useProfilePassword`/`useProfileMfaFactors`/`useProfileRecoveryCodes`, trang giữ `loadMfa` + cảnh báo `role="alert"`; `tests/admin-profile-page.test.ts`) → `ProfileActivityHistory.vue`, gọi bằng `<AdminProfileActivityHistory>` — component trong `components/<thư mục>/` mang tiền tố thư mục; tên trần không phân giải và Vue chỉ cảnh báo (khối lịch sử từng vắng từ lần tách tới 2A, CHANGELOG § 33).
 - `server/services/media-portal.ts` (1208 → 74, barrel, wave2 5.3) → `media-portal-{assets,stream,thumbnail,admin-write,thumbnail-override}.ts` (+ `-constants`/`-public`/`-admin-read`/`media-validation`/`media-views` có từ trước); nơi gọi vẫn import barrel, tệp con không import ngược barrel (`tests/service-split-boundaries.test.ts`). Guard ảnh YouTube quét toàn bộ `server/`+`app/`, không theo danh sách tên (→ CHANGELOG § 41).
 - `server/services/video-processing.ts` (1168 → 38, cửa vào, 5.4) → `video-{transcode-pipeline,process-runner,renditions,thumbnail-frame,disk-guard,processing-job}.ts`; chỉ đường ống được `trackProcessingClaim`/`forgetProcessingClaim`; argv `cpulimit` của production ghim qua `setCpulimitAvailableForTests`.
 - `server/services/chunked-upload.ts` (923 → 47, barrel, 5.6) → `chunked-upload-{core,session,receipt,completion}.ts`; `-core` chỉ nhóm `chunked-upload*` import, ngoại lệ nêu tên duy nhất `video-disk-guard.ts` lấy đúng `formatBytes` (cắt vòng import với `video-processing`).

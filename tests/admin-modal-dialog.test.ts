@@ -736,9 +736,25 @@ test('hộp thoại nuốt phím giữ từ trước khi mở; ô Enter trong h�
     assert.match(source, /addEventListener\('keydown', [^,]+, true\)/, `${file}: nuốt ở pha capture, trước handler của điều khiển`)
     assert.match(source, /addEventListener\('keyup', [^,]+, true\)/)
   }
-  for (const file of ['pages/admin/content/pages/[id].vue', 'components/admin/MediaLibraryModal.vue', 'pages/admin/profile.vue']) {
+  // /admin/profile (wave3 4.1): ba hộp thoại nay là component riêng — phím Enter của chúng
+  // đi theo, nên chốt đi theo tới đó.
+  const PROFILE_DIALOGS = [
+    'components/admin/profile/ProfileEnrollDialog.vue',
+    'components/admin/profile/ProfileDisableDialog.vue',
+    'components/admin/profile/ProfileRecoveryDialog.vue',
+  ]
+  for (const file of ['pages/admin/content/pages/[id].vue', 'components/admin/MediaLibraryModal.vue', ...PROFILE_DIALOGS]) {
     assert.match(read(file), /isDeliberateEnter\(/, `${file}: Enter lặp/đang gõ dấu không được gửi`)
   }
+  // Có `isDeliberateEnter(` ở đâu đó trong tệp chưa đủ: MỌI ô nhập bắt Enter của hộp thoại
+  // hồ sơ phải đi qua `submitOnEnter` (hàm gọi nó), và ở `keydown` — `keyup` từng gửi biểu
+  // mẫu trống khi hộp mở bằng Enter.
+  for (const file of PROFILE_DIALOGS) {
+    const bindings = read(file).match(/@key(?:down|up)\.enter="[^"]*"/g) ?? []
+    assert.ok(bindings.length > 0, `${file}: không còn ô nào bắt Enter để kiểm`)
+    for (const binding of bindings) assert.match(binding, /^@keydown\.enter="submitOnEnter\(\$event/, `${file}: ${binding}`)
+  }
+  assert.doesNotMatch(read('pages/admin/profile.vue'), /@key(?:down|up)\.enter=/, 'profile.vue: Enter của hộp thoại thuộc về component hộp thoại')
 })
 
 /**
