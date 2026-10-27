@@ -1,7 +1,7 @@
 /**
  * Differential fuzz of the save-time check (Layer 1) of `server/services/moderation-regex.ts`
  * against the real engine: every pattern the check ACCEPTS must finish matching each
- * adversarial 400-character input in under 100 ms.
+ * adversarial 400-character input in under 200 ms (best of three runs).
  *
  * Why: Layer 1 is an estimate over a parse tree, and its holes are exactly the patterns it
  * misreads — a group name it did not parse (`(?<é>\s*)(?<ê>\s*)$`), a `{0}` that made a
@@ -17,33 +17,49 @@
  * `engines`. Bounded: every run executes in one `vm` context with a timeout, so a pattern the
  * check wrongly accepts cannot hang the suite; a run over budget is retried twice (a loaded CI
  * runner is slow, a catastrophic pattern is slow every time), and the scan stops after a few
- * failures. Floors on the number of valid and accepted patterns keep the test from passing on
- * an empty corpus. Every valid pattern is also checked for a NaN estimate (`analysisNumbers`).
+ * failures. The save-time check and the estimate run under `withinWallClock` too, and the loop
+ * checks its own deadline: `{ timeout }` cannot stop a synchronous body, so an analyser that
+ * regresses into a long loop fails here in about a second instead of hanging the runner. Floors
+ * on the number of valid and accepted patterns keep the test from passing on an empty corpus.
+ * Every valid pattern is also checked for a NaN estimate (`analysisNumbers`).
  *
  * Teeth: on the code before wave3 4.3b this corpus has 77 accepted patterns that run past
  * 250 ms on one of the inputs — every one a variant of the three holes (several are pinned by
  * name in `moderation-regex-seams-behavior.test.ts`, so they outlive changes to the generator).
+ * The budget is 200 ms, under all 77: it still fails there (re-run on 28e470e's analysis and
+ * parser for this budget), with room above what an accepted pattern takes today — worst
+ * best-of-three 1.4 ms unloaded, 79 ms on Node 24 throttled to 0.4 CPU (100 ms was near the line).
+ * The save-time check itself took at most 68.5 ms there, far under `ANALYSIS_BOUND_MS`.
  *
  * Limit of this evidence: 400 characters is far below the 2000-character window Layer 2 runs
- * on, so a cubic pattern can sit under 100 ms here (the two cubic holes above cost about
- * 150 ms at 401 characters on a developer machine — near the line). Those two are pinned by
- * name in `moderation-regex-seams-behavior.test.ts`; this test is the net for exponential
- * shapes and for everything nobody listed. Its alphabet has no character outside the sample
- * table, so it cannot see `FINDING moderation-regex-4` (`日*日*$`).
+ * on. The two cubic holes above (`\s*\s*$` family) cost 148 ms at 401 characters on the FIRST
+ * run (V8 interprets a new regex) but 12 ms once compiled — and ~1.25 s on a 2000-character
+ * window (Node 26; Node 24 alike). A polynomial pattern can therefore pass here and still cost
+ * over a second per window. Those two are pinned by name in the seams test; this test is the net
+ * for exponential shapes and for everything nobody listed. Its alphabet has no character outside
+ * the sample table, so it cannot see `FINDING moderation-regex-4` (`日*日*$`, `日*日*日*$`… — k
+ * adjacent quantifiers are polynomial of degree k + 1, no ceiling). Neither gap holds the event
+ * loop any more: Layer 2 interrupts every window at 200 ms (`tests/moderation-regex-timeout.test.ts`).
+ * This test measures how good Layer 1's estimate is, not what protects the server.
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import vm from 'node:vm'
 import { MODERATION_REGEX_FLAGS, checkModerationPattern } from '../server/services/moderation-regex.ts'
 import { analysisNumbers } from '../server/services/moderation-regex-analysis.ts'
+import { withinWallClock } from './_wall-clock-bound.ts'
 
 const SEED = 0x5eed2026
 const PATTERNS = 3000
 const INPUT_LENGTH = 400
-const BUDGET_MS = 100
+const BUDGET_MS = 200
 /** A catastrophic run is stopped here; the budget above is what fails the test. */
 const TIMEOUT_MS = 250
 const MAX_FAILURES = 5
+/** One save-time check or estimate (microseconds normally). */
+const ANALYSIS_BOUND_MS = 1000
+/** The whole scan (2–4 s normally). */
+const RUN_BOUND_MS = 90_000
 
 /** mulberry32: small, fast, and the same sequence everywhere. */
 function prng(seed: number): () => number {
@@ -129,7 +145,10 @@ const INPUTS: Array<[string, string]> = [
   ['␠×400', ' '.repeat(INPUT_LENGTH)],
 ]
 
-test('fuzz: every pattern the save-time check accepts matches each 400-char adversarial input in < 100 ms', () => {
+test('fuzz: every pattern the save-time check accepts matches each 400-char adversarial input in < 200 ms', { timeout: RUN_BOUND_MS + 30_000 }, () => {
+  const deadline = performance.now() + RUN_BOUND_MS
+  const bounded = <T>(what: string, pattern: string, call: () => T): T =>
+    withinWallClock(ANALYSIS_BOUND_MS, `${what}(${JSON.stringify(pattern)})`, call)
   const next = generator(prng(SEED))
   const context = vm.createContext({ pattern: '', flags: MODERATION_REGEX_FLAGS, input: '', re: null })
   const compile = new vm.Script('re = new RegExp(pattern, flags)')
@@ -160,9 +179,10 @@ test('fuzz: every pattern the save-time check accepts matches each 400-char adve
       continue
     }
     valid += 1
+    assert.ok(performance.now() < deadline, `fuzz still running after ${RUN_BOUND_MS} ms (${valid} valid patterns)`)
     // Invariant over the whole corpus: no estimate is NaN (a NaN passes every limit).
-    if (analysisNumbers(pattern).some(Number.isNaN)) nanPatterns.push(pattern)
-    if (!checkModerationPattern(pattern, 'pattern').ok) continue
+    if (bounded('analysisNumbers', pattern, () => analysisNumbers(pattern)).some(Number.isNaN)) nanPatterns.push(pattern)
+    if (!bounded('checkModerationPattern', pattern, () => checkModerationPattern(pattern, 'pattern')).ok) continue
     accepted += 1
     context.pattern = pattern
     compile.runInContext(context)

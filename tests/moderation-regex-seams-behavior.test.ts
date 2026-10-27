@@ -523,11 +523,14 @@ test('the real clock comes back with setModerationRegexTimingForTests(null): a f
 // ── Khe hở lớp 1 tìm thấy lúc viết test này ─────────────────────────────────
 //
 // Ba mẫu `regression moderation-regex-1..3` có cùng hình dạng với một mẫu lớp 1 đang từ
-// chối, nhưng từng lọt (ghim là `FINDING …`, sửa ở wave3 4.3b). Đo trên máy phát triển
-// (Node 26, bản gốc 597af6a, trước khi sửa): mẫu 1 và 2 tốn 148 ms cho 401 ký tự (bậc ba —
-// ~18 s cho một cửa sổ 2000 ký tự); mẫu 3 tốn 2,4 s cho 24 ký tự (cấp số — mỗi ký tự thêm
-// nhân đôi). Khi đó lớp 2 tắt luật SAU cửa sổ chậm đầu tiên, nên cửa sổ đó chặn vòng sự kiện
-// trọn thời gian của nó; từ wave3 4.3c cửa sổ bị ngắt cứng ở ngân sách. Cần quyền sửa luật
+// chối, nhưng từng lọt (ghim là `FINDING …`, sửa ở wave3 4.3b). Đo trên máy phát triển (Node
+// 26; Node 24 cùng bậc — giờ của engine, không phụ thuộc bản mã), mỗi ca một tiến trình mới:
+// mẫu 1 và 2 tốn 148 ms cho 401 ký tự ở lần chạy ĐẦU (V8 thông dịch regex mới), 12 ms khi đã
+// dịch sang mã máy, và ~1,25 s cho một cửa sổ 2000 ký tự — bậc ba theo cả lượt tìm không neo
+// (401 → 2000 ký tự: ×104 ≈ 5³). Con số "~18 s" từng ghi ở đây là ngoại suy n³ từ 148 ms thông
+// dịch, sai. Mẫu 3 tốn 2,4 s cho 25 ký tự ở lần chạy đầu, 194 ms khi đã dịch (cấp số — mỗi ký
+// tự thêm nhân đôi). Khi đó lớp 2 tắt luật SAU cửa sổ chậm đầu tiên, nên cửa sổ đó chặn vòng sự
+// kiện trọn thời gian của nó; từ wave3 4.3c cửa sổ bị ngắt cứng ở ngân sách. Cần quyền sửa luật
 // kiểm duyệt để lưu một mẫu như vậy. Mỗi test kèm vài mẫu mà fuzz vi sai
 // (`moderation-regex-fuzz.test.ts`) tìm được trên mã cũ — 77 mẫu được nhận mà treo > 250 ms
 // trên 400 ký tự — ghim bằng tên để không phụ thuộc bộ sinh. `FINDING moderation-regex-4`
@@ -621,13 +624,15 @@ test('regression: số lần lặp khổng lồ không làm phép kiểm lúc l�
   // Trước (tìm khi sửa ba lỗi trên, không phải do fuzz): `choices` cộng từng k nên
   // `a{0,999999999}b*` tốn ~15 s ngay lúc lưu và lúc nạp luật; `literalStrings` dựng mảng
   // `node.min` phần tử nên `(?:a{999999999}|b)+` làm tiến trình hết bộ nhớ (core dump).
-  const started = performance.now()
-  refusedAs(ADJACENT, 'a{0,999999999}b*')
-  assert.equal(checkModerationPattern('x{0,2147483647}y{0,9}', 'pattern').ok, false)
-  // Từ dài hơn một cửa sổ không phải từ cố định: thận trọng, như mọi nhánh không phải từ.
-  refusedAs(OVERLAPPING_ALTERNATION, '(?:a{999999999}|b)+')
-  refusedAs(OVERLAPPING_ALTERNATION, '(?:a{2147483647}|b)+')
-  assert.ok(performance.now() - started < 1000, 'quyết trong vài mili giây, không phải vài giây')
+  // Chặn giờ thật bằng `withinWallClock` (vm), không đo sau khi chạy xong: vòng đếm từng k quay
+  // lại thì test đỏ sau 1 s, thay vì chạy hết hàng chục giây rồi mới so.
+  withinWallClock(1000, 'phép kiểm lúc lưu trên số lần lặp khổng lồ — quyết trong vài mili giây, không phải vài giây', () => {
+    refusedAs(ADJACENT, 'a{0,999999999}b*')
+    assert.equal(checkModerationPattern('x{0,2147483647}y{0,9}', 'pattern').ok, false)
+    // Từ dài hơn một cửa sổ không phải từ cố định: thận trọng, như mọi nhánh không phải từ.
+    refusedAs(OVERLAPPING_ALTERNATION, '(?:a{999999999}|b)+')
+    refusedAs(OVERLAPPING_ALTERNATION, '(?:a{2147483647}|b)+')
+  })
   // Số lần lặp vừa phải vẫn là từ cố định như trước.
   assert.deepEqual(checkModerationPattern('(?:a{300}|b)+', 'pattern'), { ok: true })
 })
@@ -642,9 +647,10 @@ test('FINDING moderation-regex-4 (đóng ở lớp 2): 日*日*$ vẫn lọt l�
   for (const pattern of ['日*日*$', 'ж*ж*$', '\\u0436*\\u0436*$', '[ж]+[жз]+$'])
     assert.deepEqual(checkModerationPattern(pattern, 'pattern'), { ok: true }, pattern)
   // Lớp 2 — đồng hồ thật, mẫu thật: cửa sổ bị ngắt ở MODERATION_RULE_WINDOW_BUDGET_MS, luật tắt
-  // 10 phút, lượt sau không chạy nó. Không có ngắt cứng thì cửa sổ chạy trọn: `日*日*$` trên
-  // 2000 ký tự ~1,2 s, `日*日*日*$` trên 401 ký tự ~15,6 s (Node 26, kiểm chứng 4.3b) —
-  // `withinWallClock` dừng lượt chạy ở 5 s để test đỏ có thông báo thay vì treo.
+  // 10 phút, lượt sau không chạy nó. Không có ngắt cứng thì cửa sổ chạy trọn (Node 26): `日*日*$`
+  // trên 2000 ký tự ~1,2 s (bậc ba, như `\s*\s*$`); `日*日*日*$` trên 401 ký tự 15,6 s ở lần chạy
+  // đầu, ~1,2 s khi V8 đã dịch regex (bậc bốn — k lượng từ nối nhau là đa thức bậc k + 1, không
+  // có trần bậc) — `withinWallClock` dừng lượt chạy ở 5 s để test đỏ có thông báo thay vì treo.
   setModerationRegexTimingForTests(null)
   resetSlowModerationRules()
   const quiet = mock.method(console, 'error', () => {}) // the rule_slow_disabled lines

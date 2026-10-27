@@ -27,8 +27,11 @@
  * phải chứng minh), và chồng lấn chỉ xảy ra trên ký tự nằm ngoài bảng mẫu thử
  * (`SAMPLE_CHARS` ở `moderation-regex-parser.ts` — ASCII, khoảng trắng Unicode, chữ
  * Việt, vài ký tự đại diện): hai lớp ký tự được coi là rời nhau nếu không chung ký tự
- * mẫu nào — kể cả một chữ cố định với chính nó (`日*日*$`, `ж*ж*$`: bậc ba, ghim ở
- * `FINDING moderation-regex-4`, `tests/moderation-regex-seams-behavior.test.ts`).
+ * mẫu nào — kể cả một chữ cố định với chính nó. k lượng từ nối nhau trên một chữ như vậy là
+ * đa thức bậc k + 1, không có trần bậc (`日*日*$` bậc ba như `\s*\s*$`, ~1,2 s một cửa sổ
+ * 2000 ký tự; `日*日*日*$` 15,6 s/401 ký tự ở lần chạy đầu; `.*日.*日.*日$` > 60 s — Node 26).
+ * Không vá trọn được lúc lưu (mọi chữ ngoài bảng, mọi lớp `\p{…}`): lớp 2 ngắt cứng mỗi cửa
+ * sổ ở 200 ms (`FINDING moderation-regex-4`, `tests/moderation-regex-seams-behavior.test.ts`).
  * Ba khe hở từng lọt đã sửa (wave3 4.3b, test `regression moderation-regex-1..3`): tên nhóm
  * không phải ASCII bị đọc thành chữ cố định, `{0}` cho độ rộng NaN (lặp 0 lần nay là chuỗi
  * rỗng, so với trần viết dạng đóng khi nghi ngờ), chữ mà `iu` gập về nhau được so bằng
@@ -38,7 +41,7 @@
  * tệp nào khác ghi vào (`tests/service-split-boundaries.test.ts`, luật 4).
  */
 import { MODERATION_REGEX_FLAGS, MODERATION_REGEX_WINDOW } from './moderation-regex-limits'
-import { ALL_SAMPLES, Parser, SAMPLE_CHARS, type Node } from './moderation-regex-parser'
+import { Parser, SAMPLE_CHARS, type Node } from './moderation-regex-parser'
 
 // ── Lớp 1: phân tích cấu trúc ─────────────────────────────────────────────
 
@@ -199,7 +202,7 @@ function charset(src: string): Set<string> {
     const re = new RegExp(`^(?:${src})$`, MODERATION_REGEX_FLAGS)
     out = new Set(SAMPLE_CHARS.filter(c => re.test(c)))
   } catch {
-    out = new Set(ALL_SAMPLES)
+    out = new Set(SAMPLE_CHARS)
   }
   charsetCache.set(src, out)
   return out
@@ -209,7 +212,7 @@ function charset(src: string): Set<string> {
 function alphabet(node: Node): Set<string> {
   switch (node.type) {
     case 'char': return charset(node.src)
-    case 'backref': return new Set(ALL_SAMPLES)
+    case 'backref': return new Set(SAMPLE_CHARS)
     case 'assert':
     case 'look': return new Set()
     case 'group':

@@ -20,10 +20,20 @@
  * Bảng `SAMPLE_CHARS` chứa ký tự vô hình (khoảng trắng Unicode, BOM, dấu kết hợp, dấu
  * Kelvin): sửa tệp này bằng công cụ giữ nguyên byte, đừng gõ lại các chuỗi đó.
  *
- * Hai bảng mẫu `SAMPLE_CHARS`/`ALL_SAMPLES` dựng một lần lúc nạp và chỉ được đọc: tệp khác
- * ghi vào — kể cả `.push()`/`[i] = …` sau khi ép bỏ `readonly` — là đỏ
- * (`tests/service-split-boundaries.test.ts`, luật 4). Nội dung bảng được ghim theo mã điểm,
- * đúng thứ tự, ở `tests/moderation-regex-parts.test.ts`.
+ * Bảng mẫu `SAMPLE_CHARS` dựng một lần lúc nạp và được canh ở HAI chỗ, mỗi chỗ một việc:
+ *  - lúc chạy, `Object.freeze`: mọi lượt ghi — `.push()`, `[i] = …`, `.length = 0`, `.sort()`,
+ *    `Object.assign` — ném `TypeError` (module ESM là strict mode), bất kể đi qua tên nào:
+ *    import thẳng, namespace, bí danh, tham số, đối tượng do hàm trả về. Phần tử là chuỗi (bất
+ *    biến), nên khoá một tầng là đủ. Chỉ chặn được mã CHẠY tới: mã không bao giờ chạy (nhánh
+ *    chết, hàm không ai gọi) thì không ném gì;
+ *  - lúc kiểm, guard tĩnh (`tests/service-split-boundaries.test.ts`, luật 4): tệp khác viết một
+ *    lượt ghi qua tên đã nhập — thẳng, qua namespace, hay qua bí danh cục bộ/cấp module (`const
+ *    a = SAMPLE_CHARS as string[]`, `const t = ns.SAMPLE_CHARS`, `const { SAMPLE_CHARS: s } =
+ *    ns`) — là đỏ, kể cả trong mã không bao giờ chạy. Guard không lần qua lời gọi hàm, tham số
+ *    hay biến gán sau khai báo (`let a; a = SAMPLE_CHARS`); với bảng này freeze vẫn chặn lúc chạy.
+ * Không có bảng thứ hai: tập ký tự mẫu là `new Set(SAMPLE_CHARS)` dựng mới tại chỗ dùng (một Set
+ * không đóng băng được — `Object.freeze` không chặn `.add()`). Nội dung bảng được ghim theo mã
+ * điểm, đúng thứ tự, ở `tests/moderation-regex-parts.test.ts`.
  */
 import { MODERATION_REGEX_FLAGS } from './moderation-regex-limits'
 
@@ -31,9 +41,9 @@ import { MODERATION_REGEX_FLAGS } from './moderation-regex-limits'
  * Bảng ký tự mẫu để quyết định hai lớp ký tự có chung ký tự nào không. Phủ: ASCII in
  * được, khoảng trắng và ký tự điều khiển hay gặp, khoảng trắng Unicode, Latin-1, chữ
  * tiếng Việt (dựng sẵn, hai kiểu chữ), dấu kết hợp, và vài đại diện khác (chữ số Ả
- * Rập, chữ Hán, emoji, Kelvin `K`).
+ * Rập, chữ Hán, emoji, Kelvin `K`). Đóng băng — xem đầu tệp.
  */
-export const SAMPLE_CHARS: readonly string[] = (() => {
+export const SAMPLE_CHARS: readonly string[] = Object.freeze((() => {
   const out = new Set<string>()
   for (let c = 0x20; c < 0x7f; c += 1) out.add(String.fromCharCode(c))
   for (const c of '\t\n\r\v\f\u0000         　﻿') out.add(c)
@@ -43,8 +53,7 @@ export const SAMPLE_CHARS: readonly string[] = (() => {
   for (const c of '̣̀́̃̉٠中K−–“ß') out.add(c)
   out.add('\u{1F600}')
   return [...out]
-})()
-export const ALL_SAMPLES: ReadonlySet<string> = new Set(SAMPLE_CHARS)
+})())
 
 // ── Gập chữ của cờ `iu` ─────────────────────────────────────────────────────
 
@@ -267,7 +276,7 @@ function literalOfEscape(src: string): string | null {
   if ('dDwWsSpP'.includes(c)) return null
   try {
     const m = new RegExp(`^${src}$`, 'u')
-    for (const sample of [...ALL_SAMPLES, ...'0123456789abcdefghijklmnopqrstuvwxyz']) if (m.test(sample)) return foldCase(sample)
+    for (const sample of [...SAMPLE_CHARS, ...'0123456789abcdefghijklmnopqrstuvwxyz']) if (m.test(sample)) return foldCase(sample)
   } catch { /* không biên dịch được riêng lẻ */ }
   return null
 }

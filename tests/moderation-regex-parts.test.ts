@@ -27,11 +27,11 @@ import test from 'node:test'
 import { analysisNumbers } from '../server/services/moderation-regex-analysis.ts'
 import { MODERATION_REGEX_FLAGS } from '../server/services/moderation-regex-limits.ts'
 import {
-  ALL_SAMPLES,
   SAMPLE_CHARS,
   foldCase,
   isRegExpGroupName,
 } from '../server/services/moderation-regex-parser.ts'
+import { withinWallClock } from './_wall-clock-bound.ts'
 
 const run = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 
@@ -73,8 +73,25 @@ test('SAMPLE_CHARS: exactly these code points, in this order — one code point 
   assert.ok(SAMPLE_CHARS.includes('K') && SAMPLE_CHARS.includes(' ') && !SAMPLE_CHARS.includes(' '))
 })
 
-test('ALL_SAMPLES is the same characters as SAMPLE_CHARS, as a set', () => {
-  assert.deepEqual([...ALL_SAMPLES], [...SAMPLE_CHARS])
+test('SAMPLE_CHARS is frozen: every write throws, through the name, an alias, a namespace or a destructured copy — and the table is unchanged', async () => {
+  // The guard (rule 4) reads source; the freeze holds at run time, whatever path the array took.
+  assert.ok(Object.isFrozen(SAMPLE_CHARS))
+  const parser = await import('../server/services/moderation-regex-parser.ts')
+  const alias = SAMPLE_CHARS as string[]
+  const { SAMPLE_CHARS: destructured } = parser
+  const writes: Array<[string, () => unknown]> = [
+    ['.push()', () => alias.push('ſ')],
+    ['[i] = …', () => { alias[0] = 'x' }],
+    ['.length = 0', () => { (parser.SAMPLE_CHARS as string[]).length = 0 }],
+    ['.sort()', () => (destructured as string[]).sort()],
+    ['.reverse()', () => alias.reverse()],
+    ['.fill()', () => alias.fill('x')],
+    ['.splice()', () => alias.splice(0, 1)],
+    ['Object.assign', () => Object.assign(alias, { 0: 'x' })],
+    ['Reflect.set (returns false, then strict assignment)', () => { if (!Reflect.set(alias, 0, 'x')) throw new TypeError('refused') }],
+  ]
+  for (const [label, write] of writes) assert.throws(write, TypeError, label)
+  assert.deepEqual(SAMPLE_CHARS.map(c => c.codePointAt(0)), EXPECTED_SAMPLE_CODE_POINTS, 'not one write got through')
 })
 
 // ── Gập chữ của cờ `iu` (regression moderation-regex-3) ─────────────────────
@@ -193,9 +210,19 @@ test('isRegExpGroupName agrees with the engine: every BMP code point first and l
 
 // ── Không bao giờ NaN (regression moderation-regex-2) ───────────────────────
 
-test('analysisNumbers: no width, choice count or sequence cost is ever NaN — for every shape, repeated 0, once, unbounded and a huge number of times', () => {
+/**
+ * Each estimate is a few microseconds; a loop over the repeat count (`choices` adding `c^k` for
+ * every k, as before wave3 4.3b) makes one take seconds. `{ timeout }` cannot stop a synchronous
+ * body, so each call runs under `withinWallClock` and the whole loop checks its own deadline —
+ * such a regression is red within about a second, not a runner killed minutes later.
+ */
+const ESTIMATE_BOUND_MS = 1000
+const LOOP_BOUND_MS = 30_000
+
+test('analysisNumbers: no width, choice count or sequence cost is ever NaN — for every shape, repeated 0, once, unbounded and a huge number of times', { timeout: LOOP_BOUND_MS + 30_000 }, () => {
   const shapes = ['a', 'ab', '\\s', '[sſ]', '.', '\\s*', '\\s+', 'a?', '(?:a|)', '(?:a|ab)', '(?:a+)+', '^', '$', '\\b', '(?=a)', '(?:)', '(x)\\1', '(?<n>x)\\k<n>', '\\s{1,3}']
   const counts = ['{0}', '{0,0}', '{1}', '{0,1}', '*', '+', '{2,}', '{1,3}', '{999999999}', '{0,2147483647}']
+  const deadline = performance.now() + LOOP_BOUND_MS
   let checked = 0
   for (const shape of shapes)
     for (const count of counts)
@@ -206,7 +233,8 @@ test('analysisNumbers: no width, choice count or sequence cost is ever NaN — f
           continue
         }
         checked += 1
-        const numbers = analysisNumbers(pattern)
+        assert.ok(performance.now() < deadline, `still estimating after ${LOOP_BOUND_MS} ms (${checked} patterns)`)
+        const numbers = withinWallClock(ESTIMATE_BOUND_MS, `analysisNumbers(${JSON.stringify(pattern)})`, () => analysisNumbers(pattern))
         assert.ok(numbers.length > 0 && numbers.every(n => !Number.isNaN(n)), `${pattern}: ${JSON.stringify(numbers)}`)
       }
   assert.ok(checked > 500, `${checked} patterns`)

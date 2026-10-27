@@ -406,10 +406,9 @@ test('chặn tức thì: luật tuỳ biến khớp ĐẦU TIÊN theo thứ tự
   assert.deepEqual(await svc.matchInstantRule('nhạy cảm và abc1'), { category: 'kw', severity: 'high', label: 'Từ khóa: nhạy cảm' })
   assert.deepEqual(await svc.matchInstantRule('chỉ có abc1'), { category: 'rx2', severity: 'high', label: 'Mẫu regex: abc\\d+' })
   // Luật regex nằm SAU một từ khoá đã khớp không tới lượt — như vòng lặp theo thứ tự trước đây.
-  const started = performance.now()
+  // Chạy thì nó đã bị ngắt và TẮT (日 × 1999 + '!'): còn bật nghĩa là không chạy.
   assert.equal((await svc.matchInstantRule(`nhạy cảm ${'日'.repeat(1999)}!`))?.category, 'kw')
-  assert.ok(performance.now() - started < 100, 'the catastrophic rule after the keyword hit never ran')
-  assert.equal(regexMod.isModerationRuleDisabled('日*日*$'), false)
+  assert.equal(regexMod.isModerationRuleDisabled('日*日*$'), false, 'the catastrophic rule after the keyword hit never ran')
 })
 
 test('cả hai đường chạy MỌI luật regex của một văn bản trong MỘT lượt vm có hạn giờ (không phải một lượt mỗi luật)', async () => {
@@ -448,14 +447,20 @@ test('luật regex thảm hoạ lọt lớp 1 (日*日*$) bị ngắt cứng ở
     rec.rules = [rule({ id: 11, pattern: '日*日*$', ruleType: 'regex', category: 'redos', severity: 'critical' })]
     const content = `${'日'.repeat(1999)}!`
     // Không có ngắt cứng: ~1,2 s cho một cửa sổ (Node 26); có: quanh ngân sách 200 ms.
-    let started = performance.now()
+    const started = performance.now()
     assert.equal((await svc.fastPreModerate(content)).blocked, false, 'interrupted = no match (fail-open)')
     assert.ok(performance.now() - started < 1000, `bounded: ${(performance.now() - started).toFixed(0)} ms`)
     assert.equal(regexMod.isModerationRuleDisabled('日*日*$'), true)
     rec.ai = { ok: true, text: '{"verdict":"safe"}' }
-    started = performance.now()
-    const full = await svc.checkAndModerateContent({ content, targetType: 'comment', targetId: 12 })
-    assert.ok(performance.now() - started < 100, 'disabled: the full path does not run it again')
+    const vm = await import('node:vm')
+    const spy = mock.method(vm.default.Script.prototype, 'runInContext')
+    let full: Awaited<ReturnType<typeof svc.checkAndModerateContent>>
+    try {
+      full = await svc.checkAndModerateContent({ content, targetType: 'comment', targetId: 12 })
+    } finally {
+      spy.mock.restore()
+    }
+    assert.equal(spy.mock.callCount(), 0, 'disabled: neither pass of the full path runs it again (no vm pass at all)')
     assert.deepEqual(full.matchedRules, [])
   } finally {
     quiet.mock.restore()

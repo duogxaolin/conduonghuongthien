@@ -148,16 +148,17 @@ export function moderationRegexBarrelProblems(source: string): string[] {
  * whether a rule runs — the clock, the 10-minute disable book, the truncation-log book, the
  * compile cache — is changed only through its owner's functions; rule 4 of the boundaries
  * guard sees writes through an import, not through an object handed back by a function, so
- * that state must stay unexported. The parser's two sample tables are the only exported
- * state, by name: `SAMPLE_CHARS` (an array built once by an IIFE) and `ALL_SAMPLES` (a Set
- * of the same characters). Both are written only by the parser — rule 4 holds that for
- * every exported array/object, because both lists come from ONE classifier
- * (`moduleStateBindings` of `_service-split-state.ts`, fail-closed): a second copy of the
- * "what is state" rule here once knew only literal/`new` initialisers, so the IIFE-built
- * `SAMPLE_CHARS` was neither listed here nor guarded by rule 4.
+ * that state must stay unexported. The parser's sample table is the only exported state, by
+ * name: `SAMPLE_CHARS`, an array built once by an IIFE and FROZEN (`Object.freeze`, wave3
+ * 4.3c) — every write throws at run time, through any alias. The Set beside it
+ * (`ALL_SAMPLES`) is gone: a Set cannot be frozen (`.add()` still works), so readers build
+ * `new Set(SAMPLE_CHARS)` where they need one. Rule 4 still guards the name statically,
+ * through aliases too, because both lists come from ONE classifier (`moduleStateBindings` of
+ * `_service-split-state.ts`, fail-closed): a second copy of the "what is state" rule here once
+ * knew only literal/`new` initialisers, so the IIFE-built `SAMPLE_CHARS` was neither listed
+ * here nor guarded by rule 4.
  */
 export const EXPORTED_STATE_ALLOWED: readonly string[] = [
-  `${SERVICES}/moderation-regex-parser.ts#ALL_SAMPLES`,
   `${SERVICES}/moderation-regex-parser.ts#SAMPLE_CHARS`,
 ]
 

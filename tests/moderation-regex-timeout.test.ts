@@ -4,8 +4,9 @@
  *
  * Why (verify of wave3 4.3b, FINDING moderation-regex-4): the save-time check (Layer 1) only
  * sees overlap on the 321 characters of its sample table, so `日*日*日*$` is accepted — and
- * on production main too. Run on `'日' × 400 + '!'` it took 15.6 s; `日*日*日*日*$` on 201
- * characters 42 s; `.*日.*日.*日$` on 401 more than 60 s (Node 26, verifier's measurements).
+ * on production main too. Run on `'日' × 400 + '!'` it took 15.6 s (first run; ~1.2 s once V8
+ * has compiled the regex); `日*日*日*日*$` on 201 characters 42 s; `.*日.*日.*日$` on 401 more
+ * than 60 s (Node 26, verifier's measurements). k adjacent quantifiers: degree k + 1.
  * Layer 2 used to disable a rule only AFTER its slow window finished, so one anonymous chatbot
  * message blocked the event loop for that long. Sound save-time analysis is impossible in
  * general (any character outside the table, any `\p{…}` class), so Layer 2 is the guarantee.
@@ -51,13 +52,23 @@ function captureLogs<T>(run: () => T): { value: T, lines: LogLine[] } {
 /** The outer bound: far above the hard timeout, far below what the patterns cost unbounded. */
 const OUTER_BOUND_MS = 5000
 
-/** Run one rule on one text through the barrel, timed on the wall clock. */
+/**
+ * Run one rule on one text through the barrel, timed on the wall clock. `vmPasses`: how many
+ * bounded passes the runtime made (its `runInContext` calls with the window budget as timeout) —
+ * 0 for a disabled rule, whatever the machine's load, where a wall-time check could flake.
+ */
 function timedRun(pattern: string, text: string) {
   const regex = compileModerationRegex(pattern)
   assert.ok(regex, `Layer 1 accepts ${pattern} (best effort — the runtime bound is the guarantee)`)
+  const spy = mock.method(vm.Script.prototype, 'runInContext')
   const started = performance.now()
-  const { value: matched, lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, pattern, () => testModerationRegex(pattern, regex, text)))
-  return { matched, wallMs: performance.now() - started, lines, regex }
+  try {
+    const { value: matched, lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, pattern, () => testModerationRegex(pattern, regex, text)))
+    const vmPasses = spy.mock.calls.filter(call => call.arguments[1]?.timeout === MODERATION_RULE_WINDOW_BUDGET_MS).length
+    return { matched, wallMs: performance.now() - started, lines, regex, vmPasses }
+  } finally {
+    spy.mock.restore()
+  }
 }
 
 function fresh(): void {
@@ -74,7 +85,8 @@ test('hard timeout: 日*日*日*$ passes Layer 1, and on 401 chars returns withi
     assert.deepEqual(checkModerationPattern(pattern, 'pattern'), { ok: true }, 'Layer 1 still accepts it (FINDING moderation-regex-4)')
 
     const first = timedRun(pattern, text)
-    assert.ok(first.wallMs < 1000, `bounded: ${first.wallMs.toFixed(0)} ms (unbounded it ran ~15.6 s)`)
+    assert.ok(first.wallMs < 1000, `bounded: ${first.wallMs.toFixed(0)} ms (unbounded it ran ~15.6 s on its first run)`)
+    assert.equal(first.vmPasses, 1, 'one bounded pass: cut off, blamed, nothing left to scan')
     assert.equal(first.matched, false, 'interrupted: the window counts as no match (fail-open, as before for a skipped rule)')
     assert.equal(isModerationRuleDisabled(pattern), true, 'the offender is disabled')
     const logged = first.lines.filter(line => line.event === 'ai_moderation.rule_slow_disabled')
@@ -86,7 +98,7 @@ test('hard timeout: 日*日*日*$ passes Layer 1, and on 401 chars returns withi
       `elapsedMs ${String(logged[0]!.elapsedMs)}: about the budget, not the unbounded run`)
 
     const second = timedRun(pattern, text)
-    assert.ok(second.wallMs < 50, `disabled: not run again (${second.wallMs.toFixed(1)} ms)`)
+    assert.equal(second.vmPasses, 0, `disabled: not run again (${second.wallMs.toFixed(2)} ms)`)
     assert.equal(second.matched, false)
     assert.equal(second.lines.length, 0, 'no second log line')
   } finally {
@@ -103,9 +115,9 @@ const ATTACKS: Array<[pattern: string, text: string, unbounded: string]> = [
   ['日*日*日*日*$', `${'日'.repeat(200)}!`, '42.6 s'],
   ['.*日.*日.*日$', `${'日'.repeat(400)}!`, '> 60 s'],
   ['\\p{Script=Cyrillic}*\\p{Script=Cyrillic}*\\p{Script=Cyrillic}*$', `${'ж'.repeat(400)}!`, '38.1 s'],
-  ['ж*ж*ж*ж*ж*$', `${'ж'.repeat(400)}!`, 'degree 5, minutes'],
-  ['[а-я]*[а-я]*[а-я]*$', `${'ж'.repeat(400)}!`, 'cubic, as 日*日*日*$'],
-  ['[а-я]*[а-я]*$', `${'ж'.repeat(1999)}!`, '~1.2 s (quadratic, one window)'],
+  ['ж*ж*ж*ж*ж*$', `${'ж'.repeat(400)}!`, 'five quantifiers, degree 6: minutes'],
+  ['[а-я]*[а-я]*[а-я]*$', `${'ж'.repeat(400)}!`, 'degree 4, as 日*日*日*$'],
+  ['[а-я]*[а-я]*$', `${'ж'.repeat(1999)}!`, '~1.2 s (degree 3, as \\s*\\s*$, one window)'],
   ['₫*₫*$', `${'₫'.repeat(1999)}!`, '1.2 s'],
   ['(?:ж|з)*ж*$', `${'ж'.repeat(1999)}!`, '1.2 s'],
 ]
@@ -121,8 +133,9 @@ test('hard timeout: the verifier’s attack patterns each return in < 1.5 s wall
       assert.ok(run.wallMs < 1500, report.at(-1))
       assert.equal(isModerationRuleDisabled(pattern), true, `${pattern} is disabled`)
       assert.equal(run.lines.filter(line => line.event === 'ai_moderation.rule_slow_disabled').length, 1, `${pattern}: logged once`)
+      assert.equal(run.vmPasses, 1, `${pattern}: one bounded pass`)
       const again = timedRun(pattern, text)
-      assert.ok(again.wallMs < 50, `${pattern}: the second call does not run it (${again.wallMs.toFixed(1)} ms)`)
+      assert.equal(again.vmPasses, 0, `${pattern}: the second call does not run it (${again.wallMs.toFixed(2)} ms)`)
     }
   } finally {
     fresh()
@@ -134,8 +147,9 @@ test('hard timeout: a disabled rule comes back after the cool-down and is bounde
   const clock = { now: 1_000_000 }
   setModerationRegexTimingForTests({ elapsed: () => performance.now(), now: () => clock.now })
   try {
-    // Degree 4: unbounded, minutes on 401 chars even once V8 has tiered the regex up to
-    // native code (a cubic one drops to ~1 s after its first runs, too close to the bound).
+    // Four quantifiers, degree 5: unbounded, minutes on 401 chars even once V8 has compiled the
+    // regex to native code (日*日*日*$ drops from 15.6 s to ~1.2 s after its first run — too
+    // close to the bound to tell the two codes apart).
     const pattern = 'ж*ж*ж*ж*$'
     const text = `${'ж'.repeat(400)}!`
     const first = timedRun(pattern, text)
@@ -282,13 +296,17 @@ test('stopAtFirstMatch: the rules after the first hit do not run (a catastrophic
   fresh()
   try {
     const bad = '日*日*日*$'
-    const rules = compiledRules(['lô\\s*đề', 'cờ[\\s,.]+bạc', bad])
+    const ran: string[] = []
+    // The compiled regexes, each wrapped to record that it ran (and then run for real).
+    const rules = compiledRules(['lô\\s*đề', 'cờ[\\s,.]+bạc', bad]).map(({ pattern, regex }) => ({
+      pattern,
+      regex: { test: (slice: string) => { ran.push(pattern); return regex.test(slice) } } as unknown as RegExp,
+    }))
     const text = `cờ, bạc ${'日'.repeat(400)}!`
-    let started = performance.now()
     assert.deepEqual(testModerationRegexes(rules, text, { stopAtFirstMatch: true }), [false, true, false])
-    assert.ok(performance.now() - started < 50, 'the catastrophic rule after the hit never ran')
+    assert.deepEqual(ran, ['lô\\s*đề', 'cờ[\\s,.]+bạc'], 'the catastrophic rule after the hit never ran')
     assert.equal(isModerationRuleDisabled(bad), false)
-    started = performance.now()
+    const started = performance.now()
     const { value: all } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'all rules', () => testModerationRegexes(rules, text)))
     assert.deepEqual(all, [false, true, false])
     assert.ok(performance.now() - started < 1000)

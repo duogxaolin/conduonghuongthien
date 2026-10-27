@@ -13,15 +13,18 @@
  *      `Object.assign(X, …)`. Chủ của trạng thái không còn là nơi duy nhất quyết
  *      định giá trị của nó.
  *
- * "Trạng thái" = khai báo cấp đỉnh của một tệp thuộc nhóm: mọi `let`/`var`, và mọi
- * `const` mà giá trị khởi tạo KHÔNG chứng minh được là không ghi được (`isStateInitializer`
- * — đóng khi nghi ngờ). Không tính: nguyên thuỷ (literal, template, phép toán số/so sánh,
- * `typeof`), hàm/lớp, `Symbol()`, và `Object.freeze` của một literal mà mọi giá trị cũng
- * không ghi được. Mọi thứ khác là trạng thái: object/array literal, `new …` (Map, Set,
+ * "Trạng thái" = khai báo cấp đỉnh của một tệp thuộc nhóm: mọi `let`/`var`, mọi `const`
+ * mà giá trị khởi tạo KHÔNG chứng minh được là không ghi được (`isStateInitializer` — đóng
+ * khi nghi ngờ), và mọi lớp (khai báo hay biểu thức) có thành viên `static`. Không tính:
+ * nguyên thuỷ (literal, template, phép toán số/so sánh, `typeof`), hàm, lớp KHÔNG có thành
+ * viên `static`, `Symbol()`, và `Object.freeze` của một literal mà mọi giá trị cũng không
+ * ghi được. Mọi thứ khác là trạng thái: object/array literal, `new …` (Map, Set,
  * AbortController…), regex literal (`lastIndex` ghi được), lời gọi — kể cả IIFE dựng bảng
  * một lần lúc nạp (`SAMPLE_CHARS` của `moderation-regex-parser.ts` từng lọt vì danh sách cũ
- * chỉ biết ba dạng literal/`new`, nên tệp khác `.push()` vào nó mà luật xanh) — và bí danh
- * (`const X = Y`: cùng một đối tượng).
+ * chỉ biết ba dạng literal/`new`, nên tệp khác `.push()` vào nó mà luật xanh) —, bí danh
+ * (`const X = Y`: cùng một đối tượng), và lớp có trường/phương thức/khối `static`
+ * (`class { static table = [] }`: chính constructor mang dữ liệu; một phương thức static
+ * cũng cất được dữ liệu lên `this` — đóng khi nghi ngờ).
  *
  * Lượt ghi được dò trên AST của MỌI tệp chạy thật (không chỉ tệp trong nhóm: endpoint
  * import trạng thái qua barrel). Gốc của đích ghi được lần qua `.p`, `[k]` (kể cả
@@ -29,18 +32,24 @@
  * `RENDITIONS.slice().sort()` không bị tính. Gốc là một tên đã nhập (named, default,
  * namespace `ns.X`/`ns['X']`, `import x = require()`, `const m = await import()`,
  * `.then((m) => …)`, kể cả destructure), được giải qua barrel (`export { a as b }
- * from`) tới tệp khai báo thật. Tên cục bộ che tên đã nhập (tham số, biến cùng tên)
- * không bị tính. Ghi qua khoá tính toán trên namespace của một module có xuất trạng
- * thái (`ns[k] = …`) không biết được tên nên bị coi là vi phạm.
+ * from`) tới tệp khai báo thật — hoặc một BÍ DANH của tên đã nhập: biến cục bộ hay cấp
+ * module khai báo kèm giá trị (`const a = X as T`, `const t = ns.X`, `const { X: s } = ns`,
+ * mỗi nhánh của `?:`/`??`/`||`/`&&`), lần tiếp nếu giá trị đó lại là bí danh. Gán thẳng vào
+ * chính tên bí danh (`a = …`, `a++`) chỉ đổi biến cục bộ, không ghi vào đối tượng — không
+ * tính. Tên cục bộ che tên đã nhập (tham số, biến cùng tên) không bị tính. Ghi qua khoá
+ * tính toán trên namespace của một module có xuất trạng thái (`ns[k] = …`) không biết được
+ * tên nên bị coi là vi phạm.
  *
  * Ngoại lệ nêu tên (`SharedStateWriters`): trạng thái mà nhiều tệp ghi CÓ CHỦ ĐÍCH từ
  * trước khi tách — hôm nay chỉ `moderation-stats.ts#workerStats` (bộ đếm của worker kiểm
  * duyệt). Chỉ đúng các tệp nêu tên được ghi; mục chết thì đỏ.
  *
  * Giới hạn đã biết (phân tích tĩnh): một hàm của chủ trả về chính đối tượng trạng
- * thái (`getClaims().set(…)`), hay module object được truyền đi qua tham số, thì
- * không lần được. Vì thế trạng thái thật (`activeClaims`, `cpulimitAvailable`) cố
- * ý không được `export`, và chỉ đổi qua hàm của chủ.
+ * thái (`getClaims().set(…)`), module object hay trạng thái được truyền đi qua tham số,
+ * biến khai báo trước rồi mới gán (`let a; a = X`), và thuộc tính ghi lên một HÀM đã nhập
+ * (`fn.cache = …` — hàm không phải trạng thái) thì không lần được. Vì thế trạng thái thật
+ * (`activeClaims`, `cpulimitAvailable`) cố ý không được `export`, và chỉ đổi qua hàm của
+ * chủ; bảng chỉ-đọc được xuất ra (`SAMPLE_CHARS`) thì đóng băng lúc chạy.
  */
 import ts from 'typescript'
 import {
@@ -112,6 +121,20 @@ function calleeName(callee: ts.Expression): string | null {
     : null
 }
 
+/**
+ * Lớp mà chính đối tượng constructor mang dữ liệu: có thành viên `static` (trường, phương
+ * thức, accessor) hay khối `static { }`. Đóng khi nghi ngờ: một phương thức static cũng cất
+ * được dữ liệu lên `this`, nên mọi thành viên static đều tính.
+ */
+function hasStaticMembers(node: ts.ClassLikeDeclaration): boolean {
+  return node.members.some(
+    (member) =>
+      ts.isClassStaticBlockDeclaration(member) ||
+      (ts.canHaveModifiers(member) &&
+        (ts.getModifiers(member) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword)),
+  )
+}
+
 /** Literal mà `Object.freeze` khoá được trọn: mọi phần tử/giá trị cũng không ghi được. */
 function isFrozenLiteral(node: ts.Expression): boolean {
   const inner = unwrap(node)
@@ -143,10 +166,10 @@ function isImmutableValue(node: ts.Expression): boolean {
     ts.isTypeOfExpression(inner) ||
     ts.isVoidExpression(inner) ||
     ts.isArrowFunction(inner) ||
-    ts.isFunctionExpression(inner) ||
-    ts.isClassExpression(inner)
+    ts.isFunctionExpression(inner)
   )
     return true
+  if (ts.isClassExpression(inner)) return !hasStaticMembers(inner)
   if (
     inner.kind === ts.SyntaxKind.TrueKeyword ||
     inner.kind === ts.SyntaxKind.FalseKeyword ||
@@ -181,9 +204,18 @@ export function moduleStateBindings(file: string, source: string): StateBinding[
   const sf = ast(file, source)
   const out: StateBinding[] = []
   for (const statement of sf.statements) {
+    const exported = (ts.canHaveModifiers(statement) ? ts.getModifiers(statement) ?? [] : [])
+      .some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+    // `class X { static … }`: chính lớp là trạng thái (xem "Trạng thái" ở đầu tệp).
+    if (ts.isClassDeclaration(statement)) {
+      if (!hasStaticMembers(statement)) continue
+      const isDefault = (ts.getModifiers(statement) ?? []).some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
+      if (statement.name) out.push({ file, name: statement.name.text, line: lineOf(sf, statement.name), exported })
+      else if (isDefault) out.push({ file, name: 'default', line: lineOf(sf, statement), exported })
+      continue
+    }
     if (!ts.isVariableStatement(statement)) continue
     const isConst = (statement.declarationList.flags & ts.NodeFlags.Const) !== 0
-    const exported = statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false
     for (const declaration of statement.declarationList.declarations) {
       if (isConst && !isStateInitializer(declaration.initializer)) continue
       for (const id of bindingIdentifiers(declaration.name))
@@ -385,6 +417,67 @@ function qualifiedCallee(callee: ts.Expression): string | null {
     : null
 }
 
+/** Các toán hạng mà một biểu thức có thể trả về nguyên vẹn: `a ? b : c`, `a ?? b`, `a || b`, `a && b`, `(x, y)`. */
+function passedOperands(node: ts.Expression): ts.Expression[] {
+  const inner = unwrap(node)
+  if (ts.isConditionalExpression(inner)) return [...passedOperands(inner.whenTrue), ...passedOperands(inner.whenFalse)]
+  if (ts.isBinaryExpression(inner)) {
+    if (BINARY_PASSING_AN_OPERAND.has(inner.operatorToken.kind))
+      return [...passedOperands(inner.left), ...passedOperands(inner.right)]
+    if (inner.operatorToken.kind === ts.SyntaxKind.CommaToken) return passedOperands(inner.right)
+  }
+  return [inner]
+}
+
+/**
+ * Định danh tại chỗ khai báo của một BÍ DANH → các biểu thức nó trỏ tới, mỗi cái kèm bước thêm:
+ * biến khai báo kèm giá trị (`const a = X as T`, `let t = ns.X`) → giá trị; tên destructure
+ * một tầng từ một biến kèm giá trị (`const { X: s } = ns`) → giá trị + khoá. Phần `...rest`
+ * là đối tượng mới, không phải bí danh. Không lần: tham số, biến gán sau khai báo.
+ */
+function aliasSources(declaration: ts.Identifier): Array<{ expression: ts.Expression; prefix: Step[] }> {
+  const parent = declaration.parent
+  if (ts.isVariableDeclaration(parent) && parent.name === declaration && parent.initializer)
+    return passedOperands(parent.initializer).map((expression) => ({ expression, prefix: [] }))
+  if (ts.isBindingElement(parent) && parent.name === declaration && !parent.dotDotDotToken) {
+    const pattern = parent.parent
+    const holder = pattern.parent
+    if (!ts.isObjectBindingPattern(pattern) || !ts.isVariableDeclaration(holder) || !holder.initializer) return []
+    const key = parent.propertyName ?? parent.name
+    const step: Step = ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNumericLiteral(key) ? key.text : COMPUTED
+    return passedOperands(holder.initializer).map((expression) => ({ expression, prefix: [step] }))
+  }
+  return []
+}
+
+/**
+ * Gốc đã nhập của `expression` + các bước từ gốc tới nó, lần qua bí danh (xem đầu tệp).
+ * `throughAlias` = false ở đích của một phép gán thẳng vào tên (`a = …`): khi `a` là bí danh,
+ * phép gán chỉ đổi biến cục bộ.
+ */
+function importedRoots(
+  expression: ts.Expression,
+  throughAlias: boolean,
+  visiting: Set<ts.Node> = new Set(),
+): Array<{ origin: ImportedName; steps: Step[] }> {
+  const { root, steps } = chainOf(expression)
+  const dynamic = dynamicImportSpecifier(root)
+  if (dynamic) return [{ origin: { specifier: dynamic, imported: '*' }, steps }]
+  if (!ts.isIdentifier(root)) return []
+  const declaration = nearestDeclaration(root)
+  if (!declaration) return []
+  const origin = importOriginOf(declaration)
+  if (origin) return [{ origin, steps }]
+  if (!throughAlias || visiting.has(declaration)) return []
+  visiting.add(declaration)
+  return aliasSources(declaration).flatMap(({ expression: source, prefix }) =>
+    importedRoots(source, true, visiting).map((found) => ({ origin: found.origin, steps: [...found.steps, ...prefix, ...steps] })),
+  )
+}
+
+/** Dạng ghi vào CHÍNH tên đích khi đích không có bước nào (`x = …`, `x++`) — không phải ghi vào đối tượng. */
+const REBINDING_FORMS = new Set(['gán', '++/--', 'gán (for)', 'delete'])
+
 const writeCache = new Map<string, { source: string; sites: WriteSite[] }>()
 
 /** Mọi lượt ghi trong `file` có gốc là một tên đã nhập (tĩnh hoặc động). */
@@ -396,23 +489,18 @@ function writeSites(file: string, source: string): WriteSite[] {
   const seen = new Set<number>()
   const add = (target: ts.Expression, form: string) => {
     if (seen.has(target.getStart(sf))) return
-    const { root, steps } = chainOf(target)
-    let origin: ImportedName | null = null
-    const dynamic = dynamicImportSpecifier(root)
-    if (dynamic) origin = { specifier: dynamic, imported: '*' }
-    else if (ts.isIdentifier(root)) {
-      const declaration = nearestDeclaration(root)
-      origin = declaration ? importOriginOf(declaration) : null
-    }
-    if (!origin) return
+    const rebindsTheName = chainOf(target).steps.length === 0 && REBINDING_FORMS.has(form)
+    const roots = importedRoots(target, !rebindsTheName)
+    if (roots.length === 0) return
     seen.add(target.getStart(sf))
-    sites.push({
-      line: lineOf(sf, target),
-      form,
-      computed: steps.includes(COMPUTED),
-      origin,
-      member: steps[0] ?? null,
-    })
+    for (const { origin, steps } of roots)
+      sites.push({
+        line: lineOf(sf, target),
+        form,
+        computed: steps.includes(COMPUTED),
+        origin,
+        member: steps[0] ?? null,
+      })
   }
   const visit = (node: ts.Node): void => {
     if (

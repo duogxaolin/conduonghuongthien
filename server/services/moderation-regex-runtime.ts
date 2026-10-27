@@ -208,6 +208,7 @@ function runScan(job: ScanJob): void {
       job.scans[at.rule]!.outcome = { kind: 'interrupted', elapsedMs: ranFor }
       job.slowPatterns.add(job.rules[at.rule]!.pattern)
       job.next = { rule: at.rule + 1, from: 0 }
+      if (job.next.rule >= job.rules.length) return // không còn luật nào: không dựng thêm watchdog
     } else {
       job.next = { rule: at.rule, from: at.from }
     }
