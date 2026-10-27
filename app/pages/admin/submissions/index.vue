@@ -13,7 +13,7 @@ definePageMeta({
 })
 
 const submissions = ref<AdminSubmissionRow[]>([])
-const counts = ref<Record<string, number>>({})
+const counts = ref<Partial<Record<SubmissionStatus, number>>>({})
 const loading = ref(true)
 const error = ref('')
 const search = ref('')

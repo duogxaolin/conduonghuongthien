@@ -36,8 +36,12 @@ type TranslationDeleteHandler = typeof import('~~/server/api/admin/articles/[id]
 type LanguagesHandler = typeof import('~~/server/api/admin/languages/index.get').default
 
 // ─── The article list ────────────────────────────────────────────────────────
-/** `GET /api/admin/articles` — the silent refresh after a translate and on each bulk poll. */
-export type ArticleListResponse = Payload<ListHandler>
+/**
+ * `GET /api/admin/articles` — the list's loads and silent refreshes. `Admin…`: the public
+ * list's `ArticleListResponse` (app/utils/public-article-list.ts) is a Nuxt auto-import, and
+ * a second export of that name here shadowed it ("Duplicated imports").
+ */
+export type AdminArticleListResponse = Payload<ListHandler>
 export type ArticleAuthorsResponse = Payload<AuthorsHandler>
 export type ContentTypesResponse = Payload<ContentTypesHandler>
 /** `PUT /api/admin/articles/:id` — the list's comments switch. */

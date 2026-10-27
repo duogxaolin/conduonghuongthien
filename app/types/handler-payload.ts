@@ -10,6 +10,10 @@
  * (`Date → string`, `Map`/`Set → {}`, `undefined` dropped), so code calling `.getTime()`
  * on what is really a string does not compile.
  *
+ * Known gap: a field typed `unknown` — an untyped JSON column such as `submissions.answers`
+ * — comes out of `Serialize` as `never`, so it reads as "never present" rather than "anything".
+ * Give the column a `.$type<…>()` in schema.ts (as `published_blocks` has) before relying on it.
+ *
  * One definition for every `app/types/*-api.ts` file (wave3 D-DUP: it had been copied
  * into eight files). `adminFetch<T>()`'s `T` is still an unchecked assertion — see
  * app/composables/adminFetch.ts — but with this it is the right one.

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AdminArticleAuthorRow, AdminArticleRow, AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
 import type {
-  ArticleAuthorsResponse, ArticleDeleteResponse, ArticleExportGoogleResponse, ArticleListResponse, ArticleTranslateResponse, ArticleUpdateResponse,
+  AdminArticleListResponse, ArticleAuthorsResponse, ArticleDeleteResponse, ArticleExportGoogleResponse, ArticleTranslateResponse, ArticleUpdateResponse,
   BulkPublishTranslationsResponse, BulkTranslateResponse, BulkTranslateStatusResponse, ContentTypesResponse, TranslationStatsResponse,
 } from '~/types/admin-articles-api'
 import ArticleQuickViewModal from '~/components/admin/articles/ArticleQuickViewModal.vue'
@@ -186,37 +186,40 @@ watch(selectedParentCategoryId, () => {
 })
 
 // ─── Articles fetch ───────────────────────────────────────────────────────────
-// Only the latest load writes the table: two filter changes in a row, or a silent refresh
-// asked before a filter change and answered after it, used to put the older rows back.
+// Only the LATEST list request writes the table. Every request — a load (filter, page,
+// reload) or a silent refresh (after a translate; every 2.5 s while a bulk translation
+// runs) — takes a ticket, and an answer whose ticket is no longer the newest is dropped.
+// Without it, an older answer landing last put its rows back under the newer controls.
 let listRequest = 0
+
+/** One list request for `page` with the current filters — the load and the silent refresh alike. */
+function requestList(page: number) {
+  const query: Record<string, string | number> = { page, search: search.value, type: selectedType.value, status: selectedStatus.value, perPage: 15 }
+  // Wire category filter: prefer sub-category if selected, else parent
+  const effectiveCategoryId = selectedCategoryId.value ?? selectedParentCategoryId.value
+  if (effectiveCategoryId) query.categoryId = effectiveCategoryId
+  // Chuỗi rỗng nghĩa là không lọc — gửi lên thì máy chủ cũng đọc thành không
+  // lọc, nhưng để URL và query sạch thì chỉ gửi khi có chọn.
+  if (selectedAuthorId.value) query.authorId = selectedAuthorId.value
+  if (selectedTranslationFilter.value) query.translation = selectedTranslationFilter.value
+  return { ticket: ++listRequest, answer: adminFetch<AdminArticleListResponse>('/api/admin/articles', { query }) }
+}
+
+function showList(res: AdminArticleListResponse) {
+  if (!res.ok) return
+  articles.value = res.items
+  pagination.value = res.pagination
+  // Ids from the previous page/filter — or of rows gone since — no longer refer to anything on screen.
+  selection.keepOnly(visibleIds.value)
+}
+
 const fetchArticles = async (page = 1) => {
-  const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
+  const { ticket, answer } = requestList(page)
   try {
-    const params: Record<string, string | number> = {
-      page,
-      search: search.value,
-      type: selectedType.value,
-      status: selectedStatus.value,
-      perPage: 15,
-    }
-    // Wire category filter: prefer sub-category if selected, else parent
-    const effectiveCategoryId = selectedCategoryId.value ?? selectedParentCategoryId.value
-    if (effectiveCategoryId) params.categoryId = effectiveCategoryId
-    // Chuỗi rỗng nghĩa là không lọc — gửi lên thì máy chủ cũng đọc thành không
-    // lọc, nhưng để URL và params sạch thì chỉ gửi khi có chọn.
-    if (selectedAuthorId.value) params.authorId = selectedAuthorId.value
-    if (selectedTranslationFilter.value) params.translation = selectedTranslationFilter.value
-
-    const res = await $fetch('/api/admin/articles', { params })
-    if (ticket !== listRequest) return
-    if (res.ok) {
-      articles.value = res.items
-      pagination.value = res.pagination
-      // Ids from the previous page/filter no longer refer to anything on screen.
-      selection.keepOnly(visibleIds.value)
-    }
+    const res = await answer
+    if (ticket === listRequest) showList(res)
   } catch (err: unknown) {
     if (ticket !== listRequest) return
     toast.error(errorMessage(err, 'Lỗi tải danh sách bài viết'))
@@ -226,28 +229,13 @@ const fetchArticles = async (page = 1) => {
   }
 }
 
-/** A silent refresh never replaces a load: dropped if one started since it was asked, or is running. */
+/** Not sent while a load runs (that load brings fresh rows); asks for the page on screen. */
 const fetchArticlesSilent = async () => {
-  const ticket = listRequest
+  if (loading.value) return
+  const { ticket, answer } = requestList(pagination.value.page || 1)
   try {
-    const params: Record<string, string | number> = {
-      page: pagination.value.page || 1,
-      search: search.value,
-      type: selectedType.value,
-      status: selectedStatus.value,
-      perPage: 15,
-    }
-    const effectiveCategoryId = selectedCategoryId.value ?? selectedParentCategoryId.value
-    if (effectiveCategoryId) params.categoryId = effectiveCategoryId
-    if (selectedAuthorId.value) params.authorId = selectedAuthorId.value
-    if (selectedTranslationFilter.value) params.translation = selectedTranslationFilter.value
-
-    const res = await adminFetch<ArticleListResponse>(`/api/admin/articles`, { query: params })
-    if (ticket !== listRequest || loading.value) return
-    if (res.ok) {
-      articles.value = res.items
-      pagination.value = res.pagination
-    }
+    const res = await answer
+    if (ticket === listRequest) showList(res)
   } catch {
     // Non-critical
   }

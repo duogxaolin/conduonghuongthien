@@ -28,6 +28,12 @@
  *     and answered after it put the old rows back — nothing on screen said so;
  *   - "Thử lại lỗi (N)" in the translation panel counted the failed translations AFTER
  *     retrying them, so it always reported "Đã kích hoạt thử lại cho 0 bản dịch lỗi."
+ * The first fix of the list (b061ecc) only gave LOADS a ticket; the independent verify found
+ * three more holes, each RED on b061ecc: of two silent refreshes the older one answered
+ * last put its rows back; a silent refresh sent while a filter load ran (still asking for
+ * the old page) landed after it and emptied the table; and a silent refresh never narrowed
+ * the selection, so a ticked row gone from the screen stayed deletable. Now every request
+ * takes a ticket, no silent refresh is sent during a load, and every write narrows.
  */
 import assert from 'node:assert/strict'
 import { afterEach, describe, it, mock } from 'node:test'
@@ -217,6 +223,83 @@ describe('pages/admin/content/articles/index.vue', () => {
     await settle()
     assert.deepEqual(shownTitles(opened), ['Chỉ bản nháp'])
     opened.page.unmount()
+  })
+
+  // The bulk-translate poll: every 2.5 s a status check, and while a translation runs a silent
+  // refresh of the table. The three tests below drive that poll (mock timers).
+  const RUNNING = {
+    ...IDLE_STATUS, active: true, dbTranslatingCount: 1,
+    task: { ...IDLE_STATUS.task, active: true, total: 2, processed: 1, langCode: 'en', langName: 'Tiếng Anh', startedAt: '2026-10-27T01:00:00.000Z' },
+  }
+  const pollingServer = (held: NetCall[], state: { hold: boolean, rows?: unknown[] }) => listServer({
+    'GET /api/admin/articles': (call) => {
+      if (state.hold) { held.push(call); return undefined }
+      return listAnswer(state.rows ?? ROWS, Number(call.url.searchParams.get('page') ?? 1), 40)
+    },
+    'GET /api/admin/articles/bulk-translate-status': () => json(RUNNING),
+  })
+
+  it('FINDING: of two silent refreshes, the older one answered last does not put its rows back (RED on b061ecc)', async () => {
+    mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+    const held: NetCall[] = []
+    const state = { hold: false }
+    const opened = await openList(pollingServer(held, state))
+    state.hold = true
+    mock.timers.tick(2500)
+    await settle()
+    mock.timers.tick(2500)
+    await settle()
+    const [older, newer] = held.slice(-2)
+    assert.ok(older && newer && older !== newer, `two silent refreshes expected, got ${held.map(wire).join(', ')}`)
+    newer.respond(listAnswer([article(2, { title: 'Bản mới' })]))
+    await settle()
+    older.respond(listAnswer([article(1, { title: 'Bản cũ' })]))
+    await settle()
+    assert.deepEqual(shownTitles(opened), ['Bản mới'])
+  })
+
+  it('FINDING: no silent refresh is sent while a load runs; the next one asks for the page and filters of that load (RED on b061ecc)', async () => {
+    mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+    const held: NetCall[] = []
+    const state = { hold: false }
+    const opened = await openList(pollingServer(held, state))
+    await fire(findAll(opened.page.root, el => el.tag === 'AdminPagination')[0]!, 'update:page', 3)
+    await settle()
+    // A filter change starts a load of page 1; its answer is held.
+    state.hold = true
+    await pickHeld(select(opened, 'Lọc theo trạng thái bài viết'), 'draft')
+    const load = held.at(-1)!
+    assert.equal(wire(load), ARTICLES_QUERY({ status: 'draft' }))
+    // A poll tick while the load runs: the status is asked, the table is not.
+    const before = opened.calls.length
+    mock.timers.tick(2500)
+    await settle()
+    assert.deepEqual(opened.calls.slice(before).map(wire), ['GET /api/admin/articles/bulk-translate-status'])
+    load.respond(listAnswer([article(5, { title: 'Nháp trang 1', status: 'draft' })], 1, 20))
+    await settle()
+    assert.deepEqual(shownTitles(opened), ['Nháp trang 1'])
+    // The next tick refreshes what is on screen now: page 1, status=draft — never the old page 3.
+    state.hold = false
+    const next = opened.calls.length
+    mock.timers.tick(2500)
+    await settle()
+    assert.deepEqual(opened.calls.slice(next).map(wire), ['GET /api/admin/articles/bulk-translate-status', ARTICLES_QUERY({ status: 'draft' })])
+  })
+
+  it('FINDING: a silent refresh drops ticked rows that are no longer on screen from the selection (RED on b061ecc)', async () => {
+    mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+    const held: NetCall[] = []
+    const state: { hold: boolean, rows?: unknown[] } = { hold: false }
+    const opened = await openList(pollingServer(held, state))
+    await tick(rowOf(opened, 'Bài 4'))
+    // (Booleans, not elements: a failing assert would print the whole mini-DOM, parents included.)
+    assert.equal(Boolean(bulkBar(opened)), true, 'one row ticked')
+    // Bài 4 was deleted elsewhere; the poll's silent refresh no longer lists it.
+    state.rows = [ROWS[0]]
+    mock.timers.tick(2500)
+    await settle()
+    assert.deepEqual(shownTitles(opened), ['Bài 3'])
+    assert.equal(Boolean(bulkBar(opened)), false, 'a bulk action must not reach a row that is no longer on screen')
   })
 
   it('comments switch: PUT { commentsEnabled }; a refusal flips it back and shows the server\'s sentence', async () => {
