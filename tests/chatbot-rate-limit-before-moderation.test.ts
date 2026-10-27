@@ -54,8 +54,8 @@ mock.module('../server/services/moderation-worker', {
       return { blocked: true }
     },
     checkAndModerateContent: async () => ({ blocked: false }),
-    // Earlier history turns are checked without filing a review row (chat-turns.ts).
-    matchInstantRule: async () => null,
+    // Earlier history turns are checked, in one batch, without filing a review row (chat-turns.ts).
+    matchInstantRuleBatch: async (texts: string[]) => texts.map(() => null),
   },
 })
 

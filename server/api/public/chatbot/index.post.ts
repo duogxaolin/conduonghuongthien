@@ -7,7 +7,8 @@ import { verifySessionToken } from '../../../utils/chatbot/session-token'
 import { persistChatTurn } from '../../../utils/chatbot/session-db'
 import { getClientIp } from '../../../utils/client-ip'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
-import { fastPreModerate, matchInstantRule } from '../../../services/moderation-worker'
+import { fastPreModerate, matchInstantRuleBatch } from '../../../services/moderation-worker'
+import { createModerationRegexBudget } from '../../../services/moderation-regex'
 import { chatHistoryShapeOk, chatTextsToScreen, lastUserTurnText, withoutUserTurns } from '../../../utils/chatbot/chat-turns'
 import { createSseHeartbeat } from '../../../utils/chatbot/sse-heartbeat'
 
@@ -84,6 +85,9 @@ export default defineEventHandler(async (event) => {
   // Lượt người dùng CŨ trong lịch sử (do trình duyệt gửi lên) cũng được quét, nhưng lượt
   // vi phạm chỉ bị bỏ khỏi lịch sử gửi model: từ chối vì nó làm kẹt cả cuộc trò chuyện
   // (widget chỉ bỏ lượt mới nhất) và ghi lại câu cũ vào hàng chờ ở mỗi tin nhắn.
+  // Một hạn mức thời gian regex cho cả request (moderation-regex-runtime.ts), câu mới quét
+  // trước để lịch sử không tiêu hết; các lượt cũ quét trong một lượt gộp.
+  const regexBudget = createModerationRegexBudget()
   const [latest, ...earlier] = screenedTexts
   let blocked: string | null = null
   if (latest) {
@@ -94,14 +98,14 @@ export default defineEventHandler(async (event) => {
       contextUrl: sessionId ? `/admin/chatbot/sessions?search=${encodeURIComponent(sessionId)}` : '/admin/chatbot/sessions',
       authorIp: getClientIp(event) || undefined,
       capQueuePerSource: true,
+      regexBudget,
     }).catch(() => null)
     if (fastCheck?.blocked) blocked = latest
   }
   const withheld = new Set<string>()
   if (blocked === null) {
-    for (const turn of earlier) {
-      if (await matchInstantRule(turn).catch(() => null)) withheld.add(turn)
-    }
+    const verdicts = await matchInstantRuleBatch(earlier, { regexBudget }).catch(() => [])
+    for (const [index, turn] of earlier.entries()) if (verdicts[index]) withheld.add(turn)
   }
   const answerMessages = withoutUserTurns(messages, withheld)
 

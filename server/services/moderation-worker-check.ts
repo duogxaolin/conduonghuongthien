@@ -36,8 +36,8 @@ export async function checkAndModerateContent(
     return { flagged: false, action: "allow", severity: 'low', reasons: [], matchedRules: [] }
   }
 
-  // First check fast pre-moderator
-  const fast = await fastPreModerate(content, input)
+  // First check fast pre-moderator — on the same regex budget as the full pass below.
+  const fast = await fastPreModerate(content, { ...input, regexBudget: options.regexBudget })
   if (fast.blocked) {
     // Already flagged by pre-moderator, auto-hide database target row if targetId provided
     const failures: ModerationPersistFailure[] = []
@@ -74,14 +74,15 @@ export async function checkAndModerateContent(
   // lý với `fastPreModerate`: mẫu không biên dịch được (hỏng / quá dài / hình dạng nguy hiểm) bị
   // BỎ QUA (đã ghi log một lần khi biên dịch). Trước đây đường này lại khớp nó như một chuỗi con
   // thường — hai đường cho hai kết quả khác nhau với cùng một luật. Mọi luật regex chạy trong MỘT
-  // lượt có hạn giờ cứng (`testModerationRegexes`: một lượt `vm` cho cả văn bản).
+  // lượt có hạn giờ cứng (`testModerationRegexes`: một lượt `vm` cho cả văn bản), trên hạn mức
+  // của request khi nơi gọi truyền `regexBudget` (đường đăng bình luận).
   const regexRules: Array<ModerationRegexRule & { index: number }> = []
   for (const [index, rule] of rules.entries()) {
     if (!isRegexRuleType(rule.ruleType)) continue
     const regex = compileModerationRegex(rule.pattern)
     if (regex) regexRules.push({ index, pattern: rule.pattern, regex })
   }
-  const regexHits = testModerationRegexes(regexRules, content)
+  const regexHits = testModerationRegexes(regexRules, content, { budget: options.regexBudget })
   const regexMatched = new Set(regexRules.filter((_, k) => regexHits[k]).map(rule => rule.index))
 
   for (const [index, rule] of rules.entries()) {

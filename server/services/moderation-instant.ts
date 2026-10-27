@@ -10,9 +10,12 @@ import { logError } from '../utils/logger'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
 import { workerStats } from './moderation-stats'
+import type { ModerationRegexBudget } from './moderation-regex'
 
 /** Ngữ cảnh một lượt chặn tức thì — chung cho `fastPreModerate` và `recordInstantBlock`. */
 export interface InstantBlockContext {
+  /** Hạn mức thời gian khớp regex của request (`createModerationRegexBudget`); chỉ `fastPreModerate` đọc. */
+  regexBudget?: ModerationRegexBudget
   authorName?: string
   authorIp?: string
   targetType?: 'comment' | 'chat' | 'livestream_chat' | 'article'

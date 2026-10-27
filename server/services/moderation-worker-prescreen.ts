@@ -5,8 +5,15 @@
  * `moderation-worker.ts` xuất lại. Từ điển và việc ghi hàng chờ của một lượt chặn ở
  * `moderation-instant.ts`.
  */
+import type { AiModerationRule } from '../db/schema'
 import { getActiveModerationRules } from './moderation-rules-cache'
-import { compileModerationRegex, isRegexRuleType, testModerationRegexes, type ModerationRegexRule } from './moderation-regex'
+import {
+  compileModerationRegex,
+  isRegexRuleType,
+  testModerationRegexBatch,
+  type ModerationRegexBudget,
+  type ModerationRegexRule,
+} from './moderation-regex'
 import { workerStats } from './moderation-stats'
 import {
   INSTANT_PROFANITY,
@@ -35,11 +42,15 @@ export interface InstantRuleMatch {
  * (the widget only drops the newest turn) and filed the old line again on every
  * message. The chat endpoints withhold such turns instead — see `chat-turns.ts`.
  */
-export async function matchInstantRule(content: string): Promise<InstantRuleMatch | null> {
-  const trimmed = (content || '').trim()
-  if (!trimmed) return null
+export async function matchInstantRule(
+  content: string,
+  /** `regexBudget`: the request's matching budget (`createModerationRegexBudget`) — see `fastPreModerate`. */
+  options: { regexBudget?: ModerationRegexBudget } = {},
+): Promise<InstantRuleMatch | null> {
+  return (await matchInstantRuleBatch([content], options))[0]!
+}
 
-  // 1. Built-in high-confidence rules
+function builtInMatch(trimmed: string): InstantRuleMatch | null {
   for (const item of INSTANT_PROFANITY) {
     if (item.pattern.test(trimmed)) return { category: 'profanity', severity: 'high', label: item.label }
   }
@@ -49,36 +60,68 @@ export async function matchInstantRule(content: string): Promise<InstantRuleMatc
   for (const item of INSTANT_SPAM_GAMBLING) {
     if (item.pattern.test(trimmed)) return { category: 'spam_fraud', severity: 'high', label: item.label }
   }
+  return null
+}
 
-  // 2. Active custom rules from database — the first rule, in order, that matches.
+/** The database rules one text reaches: its first keyword hit, and the regex rules before it. */
+function databaseRulesFor(rules: AiModerationRule[], trimmed: string) {
+  const lower = trimmed.toLowerCase()
+  const keywordHit = rules.findIndex(rule => !isRegexRuleType(rule.ruleType) && lower.includes(rule.pattern.toLowerCase().trim()))
+  const regexRules: Array<ModerationRegexRule & { index: number }> = []
+  for (const [index, rule] of rules.entries()) {
+    if (keywordHit !== -1 && index >= keywordHit) break
+    if (!isRegexRuleType(rule.ruleType)) continue
+    const regex = compileModerationRegex(rule.pattern)
+    if (regex) regexRules.push({ index, pattern: rule.pattern, regex })
+  }
+  return { keywordHit, regexRules }
+}
+
+/**
+ * `matchInstantRule` for several texts — exactly `texts.map(matchInstantRule)`, but every regex
+ * rule of every text runs in ONE bounded pass (`testModerationRegexBatch`: one `vm` call with a
+ * hard timeout for the whole batch, not one per text). For the chat endpoints' earlier user
+ * turns (up to 29 per request): one call per turn cost ~1 ms per request in `vm` set-up alone.
+ */
+export async function matchInstantRuleBatch(
+  contents: readonly string[],
+  options: { regexBudget?: ModerationRegexBudget } = {},
+): Promise<Array<InstantRuleMatch | null>> {
+  const results: Array<InstantRuleMatch | null> = []
+  const pending: Array<{ at: number, trimmed: string }> = []
+  for (const [at, content] of contents.entries()) {
+    const trimmed = (content || '').trim()
+    // 1. Built-in high-confidence rules
+    results.push(trimmed ? builtInMatch(trimmed) : null)
+    if (trimmed && !results[at]) pending.push({ at, trimmed })
+  }
+  if (!pending.length) return results
+
+  // 2. Active custom rules from database — per text, the first rule, in order, that matches.
   try {
     const rules = await getActiveModerationRules()
-    const lower = trimmed.toLowerCase()
-    // Keyword rules are a substring test. Regex rules before the first keyword hit run in ONE
-    // bounded pass (`testModerationRegexes`: one `vm` call with a hard timeout per text, not one
-    // per rule), stopping at the first regex hit — the rules the old in-order loop would reach.
-    // Compiled through the helper shared with checkAndModerateContent: flag `iu`, the pattern
-    // never lower-cased, broken/too long/catastrophic patterns skipped.
-    const keywordHit = rules.findIndex(rule => !isRegexRuleType(rule.ruleType) && lower.includes(rule.pattern.toLowerCase().trim()))
-    const regexRules: Array<ModerationRegexRule & { index: number }> = []
-    for (const [index, rule] of rules.entries()) {
-      if (keywordHit !== -1 && index >= keywordHit) break
-      if (!isRegexRuleType(rule.ruleType)) continue
-      const regex = compileModerationRegex(rule.pattern)
-      if (regex) regexRules.push({ index, pattern: rule.pattern, regex })
-    }
-    const hits = testModerationRegexes(regexRules, trimmed, { stopAtFirstMatch: true })
-    const regexHit = regexRules.find((_, k) => hits[k])
-    const hitIndex = regexHit ? regexHit.index : keywordHit
-    const rule = hitIndex === -1 ? undefined : rules[hitIndex]
-    if (rule) {
+    // Keyword rules are a substring test. Regex rules before a text's first keyword hit run in
+    // ONE bounded pass for the whole batch, stopping at that text's first regex hit — the rules
+    // the old in-order loop would reach. Compiled through the helper shared with
+    // checkAndModerateContent: flag `iu`, the pattern never lower-cased, broken/too
+    // long/catastrophic patterns skipped.
+    const scans = pending.map(({ trimmed }) => databaseRulesFor(rules, trimmed))
+    const hits = testModerationRegexBatch(
+      scans.map(({ regexRules }, k) => ({ rules: regexRules, text: pending[k]!.trimmed })),
+      { stopAtFirstMatch: true, budget: options.regexBudget },
+    )
+    for (const [k, { keywordHit, regexRules }] of scans.entries()) {
+      const regexHit = regexRules.find((_, r) => hits[k]![r])
+      const hitIndex = regexHit ? regexHit.index : keywordHit
+      const rule = hitIndex === -1 ? undefined : rules[hitIndex]
+      if (!rule) continue
       const severity = (rule.severity as InstantRuleMatch['severity']) || 'high'
-      return { category: rule.category, severity, label: `${regexHit ? 'Mẫu regex' : 'Từ khóa'}: ${rule.pattern}` }
+      results[pending[k]!.at] = { category: rule.category, severity, label: `${regexHit ? 'Mẫu regex' : 'Từ khóa'}: ${rule.pattern}` }
     }
   } catch {
     // If DB read fails, built-in instant rules still secure the entrance
   }
-  return null
+  return results
 }
 
 /**
@@ -88,7 +131,12 @@ export async function matchInstantRule(content: string): Promise<InstantRuleMatc
  */
 export async function fastPreModerate(
   content: string,
-  /** `capQueuePerSource` caps review-queue rows per source (MODERATION_QUEUE_CAP) — public inbound flows. */
+  /**
+   * `capQueuePerSource` caps review-queue rows per source (MODERATION_QUEUE_CAP) — public inbound
+   * flows. `regexBudget` bounds the regex matching of the whole request it belongs to (pass the
+   * same one to every moderation call of that request); without it only the per-window and
+   * per-rule bounds apply.
+   */
   context?: InstantBlockContext,
 ): Promise<FastPreModerateResult> {
   const trimmed = (content || '').trim()
@@ -99,7 +147,7 @@ export async function fastPreModerate(
   workerStats.totalScanned++
   workerStats.lastScannedAt = new Date().toISOString()
 
-  const match = await matchInstantRule(trimmed)
+  const match = await matchInstantRule(trimmed, { regexBudget: context?.regexBudget })
   if (match) return recordInstantBlock(trimmed, match.category, match.severity, match.label, context)
 
   workerStats.allowedCount++

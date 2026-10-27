@@ -40,8 +40,10 @@ import {
   MODERATION_REGEX_FLAGS,
   MODERATION_REGEX_WINDOW,
   MODERATION_REGEX_WINDOW_OVERLAP,
-  MODERATION_RULE_CALL_BUDGET_MS,
+  MODERATION_REQUEST_BUDGET_MS,
   MODERATION_RULE_COOLDOWN_MS,
+  MODERATION_RULE_CUMULATIVE_BUDGET_MS,
+  MODERATION_RULE_CUMULATIVE_PERIOD_MS,
   MODERATION_RULE_WINDOW_BUDGET_MS,
   checkModerationPattern,
   clearCompiledModerationRegexCache,
@@ -83,38 +85,49 @@ const reasonOf = (pattern: string) => {
 
 // ── Surface ─────────────────────────────────────────────────────────────────
 
-test('the barrel exports exactly the 16 runtime values it had before the split, plus testModerationRegexes (4.3c)', () => {
+test('the barrel exports the runtime values it had before the split, plus the names added on purpose since (4.3c and its follow-up)', () => {
   assert.deepEqual(Object.keys(moderationRegex).sort(), [
     'MODERATION_PATTERN_MAX_LENGTH',
     'MODERATION_REGEX_FLAGS',
     'MODERATION_REGEX_WINDOW',
     'MODERATION_REGEX_WINDOW_OVERLAP',
-    'MODERATION_RULE_CALL_BUDGET_MS',
+    // 4.3c follow-up: the per-request budget and the per-rule cumulative budget — see
+    // `tests/moderation-regex-budget.test.ts`. `MODERATION_RULE_CALL_BUDGET_MS` (1 s per rule per
+    // text, then the rest of that text unscanned, rule left on) is gone: the cumulative budget
+    // (1 s per rule per 60 s, then off) bounds the same time and more.
+    'MODERATION_REQUEST_BUDGET_MS',
     'MODERATION_RULE_COOLDOWN_MS',
+    'MODERATION_RULE_CUMULATIVE_BUDGET_MS',
+    'MODERATION_RULE_CUMULATIVE_PERIOD_MS',
     'MODERATION_RULE_WINDOW_BUDGET_MS',
     'checkModerationPattern',
     'clearCompiledModerationRegexCache',
     'compileModerationRegex',
+    'createModerationRegexBudget',
     'findCatastrophicShape',
     'isModerationRuleDisabled',
     'isRegexRuleType',
     'resetSlowModerationRules',
     'setModerationRegexTimingForTests',
     'testModerationRegex',
+    'testModerationRegexBatch',
     // Added on purpose after the split (wave3 4.3c): every rule of one text in ONE bounded `vm`
     // call — see `tests/moderation-regex-timeout.test.ts`.
     'testModerationRegexes',
   ])
 })
 
-test('the seven limits keep their values (200 chars, iu, 2000/400-char windows, 200 ms, 1 s, 10 min)', () => {
+test('the limits keep their documented values (200 chars, iu, 2000/400-char windows, 200 ms, 10 min; 1 s per rule per 60 s; 250 ms per request)', () => {
   assert.equal(MODERATION_PATTERN_MAX_LENGTH, 200)
   assert.equal(MODERATION_REGEX_FLAGS, 'iu')
   assert.equal(MODERATION_REGEX_WINDOW, 2000)
   assert.equal(MODERATION_REGEX_WINDOW_OVERLAP, 400)
   assert.equal(MODERATION_RULE_WINDOW_BUDGET_MS, 200)
-  assert.equal(MODERATION_RULE_CALL_BUDGET_MS, 1000)
   assert.equal(MODERATION_RULE_COOLDOWN_MS, 600_000)
+  // The guarantee CLAUDE.md / realm-safety.md state, and `moderation-regex-total-bound.test.ts` checks.
+  assert.equal(MODERATION_RULE_CUMULATIVE_BUDGET_MS, 1000)
+  assert.equal(MODERATION_RULE_CUMULATIVE_PERIOD_MS, 60_000)
+  assert.equal(MODERATION_REQUEST_BUDGET_MS, 250)
 })
 
 // ── Lớp 1: lúc lưu ──────────────────────────────────────────────────────────
@@ -458,8 +471,8 @@ test('slow window: over 200 ms disables the rule for 10 minutes (exactly), logs 
       assert.equal(testModerationRegex(pattern, fast.regex, text), false, 'disabled: not run at all')
       assert.equal(fast.windows.length, 0)
     })
-    assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(({ event, pattern: p, elapsedMs, inputLength, disabledForMs }) => ({ event, p, elapsedMs, inputLength, disabledForMs })), [
-      { event: 'ai_moderation.rule_slow_disabled', p: pattern.slice(0, 200), elapsedMs: 201, inputLength: 6000, disabledForMs: 600_000 },
+    assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(({ event, pattern: p, elapsedMs, inputLength, disabledForMs, reason }) => ({ event, p, elapsedMs, inputLength, disabledForMs, reason })), [
+      { event: 'ai_moderation.rule_slow_disabled', p: pattern.slice(0, 200), elapsedMs: 201, inputLength: 6000, disabledForMs: 600_000, reason: 'window' },
     ])
     assert.equal(isModerationRuleDisabled('another rule'), false, 'per pattern')
 
@@ -485,31 +498,46 @@ test('slow window: over 200 ms disables the rule for 10 minutes (exactly), logs 
   })
 })
 
-test('per-text budget: past 1 s on one text the rest is not scanned (rule stays on), logged once per pattern per 10 minutes', async () => {
+// Was "per-text budget: past 1 s on one text the rest is not scanned (rule stays on)" — the
+// 4.3c follow-up replaced it: 1 s per text bounded one text, never the rule (C1: a sub-budget
+// cubic rule ran forever, one text at a time). The cumulative budget bounds the rule.
+test('per-rule budget: once a rule has used 1 s in its 60-s period it stops before its next window and is off 10 minutes, logged once with reason "cumulative"', async () => {
   await withClock(async (clock) => {
     const step = MODERATION_REGEX_WINDOW - MODERATION_REGEX_WINDOW_OVERLAP
     const text = distinct(step * 15)
     let windows: number[] = []
     const lines = await captureLogs(() => {
-      // 100 ms per window: 1000 ms after 10 windows is not over the budget; 1100 after 11 is.
+      // 100 ms per window: the 10th window brings the rule to exactly 1000 ms; the 11th never runs.
       const scan = recorder(clock, 100)
       assert.equal(testModerationRegex('dài', scan.regex, text), false)
       windows = scan.windows.map(w => w.from)
-      testModerationRegex('dài', recorder(clock, 100).regex, text)
+      const again = recorder(clock, 100)
+      testModerationRegex('dài', again.regex, text)
+      assert.equal(again.windows.length, 0, 'off: not run again')
     })
-    assert.equal(windows.length, 11)
-    assert.equal(windows.at(-1), 10 * step)
-    assert.equal(isModerationRuleDisabled('dài'), false, 'a long text is not the rule’s fault')
-    assert.deepEqual(events(lines, 'ai_moderation.rule_scan_truncated').map(({ pattern, scannedChars, inputLength }) => ({ pattern, scannedChars, inputLength })), [
-      { pattern: 'dài', scannedChars: 10 * step + 2000, inputLength: text.length },
-    ], 'once, though the budget ran out twice')
+    assert.equal(windows.length, 10)
+    assert.equal(windows.at(-1), 9 * step)
+    assert.equal(isModerationRuleDisabled('dài'), true)
+    assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(({ pattern, elapsedMs, inputLength, reason, periodMs, disabledForMs, interrupted }) => ({ pattern, elapsedMs, inputLength, reason, periodMs, disabledForMs, interrupted })), [
+      { pattern: 'dài', elapsedMs: 1000, inputLength: text.length, reason: 'cumulative', periodMs: MODERATION_RULE_CUMULATIVE_PERIOD_MS, disabledForMs: 600_000, interrupted: undefined },
+    ])
 
+    // Back after the cool-down with a fresh period: 9 windows (900 ms) do not disable it…
+    const nine = distinct(step * 8 + MODERATION_REGEX_WINDOW)
     clock.now += MODERATION_RULE_COOLDOWN_MS
-    const later = await captureLogs(() => { testModerationRegex('dài', recorder(clock, 100).regex, text) })
-    assert.equal(events(later, 'ai_moderation.rule_scan_truncated').length, 1, 'logged again after the cool-down')
+    testModerationRegex('dài', recorder(clock, 100).regex, nine)
+    assert.equal(isModerationRuleDisabled('dài'), false, 'the cool-down starts a new period')
+    // …a new 60-s period starts from zero again…
+    clock.now += MODERATION_RULE_CUMULATIVE_PERIOD_MS
+    testModerationRegex('dài', recorder(clock, 100).regex, nine)
+    assert.equal(isModerationRuleDisabled('dài'), false, '900 + 900 ms, but in two periods')
+    // …and within one period the time adds up across calls and texts.
+    testModerationRegex('dài', recorder(clock, 100).regex, distinct(1000))
+    assert.equal(isModerationRuleDisabled('dài'), true, '900 + 100 ms in one period')
     resetSlowModerationRules()
-    const afterReset = await captureLogs(() => { testModerationRegex('dài', recorder(clock, 100).regex, text) })
-    assert.equal(events(afterReset, 'ai_moderation.rule_scan_truncated').length, 1, 'reset forgets the log memory too')
+    assert.equal(isModerationRuleDisabled('dài'), false, 'reset re-enables at once')
+    testModerationRegex('dài', recorder(clock, 100).regex, nine)
+    assert.equal(isModerationRuleDisabled('dài'), false, 'and forgets the time already spent')
   })
 })
 

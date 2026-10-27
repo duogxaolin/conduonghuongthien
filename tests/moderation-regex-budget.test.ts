@@ -1,0 +1,379 @@
+/**
+ * The 4.3c follow-up API of `moderation-regex` (C1, W1–W2, S1–S4 of the verify of 4.3c):
+ *   - `createModerationRegexBudget` — the per-request budget, shared by every matching call of
+ *     one request;
+ *   - `testModerationRegexBatch` — several texts in ONE bounded `vm` pass (the chat history);
+ *     `matchInstantRuleBatch` — the same for the instant check, exactly `texts.map(matchInstantRule)`;
+ *   - attribution: a window interrupted by the hard timeout is blamed without a re-run, a cut
+ *     BETWEEN windows blames nobody (S1), a pass that never reached a window is logged (S2),
+ *     `test()` runs once per window (S3);
+ *   - S4: `node:vm` is not a sandbox, so the only script ever compiled is the constant
+ *     `'scan(job)'` — an AST guard over `server/`.
+ * The end-to-end bounds (real patterns, real handlers) are in `moderation-regex-total-bound.test.ts`.
+ */
+import assert from 'node:assert/strict'
+import { readdirSync, readFileSync } from 'node:fs'
+import test, { mock } from 'node:test'
+import vm from 'node:vm'
+import ts from 'typescript'
+import { HANDLERS, reset, rule, send, worker } from './_chat-real-moderation.ts'
+import {
+  MODERATION_REQUEST_BUDGET_MS,
+  MODERATION_RULE_CUMULATIVE_BUDGET_MS,
+  MODERATION_RULE_WINDOW_BUDGET_MS,
+  compileModerationRegex,
+  createModerationRegexBudget,
+  isModerationRuleDisabled,
+  resetSlowModerationRules,
+  setModerationRegexTimingForTests,
+  testModerationRegexBatch,
+  testModerationRegexes,
+} from '../server/services/moderation-regex.ts'
+import { withinWallClock } from './_wall-clock-bound.ts'
+
+type LogLine = Record<string, unknown>
+const OUTER_BOUND_MS = 5000
+
+function captureLogs<T>(run: () => T): { value: T, lines: LogLine[] } {
+  const lines: LogLine[] = []
+  const spy = mock.method(console, 'error', (line: unknown) => {
+    try { lines.push(JSON.parse(String(line)) as LogLine) } catch { /* not a log line */ }
+  })
+  try {
+    return { value: run(), lines }
+  } finally {
+    spy.mock.restore()
+  }
+}
+const events = (lines: LogLine[], event: string) => lines.filter(line => line.event === event)
+
+function fresh(): void {
+  setModerationRegexTimingForTests(null)
+  resetSlowModerationRules()
+}
+
+/** A fake rule costing `cost` ms of the fake clock per window, recording each window it runs. */
+function fakeRule(clock: { t: number }, pattern: string, cost: number, match = false) {
+  const windows: string[] = []
+  return { windows, rule: { pattern, regex: { test: (slice: string) => { windows.push(slice); clock.t += cost; return match } } as unknown as RegExp } }
+}
+/** Busy-wait `ms` of real time per window. */
+const busyRule = (pattern: string, ms: number, result = false) => ({
+  pattern,
+  regex: { test: () => { const end = performance.now() + ms; while (performance.now() < end); return result } } as unknown as RegExp,
+})
+
+function withFakeClock<T>(run: (clock: { t: number, now: number }) => T): T {
+  const clock = { t: 0, now: 1_000_000 }
+  setModerationRegexTimingForTests({ elapsed: () => clock.t, now: () => clock.now })
+  resetSlowModerationRules()
+  try {
+    return run(clock)
+  } finally {
+    fresh()
+  }
+}
+
+/** Count the runtime's bounded `vm` passes while `run` runs (not `withinWallClock`'s own, 5-s, call). */
+function vmPasses<T>(run: () => T): { value: T, passes: number } {
+  const spy = mock.method(vm.Script.prototype, 'runInContext')
+  try {
+    const value = run()
+    return { value, passes: spy.mock.calls.filter(call => Number(call.arguments[1]?.timeout) <= MODERATION_RULE_WINDOW_BUDGET_MS).length }
+  } finally {
+    spy.mock.restore()
+  }
+}
+
+// ── Per-request budget ──────────────────────────────────────────────────────
+
+test('request budget: shared by every call of the request; a window that would start past it never runs; logged once, naming the top consumer', () => {
+  withFakeClock((clock) => {
+    const a = fakeRule(clock, 'a', 120)
+    const b = fakeRule(clock, 'b', 100)
+    const c = fakeRule(clock, 'c', 50)
+    const d = fakeRule(clock, 'd', 10)
+    const budget = createModerationRegexBudget(250)
+    const { value: first, lines } = captureLogs(() => testModerationRegexes([a.rule, b.rule, c.rule, d.rule], 'x', { budget }))
+    assert.deepEqual(first, [false, false, false, false])
+    assert.deepEqual([a, b, c, d].map(r => r.windows.length), [1, 1, 1, 0], 'd would start at 270 ms > 250: it never runs')
+    assert.deepEqual(events(lines, 'ai_moderation.request_budget_exhausted').map(({ budgetMs, spentMs, topPattern, topPatternMs, texts }) => ({ budgetMs, spentMs, topPattern, topPatternMs, texts })), [
+      { budgetMs: 250, spentMs: 270, topPattern: 'a', topPatternMs: 120, texts: 1 },
+    ])
+    assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled'), [], 'nobody is disabled for the request running out')
+    // The same request's next call: nothing left — no pass at all, no second log line.
+    const { value: second, passes } = vmPasses(() => captureLogs(() => testModerationRegexes([d.rule], 'y', { budget })))
+    assert.deepEqual(second.value, [false])
+    assert.equal(passes, 0)
+    assert.equal(d.windows.length, 0)
+    assert.deepEqual(second.lines, [])
+    // A new request gets a new budget.
+    assert.deepEqual(testModerationRegexes([d.rule], 'y', { budget: createModerationRegexBudget() }), [false])
+    assert.equal(d.windows.length, 1)
+  })
+})
+
+test('request budget (real clock): ten 60-ms rules on one text cost ≈ the budget, not 600 ms; the rule cut by the deadline is not blamed', () => {
+  fresh()
+  const rules = Array.from({ length: 10 }, (_, i) => busyRule(`bận-${i}`, 60, i === 9))
+  const started = performance.now()
+  const { value: hits, lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'request budget', () =>
+    testModerationRegexes(rules, 'x', { budget: createModerationRegexBudget() })))
+  const wallMs = performance.now() - started
+  assert.ok(wallMs < MODERATION_REQUEST_BUDGET_MS + 60, `${wallMs.toFixed(0)} ms for ${MODERATION_REQUEST_BUDGET_MS} ms of budget`)
+  assert.equal(hits[9], false, 'the matching rule after the deadline is not reached (fail-open, logged)')
+  assert.equal(events(lines, 'ai_moderation.request_budget_exhausted').length, 1)
+  assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled'), [])
+  for (const rule of rules) assert.equal(isModerationRuleDisabled(rule.pattern), false)
+  fresh()
+})
+
+test('request budget: a catastrophic rule reached with 50 ms left is cut at the deadline, not blamed; with a full window budget it is', () => {
+  fresh()
+  const bad = '日*日*日*$'
+  const text = `${'日'.repeat(1500)}!`
+  const budget = createModerationRegexBudget(MODERATION_REQUEST_BUDGET_MS)
+  const head = busyRule('nặng', 170, false) // under the window budget; leaves ~80 ms of the request
+  const started = performance.now()
+  const { lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'deadline cut', () =>
+    testModerationRegexes([head, { pattern: bad, regex: compileModerationRegex(bad)! }], text, { budget })))
+  assert.ok(performance.now() - started < MODERATION_REQUEST_BUDGET_MS + 60)
+  assert.equal(isModerationRuleDisabled(bad), false, 'cut by the request deadline — not its full window budget')
+  const exhausted = events(lines, 'ai_moderation.request_budget_exhausted')
+  assert.equal(exhausted.length, 1)
+  assert.equal(exhausted[0]!.topPattern, 'nặng')
+  // A fresh request gives it its full window: interrupted, blamed, disabled.
+  const { lines: again } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'full window', () =>
+    testModerationRegexes([{ pattern: bad, regex: compileModerationRegex(bad)! }], text, { budget: createModerationRegexBudget() })))
+  assert.equal(isModerationRuleDisabled(bad), true)
+  assert.deepEqual(events(again, 'ai_moderation.rule_slow_disabled').map(line => [line.reason, line.interrupted]), [['window', true]])
+  fresh()
+})
+
+test('createModerationRegexBudget: a budget of 0 runs nothing; a negative one and a hand-made object are refused', () => {
+  fresh()
+  const { value, passes } = vmPasses(() => captureLogs(() => testModerationRegexes([{ pattern: 'a', regex: /a/iu }], 'a', { budget: createModerationRegexBudget(0) })))
+  assert.deepEqual(value.value, [false])
+  assert.equal(passes, 0)
+  assert.equal(events(value.lines, 'ai_moderation.request_budget_exhausted').length, 1)
+  assert.throws(() => createModerationRegexBudget(-1), RangeError)
+  assert.throws(() => createModerationRegexBudget(Number.NaN), RangeError)
+  assert.throws(() => testModerationRegexes([{ pattern: 'a', regex: /a/iu }], 'a', { budget: { limitMs: 250 } }), TypeError)
+  assert.deepEqual(testModerationRegexes([{ pattern: 'a', regex: /a/iu }], 'a'), [true], 'no budget: the old behaviour')
+})
+
+// ── Per-rule cumulative budget across a batch ───────────────────────────────
+
+test('cumulative budget across a batch: the same as the calls one by one — 7 × 150 ms windows, then off; the 8th text does not run it', () => {
+  const texts = Array.from({ length: 9 }, (_, i) => `văn bản ${i}`)
+  const run = (batched: boolean) => withFakeClock((clock) => {
+    const slow = fakeRule(clock, 'chậm-150', 150)
+    const { lines } = captureLogs(() => {
+      if (batched) testModerationRegexBatch(texts.map(text => ({ rules: [slow.rule], text })))
+      else for (const text of texts) testModerationRegexes([slow.rule], text)
+    })
+    return { windows: slow.windows.length, off: isModerationRuleDisabled('chậm-150'), logged: events(lines, 'ai_moderation.rule_slow_disabled').map(line => [line.reason, line.elapsedMs]) }
+  })
+  const expected = { windows: 7, off: true, logged: [['cumulative', 1050]] }
+  assert.deepEqual(run(false), expected, 'one call per text')
+  assert.deepEqual(run(true), expected, 'one batch')
+  assert.ok(MODERATION_RULE_CUMULATIVE_BUDGET_MS === 1000)
+})
+
+// ── Batch = the calls one by one, in one vm pass ────────────────────────────
+
+const REAL_RULES = ['lô\\s*đề', '(?:0|\\+84)\\d{9}', 'cờ[\\s,.]+bạc', 'nhà\\s*cái\\s*uy\\s*tín', '\\b(tài|tai)\\s*xỉu\\b']
+const BATCH_TEXTS = ['', 'chơi lô đề', 'gọi 0912345678 nhé', 'bình thường', 'cờ, bạc và lô đề', 'nhà cái uy tín', `${'dài '.repeat(1500)} lô đề`]
+
+for (const stopAtFirstMatch of [false, true]) {
+  test(`testModerationRegexBatch (stopAtFirstMatch: ${stopAtFirstMatch}): the same answers as one call per text, in ONE vm pass`, () => {
+    fresh()
+    const rules = REAL_RULES.map(pattern => ({ pattern, regex: compileModerationRegex(pattern)! }))
+    const oneByOne = vmPasses(() => BATCH_TEXTS.map(text => testModerationRegexes(rules, text, { stopAtFirstMatch })))
+    const batched = vmPasses(() => testModerationRegexBatch(BATCH_TEXTS.map(text => ({ rules, text })), { stopAtFirstMatch }))
+    assert.deepEqual(batched.value, oneByOne.value)
+    assert.equal(oneByOne.passes, BATCH_TEXTS.length)
+    assert.equal(batched.passes, 1)
+    assert.deepEqual(testModerationRegexBatch([]), [])
+  })
+}
+
+test('matchInstantRuleBatch is exactly texts.map(matchInstantRule): built-ins, keyword before regex, rule order, empty texts', async () => {
+  reset([
+    rule('cá độ', 'keyword'),
+    rule('lô\\s*đề'),
+    rule('đề', 'keyword', { category: 'từ-khoá-sau' }),
+    rule('(?:0|\\+84)\\d{9}', 'regex', { severity: 'critical' }),
+    rule('(a+)+'), // refused by Layer 1: skipped on both paths
+  ])
+  const texts = ['', '   ', 'mày dcm', 'chơi lô đề', 'đề thi', 'cá độ và lô đề', 'gọi 0912345678', 'bình thường', 'aaaa', 'tài xỉu']
+  const single = await Promise.all(texts.map(text => worker.matchInstantRule(text)))
+  const spy = mock.method(vm.Script.prototype, 'runInContext')
+  let batched: unknown
+  try {
+    batched = await worker.matchInstantRuleBatch(texts)
+    assert.equal(spy.mock.callCount(), 1, 'one vm pass for the whole batch')
+  } finally {
+    spy.mock.restore()
+  }
+  assert.deepEqual(batched, single)
+  assert.deepEqual(await worker.matchInstantRuleBatch([]), [])
+  reset([])
+})
+
+// ── Attribution: S1 (cut between windows), S2 (stalled pass) ────────────────
+
+test('S1 + S2: an interrupt that lands BETWEEN windows (the rule already answered) blames nobody; a pass that never reaches a window is logged', () => {
+  fresh()
+  let firstCalls = 0
+  const answered = { pattern: 'đã-trả-lời', regex: { test: () => { firstCalls += 1; return true } } as unknown as RegExp }
+  // Reading this rule's regex blocks: the timer fires while `job.at` still points at the rule
+  // before it, which already has its answer — nobody ran 200 ms of matching.
+  const stuck = { pattern: 'kẹt', get regex(): RegExp { const end = performance.now() + 300; while (performance.now() < end); return /x/iu } }
+  const started = performance.now()
+  const { value: hits, lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'S1', () => testModerationRegexes([answered, stuck], 'x')))
+  assert.ok(performance.now() - started < 3 * MODERATION_RULE_WINDOW_BUDGET_MS + 300)
+  assert.deepEqual(hits, [true, false], 'the answered rule keeps its match')
+  assert.equal(firstCalls, 1)
+  assert.equal(isModerationRuleDisabled('đã-trả-lời'), false, 'not blamed for the time after its window')
+  assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled'), [])
+  assert.deepEqual(events(lines, 'ai_moderation.rule_scan_stalled').map(line => [line.pattern, line.inputLength]), [['kẹt', 1]], 'giving up is logged, not silent')
+  fresh()
+})
+
+test('S3: no window is ever run twice — a counting rule after a heavy one and after a catastrophic one runs exactly once', () => {
+  fresh()
+  let counted = 0
+  const counter = { pattern: 'đếm', regex: { test: (s: string) => { counted += 1; return s.includes('lô đề') } } as unknown as RegExp }
+  const bad = '日*日*日*$'
+  const rules = [busyRule('nặng', 120), { pattern: bad, regex: compileModerationRegex(bad)! }, counter, busyRule('nặng-2', 120), counter]
+  const { value: hits } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'S3', () => testModerationRegexes(rules, `${'日'.repeat(1500)}! lô đề`)))
+  assert.deepEqual(hits, [false, false, true, false, true])
+  assert.equal(counted, 2, 'once per rule entry, never re-run after an interrupt')
+  fresh()
+})
+
+test('a pass that has run > 20 ms yields before the next window: the catastrophic rule in the middle of 30 costs 2 vm passes and ~one window budget', () => {
+  fresh()
+  const patterns = REAL_RULES.concat(REAL_RULES, REAL_RULES)
+  const bad = '日*日*日*$'
+  const rules = [...patterns.slice(0, 7), bad, ...patterns.slice(7)].map(pattern => ({ pattern, regex: compileModerationRegex(pattern)! }))
+  const text = `${'日'.repeat(1500)}!`
+  // V8 compiles a regex to native code on its first long subject (a few ms each): do it first,
+  // or the 7 rules before the bad one can pass 20 ms and yield — one pass more, same bound.
+  for (let i = 0; i < 2; i += 1) testModerationRegexes(rules.filter(r => r.pattern !== bad), text)
+  const started = performance.now()
+  const { value, passes } = vmPasses(() => captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'middle', () => testModerationRegexes(rules, text))))
+  const wallMs = performance.now() - started
+  assert.equal(passes, 2, 'the pass cut at the bad rule, then the rest')
+  assert.ok(wallMs < MODERATION_RULE_WINDOW_BUDGET_MS + 100, `${wallMs.toFixed(0)} ms`)
+  assert.deepEqual(events(value.lines, 'ai_moderation.rule_slow_disabled').map(line => [line.pattern, line.reason, line.interrupted]), [[bad, 'window', true]])
+  fresh()
+})
+
+// ── The chat endpoints: one pass for the whole history ──────────────────────
+
+for (const [name, handler] of HANDLERS) {
+  test(`${name}: 30 user turns, regex rules on — the history is matched in ONE vm pass (the new question in its own)`, async () => {
+    reset(REAL_RULES.map(pattern => rule(pattern)))
+    const history = Array.from({ length: 30 }, (_, i) => ({ role: 'user', content: `câu hỏi số ${i} về thủ tục hành chính` }))
+    const spy = mock.method(vm.Script.prototype, 'runInContext')
+    try {
+      await send(handler, history)
+      assert.equal(spy.mock.callCount(), 2, 'one pass for the newest turn, one for the 29 earlier ones')
+    } finally {
+      spy.mock.restore()
+      reset([])
+    }
+  })
+}
+
+// ── S4: the only script is the constant 'scan(job)' ─────────────────────────
+
+test('vm is not a sandbox: a main-realm function handed to a context reaches `process`, codeGeneration off or not', () => {
+  const context = vm.createContext({ fn: () => 1 }, { codeGeneration: { strings: false, wasm: false } })
+  assert.throws(() => vm.runInContext("eval('1')", context), /Code generation from strings disallowed/)
+  assert.equal(vm.runInContext("fn.constructor('return typeof process')()", context), 'object')
+})
+
+const SERVER = new URL('../server/', import.meta.url)
+const RUNTIME = 'server/services/moderation-regex-runtime.ts'
+const SCAN_SOURCE = 'scan(job)'
+
+/**
+ * Every use of `node:vm` under `server/`: only the runtime may import it (default import), and
+ * there only `vm.createContext` (code generation off) and `new vm.Script('scan(job)', …)` — a
+ * constant. Anything else is a violation: another importer, a named/namespace import, `require`
+ * or `import()` of vm, `runInNewContext`/`runInThisContext`/`compileFunction`/`SourceTextModule`,
+ * a `Script` whose source is not that literal.
+ */
+function vmViolations(sources: Map<string, string>): string[] {
+  const out: string[] = []
+  const isVm = (node: ts.Node | undefined) => !!node && ts.isStringLiteralLike(node) && (node.text === 'vm' || node.text === 'node:vm')
+  for (const [file, source] of sources) {
+    const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const where = (node: ts.Node) => `${file}:${sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1}`
+    let binding: string | null = null
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportDeclaration(node) && isVm(node.moduleSpecifier)) {
+        const clause = node.importClause
+        if (file !== RUNTIME) out.push(`${where(node)} imports node:vm`)
+        else if (!clause?.name || clause.namedBindings) out.push(`${where(node)} imports node:vm other than as a default binding`)
+        else binding = clause.name.text
+      }
+      if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === 'require')) && isVm(node.arguments[0]))
+        out.push(`${where(node)} loads node:vm dynamically`)
+      if (binding && ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === binding) {
+        const member = node.name.text
+        if (member === 'Script') {
+          const created = node.parent
+          const arg = ts.isNewExpression(created) && created.expression === node ? created.arguments?.[0] : undefined
+          if (!arg || !ts.isStringLiteralLike(arg) || arg.text !== SCAN_SOURCE) out.push(`${where(node)} compiles a vm.Script whose source is not the constant '${SCAN_SOURCE}'`)
+        } else if (member === 'createContext') {
+          if (!/codeGeneration:\s*\{\s*strings:\s*false,\s*wasm:\s*false\s*\}/.test(node.parent.getText(sf))) out.push(`${where(node)} creates a context with code generation on`)
+        } else {
+          out.push(`${where(node)} uses vm.${member}`)
+        }
+      }
+      if (binding && ts.isIdentifier(node) && node.text === binding && !ts.isPropertyAccessExpression(node.parent) && !ts.isImportClause(node.parent))
+        out.push(`${where(node)} passes the vm module around`)
+      ts.forEachChild(node, visit)
+    }
+    visit(sf)
+  }
+  return out
+}
+
+function serverSources(): Map<string, string> {
+  const files = readdirSync(SERVER, { recursive: true, encoding: 'utf8' }).filter(file => /\.[cm]?[jt]s$/.test(file))
+  return new Map(files.map(file => [`server/${file.split('\\').join('/')}`, readFileSync(new URL(file, SERVER), 'utf8')]))
+}
+
+test('S4: under server/, node:vm is used only by the runtime, only to compile the constant script \'scan(job)\'', () => {
+  const sources = serverSources()
+  assert.ok(sources.get(RUNTIME)?.includes(`new vm.Script('${SCAN_SOURCE}'`), 'the runtime is scanned')
+  assert.deepEqual(vmViolations(sources), [])
+})
+
+test('S4 guard goes red on every way around it', () => {
+  const runtime = serverSources().get(RUNTIME)!
+  const mutate = (from: string, to: string) => {
+    assert.ok(runtime.includes(from), `no ${JSON.stringify(from)} to mutate`)
+    return new Map([[RUNTIME, runtime.replace(from, to)]])
+  }
+  const cases: Array<[string, Map<string, string>, RegExp]> = [
+    ['data in the script source', mutate(`new vm.Script('${SCAN_SOURCE}'`, 'new vm.Script(`scan(${JSON.stringify(1)})`'), /source is not the constant/],
+    ['another constant', mutate(`new vm.Script('${SCAN_SOURCE}'`, "new vm.Script('scan(job); 1'"), /source is not the constant/],
+    ['runInNewContext', mutate('scanScript.runInContext(scanContext, { timeout })', "vm.runInNewContext('1', {})"), /uses vm\.runInNewContext/],
+    ['code generation on', mutate('codeGeneration: { strings: false, wasm: false }', 'codeGeneration: { strings: true, wasm: false }'), /code generation on/],
+    ['namespace import', mutate("import vm from 'node:vm'", "import * as vm from 'node:vm'"), /other than as a default binding/],
+    ['vm passed around', mutate('const isScriptTimeout', 'export const leak = vm\nconst isScriptTimeout'), /passes the vm module around/],
+    ['another file', new Map([['server/utils/x.ts', "import { runInThisContext } from 'node:vm'\nrunInThisContext('1')\n"]]), /server\/utils\/x\.ts:1 imports node:vm/],
+    ['dynamic import', new Map([['server/utils/x.ts', "export const load = () => import('node:vm')\n"]]), /loads node:vm dynamically/],
+    ['require', new Map([['server/utils/x.ts', "const vm = require('vm')\n"]]), /loads node:vm dynamically/],
+  ]
+  for (const [label, sources, expected] of cases) {
+    const violations = vmViolations(sources)
+    assert.ok(violations.some(violation => expected.test(violation)), `${label}: ${JSON.stringify(violations)}`)
+  }
+})

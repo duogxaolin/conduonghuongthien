@@ -232,20 +232,30 @@ test('one vm call per text for 30 rules over several windows: same context and s
   }
 })
 
-test('attribution: an innocent rule cut off because the rules before it used the time is re-run with the full budget — never disabled', () => {
+// 4.3c follow-up (W1/S3): an innocent rule used to be cut off ~50 ms in — the pass's timer had
+// started under the 150-ms rule before it — and then re-run (test() twice on one window). Now a
+// pass that has run > 20 ms yields BEFORE the next window, so every window starts with ≥ 180 ms
+// of its pass left: nothing is cut, nothing re-run.
+test('attribution: an innocent rule after rules that used the time starts a fresh pass — never cut off, never re-run, never disabled', () => {
   fresh()
   const spy = spyRunInContext()
   try {
-    const rules = [busyRule('chậm-mà-hợp-lệ', 150, false), busyRule('vô-tội', 100, true), busyRule('sau-cùng', 0, true)]
+    const counted = (rule: ReturnType<typeof busyRule>) => {
+      const calls = { n: 0 }
+      return { calls, rule: { pattern: rule.pattern, regex: { test: (s: string) => { calls.n += 1; return rule.regex.test(s) } } as unknown as RegExp } }
+    }
+    const wrapped = [counted(busyRule('chậm-mà-hợp-lệ', 150, false)), counted(busyRule('vô-tội', 100, true)), counted(busyRule('sau-cùng', 0, true))]
+    const rules = wrapped.map(w => w.rule)
     const started = performance.now()
     const { value: hits, lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'attribution', () => testModerationRegexes(rules, 'x')))
     const wallMs = performance.now() - started
     assert.deepEqual(hits, [false, true, true], 'every rule gave its own answer')
+    assert.deepEqual(wrapped.map(w => w.calls.n), [1, 1, 1], 'each window ran exactly once')
     for (const rule of rules) assert.equal(isModerationRuleDisabled(rule.pattern), false, `${rule.pattern} stays on`)
     assert.deepEqual(lines, [])
-    // vm calls: the bound itself, the pass cut off ~50 ms into 'vô-tội', the re-run from 'vô-tội'.
-    assert.equal(spy.mock.calls.filter(call => call.arguments[1]?.timeout === MODERATION_RULE_WINDOW_BUDGET_MS).length, 2)
-    assert.ok(wallMs > 240 && wallMs < 1000, `150 + 50 (cut) + 100 (re-run) ms: ${wallMs.toFixed(0)} ms`)
+    // vm calls: one per rule here — 'vô-tội' and 'sau-cùng' each open a fresh pass.
+    assert.equal(spy.mock.calls.filter(call => call.arguments[1]?.timeout === MODERATION_RULE_WINDOW_BUDGET_MS).length, 3)
+    assert.ok(wallMs > 240 && wallMs < 1000, `150 + 100 ms, nothing wasted: ${wallMs.toFixed(0)} ms`)
   } finally {
     spy.mock.restore()
     fresh()

@@ -49,8 +49,11 @@ mock.module('../server/utils/runtime-config', { namedExports: { analyticsHmacSec
 mock.module('../server/services/moderation-worker', {
   namedExports: {
     fastPreModerate: async (text: string) => { seen.screened.push(text); return { blocked: text.includes(PROHIBITED) } },
-    // Same decision, no review row: what earlier history turns go through.
-    matchInstantRule: async (text: string) => { seen.matched.push(text); return text.includes(PROHIBITED) ? { category: 'x', severity: 'high', label: 'x' } : null },
+    // Same decision, no review row: what earlier history turns go through (one batched call).
+    matchInstantRuleBatch: async (texts: string[]) => texts.map((text) => {
+      seen.matched.push(text)
+      return text.includes(PROHIBITED) ? { category: 'x', severity: 'high', label: 'x' } : null
+    }),
     checkAndModerateContent: async () => ({ blocked: false }),
   },
 })
