@@ -14,6 +14,10 @@
 import { errorMessage } from '~/utils/errorMessage'
 import AdminModal from '~/components/admin/AdminModal.vue'
 import { slugify } from '~~/shared/slugify'
+// Hàng danh mục (`MediaCategoryRow`, kèm `usageCount`): kiểu suy từ handler `categories/index.get.ts`.
+import type {
+  MediaCategoriesResponse, MediaCategoryCreateResponse, MediaCategoryDeleteResponse, MediaCategoryRow, MediaCategoryUpdateResponse,
+} from '~/types/admin-media-portal-api'
 
 definePageMeta({
   layout: 'admin',
@@ -27,16 +31,6 @@ const { hasPermission } = useAdminAuth()
 const canCreate = hasPermission('media_portal', 'create')
 const canUpdate = hasPermission('media_portal', 'update')
 const canDelete = hasPermission('media_portal', 'delete')
-
-interface MediaCategoryRow {
-  id: number
-  name: string
-  slug: string
-  description: string | null
-  displayOrder: number
-  createdAt: string | null
-  usageCount: number
-}
 
 const categories = ref<MediaCategoryRow[]>([])
 const loading = ref(true)
@@ -67,7 +61,7 @@ async function fetchCategories() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, items: MediaCategoryRow[] }>)(`/api/admin/media-portal/categories`)
+    const res = await adminFetch<MediaCategoriesResponse>(`/api/admin/media-portal/categories`)
     if (res.ok) {
       categories.value = res.items
     } else {
@@ -113,10 +107,10 @@ async function handleSave() {
       displayOrder: form.displayOrder,
     }
     if (modalMode.value === 'create') {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/categories`, { method: 'POST', body: payload })
+      await adminFetch<MediaCategoryCreateResponse>(`/api/admin/media-portal/categories`, { method: 'POST', body: payload })
       toast.success('Đã tạo danh mục thành công!')
     } else {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/categories/${editingId.value}`, { method: 'PUT', body: payload })
+      await adminFetch<MediaCategoryUpdateResponse>(`/api/admin/media-portal/categories/${editingId.value}`, { method: 'PUT', body: payload })
       toast.success('Đã cập nhật danh mục thành công!')
     }
     showModal.value = false
@@ -138,7 +132,7 @@ async function deleteCategory(cat: MediaCategoryRow) {
   })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/categories/${cat.id}`, { method: 'DELETE' })
+    await adminFetch<MediaCategoryDeleteResponse>(`/api/admin/media-portal/categories/${cat.id}`, { method: 'DELETE' })
     toast.success('Đã xóa danh mục thành công!')
     await fetchCategories()
   } catch (err: unknown) {

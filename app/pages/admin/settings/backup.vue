@@ -2,6 +2,7 @@
 import BackupSettingsPanel from '~/components/admin/backup/BackupSettingsPanel.vue'
 import BackupOffsiteBadge from '~/components/admin/backup/BackupOffsiteBadge.vue'
 import type { OffsiteStatus } from '~~/shared/backup-offsite-status'
+import type { BackupDeleteResponse, BackupListResponse, BackupRestoreResponse, BackupRunResponse, BackupRunStatus, BackupStatusResponse } from '~/types/admin-backup-api'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -13,22 +14,21 @@ const { user } = useAdminAuth()
 const isSuperAdmin = computed(() => user.value?.isSuperAdmin === true)
 
 // ─── Backup status (poll khi đang chạy) ──────────────────────────────────────
-interface RunStatus { running: boolean; phase: string; message: string; progress?: number }
-interface BackupItem {
+interface BackupItem { // phần hàng `backups` trang hiển thị; `items.value = res.items` giữ nó khớp kiểu suy từ handler
   id: number
   filename: string
   type: string
   bytes: number
   stamp: string
   status: string
-  driveUploaded: boolean
+  driveUploaded: boolean | null // cột NULL được, như `createdAt` (formatWhen hiện '—')
   // Bản ngoài máy chủ của tệp này; NULL = hàng cũ (lùi về driveUploaded) — offsiteStatusDisplay().
   offsiteStatus: OffsiteStatus | null
-  createdAt: string
+  createdAt: string | null
 }
 
-const backupStatus = ref<RunStatus | null>(null)
-const restoreStatus = ref<RunStatus | null>(null)
+const backupStatus = ref<BackupRunStatus | null>(null)
+const restoreStatus = ref<BackupRunStatus | null>(null)
 const loading = ref(true)
 const error = ref('')
 const items = ref<BackupItem[]>([])
@@ -95,7 +95,7 @@ const typeLabel = (t: string) => ({ sql: 'CSDL', media: 'File', all: 'Cả hai' 
 
 async function loadStatus() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; backup: RunStatus; restore: RunStatus }>)(`/api/admin/backup/status`)
+    const res = await adminFetch<BackupStatusResponse>(`/api/admin/backup/status`)
     backupStatus.value = res.backup
     restoreStatus.value = res.restore
     running.value = res.backup.running
@@ -118,8 +118,8 @@ async function loadBackups() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: BackupItem[]; total: number; totalPages: number }>)(`/api/admin/backup`, {
-      params: { page: page.value, pageSize: 20, ...(filterType.value ? { type: filterType.value } : {}) },
+    const res = await adminFetch<BackupListResponse>(`/api/admin/backup`, {
+      query: { page: page.value, pageSize: 20, ...(filterType.value ? { type: filterType.value } : {}) },
     })
     items.value = res.items || []
     total.value = res.total || 0
@@ -152,7 +152,7 @@ function stopPolling() {
 const runBackup = async (type: 'sql' | 'files' | 'all') => {
   running.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; files: Array<{ name: string }>; driveUploaded: boolean; driveError?: string }>)(`/api/admin/backup/run`, {
+    const res = await adminFetch<BackupRunResponse>(`/api/admin/backup/run`, {
       method: 'POST', body: { type },
     })
     toast.success(`Đã tạo ${res.files.length} file backup${res.driveUploaded ? ' + upload Drive' : ''}.${res.driveError ? ` (Drive lỗi: ${res.driveError})` : ''}`)
@@ -179,7 +179,7 @@ const restoreBackup = async (filename: string) => {
   restoreLog.value = [{ phase: 'start', message: `Bắt đầu khôi phục ${filename}`, at: Date.now(), percent: 0 }]
   startPolling()
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; warning?: string | null }>)(`/api/admin/backup/restore`, { method: 'POST', body: { filename } })
+    const res = await adminFetch<BackupRestoreResponse>(`/api/admin/backup/restore`, { method: 'POST', body: { filename } })
     toast.success('Đã khôi phục backup thành công.')
     if (res?.warning) toast.warning(res.warning, undefined, 15000)
     await loadBackups()
@@ -290,7 +290,7 @@ const deleteBackup = async (item: BackupItem) => {
   const ok = await confirm({ title: 'Xoá backup', message: `Xoá file "${item.filename}"?`, danger: true, confirmLabel: 'Xoá' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/${encodeURIComponent(item.filename)}?id=${item.id}`, { method: 'DELETE' })
+    await adminFetch<BackupDeleteResponse>(`/api/admin/backup/${encodeURIComponent(item.filename)}?id=${item.id}`, { method: 'DELETE' })
     toast.success('Đã xoá backup.')
     await loadBackups()
   } catch (err: unknown) {

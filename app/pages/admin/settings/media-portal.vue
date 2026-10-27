@@ -10,60 +10,15 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  * dọn upload bỏ dở, chuyển mã). Workdir và FFmpeg chỉ hiển thị read-only vì
  * đổi chúng cần restart container. Mỗi field ghi nguồn hiện tại (CSDL/env/mặc
  * định) — cùng pattern `data-retention.vue`.
+ *
+ * Kiểu phản hồi suy từ handler (`server/api/admin/settings/media-portal.get.ts`):
+ * `videoStorage.secretStored` = đã có hàng bí mật (kể cả không giải mã được) — máy chủ
+ * khi đó đòi nhập lại Secret Key để đổi Account ID/Bucket.
  */
+import type { MediaPortalSettingsResponse, MediaPortalSettingsSaveResponse, SiteSettingsResponse, UploadHousekeepResponse } from '~/types/admin-settings-api'
 
-type MediaPortalConfig = {
-  uploadEnabled: boolean
-  maxUploadSize: number
-  chunkSize: number
-  diskFloorBytes: number
-  sessionInactivityHours: number
-  processingHeartbeatSeconds: number
-  processingStaleMinutes: number
-  processingMaxJobs: number
-  processingMaxAttempts: number
-  videoStorage: {
-    provider: 'local' | 'r2'
-    r2AccountId: string
-    r2AccessKey: string
-    r2Bucket: string
-    r2PublicUrl: string
-  }
-}
-
-type Source = 'database' | 'environment' | 'default'
-
-type VideoStorageSources = {
-  provider: Source
-  r2AccountId: Source
-  r2AccessKey: Source
-  r2SecretKey: Source
-  r2Bucket: Source
-  r2PublicUrl: Source
-}
-
-type SettingsResponse = {
-  ok: true
-  config: MediaPortalConfig
-  sources: Record<keyof Omit<MediaPortalConfig, 'videoStorage'>, Source>
-  videoStorageSources: VideoStorageSources
-  videoStorage: {
-    provider: 'local' | 'r2'
-    r2Configured: boolean
-    secretMasked: string
-    secretUnreadable: boolean
-    /** A secret row exists (even if it cannot be decrypted) — the server then requires it retyped to change account/bucket. */
-    secretStored: boolean
-    localCount: number
-    r2Count: number
-  }
-  workdir: string
-  workdirIsDefault: boolean
-  ffmpegInstalled: boolean
-  ffmpegPath: string | null
-  diskFreeBytes: number | null
-  diskFloorBytes: number
-}
+type SettingsResponse = MediaPortalSettingsResponse
+type Source = SettingsResponse['videoStorageSources']['provider']
 
 const SOURCE_LABELS: Record<Source, string> = {
   database: 'đang đặt tại đây',
@@ -124,7 +79,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    data.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<SettingsResponse>)(`/api/admin/settings/media-portal`)
+    data.value = await adminFetch<SettingsResponse>(`/api/admin/settings/media-portal`)
     const c = data.value.config
     form.uploadEnabled = c.uploadEnabled
     form.maxUploadSizeGb = bytesToGb(c.maxUploadSize)
@@ -133,8 +88,9 @@ async function load() {
     form.sessionInactivityHours = c.sessionInactivityHours
     form.processingHeartbeatSeconds = c.processingHeartbeatSeconds
     form.processingStaleMinutes = c.processingStaleMinutes
-    form.processingMaxJobs = c.processingMaxJobs
-    form.processingMaxAttempts = c.processingMaxAttempts
+    // `MediaConfig` khai hai ô này tuỳ chọn (máy chủ luôn điền): vắng thì giữ giá trị đang có, không ghi `undefined`.
+    form.processingMaxJobs = c.processingMaxJobs ?? form.processingMaxJobs
+    form.processingMaxAttempts = c.processingMaxAttempts ?? form.processingMaxAttempts
     // R2
     form.videoStorageProvider = c.videoStorage.provider
     form.videoR2AccountId = c.videoStorage.r2AccountId
@@ -147,7 +103,7 @@ async function load() {
     // Phát hiện "đang dùng chung R2 với Media Storage" — so khớp 4 field public
     // với settings `r2_*`. Khớp hết → dùng chung, khác → R2 riêng.
     try {
-      const msRes = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Record<string, string | null> }>)(`/api/admin/settings`)
+      const msRes = await adminFetch<SiteSettingsResponse>(`/api/admin/settings`)
       const ms = msRes.settings ?? {}
       const sameAccount = ms.r2_account_id && form.videoR2AccountId === ms.r2_account_id
       const sameAccess = ms.r2_access_key && form.videoR2AccessKey === ms.r2_access_key
@@ -155,7 +111,8 @@ async function load() {
       usingSharedMediaStorageR2.value = Boolean(sameAccount && sameAccess && sameBucket)
     } catch { /* không chặn load */ }
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Không tải được cấu hình Media Portal.'
+    // Câu máy chủ soạn — không phải dòng `[GET] "/api/…": 500 …` của ofetch (FetchError cũng là Error).
+    error.value = errorMessage(err, 'Không tải được cấu hình Media Portal.')
   } finally {
     loading.value = false
   }
@@ -181,7 +138,7 @@ async function save() {
   }
   saving.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/media-portal`, {
+    await adminFetch<MediaPortalSettingsSaveResponse>(`/api/admin/settings/media-portal`, {
       method: 'PUT',
       body: {
         fields: {
@@ -207,10 +164,9 @@ async function save() {
     toast.success('Đã lưu cài đặt Media Portal.')
     await load()
   } catch (err) {
-    const msg = err && typeof err === 'object' && 'statusMessage' in err
-      ? String((err as { statusMessage?: string }).statusMessage ?? '')
-      : (err instanceof Error ? err.message : 'Không lưu được cài đặt.')
-    toast.error(msg || 'Không lưu được cài đặt.')
+    // `statusMessage` của FetchError là dòng trạng thái HTTP (h3 bỏ dấu tiếng Việt, HTTP/2
+    // không có) — câu máy chủ soạn nằm trong `data`, `errorMessage` đọc đúng chỗ đó.
+    toast.error(errorMessage(err, 'Không lưu được cài đặt.'))
   } finally {
     saving.value = false
   }
@@ -219,18 +175,12 @@ async function save() {
 async function cleanNow() {
   cleaning.value = true
   try {
-    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: true, sessions: number, orphans: number }>)(
-      '/api/admin/media-portal/upload/housekeep',
-      { method: 'POST', body: { confirm: true } },
-    )
+    const result = await adminFetch<UploadHousekeepResponse>('/api/admin/media-portal/upload/housekeep', { method: 'POST', body: { confirm: true } })
     const total = result.sessions + result.orphans
     if (total === 0) toast.success('Không có phiên bỏ dở nào cần dọn.')
     else toast.success(`Đã dọn ${result.sessions} phiên, ${result.orphans} thư mục mồ côi.`)
   } catch (err) {
-    const msg = err && typeof err === 'object' && 'statusMessage' in err
-      ? String((err as { statusMessage?: string }).statusMessage ?? '')
-      : (err instanceof Error ? err.message : 'Không dọn được.')
-    toast.error(msg || 'Không dọn được.')
+    toast.error(errorMessage(err, 'Không dọn được.'))
   } finally {
     cleaning.value = false
   }
@@ -248,7 +198,7 @@ const usingSharedMediaStorageR2 = ref(false)
 async function useMediaStorageR2() {
   importingFromMediaStorage.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Record<string, string | null> }>)(`/api/admin/settings`)
+    const res = await adminFetch<SiteSettingsResponse>(`/api/admin/settings`)
     const s = res.settings ?? {}
     const filled: string[] = []
     if (s.r2_account_id) { form.videoR2AccountId = s.r2_account_id; filled.push('Account ID') }

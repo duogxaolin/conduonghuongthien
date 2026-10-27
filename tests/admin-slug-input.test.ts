@@ -54,6 +54,7 @@ async function runPage(file: string) {
     .replace(/export default/, 'return')
 
   const calls: FetchCall[] = []
+  const record = async (url: string, opts?: FetchCall['opts']) => { calls.push({ url, opts }); return { ok: true, items: [] } }
   const auto: Record<string, unknown> = {
     definePageMeta: () => {},
     useToast: () => ({ success: () => {}, error: () => {}, warning: () => {}, info: () => {} }),
@@ -65,7 +66,9 @@ async function runPage(file: string) {
     errorMessage: (_err: unknown, fallback: string) => fallback,
     ref: Vue.ref, reactive: Vue.reactive, computed: Vue.computed, watch: Vue.watch, nextTick: Vue.nextTick,
     onMounted: () => {},
-    $fetch: async (url: string, opts?: FetchCall['opts']) => { calls.push({ url, opts }); return { ok: true, items: [] } },
+    // A page moved to `adminFetch<T>()` (D-FETCH) reaches the same recorder — same wire.
+    $fetch: record,
+    adminFetch: record,
   }
   // A name the page imports itself (`import { errorMessage } from …`) is not an auto-import.
   for (const [, names] of compiled.content.matchAll(/import\s*\{([^}]*)\}/g)) {

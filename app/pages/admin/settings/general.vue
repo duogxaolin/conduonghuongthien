@@ -1,8 +1,8 @@
 <script setup lang="ts">
-definePageMeta({
-  layout: 'admin',
-  middleware: 'admin-auth'
-})
+definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
+import type {
+  FaviconResetResponse, FaviconUploadResponse, LayoutSettingsResponse, LayoutSettingsSaveResponse, SiteSettingsResponse, SiteSettingsSaveResponse,
+} from '~/types/admin-settings-api'
 
 const settings = reactive({
   site_name: 'Con Đường Hướng Thiện',
@@ -34,7 +34,7 @@ const fetchSettings = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null> }>)(`/api/admin/settings`)
+    const res = await adminFetch<SiteSettingsResponse>(`/api/admin/settings`)
     if (res.ok && res.settings) {
       for (const k of GENERAL_KEYS) {
         if (res.settings[k] != null) (settings as Record<string, string>)[k] = String(res.settings[k])
@@ -54,7 +54,7 @@ const handleSave = async () => {
   try {
     const payload: Record<string, string> = {}
     for (const k of GENERAL_KEYS) payload[k] = (settings as Record<string, string>)[k] ?? ''
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings: payload } })
+    const res = await adminFetch<SiteSettingsSaveResponse>(`/api/admin/settings`, { method: 'PUT', body: { settings: payload } })
     if (res.ok) toast.success('Đã lưu cài đặt website thành công!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu cài đặt'))
@@ -110,7 +110,7 @@ const uploadFavicon = async (event: Event) => {
   try {
     const form = new FormData()
     form.append('file', file)
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; faviconUrl: string; convertedToPng?: boolean }>)(`/api/admin/settings/favicon`, { method: 'POST', body: form })
+    const res = await adminFetch<FaviconUploadResponse>(`/api/admin/settings/favicon`, { method: 'POST', body: form })
 
     settings.favicon_url = res.faviconUrl
 
@@ -140,7 +140,7 @@ const resettingFavicon = ref(false)
 const resetFavicon = async () => {
   resettingFavicon.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/favicon`, { method: 'DELETE' })
+    await adminFetch<FaviconResetResponse>(`/api/admin/settings/favicon`, { method: 'DELETE' })
     settings.favicon_url = ''
     toast.success('Đã trả favicon về mặc định của cổng.')
   } catch (err: unknown) {
@@ -176,7 +176,7 @@ const GRID_COLS_OPTIONS = [2, 3, 4] as const
 async function loadLayout() {
   layoutLoading.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout')
+    const res = await adminFetch<LayoutSettingsResponse>('/api/admin/settings/layout')
     if (res?.ok && res.config) draft.value = { ...res.config }
   } catch {
     // layout chưa cấu hình → giữ default
@@ -188,7 +188,7 @@ async function loadLayout() {
 async function saveLayout() {
   layoutBusy.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout', {
+    const res = await adminFetch<LayoutSettingsSaveResponse>('/api/admin/settings/layout', {
       method: 'PUT', body: { ...draft.value },
     })
     if (res?.ok && res.config) {
