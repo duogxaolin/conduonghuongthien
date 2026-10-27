@@ -22,7 +22,8 @@
  *     `MODERATION_REQUEST_BUDGET_MS`) cho mọi lượt khớp của request; hết thì phần chưa quét là
  *     KHÔNG khớp (mở khi lỗi), log `ai_moderation.request_budget_exhausted` một lần, kèm mẫu
  *     dùng nhiều nhất — thời gian của nó (cả cửa sổ đang chạy bị ngắt) đã tính vào mức 2.
- *     Không truyền thì không có trần này (hành vi cũ).
+ *     API này không truyền thì không có trần này; các lối vào kiểm duyệt (`fastPreModerate`,
+ *     `checkAndModerateContent`) luôn truyền một.
  *
  * Sổ của mức 1–3 (đồng hồ, luật đang tắt, chu kỳ mỗi luật, hạn mức request) ở
  * `moderation-regex-budget.ts` — chủ duy nhất của chúng; tệp này đo, quyết và nộp kết quả một lượt
@@ -292,8 +293,10 @@ export interface ModerationRegexBatchScan { hits: boolean[][], unscanned: boolea
  * hết ngân sách hay hạn mức, hay không tới lượt — `unscanned` tách hai trường hợp cuối (hạn mức
  * request hết, lượt kẹt) khỏi "không khớp", cho nơi gọi không được coi văn bản chưa xét là sạch
  * (lượt cũ của chat). `stopAtFirstMatch`: mỗi văn bản dừng ở luật đầu tiên khớp. `budget`: hạn
- * mức của request, dùng chung cho mọi lời gọi của request đó. Một lô bằng đúng chuỗi lời gọi
- * `testModerationRegexes` lần lượt trên từng văn bản.
+ * mức của request, dùng chung cho mọi lời gọi của request đó. Một lô cho cùng kết quả với chuỗi
+ * lời gọi `testModerationRegexes` lần lượt trên từng văn bản — trừ sát mép hạn mức request: mỗi lời
+ * gọi tính phần còn lại bằng `Math.floor` (`vm` chỉ nhận ms nguyên) và tính cả chi phí dựng của
+ * chính nó vào hạn mức, nên hai cách có thể lệch < 1 ms ở mép đó (một cửa sổ chạy hay không).
  */
 export function scanModerationRegexBatch(
   input: readonly ModerationRegexBatchItem[],

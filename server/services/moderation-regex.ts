@@ -16,11 +16,11 @@
  * tích cấu trúc mẫu lúc LƯU (và lúc nạp luật cũ) và chỉ là ước lượng tốt-nhất-có-thể, có
  * khe hở không vá trọn được (chữ ngoài bảng mẫu — `FINDING moderation-regex-4`); lớp 2
  * giới hạn TỔNG thời gian khớp lúc CHẠY: mỗi cửa sổ bị NGẮT CỨNG ở ~200 ms (`node:vm` có hạn
- * giờ); mỗi luật tối đa 1 s mỗi chu kỳ 60 s (+ một cửa sổ) rồi tắt 10 phút; mỗi request mà
- * nơi gọi truyền hạn mức (hai endpoint chat, đường đăng bình luận) tối đa 250 ms. Ngoài lớp
- * 2: từ điển dựng sẵn `INSTANT_*` (≤ ~10 ms trên 10 000 ký tự dựng sẵn), phép phân tích lớp 1 lúc
- * lưu/nạp luật (chỉ cán bộ có quyền sửa luật kích hoạt), và hạn mức request ở nơi chưa truyền
- * (chat livestream, quét lại) — ở đó chỉ hai mức đầu áp.
+ * giờ); mỗi luật tối đa 1 s CPU mỗi chu kỳ 60 s (+ một cửa sổ; chỉ cửa sổ ≥ 1 ms CPU) rồi tắt 10
+ * phút; mỗi request tối đa 250 ms (hai endpoint chat, đường đăng bình luận, chat livestream, quét
+ * lại; `fastPreModerate`/`checkAndModerateContent` không nhận hạn mức thì tự tạo một). Ngoài lớp
+ * 2: từ điển dựng sẵn `INSTANT_*` (≤ ~10 ms trên 10 000 ký tự dựng sẵn) và phép phân tích lớp 1
+ * lúc lưu/nạp luật (chỉ cán bộ có quyền sửa luật kích hoạt).
  *
  * Barrel từ wave3-long-term 4.3 (D-SPLIT): xuất lại những tên tệp này xuất trước khi tách
  * (16 giá trị + 1 kiểu) cộng các tên thêm có chủ đích sau đó (ghim ở
