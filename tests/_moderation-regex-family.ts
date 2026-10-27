@@ -49,6 +49,9 @@ export const EXPECTED_MODERATION_REGEX_FAMILY: readonly string[] = [
   'moderation-regex-limits.ts',
   'moderation-regex-parser.ts',
   'moderation-regex-runtime.ts',
+  // wave3 4.3c follow-up (D-SPLIT of the runtime at 398/400 lines): the Layer-2 books — clock,
+  // disabled rules, per-rule period, per-request budget — with their one owner.
+  'moderation-regex-budget.ts',
 ]
 
 /** Is this file name (in `server/services/`) the barrel or a part? The same rule as the on-disk scan. */

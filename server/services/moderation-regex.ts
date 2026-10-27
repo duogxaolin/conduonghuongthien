@@ -32,9 +32,10 @@
  *   - moderation-regex-limits.ts    trần độ dài, cờ `iu`, kích thước cửa sổ (chỉ hằng số)
  *   - moderation-regex-check.ts     kiểm mẫu lúc lưu + biên dịch có cache (chủ của cache)
  *   - moderation-regex-runtime.ts   lớp 2: mọi luật của một lô văn bản trong một lượt `vm` có
- *                                   hạn giờ cứng, theo cửa sổ; ngân sách mỗi luật và hạn mức
- *                                   mỗi request (chủ DUY NHẤT của đồng hồ, sổ luật đang tắt,
- *                                   sổ ngân sách và ngữ cảnh `vm`)
+ *                                   hạn giờ cứng, theo cửa sổ (chủ DUY NHẤT của ngữ cảnh `vm`)
+ *   - moderation-regex-budget.ts    lớp 2: sổ — đồng hồ, luật đang tắt, ngân sách chu kỳ mỗi luật,
+ *                                   hạn mức mỗi request (chủ DUY NHẤT của bốn sổ đó; tách khỏi
+ *                                   tệp chạy ở 4.3c tiếp)
  *   - moderation-regex-parser.ts    lớp 1: đọc mẫu thành cây, bảng ký tự mẫu (KHÔNG xuất lại)
  *   - moderation-regex-analysis.ts  lớp 1: xét hình dạng nguy hiểm trên cây
  *
@@ -58,6 +59,13 @@ export type { ModerationPatternCheck } from './moderation-regex-check'
 
 export {
   MODERATION_RULE_WINDOW_BUDGET_MS,
+  testModerationRegex,
+  testModerationRegexes,
+  testModerationRegexBatch,
+} from './moderation-regex-runtime'
+export type { ModerationRegexBatchItem, ModerationRegexRule } from './moderation-regex-runtime'
+
+export {
   MODERATION_RULE_COOLDOWN_MS,
   MODERATION_RULE_CUMULATIVE_BUDGET_MS,
   MODERATION_RULE_CUMULATIVE_PERIOD_MS,
@@ -66,10 +74,7 @@ export {
   resetSlowModerationRules,
   isModerationRuleDisabled,
   createModerationRegexBudget,
-  testModerationRegex,
-  testModerationRegexes,
-  testModerationRegexBatch,
-} from './moderation-regex-runtime'
-export type { ModerationRegexBatchItem, ModerationRegexBudget, ModerationRegexRule } from './moderation-regex-runtime'
+} from './moderation-regex-budget'
+export type { ModerationRegexBudget } from './moderation-regex-budget'
 
 export { findCatastrophicShape } from './moderation-regex-analysis'

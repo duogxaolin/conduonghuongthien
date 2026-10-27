@@ -20,13 +20,14 @@
  *     là ANH EM (rescan-job import barrel đúng chủ đích). Mẫu `MODERATION_WORKER_PART` ở
  *     `_moderation-worker-family.ts` — một nguồn với guard đọc mã kiểm duyệt
  *     (`moderation-always-scan`); nó loại cả nhóm regex bằng chính `MODERATION_REGEX_PART`.
- *   • `moderation-regex.ts` — barrel; mã ở `moderation-regex-{limits,check,runtime,parser,
+ *   • `moderation-regex.ts` — barrel; mã ở `moderation-regex-{limits,check,runtime,budget,parser,
  *     analysis}.ts` (tách nguyên văn: 55 khai báo cấp đỉnh giống từng byte, 5 khai báo thêm
- *     `export`; lớp 2 viết lại ở 4.3c — ngắt cứng bằng `node:vm`). `moderation-regex-parser.ts`
- *     barrel không xuất lại. Trạng thái quyết định luật có chạy không — đồng hồ, sổ luật bị
- *     tắt 10 phút, sổ log cắt quét, ngữ cảnh `vm` — một chủ
- *     (`moderation-regex-runtime.ts`), cache biên dịch một chủ (`moderation-regex-check.ts`),
- *     không `export`. Mẫu `MODERATION_REGEX_PART` ở `_moderation-regex-family.ts`.
+ *     `export`; lớp 2 viết lại ở 4.3c — ngắt cứng bằng `node:vm`; sổ của lớp 2 tách khỏi tệp chạy
+ *     sang `-budget` ở 4.3c tiếp). `moderation-regex-parser.ts` barrel không xuất lại. Trạng thái
+ *     quyết định luật có chạy không — đồng hồ, sổ luật bị tắt 10 phút, sổ chu kỳ, hạn mức request
+ *     — một chủ (`moderation-regex-budget.ts`), ngữ cảnh `vm` một chủ (`moderation-regex-runtime.ts`),
+ *     cache biên dịch một chủ (`moderation-regex-check.ts`), không `export`. Mẫu
+ *     `MODERATION_REGEX_PART` ở `_moderation-regex-family.ts`.
  *   • `server/utils/chatbot/chat-policy.ts` — barrel ở đường cũ; mã ở
  *     `server/services/chat-policy-*.ts` (thư mục KHÁC barrel, `Family.dir`): Nitro tự import mọi
  *     export của `server/utils/**`, nên tệp con cạnh barrel sẽ xuất mỗi tên của API lần thứ hai
@@ -72,8 +73,9 @@
  *      chủ (`chat-policy-rate-limit.ts`); nơi khác nới `limit` là đỏ. Nhóm `ai-gateway`: hai
  *      cache 60 s (`configCache`, `providerCache`) và bảng `PROVIDER_POLICY` — một chủ
  *      (`ai-gateway-config.ts`, không `export`). Nhóm `moderation-regex`: `timing`,
- *      `disabledUntil`, sổ ngân sách chu kỳ `ruleSpend` và hạn mức request `budgets` (4.3c tiếp),
- *      ngữ cảnh + script `vm` của ngắt cứng (`scanContext`, `scanScript`, 4.3c) — một chủ
+ *      `disabledUntil`, sổ ngân sách chu kỳ `ruleSpend` và hạn mức request `budgets` (4.3c tiếp)
+ *      — một chủ (`moderation-regex-budget.ts`, tách khỏi tệp chạy ở 4.3c tiếp); ngữ cảnh +
+ *      script `vm` của ngắt cứng (`scanContext`, `scanScript`, 4.3c) — một chủ
  *      (`moderation-regex-runtime.ts`);
  *      `compiled` (`moderation-regex-check.ts`); bảng mẫu `SAMPLE_CHARS` (mảng dựng bằng
  *      IIFE, đóng băng lúc chạy từ 4.3c) chỉ được đọc ngoài chủ (`moderation-regex-parser.ts`).
@@ -779,7 +781,8 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     assert.equal(expected['moderation-worker']!.length, 8)
     assert.equal(expected['chat-policy']!.length, 7)
     assert.equal(expected['ai-gateway']!.length, 6)
-    assert.equal(expected['moderation-regex']!.length, 5)
+    // 6 từ 4.3c tiếp: sổ lớp 2 tách khỏi tệp chạy (`moderation-regex-budget.ts`).
+    assert.equal(expected['moderation-regex']!.length, 6)
     for (const [name, family] of Object.entries(FAMILIES)) {
       const members = familyMembers(REPO, family)
       // Tệp con nằm ở `familyHome` — thư mục của barrel, hoặc `Family.dir` (chat-policy).
@@ -1008,15 +1011,15 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/services/ai-gateway-config.ts#configCache',
       'server/services/ai-gateway-config.ts#providerCache',
       'server/services/ai-gateway-config.ts#PROVIDER_POLICY',
-      // Nhóm moderation-regex: đồng hồ + sổ luật tắt 10 phút + sổ log cắt quét (chủ: tệp chạy),
-      // cache biên dịch (chủ: tệp kiểm), cache lớp ký tự và hai bảng mẫu (chỉ đọc ngoài chủ) —
-      // `SAMPLE_CHARS` dựng bằng IIFE: lời gọi là trạng thái (đóng khi nghi ngờ).
-      'server/services/moderation-regex-runtime.ts#timing',
-      'server/services/moderation-regex-runtime.ts#defaultTiming',
-      'server/services/moderation-regex-runtime.ts#disabledUntil',
+      // Nhóm moderation-regex: đồng hồ + sổ luật tắt 10 phút (chủ: tệp sổ, tách khỏi tệp chạy ở
+      // 4.3c tiếp), cache biên dịch (chủ: tệp kiểm), cache lớp ký tự và hai bảng mẫu (chỉ đọc
+      // ngoài chủ) — `SAMPLE_CHARS` dựng bằng IIFE: lời gọi là trạng thái (đóng khi nghi ngờ).
+      'server/services/moderation-regex-budget.ts#timing',
+      'server/services/moderation-regex-budget.ts#defaultTiming',
+      'server/services/moderation-regex-budget.ts#disabledUntil',
       // Ngân sách tổng (4.3c tiếp): sổ chu kỳ mỗi luật + hạn mức mỗi request — cùng một chủ.
-      'server/services/moderation-regex-runtime.ts#ruleSpend',
-      'server/services/moderation-regex-runtime.ts#budgets',
+      'server/services/moderation-regex-budget.ts#ruleSpend',
+      'server/services/moderation-regex-budget.ts#budgets',
       // Ngắt cứng (4.3c): ngữ cảnh `vm` + script dựng một lần — bản thứ hai ở tệp khác là hai
       // ngữ cảnh, mỗi nửa mã ghi `job` vào một cái.
       'server/services/moderation-regex-runtime.ts#scanContext',
@@ -2774,12 +2777,23 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
       [
         'sổ luật tắt chép sang tệp kiểm',
         inject('server/services/moderation-regex-check.ts', 'const disabledUntil = new Map<string, number>()'),
-        /^\[moderation-regex\] 'disabledUntil' khai ở 2 tệp \(server\/services\/moderation-regex-check\.ts:1, server\/services\/moderation-regex-runtime\.ts:\d+\)/,
+        /^\[moderation-regex\] 'disabledUntil' khai ở 2 tệp \(server\/services\/moderation-regex-budget\.ts:\d+, server\/services\/moderation-regex-check\.ts:1\)/,
       ],
       [
         'đồng hồ chép sang tệp phân tích',
         inject('server/services/moderation-regex-analysis.ts', 'let timing = { elapsed: () => 0, now: () => 0 }'),
-        /^\[moderation-regex\] 'timing' khai ở 2 tệp \(server\/services\/moderation-regex-analysis\.ts:1, server\/services\/moderation-regex-runtime\.ts:\d+\)/,
+        /^\[moderation-regex\] 'timing' khai ở 2 tệp \(server\/services\/moderation-regex-analysis\.ts:1, server\/services\/moderation-regex-budget\.ts:\d+\)/,
+      ],
+      // Tách ở 4.3c tiếp: sổ chu kỳ và hạn mức request chép NGƯỢC về tệp chạy (chủ cũ) — hai sổ.
+      [
+        'sổ chu kỳ mỗi luật chép ngược về tệp chạy',
+        inject('server/services/moderation-regex-runtime.ts', 'const ruleSpend = new Map<string, number>()'),
+        /^\[moderation-regex\] 'ruleSpend' khai ở 2 tệp \(server\/services\/moderation-regex-budget\.ts:\d+, server\/services\/moderation-regex-runtime\.ts:1\)/,
+      ],
+      [
+        'hạn mức request chép ngược về tệp chạy',
+        inject('server/services/moderation-regex-runtime.ts', 'const budgets = new WeakMap<object, number>()'),
+        /^\[moderation-regex\] 'budgets' khai ở 2 tệp \(server\/services\/moderation-regex-budget\.ts:\d+, server\/services\/moderation-regex-runtime\.ts:1\)/,
       ],
       [
         'cache biên dịch chép sang tệp chạy',
@@ -2801,27 +2815,37 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
 
   it('luật 4 đỏ khi tệp khác ghi sổ luật tắt, cache biên dịch hay bảng mẫu của chủ — kể cả endpoint qua barrel', () => {
     const runtime = 'server/services/moderation-regex-runtime.ts'
+    const books = 'server/services/moderation-regex-budget.ts'
     const check = 'server/services/moderation-regex-check.ts'
     const analysis = 'server/services/moderation-regex-analysis.ts'
     const endpoint = 'server/api/admin/ai/moderation/rules.post.ts'
     const from = "import { checkModerationPattern } from '../../../../services/moderation-regex'"
     const endpointSource = REPO.get(endpoint)!
     assert.ok(endpointSource.includes(from), `${endpoint} không còn đoạn ${JSON.stringify(from)} để đột biến`)
-    const openBook = replaceIn(runtime, 'const disabledUntil = new Map', 'export const disabledUntil = new Map')
+    const openBook = replaceIn(books, 'const disabledUntil = new Map', 'export const disabledUntil = new Map')
     const cases: Array<[string, Record<string, string>, RegExp]> = [
       [
         'tệp kiểm bật lại mọi luật chậm (`.clear()`)',
-        { ...openBook, [check]: `import { disabledUntil } from './moderation-regex-runtime'\n${REPO.get(check)}\nexport function _enableAll() { disabledUntil.clear() }\n` },
-        /^\[moderation-regex\] server\/services\/moderation-regex-check\.ts:\d+ \(\.clear\(\)\) ghi vào 'disabledUntil' của server\/services\/moderation-regex-runtime\.ts/,
+        { ...openBook, [check]: `import { disabledUntil } from './moderation-regex-budget'\n${REPO.get(check)}\nexport function _enableAll() { disabledUntil.clear() }\n` },
+        /^\[moderation-regex\] server\/services\/moderation-regex-check\.ts:\d+ \(\.clear\(\)\) ghi vào 'disabledUntil' của server\/services\/moderation-regex-budget\.ts/,
       ],
       [
         'endpoint luật bật lại một luật qua barrel (`.delete()`)',
         {
           ...openBook,
-          ...append(MODERATION_REGEX_BARREL, "export { disabledUntil } from './moderation-regex-runtime'"),
+          ...append(MODERATION_REGEX_BARREL, "export { disabledUntil } from './moderation-regex-budget'"),
           [endpoint]: `${endpointSource.replace(from, "import { checkModerationPattern, disabledUntil } from '../../../../services/moderation-regex'")}\nexport function _enable(p: string) { disabledUntil.delete(p) }\n`,
         },
-        /^\[moderation-regex\] server\/api\/admin\/ai\/moderation\/rules\.post\.ts:\d+ \(\.delete\(\)\) ghi vào 'disabledUntil' của server\/services\/moderation-regex-runtime\.ts/,
+        /^\[moderation-regex\] server\/api\/admin\/ai\/moderation\/rules\.post\.ts:\d+ \(\.delete\(\)\) ghi vào 'disabledUntil' của server\/services\/moderation-regex-budget\.ts/,
+      ],
+      [
+        // Tách ở 4.3c tiếp: chủ cũ (tệp chạy) không còn ghi sổ chu kỳ — chỉ nộp kết quả qua `settleRegexSpend`.
+        'tệp chạy xoá thẳng sổ chu kỳ của tệp sổ (`.clear()`)',
+        {
+          ...replaceIn(books, 'const ruleSpend = new Map', 'export const ruleSpend = new Map'),
+          [runtime]: `import { ruleSpend } from './moderation-regex-budget'\n${REPO.get(runtime)}\nexport function _forget() { ruleSpend.clear() }\n`,
+        },
+        /^\[moderation-regex\] server\/services\/moderation-regex-runtime\.ts:\d+ \(\.clear\(\)\) ghi vào 'ruleSpend' của server\/services\/moderation-regex-budget\.ts/,
       ],
       [
         'tệp chạy xoá cache biên dịch của tệp kiểm',
@@ -2914,17 +2938,20 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
   it('trạng thái xuất ra của moderation-regex đỏ khi sổ luật tắt, đồng hồ hay cache bị export — ở mọi tệp của nhóm, kể cả tệp con mới', () => {
     const extra = (overrides: Record<string, string>) =>
       exportedFamilyState(moderationRegexSourcesWith(overrides)).filter((entry) => !EXPORTED_STATE_ALLOWED.includes(entry))
+    const books = 'server/services/moderation-regex-budget.ts'
     const runtime = 'server/services/moderation-regex-runtime.ts'
-    assert.deepEqual(extra(replaceIn(runtime, 'const disabledUntil = new Map', 'export const disabledUntil = new Map')), [`${runtime}#disabledUntil`])
-    assert.deepEqual(extra(replaceIn(runtime, 'let timing: RegexTiming', 'export let timing: RegexTiming')), [`${runtime}#timing`])
-    assert.deepEqual(extra(replaceIn(runtime, 'const ruleSpend = new Map', 'export const ruleSpend = new Map')), [`${runtime}#ruleSpend`])
+    assert.deepEqual(extra(replaceIn(books, 'const disabledUntil = new Map', 'export const disabledUntil = new Map')), [`${books}#disabledUntil`])
+    assert.deepEqual(extra(replaceIn(books, 'let timing: RegexTiming', 'export let timing: RegexTiming')), [`${books}#timing`])
+    assert.deepEqual(extra(replaceIn(books, 'const ruleSpend = new Map', 'export const ruleSpend = new Map')), [`${books}#ruleSpend`])
+    assert.deepEqual(extra(replaceIn(books, 'const budgets = new WeakMap', 'export const budgets = new WeakMap')), [`${books}#budgets`])
+    assert.deepEqual(extra(replaceIn(runtime, 'const scanContext = vm.createContext', 'export const scanContext = vm.createContext')), [`${runtime}#scanContext`])
     assert.deepEqual(
       extra(replaceIn('server/services/moderation-regex-check.ts', 'const compiled = new Map', 'export const compiled = new Map')),
       ['server/services/moderation-regex-check.ts#compiled'],
     )
     // Mọi tệp của nhóm (barrel trừ ra — hình dạng barrel đã cấm khai báo), và tệp con mới.
     const parts = moderationRegexFiles().filter((file) => file !== MODERATION_REGEX_BARREL)
-    assert.equal(parts.length, 5)
+    assert.equal(parts.length, 6)
     for (const file of [...parts, 'server/services/moderation-regex-extra.ts'])
       assert.deepEqual(
         extra({ [file]: `${REPO.get(file) ?? ''}\nexport const _leak = new Map<string, number>()\n` }),
@@ -3036,13 +3063,18 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
         /^\[moderation-regex\] server\/api\/admin\/ai\/moderation\/rules\.post\.ts:\d+ \(import\) import server\/services\/moderation-regex-check\.ts — .*phần ruột/,
       ],
       [
-        'cache luật nhập thẳng tệp chạy',
+        'cache luật nhập thẳng tệp sổ (chủ của `resetSlowModerationRules` từ 4.3c tiếp)',
         replaceIn(
           'server/services/moderation-rules-cache.ts',
           "import { clearCompiledModerationRegexCache, resetSlowModerationRules } from './moderation-regex'",
-          "import { clearCompiledModerationRegexCache } from './moderation-regex'\nimport { resetSlowModerationRules } from './moderation-regex-runtime'",
+          "import { clearCompiledModerationRegexCache } from './moderation-regex'\nimport { resetSlowModerationRules } from './moderation-regex-budget'",
         ),
-        /^\[moderation-regex\] server\/services\/moderation-rules-cache\.ts:\d+ \(import\) import server\/services\/moderation-regex-runtime\.ts/,
+        /^\[moderation-regex\] server\/services\/moderation-rules-cache\.ts:\d+ \(import\) import server\/services\/moderation-regex-budget\.ts/,
+      ],
+      [
+        'lượt chặn tức thì nhập thẳng tệp chạy',
+        inject('server/services/moderation-worker-prescreen.ts', "import { testModerationRegexBatch as _t } from './moderation-regex-runtime'"),
+        /^\[moderation-regex\] server\/services\/moderation-worker-prescreen\.ts:1 \(import\) import server\/services\/moderation-regex-runtime\.ts/,
       ],
       [
         'lượt chặn tức thì (nhóm moderation-worker) nhập bộ phân tích cú pháp',

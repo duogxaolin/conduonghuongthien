@@ -22,6 +22,10 @@
  *     dùng nhiều nhất — thời gian của nó (cả cửa sổ đang chạy bị ngắt) đã tính vào mức 2.
  *     Không truyền thì không có trần này (hành vi cũ).
  *
+ * Sổ của mức 1–3 (đồng hồ, luật đang tắt, chu kỳ mỗi luật, hạn mức request) ở
+ * `moderation-regex-budget.ts` — chủ duy nhất của chúng; tệp này đo, quyết và nộp kết quả một lượt
+ * (`settleRegexSpend`).
+ *
  * Quy lỗi: nhiều văn bản × nhiều luật chạy trong MỘT lượt `vm` (mỗi lượt tốn ~25–50 µs dựng
  * watchdog), hạn giờ tính từ đầu lượt. Trước mỗi cửa sổ không phải đầu lượt, lượt đã chạy quá
  * `PASS_SLACK_MS` thì nhường cho lượt mới: mọi cửa sổ bắt đầu ≤ 20 ms sau đầu lượt, nên cửa sổ
@@ -32,50 +36,38 @@
  *
  * Trong `vm` chỉ có phép khớp và việc ghi vào `ScanJob`, mỗi lần bằng MỘT phép gán (`job.at =`,
  * `ledger.set`) vì lệnh ngắt rơi vào giữa bất kỳ câu lệnh nào; sổ tắt luật, sổ chu kỳ, hạn mức
- * và log đổi SAU khi lượt `vm` trả về hay bị ngắt. Tệp này là chủ DUY NHẤT của trạng thái lúc
- * chạy (`timing`, `disabledUntil`, `ruleSpend`, `budgets`, `scanContext`, `scanScript` — không
- * `export`; `tests/service-split-boundaries.test.ts`, luật 4). Văn bản và luật vào `vm` qua thuộc
- * tính của ngữ cảnh; script là hằng `'scan(job)'` (`vm` không phải hộp cát — guard ở
- * `tests/moderation-regex-budget.test.ts`).
+ * và log đổi SAU khi lượt `vm` trả về hay bị ngắt. Tệp này là chủ DUY NHẤT của ngữ cảnh + script
+ * `vm` (`scanContext`, `scanScript` — không `export`; `tests/service-split-boundaries.test.ts`,
+ * luật 4). Văn bản và luật vào `vm` qua thuộc tính của ngữ cảnh; script là hằng `'scan(job)'`
+ * (`vm` không phải hộp cát — guard ở `tests/moderation-regex-budget.test.ts`).
  */
 import vm from 'node:vm'
 import { logWarn } from '../utils/logger'
 import { MODERATION_PATTERN_MAX_LENGTH, MODERATION_REGEX_WINDOW, MODERATION_REGEX_WINDOW_OVERLAP } from './moderation-regex-limits'
+import {
+  assertModerationRegexBudget,
+  isModerationRuleDisabled,
+  regexElapsed,
+  requestDeadline,
+  ruleAllowances,
+  settleRegexSpend,
+  type ModerationRegexBudget,
+  type PatternSpend,
+  type WindowOffender,
+} from './moderation-regex-budget'
 
 /**
  * Hạn giờ CỨNG của một cửa sổ (ms). Mẫu lành mạnh tốn µs một cửa sổ 2000 ký tự (đo 30 luật
  * tiếng Việt: ≤ 69 µs trên văn bản thường, ≤ 30 ms trên đầu vào dựng sẵn tệ nhất).
  */
 export const MODERATION_RULE_WINDOW_BUDGET_MS = 200
-/** Thời gian một luật chậm bị tắt (tự bật lại sau đó). */
-export const MODERATION_RULE_COOLDOWN_MS = 10 * 60_000
-/** Tổng thời gian khớp một luật được dùng mỗi chu kỳ — ~10⁴× chi phí một cửa sổ của luật lành mạnh. */
-export const MODERATION_RULE_CUMULATIVE_BUDGET_MS = 1000
-export const MODERATION_RULE_CUMULATIVE_PERIOD_MS = 60_000
-/** Tổng thời gian khớp luật mặc định của một request (chat: câu mới + tối đa 29 lượt cũ; bình luận). */
-export const MODERATION_REQUEST_BUDGET_MS = 250
 /** Lượt `vm` đã chạy quá mức này thì nhường trước cửa sổ kế (xem "Quy lỗi"). */
 const PASS_SLACK_MS = 20
-
-/** `elapsed`: đồng hồ đo khoảng (ms, đơn điệu); `now`: giờ thực (ms) — hạn tắt luật, chu kỳ ngân sách. */
-interface RegexTiming { elapsed: () => number, now: () => number }
-const defaultTiming: RegexTiming = { elapsed: () => performance.now(), now: () => Date.now() }
-let timing: RegexTiming = defaultTiming
-const disabledUntil = new Map<string, number>()
-/** Thời gian đã tính cho mỗi mẫu trong chu kỳ hiện tại của nó. */
-const ruleSpend = new Map<string, { periodStart: number, spentMs: number }>()
-const RULE_SPEND_PRUNE_AT = 1000
 
 /** Một luật regex đã biên dịch (`compileModerationRegex`) cùng chuỗi mẫu làm khoá tắt/log. */
 export interface ModerationRegexRule { pattern: string, regex: RegExp }
 /** Một văn bản cùng các luật quét nó — một phần tử của `testModerationRegexBatch`. */
 export interface ModerationRegexBatchItem { rules: readonly ModerationRegexRule[], text: string }
-
-/** Hạn mức thời gian khớp của MỘT request. Chỉ tạo bằng `createModerationRegexBudget`; chỉ tệp này đọc/đổi. */
-export interface ModerationRegexBudget { readonly limitMs: number }
-/** `byPattern`: ms mỗi mẫu đã dùng trong request — cho dòng log khi hết hạn mức. */
-interface BudgetState { spentMs: number, byPattern: Map<string, number>, logged: boolean }
-const budgets = new WeakMap<ModerationRegexBudget, BudgetState>()
 
 type Outcome =
   | { kind: 'match' } | { kind: 'clean' }
@@ -90,7 +82,7 @@ interface RuleScan { outcome: Outcome | null, skip: boolean }
 interface ItemScan { rules: readonly ModerationRegexRule[], text: string, scans: RuleScan[] }
 interface Position { item: number, rule: number, from: number }
 /**
- * Cửa sổ đang (hoặc vừa) chạy — một phép gán trước mỗi cửa sổ. `startedAt`: `timing.elapsed()`
+ * Cửa sổ đang (hoặc vừa) chạy — một phép gán trước mỗi cửa sổ. `startedAt`: `regexElapsed()`
  * ngay trước nó (`null`: lượt chưa tới cửa sổ nào); `charged`: số cửa sổ của mẫu đã vào `ledger`.
  */
 interface Cursor extends Position { startedAt: number | null, charged: number }
@@ -106,7 +98,7 @@ interface ScanJob {
   /** `before` của cửa sổ đầu của lượt `vm` hiện tại. */
   passStart: number | null
   done: boolean
-  /** Hạn của request trên `timing.elapsed()`; `Infinity` khi không có hạn mức. */
+  /** Hạn của request trên `regexElapsed()`; `Infinity` khi không có hạn mức. */
   deadlineAt: number
   exhausted: boolean
   /** ms mỗi mẫu còn được dùng trong chu kỳ (chụp lúc bắt đầu, chỉ đọc trong `vm`). */
@@ -122,7 +114,7 @@ const matchedBy = (outcome: Outcome | null): boolean =>
 
 /**
  * Vòng quét — mã của realm chính, gọi TỪ script `vm` để watchdog ngắt được nó. Đúng một lần
- * `timing.elapsed()` ngay trước và một lần ngay sau mỗi cửa sổ (đồng hồ giả của test dựa vào nhịp này).
+ * `regexElapsed()` ngay trước và một lần ngay sau mỗi cửa sổ (đồng hồ giả của test dựa vào nhịp này).
  */
 function scan(job: ScanJob): void {
   const step = MODERATION_REGEX_WINDOW - MODERATION_REGEX_WINDOW_OVERLAP
@@ -140,7 +132,7 @@ function scan(job: ScanJob): void {
           job.slowPatterns.add(pattern)
           break
         }
-        const before = timing.elapsed()
+        const before = regexElapsed()
         if (before >= job.deadlineAt) {
           state.outcome = { kind: 'deadline' }
           job.exhausted = true
@@ -153,7 +145,7 @@ function scan(job: ScanJob): void {
         }
         job.at = { item: i, rule: r, from, startedAt: before, charged: ledger.windows }
         const matched = regex.test(item.text.slice(from, from + MODERATION_REGEX_WINDOW))
-        const after = timing.elapsed()
+        const after = regexElapsed()
         job.ledger.set(pattern, { windows: ledger.windows + 1, spentMs: ledger.spentMs + (after - before), item: i })
         if (after - before > MODERATION_RULE_WINDOW_BUDGET_MS) {
           state.outcome = { kind: 'slow', matched, elapsedMs: after - before }
@@ -202,7 +194,7 @@ function runScan(job: ScanJob): void {
     job.next = next
     let timeout = MODERATION_RULE_WINDOW_BUDGET_MS
     if (job.deadlineAt !== Infinity) {
-      const remaining = Math.floor(job.deadlineAt - timing.elapsed())
+      const remaining = Math.floor(job.deadlineAt - regexElapsed())
       if (remaining < 1) { job.exhausted = true; return } // `vm` chỉ nhận số nguyên dương
       timeout = Math.min(timeout, remaining)
     }
@@ -233,7 +225,7 @@ function runScan(job: ScanJob): void {
     idle = 0
     const item = job.items[at.item]!
     const { pattern } = item.rules[at.rule]!
-    const ranFor = timing.elapsed() - at.startedAt
+    const ranFor = regexElapsed() - at.startedAt
     const ledger = job.ledger.get(pattern) ?? NOTHING_CHARGED
     // Cửa sổ đang chạy chưa vào sổ (ngắt rơi trước `ledger.set`): tính phần nó đã chạy.
     if (ledger.windows === at.charged) job.ledger.set(pattern, { windows: ledger.windows + 1, spentMs: ledger.spentMs + ranFor, item: at.item })
@@ -252,90 +244,19 @@ function runScan(job: ScanJob): void {
   }
 }
 
-/** Chu kỳ ngân sách đang mở của mẫu, hay `undefined` khi đã hết hạn (đồng hồ lùi cũng tính là hết). */
-function currentPeriod(pattern: string, now: number): { periodStart: number, spentMs: number } | undefined {
-  const entry = ruleSpend.get(pattern)
-  return entry && now >= entry.periodStart && now - entry.periodStart < MODERATION_RULE_CUMULATIVE_PERIOD_MS ? entry : undefined
-}
-
-function disable(pattern: string, fields: Record<string, unknown>): void {
-  disabledUntil.set(pattern, timing.now() + MODERATION_RULE_COOLDOWN_MS)
-  ruleSpend.delete(pattern) // bật lại sau thời gian chờ thì bắt đầu một chu kỳ mới
-  logWarn({ event: 'ai_moderation.rule_slow_disabled', pattern: pattern.slice(0, MODERATION_PATTERN_MAX_LENGTH), ...fields, disabledForMs: MODERATION_RULE_COOLDOWN_MS })
-}
-
-/** Ghi hậu quả của lượt quét (tắt luật, sổ chu kỳ, hạn mức request, log) và trả kết quả. */
-function settle(job: ScanJob, budget: { limitMs: number, state: BudgetState } | undefined, callMs: number): boolean[][] {
-  const disabledNow = new Set<string>()
+/** Nộp hậu quả của lượt quét cho sổ (`settleRegexSpend`: tắt luật, chu kỳ, hạn mức request, log) và trả kết quả. */
+function settle(job: ScanJob, budget: ModerationRegexBudget | undefined, callMs: number): boolean[][] {
+  const offenders: WindowOffender[] = []
   for (const item of job.items) {
     item.scans.forEach((state, index) => {
       const outcome = state.outcome
       if (outcome?.kind !== 'slow' && outcome?.kind !== 'interrupted') return
-      const pattern = item.rules[index]!.pattern
-      disabledNow.add(pattern)
-      disable(pattern, { elapsedMs: Math.round(outcome.elapsedMs), inputLength: item.text.length, reason: 'window', ...(outcome.kind === 'interrupted' ? { interrupted: true } : {}) })
+      offenders.push({ pattern: item.rules[index]!.pattern, elapsedMs: outcome.elapsedMs, inputLength: item.text.length, interrupted: outcome.kind === 'interrupted' })
     })
   }
-  const now = timing.now()
-  if (ruleSpend.size > RULE_SPEND_PRUNE_AT) for (const [pattern] of ruleSpend) if (!currentPeriod(pattern, now)) ruleSpend.delete(pattern)
-  for (const [pattern, ledger] of job.ledger) {
-    budget?.state.byPattern.set(pattern, (budget.state.byPattern.get(pattern) ?? 0) + ledger.spentMs)
-    if (disabledNow.has(pattern)) continue
-    const period = currentPeriod(pattern, now)
-    const spentMs = (period?.spentMs ?? 0) + ledger.spentMs
-    ruleSpend.set(pattern, { periodStart: period?.periodStart ?? now, spentMs })
-    if (spentMs >= MODERATION_RULE_CUMULATIVE_BUDGET_MS) {
-      disable(pattern, { elapsedMs: Math.round(spentMs), inputLength: job.items[ledger.item]!.text.length, reason: 'cumulative', periodMs: MODERATION_RULE_CUMULATIVE_PERIOD_MS })
-    }
-  }
-  if (budget) {
-    const { state } = budget
-    state.spentMs += callMs
-    if (job.exhausted && !state.logged) {
-      state.logged = true
-      const [topPattern, topMs] = [...state.byPattern].reduce((top, entry) => (entry[1] > top[1] ? entry : top), ['', 0])
-      logWarn({
-        event: 'ai_moderation.request_budget_exhausted',
-        budgetMs: budget.limitMs,
-        spentMs: Math.round(state.spentMs),
-        topPattern: topPattern.slice(0, MODERATION_PATTERN_MAX_LENGTH),
-        topPatternMs: Math.round(topMs),
-        texts: job.items.length,
-      })
-    }
-  }
+  const spend: PatternSpend[] = [...job.ledger].map(([pattern, ledger]) => ({ pattern, spentMs: ledger.spentMs, inputLength: job.items[ledger.item]!.text.length }))
+  settleRegexSpend({ offenders, spend, ...(budget ? { request: { budget, callMs, exhausted: job.exhausted, texts: job.items.length } } : {}) })
   return job.items.map(item => item.scans.map(state => matchedBy(state.outcome)))
-}
-
-/** Chỉ cho test: thay đồng hồ để không phải đo thời gian thật. `null` = khôi phục. */
-export function setModerationRegexTimingForTests(next: RegexTiming | null): void {
-  timing = next ?? defaultTiming
-}
-
-/**
- * Bật lại mọi luật đã bị tắt vì chậm và xoá sổ ngân sách chu kỳ (gọi cùng lúc với xoá cache
- * luật — thao tác của cán bộ). Không gọi thì luật tự bật lại sau `MODERATION_RULE_COOLDOWN_MS`.
- */
-export function resetSlowModerationRules(): void {
-  disabledUntil.clear()
-  ruleSpend.clear()
-}
-
-/** Luật này có đang bị tắt vì chậm không. */
-export function isModerationRuleDisabled(pattern: string): boolean {
-  const until = disabledUntil.get(pattern)
-  if (until === undefined) return false
-  if (until > timing.now()) return true
-  disabledUntil.delete(pattern)
-  return false
-}
-
-/** Một hạn mức thời gian khớp mới cho MỘT request (mặc định `MODERATION_REQUEST_BUDGET_MS`). */
-export function createModerationRegexBudget(limitMs: number = MODERATION_REQUEST_BUDGET_MS): ModerationRegexBudget {
-  if (!(limitMs >= 0)) throw new RangeError(`moderation regex budget must be ≥ 0 ms, got ${String(limitMs)}`)
-  const budget: ModerationRegexBudget = Object.freeze({ limitMs })
-  budgets.set(budget, { spentMs: 0, byPattern: new Map(), logged: false })
-  return budget
 }
 
 /**
@@ -349,16 +270,14 @@ export function testModerationRegexBatch(
   input: readonly ModerationRegexBatchItem[],
   options: { stopAtFirstMatch?: boolean, budget?: ModerationRegexBudget } = {},
 ): boolean[][] {
-  const budgetState = options.budget === undefined ? undefined : budgets.get(options.budget)
-  if (options.budget !== undefined && budgetState === undefined) throw new TypeError('budget must come from createModerationRegexBudget()')
+  const { budget } = options
+  assertModerationRegexBudget(budget)
   const disabled = new Map<string, boolean>()
   const isDisabled = (pattern: string) => disabled.get(pattern) ?? disabled.set(pattern, isModerationRuleDisabled(pattern)).get(pattern)!
   const items: ItemScan[] = input.map(({ rules, text }) => ({ rules, text, scans: rules.map(rule => ({ outcome: null, skip: isDisabled(rule.pattern) })) }))
   if (items.every(item => item.scans.every(state => state.skip))) return items.map(item => item.scans.map(() => false))
-  const now = timing.now()
-  const allowance = new Map<string, number>()
-  for (const [pattern, off] of disabled) if (!off) allowance.set(pattern, MODERATION_RULE_CUMULATIVE_BUDGET_MS - (currentPeriod(pattern, now)?.spentMs ?? 0))
-  const startedAt = budgetState ? timing.elapsed() : 0
+  const allowance = ruleAllowances([...disabled].filter(([, off]) => !off).map(([pattern]) => pattern))
+  const startedAt = budget ? regexElapsed() : 0
   const job: ScanJob = {
     items,
     stopAtFirstMatch: options.stopAtFirstMatch === true,
@@ -366,7 +285,7 @@ export function testModerationRegexBatch(
     at: { item: 0, rule: 0, from: 0, startedAt: null, charged: 0 },
     passStart: null,
     done: false,
-    deadlineAt: budgetState ? startedAt + options.budget!.limitMs - budgetState.spentMs : Infinity,
+    deadlineAt: budget ? requestDeadline(budget, startedAt) : Infinity,
     exhausted: false,
     allowance,
     ledger: new Map(),
@@ -377,8 +296,8 @@ export function testModerationRegexBatch(
     runScan(job)
   } finally {
     // Cả khi một lượt khớp ném lỗi: luật đã quét vẫn bị tắt/tính giờ/ghi log như trước.
-    const callMs = budgetState ? timing.elapsed() - startedAt : 0
-    results = settle(job, budgetState && { limitMs: options.budget!.limitMs, state: budgetState }, callMs)
+    const callMs = budget ? regexElapsed() - startedAt : 0
+    results = settle(job, budget, callMs)
   }
   return results
 }
