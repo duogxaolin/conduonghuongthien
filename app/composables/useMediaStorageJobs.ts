@@ -36,7 +36,9 @@ import type {
  * Two fixes over the pre-split page, each pinned by a test:
  *   - leaving the page while the first status read or a start request is still in flight
  *     no longer starts a 3-second poll afterwards — `onUnmounted` had already run, so
- *     nothing would ever stop it (`usePollTimer`);
+ *     nothing would ever stop it (`usePollTimer`). A start or force-reset request whose
+ *     answer lands after the page left also drops it: no "Đã khởi tạo job…" toast and no
+ *     direct status read, which could toast a job result on whatever page came next;
  *   - "Hủy" answered `{ ok: false }` (HTTP 200: the job ended between two polls) shows the
  *     server's sentence instead of claiming a cancel was sent.
  */
@@ -49,19 +51,22 @@ export interface MediaJobDeps {
 
 const POLL_INTERVAL_MS = 3000
 
-/** The 3-second status poll of one job. Never armed once the page has left. */
+/**
+ * The 3-second status poll of one job. Never armed once the page has left; `left()` tells
+ * a request that was in flight when the page left to drop its answer (no toast, no read).
+ */
 function usePollTimer(poll: () => Promise<void>) {
   let timer: ReturnType<typeof setInterval> | null = null
-  let left = false
+  let gone = false
   const start = () => {
-    if (timer || left) return
+    if (timer || gone) return
     timer = setInterval(poll, POLL_INTERVAL_MS)
   }
   const stop = () => {
     if (timer) { clearInterval(timer); timer = null }
   }
-  onUnmounted(() => { left = true; stop() })
-  return { start, stop }
+  onUnmounted(() => { gone = true; stop() })
+  return { start, stop, left: () => gone }
 }
 
 // ─── Quét thư mục uploads ─────────────────────────────────────────────────────
@@ -119,6 +124,7 @@ export function useMediaScanJob({ toast, confirm, onFinished }: MediaJobDeps) {
         method: 'POST',
         body: { autoRepointToR2: autoRepointToR2.value },
       })
+      if (timer.left()) return
       toast.info(autoRepointToR2.value
         ? 'Đã khởi tạo job quét + tự đẩy R2. Đang chạy nền...'
         : 'Đã khởi tạo job quét. Đang chạy nền...')
@@ -149,6 +155,7 @@ export function useMediaScanJob({ toast, confirm, onFinished }: MediaJobDeps) {
     forceResettingScan.value = true
     try {
       const res = await adminFetch<ScanForceResetResponse>('/api/admin/media/scan-force-reset', { method: 'POST' })
+      if (timer.left()) return
       toast.success(res.message)
       await pollScanStatus()
     } catch (err: unknown) {
@@ -217,6 +224,7 @@ export function useMediaSyncJob({ toast, confirm, onFinished }: MediaJobDeps) {
         method: 'POST',
         body: { direction },
       })
+      if (timer.left()) return
       toast.info('Đã khởi tạo job sync. Đang chạy nền...')
       timer.start()
       await pollStatus()
@@ -246,6 +254,7 @@ export function useMediaSyncJob({ toast, confirm, onFinished }: MediaJobDeps) {
     forceResettingSync.value = true
     try {
       const res = await adminFetch<SyncForceResetResponse>('/api/admin/media/sync-force-reset', { method: 'POST' })
+      if (timer.left()) return
       toast.success(res.message)
       await pollStatus()
     } catch (err: unknown) {

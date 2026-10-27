@@ -49,7 +49,10 @@ import { useAdminList } from '../app/composables/useAdminList.ts'
 import { errorMessage, errorStatus } from '../app/utils/errorMessage.ts'
 import { rescanAiNotice, rescanFinishedToast, rescanSummaryText } from '../app/utils/moderation-rescan-summary.ts'
 import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
-import { moderationPageSource, readModerationPart } from './_moderation-page-parts.ts'
+import {
+  MODERATION_PANELS_DIR, moderationPageFiles, moderationPageSource, moderationPageSourceWith, moderationPanelFiles,
+  readAppFile, readModerationPart,
+} from './_moderation-page-parts.ts'
 import { byText, click, findAll, fire, input, mountSfc, textOf, type MiniElement, type MountedSfc } from './_sfc-mount.ts'
 import { COLOR_TOKENS } from '../shared/color-tokens.ts'
 
@@ -1202,18 +1205,33 @@ describe('moderation page — the review queue follows the latest request (RED o
 // ─── Source ──────────────────────────────────────────────────────────────────
 
 describe('moderation page — source (RED on the base)', () => {
-  const PANELS = ['settingsPanel', 'queuePanel', 'rulesPanel', 'workerPanel'] as const
-
   it('no part calls or casts $fetch; the page still counts as fetching for the error/skeleton coverage gates', () => {
     assert.doesNotMatch(moderationPageSource(), /\$fetch\b/, 'a part still uses $fetch — go through adminFetch<T>()')
     assert.match(readModerationPart('page'), ADMIN_FETCH_CALL)
     assert.match(readModerationPart('page'), /\buseAdminList\s*</, 'the review queue is a useAdminList list')
   })
 
+  // Every `.vue` in the panels directory, read on disk (tests/_moderation-page-parts.ts) —
+  // not a fixed list: a panel added later is held to the same rule.
   it('the panels do not fetch: every request, and the error/retry branch, stay in the page (split-guard rule)', () => {
-    for (const panel of PANELS) {
-      assert.doesNotMatch(readModerationPart(panel), ADMIN_FETCH_CALL, `${panel} fetches — the coverage gates would need it listed`)
-      assert.doesNotMatch(readModerationPart(panel), /role="alert"/, `${panel}: the error branch belongs to the page`)
+    const panels = moderationPanelFiles()
+    assert.ok(panels.length >= 4, `panels: ${JSON.stringify(panels)}`)
+    for (const panel of panels) {
+      assert.doesNotMatch(readAppFile(panel), ADMIN_FETCH_CALL, `${panel} fetches — the coverage gates would need it listed`)
+      assert.doesNotMatch(readAppFile(panel), /role="alert"/, `${panel}: the error branch belongs to the page`)
     }
+  })
+
+  it('injection proof: "must appear nowhere" scans read every panel on disk and the modules split out of the page', () => {
+    const planted = '\nfunction rescanSummaryText() { return "" }\n'
+    const NOWHERE = /function rescanSummaryText/
+    assert.doesNotMatch(moderationPageSource(), NOWHERE)
+    // A panel nobody listed yet, and the two modules the split pulled out of the page.
+    assert.match(moderationPageSourceWith({ [`${MODERATION_PANELS_DIR}/ModerationExtraPanel.vue`]: planted }), NOWHERE)
+    assert.match(moderationPageSourceWith({ 'utils/moderation-format.ts': readAppFile('utils/moderation-format.ts') + planted }), NOWHERE)
+    assert.match(moderationPageSourceWith({ 'types/moderation.ts': readAppFile('types/moderation.ts') + planted }), NOWHERE)
+    // Only what the real scan would read joins: a file outside the family does not.
+    assert.equal(moderationPageSourceWith({ 'components/admin/ai/AiModerationTab.vue': planted }), moderationPageSource())
+    assert.ok(moderationPageFiles().includes('utils/moderation-format.ts') && moderationPageFiles().includes('types/moderation.ts'))
   })
 })

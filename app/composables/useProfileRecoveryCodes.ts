@@ -73,6 +73,10 @@ export function useProfileRecoveryCodes({ toast, focusField, username, afterChan
   function closeRecovery() {
     session += 1
     recoveryDialog.open = false
+    // The request in flight (or the one whose success is closing the dialog) belongs to
+    // the session just ended, so its `finally` no longer resets this: a closed dialog is
+    // never left busy.
+    recoveryDialog.busy = false
     recoveryDialog.currentPassword = ''
   }
 

@@ -17,6 +17,12 @@
  * scripts/docs-facts.ts`. The resolver is required, as for `db:drift`: the drift parser and
  * the seed modules import project files extension-less.
  *
+ * DEV-ONLY — run it in a git checkout with `npm ci` done, never in the container. It needs
+ * the `.git` directory (`git ls-files`; the image has none — .dockerignore drops `.git`) and
+ * two devDependencies, `typescript` and `js-yaml`, that the runtime image does not install
+ * (`npm ci --omit=dev`). The image still ships this file, because the runtime stage copies
+ * all of `scripts/`; `docker exec … npm run docs:facts` fails there by design.
+ *
  * How each count is measured (the methods CLAUDE.md used to print next to the numbers):
  *   - tables · columns: `tablesFromSchema()` of scripts/check-schema-drift.ts on
  *     server/db/schema.ts — the same parser as `db:drift`, not a second one. Columns are the

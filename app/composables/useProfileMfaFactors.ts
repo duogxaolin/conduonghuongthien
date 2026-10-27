@@ -73,6 +73,10 @@ export function useMfaEnrollDialog({ toast, focusField, codes, afterEnabled }: M
   function closeEnroll() {
     session += 1
     enrollDialog.open = false
+    // The request in flight (or the one whose success is closing the dialog) belongs to
+    // the session just ended, so its `finally` no longer resets this: a closed dialog is
+    // never left busy.
+    enrollDialog.busy = false
     // Bí mật TOTP chỉ hiện một lần; xoá khỏi bộ nhớ trang ngay khi đóng.
     enrollDialog.totpSecret = ''
     enrollDialog.otpauthUri = ''
@@ -208,6 +212,7 @@ export function useMfaDisableDialog({ toast, focusField, afterDisabled }: MfaDis
   function closeDisable() {
     session += 1
     disableDialog.open = false
+    disableDialog.busy = false // as in closeEnroll: a closed dialog is never left busy
     disableDialog.currentPassword = ''
   }
 

@@ -1883,7 +1883,8 @@ Nhánh `wave3/1-ratchets` (PR #144, `e964dda` + `9da12ab`), gộp vào `wave3/in
   - hex 3946 (§ 46);
   - ép kiểu 290 chỗ / 102 tệp (−29 ở § 49; −12, −12, −8 ở ba trang tách, § 52);
   - độ dài tệp 63 mục, 5 exempt;
-  - độ phủ: `app/composables` 61.88 · `app/utils` 94.86 · `server/api` 53.4 · `server/data` 100 · `server/db` 71.84 · `server/middleware` 82.31 · `server/plugins` 44.36 · `server/routes` 40.11 · `server/services` 84.14 · `server/utils` 92.49 · `shared` 95.9.
+  - độ phủ: `app/composables` 61.88 · `app/utils` 94.86 · `server/api` 53.4 · `server/data` 100 · `server/db` 71.84 · `server/middleware` 82.31 · `server/plugins` 44.36 · `server/routes` 40.11 · `server/services` 84.14 · `server/utils` 92.49 · `shared` 95.9 — mức ghi từ `99695ca` (lát R2), CHƯA nâng theo các lát sau (Ngôn ngữ, ba trang tách, hai module tách), nên cổng để hở tới ~5 điểm. Nâng ở `wave3/verify-fixes` (§ 53).
+- **Mức nền độ phủ sau `wave3/verify-fixes`** (`--update`, Node 24.21 trong container `cdkt-cov:node24`, `TZ=Asia/Ho_Chi_Minh` như CI; sáu thư mục không lát nào chạm đo khớp mức cũ trong 0,01): `app/composables` 61.88 → 67.28 · `app/utils` 94.86 → 95.06 · `server/api` 53.4 → 56.74 · `server/services` 84.14 → 85.13 · `server/utils` 92.49 → 93.52; `server/data` 100 · `server/db` 71.84 · `server/middleware` 82.31 · `server/plugins` 44.36 · `server/routes` 40.11 · `shared` 95.9 giữ nguyên. Trước khi nâng, xoá `tests/admin-media-scan-page.test.ts` (nơi duy nhất nạp `useMediaStorageJobs.ts`, 262 dòng) chỉ đưa `app/composables` xuống ≈ 63,15 — trên ngưỡng 61,38, CI vẫn xanh.
 - **Còn mở:** ratchet chỉ chặn đi lùi. Đưa hex và ép kiểu về gần 0 là việc của 3.7 (§ 46) và phần còn lại của 7.1 (§ 49).
 
 ### 45. Đợt 3 — 2.1/2.2 CSP giai đoạn 1: quan sát (2026-10-25)
@@ -2104,7 +2105,18 @@ Design D-SPLIT. Số dòng đo bằng `wc -l` trên `9ee740b`.
 - **Kiểm chứng trên đỉnh `9ee740b`** (2026-10-27):
   - `npm test` 5888 / 5834 pass / 0 fail / 54 skip, gồm `tests/ratchets/*.test.ts` — +816 test so với § 43 (5072 / 5019 / 0 / 53);
   - E2E 116/116, Playwright 5,0 phút (chạy dưới giới hạn tài nguyên `cap80`);
-  - chưa chạy lại integration trên đỉnh này (lượt gần nhất: 22/22 suite trên `wave2/integration` `3d69836`, CLAUDE.md § Test); typecheck/lint chưa đo trên đỉnh trong lượt này.
+  - chưa chạy lại integration trên đỉnh này (lượt gần nhất: 22/22 suite trên `wave2/integration` `3d69836`, CLAUDE.md § Test).
+- **Kiểm chứng độc lập trên đỉnh `7946592`** (2026-10-27, mọi lệnh nặng qua `cap80`, lần lượt): typecheck **0 lỗi**; `npm test` 5888 / 5834 / 0 / 54; lint **0 lỗi / 16 cảnh báo**; `npm run test:coverage` xanh (ratchet độ phủ qua); `docs:facts` sạch. **0 CRITICAL, 2 WARNING, 5 SUGGESTION.** Bằng chứng chính cho các lát chưa từng có lượt kiểm độc lập:
+  - hai module tách: khai báo cấp đỉnh giống từng byte (22/22, 35/35), API 20 + 20 tên không đổi, không vòng import; cài `sql.raw`/`xForwardedFor`/bucket trong tiến trình vào một phần tách (kể cả một tệp con MỚI chưa track), cài ngưỡng `content.length >= 5` vào `moderation-instant.ts` → guard đỏ;
+  - token: 4722/4722 cặp đổi tên trong năm commit token đúng giá trị/tiền tố/opacity; histogram lớp màu của ba trang tách giống bản gốc (178, 118, 157); codemod chạy thử trên `app shared server` đề xuất 0 thay thế, 148 hex trùng giá trị token đều có lý do `order`/`order-merge`; biên dịch Tailwind thật: mọi lớp token có CSS trừ `bg-brand-700/12` và `/8` (dạng hex cũ cũng không có — lỗi có sẵn, đã ghi ở § 46);
+  - đột biến đỏ cho § 47 (escape tiêu đề Markdown, bản chép `slugify`, danh sách cổng SMTP), § 48 (`..` ở `/uploads`, phạm vi `readerId` của thông báo, lọc HTML lúc đọc), § 50 (đăng xuất không tăng `tokenVersion`, thiếu `linkedAt`, `to` của lịch sử không cộng một ngày), § 46 (tắt bảo vệ thứ tự cascade → 24 test đỏ).
+- **`wave3/verify-fixes` — sửa theo lượt kiểm trên**, mỗi mục có bằng chứng đỏ-trước:
+  - W1: nâng mức nền độ phủ (§ 44);
+  - W2: `tests/_moderation-page-parts.ts` suy tập tệp từ thư mục `app/components/admin/ai/moderation/` (danh sách mong đợi là tập con) và thêm `utils/moderation-format.ts` + `types/moderation.ts` (mã tách ra từ trang); vòng "panel không fetch / không `role="alert"`" của `admin-moderation-page` dùng tập suy ra. Trước: bản chép `rescanSummaryText` cài vào `moderation-format.ts` xanh 6/0, một panel mới có `$fetch` + `role="alert"` xanh 2/0; sau: cả hai đỏ;
+  - S1: `useMediaStorageJobs.ts` — câu trả lời của POST bắt đầu/gỡ kẹt về sau khi đã rời trang thì bỏ: không toast "Đã khởi tạo job…", không đọc trạng thái trực tiếp (lượt đọc đó từng toast kết quả job ở trang khác). Test mới trong `admin-media-scan-page` đỏ trước (4 lượt đọc sau khi rời trang);
+  - S2: `close*()` của ba hộp thoại hồ sơ đặt lại `busy` — hộp thoại đã đóng (Huỷ khi đang gửi, hoặc tự đóng sau khi thành công) không còn kẹt "bận" tới lần mở sau. `tests/admin-profile-dialog-busy.test.ts` đỏ 4/4 trước;
+  - S4: chú thích đầu `scripts/docs-facts.ts`: chỉ chạy trên máy dev (cần `.git` + devDependencies `typescript`/`js-yaml`), không chạy trong container;
+  - S5: guard "panel không fetch" của `/admin/media/scan` đỏ khi thư mục panel vắng hoặc rỗng (trước: xanh rỗng khi thư mục bị đổi tên).
 - Việc còn mở của cả đợt: mục "(Đợt 3)" trong "Chưa xử lý" ngay dưới đây.
 
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27)
