@@ -1,19 +1,12 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
-interface SocialLink {
-  id: number
-  platform: string
-  label: string
-  url: string
-  icon: string
-  iconType: 'fontawesome' | 'image' | 'svg'
-  color: string
-  sortOrder: number
-  isVisible: boolean
-  createdAt: string | null
-  updatedAt: string | null
-}
+import type {
+  AdminSocialLink, LayoutSettingsResponse, LayoutSettingsSaveResponse, SocialLinkCreateResponse, SocialLinkDeleteResponse,
+  SocialLinksReorderResponse, SocialLinksResponse, SocialLinkUpdateResponse,
+} from '~/types/admin-settings-api'
+// Kiểu suy từ handler: `iconType` là `string` của cột (máy chủ chỉ lưu 3 giá trị) — startEdit thu hẹp.
+type SocialLink = AdminSocialLink
 
 import { useLayoutConfig, type LayoutConfig, DEFAULT_LAYOUT_CONFIG } from '~/composables/useLayoutConfig'
 
@@ -73,7 +66,7 @@ const layoutDraft = ref<LayoutConfig>({ ...DEFAULT_LAYOUT_CONFIG })
 async function loadLayout() {
   layoutLoading.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout')
+    const res = await adminFetch<LayoutSettingsResponse>('/api/admin/settings/layout')
     if (res?.ok && res.config) layoutDraft.value = { ...res.config }
   } catch {
     // layout chưa cấu hình → giữ default
@@ -85,7 +78,7 @@ async function loadLayout() {
 async function saveLayout() {
   layoutBusy.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout', {
+    const res = await adminFetch<LayoutSettingsSaveResponse>('/api/admin/settings/layout', {
       method: 'PUT',
       body: { ...layoutDraft.value },
     })
@@ -104,7 +97,7 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: SocialLink[] }>)('/api/admin/social-links')
+    const res = await adminFetch<SocialLinksResponse>('/api/admin/social-links')
     if (res.ok) items.value = res.items || []
   } catch (err: unknown) {
     loadError.value = errorMessage(err, 'Không tải được danh sách mạng xã hội.')
@@ -164,13 +157,13 @@ async function save() {
   busy.value = true
   try {
     if (editingId.value == null) {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; id: number }>)('/api/admin/social-links', {
+      const res = await adminFetch<SocialLinkCreateResponse>('/api/admin/social-links', {
         method: 'POST', body: { ...form.value, sortOrder: items.value.length },
       })
       toast.success(`Đã thêm "${form.value.label}".`)
       editingId.value = res.id
     } else {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/social-links/${editingId.value}`, {
+      await adminFetch<SocialLinkUpdateResponse>(`/api/admin/social-links/${editingId.value}`, {
         method: 'PUT', body: form.value,
       })
       toast.success(`Đã cập nhật "${form.value.label}".`)
@@ -185,7 +178,7 @@ async function save() {
 
 async function toggleVisible(item: SocialLink) {
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/social-links/${item.id}`, {
+    await adminFetch<SocialLinkUpdateResponse>(`/api/admin/social-links/${item.id}`, {
       method: 'PUT', body: { isVisible: !item.isVisible },
     })
     item.isVisible = !item.isVisible
@@ -204,7 +197,7 @@ async function remove(item: SocialLink) {
   })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/social-links/${item.id}`, { method: 'DELETE' })
+    await adminFetch<SocialLinkDeleteResponse>(`/api/admin/social-links/${item.id}`, { method: 'DELETE' })
     toast.success(`Đã xóa "${item.label}".`)
     if (editingId.value === item.id) resetForm()
     await load()
@@ -222,7 +215,7 @@ async function move(item: SocialLink, dir: -1 | 1) {
   // Đảo local ngay để UI responsive, rồi sync server.
   ;[items.value[idx], items.value[swap]] = [items.value[swap] as SocialLink, items.value[idx] as SocialLink]
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)('/api/admin/social-links/reorder', {
+    await adminFetch<SocialLinksReorderResponse>('/api/admin/social-links/reorder', {
       method: 'POST', body: { orderedIds: ordered },
     })
   } catch (err: unknown) {

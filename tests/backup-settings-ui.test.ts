@@ -3,6 +3,7 @@ import test, { mock } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { parse } from '@vue/compiler-sfc'
 import { BACKUP_SUPERADMIN_ONLY_KEYS, backupSettingsPayload, type BackupSettingsForm } from '../app/utils/backup-settings-payload'
+import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
 
 /**
  * The "Cài đặt backup" block on /admin/settings/backup, against the server rule
@@ -128,5 +129,7 @@ test('panel: a failed settings load blocks saving (defaults would overwrite real
   assert.match(composable, /settingsLoadError\.value = errorMessage\(err, /)
   assert.match(composable, /if \(!settingsLoaded\.value\) return/)
   assert.match(composable, /backupSettingsPayload\(backupSettings\.value, selectedDays\.value, isSuperAdmin\.value\)/)
-  assert.doesNotMatch(panelScript, /\$fetch/, 'network calls stay in the composable')
+  // Bare `$fetch` or `adminFetch<T>()` (D-FETCH): either would be a request outside the composable.
+  assert.doesNotMatch(panelScript, ADMIN_FETCH_CALL, 'network calls stay in the composable')
+  assert.match(composable, /\badminFetch</, 'the composable makes them')
 })

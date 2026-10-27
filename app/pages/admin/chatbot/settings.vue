@@ -2,6 +2,7 @@
 // `errorMessage` ở tệp này đã là tên một ref hiển thị, nên helper dùng chung
 // vào dưới alias — trùng tên sẽ khiến ref che mất hàm và không có lỗi nào.
 import { errorMessage as readErrorMessage } from '~/utils/errorMessage'
+import type { AiPricingResponse, AiProvidersResponse, ChatbotSettingsResponse, ChatbotSettingsSaveResponse } from '~/types/admin-settings-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -33,8 +34,7 @@ type EditableSettings = {
   rateLimitWindowSeconds: number
 }
 
-type SettingsResponse = Record<string, unknown>
-
+type SettingsResponse = Record<string, unknown> // khối `settings` của GET (đã có kiểu), đọc phòng thủ từng trường
 type SettingsMetadata = {
   systemPromptConfigured: boolean
   systemPromptLength: number
@@ -197,9 +197,9 @@ async function load() {
   errorMessage.value = ''
   try {
     const [response, provData, priceData] = await Promise.all([
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ settings?: SettingsResponse; currentSystemPrompt?: string; currentProvider?: string; currentModel?: string }>)('/api/admin/chatbot/settings'),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ providers: Array<{ provider: string; label: string; isActive: boolean }> }>)('/api/admin/ai/providers').catch(() => ({ providers: [] })),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: Array<{ model: string; provider: string; label: string | null; promptCostPerMillion: number; completionCostPerMillion: number; isActive: boolean }> }>)('/api/admin/ai/pricing').catch(() => ({ pricing: [] })),
+      adminFetch<ChatbotSettingsResponse>('/api/admin/chatbot/settings'),
+      adminFetch<AiProvidersResponse>('/api/admin/ai/providers').catch(() => ({ providers: [] })),
+      adminFetch<AiPricingResponse>('/api/admin/ai/pricing').catch(() => ({ pricing: [] })),
     ])
     activeProviders.value = provData.providers.filter(p => p.isActive)
     activeModels.value = priceData.pricing
@@ -229,7 +229,7 @@ async function save() {
 
   saving.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/chatbot/settings', { method: 'PATCH', body })
+    await adminFetch<ChatbotSettingsSaveResponse>('/api/admin/chatbot/settings', { method: 'PATCH', body })
     await load()
     toast.success('Đã lưu cấu hình chatbot.')
   } catch (error) {

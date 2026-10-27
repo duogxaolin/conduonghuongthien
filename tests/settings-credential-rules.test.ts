@@ -5,6 +5,7 @@ import { parse } from '@vue/compiler-sfc'
 import * as shared from '../shared/settings-credential-rules'
 import * as smtp from '../server/utils/smtp-test-config'
 import * as guard from '../server/utils/settings-credential-guard'
+import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
 
 /**
  * `shared/settings-credential-rules.ts` is the "change the destination → retype the
@@ -143,7 +144,8 @@ for (const [file, guardCall, saveFn] of [
     assert.ok(start >= 0, `defines ${saveFn}`)
     const body = src.slice(start)
     const guardAt = body.search(/if \((formViolation|r2Violation)\.value\)/)
-    const fetchAt = body.indexOf('$fetch')
+    // The save request, bare `$fetch` or `adminFetch<T>()` (D-FETCH) — one definition with the error/skeleton gates.
+    const fetchAt = body.search(ADMIN_FETCH_CALL)
     assert.ok(guardAt >= 0 && fetchAt > guardAt, 'the guard runs before the save request')
   })
 }
