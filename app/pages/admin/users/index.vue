@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminUserRow, AdminRoleRow } from '~/types/admin-api'
+import type { AdminRolesResponse, AdminUserCreateResponse, AdminUserDeleteResponse, AdminUsersResponse, AdminUserUpdateResponse } from '~/types/admin-users-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
 definePageMeta({
   layout: 'admin',
@@ -29,10 +30,7 @@ const fetchUsers = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const [uRes, rRes] = await Promise.all([
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; users: AdminUserRow[] }>)(`/api/admin/users`),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; roles: AdminRoleRow[] }>)(`/api/admin/roles`),
-    ])
+    const [uRes, rRes] = await Promise.all([adminFetch<AdminUsersResponse>(`/api/admin/users`), adminFetch<AdminRolesResponse>(`/api/admin/roles`)])
     if (uRes.ok) users.value = uRes.users
     if (rRes.ok) roles.value = rRes.roles
     // Ids from the previous load are meaningless once the list changes.
@@ -50,7 +48,7 @@ const handleCreateUser = async () => {
   errorMsg.value = ''
   saving.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/users`, { method: 'POST', body: form })
+    const res = await adminFetch<AdminUserCreateResponse>(`/api/admin/users`, { method: 'POST', body: form })
     if (res.ok) {
       toast.success(`Đã tạo tài khoản ${form.username} thành công!`)
       showModal.value = false
@@ -67,7 +65,8 @@ const handleCreateUser = async () => {
 
 const openEditModal = (user: AdminUserRow) => {
   editForm.id = user.id; editForm.username = user.username; editForm.email = user.email || ''
-  editForm.roleId = user.roleId || 2; editForm.password = ''; editForm.isActive = user.isActive !== false  // cột nullable: null đọc là đang bật, đúng DEFAULT của DB
+  // `is_active` NULL = ĐÃ KHOÁ, như danh sách và cổng đăng nhập; đọc là "bật" thì lưu email mới cũng mở khoá.
+  editForm.roleId = user.roleId || 2; editForm.password = ''; editForm.isActive = user.isActive === true
   errorMsg.value = ''; showEditModal.value = true
 }
 
@@ -83,7 +82,7 @@ const handleUpdateUser = async () => {
   }
   saving.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/users/${editForm.id}`, { method: 'PUT', body })
+    const res = await adminFetch<AdminUserUpdateResponse>(`/api/admin/users/${editForm.id}`, { method: 'PUT', body })
     if (res.ok) {
       toast.success(`Đã cập nhật tài khoản ${editForm.username} thành công!`)
       showEditModal.value = false; await fetchUsers()
@@ -98,7 +97,7 @@ const handleUpdateUser = async () => {
 
 const toggleActive = async (user: AdminUserRow) => {
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/users/${user.id}`, { method: 'PUT', body: { isActive: !user.isActive } })
+    await adminFetch<AdminUserUpdateResponse>(`/api/admin/users/${user.id}`, { method: 'PUT', body: { isActive: !user.isActive } })
     user.isActive = !user.isActive
     toast.success(`Đã ${user.isActive ? 'kích hoạt' : 'khóa'} tài khoản ${user.username}!`)
   } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể đổi trạng thái')) }
@@ -108,7 +107,7 @@ const deleteUser = async (user: AdminUserRow) => {
   const ok = await confirm({ title: 'Xóa tài khoản', message: `Bạn có chắc muốn xóa tài khoản ${user.username}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/users/${user.id}`, { method: 'DELETE' })
+    await adminFetch<AdminUserDeleteResponse>(`/api/admin/users/${user.id}`, { method: 'DELETE' })
     toast.success('Đã xóa người dùng thành công!'); await fetchUsers()
   } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa người dùng')) }
 }

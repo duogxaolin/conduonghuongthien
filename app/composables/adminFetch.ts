@@ -43,6 +43,8 @@ export interface AdminFetchOptions {
   signal?: AbortSignal
   /** ofetch's own default applies when omitted: one retry for GET on 408/409/425/429/5xx. */
   retry?: number | false
+  /** How to read the body; JSON when omitted. A file download (a stream) is `'blob'` with `T = Blob`. */
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer'
 }
 
 type TypedFetch = <T>(url: string, options?: AdminFetchOptions) => Promise<T>
