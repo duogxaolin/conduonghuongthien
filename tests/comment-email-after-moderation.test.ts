@@ -289,8 +289,13 @@ test('one regex budget per comment, shared by the instant check and the full mod
   await reply('Bình luận thứ nhất')
   await reply('Bình luận thứ hai')
   assert.equal(budgetsSeen.instant.length, 2)
+  assert.equal(budgetsSeen.full.length, 2)
   const [first, second] = budgetsSeen.instant as Array<{ limitMs: number }>
   assert.equal(first!.limitMs, MODERATION_REQUEST_BUDGET_MS)
-  assert.deepEqual(budgetsSeen.full, [first, second], 'the full moderation runs on the same budget object')
-  assert.notEqual(first, second, 'each comment has its own')
+  // By IDENTITY: every budget is a frozen `{ limitMs: 250 }`, so a structural comparison
+  // (`deepEqual`) also passes when the full moderation is handed a NEW budget — another
+  // 250 ms for the same comment (verify of 4.3c follow-up, W1: that mutant stayed green).
+  assert.strictEqual(budgetsSeen.full[0], first, 'the full moderation of comment 1 runs on comment 1\'s budget object')
+  assert.strictEqual(budgetsSeen.full[1], second, 'the full moderation of comment 2 runs on comment 2\'s budget object')
+  assert.notStrictEqual(first, second, 'each comment has its own')
 })

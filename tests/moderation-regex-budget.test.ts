@@ -162,16 +162,50 @@ test('a window cut by the request deadline is still charged to its rule at once:
   fresh()
   const slow = busyRule('bị-cắt-mãi', 300)
   const lines: LogLine[] = []
+  const walls: number[] = []
   let requests = 0
   for (; requests < 20 && !isModerationRuleDisabled(slow.pattern); requests += 1) {
+    const started = performance.now()
     lines.push(...captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'cut by deadline', () =>
       testModerationRegexes([slow], 'x', { budget: createModerationRegexBudget(100) }))).lines)
+    walls.push(performance.now() - started)
   }
   assert.equal(isModerationRuleDisabled(slow.pattern), true, `still on after ${requests} requests cut at 100 ms`)
   // ~10 × ~100 ms; fewer when a throttled runner's interrupt latency lengthens each cut window.
   assert.ok(requests >= 2 && requests <= 12, `${requests} requests × ~100 ms`)
+  // The bound that holds on any runner: each cut window is charged the time it ran, measured
+  // INSIDE the request, so a request's charge never exceeds its wall time — the rule cannot be
+  // off before the requests together ran ≥ 1 s. Off sooner means some window was charged more
+  // than once (mutant M15: 2 × its time — off after ~0.5 s). Exactly-once is pinned on a fake
+  // clock in the next test.
+  const totalMs = walls.reduce((sum, ms) => sum + ms, 0)
+  assert.ok(totalMs >= MODERATION_RULE_CUMULATIVE_BUDGET_MS, `${requests} requests, ${walls.map(ms => ms.toFixed(0)).join('+')} = ${totalMs.toFixed(0)} ms of wall time before it was off`)
   assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(line => line.reason), ['cumulative'])
   fresh()
+})
+
+test('a window cut by the request deadline is charged its own time EXACTLY once (fake clock): 60 ms per request → off at the 17th, 1020 ms', () => {
+  // The rule's window moves the fake clock 60 ms, then blocks REAL time until the request's
+  // deadline interrupts it (the `vm` timeout is real; a 10-ms budget keeps each request short).
+  // The cut window never reaches `ledger.set` in `scan`, so only `runScan` charges it — 60 ms of
+  // the fake clock, deterministic. 16 × 60 = 960 < 1000 ≤ 17 × 60: the 17th request turns it off.
+  // Charged twice (mutant M15) it is off at the 9th (1080); not charged (M7) never.
+  withFakeClock((clock) => {
+    let windows = 0
+    const cut = { pattern: 'cắt-60', regex: { test: () => { windows += 1; clock.t += 60; for (;;); } } as unknown as RegExp }
+    const lines: LogLine[] = []
+    let requests = 0
+    for (; requests < 30 && !isModerationRuleDisabled(cut.pattern); requests += 1) {
+      const { value: hits, lines: logged } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'cut at 10 ms', () =>
+        testModerationRegexes([cut], 'x', { budget: createModerationRegexBudget(10) })))
+      assert.deepEqual(hits, [false], 'a cut window has no result')
+      lines.push(...logged)
+    }
+    assert.equal(requests, 17, `off after ${requests} requests: each cut window must be charged 60 ms, once`)
+    assert.equal(windows, 17, 'one window per request, never re-run')
+    assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(line => [line.reason, line.elapsedMs]), [['cumulative', 1020]])
+    assert.equal(events(lines, 'ai_moderation.request_budget_exhausted').length, 17, 'every request ran out (and is logged once)')
+  })
 })
 
 test('createModerationRegexBudget: a budget of 0 runs nothing; a negative one and a hand-made object are refused', () => {
