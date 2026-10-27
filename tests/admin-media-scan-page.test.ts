@@ -871,6 +871,33 @@ describe('/admin/media/scan — leaving the page', () => {
     await open.tick()
     assert.deepEqual(wiresSince(open.calls, from), [])
   })
+
+  it('leaving while "Bắt đầu quét" / "Đồng bộ lên R2" is in flight: the late answer reads no status and toasts nothing', async (t) => {
+    // RED before the follow-up to the split (wave3 verify S1): the poll LOOP no longer starts
+    // after leaving, but the answer still toasted "Đã khởi tạo job…" and read the status once
+    // directly — on whatever page the officer had moved to, and that read can toast a job result.
+    const held: NetCall[] = []
+    const state = emptyServer()
+    const open = await openPage(t, state, (call) => {
+      if (call.method === 'POST') { held.push(call); return 'hold' }
+      return undefined
+    })
+    await press(button(open, SCAN_HEADING, 'Bắt đầu quét'))
+    await press(button(open, SYNC_HEADING, 'Đồng bộ lên R2'))
+    assert.equal(held.length, 2)
+    open.close()
+    // Both jobs already finished by the time the answers land: a status read would toast them.
+    state.scan = scanStatus({ running: false, phase: 'done', imported: 4, skipped: 0 })
+    state.sync = syncStatus({ running: false, phase: 'done', synced: 7, skipped: 0 })
+    const from = open.calls.length
+    const toastsBefore = open.toasts.length
+    for (const call of held) call.respond(json({ ok: true, jobId: 'x', message: 'ok' }))
+    await settle()
+    await open.tick()
+    assert.deepEqual(wiresSince(open.calls, from), [], 'no status read after leaving')
+    assert.deepEqual(open.toasts.slice(toastsBefore), [], 'no toast after leaving')
+    noErrors(open)
+  })
 })
 
 // ─── Shape ───────────────────────────────────────────────────────────────────
@@ -881,7 +908,10 @@ describe('/admin/media/scan — shape', () => {
   })
 
   it('the panels under components/admin/media/scan are display-only: no fetch of their own', () => {
-    const files = existsSync(PANELS_DIR) ? readdirSync(PANELS_DIR).filter(name => name.endsWith('.vue')) : []
+    // A scan over nothing is not a pass: a renamed/moved panels directory must turn this red.
+    assert.ok(existsSync(PANELS_DIR), `${PANELS_DIR} does not exist — the panels moved; point this guard at them`)
+    const files = readdirSync(PANELS_DIR).filter(name => name.endsWith('.vue'))
+    assert.ok(files.length > 0, `${PANELS_DIR} holds no .vue panel — the scan below would check nothing`)
     for (const name of files) {
       assert.doesNotMatch(readFileSync(new URL(name, `file://${PANELS_DIR}`), 'utf8'), ADMIN_FETCH_CALL, `${name} fetches — keep requests in the page or its composable`)
     }
