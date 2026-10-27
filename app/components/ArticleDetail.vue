@@ -1,5 +1,5 @@
 <template>
-  <div class="py-10 bg-[#F8FAF7]">
+  <div class="py-10 bg-surface">
     <!--
       Container rộng 1200px thay vì 800px, vì từ khi có khối liên quan thì trang
       này không còn là một cột chữ nữa. Cột đọc vẫn giữ đúng bề rộng cũ (~800px)
@@ -9,8 +9,8 @@
     <div class="max-w-[1200px] mx-auto px-4">
       <!-- Breadcrumb -->
       <nav class="text-[0.85rem] text-[#5A6C58] mb-6" :aria-label="t('a_breadcrumb_aria')">
-        <nuxt-link to="/" class="text-[#4A6741] no-underline hover:underline">{{ t('a_home') }}</nuxt-link> &raquo;
-        <nuxt-link :to="backTo" class="text-[#4A6741] no-underline hover:underline">{{ backLabelText }}</nuxt-link> &raquo;
+        <nuxt-link to="/" class="text-brand-600 no-underline hover:underline">{{ t('a_home') }}</nuxt-link> &raquo;
+        <nuxt-link :to="backTo" class="text-brand-600 no-underline hover:underline">{{ backLabelText }}</nuxt-link> &raquo;
         <slot name="crumb" :category-label="categoryLabel" />
         <span>{{ currentCrumbText }}</span>
       </nav>
@@ -33,7 +33,7 @@
       >
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
         Không thể tải nội dung. Vui lòng
-        <button type="button" class="text-[#4A6741] font-bold underline" @click="refresh()">thử lại</button>.
+        <button type="button" class="text-brand-600 font-bold underline" @click="refresh()">thử lại</button>.
       </div>
 
       <!-- Main content -->
@@ -54,7 +54,7 @@
         <!-- Cột đọc. `min-w-0` để một khối `v-html` rộng (bảng, ảnh, code) co lại
              theo cột thay vì nong cột ra và đẩy cột phải tràn khỏi container. -->
         <div class="min-w-0">
-        <span class="text-[0.85rem] font-bold text-[#4A6741] bg-[#F8FAF7] px-3 py-1.5 rounded inline-flex flex-wrap items-center gap-x-2 mb-4">
+        <span class="text-[0.85rem] font-bold text-brand-600 bg-surface px-3 py-1.5 rounded inline-flex flex-wrap items-center gap-x-2 mb-4">
           <span><i v-if="metaIconIsFa" :class="metaIcon" aria-hidden="true"></i><span v-else aria-hidden="true">{{ metaIcon }}</span> {{ categoryLabel }}</span>
           <span aria-hidden="true">•</span>
           <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> {{ t('a_published_on') }} {{ formattedDate }}</span>
@@ -63,11 +63,11 @@
           <span aria-hidden="true">•</span>
           <span><i class="fa-regular fa-eye" aria-hidden="true"></i> {{ formattedViews }} {{ t('a_views_suffix') }}</span>
         </span>
-        <h1 class="text-[1.35rem] sm:text-[1.75rem] lg:text-[2.2rem] font-extrabold leading-[1.3] text-[#1E251C] mb-4 sm:mb-5">{{ article.title }}</h1>
+        <h1 class="text-[1.35rem] sm:text-[1.75rem] lg:text-[2.2rem] font-extrabold leading-[1.3] text-ink mb-4 sm:mb-5">{{ article.title }}</h1>
 
         <div
           v-if="article.excerpt"
-          class="text-[0.95rem] sm:text-[1.12rem] font-semibold text-[#4A5545] leading-[1.6] border-l-4 border-[#7CB342] pl-4 sm:pl-5 mb-6 sm:mb-8"
+          class="text-[0.95rem] sm:text-[1.12rem] font-semibold text-ink-secondary leading-[1.6] border-l-4 border-[#7CB342] pl-4 sm:pl-5 mb-6 sm:mb-8"
         >
           <p>{{ article.excerpt }}</p>
         </div>
@@ -100,7 +100,7 @@
             </h2>
             <button
               type="button"
-              class="rounded px-2 py-1 text-[0.8rem] font-bold text-[#4A6741] transition hover:bg-[#F8FAF7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+              class="rounded px-2 py-1 text-[0.8rem] font-bold text-brand-600 transition hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
               :aria-expanded="tocOpen"
               aria-controls="muc-luc-list"
               @click="tocOpen = !tocOpen"
@@ -117,14 +117,14 @@
             >
               <a
                 :href="`#${heading.id}`"
-                class="text-[0.95rem] font-semibold text-[#4A6741] no-underline transition hover:text-[#385130] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                class="text-[0.95rem] font-semibold text-[#4A6741] no-underline transition hover:text-[#385130] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                 :class="heading.level > 2 ? 'font-medium text-[0.9rem] text-[#5C6B55]' : ''"
               >{{ heading.text }}</a>
             </li>
           </ol>
         </nav>
 
-        <div ref="articleBodyEl" class="article-body text-[1.05rem] leading-[1.7] text-[#4A5545]">
+        <div ref="articleBodyEl" class="article-body text-[1.05rem] leading-[1.7] text-ink-secondary">
           <!-- eslint-disable-next-line vue/no-v-html -- content authored by C11 editors, sanitized on write -->
           <div v-html="toc.html"></div>
         </div>
@@ -138,7 +138,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#1877F2] transition hover:bg-[#1877F2]/10 hover:border-[#1877F2]"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-[#1877F2] transition hover:bg-[#1877F2]/10 hover:border-[#1877F2]"
               @click="shareFacebook"
               :title="t('a_share_facebook')"
             >
@@ -149,7 +149,7 @@
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#0068FF] transition hover:bg-[#0068FF]/10 hover:border-[#0068FF]"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-[#0068FF] transition hover:bg-[#0068FF]/10 hover:border-[#0068FF]"
               @click="shareZalo"
               :title="t('a_share_zalo')"
             >
@@ -157,7 +157,7 @@
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#4A6741] transition hover:bg-[#4A6741]/10 hover:border-[#4A6741]"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-brand-600 transition hover:bg-brand-600/10 hover:border-brand-600"
               @click="copyArticleLink"
               :title="copiedArticleLink ? t('a_copied') : t('a_copy_link_btn')"
             >
@@ -166,7 +166,7 @@
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#667768] transition hover:bg-[#667768]/10 hover:border-[#667768]"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-ink-muted transition hover:bg-ink-muted/10 hover:border-ink-muted"
               @click="printArticle"
               :title="t('a_print_title')"
             >
@@ -245,7 +245,7 @@
           >
             <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
             {{ t('a_related_error') }}
-            <button type="button" class="text-[#4A6741] font-bold underline" @click="refreshRelated()">{{ t('a_retry') }}</button>.
+            <button type="button" class="text-brand-600 font-bold underline" @click="refreshRelated()">{{ t('a_retry') }}</button>.
           </div>
 
           <template v-else>
@@ -260,7 +260,7 @@
               <li v-for="item in relatedArticles" :key="item.id" class="py-3 first:pt-0">
                 <nuxt-link
                   :to="`${backTo}/${item.slug}`"
-                  class="group flex items-start gap-3 no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
+                  class="group flex items-start gap-3 no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
                 >
                   <img
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
@@ -270,7 +270,7 @@
                     class="w-[72px] h-[54px] shrink-0 object-cover rounded bg-[#EEF2EC]"
                   />
                   <span class="min-w-0 flex-grow">
-                    <span class="block text-[0.9rem] font-bold leading-[1.4] text-[#1E251C] transition-colors duration-200 group-hover:text-[#4A6741] line-clamp-3">{{ item.title }}</span>
+                    <span class="block text-[0.9rem] font-bold leading-[1.4] text-ink transition-colors duration-200 group-hover:text-brand-600 line-clamp-3">{{ item.title }}</span>
                     <span class="block mt-1 text-[0.75rem] text-[#5A6C58] font-semibold">
                       {{ formatDateVN(item.publishedAt || item.createdAt) }}
                     </span>
@@ -292,10 +292,10 @@
                   v-for="topic in relatedTopics"
                   :key="topic.slug"
                   :to="`${backTo}/${topic.slug}`"
-                  class="px-3 py-1.5 rounded-full text-[0.85rem] font-semibold border no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                  class="px-3 py-1.5 rounded-full text-[0.85rem] font-semibold border no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                   :class="topic.isCurrent
-                    ? 'bg-[#4A6741] border-[#4A6741] text-white'
-                    : 'bg-white border-[#E2E8DF] text-[#4A5545] hover:border-[#7CB342]'"
+                    ? 'bg-brand-600 border-[#4A6741] text-white'
+                    : 'bg-white border-[#E2E8DF] text-ink-secondary hover:border-[#7CB342]'"
                 >{{ topic.name }} <span class="opacity-70">({{ topic.total }})</span></nuxt-link>
               </div>
             </div>
@@ -305,7 +305,7 @@
 
       <!-- Not found -->
       <div v-else class="py-10 text-center">
-        <p class="text-[#4A5545] mb-4">{{ notFoundTextValue }}</p>
+        <p class="text-ink-secondary mb-4">{{ notFoundTextValue }}</p>
         <nuxt-link :to="backTo" class="btn btn-primary">{{ backCtaText }}</nuxt-link>
       </div>
     </div>

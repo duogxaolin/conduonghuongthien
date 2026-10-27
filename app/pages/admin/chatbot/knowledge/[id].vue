@@ -14,8 +14,8 @@ const lifecycleStatus = ref<'draft' | 'published' | 'archived'>('draft')
 const statusLabel = computed(() => ({ draft: 'Bản nháp', published: 'Đã xuất bản', archived: 'Đã lưu trữ' })[lifecycleStatus.value])
 const statusTone = computed(() => ({
   draft: 'border-[#d8c99a] bg-[#fffaf0] text-[#765b00]',
-  published: 'border-[#8ed694] bg-[#f0f7f1] text-[#1e4620]',
-  archived: 'border-[#c8d6c9] bg-[#f4f7f4] text-[#667768]',
+  published: 'border-[#8ed694] bg-surface-tint text-brand-900',
+  archived: 'border-line-strong bg-[#f4f7f4] text-ink-muted',
 })[lifecycleStatus.value])
 const form = reactive({
   canonicalQuestion: '',
@@ -140,47 +140,47 @@ onMounted(load)
   <div class="flex flex-col gap-5">
     <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 class="m-0 text-[1.3rem] font-extrabold text-[#122815]">{{ isNew ? 'Tạo mục kiến thức' : 'Chỉnh sửa mục kiến thức' }}</h1>
-        <p class="m-0 mt-1 text-sm text-[#667768]">Tách bạch nội dung công khai, nguồn tham khảo và ghi chú nội bộ.</p>
+        <h1 class="m-0 text-[1.3rem] font-extrabold text-brand-950">{{ isNew ? 'Tạo mục kiến thức' : 'Chỉnh sửa mục kiến thức' }}</h1>
+        <p class="m-0 mt-1 text-sm text-ink-muted">Tách bạch nội dung công khai, nguồn tham khảo và ghi chú nội bộ.</p>
       </div>
-      <nuxt-link to="/admin/chatbot/knowledge" class="font-bold text-[#2c6e33]">Quay lại danh sách</nuxt-link>
+      <nuxt-link to="/admin/chatbot/knowledge" class="font-bold text-brand-700">Quay lại danh sách</nuxt-link>
     </header>
 
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }}<template v-if="!isNew && !saving"> Vui lòng <button type="button" class="font-bold underline text-[#4A6741]" @click="load()">thử lại</button>.</template></div>
+    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }}<template v-if="!isNew && !saving"> Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load()">thử lại</button>.</template></div>
     <div v-if="loading" class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]">
       <SkeletonForm label="Đang tải mục kiến thức" :fields="4" />
       <SkeletonForm label="Đang tải mục kiến thức" :fields="3" :has-action="false" />
     </div>
 
     <form v-else class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]" @submit.prevent="save">
-      <section class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-5">
-        <h2 class="m-0 text-base font-extrabold text-[#122815]">Nội dung công khai</h2>
-        <label class="flex flex-col gap-1.5 text-sm font-bold">Câu hỏi chính<input v-model="form.canonicalQuestion" required class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" /></label>
-        <label class="flex flex-col gap-1.5 text-sm font-bold">Câu trả lời đã duyệt<textarea v-model="form.approvedAnswer" required rows="10" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"></textarea></label>
+      <section class="flex flex-col gap-4 rounded-xl border border-line bg-white p-5">
+        <h2 class="m-0 text-base font-extrabold text-brand-950">Nội dung công khai</h2>
+        <label class="flex flex-col gap-1.5 text-sm font-bold">Câu hỏi chính<input v-model="form.canonicalQuestion" required class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20" /></label>
+        <label class="flex flex-col gap-1.5 text-sm font-bold">Câu trả lời đã duyệt<textarea v-model="form.approvedAnswer" required rows="10" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"></textarea></label>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label class="flex flex-col gap-1.5 text-sm font-bold">Chủ đề<input v-model="form.topic" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal" /></label>
-          <label class="flex flex-col gap-1.5 text-sm font-bold">Độ ưu tiên<input v-model.number="form.priority" type="number" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal" /></label>
+          <label class="flex flex-col gap-1.5 text-sm font-bold">Chủ đề<input v-model="form.topic" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal" /></label>
+          <label class="flex flex-col gap-1.5 text-sm font-bold">Độ ưu tiên<input v-model.number="form.priority" type="number" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal" /></label>
         </div>
-        <label class="flex flex-col gap-1.5 text-sm font-bold">Bí danh <span class="font-normal text-[#667768]">Mỗi dòng một bí danh</span><textarea v-model="form.aliases" rows="3" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal"></textarea></label>
-        <label class="flex flex-col gap-1.5 text-sm font-bold">Từ khóa <span class="font-normal text-[#667768]">Mỗi dòng một từ khóa</span><textarea v-model="form.keywords" rows="3" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal"></textarea></label>
+        <label class="flex flex-col gap-1.5 text-sm font-bold">Bí danh <span class="font-normal text-ink-muted">Mỗi dòng một bí danh</span><textarea v-model="form.aliases" rows="3" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal"></textarea></label>
+        <label class="flex flex-col gap-1.5 text-sm font-bold">Từ khóa <span class="font-normal text-ink-muted">Mỗi dòng một từ khóa</span><textarea v-model="form.keywords" rows="3" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal"></textarea></label>
       </section>
 
-      <aside class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-5">
-        <h2 class="m-0 text-base font-extrabold text-[#122815]">Nguồn và duyệt</h2>
-        <label class="flex flex-col gap-1.5 text-sm font-bold">Nhãn nguồn<input v-model="form.sourceLabel" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal" /></label>
-        <label class="flex flex-col gap-1.5 text-sm font-bold">URL nguồn<input v-model="form.sourceUrl" type="url" placeholder="https://..." class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal" /></label>
-        <label class="flex flex-col gap-1.5 text-sm font-bold">Số hiệu / tham chiếu<textarea v-model="form.sourceReference" rows="3" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal"></textarea></label>
-        <label class="flex flex-col gap-1.5 text-sm font-bold">Ghi chú nội bộ <span class="font-normal text-[#667768]">Không bao giờ hiển thị công khai.</span><textarea v-model="form.internalNotes" rows="5" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal"></textarea></label>
+      <aside class="flex flex-col gap-4 rounded-xl border border-line bg-white p-5">
+        <h2 class="m-0 text-base font-extrabold text-brand-950">Nguồn và duyệt</h2>
+        <label class="flex flex-col gap-1.5 text-sm font-bold">Nhãn nguồn<input v-model="form.sourceLabel" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal" /></label>
+        <label class="flex flex-col gap-1.5 text-sm font-bold">URL nguồn<input v-model="form.sourceUrl" type="url" placeholder="https://..." class="rounded-lg border border-line-strong px-3 py-2.5 font-normal" /></label>
+        <label class="flex flex-col gap-1.5 text-sm font-bold">Số hiệu / tham chiếu<textarea v-model="form.sourceReference" rows="3" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal"></textarea></label>
+        <label class="flex flex-col gap-1.5 text-sm font-bold">Ghi chú nội bộ <span class="font-normal text-ink-muted">Không bao giờ hiển thị công khai.</span><textarea v-model="form.internalNotes" rows="5" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal"></textarea></label>
 
         <div class="flex flex-col gap-2 text-sm font-bold">
           <span>Trạng thái hiện tại</span>
           <span class="inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-bold" :class="statusTone" aria-live="polite">{{ statusLabel }}</span>
-          <span class="font-normal text-[#667768]">Lưu chỉ cập nhật nội dung. Trạng thái chỉ đổi bằng thao tác duyệt riêng.</span>
+          <span class="font-normal text-ink-muted">Lưu chỉ cập nhật nội dung. Trạng thái chỉ đổi bằng thao tác duyệt riêng.</span>
         </div>
 
-        <label class="flex items-center gap-2 text-sm font-semibold"><input v-model="form.isQuickQuestion" type="checkbox" class="h-4 w-4 accent-[#2c6e33]" /> Đưa vào câu hỏi nhanh</label>
-        <button type="submit" :disabled="saving || transitioning !== null" class="rounded-lg bg-[#1e4620] px-5 py-2.5 font-bold text-white disabled:opacity-60">{{ saving ? 'Đang lưu...' : 'Lưu nội dung' }}</button>
-        <button v-if="!isNew && lifecycleStatus === 'draft'" type="button" :disabled="saving || transitioning !== null" class="rounded-lg border border-[#2c6e33] px-5 py-2.5 font-bold text-[#2c6e33] disabled:opacity-60" @click="transition('publish')">{{ transitioning === 'publish' ? 'Đang xuất bản...' : 'Xuất bản' }}</button>
+        <label class="flex items-center gap-2 text-sm font-semibold"><input v-model="form.isQuickQuestion" type="checkbox" class="h-4 w-4 accent-brand-700" /> Đưa vào câu hỏi nhanh</label>
+        <button type="submit" :disabled="saving || transitioning !== null" class="rounded-lg bg-brand-900 px-5 py-2.5 font-bold text-white disabled:opacity-60">{{ saving ? 'Đang lưu...' : 'Lưu nội dung' }}</button>
+        <button v-if="!isNew && lifecycleStatus === 'draft'" type="button" :disabled="saving || transitioning !== null" class="rounded-lg border border-brand-700 px-5 py-2.5 font-bold text-brand-700 disabled:opacity-60" @click="transition('publish')">{{ transitioning === 'publish' ? 'Đang xuất bản...' : 'Xuất bản' }}</button>
         <button v-if="!isNew && lifecycleStatus === 'published'" type="button" :disabled="saving || transitioning !== null" class="rounded-lg border border-[#d8c99a] px-5 py-2.5 font-bold text-[#765b00] disabled:opacity-60" @click="transition('archive')">{{ transitioning === 'archive' ? 'Đang lưu trữ...' : 'Lưu trữ' }}</button>
       </aside>
     </form>

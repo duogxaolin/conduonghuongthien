@@ -130,7 +130,7 @@ watch(isOpen, (val) => {
                 aria-label="Tìm ảnh theo tên file"
                 placeholder="Tìm theo tên file..."
                 data-autofocus
-                class="w-full h-9 rounded-lg border border-gray-200 pl-9 pr-3 text-sm text-gray-700 outline-none focus:border-green-600 focus:ring-2 focus:ring-[#4A6741]/30"
+                class="w-full h-9 rounded-lg border border-gray-200 pl-9 pr-3 text-sm text-gray-700 outline-none focus:border-green-600 focus:ring-2 focus:ring-brand-600/30"
                 @keydown.enter="onSearchEnter"
               />
             </div>

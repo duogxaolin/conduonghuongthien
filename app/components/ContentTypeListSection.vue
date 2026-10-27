@@ -140,10 +140,10 @@ const typeLink = (slug: string) => `/${props.typeSlug}/${slug}`
 
 // Visual pill classes (tham chiếu news/index.vue)
 const pillClass = (active: boolean) => [
-  'inline-flex items-center gap-2 shrink-0 whitespace-nowrap rounded-full border cursor-pointer px-4 py-2 text-[0.82rem] font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]',
+  'inline-flex items-center gap-2 shrink-0 whitespace-nowrap rounded-full border cursor-pointer px-4 py-2 text-[0.82rem] font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
   active
-    ? 'bg-[#4A6741] border-[#4A6741] text-white shadow-sm shadow-[#4A6741]/25'
-    : 'bg-white border-[#D5E1D3] text-[#485645] hover:border-[#4A6741] hover:text-[#385932] hover:bg-[#F2F7F0]',
+    ? 'bg-brand-600 border-[#4A6741] text-white shadow-sm shadow-brand-600/25'
+    : 'bg-white border-[#D5E1D3] text-[#485645] hover:border-brand-600 hover:text-[#385932] hover:bg-[#F2F7F0]',
 ]
 const subPillClass = (active: boolean) => [
   'shrink-0 whitespace-nowrap rounded-lg border cursor-pointer px-3 py-1 font-bold transition-all duration-200 text-xs',
@@ -162,7 +162,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
         <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
           <li class="flex items-center gap-1.5">
             <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1 no-underline text-[#556450]">
-              <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
+              <i class="fa-solid fa-house text-[0.7rem] text-brand-600" aria-hidden="true"></i>
               <span>{{ t('home') }}</span>
             </nuxt-link>
           </li>
@@ -178,7 +178,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
 
       <div class="max-w-2xl">
         <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
-          <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+          <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
           <span>{{ t('n_portal_badge') }}</span>
         </div>
         <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
@@ -205,19 +205,19 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                 type="text"
                 :placeholder="t('n_search_placeholder')"
                 :aria-label="t('n_search_placeholder')"
-                class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-[#1E251C] placeholder-[#8A9986] focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/30 focus:outline-none transition-all shadow-sm"
+                class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-ink placeholder-[#8A9986] focus:border-brand-600 focus:ring-2 focus:ring-brand-600/30 focus:outline-none transition-all shadow-sm"
               />
               <button
                 v-if="searchInput"
                 type="button"
                 @click="clearSearchInput"
-                class="absolute right-12 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-[#97A593] hover:text-[#4A5545] text-xs transition-colors"
+                class="absolute right-12 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-[#97A593] hover:text-ink-secondary text-xs transition-colors"
                 :title="t('clear_search')"
                 :aria-label="t('clear_search')"
               >✕</button>
               <button
                 type="submit"
-                class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-[#4A6741] hover:bg-[#365130] text-white text-xs font-bold transition-all shadow-sm"
+                class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-[#365130] text-white text-xs font-bold transition-all shadow-sm"
               >{{ t('n_search_btn_short') }}</button>
             </form>
           </div>
@@ -281,10 +281,10 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
           <!-- Active Search Filter Banner -->
           <div
             v-if="searchQuery"
-            class="bg-white border-l-4 border-l-[#4A6741] border border-[#DDE6DC] p-4 rounded-xl shadow-sm flex items-center justify-between gap-3 flex-wrap"
+            class="bg-white border-l-4 border-l-brand-600 border border-[#DDE6DC] p-4 rounded-xl shadow-sm flex items-center justify-between gap-3 flex-wrap"
           >
             <div class="flex items-center gap-2.5">
-              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center text-xs">
+              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-brand-600 flex items-center justify-center text-xs">
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
               </span>
               <span class="text-sm text-[#3E4D3C]">
@@ -294,7 +294,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
             </div>
             <button
               type="button"
-              class="text-xs font-bold text-[#4A6741] hover:text-[#2D5A27] flex items-center gap-1 cursor-pointer"
+              class="text-xs font-bold text-brand-600 hover:text-[#2D5A27] flex items-center gap-1 cursor-pointer"
               @click="clearSearchInput"
             >
               <i class="fa-solid fa-xmark" aria-hidden="true"></i>
@@ -339,10 +339,10 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
             <h3 class="text-base font-extrabold text-[#172516] m-0 mb-2">{{ t('n_load_error') }}</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">{{ t('n_load_error_desc') }}</p>
+            <p class="text-sm text-ink-muted m-0 mb-4">{{ t('n_load_error_desc') }}</p>
             <button
               type="button"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
               @click="() => refresh()"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -355,7 +355,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
             v-else-if="articles.length === 0"
             class="bg-white border border-[#E2E8DF] rounded-2xl p-10 text-center shadow-sm"
           >
-            <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-2xl">
+            <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-brand-600 flex items-center justify-center mx-auto mb-4 text-2xl">
               <i :class="typeIcon || 'fa-regular fa-newspaper'" aria-hidden="true"></i>
             </div>
             <template v-if="pageOutOfRange">
@@ -364,7 +364,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
               <p class="text-sm text-[#556450] m-0 mb-4">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
               <button
                 type="button"
-                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
                 @click="goFirstPage"
               >
                 <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
@@ -426,7 +426,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
             <!-- Section Title Divider -->
             <div v-if="restArticles.length" class="flex items-center justify-between pt-1 pb-3 border-b-2 border-[#E1EADF] mb-1">
               <div class="flex items-center gap-2.5">
-                <span class="w-2.5 h-6 rounded-sm bg-[#4A6741]" aria-hidden="true"></span>
+                <span class="w-2.5 h-6 rounded-sm bg-brand-600" aria-hidden="true"></span>
                 <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
                   {{ pageTitle }}
                 </h2>
@@ -490,19 +490,19 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
               <nuxt-link
                 v-if="page > 1"
                 :to="pagePath(page - 1)"
-                class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-[#DCE5DB] text-[#4A5545] text-xs font-bold hover:bg-[#F2F7F0] no-underline"
+                class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-[#DCE5DB] text-ink-secondary text-xs font-bold hover:bg-[#F2F7F0] no-underline"
               >
                 <i class="fa-solid fa-arrow-left text-[0.65rem]" aria-hidden="true"></i>
                 <span>{{ t('page_prev') }}</span>
               </nuxt-link>
-              <span class="px-3 py-2 text-xs font-bold text-[#4A6741]">
+              <span class="px-3 py-2 text-xs font-bold text-brand-600">
                 <span class="sr-only">{{ t('n_pagination_summary').replace('{current}', String(page)).replace('{total}', String(pagination.totalPages)) }} </span>
                 {{ page }} / {{ pagination.totalPages }}
               </span>
               <nuxt-link
                 v-if="page < pagination.totalPages"
                 :to="pagePath(page + 1)"
-                class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-[#DCE5DB] text-[#4A5545] text-xs font-bold hover:bg-[#F2F7F0] no-underline"
+                class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-[#DCE5DB] text-ink-secondary text-xs font-bold hover:bg-[#F2F7F0] no-underline"
               >
                 <span>{{ t('page_next') }}</span>
                 <i class="fa-solid fa-arrow-right text-[0.65rem]" aria-hidden="true"></i>

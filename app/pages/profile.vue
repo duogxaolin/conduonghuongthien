@@ -17,8 +17,8 @@
      đều là văn bản do người dùng hoặc cán bộ gõ, hiện qua `{{ }}`.
 -->
 <template>
-  <div class="bg-[#F8FAF7] min-h-[70vh]">
-    <section class="bg-gradient-to-br from-[#1e4620] to-[#133215] py-10 text-white">
+  <div class="bg-surface min-h-[70vh]">
+    <section class="bg-gradient-to-br from-brand-900 to-[#133215] py-10 text-white">
       <div class="container">
         <nav aria-label="Đường dẫn" class="mb-3 text-[0.82rem] text-white/70">
           <nuxt-link to="/" class="text-white/80 no-underline hover:underline">{{ t('home') }}</nuxt-link> &raquo;
@@ -56,8 +56,8 @@
           <!-- Chưa đăng nhập -->
           <div v-else-if="!reader" class="rounded-xl border border-[#E2E8DF] bg-white px-6 py-12 text-center">
             <i class="fa-solid fa-user-lock mb-4 text-[2rem] text-[#CFDDC8]" aria-hidden="true"></i>
-            <h2 class="m-0 mb-2 text-[1.1rem] font-extrabold text-[#122815]">Bạn chưa đăng nhập</h2>
-            <p class="mx-auto mb-6 max-w-[460px] text-[0.9rem] leading-relaxed text-[#4A5545]">
+            <h2 class="m-0 mb-2 text-[1.1rem] font-extrabold text-brand-950">Bạn chưa đăng nhập</h2>
+            <p class="mx-auto mb-6 max-w-[460px] text-[0.9rem] leading-relaxed text-ink-secondary">
               Đăng nhập bằng tài khoản Google để đặt câu hỏi dưới các bài viết, xem lại bình luận đã gửi
               và các đoạn trò chuyện với trợ lý.
             </p>
@@ -77,7 +77,7 @@
               <div class="flex flex-wrap items-center gap-4 border-b border-[#EEF2EC] pb-5">
                 <ReaderAvatar :initials="reader.initials" size="lg" />
                 <div class="min-w-0 flex-1">
-                  <p class="m-0 truncate text-[1.15rem] font-extrabold text-[#122815]">{{ reader.displayName }}</p>
+                  <p class="m-0 truncate text-[1.15rem] font-extrabold text-brand-950">{{ reader.displayName }}</p>
                   <p v-if="reader.email" class="m-0 mt-0.5 truncate text-[0.85rem] text-[#5A6C58]">{{ reader.email }}</p>
                 </div>
               </div>
@@ -98,7 +98,7 @@
                     type="text"
                     :maxlength="DISPLAY_NAME_MAX_LENGTH"
                     autocomplete="nickname"
-                    class="min-w-0 flex-1 rounded-lg border border-[#E2E8DF] bg-white px-3.5 py-2.5 text-[0.9rem] text-[#1E251C] outline-none transition-colors focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/30"
+                    class="min-w-0 flex-1 rounded-lg border border-[#E2E8DF] bg-white px-3.5 py-2.5 text-[0.9rem] text-ink outline-none transition-colors focus:border-brand-600 focus:ring-2 focus:ring-brand-600/30"
                     :placeholder="t('profile_display_name_ph')"
                   />
                   <button
@@ -117,7 +117,7 @@
                   <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
                   <span>{{ nameError }}</span>
                 </p>
-                <p v-else-if="nameSaved" role="status" class="mt-2.5 mb-0 flex items-center gap-2 text-[0.85rem] font-semibold text-[#4A6741]">
+                <p v-else-if="nameSaved" role="status" class="mt-2.5 mb-0 flex items-center gap-2 text-[0.85rem] font-semibold text-brand-600">
                   <i class="fa-solid fa-circle-check" aria-hidden="true"></i> Đã lưu tên hiển thị mới.
                 </p>
               </form>
@@ -136,7 +136,7 @@
                 <button
                   v-if="unreadCount > 0"
                   type="button"
-                  class="shrink-0 text-[0.8rem] font-semibold text-[#4A6741] underline transition-colors hover:text-[#385130]"
+                  class="shrink-0 text-[0.8rem] font-semibold text-brand-600 underline transition-colors hover:text-[#385130]"
                   @click="markAllNotificationsRead"
                 >Đánh dấu tất cả đã đọc</button>
               </header>
@@ -154,7 +154,7 @@
                     <i class="fa-solid fa-envelope mr-1.5 text-[#7CB342]" aria-hidden="true"></i>
                     Gửi email khi có người trả lời
                   </p>
-                  <p v-if="reader.email" class="m-0 mt-1 text-[0.78rem] leading-relaxed text-[#4A5545]">
+                  <p v-if="reader.email" class="m-0 mt-1 text-[0.78rem] leading-relaxed text-ink-secondary">
                     Gửi tới <strong class="break-all">{{ reader.email }}</strong>. Bạn có thể tắt bất cứ lúc nào.
                   </p>
                   <!-- Tài khoản Google không có email thì không có gì để gửi tới;
@@ -169,7 +169,7 @@
                   role="switch"
                   :aria-checked="emailNotificationsOn"
                   :disabled="savingEmailPref || !reader.email"
-                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   :class="emailNotificationsOn ? 'bg-[#4A6741]' : 'bg-[#CFDDC8]'"
                   @click="toggleEmailNotifications"
                 >
@@ -196,7 +196,7 @@
               <p v-else-if="notifFailed" role="alert" class="m-0 rounded-lg border border-dashed border-[#E2A0A0] bg-[#FDF6F6] px-4 py-6 text-center text-[0.9rem] text-[#B04A4A]">
                 <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
                 Không thể tải thông báo.
-                <button type="button" class="font-bold text-[#4A6741] underline" @click="reloadNotifications">Thử lại</button>.
+                <button type="button" class="font-bold text-brand-600 underline" @click="reloadNotifications">Thử lại</button>.
               </p>
 
               <p v-else-if="!notifications.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#5A6C58]">
@@ -221,15 +221,15 @@
                       aria-hidden="true"
                     ></span>
                     <span class="min-w-0 flex-1">
-                      <span class="block text-[0.88rem] leading-snug text-[#1E251C]">
+                      <span class="block text-[0.88rem] leading-snug text-ink">
                         <strong class="font-bold">{{ item.authorName }}</strong>
                         đã trả lời bình luận của bạn
                         <span v-if="item.createdAt" class="ml-1 text-[0.78rem] font-normal text-[#5A6C58]">
                           • {{ formatDateVN(item.createdAt) }}
                         </span>
                       </span>
-                      <span class="mt-1 block break-words text-[0.85rem] leading-relaxed text-[#4A5545]">{{ item.excerpt }}</span>
-                      <span v-if="item.target" class="mt-1.5 block truncate text-[0.78rem] font-semibold text-[#4A6741]">
+                      <span class="mt-1 block break-words text-[0.85rem] leading-relaxed text-ink-secondary">{{ item.excerpt }}</span>
+                      <span v-if="item.target" class="mt-1.5 block truncate text-[0.78rem] font-semibold text-brand-600">
                         {{ item.target.articleTitle }} &rarr;
                       </span>
                       <!-- Bài đã ẩn hoặc đã đóng bình luận: nói ra thay vì đưa một
@@ -282,7 +282,7 @@
               <p v-else-if="commentsError" role="alert" class="m-0 rounded-lg border border-dashed border-[#E2A0A0] bg-[#FDF6F6] px-4 py-6 text-center text-[0.9rem] text-[#B04A4A]">
                 <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
                 Không thể tải bình luận của bạn.
-                <button type="button" class="font-bold text-[#4A6741] underline" @click="loadComments">Thử lại</button>.
+                <button type="button" class="font-bold text-brand-600 underline" @click="loadComments">Thử lại</button>.
               </p>
 
               <p v-else-if="!myComments.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#5A6C58]">
@@ -294,14 +294,14 @@
                   <div class="mb-2 flex flex-wrap items-center gap-2 text-[0.78rem] text-[#5A6C58]">
                     <span class="font-semibold">{{ formatDateVN(item.createdAt) }}</span>
                     <span v-if="item.isReply" class="rounded bg-[#EEF2EC] px-1.5 py-0.5 font-semibold text-[#385130]">Phản hồi</span>
-                    <span v-if="item.replyCount > 0" class="rounded bg-[#4A6741] px-1.5 py-0.5 font-semibold text-white">
+                    <span v-if="item.replyCount > 0" class="rounded bg-brand-600 px-1.5 py-0.5 font-semibold text-white">
                       {{ item.replyCount }} trả lời
                     </span>
                   </div>
-                  <p class="m-0 whitespace-pre-line break-words text-[0.9rem] leading-relaxed text-[#1E251C]">{{ item.body }}</p>
+                  <p class="m-0 whitespace-pre-line break-words text-[0.9rem] leading-relaxed text-ink">{{ item.body }}</p>
                   <p v-if="item.article" class="mt-2.5 mb-0 text-[0.82rem]">
                     <template v-if="item.article.readable">
-                      <nuxt-link :to="item.article.url" class="font-semibold text-[#4A6741] no-underline hover:underline">
+                      <nuxt-link :to="item.article.url" class="font-semibold text-brand-600 no-underline hover:underline">
                         {{ item.article.title }}
                       </nuxt-link>
                     </template>
@@ -356,7 +356,7 @@
                 hay xoá dữ liệu trình duyệt là mất, và một người tưởng nó theo tài
                 khoản sẽ kết luận cổng đã làm mất dữ liệu của họ.
               -->
-              <p class="mb-4 mt-0 flex items-start gap-2 rounded-lg bg-[#F3F7F1] px-3 py-2.5 text-[0.8rem] leading-relaxed text-[#4A5545]">
+              <p class="mb-4 mt-0 flex items-start gap-2 rounded-lg bg-[#F3F7F1] px-3 py-2.5 text-[0.8rem] leading-relaxed text-ink-secondary">
                 <i class="fa-solid fa-circle-info mt-0.5 text-[#7CB342]" aria-hidden="true"></i>
                 <span>
                   Danh sách này được lưu trên <strong>thiết bị này</strong>, không lưu trên máy chủ và không gắn với
@@ -374,7 +374,7 @@
                     :to="`/news/${item.slug}`"
                     class="flex min-w-0 flex-1 items-start justify-between gap-3 no-underline"
                   >
-                    <span class="min-w-0 flex-1 text-[0.9rem] font-semibold leading-snug text-[#1E251C] transition-colors hover:text-[#4A6741]">
+                    <span class="min-w-0 flex-1 text-[0.9rem] font-semibold leading-snug text-ink transition-colors hover:text-brand-600">
                       {{ item.title || item.slug }}
                     </span>
                     <span v-if="item.readAt" class="shrink-0 text-[0.76rem] text-[#5A6C58]">{{ formatReadAt(item.readAt) }}</span>
@@ -398,7 +398,7 @@
                 <h2 class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
                   <i class="fa-solid fa-robot mr-2 text-[#7CB342]" aria-hidden="true"></i>Đoạn chat của tôi
                 </h2>
-                <nuxt-link to="/assistant" class="shrink-0 text-[0.8rem] font-semibold text-[#4A6741] no-underline hover:underline">
+                <nuxt-link to="/assistant" class="shrink-0 text-[0.8rem] font-semibold text-brand-600 no-underline hover:underline">
                   Mở trợ lý &rarr;
                 </nuxt-link>
               </header>
@@ -414,7 +414,7 @@
               <p v-else-if="chatsError" role="alert" class="m-0 rounded-lg border border-dashed border-[#E2A0A0] bg-[#FDF6F6] px-4 py-6 text-center text-[0.9rem] text-[#B04A4A]">
                 <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
                 Không thể tải đoạn chat của bạn.
-                <button type="button" class="font-bold text-[#4A6741] underline" @click="loadChats">Thử lại</button>.
+                <button type="button" class="font-bold text-brand-600 underline" @click="loadChats">Thử lại</button>.
               </p>
 
               <template v-else>
@@ -424,7 +424,7 @@
 
                 <ul v-else class="m-0 flex list-none flex-col gap-3 p-0">
                   <li v-for="item in myChats" :key="item.id" class="rounded-lg border border-[#EEF2EC] bg-[#FCFDFC] p-4">
-                    <p class="m-0 line-clamp-2 break-words text-[0.9rem] font-semibold leading-snug text-[#1E251C]">{{ item.title }}</p>
+                    <p class="m-0 line-clamp-2 break-words text-[0.9rem] font-semibold leading-snug text-ink">{{ item.title }}</p>
                     <p class="mt-1.5 mb-0 text-[0.78rem] text-[#5A6C58]">
                       {{ formatDateVN(item.lastMessageAt) }} • {{ item.messageCount }} tin nhắn
                     </p>
@@ -445,14 +445,14 @@
                   </p>
                   <button
                     type="button"
-                    class="inline-flex items-center gap-2 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-4 py-2.5 text-[0.85rem] font-bold text-[#385130] transition-colors hover:bg-[#EEF2EC] disabled:opacity-60"
+                    class="inline-flex items-center gap-2 rounded-lg border border-[#E2E8DF] bg-surface px-4 py-2.5 text-[0.85rem] font-bold text-[#385130] transition-colors hover:bg-[#EEF2EC] disabled:opacity-60"
                     :disabled="claiming"
                     @click="claimNow"
                   >
                     <i class="fa-solid fa-link" aria-hidden="true"></i>
                     {{ claiming ? 'Đang gắn…' : 'Nhận các đoạn chat trên thiết bị này' }}
                   </button>
-                  <p v-if="claimMessage" role="status" class="mt-2.5 mb-0 text-[0.83rem] font-semibold text-[#4A6741]">{{ claimMessage }}</p>
+                  <p v-if="claimMessage" role="status" class="mt-2.5 mb-0 text-[0.83rem] font-semibold text-brand-600">{{ claimMessage }}</p>
                 </div>
               </template>
             </section>

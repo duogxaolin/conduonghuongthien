@@ -13,6 +13,7 @@ import { sum, gte, eq } from 'drizzle-orm'
 import type { Database } from '../utils/db'
 import { aiUsageLogs, aiBudgetSettings, aiProviders, type AiBudgetSettings } from '../db/schema'
 import { decryptAiSecret } from './ai/crypto'
+import { fetchDelifyUsage } from './ai/delify-usage'
 import { logWarn } from './logger'
 
 /** Services blocked at 100% budget. Chatbot falls back to knowledge-only in its
@@ -72,13 +73,33 @@ interface CachedDelifyQuota {
 }
 
 let cachedDelifyQuota: CachedDelifyQuota | null = null
+/**
+ * How long ANY outcome of a lookup is kept — a quota, and equally a failure (refused
+ * base URL, no key, timeout, error answer). `checkBudget` runs before every AI call,
+ * public chatbot turns included; caching only successes made an outage cost every
+ * call the 2.5 s deadline and a log line. 60 s: the same freshness as a good answer,
+ * and how long a configured quota or a recovered API takes to be seen. During a
+ * failure the last known quota (or none) stands, as before.
+ */
 const DELIFY_QUOTA_CACHE_TTL_MS = 60_000
+let lastQuotaLookupAt: number | null = null
+/** The lookup in flight: concurrent budget checks share it instead of each asking. */
+let quotaLookup: Promise<CachedDelifyQuota | null> | null = null
 
 export async function loadDelifyQuota(db: Database): Promise<CachedDelifyQuota | null> {
-  if (cachedDelifyQuota && Date.now() - cachedDelifyQuota.fetchedAt < DELIFY_QUOTA_CACHE_TTL_MS) {
+  const now = Date.now()
+  // A clock that went backwards counts as expired.
+  if (lastQuotaLookupAt !== null && now >= lastQuotaLookupAt && now - lastQuotaLookupAt < DELIFY_QUOTA_CACHE_TTL_MS) {
     return cachedDelifyQuota
   }
+  quotaLookup ??= lookupDelifyQuota(db).finally(() => {
+    lastQuotaLookupAt = Date.now()
+    quotaLookup = null
+  })
+  return quotaLookup
+}
 
+async function lookupDelifyQuota(db: Database): Promise<CachedDelifyQuota | null> {
   try {
     const [delifyRow] = await db.select().from(aiProviders)
       .where(eq(aiProviders.provider, 'delify'))
@@ -97,23 +118,17 @@ export async function loadDelifyQuota(db: Database): Promise<CachedDelifyQuota |
       lastFour: delifyRow.apiKeyLastFour ?? '',
     })
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 2500)
-    try {
-      const resp = await fetch(`https://router.delify.vn/api/usage/key?key=${encodeURIComponent(secret)}`, {
-        signal: controller.signal,
-      })
-      if (resp.ok) {
-        const data = await resp.json() as { budgetUsd?: number | null; active?: boolean }
-        cachedDelifyQuota = {
-          budgetUsd: typeof data.budgetUsd === 'number' ? data.budgetUsd : null,
-          active: typeof data.active === 'boolean' ? data.active : true,
-          fetchedAt: Date.now(),
-        }
-        return cachedDelifyQuota
+    // Through outbound.ts, to the delify row's own host (a refused base URL is never
+    // resolved); a short deadline — this check runs before every AI call.
+    const resp = await fetchDelifyUsage({ baseUrl: delifyRow.baseUrl, secret, path: '/api/usage/key', timeoutMs: 2500, maxResponseBytes: 64 * 1024 })
+    if (resp.data && typeof resp.data === 'object') {
+      const data = resp.data as { budgetUsd?: number | null; active?: boolean }
+      cachedDelifyQuota = {
+        budgetUsd: typeof data.budgetUsd === 'number' ? data.budgetUsd : null,
+        active: typeof data.active === 'boolean' ? data.active : true,
+        fetchedAt: Date.now(),
       }
-    } finally {
-      clearTimeout(timer)
+      return cachedDelifyQuota
     }
   } catch {
     // Return last known cache on error or timeout

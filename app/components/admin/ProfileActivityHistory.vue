@@ -138,11 +138,11 @@ defineExpose({ reload: loadHistory })
 </script>
 
 <template>
-  <section class="rounded-xl border border-[#e2ece3] bg-white p-5">
+  <section class="rounded-xl border border-line bg-white p-5">
     <div class="flex items-center gap-3 mb-4 flex-wrap">
-      <span class="w-1 h-5 rounded-full bg-[#2c6e33]" aria-hidden="true"></span>
-      <h2 class="text-[1rem] font-extrabold text-[#122815] m-0">Lịch sử truy cập &amp; hoạt động</h2>
-      <span v-if="!historyLoading && historyTotal > 0" class="text-[0.78rem] text-[#667768]">
+      <span class="w-1 h-5 rounded-full bg-brand-700" aria-hidden="true"></span>
+      <h2 class="text-[1rem] font-extrabold text-brand-950 m-0">Lịch sử truy cập &amp; hoạt động</h2>
+      <span v-if="!historyLoading && historyTotal > 0" class="text-[0.78rem] text-ink-muted">
         {{ historyTotal }} bản ghi
       </span>
 
@@ -152,7 +152,7 @@ defineExpose({ reload: loadHistory })
         <select
           id="history-target"
           v-model="historyTargetId"
-          class="rounded-lg border border-[#e2ece3] bg-white px-3 py-2 text-[0.84rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
+          class="rounded-lg border border-line bg-white px-3 py-2 text-[0.84rem] text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:border-brand-700"
           @change="changeHistoryTarget"
         >
           <option value="">Tài khoản của tôi</option>
@@ -168,40 +168,40 @@ defineExpose({ reload: loadHistory })
 
     <SkeletonTable v-if="historyLoading" label="Đang tải lịch sử hoạt động" :rows="6" :cols="5" />
 
-    <div v-else-if="historyError" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-[#d12420] px-3.5 py-3 rounded-lg text-[0.84rem]" role="alert">
+    <div v-else-if="historyError" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-3 rounded-lg text-[0.84rem]" role="alert">
       <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
       <div>
         <div>{{ historyError }}</div>
-        <button type="button" class="mt-2 text-[0.82rem] font-bold underline bg-transparent border-0 cursor-pointer text-[#d12420] rounded focus:outline-none focus:ring-2 focus:ring-[#d12420]/40" @click="loadHistory">Thử lại</button>
+        <button type="button" class="mt-2 text-[0.82rem] font-bold underline bg-transparent border-0 cursor-pointer text-danger rounded focus:outline-none focus:ring-2 focus:ring-danger/40" @click="loadHistory">Thử lại</button>
       </div>
     </div>
 
     <div v-else-if="!history.length" class="rounded-lg border border-dashed border-[#dce8dd] bg-[#fafcfa] p-8 text-center">
       <i class="fa-solid fa-clock-rotate-left text-2xl text-[#b6cdb8] mb-2 block" aria-hidden="true"></i>
-      <p class="text-[0.85rem] text-[#667768] m-0">Chưa có bản ghi nào trong khoảng thời gian lưu trữ.</p>
+      <p class="text-[0.85rem] text-ink-muted m-0">Chưa có bản ghi nào trong khoảng thời gian lưu trữ.</p>
     </div>
 
     <template v-else>
-      <div class="overflow-x-auto rounded-lg border border-[#e2ece3]">
+      <div class="overflow-x-auto rounded-lg border border-line">
         <table class="w-full border-collapse text-[0.84rem]">
           <caption class="sr-only">Danh sách lượt truy cập và hoạt động, mới nhất trước</caption>
           <thead>
             <tr class="bg-[#fafcfa]">
-              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-[#e2ece3] whitespace-nowrap">Thời điểm</th>
-              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-[#e2ece3]">Hoạt động</th>
-              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-[#e2ece3] whitespace-nowrap">Địa chỉ IP</th>
-              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-[#e2ece3] whitespace-nowrap">Thiết bị</th>
-              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-[#e2ece3] whitespace-nowrap">Xác thực</th>
+              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-line whitespace-nowrap">Thời điểm</th>
+              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-line">Hoạt động</th>
+              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-line whitespace-nowrap">Địa chỉ IP</th>
+              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-line whitespace-nowrap">Thiết bị</th>
+              <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-line whitespace-nowrap">Xác thực</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in history" :key="item.id" class="hover:bg-[#fafcfa] transition-colors">
               <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-[#3d4a3e] whitespace-nowrap">{{ formatDateTimeVN(item.createdAt) }}</td>
-              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-[#122815] font-semibold">{{ actionLabel(item) }}</td>
-              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-[#667768] font-mono text-[0.8rem]">{{ item.ip || '—' }}</td>
-              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-[#667768]">{{ shortAgent(item.userAgent) }}</td>
-              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-[#667768]">
-                <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 text-[0.72rem] font-bold px-2 py-0.5 rounded-full bg-[#eef7ee] border border-[#cce5cd] text-[#1e4620]">
+              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-brand-950 font-semibold">{{ actionLabel(item) }}</td>
+              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-ink-muted font-mono text-[0.8rem]">{{ item.ip || '—' }}</td>
+              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-ink-muted">{{ shortAgent(item.userAgent) }}</td>
+              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-ink-muted">
+                <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 text-[0.72rem] font-bold px-2 py-0.5 rounded-full bg-[#eef7ee] border border-[#cce5cd] text-brand-900">
                   <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
                   {{ MFA_METHOD_LABELS[item.mfaMethod] ?? item.mfaMethod }}
                 </span>
@@ -213,11 +213,11 @@ defineExpose({ reload: loadHistory })
       </div>
 
       <div v-if="historyTotalPages > 1" class="flex items-center justify-between gap-3 mt-3 flex-wrap">
-        <span class="text-[0.8rem] text-[#667768]">Trang {{ historyPage }} / {{ historyTotalPages }}</span>
+        <span class="text-[0.8rem] text-ink-muted">Trang {{ historyPage }} / {{ historyTotalPages }}</span>
         <div class="flex items-center gap-2">
           <button
             type="button" :disabled="historyPage <= 1"
-            class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] bg-white px-3 py-2 text-[0.82rem] font-semibold text-[#3d4a3e] hover:bg-[#f0f7f1] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
+            class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-[0.82rem] font-semibold text-[#3d4a3e] hover:bg-surface-tint cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700"
             @click="goHistoryPage(historyPage - 1)"
           >
             <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
@@ -225,7 +225,7 @@ defineExpose({ reload: loadHistory })
           </button>
           <button
             type="button" :disabled="historyPage >= historyTotalPages"
-            class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] bg-white px-3 py-2 text-[0.82rem] font-semibold text-[#3d4a3e] hover:bg-[#f0f7f1] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
+            class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-[0.82rem] font-semibold text-[#3d4a3e] hover:bg-surface-tint cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700"
             @click="goHistoryPage(historyPage + 1)"
           >
             Sau
