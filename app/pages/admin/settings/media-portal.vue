@@ -88,9 +88,8 @@ async function load() {
     form.sessionInactivityHours = c.sessionInactivityHours
     form.processingHeartbeatSeconds = c.processingHeartbeatSeconds
     form.processingStaleMinutes = c.processingStaleMinutes
-    // `MediaConfig` khai hai ô này tuỳ chọn (máy chủ luôn điền): vắng thì giữ giá trị đang có, không ghi `undefined`.
-    form.processingMaxJobs = c.processingMaxJobs ?? form.processingMaxJobs
-    form.processingMaxAttempts = c.processingMaxAttempts ?? form.processingMaxAttempts
+    form.processingMaxJobs = c.processingMaxJobs
+    form.processingMaxAttempts = c.processingMaxAttempts
     // R2
     form.videoStorageProvider = c.videoStorage.provider
     form.videoR2AccountId = c.videoStorage.r2AccountId

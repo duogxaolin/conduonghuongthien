@@ -80,8 +80,10 @@ export type MediaConfig = {
   diskFloorBytes: number
   processingHeartbeatSeconds: number
   processingStaleMinutes: number
-  processingMaxJobs?: number
-  processingMaxAttempts?: number
+  /** Luôn có: `resolveMediaConfig` điền từ env (mặc định 1), lớp cài đặt CSDL ghi đè. */
+  processingMaxJobs: number
+  /** Luôn có, như trên (mặc định 3). */
+  processingMaxAttempts: number
   /** Tự chuyển mã sau upload (mặc định true). Tắt = chỉ probe+thumbnail. */
   autoTranscode: boolean
   /** Trần CPU % cho ffmpeg (mặc định 50). */
