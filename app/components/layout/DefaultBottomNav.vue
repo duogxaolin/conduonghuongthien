@@ -17,7 +17,7 @@
         @click="item.type === 'link' ? navigateTo(item.url) : $emit('bottom-nav-click', item)"
       >
         <div
-          class="w-[50px] h-[50px] rounded-full bg-gradient-to-br from-[#2e6b32] to-[#173b18] text-white flex items-center justify-center shadow-[0_12px_28px_rgba(23,59,24,0.45),inset_0_2px_4px_rgba(255,255,255,0.4)] border-[3.5px] border-white/95 transition-all active:scale-90"
+          class="w-[50px] h-[50px] rounded-full bg-gradient-to-br from-brand-700 to-[#173b18] text-white flex items-center justify-center shadow-[0_12px_28px_rgba(23,59,24,0.45),inset_0_2px_4px_rgba(255,255,255,0.4)] border-[3.5px] border-white/95 transition-all active:scale-90"
           :class="{ 'shadow-[0_16px_36px_rgba(23,59,24,0.55),inset_0_2px_6px_rgba(255,255,255,0.5)] scale-105': (item.type === 'chatbot' && isChatOpen) || (item.type === 'drawer' && isMobileMenuOpen) }"
         >
           <i :class="item.icon || 'fa-solid fa-circle'" class="text-[1.3rem]" aria-hidden="true"></i>

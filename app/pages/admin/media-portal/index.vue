@@ -174,14 +174,14 @@ onMounted(() => { void fetchMedia() })
   <div class="p-4 md:p-6 lg:p-8 space-y-6">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-[#2c3e2e]">Thư viện Video</h1>
+        <h1 class="text-2xl font-bold text-ink-admin">Thư viện Video</h1>
         <p class="text-sm text-[#6b7d6c] mt-1">Quản lý video của Portal Media — tải lên, xuất bản, gỡ bỏ.</p>
       </div>
       <div class="flex gap-2">
         <NuxtLink
           v-if="canCreate"
           to="/admin/media-portal/external"
-          class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-[#3d5636] transition-colors"
+          class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800 transition-colors"
         >
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
           Đăng video YouTube
@@ -205,14 +205,14 @@ onMounted(() => { void fetchMedia() })
           aria-label="Tìm video theo tiêu đề"
           type="text"
           placeholder="Tìm theo tiêu đề..."
-          class="w-full rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-brand-600"
+          class="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand-600"
           @keydown.enter="applyFilters"
         />
       </div>
       <select
         v-model="statusFilter"
         aria-label="Lọc trạng thái xuất bản"
-        class="rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-brand-600"
+        class="rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand-600"
         @change="applyFilters"
       >
         <option v-for="o in STATUS_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
@@ -220,14 +220,14 @@ onMounted(() => { void fetchMedia() })
       <select
         v-model="sourceFilter"
         aria-label="Lọc nguồn video"
-        class="rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-brand-600"
+        class="rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand-600"
         @change="applyFilters"
       >
         <option v-for="o in SOURCE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
       </select>
       <button
         type="button"
-        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-[#3d5636] transition-colors"
+        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800 transition-colors"
         @click="applyFilters"
       >
         Lọc
@@ -241,20 +241,20 @@ onMounted(() => { void fetchMedia() })
         <span class="sr-only">Đang tải danh sách video</span>
         <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
           <div v-for="n in 6" :key="n" class="flex gap-3">
-            <div v-for="c in 6" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+            <div v-for="c in 6" :key="c" class="h-10 bg-surface-tint rounded flex-1" aria-hidden="true"></div>
           </div>
         </div>
       </div>
 
       <!-- Error -->
-      <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-[#B04A4A] text-[0.95rem]">
+      <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-danger-soft text-[0.95rem]">
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
         {{ loadError }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchMedia()">thử lại</button>.
       </div>
 
       <!-- Empty -->
       <div v-else-if="items.length === 0" class="px-6 py-12 text-center text-[#6b7d6c] text-[0.95rem]">
-        <i class="fa-solid fa-video-slash text-3xl mb-3 text-[#c5d3c7]" aria-hidden="true"></i>
+        <i class="fa-solid fa-video-slash text-3xl mb-3 text-line-strong" aria-hidden="true"></i>
         <p>Chưa có video nào{{ search || statusFilter || sourceFilter ? ' khớp bộ lọc' : '' }}.</p>
         <p v-if="canCreate" class="mt-2 text-xs">Bấm "Tải video lên" hoặc "Đăng video YouTube" để bắt đầu.</p>
       </div>
@@ -263,7 +263,7 @@ onMounted(() => { void fetchMedia() })
       <div v-else>
         <!-- Desktop table -->
         <table class="w-full text-sm hidden md:table">
-          <thead class="bg-[#f4f7f4] text-[#6b7d6c]">
+          <thead class="bg-surface text-[#6b7d6c]">
             <tr>
               <th class="px-4 py-3 text-left font-semibold">Tiêu đề</th>
               <th class="px-4 py-3 text-left font-semibold">Nguồn</th>
@@ -275,10 +275,10 @@ onMounted(() => { void fetchMedia() })
               <th class="px-4 py-3 text-right font-semibold">Thao tác</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-[#eef2ee]">
-            <tr v-for="item in items" :key="item.id" class="hover:bg-[#f8fbf8]">
+          <tbody class="divide-y divide-surface-tint">
+            <tr v-for="item in items" :key="item.id" class="hover:bg-surface">
               <td class="px-4 py-3">
-                <div class="font-medium text-[#2c3e2e] line-clamp-1">{{ item.title }}</div>
+                <div class="font-medium text-ink-admin line-clamp-1">{{ item.title }}</div>
                 <div v-if="item.categoryName" class="text-xs text-[#8aa08c]">{{ item.categoryName }}</div>
               </td>
               <td class="px-4 py-3">
@@ -294,7 +294,7 @@ onMounted(() => { void fetchMedia() })
                 </span>
               </td>
               <td class="px-4 py-3 text-xs">
-                <span :class="item.processingStatus === 'failed' ? 'text-[#B04A4A]' : 'text-[#6b7d6c]'">
+                <span :class="item.processingStatus === 'failed' ? 'text-danger-soft' : 'text-[#6b7d6c]'">
                   {{ processingLabel(item.processingStatus) }}
                 </span>
               </td>
@@ -313,7 +313,7 @@ onMounted(() => { void fetchMedia() })
                   <button
                     v-if="canDelete"
                     type="button"
-                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[#fbe6e6] text-[#B04A4A]"
+                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-danger-bg text-danger-soft"
                     :title="'Xoá'"
                     @click="deleteItem(item.id, item.title)"
                   >
@@ -326,11 +326,11 @@ onMounted(() => { void fetchMedia() })
         </table>
 
         <!-- Mobile cards -->
-        <div class="md:hidden divide-y divide-[#eef2ee]">
+        <div class="md:hidden divide-y divide-surface-tint">
           <div v-for="item in items" :key="'m-'+item.id" class="p-4">
             <div class="flex items-start justify-between gap-2">
               <div class="flex-1 min-w-0">
-                <div class="font-medium text-[#2c3e2e] line-clamp-2">{{ item.title }}</div>
+                <div class="font-medium text-ink-admin line-clamp-2">{{ item.title }}</div>
                 <div class="text-xs text-[#8aa08c] mt-1">
                   {{ item.source === 'youtube' ? 'YouTube' : 'Tải lên' }}
                   · {{ fmtDuration(item.durationSeconds) }}
@@ -351,7 +351,7 @@ onMounted(() => { void fetchMedia() })
               <button
                 v-if="canDelete"
                 type="button"
-                class="inline-flex items-center justify-center flex-1 h-9 rounded-lg bg-[#fbe6e6] text-[#B04A4A] text-sm font-medium hover:bg-[#f8d8d8]"
+                class="inline-flex items-center justify-center flex-1 h-9 rounded-lg bg-danger-bg text-danger-soft text-sm font-medium hover:bg-[#f8d8d8]"
                 @click="deleteItem(item.id, item.title)"
               >
                 <i class="fa-solid fa-trash mr-1.5 text-xs" aria-hidden="true"></i> Xoá
@@ -361,7 +361,7 @@ onMounted(() => { void fetchMedia() })
         </div>
 
         <!-- Pagination -->
-        <div v-if="totalPages > 1" class="flex items-center justify-between px-4 py-3 border-t border-[#eef2ee] text-sm">
+        <div v-if="totalPages > 1" class="flex items-center justify-between px-4 py-3 border-t border-surface-tint text-sm">
           <div class="text-[#6b7d6c]">
             Trang {{ currentPage }} / {{ totalPages }}
             <span class="text-[#8aa08c]">· {{ total }} video</span>
@@ -369,7 +369,7 @@ onMounted(() => { void fetchMedia() })
           <div class="flex gap-2">
             <button
               type="button"
-              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#dde6de] text-brand-600 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-line text-brand-600 disabled:opacity-40 disabled:cursor-not-allowed"
               :disabled="currentPage <= 1"
               @click="changePage(currentPage - 1)"
             >
@@ -377,7 +377,7 @@ onMounted(() => { void fetchMedia() })
             </button>
             <button
               type="button"
-              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#dde6de] text-brand-600 disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-line text-brand-600 disabled:opacity-40 disabled:cursor-not-allowed"
               :disabled="currentPage >= totalPages"
               @click="changePage(currentPage + 1)"
             >

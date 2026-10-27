@@ -65,17 +65,17 @@ const emit = defineEmits<{ repoint: [] }>()
       <p v-if="repointing" class="m-0 text-sm text-ink-muted">Đang sao lưu CSDL rồi đổi URL...</p>
 
       <div v-if="repointResult" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
-        <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
+        <div class="rounded-lg border border-[#cce5cd] bg-surface-tint p-3">
           <p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Ảnh sửa URL</p>
           <p class="m-0 mt-1 text-xl font-extrabold text-brand-900">{{ repointResult.mediaUpdated }}</p>
         </div>
-        <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
+        <div class="rounded-lg border border-[#cce5cd] bg-surface-tint p-3">
           <p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Nội dung sửa URL</p>
           <p class="m-0 mt-1 text-xl font-extrabold text-brand-900">{{ repointResult.contentRowsUpdated }}</p>
         </div>
         <div v-if="repointResult.backupStamp" class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] p-3">
-          <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#8a6412]">Snapshot</p>
-          <p class="m-0 mt-1 text-sm font-bold text-[#8a6412] break-all">{{ repointResult.backupStamp }}</p>
+          <p class="m-0 text-xs font-bold uppercase tracking-wide text-warn-ink">Snapshot</p>
+          <p class="m-0 mt-1 text-sm font-bold text-warn-ink break-all">{{ repointResult.backupStamp }}</p>
         </div>
       </div>
     </div>

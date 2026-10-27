@@ -39,7 +39,7 @@ const emit = defineEmits<{
         :key="s.key"
         type="button"
         class="px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer border"
-        :class="queueStatusFilter === s.key ? 'bg-brand-700 text-white border-[#2c6e33]' : 'bg-white text-ink-muted border-[#d0ddd1] hover:bg-surface-tint'"
+        :class="queueStatusFilter === s.key ? 'bg-brand-700 text-white border-brand-700' : 'bg-white text-ink-muted border-line-strong hover:bg-surface-tint'"
         @click="emit('select-filter', s.key)"
       >
         {{ s.label }}
@@ -59,7 +59,7 @@ const emit = defineEmits<{
     <!-- Queue table -->
     <div v-else class="rounded-xl border border-line bg-white overflow-x-auto shadow-xs">
       <table class="w-full text-xs">
-        <thead class="bg-[#f7faf7] text-left">
+        <thead class="bg-surface text-left">
           <tr>
             <th class="px-3.5 py-3 font-bold text-brand-950">Thời gian</th>
             <th class="px-3.5 py-3 font-bold text-brand-950">Nguồn & Vị trí ẩn</th>
@@ -72,7 +72,7 @@ const emit = defineEmits<{
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in queue" :key="item.id" class="border-t border-line hover:bg-[#fcfdfc]">
+          <tr v-for="item in queue" :key="item.id" class="border-t border-line hover:bg-surface">
             <td class="px-3.5 py-2.5 whitespace-nowrap text-ink-muted">{{ formatTime(item.createdAt) }}</td>
             <td class="px-3.5 py-2.5">
               <span class="inline-block px-2 py-0.5 rounded font-bold uppercase text-[0.65rem]" :class="item.targetType === 'comment' ? 'bg-blue-100 text-blue-800' : item.targetType === 'chat' ? 'bg-purple-100 text-purple-800' : item.targetType === 'livestream_chat' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'">

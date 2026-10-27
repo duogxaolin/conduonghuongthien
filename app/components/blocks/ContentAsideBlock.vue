@@ -11,7 +11,7 @@
 
       <div class="grid grid-cols-1 gap-10 lg:grid-cols-[2fr_1fr]">
         <!-- Left: rich content card -->
-        <div ref="contentCardEl" class="content-card bg-white p-10 rounded-lg shadow-sm border border-[#E2E8DF] max-md:p-6" v-html="bodyHtml"></div>
+        <div ref="contentCardEl" class="content-card bg-white p-10 rounded-lg shadow-sm border border-line max-md:p-6" v-html="bodyHtml"></div>
 
         <!-- Right: green organisation sidebar -->
         <aside class="flex flex-col" role="complementary" aria-label="Thông tin thêm">

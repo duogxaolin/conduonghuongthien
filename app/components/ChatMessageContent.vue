@@ -26,7 +26,7 @@
         <span class="flex items-center gap-1.5">
           <i class="fa-solid fa-screwdriver-wrench text-brand-700"></i>
           <span v-if="toolCalls && toolCalls.length > 0">Công cụ AI đã sử dụng ({{ toolCalls.length }})</span>
-          <span v-else class="text-[#556450] font-medium">Công cụ AI: Trả lời trực tiếp</span>
+          <span v-else class="text-ink-soft font-medium">Công cụ AI: Trả lời trực tiếp</span>
         </span>
         <span class="text-[0.68rem] text-ink-muted font-normal group-open:rotate-180 transition-transform">
           <i class="fa-solid fa-chevron-down"></i>

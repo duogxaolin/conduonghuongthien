@@ -2,15 +2,24 @@
  * Rewrites Tailwind arbitrary hex colours into the semantic tokens of
  * `shared/color-tokens.ts`, without changing a pixel (wave3-long-term D-TOKENS, task 3.2).
  *
- *   node --experimental-strip-types scripts/codemod-hex-tokens.ts [--write] <dir|file>…
+ *   node --experimental-strip-types scripts/codemod-hex-tokens.ts [--write] [--merges] <dir|file>…
  *
  * Dry run by default: prints, per file, `file: N replacements (value→token ×n, …)` and
  * the `[#hex]` values it left alone (with the reason), then a summary. `--write`
  * writes the files. It runs on plain Node (no ts-resolver), so imports carry `.ts`.
  *
+ * `--merges` (off by default) ALSO rewrites the hexes of `shared/color-merges.ts`: values
+ * the user decided to fold into a token although they differ from it (decision D-T1).
+ * Those rewrites change the colour, by the CIEDE2000 difference the table records; the
+ * per-file report prints it for every rewrite (`#e2e8df→line (ΔE 1.79) ×3`, an exact
+ * match as ΔE 0) and the summary buckets them. Every guard below applies to them as to
+ * an exact match. Without the flag only exact matches are rewritten, and the report is
+ * unchanged (no ΔE).
+ *
  * What it rewrites: `<prefix>-[#hex]` → `<prefix>-<token>` for every Tailwind v3 colour
  * utility (COLOR_PREFIXES), when the hex is EXACTLY a token value (case-insensitive;
- * a 3-digit hex only when its expansion is exactly a token value). Everything before
+ * a 3-digit hex only when its expansion is exactly a token value) or, with `--merges`,
+ * an entry of the merge table. Everything before
  * the prefix (variants such as `hover:`/`md:`/`group-hover/x:`/`[&>svg]:`, and `!`) and
  * after the bracket (`/30`, `/[0.35]`) is kept byte for byte. The output is always a
  * literal class name — never an interpolation — because Tailwind only generates CSS
@@ -19,7 +28,10 @@
  *
  * What it leaves alone, and reports:
  *   unmapped          the hex is not a token value — near-duplicates included (`#2c6e34`
- *                     is not `#2c6e33`); merging those is decision D-T1, not this tool's
+ *                     is not `#2c6e33`) — nor, with `--merges`, in the merge table
+ *   indicator         the token may only decorate (DECORATIVE_ONLY_TOKENS: under 3:1 on
+ *                     white) and the utility is a ring, an outline, or any colour under a
+ *                     focus variant — a focus indicator is never given that name
  *   alpha / invalid   4/8-digit hex (alpha channel), 5/7-digit hex
  *   suffix            anything after `]` other than `/<number>` or `/[<number>]`,
  *                     e.g. a dynamic `/${alpha}` — the rewrite would not be a literal
@@ -39,9 +51,16 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { COLOR_MERGES } from '../shared/color-merges.ts'
 import { COLOR_TOKENS } from '../shared/color-tokens.ts'
+import { buildHexMap, buildMergeMap, isForbiddenIndicator, type LeaveReason, type LeftAlone, type MergeEntry, type Rewrite, type RewriteResult } from './codemod-hex-tokens-map.ts'
 import { END_CHARS, IS_END, MERGE_GROUP, cascadeGroups, inRanges, keepCascadeOrder, variantsBefore, type CascadeMember, type Range } from './codemod-hex-tokens-order.ts'
 import { mergeGroups, nodeFs, type Project, type SourceKind } from './codemod-hex-tokens-reach.ts'
+import { formatFileReport, formatSummary } from './codemod-hex-tokens-report.ts'
+
+// The tables, result shapes and report live in their own modules; the codemod's API stays here.
+export { buildHexMap, buildMergeMap, formatFileReport, formatSummary }
+export type { LeaveReason, LeftAlone, MergeEntry, Rewrite, RewriteResult }
 
 /** Every Tailwind v3 utility whose arbitrary value can be a colour. */
 export const COLOR_PREFIXES: readonly string[] = Object.freeze([
@@ -51,16 +70,18 @@ export const COLOR_PREFIXES: readonly string[] = Object.freeze([
   'fill', 'stroke', 'placeholder', 'caret', 'accent', 'decoration', 'shadow',
 ])
 
-export type LeaveReason = 'unmapped' | 'alpha' | 'invalid' | 'suffix' | 'style' | 'type-hint' | 'no-colour-prefix' | 'order' | 'order-merge'
-export interface Rewrite { index: number; from: string; to: string; value: string; token: string }
-/** `via` / `partner` (order-merge only): how the other class reaches the element, and its text. */
-export interface LeftAlone { index: number; text: string; value: string; reason: LeaveReason; via?: SourceKind; partner?: string }
-export interface RewriteResult { output: string; rewrites: Rewrite[]; leftAlone: LeftAlone[] }
 /**
  * `project`: where the merge analysis reads other files (components, modules, parents) —
  * this repository by default; `false` turns the analysis off (same-tag/line order only).
+ * `merges`: hexes that also map although they differ from the token (shared/color-merges.ts,
+ * the CLI's `--merges`); none by default.
  */
-export interface RewriteOptions { fileName?: string; tokens?: Readonly<Record<string, string>>; project?: Project | false }
+export interface RewriteOptions {
+  fileName?: string
+  tokens?: Readonly<Record<string, string>>
+  merges?: Readonly<Record<string, MergeEntry>>
+  project?: Project | false
+}
 
 const REPO_PROJECT: Project = { root: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), fs: nodeFs }
 
@@ -82,25 +103,27 @@ const DEFAULT_COLOURS = '(?:inherit|current|transparent|black|white'
   + '|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)'
   + '|\\[(?:rgba?|hsla?)\\([^\\]\\s]*\\)\\]|\\[var\\(--[^\\]\\s]+\\)\\]|\\[color:[^\\]\\s]+\\])'
 
-/** Token table → `#rrggbb` (lowercase) → token. Refuses anything the codemod could not map exactly. */
-export function buildHexMap(tokens: Readonly<Record<string, string>>): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const [token, value] of Object.entries(tokens)) {
-    if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error(`token ${token}: ${value} is not a 6-digit hex`)
-    const key = value.toLowerCase()
-    const other = map.get(key)
-    if (other) throw new Error(`tokens ${other} and ${token} share ${key} — the codemod cannot choose a name`)
-    map.set(key, token)
-  }
-  return map
+interface Prepared {
+  hexMap: Map<string, string>
+  mergeMap: Map<string, MergeEntry>
+  /** Whether this run has a merge table: every rewrite then reports its ΔE (0 when exact). */
+  merging: boolean
+  named: RegExp
+  colourOfNamed: (prefix: string, text: string) => string
 }
-
-interface Prepared { hexMap: Map<string, string>; named: RegExp; colourOfNamed: (prefix: string, text: string) => string }
-const preparedCache = new WeakMap<object, Prepared>()
-function prepare(tokens: Readonly<Record<string, string>>): Prepared {
-  let prepared = preparedCache.get(tokens)
+const NO_MERGES: Readonly<Record<string, MergeEntry>> = Object.freeze({})
+/** Keyed by the token table, then by the merge table: one process may run both modes (the tests do). */
+const preparedCache = new WeakMap<object, WeakMap<object, Prepared>>()
+function prepare(tokens: Readonly<Record<string, string>>, merges: Readonly<Record<string, MergeEntry>> = NO_MERGES): Prepared {
+  let byMerges = preparedCache.get(tokens)
+  if (!byMerges) {
+    byMerges = new WeakMap()
+    preparedCache.set(tokens, byMerges)
+  }
+  let prepared = byMerges.get(merges)
   if (!prepared) {
     const hexMap = buildHexMap(tokens)
+    const mergeMap = buildMergeMap(tokens, merges)
     const names = Object.keys(tokens).sort(byLengthDesc)
     const tokenAlt = names.map(escapeRe).join('|')
     const colour = tokenAlt ? `(?:${tokenAlt}|${DEFAULT_COLOURS})` : DEFAULT_COLOURS
@@ -111,8 +134,8 @@ function prepare(tokens: Readonly<Record<string, string>>): Prepared {
       const token = names.find((n) => rest === n || rest.startsWith(`${n}/`))
       return token ? `${tokens[token]!.toLowerCase()}${rest.slice(token.length)}` : rest
     }
-    prepared = { hexMap, named, colourOfNamed }
-    preparedCache.set(tokens, prepared)
+    prepared = { hexMap, mergeMap, merging: merges !== NO_MERGES, named, colourOfNamed }
+    byMerges.set(merges, prepared)
   }
   return prepared
 }
@@ -150,14 +173,24 @@ interface Member extends CascadeMember {
   via: Map<string, SourceKind>
 }
 
-/** The token form of one `<prefix>-[#hex]<tail>`, or why it keeps its text. */
-function plan(prefix: string, hex: string, tail: string, hexMap: Map<string, string>): { to: string; value: string; token: string } | LeaveReason {
+type Planned = Omit<Rewrite, 'index' | 'from'>
+
+/**
+ * The token form of one `<prefix>-[#hex]<tail>` written after `variants` (`hover:`,
+ * `focus-visible:!`…), or why it keeps its text. An exact match wins over the merge table.
+ */
+function plan(prefix: string, hex: string, tail: string, variants: string, prepared: Prepared): Planned | LeaveReason {
   if (!OPACITY_SUFFIX.test(tail)) return 'suffix'
   if (hex.length === 4 || hex.length === 8) return 'alpha'
   if (hex.length !== 3 && hex.length !== 6) return 'invalid'
   const value = `#${expandHex(hex)}`
-  const token = hexMap.get(value)
-  return token ? { to: `${prefix}-${token}${tail}`, value, token } : 'unmapped'
+  const exact = prepared.hexMap.get(value)
+  const merge = exact ? undefined : prepared.mergeMap.get(value)
+  const token = exact ?? merge?.token
+  if (!token) return 'unmapped'
+  if (isForbiddenIndicator(token, prefix, variants)) return 'indicator'
+  const change = merge ? { dE: merge.dE, ...(merge.rule ? { rule: merge.rule } : {}) } : prepared.merging ? { dE: 0 } : {}
+  return { to: `${prefix}-${token}${tail}`, value, token, ...change }
 }
 
 /**
@@ -188,7 +221,7 @@ function mergeMembers(source: string, isSfc: boolean, options: RewriteOptions, m
         external.push({ index: -1, end: -1, group: g, before, after: before, fixed: true, later, colour, extraGroups: [], via: new Map([[g, piece.kind]]) })
       }
       for (const m of piece.text.matchAll(HEX_UTILITY)) {
-        const planned = plan(m[1]!, m[2]!, m[3] ?? '', prepared.hexMap)
+        const planned = plan(m[1]!, m[2]!, m[3] ?? '', variantsBefore(piece.text, m.index), prepared)
         add(m.index, m[0], m[1]!, typeof planned === 'string' ? m[0] : planned.to, hexColour(m[2]!, m[3] ?? ''))
       }
       for (const m of piece.text.matchAll(prepared.named)) add(m.index, m[0], m[1]!, m[0], prepared.colourOfNamed(m[1]!, m[0]))
@@ -198,8 +231,8 @@ function mergeMembers(source: string, isSfc: boolean, options: RewriteOptions, m
 }
 
 export function rewriteSource(source: string, options: RewriteOptions = {}): RewriteResult {
-  const prepared = prepare(options.tokens ?? COLOR_TOKENS)
-  const { hexMap, named } = prepared
+  const prepared = prepare(options.tokens ?? COLOR_TOKENS, options.merges)
+  const { named } = prepared
   const isSfc = options.fileName ? options.fileName.endsWith('.vue') : /<template[\s>]/.test(source)
   const masked = styleRanges(source)
   const groupOf = cascadeGroups(source, isSfc)
@@ -216,10 +249,10 @@ export function rewriteSource(source: string, options: RewriteOptions = {}): Rew
     if (inRanges(index, masked)) { leftAlone.push({ index, text, value, reason: 'style' }); continue }
     const member: Member = { index, end: index + text.length, group: groupOf(index, prefix), before: text, after: text, colour: hexColour(m[2]!, m[3] ?? ''), extraGroups: [], via: new Map() }
     members.push(member)
-    const planned = plan(prefix, m[2]!, m[3] ?? '', hexMap)
+    const planned = plan(prefix, m[2]!, m[3] ?? '', variantsBefore(source, index), prepared)
     if (typeof planned === 'string') { leftAlone.push({ index, text, value, reason: planned }); continue }
     member.after = planned.to
-    member.rewrite = { index, from: text, to: planned.to, value: planned.value, token: planned.token }
+    member.rewrite = { index, from: text, ...planned }
   }
 
   for (const m of source.matchAll(RATCHET_HEX)) {
@@ -265,66 +298,6 @@ export function rewriteSource(source: string, options: RewriteOptions = {}): Rew
   return { output, rewrites, leftAlone }
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
-
-function tally<T>(items: readonly T[], key: (item: T) => string): Array<[string, number]> {
-  const counts = new Map<string, number>()
-  for (const item of items) counts.set(key(item), (counts.get(key(item)) ?? 0) + 1)
-  return [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-}
-
-/** `file: N replacements (#2c6e33→brand-700 ×2, …)` + `  left alone: M (#8ed694 ×1 unmapped, …)`; '' when nothing to say. */
-export function formatFileReport(file: string, result: RewriteResult): string {
-  const { rewrites, leftAlone } = result
-  if (!rewrites.length && !leftAlone.length) return ''
-  let head = `${file}: ${plural(rewrites.length, 'replacement')}`
-  if (rewrites.length) {
-    head += ` (${tally(rewrites, (r) => `${r.value}→${r.token}`).map(([key, n]) => `${key} ×${n}`).join(', ')})`
-  }
-  if (!leftAlone.length) return head
-  const left = tally(leftAlone, (e) => `${e.value}\u0000${e.reason}${e.via ? ` via ${e.via}` : ''}`)
-    .map(([key, n]) => {
-      const [value, reason] = key.split('\u0000')
-      return `${value} ×${n} ${reason}`
-    })
-  return `${head}\n  left alone: ${leftAlone.length} (${left.join(', ')})`
-}
-
-export function formatSummary(entries: ReadonlyArray<{ file: string; result: RewriteResult }>, options: { write: boolean }): string {
-  const rewrites = entries.flatMap((e) => e.result.rewrites)
-  const leftAlone = entries.flatMap((e) => e.result.leftAlone)
-  const lines = [
-    `== hex → token codemod: ${options.write ? 'WRITTEN' : 'DRY RUN — no file written'} ==`,
-    `files: ${entries.length} scanned, ${entries.filter((e) => e.result.rewrites.length).length} with replacements`,
-    `replacements: ${rewrites.length}`,
-    `left alone: ${leftAlone.length}${leftAlone.length ? ` (${tally(leftAlone, (e) => e.reason).map(([reason, n]) => `${reason} ${n}`).join(', ')})` : ''}`,
-  ]
-  const byDir = new Map<string, { rewrites: number; files: number; left: number }>()
-  for (const { file, result } of entries) {
-    if (!result.rewrites.length && !result.leftAlone.length) continue
-    const dir = path.posix.dirname(file.split(path.sep).join('/'))
-    const row = byDir.get(dir) ?? { rewrites: 0, files: 0, left: 0 }
-    row.rewrites += result.rewrites.length
-    row.files += result.rewrites.length ? 1 : 0
-    row.left += result.leftAlone.length
-    byDir.set(dir, row)
-  }
-  if (byDir.size) {
-    lines.push('by directory:')
-    for (const [dir, row] of [...byDir].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-      lines.push(`  ${dir}: ${plural(row.rewrites, 'replacement')} in ${plural(row.files, 'file')} (${row.left} left alone)`)
-    }
-  }
-  const merged = tally(leftAlone.filter((e) => e.reason === 'order-merge'), (e) => e.via ?? 'self')
-  if (merged.length) lines.push(`order-merge by source: ${merged.map(([via, n]) => `${via} ${n}`).join(', ')}`)
-  const unmapped = tally(leftAlone.filter((e) => e.reason === 'unmapped'), (e) => e.value).slice(0, 20)
-  if (unmapped.length) {
-    lines.push('top unmapped values:')
-    for (const [value, n] of unmapped) lines.push(`  ${value} ${n}`)
-  }
-  return lines.join('\n')
-}
-
 const SOURCE_EXTENSIONS = new Set(['.vue', '.ts', '.js'])
 const SKIP_DIRS = new Set(['node_modules', '.nuxt', '.output', '.git', '.data'])
 
@@ -348,16 +321,19 @@ export function collectFiles(paths: readonly string[]): string[] {
   return [...files].sort()
 }
 
-const USAGE = 'usage: node --experimental-strip-types scripts/codemod-hex-tokens.ts [--write] <dir|file>…'
+const USAGE = 'usage: node --experimental-strip-types scripts/codemod-hex-tokens.ts [--write] [--merges] <dir|file>…'
+const OPTIONS = new Set(['--write', '--merges'])
 
 export interface Io { log(line: string): void; error(line: string): void }
 const STDIO: Io = { log: (line) => process.stdout.write(`${line}\n`), error: (line) => process.stderr.write(`${line}\n`) }
 
-export function main(argv: readonly string[], io: Io = STDIO): number {
+/** `merges`: the table `--merges` applies (shared/color-merges.ts; a test passes its own). */
+export function main(argv: readonly string[], io: Io = STDIO, merges: Readonly<Record<string, MergeEntry>> = COLOR_MERGES): number {
   if (argv.includes('--help') || argv.includes('-h')) { io.log(USAGE); return 0 }
-  const unknown = argv.filter((arg) => arg.startsWith('-') && arg !== '--write')
+  const unknown = argv.filter((arg) => arg.startsWith('-') && !OPTIONS.has(arg))
   if (unknown.length) { io.error(`unknown option: ${unknown.join(' ')}`); io.error(USAGE); return 2 }
   const write = argv.includes('--write')
+  const options: RewriteOptions = argv.includes('--merges') ? { merges } : {}
   const targets = argv.filter((arg) => !arg.startsWith('-'))
   if (!targets.length) { io.error(USAGE); return 2 }
   const missing = targets.filter((target) => !existsSync(target))
@@ -366,7 +342,7 @@ export function main(argv: readonly string[], io: Io = STDIO): number {
   const entries: Array<{ file: string; result: RewriteResult }> = []
   for (const file of collectFiles(targets)) {
     const source = readFileSync(file, 'utf8')
-    const result = rewriteSource(source, { fileName: file })
+    const result = rewriteSource(source, { ...options, fileName: file })
     const shown = (path.relative(process.cwd(), file) || file).split(path.sep).join('/')
     entries.push({ file: shown, result })
     const report = formatFileReport(shown, result)

@@ -54,7 +54,7 @@ const emit = defineEmits<{ run: [dryRun: boolean] }>()
     <!-- Báo cáo self-heal (xem trước hoặc kết quả) -->
     <div v-if="selfHealReport" class="rounded-lg border border-[#cce5cd] bg-surface-tint p-4 flex flex-col gap-3" role="status">
       <div class="text-sm font-bold text-brand-950">
-        <i class="fa-solid mr-1.5" :class="selfHealReport.r2Missing === 0 ? 'fa-circle-check text-[#2c6e33]' : 'fa-circle-info text-[#8a6412]'" aria-hidden="true"></i>
+        <i class="fa-solid mr-1.5" :class="selfHealReport.r2Missing === 0 ? 'fa-circle-check text-brand-700' : 'fa-circle-info text-warn-ink'" aria-hidden="true"></i>
         Đã kiểm tra {{ selfHealReport.r2Checked }} ảnh R2
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
@@ -63,14 +63,14 @@ const emit = defineEmits<{ run: [dryRun: boolean] }>()
           <p class="m-0 mt-0.5 text-lg font-extrabold text-brand-900">{{ selfHealReport.r2Ok }}</p>
         </div>
         <div class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] p-2.5">
-          <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#8a6412]">R2 thiếu</p>
-          <p class="m-0 mt-0.5 text-lg font-extrabold text-[#8a6412]">{{ selfHealReport.r2Missing }}</p>
+          <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-warn-ink">R2 thiếu</p>
+          <p class="m-0 mt-0.5 text-lg font-extrabold text-warn-ink">{{ selfHealReport.r2Missing }}</p>
         </div>
-        <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-2.5">
+        <div class="rounded-lg border border-[#cce5cd] bg-surface-tint p-2.5">
           <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-ink-muted">Đã upload lại</p>
           <p class="m-0 mt-0.5 text-lg font-extrabold text-brand-900">{{ selfHealReport.r2Reuploaded }}</p>
         </div>
-        <div class="rounded-lg border border-[#a32924] bg-[#fdf0f0] p-2.5">
+        <div class="rounded-lg border border-[#a32924] bg-danger-bg p-2.5">
           <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#a32924]">Mất gốc</p>
           <p class="m-0 mt-0.5 text-lg font-extrabold text-[#a32924]">{{ selfHealReport.r2Lost }}</p>
         </div>
@@ -80,18 +80,18 @@ const emit = defineEmits<{ run: [dryRun: boolean] }>()
           <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-ink-muted">Thumbnail bài viết repoint</p>
           <p class="m-0 mt-0.5 text-lg font-extrabold text-brand-900">{{ selfHealReport.thumbnailsRepointed }}</p>
         </div>
-        <div class="rounded-lg border border-[#cfe8d0] bg-[#eef7ee] p-2.5">
+        <div class="rounded-lg border border-[#cfe8d0] bg-surface-tint p-2.5">
           <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-brand-900">Thumbnail đổi sang ảnh mặc định</p>
           <p class="m-0 mt-0.5 text-lg font-extrabold text-brand-900">{{ selfHealReport.thumbnailsDefaulted }}</p>
         </div>
       </div>
       <div v-if="selfHealReport.backupStamp" class="text-xs">
         <div class="rounded-lg border border-[#f0dcae] bg-white p-2.5 inline-block">
-          <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#8a6412]">Snapshot</p>
-          <p class="m-0 mt-0.5 text-sm font-bold text-[#8a6412] break-all">{{ selfHealReport.backupStamp }}</p>
+          <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-warn-ink">Snapshot</p>
+          <p class="m-0 mt-0.5 text-sm font-bold text-warn-ink break-all">{{ selfHealReport.backupStamp }}</p>
         </div>
       </div>
-      <div v-if="selfHealReport.missingSamples.length > 0" class="text-xs text-[#8a6412]">
+      <div v-if="selfHealReport.missingSamples.length > 0" class="text-xs text-warn-ink">
         <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
         Mẫu thiếu ({{ selfHealReport.missingSamples.length }}): {{ selfHealReport.missingSamples.slice(0, 8).join(', ') }}{{ selfHealReport.missingSamples.length > 8 ? '...' : '' }}
       </div>

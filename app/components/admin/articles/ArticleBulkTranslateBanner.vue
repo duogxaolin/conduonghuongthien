@@ -96,7 +96,7 @@ const emit = defineEmits<{
     <div class="flex items-center gap-2 shrink-0">
       <button
         type="button"
-        class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-brand-900 hover:bg-[#e4ece4] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
+        class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-brand-900 hover:bg-line transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
         @click="emit('refresh-table', props.currentPage); emit('fetch-bulk-status')"
       >
         <i class="fa-solid fa-arrows-rotate text-[0.7rem]" :class="props.loading ? 'animate-spin' : ''"></i>
@@ -132,7 +132,7 @@ const emit = defineEmits<{
       </div>
       <div class="flex flex-col gap-0.5">
         <span class="font-extrabold text-[#735100] text-sm">Lưu ý kiểm duyệt & Xuất bản bản dịch AI:</span>
-        <span class="text-[#8a6500]">
+        <span class="text-warn-ink">
           Các bài viết dịch bằng AI được lưu ở trạng thái <strong>Bản nháp AI</strong> (huy hiệu vàng <span class="px-1.5 py-px rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">EN</span>, <span class="px-1.5 py-px rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">ZH</span>...). Cán bộ bấm vào huy hiệu để <strong>Xem nhanh</strong> và rà soát trước khi bấm <strong>Xuất bản</strong> ra trang công khai.
         </span>
       </div>

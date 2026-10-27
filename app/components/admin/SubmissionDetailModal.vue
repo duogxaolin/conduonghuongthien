@@ -186,7 +186,7 @@ const logContact = async () => {
         <div
           v-for="n in 5"
           :key="n"
-          class="h-12 animate-pulse rounded-lg bg-[#EEF2EC] motion-reduce:animate-none"
+          class="h-12 animate-pulse rounded-lg bg-surface-tint motion-reduce:animate-none"
           aria-hidden="true"
         ></div>
       </div>
@@ -242,7 +242,7 @@ const logContact = async () => {
           </div>
           <div v-if="submission.phone" class="flex flex-col gap-1">
             <span class="text-[0.78rem] font-bold text-ink-muted">Số điện thoại:</span>
-            <code class="self-start rounded bg-[#f4f7f4] px-2 py-1 text-sm">{{ submission.phone }}</code>
+            <code class="self-start rounded bg-surface px-2 py-1 text-sm">{{ submission.phone }}</code>
           </div>
           <div v-if="submission.email" class="flex flex-col gap-1">
             <span class="text-[0.78rem] font-bold text-ink-muted">Email:</span>
@@ -254,7 +254,7 @@ const logContact = async () => {
           </div>
           <div v-if="submission.message" class="flex flex-col gap-1 sm:col-span-2">
             <span class="text-[0.78rem] font-bold text-ink-muted">Nội dung yêu cầu / Hoàn cảnh:</span>
-            <div class="whitespace-pre-wrap rounded-lg border border-line bg-[#f8faf8] px-3 py-3 text-[0.9rem] leading-relaxed">{{ submission.message }}</div>
+            <div class="whitespace-pre-wrap rounded-lg border border-line bg-surface px-3 py-3 text-[0.9rem] leading-relaxed">{{ submission.message }}</div>
           </div>
           <div v-for="(a, i) in extraAnswers" :key="i" class="flex flex-col gap-1 sm:col-span-2">
             <span class="text-[0.78rem] font-bold text-ink-muted">{{ a.label }}:</span>
@@ -329,7 +329,7 @@ const logContact = async () => {
             <button
               type="button"
               :disabled="busy !== ''"
-              class="inline-flex items-center gap-2 rounded-lg border border-[#8ed694] bg-surface-tint px-3 py-2 text-sm font-bold text-brand-700 hover:bg-[#e4f2e5] disabled:cursor-not-allowed disabled:opacity-60"
+              class="inline-flex items-center gap-2 rounded-lg border border-brand-300 bg-surface-tint px-3 py-2 text-sm font-bold text-brand-700 hover:bg-[#e4f2e5] disabled:cursor-not-allowed disabled:opacity-60"
               @click="saveNote"
             >
               <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Lưu ghi chú
@@ -351,7 +351,7 @@ const logContact = async () => {
                 <p class="m-0 text-[0.75rem] text-ink-muted">
                   {{ e.actorUsername || e.actorName || 'Tài khoản đã xoá' }} · {{ fmtDate(e.createdAt) }}
                 </p>
-                <p v-if="e.note" class="m-0 mt-1 whitespace-pre-wrap text-[0.82rem] text-[#2c3e2e]">{{ e.note }}</p>
+                <p v-if="e.note" class="m-0 mt-1 whitespace-pre-wrap text-[0.82rem] text-ink-admin">{{ e.note }}</p>
               </div>
             </li>
           </ol>

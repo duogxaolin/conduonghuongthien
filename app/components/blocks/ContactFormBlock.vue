@@ -6,14 +6,14 @@
         <!-- Left: contact info panel (only when configured) -->
         <div v-if="hasInfo" class="flex flex-col gap-8">
           <div v-if="d.infoTitle || infoRows.length">
-            <h3 class="text-[1.4rem] font-bold text-brand-600 mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ (currentLang !== 'vi' ? t('contact_info') : '') || d.infoTitle || 'Thông tin liên hệ' }}</h3>
+            <h3 class="text-[1.4rem] font-bold text-brand-600 mb-5 border-b-2 border-line pb-2">{{ (currentLang !== 'vi' ? t('contact_info') : '') || d.infoTitle || 'Thông tin liên hệ' }}</h3>
             <p v-for="(row, i) in infoRows" :key="i" class="text-[0.95rem] text-ink-secondary mb-3 leading-relaxed">
               <strong v-if="row.label" class="text-ink">{{ row.label }}</strong>
               <template v-if="row.label"> </template>{{ row.value }}
             </p>
           </div>
           <div v-if="d.noteTitle || d.noteText">
-            <h3 v-if="d.noteTitle" class="text-[1.4rem] font-bold text-brand-600 mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ (currentLang !== 'vi' ? t('support_mechanism_title') : '') || d.noteTitle }}</h3>
+            <h3 v-if="d.noteTitle" class="text-[1.4rem] font-bold text-brand-600 mb-5 border-b-2 border-line pb-2">{{ (currentLang !== 'vi' ? t('support_mechanism_title') : '') || d.noteTitle }}</h3>
             <p v-if="d.noteText" class="text-[0.95rem] text-ink-secondary leading-relaxed text-justify">{{ (currentLang !== 'vi' ? t('support_mechanism_desc') : '') || d.noteText }}</p>
           </div>
         </div>
@@ -23,7 +23,7 @@
           <div v-if="!hasInfo" class="text-center mb-8">
             <h2 class="text-[2rem] md:text-[1.5rem] font-extrabold text-ink">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h2>
           </div>
-          <form @submit.prevent="submitForm" class="bg-white p-5 sm:p-8 lg:p-10 rounded-lg shadow-md border border-[#E2E8DF]">
+          <form @submit.prevent="submitForm" class="bg-white p-5 sm:p-8 lg:p-10 rounded-lg shadow-md border border-line">
             <h3 v-if="hasInfo" class="text-[1.3rem] font-bold text-brand-600 mb-6">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h3>
 
             <!-- Dynamic fields -->
@@ -99,7 +99,7 @@
             <div
               v-if="submitMessage"
               class="mt-4 px-[18px] py-[14px] rounded-lg text-[0.9rem] font-semibold leading-[1.5]"
-              :class="submitStatus === 'success' ? 'bg-[#e8f5e9] text-[#2e6b32] border border-[#b6d7b8]' : 'bg-[#fdecea] text-[#b71c1c] border border-[#f5c6cb]'"
+              :class="submitStatus === 'success' ? 'bg-[#e8f5e9] text-[#2e6b32] border border-[#b6d7b8]' : 'bg-danger-bg text-[#b71c1c] border border-[#f5c6cb]'"
               :role="submitStatus === 'error' ? 'alert' : 'status'"
             >
               {{ submitMessage }}

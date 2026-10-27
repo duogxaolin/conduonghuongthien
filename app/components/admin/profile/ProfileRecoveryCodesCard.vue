@@ -16,7 +16,7 @@ const emit = defineEmits<{ open: [mode: 'create' | 'delete'], copy: [], download
 </script>
 
 <template>
-  <div class="mt-5 rounded-xl border border-line bg-[#fafcfa] p-4">
+  <div class="mt-5 rounded-xl border border-line bg-surface p-4">
     <div class="flex items-start gap-4 flex-wrap">
       <div class="w-10 h-10 rounded-xl bg-surface-tint border border-line flex items-center justify-center shrink-0">
         <i class="fa-solid fa-life-ring text-brand-700" aria-hidden="true"></i>
@@ -25,7 +25,7 @@ const emit = defineEmits<{ open: [mode: 'create' | 'delete'], copy: [], download
         <div class="flex items-center gap-2 flex-wrap">
           <strong class="text-[0.9rem] text-brand-950">Mã dự phòng</strong>
           <span class="inline-flex items-center gap-1 text-[0.7rem] font-bold px-2 py-0.5 rounded-full border"
-                :class="enabled ? 'bg-[#eef7ee] border-[#cce5cd] text-brand-900' : 'bg-[#f4f7f4] border-[#dce8dd] text-ink-muted'">
+                :class="enabled ? 'bg-[#eef7ee] border-[#cce5cd] text-brand-900' : 'bg-[#f4f7f4] border-line text-ink-muted'">
             <i class="fa-solid" :class="enabled ? 'fa-circle-check' : 'fa-circle-minus'" aria-hidden="true"></i>
             {{ enabled ? `Còn ${remaining} mã` : 'Đang tắt' }}
           </span>
@@ -33,7 +33,7 @@ const emit = defineEmits<{ open: [mode: 'create' | 'delete'], copy: [], download
         <p class="text-[0.8rem] text-ink-muted mt-1 mb-0">
           10 mã dùng một lần, để vào được hệ thống khi mất thiết bị xác thực. Tuỳ chọn — bật/tắt lúc nào cũng được.
         </p>
-        <p v-if="activeFactorCount === 0" class="text-[0.78rem] text-[#8a6412] mt-1.5 mb-0">
+        <p v-if="activeFactorCount === 0" class="text-[0.78rem] text-warn-ink mt-1.5 mb-0">
           <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
           Cần bật ít nhất một yếu tố thứ hai trước khi tạo mã dự phòng.
         </p>
@@ -56,7 +56,7 @@ const emit = defineEmits<{ open: [mode: 'create' | 'delete'], copy: [], download
 
     <!-- Hiện mã đúng một lần -->
     <div v-if="codes.length" class="mt-4 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] p-4">
-      <div class="flex items-start gap-2 text-[0.84rem] font-bold text-[#8a6412] mb-3">
+      <div class="flex items-start gap-2 text-[0.84rem] font-bold text-warn-ink mb-3">
         <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
         <span>Lưu lại ngay — các mã này chỉ hiện một lần duy nhất và sẽ không xem lại được.</span>
       </div>

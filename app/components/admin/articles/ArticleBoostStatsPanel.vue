@@ -170,7 +170,7 @@ const cancelBoost = async () => {
     @click.self="emit('close')"
   >
     <div class="w-full max-w-2xl rounded-xl border border-line bg-white shadow-lg">
-      <div class="flex items-start justify-between gap-3 border-b border-[#eef2ee] px-5 py-4">
+      <div class="flex items-start justify-between gap-3 border-b border-surface-tint px-5 py-4">
         <div class="min-w-0">
           <h2 id="stats-modal-title" class="m-0 text-[1.05rem] font-extrabold text-brand-950">Thống kê lượt xem</h2>
           <p class="m-0 mt-1 line-clamp-2 text-[0.82rem] text-ink-muted">{{ props.article.title }}</p>
@@ -202,7 +202,7 @@ const cancelBoost = async () => {
             cộng vào.
           -->
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div class="rounded-lg border border-line bg-[#f8faf8] px-4 py-3">
+            <div class="rounded-lg border border-line bg-surface px-4 py-3">
               <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-ink-muted">Tổng hiển thị</p>
               <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-brand-950">{{ formatViews(statsData.totalDisplayed) }}</p>
             </div>
@@ -243,14 +243,14 @@ const cancelBoost = async () => {
             <table v-if="statsData.bySource.length" class="w-full border-collapse text-left text-[0.82rem]">
               <thead>
                 <tr>
-                  <th class="border-b border-line bg-[#f8faf8] px-3 py-2 font-bold text-ink-muted">Nguồn</th>
-                  <th class="border-b border-line bg-[#f8faf8] px-3 py-2 text-right font-bold text-ink-muted">Lượt xem</th>
+                  <th class="border-b border-line bg-surface px-3 py-2 font-bold text-ink-muted">Nguồn</th>
+                  <th class="border-b border-line bg-surface px-3 py-2 text-right font-bold text-ink-muted">Lượt xem</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in statsData.bySource" :key="row.sourceCategory">
-                  <td class="border-b border-[#eef2ee] px-3 py-2 text-[#445546]">{{ sourceLabels[row.sourceCategory] || row.sourceCategory }}</td>
-                  <td class="border-b border-[#eef2ee] px-3 py-2 text-right font-bold text-brand-950">{{ formatViews(row.views) }}</td>
+                  <td class="border-b border-surface-tint px-3 py-2 text-[#445546]">{{ sourceLabels[row.sourceCategory] || row.sourceCategory }}</td>
+                  <td class="border-b border-surface-tint px-3 py-2 text-right font-bold text-brand-950">{{ formatViews(row.views) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -265,7 +265,7 @@ const cancelBoost = async () => {
             <ul v-if="statsData.daily.length" class="m-0 flex list-none flex-col gap-1.5 p-0">
               <li v-for="row in statsData.daily" :key="row.day" class="flex items-center gap-3">
                 <span class="w-20 shrink-0 text-[0.78rem] text-ink-muted">{{ new Date(row.day).toLocaleDateString('vi-VN') }}</span>
-                <span class="h-2 flex-1 overflow-hidden rounded-full bg-[#eef2ee]">
+                <span class="h-2 flex-1 overflow-hidden rounded-full bg-surface-tint">
                   <span class="block h-full rounded-full bg-brand-700" :style="{ width: dailyPeak ? `${(row.total / dailyPeak) * 100}%` : '0%' }"></span>
                 </span>
                 <span class="w-32 shrink-0 text-right text-[0.78rem] text-[#445546]">
@@ -280,7 +280,7 @@ const cancelBoost = async () => {
           </div>
 
           <!-- Tăng lượt xem ảo -->
-          <div class="rounded-lg border border-line bg-[#f8faf8] px-4 py-4">
+          <div class="rounded-lg border border-line bg-surface px-4 py-4">
             <h3 class="m-0 text-[0.85rem] font-extrabold text-brand-950">Tăng lượt xem ảo</h3>
             <p class="m-0 mt-1 text-[0.78rem] text-ink-muted">
               Lượt xem ảo được lưu tách khỏi lượt xem thật và mọi thao tác đều ghi vào nhật ký hoạt động kèm tên tài khoản thực hiện.

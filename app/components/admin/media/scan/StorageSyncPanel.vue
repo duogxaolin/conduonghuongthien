@@ -48,18 +48,18 @@ const syncStalled = computed(() => {
 
     <!-- Số lượng hiện tại -->
     <div class="grid grid-cols-2 gap-3">
-      <div class="rounded-lg border border-line bg-[#f8faf8] p-3 text-center">
+      <div class="rounded-lg border border-line bg-surface p-3 text-center">
         <p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Local</p>
         <p class="m-0 mt-1 text-xl font-extrabold text-brand-950">{{ counts.local }}</p>
       </div>
-      <div class="rounded-lg border border-line bg-[#f8faf8] p-3 text-center">
+      <div class="rounded-lg border border-line bg-surface p-3 text-center">
         <p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">R2</p>
         <p class="m-0 mt-1 text-xl font-extrabold text-brand-950">{{ counts.r2 }}</p>
       </div>
     </div>
 
     <!-- Cảnh báo -->
-    <div class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3.5 py-2.5 text-[0.82rem] text-[#8a6412]" role="status">
+    <div class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3.5 py-2.5 text-[0.82rem] text-warn-ink" role="status">
       <i class="fa-solid fa-triangle-exclamation mt-0.5 mr-1.5" aria-hidden="true"></i>
       <span>Ảnh đã nhúng trong bài viết sẽ được tự thay URL sang storage mới. Trước khi sync, hệ thống tự backup (SQL + file) để recover thủ công nếu lỗi — không auto rollback (restore toàn DB mất dữ liệu unrelated). Để hoàn tác, chạy sync ngược.</span>
     </div>
@@ -89,7 +89,7 @@ const syncStalled = computed(() => {
       <button
         v-if="syncing"
         type="button"
-        class="inline-flex items-center gap-2 rounded-lg border border-[#a32924] bg-white px-4 py-2.5 text-sm font-bold text-[#a32924] cursor-pointer transition-colors hover:bg-[#fdf0f0] disabled:cursor-not-allowed disabled:opacity-50"
+        class="inline-flex items-center gap-2 rounded-lg border border-[#a32924] bg-white px-4 py-2.5 text-sm font-bold text-[#a32924] cursor-pointer transition-colors hover:bg-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="jobStatus?.cancelling"
         @click="emit('cancel')"
       >
@@ -128,7 +128,7 @@ const syncStalled = computed(() => {
             aria-hidden="true"
           ></i>
           {{ phaseLabel[jobStatus.phase] }}
-          <span v-if="jobStatus.cancelling" class="text-[#8a6412]">(đang dừng)</span>
+          <span v-if="jobStatus.cancelling" class="text-warn-ink">(đang dừng)</span>
         </span>
         <span class="text-xs text-ink-muted">
           {{ jobStatus.done }} / {{ jobStatus.total }} file
@@ -137,7 +137,7 @@ const syncStalled = computed(() => {
       </div>
 
       <!-- Progress bar -->
-      <div class="h-2 w-full overflow-hidden rounded-full bg-[#d0ddd1]" role="progressbar" :aria-valuenow="progressPercent" aria-valuemin="0" aria-valuemax="100">
+      <div class="h-2 w-full overflow-hidden rounded-full bg-line-strong" role="progressbar" :aria-valuenow="progressPercent" aria-valuemin="0" aria-valuemax="100">
         <div class="h-full rounded-full bg-brand-700 transition-all duration-300" :style="{ width: `${progressPercent}%` }"></div>
       </div>
 
@@ -161,7 +161,7 @@ const syncStalled = computed(() => {
       </div>
 
       <!-- Snapshot backup -->
-      <div v-if="jobStatus.preBackupStamp" class="text-xs text-[#8a6412]">
+      <div v-if="jobStatus.preBackupStamp" class="text-xs text-warn-ink">
         <i class="fa-solid fa-shield-halved mr-1" aria-hidden="true"></i>
         Snapshot trước sync: <code class="font-mono">{{ jobStatus.preBackupStamp }}</code> (giữ để recover thủ công)
       </div>
@@ -175,15 +175,15 @@ const syncStalled = computed(() => {
 
     <!-- Kết quả sync (giữ hiện sau khi xong) -->
     <div v-if="syncResult && !syncing" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
-      <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
+      <div class="rounded-lg border border-[#cce5cd] bg-surface-tint p-3">
         <p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Đã chuyển</p>
         <p class="m-0 mt-1 text-xl font-extrabold text-brand-900">{{ syncResult.synced }}</p>
       </div>
-      <div class="rounded-lg border border-line bg-[#f8faf8] p-3">
+      <div class="rounded-lg border border-line bg-surface p-3">
         <p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Bỏ qua</p>
         <p class="m-0 mt-1 text-xl font-extrabold text-ink-muted">{{ syncResult.skipped }}</p>
       </div>
-      <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
+      <div class="rounded-lg border border-[#cce5cd] bg-surface-tint p-3">
         <p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Bài viết sửa URL</p>
         <p class="m-0 mt-1 text-xl font-extrabold text-brand-900">{{ syncResult.articlesRewritten }}</p>
       </div>

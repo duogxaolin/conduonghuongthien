@@ -221,7 +221,7 @@ onUnmounted(() => {
         <div>
           <button
             type="button"
-            class="w-full py-2 px-3 rounded-lg bg-[#7CB342] hover:bg-[#689F38] text-white font-extrabold text-xs cursor-pointer border-none transition-all flex items-center justify-center gap-1.5 shadow-sm"
+            class="w-full py-2 px-3 rounded-lg bg-accent hover:bg-[#689F38] text-white font-extrabold text-xs cursor-pointer border-none transition-all flex items-center justify-center gap-1.5 shadow-sm"
             :disabled="universalLoading"
             @click="loadCoverage"
           >
@@ -234,7 +234,7 @@ onUnmounted(() => {
 
     <!-- Main Action Box -->
     <div class="bg-white rounded-2xl border border-line-strong p-6 shadow-sm flex flex-col gap-5">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#eef2ee] pb-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-surface-tint pb-4">
         <div class="flex items-center gap-3">
           <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 text-white flex items-center justify-center text-xl shadow-sm">
             <i class="fa-solid fa-wand-magic-sparkles"></i>
@@ -301,7 +301,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Scope & Options -->
-      <div class="flex flex-col gap-2.5 bg-[#fcfdfc] p-4 rounded-xl border border-[#eef2ee]">
+      <div class="flex flex-col gap-2.5 bg-surface p-4 rounded-xl border border-surface-tint">
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-brand-950">
             <input type="checkbox" v-model="universalOptions.includeUi" class="h-4 w-4 accent-brand-700 rounded" />
@@ -406,7 +406,7 @@ onUnmounted(() => {
               :style="{ width: `${Math.max(2, universalTask.percent)}%` }"
             ></div>
           </div>
-          <p v-if="universalTask.currentItem" class="m-0 text-xs text-[#385130] font-mono truncate" :title="universalTask.currentItem">
+          <p v-if="universalTask.currentItem" class="m-0 text-xs text-brand-800 font-mono truncate" :title="universalTask.currentItem">
             > {{ universalTask.currentItem }}
           </p>
         </div>
@@ -430,13 +430,13 @@ onUnmounted(() => {
 
     <!-- Coverage Breakdown Table by Language -->
     <div class="bg-white rounded-2xl border border-line overflow-hidden shadow-xs">
-      <div class="px-5 py-4 border-b border-[#eef2ee] bg-[#f8faf8] flex items-center justify-between flex-wrap gap-2">
+      <div class="px-5 py-4 border-b border-surface-tint bg-surface flex items-center justify-between flex-wrap gap-2">
         <h4 class="m-0 text-sm font-bold text-brand-950">Bảng thống kê tỷ lệ hoàn thiện theo ngôn ngữ</h4>
         <span class="text-xs text-ink-muted">Cập nhật theo dữ liệu thực tế trong CSDL</span>
       </div>
 
       <!-- Mobile Card View -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <div
           v-for="l in universalStats?.languages || []"
           :key="'m-l-'+l.code"
@@ -464,19 +464,19 @@ onUnmounted(() => {
           </div>
 
           <div class="grid grid-cols-3 gap-1.5 text-center text-xs pt-1">
-            <div class="bg-[#f8faf8] p-1.5 rounded-lg border border-[#eef2ee]">
+            <div class="bg-surface p-1.5 rounded-lg border border-surface-tint">
               <span class="block text-[0.65rem] text-ink-muted">UI</span>
               <span class="font-bold text-[0.72rem]" :class="l.uiMissing === 0 ? 'text-[#2c6e33]' : 'text-[#b78103]'">
                 {{ l.uiMissing === 0 ? 'Đủ' : `-${l.uiMissing}` }}
               </span>
             </div>
-            <div class="bg-[#f8faf8] p-1.5 rounded-lg border border-[#eef2ee]">
+            <div class="bg-surface p-1.5 rounded-lg border border-surface-tint">
               <span class="block text-[0.65rem] text-ink-muted">Khối</span>
               <span class="font-bold text-[0.72rem]" :class="l.blocksMissing === 0 ? 'text-[#2c6e33]' : 'text-[#b78103]'">
                 {{ l.blocksMissing === 0 ? 'Đủ' : `-${l.blocksMissing}` }}
               </span>
             </div>
-            <div class="bg-[#f8faf8] p-1.5 rounded-lg border border-[#eef2ee]">
+            <div class="bg-surface p-1.5 rounded-lg border border-surface-tint">
               <span class="block text-[0.65rem] text-ink-muted">Bài viết</span>
               <span class="font-bold text-[0.72rem]" :class="l.articlesMissing === 0 ? 'text-[#2c6e33]' : 'text-[#b78103]'">
                 {{ l.articlesMissing === 0 ? 'Đủ' : `-${l.articlesMissing}` }}
@@ -489,7 +489,7 @@ onUnmounted(() => {
       <!-- Desktop Table View -->
       <div class="hidden md:block overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="bg-[#fcfdfc] border-b border-line text-xs text-ink-muted">
+          <thead class="bg-surface border-b border-line text-xs text-ink-muted">
             <tr>
               <th class="px-5 py-3 text-left font-bold text-brand-950">Ngôn ngữ</th>
               <th class="px-5 py-3 text-center font-bold text-brand-950">Từ điển UI</th>
@@ -498,8 +498,8 @@ onUnmounted(() => {
               <th class="px-5 py-3 text-center font-bold text-brand-950 w-[180px]">Tỷ lệ hoàn thành</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-[#eef2ee]">
-            <tr v-for="l in universalStats?.languages || []" :key="l.code" class="hover:bg-[#f8faf8]">
+          <tbody class="divide-y divide-surface-tint">
+            <tr v-for="l in universalStats?.languages || []" :key="l.code" class="hover:bg-surface">
               <td class="px-5 py-3 font-semibold text-brand-950 flex items-center gap-2.5">
                 <span class="text-xl leading-none">{{ getFlagEmoji(l.code) }}</span>
                 <div>

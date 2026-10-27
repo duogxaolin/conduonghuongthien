@@ -231,15 +231,15 @@ onMounted(() => { loadLayout() })
       <div v-for="n in 2" :key="n" class="bg-white rounded-xl border border-line p-6">
         <div class="flex flex-col gap-4 animate-pulse motion-reduce:animate-none">
           <div v-for="i in 4" :key="i">
-            <div class="h-4 bg-[#EEF2EC] rounded w-1/4 mb-2" aria-hidden="true"></div>
-            <div class="h-10 bg-[#EEF2EC] rounded" aria-hidden="true"></div>
+            <div class="h-4 bg-surface-tint rounded w-1/4 mb-2" aria-hidden="true"></div>
+            <div class="h-10 bg-surface-tint rounded" aria-hidden="true"></div>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchSettings()">thử lại</button>.
     </div>
@@ -250,11 +250,11 @@ onMounted(() => { loadLayout() })
         <h3 class="text-[1.05rem] font-bold text-brand-950 m-0 mb-4">Thông tin cơ bản</h3>
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tên Website</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Tên Website</label>
             <input type="text" v-model="settings.site_name" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Mô tả Website (SEO Meta)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Mô tả Website (SEO Meta)</label>
             <textarea rows="3" v-model="settings.site_description" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border resize-none"></textarea>
           </div>
         </div>
@@ -265,19 +265,19 @@ onMounted(() => { loadLayout() })
         <h3 class="text-[1.05rem] font-bold text-brand-950 m-0 mb-4">Thông tin liên hệ</h3>
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Hotline Hỗ Trợ (*)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Hotline Hỗ Trợ (*)</label>
             <input type="text" v-model="settings.hotline" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Email Liên Hệ</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Email Liên Hệ</label>
             <input type="email" v-model="settings.email" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Địa Chỉ Cơ Quan</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Địa Chỉ Cơ Quan</label>
             <input type="text" v-model="settings.address" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Đường dẫn Trang Fanpage / Facebook</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Đường dẫn Trang Fanpage / Facebook</label>
             <input type="text" v-model="settings.facebook_url" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
           </div>
         </div>
@@ -289,11 +289,11 @@ onMounted(() => { loadLayout() })
         <div class="flex flex-col gap-5">
           <!-- Main Logo (Đơn vị chủ quản) -->
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Logo Tổng Cục / Đơn Vị Chủ Quản (Main Logo)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Logo Tổng Cục / Đơn Vị Chủ Quản (Main Logo)</label>
             <p class="text-[0.72rem] text-ink-muted m-0">Hiển thị bên trái logo website tại Header và Footer để biểu thị cơ quan / tập đoàn chủ quản.</p>
             <div class="flex gap-2 items-center flex-wrap">
               <input type="text" v-model="settings.main_logo_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-[#f4f7f4] text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-brand-700 transition-colors shrink-0" @click="pickImage('main_logo_url')">
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-surface text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-line hover:border-brand-700 transition-colors shrink-0" @click="pickImage('main_logo_url')">
                 <i class="fa-regular fa-images"></i> Thư viện
               </button>
               <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-brand-900 hover:bg-brand-700 text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
@@ -309,11 +309,11 @@ onMounted(() => { loadLayout() })
 
           <!-- Logo Website (Đơn vị trực thuộc / Logo con) -->
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Logo Website (Đơn vị trực thuộc / Logo con)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Logo Website (Đơn vị trực thuộc / Logo con)</label>
             <p class="text-[0.72rem] text-ink-muted m-0">Hiển thị bên phải logo chủ quản với tỷ lệ kích thước 80% để thể hiện đơn vị thành viên.</p>
             <div class="flex gap-2 items-center flex-wrap">
               <input type="text" v-model="settings.logo_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-[#f4f7f4] text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-brand-700 transition-colors shrink-0" @click="pickImage('logo_url')">
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-surface text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-line hover:border-brand-700 transition-colors shrink-0" @click="pickImage('logo_url')">
                 <i class="fa-regular fa-images"></i> Thư viện
               </button>
               <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-brand-900 hover:bg-brand-700 text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
@@ -328,7 +328,7 @@ onMounted(() => { loadLayout() })
           </div>
 
           <!-- Phối hợp hiển thị thực tế (Header / Footer Preview) -->
-          <div v-if="settings.main_logo_url || settings.logo_url" class="p-4 bg-[#f8faf8] border border-[#d8e6d9] rounded-xl flex flex-col gap-3">
+          <div v-if="settings.main_logo_url || settings.logo_url" class="p-4 bg-surface border border-[#d8e6d9] rounded-xl flex flex-col gap-3">
             <div class="flex items-center justify-between flex-wrap gap-2">
               <span class="text-[0.82rem] font-bold text-brand-900 flex items-center gap-1.5">
                 <i class="fa-regular fa-eye"></i> Xem trước phối hợp Logo (Header &amp; Footer)
@@ -340,9 +340,9 @@ onMounted(() => { loadLayout() })
               <div class="flex items-center gap-2.5 shrink-0">
                 <div v-if="settings.main_logo_url" class="flex flex-col items-center gap-1">
                   <img :src="settings.main_logo_url" alt="Main logo" class="h-14 max-w-[160px] object-contain" />
-                  <span class="text-[0.62rem] font-bold text-brand-900 uppercase bg-[#eaf2ea] px-1.5 py-0.5 rounded border border-[#c6dfc7]">Đơn vị chủ quản</span>
+                  <span class="text-[0.62rem] font-bold text-brand-900 uppercase bg-surface-tint px-1.5 py-0.5 rounded border border-[#c6dfc7]">Đơn vị chủ quản</span>
                 </div>
-                <span v-if="settings.main_logo_url && settings.logo_url" class="h-10 w-px bg-[#D0DDD1]" aria-hidden="true"></span>
+                <span v-if="settings.main_logo_url && settings.logo_url" class="h-10 w-px bg-line-strong" aria-hidden="true"></span>
                 <div v-if="settings.logo_url" class="flex flex-col items-center gap-1">
                   <img :src="settings.logo_url" alt="Logo con" :class="settings.main_logo_url ? 'h-[38px]' : 'h-12'" class="max-w-[120px] object-contain" />
                   <span class="text-[0.62rem] font-semibold text-ink-muted uppercase bg-[#f0f0f0] px-1.5 py-0.5 rounded border border-[#e0e0e0]">
@@ -365,10 +365,10 @@ onMounted(() => { loadLayout() })
                phần dễ bỏ nhất và cũng là phần sinh ra nhiều báo lỗi giả nhất —
                đổi xong, tải lại trang, không thấy gì đổi. -->
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Favicon (icon trên tab trình duyệt)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Favicon (icon trên tab trình duyệt)</label>
             <div class="flex gap-2 items-center flex-wrap">
               <input type="text" v-model="settings.favicon_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-[#f4f7f4] text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-brand-700 transition-colors shrink-0" @click="pickImage('favicon_url')">
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-surface text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-line hover:border-brand-700 transition-colors shrink-0" @click="pickImage('favicon_url')">
                 <i class="fa-regular fa-images"></i> Thư viện
               </button>
               <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-brand-900 hover:bg-brand-700 text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploadingFavicon }">
@@ -378,14 +378,14 @@ onMounted(() => { loadLayout() })
               </label>
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-white text-ink-muted rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#f4f7f4] transition-colors shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
+                class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-white text-ink-muted rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-surface transition-colors shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
                 :disabled="resettingFavicon"
                 @click="resetFavicon"
               >
                 <i class="fa-regular" :class="resettingFavicon ? 'fa-spinner animate-spin' : 'fa-rotate-left'"></i> Về mặc định
               </button>
             </div>
-            <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+            <p class="text-[0.72rem] text-ink-faint m-0">
               Nhận <strong>PNG</strong>, <strong>JPG</strong> hoặc <strong>ICO</strong>. Nút
               <strong>Tải ảnh &amp; tự tạo</strong> tự thu nhỏ và tạo đủ bộ icon (32×32 cho tab,
               180×180 cho iOS, và tệp <code>.ico</code>) — nên chọn ảnh vuông, không cần đúng kích thước sẵn.
@@ -408,10 +408,10 @@ onMounted(() => { loadLayout() })
 
           <!-- Hero Banner -->
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Ảnh Hero Banner Trang Chủ</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Ảnh Hero Banner Trang Chủ</label>
             <div class="flex gap-2 items-center flex-wrap">
               <input type="text" v-model="settings.hero_banner_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-[#f4f7f4] text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-brand-700 transition-colors shrink-0" @click="pickImage('hero_banner_url')">
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-surface text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-line hover:border-brand-700 transition-colors shrink-0" @click="pickImage('hero_banner_url')">
                 <i class="fa-regular fa-images"></i> Thư viện
               </button>
               <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-brand-900 hover:bg-brand-700 text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
@@ -433,11 +433,11 @@ onMounted(() => { loadLayout() })
                `server/plugins/og-image.ts` chỉ là lưới an toàn cho route không
                gọi `useSeoMeta`. Khuyến Nghị 1200×630px (tỉ lệ Facebook/Twitter). -->
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Ảnh Chia Sẻ Mặc Định (Open Graph / Twitter)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Ảnh Chia Sẻ Mặc Định (Open Graph / Twitter)</label>
             <p class="text-[0.72rem] text-ink-muted m-0">Hiện khi chia sẻ link lên Facebook/Twitter/Zalo. Khuyến nghị 1200×630px. Trang bài viết có ảnh bìa sẽ dùng ảnh bìa đó.</p>
             <div class="flex gap-2 items-center flex-wrap">
               <input type="text" v-model="settings.og_image_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-[#f4f7f4] text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-brand-700 transition-colors shrink-0" @click="pickImage('og_image_url')">
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-line-strong bg-surface text-brand-900 rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-line hover:border-brand-700 transition-colors shrink-0" @click="pickImage('og_image_url')">
                 <i class="fa-regular fa-images"></i> Thư viện
               </button>
               <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-brand-900 hover:bg-brand-700 text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
@@ -477,7 +477,7 @@ onMounted(() => { loadLayout() })
         <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <!-- Container width -->
           <div class="flex flex-col gap-1.5">
-            <span class="text-[0.82rem] font-bold text-[#2c3e2e]">Độ rộng khung nội dung</span>
+            <span class="text-[0.82rem] font-bold text-ink-admin">Độ rộng khung nội dung</span>
             <select
               v-model="draft.containerWidth"
               class="px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 bg-white"
@@ -496,12 +496,12 @@ onMounted(() => { loadLayout() })
 
           <!-- Kiểu hiển thị bài viết -->
           <div class="flex flex-col gap-1.5">
-            <span class="text-[0.82rem] font-bold text-[#2c3e2e]">Hiển thị bài viết</span>
+            <span class="text-[0.82rem] font-bold text-ink-admin">Hiển thị bài viết</span>
             <div class="flex gap-1.5">
               <button
                 type="button"
                 class="flex-1 px-3 py-2.5 rounded-lg border text-xs font-semibold transition-colors"
-                :class="draft.articleGrid === 'grid' ? 'border-brand-700 bg-surface-tint text-[#245328]' : 'border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4]'"
+                :class="draft.articleGrid === 'grid' ? 'border-brand-700 bg-surface-tint text-[#245328]' : 'border-line-strong bg-white text-ink-muted hover:bg-surface'"
                 @click="draft.articleGrid = 'grid'"
               >
                 <i class="fa-solid fa-grip mr-1.5" aria-hidden="true"></i>Lưới
@@ -509,7 +509,7 @@ onMounted(() => { loadLayout() })
               <button
                 type="button"
                 class="flex-1 px-3 py-2.5 rounded-lg border text-xs font-semibold transition-colors"
-                :class="draft.articleGrid === 'list' ? 'border-brand-700 bg-surface-tint text-[#245328]' : 'border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4]'"
+                :class="draft.articleGrid === 'list' ? 'border-brand-700 bg-surface-tint text-[#245328]' : 'border-line-strong bg-white text-ink-muted hover:bg-surface'"
                 @click="draft.articleGrid = 'list'"
               >
                 <i class="fa-solid fa-list mr-1.5" aria-hidden="true"></i>Danh sách
@@ -519,14 +519,14 @@ onMounted(() => { loadLayout() })
 
           <!-- Số cột lưới -->
           <div class="flex flex-col gap-1.5">
-            <span class="text-[0.82rem] font-bold text-[#2c3e2e]" :class="{ 'opacity-50': draft.articleGrid === 'list' }">Số cột lưới</span>
+            <span class="text-[0.82rem] font-bold text-ink-admin" :class="{ 'opacity-50': draft.articleGrid === 'list' }">Số cột lưới</span>
             <div class="flex gap-1.5" :class="{ 'pointer-events-none opacity-50': draft.articleGrid === 'list' }">
               <button
                 v-for="n in GRID_COLS_OPTIONS"
                 :key="n"
                 type="button"
                 class="flex-1 px-3 py-2.5 rounded-lg border text-xs font-bold transition-colors"
-                :class="draft.articleGridCols === n ? 'border-brand-700 bg-brand-700 text-white' : 'border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4]'"
+                :class="draft.articleGridCols === n ? 'border-brand-700 bg-brand-700 text-white' : 'border-line-strong bg-white text-ink-muted hover:bg-surface'"
                 @click="draft.articleGridCols = n"
               >{{ n }} cột</button>
             </div>

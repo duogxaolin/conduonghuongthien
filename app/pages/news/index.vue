@@ -1,12 +1,12 @@
 <template>
-  <div class="min-h-screen bg-[#F7FAF6]">
+  <div class="min-h-screen bg-surface">
     <!-- Page Header & Hero Section — hero text đơn giản trên nền gradient nhạt -->
     <PageHero>
       <!-- Breadcrumb navigation -->
       <nav aria-label="Đường dẫn trang" class="mb-4">
-        <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
+        <ol class="flex items-center gap-1.5 text-xs text-ink-muted m-0 p-0 list-none flex-wrap">
           <li class="flex items-center gap-1.5">
-            <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1">
+            <nuxt-link to="/" class="hover:text-brand-800 transition-colors flex items-center gap-1">
               <i class="fa-solid fa-house text-[0.7rem] text-brand-600" aria-hidden="true"></i>
               <span>{{ t('home') }}</span>
             </nuxt-link>
@@ -14,7 +14,7 @@
           <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
           <li class="font-bold text-[#2A3B27] flex items-center gap-1">
             <span>{{ t('news') }}</span>
-            <span v-if="activeCategory !== 'all' && activeCategoryName" class="font-normal text-[#6B7967]">
+            <span v-if="activeCategory !== 'all' && activeCategoryName" class="font-normal text-ink-muted">
               &rsaquo; <span class="font-bold text-[#2A3B27]">{{ activeCategoryName }}</span>
             </span>
           </li>
@@ -22,14 +22,14 @@
       </nav>
 
       <div class="max-w-2xl">
-        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-line border border-[#D0DFCE] text-brand-800 text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
           <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
           <span>{{ t('n_portal_badge') }}</span>
         </div>
-        <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
+        <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-ink-strong tracking-tight leading-[1.2] m-0">
           {{ pageTitle }}
         </h1>
-        <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
+        <p class="text-[0.92rem] sm:text-base text-ink-soft mt-2 mb-0 leading-relaxed">
           {{ t('n_index_desc') }}
         </p>
       </div>
@@ -64,7 +64,7 @@
               </button>
               <button
                 type="submit"
-                class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-[#365130] text-white text-xs font-bold transition-all shadow-sm"
+                class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-800 text-white text-xs font-bold transition-all shadow-sm"
               >
                 {{ t('n_search_btn_short') }}
               </button>
@@ -80,7 +80,7 @@
                 v-for="n in 5"
                 :key="n"
                 aria-hidden="true"
-                class="h-[34px] w-28 rounded-full bg-[#E2EBE0] animate-pulse motion-reduce:animate-none"
+                class="h-[34px] w-28 rounded-full bg-line animate-pulse motion-reduce:animate-none"
               ></div>
             </div>
 
@@ -109,7 +109,7 @@
               </div>
 
               <div v-if="activeChildren.length" class="flex items-center gap-2 overflow-x-auto pt-2.5 pb-1 sm:flex-wrap text-xs">
-                <span class="text-[#5A6C58] font-semibold flex items-center gap-1 shrink-0">
+                <span class="text-ink-soft font-semibold flex items-center gap-1 shrink-0">
                   <i class="fa-solid fa-turn-down text-[0.65rem] rotate-[-90deg]" aria-hidden="true"></i>
                   {{ t('n_subtopic') }}
                 </span>
@@ -141,20 +141,20 @@
           <!-- Active Search Filter Banner -->
           <div
             v-if="searchQuery"
-            class="bg-white border-l-4 border-l-brand-600 border border-[#DDE6DC] p-4 rounded-xl shadow-sm flex items-center justify-between gap-3 flex-wrap"
+            class="bg-white border-l-4 border-l-brand-600 border border-line p-4 rounded-xl shadow-sm flex items-center justify-between gap-3 flex-wrap"
           >
             <div class="flex items-center gap-2.5">
-              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-brand-600 flex items-center justify-center text-xs">
+              <span class="w-7 h-7 rounded-lg bg-line text-brand-600 flex items-center justify-center text-xs">
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
               </span>
               <span class="text-sm text-[#3E4D3C]">
                 {{ t('n_search_result') }} <strong>&laquo;{{ searchQuery }}&raquo;</strong>
-                <span v-if="!pending" class="text-[#5A6C58] ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
+                <span v-if="!pending" class="text-ink-soft ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
               </span>
             </div>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#D5E1D3] bg-[#F7FAF6] hover:bg-[#EBF3E8] text-xs font-bold text-brand-600 transition-all"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#D5E1D3] bg-surface hover:bg-line text-xs font-bold text-brand-600 transition-all"
               @click="clearSearch"
             >
               <i class="fa-solid fa-xmark text-[0.7rem]" aria-hidden="true"></i>
@@ -166,35 +166,35 @@
           <div v-if="pending" role="status" aria-busy="true" class="flex flex-col gap-8">
             <span class="sr-only">{{ t('n_list_loading') }}</span>
             <!-- Hero skeleton -->
-            <div aria-hidden="true" class="bg-white overflow-hidden border border-[#DDE6DC] shadow-sm flex flex-col md:flex-row animate-pulse motion-reduce:animate-none">
-              <div class="md:w-[48%] aspect-video bg-[#E5EDE3] shrink-0 rounded-none"></div>
+            <div aria-hidden="true" class="bg-white overflow-hidden border border-line shadow-sm flex flex-col md:flex-row animate-pulse motion-reduce:animate-none">
+              <div class="md:w-[48%] aspect-video bg-line shrink-0 rounded-none"></div>
               <div class="p-6 md:p-8 flex flex-col justify-between md:w-[52%] gap-4">
                 <div class="flex items-center gap-3">
-                  <div class="h-5 w-24 bg-[#E5EDE3] rounded-full"></div>
-                  <div class="h-4 w-28 bg-[#E5EDE3] rounded"></div>
+                  <div class="h-5 w-24 bg-line rounded-full"></div>
+                  <div class="h-4 w-28 bg-line rounded"></div>
                 </div>
                 <div class="space-y-2">
-                  <div class="h-6 w-full bg-[#E5EDE3] rounded"></div>
-                  <div class="h-6 w-3/4 bg-[#E5EDE3] rounded"></div>
+                  <div class="h-6 w-full bg-line rounded"></div>
+                  <div class="h-6 w-3/4 bg-line rounded"></div>
                 </div>
                 <div class="space-y-2">
-                  <div class="h-3.5 w-full bg-[#E5EDE3] rounded"></div>
-                  <div class="h-3.5 w-5/6 bg-[#E5EDE3] rounded"></div>
+                  <div class="h-3.5 w-full bg-line rounded"></div>
+                  <div class="h-3.5 w-5/6 bg-line rounded"></div>
                 </div>
-                <div class="h-8 w-32 bg-[#E5EDE3] rounded-lg mt-2"></div>
+                <div class="h-8 w-32 bg-line rounded-lg mt-2"></div>
               </div>
             </div>
 
             <!-- Grid skeleton (6 cards) -->
             <div aria-hidden="true" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-              <div v-for="n in 6" :key="n" class="bg-white overflow-hidden border border-[#DDE6DC] shadow-sm animate-pulse motion-reduce:animate-none flex flex-col">
-                <div class="w-full aspect-video bg-[#E5EDE3] rounded-none"></div>
+              <div v-for="n in 6" :key="n" class="bg-white overflow-hidden border border-line shadow-sm animate-pulse motion-reduce:animate-none flex flex-col">
+                <div class="w-full aspect-video bg-line rounded-none"></div>
                 <div class="p-5 flex flex-col gap-3 flex-1">
-                  <div class="h-3.5 w-24 bg-[#E5EDE3] rounded"></div>
-                  <div class="h-5 w-full bg-[#E5EDE3] rounded"></div>
-                  <div class="h-5 w-2/3 bg-[#E5EDE3] rounded"></div>
-                  <div class="h-3.5 w-full bg-[#E5EDE3] rounded mt-1"></div>
-                  <div class="h-3.5 w-4/5 bg-[#E5EDE3] rounded"></div>
+                  <div class="h-3.5 w-24 bg-line rounded"></div>
+                  <div class="h-5 w-full bg-line rounded"></div>
+                  <div class="h-5 w-2/3 bg-line rounded"></div>
+                  <div class="h-3.5 w-full bg-line rounded mt-1"></div>
+                  <div class="h-3.5 w-4/5 bg-line rounded"></div>
                 </div>
               </div>
             </div>
@@ -204,16 +204,16 @@
           <div
             v-else-if="loadError"
             role="alert"
-            class="bg-white border-2 border-dashed border-[#F0B8B8] px-6 py-12 rounded-2xl text-center text-[#B04A4A] shadow-sm"
+            class="bg-white border-2 border-dashed border-[#F0B8B8] px-6 py-12 rounded-2xl text-center text-danger-soft shadow-sm"
           >
-            <div class="w-12 h-12 rounded-full bg-[#FCE8E8] text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
+            <div class="w-12 h-12 rounded-full bg-danger-bg text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
             <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('n_load_error_title') }}</h3>
             <p class="text-sm text-ink-muted m-0 mb-4">{{ t('n_load_error_desc') }}</p>
             <button
               type="button"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-800 text-white font-bold text-sm transition-all shadow-sm"
               @click="refresh()"
             >
               <i class="fa-solid fa-rotate-right text-xs" aria-hidden="true"></i>
@@ -224,9 +224,9 @@
           <!-- Empty State -->
           <div
             v-else-if="newsList.length === 0"
-            class="bg-white border-2 border-dashed border-[#DDE6DC] px-6 py-14 rounded-2xl text-center shadow-sm"
+            class="bg-white border-2 border-dashed border-line px-6 py-14 rounded-2xl text-center shadow-sm"
           >
-            <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-brand-600 flex items-center justify-center mx-auto mb-3.5 text-xl">
+            <div class="w-14 h-14 rounded-full bg-surface-tint text-brand-600 flex items-center justify-center mx-auto mb-3.5 text-xl">
               <i class="fa-regular fa-newspaper" aria-hidden="true"></i>
             </div>
             <template v-if="pageOutOfRange">
@@ -235,7 +235,7 @@
               <p class="text-sm text-[#6E7D6B] max-w-md mx-auto m-0 mb-5">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
               <button
                 type="button"
-                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-800 text-white font-bold text-sm transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
                 @click="goFirstPage"
               >
                 <i class="fa-solid fa-arrow-left text-xs" aria-hidden="true"></i>
@@ -249,7 +249,7 @@
               </p>
               <button
                 type="button"
-                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-800 text-white font-bold text-sm transition-all shadow-sm"
                 @click="resetFilter"
               >
                 <i class="fa-solid fa-arrow-rotate-left text-xs" aria-hidden="true"></i>
@@ -263,11 +263,11 @@
             <!-- Featured / Lead Article: Kích thước chuẩn gọn gàng theo Image #1, không bị zoom vỡ ảnh -->
             <article
               v-if="featured"
-              class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_4px_16px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_30px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col lg:flex-row lg:items-stretch mb-6"
+              class="group bg-white rounded-2xl overflow-hidden border border-line shadow-[0_4px_16px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_30px_rgba(74,103,65,0.12)] hover:border-accent transition-all duration-300 flex flex-col lg:flex-row lg:items-stretch mb-6"
             >
               <nuxt-link
                 :to="`/news/${featured.slug}`"
-                class="block overflow-hidden lg:w-[42%] xl:w-[40%] shrink-0 relative bg-[#EBF1EA] no-underline"
+                class="block overflow-hidden lg:w-[42%] xl:w-[40%] shrink-0 relative bg-surface-tint no-underline"
               >
                 <SafeImg
                   :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
@@ -291,21 +291,21 @@
                     >
                       {{ featured.categoryName }}
                     </span>
-                    <span class="text-[#5a6c58] text-[0.8rem] font-medium">
+                    <span class="text-ink-soft text-[0.8rem] font-medium">
                       {{ formatDate(featured) }}
                     </span>
                   </div>
 
-                  <h2 class="text-[1.15rem] sm:text-[1.28rem] lg:text-[1.32rem] font-black leading-[1.35] mb-2 m-0 text-[#172516]">
+                  <h2 class="text-[1.15rem] sm:text-[1.28rem] lg:text-[1.32rem] font-black leading-[1.35] mb-2 m-0 text-ink-strong">
                     <nuxt-link
                       :to="`/news/${featured.slug}`"
-                      class="text-[#172516] no-underline transition-colors duration-200 hover:text-[#2D5A27]"
+                      class="text-ink-strong no-underline transition-colors duration-200 hover:text-[#2D5A27]"
                     >
                       {{ featured.title }}
                     </nuxt-link>
                   </h2>
 
-                  <p v-if="featured.excerpt" class="text-[0.88rem] text-[#556450] leading-relaxed m-0 line-clamp-2 mb-3">
+                  <p v-if="featured.excerpt" class="text-[0.88rem] text-ink-soft leading-relaxed m-0 line-clamp-2 mb-3">
                     {{ cleanExcerpt(featured.excerpt) }}
                   </p>
                 </div>
@@ -313,7 +313,7 @@
                 <div>
                   <nuxt-link
                     :to="`/news/${featured.slug}`"
-                    class="inline-flex items-center gap-1.5 text-[#385932] hover:text-[#1B3617] font-bold text-[0.88rem] transition-all no-underline group/link"
+                    class="inline-flex items-center gap-1.5 text-brand-800 hover:text-[#1B3617] font-bold text-[0.88rem] transition-all no-underline group/link"
                   >
                     <span>{{ t('n_read_more') }}</span>
                     <i class="fa-solid fa-arrow-right text-[0.72rem] transition-transform duration-200 group-hover/link:translate-x-1" aria-hidden="true"></i>
@@ -323,17 +323,17 @@
             </article>
 
             <!-- Section Title Divider -->
-            <div v-if="rest.length" class="flex items-center justify-between pt-3 pb-3 border-b-2 border-[#E1EADF] mt-1 mb-5">
+            <div v-if="rest.length" class="flex items-center justify-between pt-3 pb-3 border-b-2 border-line mt-1 mb-5">
               <div class="flex items-center gap-2.5">
                 <span class="w-2.5 h-6 rounded-sm bg-brand-600" aria-hidden="true"></span>
                 <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
                   {{ t('n_list_title') }}
                 </h2>
-                <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-[#EBF3E8] text-[#385932]">
+                <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-line text-brand-800">
                   {{ t('n_count_suffix').replace('{n}', String(pagination.total)) }}
                 </span>
               </div>
-              <span v-if="pagination.totalPages > 1" class="text-xs text-[#5A6C58] font-medium hidden sm:inline">
+              <span v-if="pagination.totalPages > 1" class="text-xs text-ink-soft font-medium hidden sm:inline">
                 {{ t('page_of').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
               </span>
             </div>
@@ -343,10 +343,10 @@
               <article
                 v-for="item in rest"
                 :key="item.id"
-                class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
+                class="group bg-white rounded-2xl overflow-hidden border border-line shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-accent transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
               >
                 <!-- Thumbnail: strictly 16:9 -->
-                <nuxt-link :to="`/news/${item.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
+                <nuxt-link :to="`/news/${item.slug}`" class="block relative w-full aspect-video overflow-hidden bg-surface-tint no-underline shrink-0">
                   <SafeImg
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                     :alt="item.title" img-class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
@@ -359,34 +359,34 @@
 
                 <!-- Card Content: flex-1 flex-col justify-between -->
                 <div class="p-4 sm:p-5 flex flex-col flex-1">
-                  <div class="flex items-center gap-2 text-xs text-[#5A6C58] font-medium mb-2">
+                  <div class="flex items-center gap-2 text-xs text-ink-soft font-medium mb-2">
                     <span
                       v-if="item.categoryName"
-                      class="inline-block bg-[#EEF4EC] text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider"
+                      class="inline-block bg-surface-tint text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider"
                     >
                       {{ item.categoryName }}
                     </span>
-                    <span class="flex items-center gap-1 text-[#5a6c58] text-[0.75rem]">
+                    <span class="flex items-center gap-1 text-ink-soft text-[0.75rem]">
                       <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
                       <span>{{ formatDate(item) }}</span>
                     </span>
                   </div>
 
-                  <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-[#172516] group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
-                    <nuxt-link :to="`/news/${item.slug}`" class="text-[#172516] hover:text-[#2D5A27] no-underline">
+                  <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-ink-strong group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
+                    <nuxt-link :to="`/news/${item.slug}`" class="text-ink-strong hover:text-[#2D5A27] no-underline">
                       {{ item.title }}
                     </nuxt-link>
                   </h3>
 
-                  <p v-if="item.excerpt" class="text-[0.84rem] text-[#556450] leading-relaxed line-clamp-2 mb-3 m-0">
+                  <p v-if="item.excerpt" class="text-[0.84rem] text-ink-soft leading-relaxed line-clamp-2 mb-3 m-0">
                     {{ cleanExcerpt(item.excerpt) }}
                   </p>
 
                   <!-- Footer action pinned to bottom of card with mt-auto -->
-                  <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#5A6C58]">
+                  <div class="mt-auto pt-3 border-t border-surface-tint flex items-center justify-between text-xs text-ink-soft">
                     <nuxt-link
                       :to="`/news/${item.slug}`"
-                      class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
+                      class="inline-flex items-center gap-1.5 font-bold text-brand-800 hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
                     >
                       <span>{{ t('n_view_details') }}</span>
                       <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
@@ -400,7 +400,7 @@
             <nav
               v-if="pagination.totalPages > 1"
               aria-label="Phân trang bản tin"
-              class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-[#DDE6DC]"
+              class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-line"
             >
               <div class="text-xs text-[#6F7F6C] font-medium order-2 sm:order-1">
                 {{ t('n_pagination_summary').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
@@ -409,7 +409,7 @@
               <div class="flex items-center gap-1.5 flex-wrap justify-center order-1 sm:order-2">
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all duration-200 hover:border-brand-600 hover:text-brand-600 hover:bg-[#F2F7F0] disabled:opacity-30 disabled:cursor-not-allowed"
+                  class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all duration-200 hover:border-brand-600 hover:text-brand-600 hover:bg-surface-tint disabled:opacity-30 disabled:cursor-not-allowed"
                   :disabled="pagination.page <= 1"
                   @click="setPage(pagination.page - 1)"
                   :aria-label="t('page_prev')"
@@ -430,7 +430,7 @@
                       'inline-flex items-center justify-center min-w-9 h-9 px-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all duration-200',
                       pagination.page === p
                         ? 'bg-brand-600 text-white shadow-sm border border-[#4A6741]'
-                        : 'bg-white border border-[#D5E1D3] text-ink-secondary hover:border-brand-600 hover:text-brand-600 hover:bg-[#F2F7F0]'
+                        : 'bg-white border border-[#D5E1D3] text-ink-secondary hover:border-brand-600 hover:text-brand-600 hover:bg-surface-tint'
                     ]"
                     @click="setPage(p)"
                   >{{ p }}</button>
@@ -438,7 +438,7 @@
 
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all duration-200 hover:border-brand-600 hover:text-brand-600 hover:bg-[#F2F7F0] disabled:opacity-30 disabled:cursor-not-allowed"
+                  class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all duration-200 hover:border-brand-600 hover:text-brand-600 hover:bg-surface-tint disabled:opacity-30 disabled:cursor-not-allowed"
                   :disabled="pagination.page >= pagination.totalPages"
                   @click="setPage(pagination.page + 1)"
                   :aria-label="t('page_next')"
@@ -453,17 +453,17 @@
         <!-- Right Rail / Sidebar (Right) -->
         <aside class="flex flex-col gap-6 min-w-0 lg:sticky lg:top-[90px]">
           <!-- Widget 1: Đọc nhiều (thiết kế nguyên bản tinh tế) -->
-          <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
-            <h2 class="text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('n_most_read_short') }}</h2>
+          <div class="bg-white rounded-lg border border-line shadow-sm px-5 py-2">
+            <h2 class="text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-line m-0">{{ t('n_most_read_short') }}</h2>
 
             <div v-if="mostReadPending" role="status" aria-busy="true" class="py-2">
               <span class="sr-only">{{ t('n_loading_most_read') }}</span>
               <div aria-hidden="true" class="flex flex-col">
-                <div v-for="n in 6" :key="n" class="flex gap-3 py-3 border-b border-[#E2E8DF] last:border-b-0">
-                  <div class="h-6 w-6 bg-[#EEF2EC] rounded shrink-0 animate-pulse motion-reduce:animate-none"></div>
+                <div v-for="n in 6" :key="n" class="flex gap-3 py-3 border-b border-line last:border-b-0">
+                  <div class="h-6 w-6 bg-surface-tint rounded shrink-0 animate-pulse motion-reduce:animate-none"></div>
                   <div class="flex-1 flex flex-col gap-1.5 pt-0.5">
-                    <div class="h-3.5 w-full bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none"></div>
-                    <div class="h-3.5 w-2/3 bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none"></div>
+                    <div class="h-3.5 w-full bg-surface-tint rounded animate-pulse motion-reduce:animate-none"></div>
+                    <div class="h-3.5 w-2/3 bg-surface-tint rounded animate-pulse motion-reduce:animate-none"></div>
                   </div>
                 </div>
               </div>
@@ -473,9 +473,9 @@
               <li
                 v-for="(item, i) in mostRead"
                 :key="item.id"
-                class="flex gap-3 py-[13px] border-b border-[#E2E8DF] last:border-b-0"
+                class="flex gap-3 py-[13px] border-b border-line last:border-b-0"
               >
-                <span class="w-7 shrink-0 text-right text-[1.45rem] leading-[1.15] font-extrabold" :class="i < 3 ? 'text-[#7CB342]' : 'text-[#C7D2C2]'">{{ i + 1 }}</span>
+                <span class="w-7 shrink-0 text-right text-[1.45rem] leading-[1.15] font-extrabold" :class="i < 3 ? 'text-accent' : 'text-line-strong'">{{ i + 1 }}</span>
                 <h3 class="text-[0.9rem] font-bold leading-[1.4] m-0 min-w-0">
                   <nuxt-link
                     :to="`/news/${item.slug}`"
@@ -485,24 +485,24 @@
               </li>
             </ul>
 
-            <p v-else class="text-[0.85rem] text-[#5A6C58] italic py-4 m-0">{{ t('n_no_views') }}</p>
+            <p v-else class="text-[0.85rem] text-ink-soft italic py-4 m-0">{{ t('n_no_views') }}</p>
           </div>
 
           <!-- Widget 2: Chuyên mục bản tin -->
-          <div v-if="rootCategories.length" class="bg-white rounded-2xl border border-[#DDE6DC] shadow-sm p-5">
-            <div class="flex items-center gap-2 pb-3 border-b border-[#EEF3ED] mb-3">
-              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-brand-600 flex items-center justify-center text-xs shadow-sm">
+          <div v-if="rootCategories.length" class="bg-white rounded-2xl border border-line shadow-sm p-5">
+            <div class="flex items-center gap-2 pb-3 border-b border-surface-tint mb-3">
+              <span class="w-7 h-7 rounded-lg bg-line text-brand-600 flex items-center justify-center text-xs shadow-sm">
                 <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
               </span>
-              <h2 class="text-[0.92rem] font-black text-[#172516] uppercase tracking-wide m-0">
+              <h2 class="text-[0.92rem] font-black text-ink-strong uppercase tracking-wide m-0">
                 {{ t('n_category_widget') }}
               </h2>
             </div>
-            <div class="flex flex-col divide-y divide-[#F2F6F0]">
+            <div class="flex flex-col divide-y divide-surface-tint">
               <button
                 type="button"
                 class="flex items-center justify-between py-2.5 text-xs font-extrabold text-left transition-colors"
-                :class="activeCategory === 'all' ? 'text-[#385932]' : 'text-[#4A5746] hover:text-[#385932]'"
+                :class="activeCategory === 'all' ? 'text-brand-800' : 'text-ink-secondary hover:text-brand-800'"
                 @click="setCategory('all')"
               >
                 <span class="flex items-center gap-2">
@@ -516,7 +516,7 @@
                 :key="cat.id"
                 type="button"
                 class="flex items-center justify-between py-2.5 text-xs font-extrabold text-left transition-colors"
-                :class="activeCategory === cat.slug ? 'text-[#385932]' : 'text-[#4A5746] hover:text-[#385932]'"
+                :class="activeCategory === cat.slug ? 'text-brand-800' : 'text-ink-secondary hover:text-brand-800'"
                 @click="setCategory(cat.slug)"
               >
                 <span class="flex items-center gap-2">
@@ -559,19 +559,19 @@
           </div>
 
           <!-- Widget 4: Tra cứu nhanh -->
-          <div class="bg-white rounded-2xl border border-[#DDE6DC] shadow-sm p-5">
-            <div class="flex items-center gap-2 pb-3 border-b border-[#EEF3ED] mb-3">
-              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-brand-600 flex items-center justify-center text-xs shadow-sm">
+          <div class="bg-white rounded-2xl border border-line shadow-sm p-5">
+            <div class="flex items-center gap-2 pb-3 border-b border-surface-tint mb-3">
+              <span class="w-7 h-7 rounded-lg bg-line text-brand-600 flex items-center justify-center text-xs shadow-sm">
                 <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
               </span>
-              <h2 class="text-[0.92rem] font-black text-[#172516] uppercase tracking-wide m-0">
+              <h2 class="text-[0.92rem] font-black text-ink-strong uppercase tracking-wide m-0">
                 {{ t('quick_tools') }}
               </h2>
             </div>
             <div class="flex flex-col gap-2 text-xs">
               <nuxt-link
                 to="/documents"
-                class="flex items-center justify-between p-2.5 rounded-xl bg-[#F7FAF6] hover:bg-[#EEF4EC] text-[#2C3E29] font-bold no-underline transition-all border border-[#E4EDE2]"
+                class="flex items-center justify-between p-2.5 rounded-xl bg-surface hover:bg-surface-tint text-[#2C3E29] font-bold no-underline transition-all border border-line"
               >
                 <span class="flex items-center gap-2">
                   <i class="fa-solid fa-scale-balanced text-brand-600" aria-hidden="true"></i>
@@ -581,7 +581,7 @@
               </nuxt-link>
               <nuxt-link
                 to="/legal-qa"
-                class="flex items-center justify-between p-2.5 rounded-xl bg-[#F7FAF6] hover:bg-[#EEF4EC] text-[#2C3E29] font-bold no-underline transition-all border border-[#E4EDE2]"
+                class="flex items-center justify-between p-2.5 rounded-xl bg-surface hover:bg-surface-tint text-[#2C3E29] font-bold no-underline transition-all border border-line"
               >
                 <span class="flex items-center gap-2">
                   <i class="fa-solid fa-circle-question text-brand-600" aria-hidden="true"></i>
@@ -591,7 +591,7 @@
               </nuxt-link>
               <nuxt-link
                 to="/role-models"
-                class="flex items-center justify-between p-2.5 rounded-xl bg-[#F7FAF6] hover:bg-[#EEF4EC] text-[#2C3E29] font-bold no-underline transition-all border border-[#E4EDE2]"
+                class="flex items-center justify-between p-2.5 rounded-xl bg-surface hover:bg-surface-tint text-[#2C3E29] font-bold no-underline transition-all border border-line"
               >
                 <span class="flex items-center gap-2">
                   <i class="fa-solid fa-award text-brand-600" aria-hidden="true"></i>
@@ -601,7 +601,7 @@
               </nuxt-link>
               <nuxt-link
                 to="/reintegration-models"
-                class="flex items-center justify-between p-2.5 rounded-xl bg-[#F7FAF6] hover:bg-[#EEF4EC] text-[#2C3E29] font-bold no-underline transition-all border border-[#E4EDE2]"
+                class="flex items-center justify-between p-2.5 rounded-xl bg-surface hover:bg-surface-tint text-[#2C3E29] font-bold no-underline transition-all border border-line"
               >
                 <span class="flex items-center gap-2">
                   <i class="fa-solid fa-people-group text-brand-600" aria-hidden="true"></i>
@@ -703,14 +703,14 @@ const pillClass = (active: boolean) => [
   'inline-flex items-center gap-2 shrink-0 whitespace-nowrap rounded-full border cursor-pointer px-4 py-2 text-[0.82rem] font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
   active
     ? 'bg-brand-600 border-[#4A6741] text-white shadow-sm shadow-brand-600/25'
-    : 'bg-white border-[#D5E1D3] text-[#485645] hover:border-brand-600 hover:text-[#385932] hover:bg-[#F2F7F0]'
+    : 'bg-white border-[#D5E1D3] text-ink-secondary hover:border-brand-600 hover:text-brand-800 hover:bg-surface-tint'
 ]
 
 const subPillClass = (active: boolean) => [
   'shrink-0 whitespace-nowrap rounded-lg border cursor-pointer px-3 py-1 font-bold transition-all duration-200 text-xs',
   active
-    ? 'bg-[#385932] border-[#385932] text-white shadow-sm'
-    : 'bg-white border-[#DDE6DC] text-[#556350] hover:border-[#385932] hover:text-[#385932] hover:bg-[#F0F5EE]'
+    ? 'bg-brand-800 border-brand-800 text-white shadow-sm'
+    : 'bg-white border-line text-ink-soft hover:border-brand-800 hover:text-brand-800 hover:bg-surface-tint'
 ]
 
 const categoryIcon = (slug: string) => {

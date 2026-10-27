@@ -6,24 +6,24 @@
   >
     <span class="sr-only">{{ label }}</span>
 
-    <div class="flex gap-4 border-b border-line bg-[#f4f7f4] px-4 py-3" aria-hidden="true">
+    <div class="flex gap-4 border-b border-line bg-surface px-4 py-3" aria-hidden="true">
       <div
         v-for="c in cols"
         :key="`h-${c}`"
-        class="h-3 flex-1 animate-pulse rounded bg-[#dfe9e0] motion-reduce:animate-none"
+        class="h-3 flex-1 animate-pulse rounded bg-line motion-reduce:animate-none"
       ></div>
     </div>
 
     <div
       v-for="r in rows"
       :key="`r-${r}`"
-      class="flex gap-4 border-t border-[#eef2ee] px-4 py-4 first:border-t-0"
+      class="flex gap-4 border-t border-surface-tint px-4 py-4 first:border-t-0"
       aria-hidden="true"
     >
       <div
         v-for="c in cols"
         :key="`r-${r}-c-${c}`"
-        class="h-4 flex-1 animate-pulse rounded bg-[#edf3ed] motion-reduce:animate-none"
+        class="h-4 flex-1 animate-pulse rounded bg-surface-tint motion-reduce:animate-none"
       ></div>
     </div>
   </div>

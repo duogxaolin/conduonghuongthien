@@ -159,7 +159,7 @@ onMounted(load)
         v-for="n in 5"
         :key="n"
         aria-hidden="true"
-        class="h-12 rounded-lg bg-[#eef3ee] animate-pulse motion-reduce:animate-none"
+        class="h-12 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"
       ></div>
     </div>
 
@@ -199,7 +199,7 @@ onMounted(load)
           Dán đúng chuỗi này vào mục “Authorized redirect URIs” của OAuth client trong Google Cloud Console. Google so khớp từng ký tự, kể cả dấu gạch chéo cuối.
         </p>
         <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-          <code class="min-w-0 flex-1 select-all break-all rounded-lg border border-line-strong bg-[#f8faf8] px-3 py-2.5 text-sm text-brand-950">{{ settings.redirectUri }}</code>
+          <code class="min-w-0 flex-1 select-all break-all rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-sm text-brand-950">{{ settings.redirectUri }}</code>
           <button
             type="button"
             class="rounded-lg border border-line-strong bg-white px-3 py-2.5 text-sm font-semibold hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700/30"
@@ -209,8 +209,8 @@ onMounted(load)
         <div v-if="settings.publicBaseUrl" class="mt-3 rounded-lg border border-[#e6d9a8] bg-[#fdfaf0] px-3.5 py-2.5 text-xs text-[#7a6420]">
           <p class="m-0">
             <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
-            <code class="rounded bg-[#f8faf8] px-1">PUBLIC_BASE_URL</code> đang đặt là
-            <code class="rounded bg-[#f8faf8] px-1 break-all">{{ settings.publicBaseUrl }}</code> (chỉ tham khảo).
+            <code class="rounded bg-surface px-1">PUBLIC_BASE_URL</code> đang đặt là
+            <code class="rounded bg-surface px-1 break-all">{{ settings.publicBaseUrl }}</code> (chỉ tham khảo).
           </p>
           <p class="m-0 mt-1">Đăng nhập luôn dùng tên miền của yêu cầu hiện tại — một codebase phục vụ nhiều tên miền, mỗi tên miền cần đăng ký riêng trong Google Console.</p>
         </div>
@@ -260,7 +260,7 @@ onMounted(load)
           v-if="settings.hasClientSecret || secretUnreadable"
           type="button"
           :disabled="clearing || saving"
-          class="self-start rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] focus:outline-none focus:ring-2 focus:ring-danger/30 disabled:cursor-not-allowed disabled:opacity-60"
+          class="self-start rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-danger-bg focus:outline-none focus:ring-2 focus:ring-danger/30 disabled:cursor-not-allowed disabled:opacity-60"
           @click="clearSecret"
         >{{ clearing ? 'Đang xoá…' : 'Xoá Client secret' }}</button>
 
@@ -289,7 +289,7 @@ onMounted(load)
         </div>
       </form>
 
-      <section class="rounded-xl border border-line bg-[#f8faf8] p-5 text-sm text-[#3d4f3f]">
+      <section class="rounded-xl border border-line bg-surface p-5 text-sm text-[#3d4f3f]">
         <h2 class="m-0 text-[1rem] font-extrabold text-brand-950">Thứ tự thiết lập</h2>
         <ol class="m-0 mt-2 list-decimal pl-5 flex flex-col gap-1">
           <li>Cấp quyền <strong>readers</strong> và <strong>comments</strong> cho vai trò kiểm duyệt tại <nuxt-link to="/admin/users/roles" class="font-semibold text-brand-700 underline">Phân quyền</nuxt-link> — hai tài nguyên này mặc định chưa cấp cho vai trò nào.</li>

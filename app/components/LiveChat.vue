@@ -111,7 +111,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
 
 <template>
   <section
-    class="flex h-full flex-col bg-[#f7f9f6]"
+    class="flex h-full flex-col bg-surface"
     :aria-label="t('m_chat_room_aria')"
   >
     <!-- Thanh đầu: trạng thái kết nối -->

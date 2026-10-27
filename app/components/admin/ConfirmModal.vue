@@ -186,7 +186,7 @@ function onTrapTab(event: KeyboardEvent) {
               v-model="confirmState.input.value"
               type="text"
               :placeholder="confirmState.input.placeholder"
-              class="w-full rounded-lg border border-[#dce8dd] px-3 py-2 text-sm text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700"
+              class="w-full rounded-lg border border-line px-3 py-2 text-sm text-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-700"
               @keydown.enter="onPromptEnter"
             >
           </div>
@@ -196,7 +196,7 @@ function onTrapTab(event: KeyboardEvent) {
             <button
               ref="cancelBtn"
               type="button"
-              class="inline-flex items-center gap-2 rounded-lg border border-[#dce8dd] bg-white px-4 py-2 text-sm font-semibold text-[#4a5e4d] hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+              class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-[#4a5e4d] hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
               @click="cancel"
             >
               {{ confirmState.options.cancelLabel || 'Hủy' }}

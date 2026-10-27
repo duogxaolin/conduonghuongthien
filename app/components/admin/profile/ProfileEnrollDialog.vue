@@ -57,7 +57,7 @@ function submitOnEnter(event: KeyboardEvent, step: 'enroll' | 'confirm') {
       </div>
 
       <div class="px-5 py-4 flex flex-col gap-3.5">
-        <div v-if="error" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
+        <div v-if="error" class="flex items-start gap-2 bg-danger-bg border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
           <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
           <span>{{ error }}</span>
         </div>
@@ -101,11 +101,11 @@ function submitOnEnter(event: KeyboardEvent, step: 'enroll' | 'confirm') {
               Mở Google Authenticator (hoặc app tương tự) → <strong>Thêm tài khoản</strong> → <strong>Nhập khoá thủ công</strong>,
               rồi dán chuỗi dưới đây.
             </p>
-            <div class="flex items-start gap-2 bg-[#fdf6e7] border border-[#f0dcae] text-[#8a6412] px-3.5 py-2.5 rounded-lg text-[0.82rem]" role="alert">
+            <div class="flex items-start gap-2 bg-[#fdf6e7] border border-[#f0dcae] text-warn-ink px-3.5 py-2.5 rounded-lg text-[0.82rem]" role="alert">
               <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
               <span>Chuỗi này chỉ hiện <strong>một lần</strong>. Đóng cửa sổ mà chưa thêm vào app thì phải bật lại từ đầu.</span>
             </div>
-            <div class="rounded-lg border border-line bg-[#fafcfa] px-3.5 py-3">
+            <div class="rounded-lg border border-line bg-surface px-3.5 py-3">
               <div class="text-[0.74rem] font-bold text-ink-muted uppercase tracking-wide mb-1">Khoá bí mật</div>
               <code class="block font-mono text-[0.95rem] font-bold text-brand-950 break-all leading-relaxed">{{ totpSecret }}</code>
               <a v-if="otpauthUri" :href="otpauthUri"

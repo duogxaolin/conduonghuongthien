@@ -16,6 +16,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { formatFileReport, rewriteSource } from '../scripts/codemod-hex-tokens.ts'
+import { COLOR_MERGES } from '../shared/color-merges.ts'
 
 const ROOT = '/v'
 
@@ -34,6 +35,10 @@ function project(files: Record<string, string>) {
 /** Runs the codemod on `name` inside the project; `name`'s text comes from `files`. */
 function run(files: Record<string, string>, name: string) {
   return rewriteSource(files[name]!, { fileName: `${ROOT}/${name}`, project: project(files) })
+}
+/** The same, with the approved merge table (`--merges`, decision D-T1). */
+function runMerged(files: Record<string, string>, name: string) {
+  return rewriteSource(files[name]!, { fileName: `${ROOT}/${name}`, project: project(files), merges: COLOR_MERGES })
 }
 const reasons = (result: ReturnType<typeof run>) => result.leftAlone.map((e) => `${e.text}:${e.reason}${e.via ? `/${e.via}` : ''}`)
 const sfc = (template: string, script = '') => `<template>\n  ${template}\n</template>\n<script setup lang="ts">\n${script}\n</script>\n`
@@ -248,4 +253,50 @@ test('the per-file report names how the class meets the other one', () => {
     formatFileReport('app/pages/a.vue', run(files, 'app/pages/a.vue')),
     'app/pages/a.vue: 1 replacement (#2c6e33→brand-700 ×1)\n  left alone: 1 (#f8faf7 ×1 order-merge via script)',
   )
+})
+
+/**
+ * `--merges` (decision D-T1): a hex that folds into a token although it differs obeys the same
+ * cross-place guard — and a class in ANOTHER file is checked in the state the merge table
+ * would give it, not only in the state an exact-only run would.
+ */
+describe('merged values (--merges) meet the same guard', () => {
+  test('a script variable: the merged hex is kept (and without merges it is simply unmapped)', () => {
+    const files = { 'app/pages/a.vue': sfc(`<li class="bg-red-50" :class="CLS"></li>`, `const CLS = 'bg-[#f8faf8]'`) }
+    assert.deepEqual(reasons(runMerged(files, 'app/pages/a.vue')), ['bg-[#f8faf8]:order-merge/script'])
+    assert.equal(runMerged(files, 'app/pages/a.vue').output, files['app/pages/a.vue'])
+    assert.deepEqual(reasons(run(files, 'app/pages/a.vue')), ['bg-[#f8faf8]:unmapped'])
+  })
+
+  test('processing a module: its merged hex is kept where a page puts it next to a class that would lose', () => {
+    const files = {
+      'shared/badge.ts': `export const BADGE = 'bg-[#f8faf8] text-[#e2e8df]'\n`,
+      'app/pages/a.vue': sfc(`<span class="bg-red-50" :class="BADGE"></span>`, `import { BADGE } from '~~/shared/badge'`),
+    }
+    const result = runMerged(files, 'shared/badge.ts')
+    assert.equal(result.output, `export const BADGE = 'bg-[#f8faf8] text-line'\n`)
+    assert.deepEqual(reasons(result), ['bg-[#f8faf8]:order-merge/module'])
+  })
+
+  test('a child component\'s root: the passed merged hex is kept', () => {
+    const files = {
+      'app/components/blocks/Card.vue': `<template>\n  <section class="bg-red-50 p-4"><slot /></section>\n</template>\n`,
+      'app/pages/p.vue': sfc(`<BlocksCard class="bg-[#f4f7f4]" />`),
+    }
+    assert.deepEqual(reasons(runMerged(files, 'app/pages/p.vue')), ['bg-[#f4f7f4]:order-merge/component'])
+  })
+
+  test('the other file is checked as the merge table would rewrite it, too', () => {
+    // Page `bg-[#f0f7f1]` (exact → surface-tint) meets the module's `bg-[#eef2ec]` (a merge into
+    // surface-tint). Exact-only, the module keeps its hex and the order holds; with merges the
+    // module would become the same class, so the page keeps its hex as well.
+    const files = {
+      'shared/badge.ts': `export const BADGE = 'bg-[#eef2ec]'\n`,
+      'app/pages/a.vue': sfc(`<span class="bg-[#f0f7f1]" :class="BADGE"></span>`, `import { BADGE } from '~~/shared/badge'`),
+    }
+    assert.match(run(files, 'app/pages/a.vue').output, /class="bg-surface-tint"/)
+    const merged = runMerged(files, 'app/pages/a.vue')
+    assert.equal(merged.output, files['app/pages/a.vue'])
+    assert.deepEqual(reasons(merged), ['bg-[#f0f7f1]:order-merge/module'])
+  })
 })

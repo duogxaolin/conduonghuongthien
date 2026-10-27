@@ -125,7 +125,7 @@ onMounted(load)
           v-for="option in OPTIONS"
           :key="option.value"
           class="flex cursor-pointer items-start gap-3 rounded-lg border px-3.5 py-3"
-          :class="selected === option.value ? 'border-brand-700 bg-[#f4f9f4]' : 'border-line'"
+          :class="selected === option.value ? 'border-brand-700 bg-surface-tint' : 'border-line'"
         >
           <input v-model="selected" type="radio" name="mfa-policy" :value="option.value" class="mt-1 accent-brand-700 focus:ring-2 focus:ring-brand-600" />
           <span class="flex flex-col gap-0.5">
@@ -135,7 +135,7 @@ onMounted(load)
         </label>
       </fieldset>
 
-      <div v-if="selected !== 'off'" class="rounded-lg border border-line bg-[#f8faf8] px-3.5 py-3 text-sm">
+      <div v-if="selected !== 'off'" class="rounded-lg border border-line bg-surface px-3.5 py-3 text-sm">
         <p v-if="!affected.length" class="m-0 text-brand-700">
           <i class="fa-solid fa-circle-check mr-1.5" aria-hidden="true"></i>Mọi tài khoản thuộc diện đã bật xác thực hai bước.
         </p>

@@ -161,14 +161,14 @@ defineExpose({ reload: loadHistory })
       </div>
     </div>
 
-    <p v-if="historyTargetId && historyTargetName" class="flex items-start gap-2 bg-[#fdf6e7] border border-[#f0dcae] text-[#8a6412] px-3.5 py-2.5 rounded-lg text-[0.82rem] mt-0 mb-4">
+    <p v-if="historyTargetId && historyTargetName" class="flex items-start gap-2 bg-[#fdf6e7] border border-[#f0dcae] text-warn-ink px-3.5 py-2.5 rounded-lg text-[0.82rem] mt-0 mb-4">
       <i class="fa-solid fa-circle-info shrink-0 mt-0.5" aria-hidden="true"></i>
       <span>Bạn đang xem lịch sử của <strong>{{ historyTargetName }}</strong>. Lần xem này được ghi vào nhật ký hệ thống.</span>
     </p>
 
     <SkeletonTable v-if="historyLoading" label="Đang tải lịch sử hoạt động" :rows="6" :cols="5" />
 
-    <div v-else-if="historyError" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-3 rounded-lg text-[0.84rem]" role="alert">
+    <div v-else-if="historyError" class="flex items-start gap-2 bg-danger-bg border border-[#ffc1ba] text-danger px-3.5 py-3 rounded-lg text-[0.84rem]" role="alert">
       <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
       <div>
         <div>{{ historyError }}</div>
@@ -176,7 +176,7 @@ defineExpose({ reload: loadHistory })
       </div>
     </div>
 
-    <div v-else-if="!history.length" class="rounded-lg border border-dashed border-[#dce8dd] bg-[#fafcfa] p-8 text-center">
+    <div v-else-if="!history.length" class="rounded-lg border border-dashed border-line bg-surface p-8 text-center">
       <i class="fa-solid fa-clock-rotate-left text-2xl text-[#b6cdb8] mb-2 block" aria-hidden="true"></i>
       <p class="text-[0.85rem] text-ink-muted m-0">Chưa có bản ghi nào trong khoảng thời gian lưu trữ.</p>
     </div>
@@ -186,7 +186,7 @@ defineExpose({ reload: loadHistory })
         <table class="w-full border-collapse text-[0.84rem]">
           <caption class="sr-only">Danh sách lượt truy cập và hoạt động, mới nhất trước</caption>
           <thead>
-            <tr class="bg-[#fafcfa]">
+            <tr class="bg-surface">
               <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-line whitespace-nowrap">Thời điểm</th>
               <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-line">Hoạt động</th>
               <th scope="col" class="text-left font-bold text-[#3d4a3e] px-3.5 py-2.5 border-b border-line whitespace-nowrap">Địa chỉ IP</th>
@@ -195,13 +195,13 @@ defineExpose({ reload: loadHistory })
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in history" :key="item.id" class="hover:bg-[#fafcfa] transition-colors">
-              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-[#3d4a3e] whitespace-nowrap">{{ formatDateTimeVN(item.createdAt) }}</td>
-              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-brand-950 font-semibold">{{ actionLabel(item) }}</td>
-              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-ink-muted font-mono text-[0.8rem]">{{ item.ip || '—' }}</td>
-              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-ink-muted">{{ shortAgent(item.userAgent) }}</td>
-              <td class="px-3.5 py-2.5 border-b border-[#f0f4f0] text-ink-muted">
-                <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 text-[0.72rem] font-bold px-2 py-0.5 rounded-full bg-[#eef7ee] border border-[#cce5cd] text-brand-900">
+            <tr v-for="item in history" :key="item.id" class="hover:bg-surface transition-colors">
+              <td class="px-3.5 py-2.5 border-b border-surface text-[#3d4a3e] whitespace-nowrap">{{ formatDateTimeVN(item.createdAt) }}</td>
+              <td class="px-3.5 py-2.5 border-b border-surface text-brand-950 font-semibold">{{ actionLabel(item) }}</td>
+              <td class="px-3.5 py-2.5 border-b border-surface text-ink-muted font-mono text-[0.8rem]">{{ item.ip || '—' }}</td>
+              <td class="px-3.5 py-2.5 border-b border-surface text-ink-muted">{{ shortAgent(item.userAgent) }}</td>
+              <td class="px-3.5 py-2.5 border-b border-surface text-ink-muted">
+                <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 text-[0.72rem] font-bold px-2 py-0.5 rounded-full bg-surface-tint border border-[#cce5cd] text-brand-900">
                   <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
                   {{ MFA_METHOD_LABELS[item.mfaMethod] ?? item.mfaMethod }}
                 </span>

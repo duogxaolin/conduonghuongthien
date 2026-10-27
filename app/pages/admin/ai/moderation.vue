@@ -179,7 +179,7 @@ const settingsError = ref('')
 const rulesError = ref('')
 const saving = ref(false)
 /** The page alert and each tab's alert look the same. */
-const ALERT_CLASS = 'rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]'
+const ALERT_CLASS = 'rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]'
 const RETRY_CLASS = 'font-bold underline text-brand-600 ml-2 cursor-pointer'
 
 const form = reactive({

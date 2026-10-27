@@ -113,7 +113,7 @@ function discard() {
 <template>
   <section v-if="open" aria-labelledby="chunked-uploader-title" class="rounded-2xl border border-line bg-white p-6 space-y-5 shadow-sm">
     <div class="flex items-center gap-3">
-      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#e8f0e8] text-brand-700">
+      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-line text-brand-700">
         <i class="fa-solid fa-film" aria-hidden="true"></i>
       </div>
       <div>
@@ -122,7 +122,7 @@ function discard() {
       </div>
     </div>
 
-    <p v-if="props.replaceItemId" class="text-sm text-ink-muted m-0 rounded-lg bg-surface p-3 border border-[#eef2ee]">
+    <p v-if="props.replaceItemId" class="text-sm text-ink-muted m-0 rounded-lg bg-surface p-3 border border-surface-tint">
       <i class="fa-solid fa-circle-info text-brand-700 mr-1.5" aria-hidden="true"></i>
       Tệp mới sẽ thay tệp gốc, giữ tiêu đề và bình luận. Video sẽ được chuyển mã lại từ đầu.
     </p>
@@ -135,7 +135,7 @@ function discard() {
     >
       <label for="chunked-file" class="block cursor-pointer p-8 text-center">
         <div class="flex flex-col items-center gap-3">
-          <div class="flex h-14 w-14 items-center justify-center rounded-full bg-[#e8f0e8] text-brand-700">
+          <div class="flex h-14 w-14 items-center justify-center rounded-full bg-line text-brand-700">
             <i class="fa-solid fa-cloud-arrow-up text-2xl" aria-hidden="true"></i>
           </div>
           <div>
@@ -152,7 +152,7 @@ function discard() {
          `select()`, còn `state.descriptor` chỉ có sau `initUpload` trong `run()`.
          Nếu chỉ dựa vào `descriptor` thì khoảng từ lúc chọn xong tới lúc bấm
          "Bắt đầu tải lên" không có gì cho biết file đã được chọn. -->
-    <div v-if="state?.fileName && !state?.descriptor && !picking" class="rounded-lg bg-surface border border-[#eef2ee] p-3 flex items-center gap-2.5">
+    <div v-if="state?.fileName && !state?.descriptor && !picking" class="rounded-lg bg-surface border border-surface-tint p-3 flex items-center gap-2.5">
       <i class="fa-solid fa-file-video text-brand-700" aria-hidden="true"></i>
       <div class="min-w-0 flex-1">
         <p class="text-sm font-semibold text-brand-950 m-0 truncate">{{ state.fileName }}</p>
@@ -161,7 +161,7 @@ function discard() {
     </div>
 
     <!-- Lượt tải đang dở -->
-    <div v-if="state?.descriptor" class="rounded-lg bg-surface border border-[#eef2ee] p-3 flex items-center gap-2.5">
+    <div v-if="state?.descriptor" class="rounded-lg bg-surface border border-surface-tint p-3 flex items-center gap-2.5">
       <i class="fa-solid fa-file-video text-brand-700" aria-hidden="true"></i>
       <div class="min-w-0 flex-1">
         <p class="text-sm font-semibold text-brand-950 m-0 truncate">{{ state.descriptor.filename }}</p>
@@ -177,7 +177,7 @@ function discard() {
         </p>
         <p class="text-sm font-bold text-brand-700 m-0">{{ byteProgress }}%{{ etaLabel }}</p>
       </div>
-      <div class="h-2.5 w-full overflow-hidden rounded-full bg-[#eef2ee]">
+      <div class="h-2.5 w-full overflow-hidden rounded-full bg-surface-tint">
         <div class="h-full rounded-full bg-brand-700 transition-all duration-300 motion-reduce:transition-none" :style="{ width: `${byteProgress}%` }"></div>
       </div>
       <p v-if="speedLabel && busy && !state?.completing" class="text-xs text-[#8aa08c] m-0 flex items-center gap-1.5"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i>Tốc độ: {{ speedLabel }}</p>
@@ -201,13 +201,13 @@ function discard() {
       <button v-if="!busy" type="button" :disabled="picking || !controller || (!state?.fileName && !state?.descriptor)" class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-[#245b2a] focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" @click="retry">
         <i class="fa-solid fa-play" aria-hidden="true"></i>{{ state?.descriptor ? 'Tiếp tục tải lên' : 'Bắt đầu tải lên' }}
       </button>
-      <button v-if="busy" type="button" class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-semibold text-[#2c3e2e] bg-white hover:bg-[#f8faf8] focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2 transition-colors" @click="pause">
+      <button v-if="busy" type="button" class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-semibold text-ink-admin bg-white hover:bg-surface focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2 transition-colors" @click="pause">
         <i class="fa-solid fa-pause" aria-hidden="true"></i>Tạm dừng
       </button>
       <button v-if="state?.descriptor && !busy" type="button" class="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm text-red-800 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors" @click="discard">
         <i class="fa-solid fa-trash-can" aria-hidden="true"></i>Bỏ phiên cũ
       </button>
-      <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm text-[#2c3e2e] bg-white hover:bg-[#f8faf8] focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2 transition-colors" @click="close">
+      <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm text-ink-admin bg-white hover:bg-surface focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2 transition-colors" @click="close">
         <i class="fa-solid fa-xmark" aria-hidden="true"></i>{{ props.replaceItemId ? 'Hủy thay tệp' : 'Quay lại thư viện' }}
       </button>
     </div>

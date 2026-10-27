@@ -202,7 +202,7 @@ async function startGlobalTranslation() {
           </div>
 
           <!-- Alert nhắc nhở kiểm duyệt -->
-          <div class="p-3 bg-[#fff8e1] border border-[#ffe082] rounded-lg text-xs text-[#8a6500] flex items-start gap-2.5">
+          <div class="p-3 bg-[#fff8e1] border border-[#ffe082] rounded-lg text-xs text-warn-ink flex items-start gap-2.5">
             <i class="fa-solid fa-triangle-exclamation text-base shrink-0 text-[#b78103] mt-0.5"></i>
             <div>
               <strong class="font-extrabold text-[#735100]">Lưu ý kiểm duyệt:</strong>

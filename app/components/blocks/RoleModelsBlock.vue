@@ -39,7 +39,7 @@
             class="flex-[0_0_auto] w-[230px] sm:w-[250px] [scroll-snap-align:start]"
           >
             <nuxt-link :to="`/role-models/${model.id}`" class="group block no-underline">
-              <figure class="relative aspect-[16/10] rounded-lg overflow-hidden bg-[#EEF2EC]">
+              <figure class="relative aspect-[16/10] rounded-lg overflow-hidden bg-surface-tint">
                 <SafeImg
                   :src="model.image"
                   :alt="model.name" img-class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
@@ -96,7 +96,7 @@
 
           <!-- Clickable indicator tabs / pills — pill nhỏ nhưng vùng tap ≥24px
                (p-1.5 = 6px mỗi bên → 24px) để đạt WCAG 2.5.5 tap-target. -->
-          <div class="flex items-center gap-1 px-2 py-1 bg-white rounded-full border border-[#E2E8DF] shadow-sm">
+          <div class="flex items-center gap-1 px-2 py-1 bg-white rounded-full border border-line shadow-sm">
             <button
               v-for="(_, idx) in list"
               :key="idx"
@@ -112,7 +112,7 @@
               <span
                 :class="[
                   'block rounded-full transition-all duration-300 h-2.5',
-                  currentIndex === idx ? 'w-6 bg-[#4A6741]' : 'w-2.5 bg-[#D5E1D3] group-hover:bg-[#7CB342]'
+                  currentIndex === idx ? 'w-6 bg-[#4A6741]' : 'w-2.5 bg-[#D5E1D3] group-hover:bg-accent'
                 ]"
               ></span>
             </button>
@@ -140,7 +140,7 @@
       />
 
       <!-- Chỉ nói "chưa có" khi đã tải xong: lúc đang tải câu đó là một lời sai. -->
-      <p v-else-if="!pending" class="text-center text-[0.9rem] text-[#5A6C58] italic">{{ t('block_role_empty') }}</p>
+      <p v-else-if="!pending" class="text-center text-[0.9rem] text-ink-soft italic">{{ t('block_role_empty') }}</p>
     </div>
   </section>
 </template>

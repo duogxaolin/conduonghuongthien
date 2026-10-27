@@ -91,7 +91,7 @@ defineExpose<{ loadLogs: typeof loadLogs; clearLogs: typeof clearLogs }>({
 
 <template>
   <div class="flex flex-col gap-5">
-    <div v-if="logsError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
+    <div v-if="logsError" class="rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]" role="alert">
       <strong>Lỗi:</strong> {{ logsError }}
       <button type="button" class="font-bold underline text-brand-600 ml-2" @click="loadLogs()">Thử lại</button>
     </div>
@@ -101,29 +101,29 @@ defineExpose<{ loadLogs: typeof loadLogs; clearLogs: typeof clearLogs }>({
       <div class="flex flex-wrap gap-3 items-end">
         <label class="flex flex-col gap-1 text-xs font-semibold">
           <span class="text-ink-muted">Dịch vụ</span>
-          <select v-model="logsFilters.serviceKey" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm bg-white">
+          <select v-model="logsFilters.serviceKey" class="rounded-lg border border-line-strong px-3 py-1.5 text-sm bg-white">
             <option value="">Tất cả</option>
             <option v-for="key in Object.keys(SERVICE_LABELS)" :key="key" :value="key">{{ SERVICE_LABELS[key] }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1 text-xs font-semibold">
           <span class="text-ink-muted">Nhà cung cấp</span>
-          <select v-model="logsFilters.provider" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm bg-white">
+          <select v-model="logsFilters.provider" class="rounded-lg border border-line-strong px-3 py-1.5 text-sm bg-white">
             <option value="">Tất cả</option>
             <option v-for="p in props.providers" :key="p.provider" :value="p.provider">{{ p.label }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1 text-xs font-semibold">
           <span class="text-ink-muted">Từ ngày</span>
-          <input v-model="logsFilters.startDate" type="date" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm" />
+          <input v-model="logsFilters.startDate" type="date" class="rounded-lg border border-line-strong px-3 py-1.5 text-sm" />
         </label>
         <label class="flex flex-col gap-1 text-xs font-semibold">
           <span class="text-ink-muted">Đến ngày</span>
-          <input v-model="logsFilters.endDate" type="date" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm" />
+          <input v-model="logsFilters.endDate" type="date" class="rounded-lg border border-line-strong px-3 py-1.5 text-sm" />
         </label>
         <label class="flex flex-col gap-1 text-xs font-semibold">
           <span class="text-ink-muted">Trạng thái</span>
-          <select v-model="logsFilters.success" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm bg-white">
+          <select v-model="logsFilters.success" class="rounded-lg border border-line-strong px-3 py-1.5 text-sm bg-white">
             <option value="">Tất cả</option>
             <option value="true">Thành công</option>
             <option value="false">Lỗi</option>
@@ -149,7 +149,7 @@ defineExpose<{ loadLogs: typeof loadLogs; clearLogs: typeof clearLogs }>({
       </div>
       <div v-else class="rounded-xl border border-line bg-white overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="bg-[#f4f7f4] text-left">
+          <thead class="bg-surface text-left">
             <tr>
               <th class="px-3 py-3 font-bold text-brand-950">Thời gian</th>
               <th class="px-3 py-3 font-bold text-brand-950">Dịch vụ</th>
@@ -165,7 +165,7 @@ defineExpose<{ loadLogs: typeof loadLogs; clearLogs: typeof clearLogs }>({
           <tbody>
             <template v-for="log in logs" :key="log.id">
               <tr
-                class="border-t border-line cursor-pointer hover:bg-[#f4f7f4]"
+                class="border-t border-line cursor-pointer hover:bg-surface"
                 :class="!log.success ? 'bg-red-50/50' : ''"
                 @click="!log.success && toggleRowExpand(log.id)"
               >

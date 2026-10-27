@@ -212,19 +212,19 @@ onMounted(() => { fetchSubmissions() })
         <span class="sr-only">Đang tải danh sách đơn đăng ký</span>
         <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
           <div v-for="n in 6" :key="n" class="flex gap-3">
-            <div v-for="c in 8" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+            <div v-for="c in 8" :key="c" class="h-10 bg-surface-tint rounded flex-1" aria-hidden="true"></div>
           </div>
         </div>
       </div>
 
       <!-- Error -->
-      <div v-else-if="error" role="alert" class="px-6 py-10 text-center text-[#B04A4A] text-[0.95rem]">
+      <div v-else-if="error" role="alert" class="px-6 py-10 text-center text-danger-soft text-[0.95rem]">
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
         {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchSubmissions()">thử lại</button>.
       </div>
 
       <!-- Mobile Card View -->
-      <div v-else class="md:hidden divide-y divide-[#eef2ee]">
+      <div v-else class="md:hidden divide-y divide-surface-tint">
         <div
           v-for="s in filteredSubmissions"
           :key="'m-'+s.id"
@@ -275,7 +275,7 @@ onMounted(() => { fetchSubmissions() })
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
-              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-line">
+              <th class="bg-surface w-10 px-4 py-3 border-b border-line">
                 <input
                   type="checkbox"
                   class="h-4 w-4 accent-brand-700"
@@ -285,23 +285,23 @@ onMounted(() => { fetchSubmissions() })
                   @change="selection.toggleAll(visibleIds)"
                 />
               </th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">ID</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Họ và tên</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Số điện thoại</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Trạng thái</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Biểu mẫu</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Ngày gửi</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">ID</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Họ và tên</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Số điện thoại</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Trạng thái</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Biểu mẫu</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Ngày gửi</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="s in filteredSubmissions"
               :key="s.id"
-              class="hover:bg-[#fafcfa]"
+              class="hover:bg-surface"
               :class="selection.isSelected(Number(s.id)) ? 'bg-surface-tint' : ''"
             >
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+              <td class="px-4 py-3.5 border-b border-surface-tint">
                 <input
                   type="checkbox"
                   class="h-4 w-4 accent-brand-700"
@@ -310,8 +310,8 @@ onMounted(() => { fetchSubmissions() })
                   @change="selection.toggle(Number(s.id))"
                 />
               </td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-ink-muted">#{{ s.id }}</td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] font-bold text-brand-950">
+              <td class="px-4 py-3.5 border-b border-surface-tint text-ink-muted">#{{ s.id }}</td>
+              <td class="px-4 py-3.5 border-b border-surface-tint font-bold text-brand-950">
                 {{ s.fullName || '—' }}
                 <!-- "Chưa ai xem" là một câu hỏi KHÁC với trạng thái `new`: một đơn
                      có thể đã được đọc mà chưa ai bấm đổi gì, và một đơn đang "Đang
@@ -319,8 +319,8 @@ onMounted(() => { fetchSubmissions() })
                      đầu giờ là câu thứ nhất. -->
                 <span v-if="!s.firstViewedAt" class="ml-1.5 rounded bg-[#fdf3e2] px-1.5 py-0.5 text-[0.68rem] font-bold text-[#8a5a12]">chưa xem</span>
               </td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]"><code class="bg-[#f4f7f4] px-1.5 py-0.5 rounded text-xs">{{ s.phone || '—' }}</code></td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+              <td class="px-4 py-3.5 border-b border-surface-tint"><code class="bg-surface px-1.5 py-0.5 rounded text-xs">{{ s.phone || '—' }}</code></td>
+              <td class="px-4 py-3.5 border-b border-surface-tint">
                 <span
                   class="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[0.72rem] font-bold"
                   :class="SUBMISSION_STATUS_META[statusOf(s)].badgeClass"
@@ -329,17 +329,17 @@ onMounted(() => { fetchSubmissions() })
                   {{ SUBMISSION_STATUS_META[statusOf(s)].label }}
                 </span>
               </td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#2c3e2e]">{{ s.formTitle || '—' }}</td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-ink-muted text-[0.82rem] whitespace-nowrap">
+              <td class="px-4 py-3.5 border-b border-surface-tint text-ink-admin">{{ s.formTitle || '—' }}</td>
+              <td class="px-4 py-3.5 border-b border-surface-tint text-ink-muted text-[0.82rem] whitespace-nowrap">
                 {{ fmtDate(s.createdAt) }}
               </td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+              <td class="px-4 py-3.5 border-b border-surface-tint">
                 <!-- Khoá ổn định: thao tác trong hộp chi tiết tải lại bảng (nút này bị gỡ
                      và vẽ lại) — AdminModal tìm lại đúng nút này để trả focus. -->
                 <button
                   type="button"
                   :data-admin-modal-opener="`submission-${s.id}`"
-                  class="inline-flex items-center gap-1.5 bg-surface-tint text-brand-700 border border-[#8ed694] px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
+                  class="inline-flex items-center gap-1.5 bg-surface-tint text-brand-700 border border-brand-300 px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
                   @click="openId = Number(s.id)"
                 >
                   <i class="fa-solid fa-eye"></i> Xem & xử lý

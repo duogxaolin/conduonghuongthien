@@ -53,13 +53,13 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
 
     <div v-if="moderationLoading" role="status" aria-busy="true" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <span class="sr-only">Đang tải số liệu kiểm duyệt an ninh</span>
-      <div v-for="n in 2" :key="n" class="h-24 rounded-xl bg-[#EEF2EC] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+      <div v-for="n in 2" :key="n" class="h-24 rounded-xl bg-surface-tint animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
     </div>
 
     <div
       v-else-if="moderationError"
       role="alert"
-      class="flex flex-col gap-2 rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924] sm:flex-row sm:items-center"
+      class="flex flex-col gap-2 rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924] sm:flex-row sm:items-center"
     >
       <span><strong>Lỗi:</strong> {{ moderationError }}</span>
       <button

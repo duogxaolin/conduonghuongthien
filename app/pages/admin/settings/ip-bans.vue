@@ -147,7 +147,7 @@ onMounted(load)
         v-for="n in 4"
         :key="n"
         aria-hidden="true"
-        class="mb-2 h-11 rounded-lg bg-[#eef3ee] animate-pulse motion-reduce:animate-none"
+        class="mb-2 h-11 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"
       ></div>
     </div>
 
@@ -169,18 +169,18 @@ onMounted(load)
       </p>
 
       <!-- Mobile Card View: Tối ưu dạng thẻ cho điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef3ee] rounded-xl border border-line bg-white overflow-hidden shadow-xs">
+      <div class="md:hidden divide-y divide-surface-tint rounded-xl border border-line bg-white overflow-hidden shadow-xs">
         <div
           v-for="ban in bans"
           :key="'m-'+ban.id"
           class="p-4 flex flex-col gap-2.5"
         >
           <div class="flex items-center justify-between gap-2">
-            <code class="font-mono font-bold text-brand-950 bg-[#f4f7f4] px-2 py-1 rounded text-sm">{{ ban.value }}</code>
+            <code class="font-mono font-bold text-brand-950 bg-surface px-2 py-1 rounded text-sm">{{ ban.value }}</code>
             <button
               type="button"
               :disabled="busy"
-              class="inline-flex items-center gap-1 text-xs font-bold text-[#b0403c] bg-[#fff4f3] hover:bg-[#fde2e0] px-3 py-1.5 rounded-lg border-0 cursor-pointer disabled:opacity-60 transition-colors"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#b0403c] bg-danger-bg hover:bg-[#fde2e0] px-3 py-1.5 rounded-lg border-0 cursor-pointer disabled:opacity-60 transition-colors"
               @click="liftBan(ban)"
             >
               <i class="fa-solid fa-lock-open text-[0.65rem]"></i> Bỏ chặn
@@ -191,7 +191,7 @@ onMounted(load)
             <span class="font-semibold text-ink-muted">Lý do:</span> {{ ban.reason || '—' }}
           </p>
 
-          <div class="flex items-center justify-between text-[0.75rem] text-[#8a9a8c] pt-2 border-t border-[#f4f7f4]">
+          <div class="flex items-center justify-between text-[0.75rem] text-ink-faint pt-2 border-t border-surface">
             <span><i class="fa-regular fa-user mr-1"></i>{{ ban.createdByName || 'Tài khoản đã xoá' }}</span>
             <span>{{ formatMoment(ban.createdAt) }}</span>
           </div>
@@ -202,7 +202,7 @@ onMounted(load)
       <div class="hidden md:block overflow-x-auto rounded-xl border border-line bg-white">
         <table class="w-full min-w-[640px] border-collapse text-sm">
           <thead>
-            <tr class="bg-[#f8faf8] text-left text-[0.78rem] uppercase tracking-wide text-ink-muted">
+            <tr class="bg-surface text-left text-[0.78rem] uppercase tracking-wide text-ink-muted">
               <th class="px-4 py-3 font-bold">Địa chỉ / dải</th>
               <th class="px-4 py-3 font-bold">Lý do</th>
               <th class="px-4 py-3 font-bold">Người thêm</th>
@@ -211,7 +211,7 @@ onMounted(load)
             </tr>
           </thead>
           <tbody>
-            <tr v-for="ban in bans" :key="ban.id" class="border-t border-[#eef3ee]">
+            <tr v-for="ban in bans" :key="ban.id" class="border-t border-surface-tint">
               <td class="px-4 py-3 font-mono font-semibold text-brand-950">{{ ban.value }}</td>
               <td class="px-4 py-3 text-[#3d4f3f]">{{ ban.reason || '—' }}</td>
               <td class="px-4 py-3 text-[#3d4f3f]">{{ ban.createdByName || 'Tài khoản đã xoá' }}</td>

@@ -268,7 +268,7 @@ onMounted(load)
       </span>
     </div>
 
-    <div v-if="errorMessage" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
+    <div v-if="errorMessage" class="rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]" role="alert">
       <strong>Lỗi:</strong> {{ errorMessage }}<template v-if="!loading && !saving"> Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load()">thử lại</button>.</template>
     </div>
     <SkeletonForm v-if="loading" label="Đang tải cấu hình chatbot" :fields="5" />
@@ -287,11 +287,11 @@ onMounted(load)
         </label>
 
         <div class="grid gap-3 sm:grid-cols-2">
-          <label class="flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition-colors" :class="form.mode === 'knowledge' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong hover:bg-[#f8faf8]'">
+          <label class="flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition-colors" :class="form.mode === 'knowledge' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong hover:bg-surface'">
             <span class="flex items-center gap-2 text-sm font-bold text-brand-950"><input type="radio" value="knowledge" v-model="form.mode" class="h-4 w-4 accent-brand-700" /> Chỉ kho kiến thức (không AI)</span>
             <span class="pl-6 text-xs text-ink-muted">Trả lời vui vẻ dựa trên câu trả lời đã duyệt trong Kho kiến thức, khớp theo từ khoá. Không gọi AI, không cần API key.</span>
           </label>
-          <label class="flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition-colors" :class="form.mode === 'ai' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong hover:bg-[#f8faf8]'">
+          <label class="flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition-colors" :class="form.mode === 'ai' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong hover:bg-surface'">
             <span class="flex items-center gap-2 text-sm font-bold text-brand-950"><input type="radio" value="ai" v-model="form.mode" class="h-4 w-4 accent-brand-700" /> Dùng AI</span>
             <span class="pl-6 text-xs text-ink-muted">AI + system prompt, ưu tiên dữ liệu trong Kho kiến thức. Cấu hình nhà cung cấp và prompt tại <nuxt-link to="/admin/ai" class="font-semibold text-brand-700 underline">AI Panel</nuxt-link>.</span>
           </label>

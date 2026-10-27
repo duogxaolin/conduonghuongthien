@@ -55,13 +55,13 @@
     </div>
 
     <!-- Drawer Locale Switcher (Grid layout for many languages) -->
-    <div class="px-4 py-2.5 bg-[#f0f6ef] border-b border-[#e1e8e0] flex-shrink-0">
+    <div class="px-4 py-2.5 bg-surface-tint border-b border-line flex-shrink-0">
       <div class="text-[0.68rem] font-bold text-ink-muted uppercase mb-1.5">{{ t('language_switcher') }}</div>
       <div class="grid grid-cols-2 gap-1.5" role="group" :aria-label="t('language_switcher')">
         <button
           v-for="locale in locales"
           :key="`drawer-${locale.code}`"
-          :class="currentLang === locale.code ? 'text-white bg-brand-700 shadow-xs' : 'text-brand-900 bg-white border border-line-strong hover:bg-[#e4ece4]'"
+          :class="currentLang === locale.code ? 'text-white bg-brand-700 shadow-xs' : 'text-brand-900 bg-white border border-line-strong hover:bg-line'"
           class="border-none font-bold cursor-pointer text-xs px-2.5 py-1.5 rounded-lg transition-all flex items-center justify-between"
           :aria-label="locale.name"
           :aria-pressed="currentLang === locale.code"
@@ -169,20 +169,20 @@
                 <ReaderAvatar :initials="reader.initials" />
                 <div class="flex flex-col min-w-0">
                   <span class="text-[0.9rem] font-extrabold text-ink truncate">{{ reader.displayName }}</span>
-                  <span v-if="reader.email" class="text-[0.72rem] text-[#5A6C58] truncate">{{ reader.email }}</span>
+                  <span v-if="reader.email" class="text-[0.72rem] text-ink-soft truncate">{{ reader.email }}</span>
                 </div>
               </div>
               <div class="flex gap-2">
                 <nuxt-link
                   to="/profile"
-                  class="flex-1 flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3 py-2.5 text-[0.85rem] font-bold text-[#385130] no-underline transition-colors active:bg-[#EEF2EC]"
+                  class="flex-1 flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3 py-2.5 text-[0.85rem] font-bold text-brand-800 no-underline transition-colors active:bg-surface-tint"
                   @click="$emit('toggle-mobile-menu')"
                 >
-                  <i class="fa-solid fa-user text-[#7CB342]" aria-hidden="true"></i> Trang cá nhân
+                  <i class="fa-solid fa-user text-accent" aria-hidden="true"></i> Trang cá nhân
                 </nuxt-link>
                 <button
                   type="button"
-                  class="flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-[#5A6C58] transition-colors active:bg-[#EEF2EC]"
+                  class="flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-ink-soft transition-colors active:bg-surface-tint"
                   @click="onReaderSignOut"
                 >
                   <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Đăng xuất
@@ -202,15 +202,15 @@
               -->
               <nuxt-link
                 to="/profile#notifications"
-                class="flex items-center justify-between gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-[#385130] no-underline transition-colors active:bg-[#EEF2EC]"
+                class="flex items-center justify-between gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-brand-800 no-underline transition-colors active:bg-surface-tint"
                 @click="$emit('toggle-mobile-menu')"
               >
                 <span class="flex items-center gap-2">
-                  <i class="fa-solid fa-bell text-[#7CB342]" aria-hidden="true"></i> {{ t('notifications') }}
+                  <i class="fa-solid fa-bell text-accent" aria-hidden="true"></i> {{ t('notifications') }}
                 </span>
                 <span
                   v-if="unreadCount > 0"
-                  class="min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-[#B04A4A] text-white text-[0.7rem] font-bold leading-none"
+                  class="min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-danger-soft text-white text-[0.7rem] font-bold leading-none"
                 >{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
               </nuxt-link>
             </div>
@@ -218,10 +218,10 @@
             <button
               v-else
               type="button"
-              class="w-full flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-4 py-3 text-[0.88rem] font-bold text-[#385130] shadow-sm transition-colors active:bg-[#EEF2EC]"
+              class="w-full flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-4 py-3 text-[0.88rem] font-bold text-brand-800 shadow-sm transition-colors active:bg-surface-tint"
               @click="readerSignIn()"
             >
-              <i class="fa-solid fa-right-to-bracket text-[#7CB342]" aria-hidden="true"></i> {{ t('login_to_comment') }}
+              <i class="fa-solid fa-right-to-bracket text-accent" aria-hidden="true"></i> {{ t('login_to_comment') }}
             </button>
           </div>
         </client-only>
@@ -229,12 +229,12 @@
         <a :href="siteHotlineTel" class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] no-underline shadow-sm">
           <span class="text-xl">📞</span>
           <div class="flex flex-col">
-            <span class="text-[0.72rem] text-[#5A6C58] font-semibold">{{ t('hotline_lbl') }}</span>
+            <span class="text-[0.72rem] text-ink-soft font-semibold">{{ t('hotline_lbl') }}</span>
             <span class="text-[0.95rem] font-extrabold text-brand-600">{{ siteHotline }}</span>
           </div>
         </a>
         <nuxt-link to="/contact" class="btn btn-primary w-full flex items-center justify-center gap-2 px-4 py-3 text-[0.88rem] font-bold rounded-xl" @click="$emit('toggle-mobile-menu')">
-          <span class="w-1.5 h-1.5 bg-[#7CB342] rounded-full inline-block animate-pulse motion-reduce:animate-none" aria-hidden="true"></span> {{ t('register_help') }}
+          <span class="w-1.5 h-1.5 bg-accent rounded-full inline-block animate-pulse motion-reduce:animate-none" aria-hidden="true"></span> {{ t('register_help') }}
         </nuxt-link>
       </div>
     </div>

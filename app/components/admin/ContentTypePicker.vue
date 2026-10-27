@@ -119,10 +119,10 @@ onMounted(fetchTypes)
           <div class="flex flex-col gap-3">
             <div v-if="loading" role="status" aria-busy="true" class="flex flex-col gap-2">
               <span class="sr-only">Đang tải danh sách thể loại</span>
-              <div v-for="n in 4" :key="n" class="h-10 bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+              <div v-for="n in 4" :key="n" class="h-10 bg-surface-tint rounded animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
             </div>
 
-            <div v-else-if="error" role="alert" class="text-sm text-[#B04A4A] flex items-center gap-2">
+            <div v-else-if="error" role="alert" class="text-sm text-danger-soft flex items-center gap-2">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
               {{ error }}
               <button type="button" class="text-brand-600 font-bold underline" @click="fetchTypes">Thử lại</button>
@@ -148,7 +148,7 @@ onMounted(fetchTypes)
                 <div v-if="expanded[ct.slug]" class="mt-1.5 ml-4 border-l-2 border-line pl-3 flex flex-col gap-1.5">
                   <div v-if="loadingChildren[ct.slug]" role="status" aria-busy="true" class="flex flex-col gap-1.5 py-1">
                     <span class="sr-only">Đang tải danh mục con</span>
-                    <div v-for="n in 2" :key="n" class="h-8 bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+                    <div v-for="n in 2" :key="n" class="h-8 bg-surface-tint rounded animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
                   </div>
                   <template v-else-if="(childrenByType[ct.slug] || []).length">
                     <button
@@ -158,8 +158,8 @@ onMounted(fetchTypes)
                       class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white border border-transparent hover:border-brand-700 hover:bg-surface-tint transition-colors cursor-pointer text-left"
                       @click="pickChild(ct, child)"
                     >
-                      <i class="fa-regular fa-folder text-[#8ed694] text-[0.82rem]" aria-hidden="true"></i>
-                      <span class="flex-1 text-[0.85rem] font-semibold text-[#2c3e2e]">{{ child.name }}</span>
+                      <i class="fa-regular fa-folder text-brand-300 text-[0.82rem]" aria-hidden="true"></i>
+                      <span class="flex-1 text-[0.85rem] font-semibold text-ink-admin">{{ child.name }}</span>
                       <span class="text-[0.68rem] text-ink-muted font-normal">/{{ child.slug }}</span>
                       <i class="fa-solid fa-plus text-brand-700 text-[0.68rem]" aria-hidden="true"></i>
                     </button>
@@ -182,7 +182,7 @@ onMounted(fetchTypes)
           </div>
 
     <template #footer>
-            <button type="button" class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors" @click="$emit('close')">
+            <button type="button" class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-surface transition-colors" @click="$emit('close')">
               Đóng
             </button>
     </template>

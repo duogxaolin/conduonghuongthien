@@ -118,14 +118,14 @@ onMounted(() => { fetchSettings() })
       <span class="sr-only">Đang tải cấu hình theo dõi và marketing</span>
       <div class="flex flex-col gap-4 animate-pulse motion-reduce:animate-none">
         <div v-for="n in 5" :key="n">
-          <div class="h-4 bg-[#EEF2EC] rounded w-1/4 mb-2" aria-hidden="true"></div>
-          <div class="h-10 bg-[#EEF2EC] rounded" aria-hidden="true"></div>
+          <div class="h-4 bg-surface-tint rounded w-1/4 mb-2" aria-hidden="true"></div>
+          <div class="h-10 bg-surface-tint rounded" aria-hidden="true"></div>
         </div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchSettings()">thử lại</button>.
     </div>
@@ -148,33 +148,33 @@ onMounted(() => { fetchSettings() })
           <h3 class="text-[1.05rem] font-bold text-brand-950 m-0 mb-4">Google (GA4 / GTM / Ads / Search Console)</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">GA4 Measurement ID</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">GA4 Measurement ID</label>
               <input type="text" v-model="settings.ga4_measurement_id" placeholder="G-XXXXXXX" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Google Analytics 4 — dạng <code>G-XXXXXXX</code>.</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Google Analytics 4 — dạng <code>G-XXXXXXX</code>.</p>
               <p v-if="fieldErrors.ga4_measurement_id" class="text-[0.72rem] font-bold text-red-600 m-0">Sai định dạng — cần dạng <code>G-XXXXXXX</code> (chữ IN HOA & số).</p>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Google Tag Manager ID</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Google Tag Manager ID</label>
               <input type="text" v-model="settings.gtm_container_id" placeholder="GTM-XXXXXX" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Container ID — dạng <code>GTM-XXXXXX</code>.</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Container ID — dạng <code>GTM-XXXXXX</code>.</p>
               <p v-if="fieldErrors.gtm_container_id" class="text-[0.72rem] font-bold text-red-600 m-0">Sai định dạng — cần dạng <code>GTM-XXXXXX</code> (chữ IN HOA & số).</p>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Google Ads ID</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Google Ads ID</label>
               <input type="text" v-model="settings.google_ads_id" placeholder="AW-XXXXXXXXX" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Global site tag — dạng <code>AW-XXXXXXXXX</code>.</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Global site tag — dạng <code>AW-XXXXXXXXX</code>.</p>
               <p v-if="fieldErrors.google_ads_id" class="text-[0.72rem] font-bold text-red-600 m-0">Sai định dạng — cần dạng <code>AW-XXXXXXXXX</code> (chữ IN HOA & số).</p>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Google Ads Conversion Label (tùy chọn)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Google Ads Conversion Label (tùy chọn)</label>
               <input type="text" v-model="settings.google_ads_conversion_label" placeholder="abcDEFghi" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Nhãn chuyển đổi đi kèm Google Ads ID (nếu có).</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Nhãn chuyển đổi đi kèm Google Ads ID (nếu có).</p>
               <p v-if="fieldErrors.google_ads_conversion_label" class="text-[0.72rem] font-bold text-red-600 m-0">Sai định dạng — chỉ gồm chữ, số, gạch ngang & gạch dưới.</p>
             </div>
             <div class="flex flex-col gap-1.5 md:col-span-2">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Google Search Console — Meta verification</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Google Search Console — Meta verification</label>
               <input type="text" v-model="settings.google_site_verification" placeholder="Chuỗi token xác minh" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Chỉ dán phần <code>content</code> của thẻ <code>&lt;meta name="google-site-verification"&gt;</code>.</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Chỉ dán phần <code>content</code> của thẻ <code>&lt;meta name="google-site-verification"&gt;</code>.</p>
               <p v-if="fieldErrors.google_site_verification" class="text-[0.72rem] font-bold text-red-600 m-0">Sai định dạng — chỉ dán chuỗi token, không dán cả thẻ <code>&lt;meta&gt;</code>.</p>
             </div>
           </div>
@@ -185,15 +185,15 @@ onMounted(() => { fetchSettings() })
           <h3 class="text-[1.05rem] font-bold text-brand-950 m-0 mb-4">Mạng xã hội (Facebook / TikTok)</h3>
           <div class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Meta / Facebook Pixel ID</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Meta / Facebook Pixel ID</label>
               <input type="text" v-model="settings.facebook_pixel_id" placeholder="1234567890" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Chuỗi số Pixel ID từ Meta Events Manager.</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Chuỗi số Pixel ID từ Meta Events Manager.</p>
               <p v-if="fieldErrors.facebook_pixel_id" class="text-[0.72rem] font-bold text-red-600 m-0">Sai định dạng — chỉ gồm chữ, số, gạch ngang & gạch dưới.</p>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">TikTok Pixel ID</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">TikTok Pixel ID</label>
               <input type="text" v-model="settings.tiktok_pixel_id" placeholder="CXXXXXXXXXXXXXXXXX" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Pixel ID từ TikTok Events Manager.</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Pixel ID từ TikTok Events Manager.</p>
               <p v-if="fieldErrors.tiktok_pixel_id" class="text-[0.72rem] font-bold text-red-600 m-0">Sai định dạng — chỉ gồm chữ, số, gạch ngang & gạch dưới.</p>
             </div>
           </div>
@@ -204,9 +204,9 @@ onMounted(() => { fetchSettings() })
           <h3 class="text-[1.05rem] font-bold text-brand-950 m-0 mb-4">Khác (Clarity)</h3>
           <div class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Microsoft Clarity Project ID</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Microsoft Clarity Project ID</label>
               <input type="text" v-model="settings.clarity_project_id" placeholder="abcdef1234" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Project ID từ clarity.microsoft.com.</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Project ID từ clarity.microsoft.com.</p>
               <p v-if="fieldErrors.clarity_project_id" class="text-[0.72rem] font-bold text-red-600 m-0">Sai định dạng — chỉ gồm chữ, số, gạch ngang & gạch dưới.</p>
             </div>
           </div>
@@ -221,14 +221,14 @@ onMounted(() => { fetchSettings() })
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Mã trong &lt;head&gt;</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Mã trong &lt;head&gt;</label>
               <textarea rows="6" v-model="settings.tracking_custom_head" placeholder="<!-- Mã tùy chỉnh chèn cuối <head> -->" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-[0.8rem] font-mono outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border resize-y"></textarea>
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Chèn ngay trước khi đóng thẻ <code>&lt;/head&gt;</code>.</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Chèn ngay trước khi đóng thẻ <code>&lt;/head&gt;</code>.</p>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Mã đầu &lt;body&gt;</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Mã đầu &lt;body&gt;</label>
               <textarea rows="6" v-model="settings.tracking_custom_body" placeholder="<!-- Mã tùy chỉnh chèn ngay sau <body> -->" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-[0.8rem] font-mono outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border resize-y"></textarea>
-              <p class="text-[0.72rem] text-[#8a9a8c] m-0">Chèn ngay sau khi mở thẻ <code>&lt;body&gt;</code>.</p>
+              <p class="text-[0.72rem] text-ink-faint m-0">Chèn ngay sau khi mở thẻ <code>&lt;body&gt;</code>.</p>
             </div>
           </div>
         </div>

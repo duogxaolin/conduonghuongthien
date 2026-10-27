@@ -311,7 +311,7 @@ onMounted(async () => {
           </div>
         </template>
         <template v-else>
-          <div class="col-span-3 rounded-2xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] p-5 text-sm text-ink-muted text-center">Chưa có dữ liệu trực tiếp.</div>
+          <div class="col-span-3 rounded-2xl border border-dashed border-[#afc8b1] bg-surface p-5 text-sm text-ink-muted text-center">Chưa có dữ liệu trực tiếp.</div>
         </template>
       </div>
 
@@ -324,12 +324,12 @@ onMounted(async () => {
           </div>
           <nuxt-link to="/admin/analytics" class="text-[0.78rem] font-semibold text-brand-700 no-underline hover:underline">Chi tiết →</nuxt-link>
         </div>
-        <div v-if="trafficLoading" class="rounded-xl bg-[#f4f7f4] h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
+        <div v-if="trafficLoading" class="rounded-xl bg-surface h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
           <span class="sr-only">Đang tải biểu đồ xu hướng 7 ngày</span>
           <div
             v-for="(h, n) in ['h-1/3', 'h-2/3', 'h-1/2', 'h-full', 'h-3/5', 'h-2/5', 'h-4/5']"
             :key="n"
-            :class="['flex-1 rounded-t bg-[#dfe9e0] animate-pulse motion-reduce:animate-none', h]"
+            :class="['flex-1 rounded-t bg-line animate-pulse motion-reduce:animate-none', h]"
             aria-hidden="true"
           ></div>
         </div>
@@ -337,19 +337,19 @@ onMounted(async () => {
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Không thể tải dữ liệu thống kê.
           <button type="button" class="ml-1 font-bold underline" @click="loadTraffic()">Thử lại</button>
         </div>
-        <div v-else-if="trafficPoints.length === 0" class="rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] p-8 text-center text-sm text-ink-muted">
+        <div v-else-if="trafficPoints.length === 0" class="rounded-xl border border-dashed border-[#afc8b1] bg-surface p-8 text-center text-sm text-ink-muted">
           <i class="fa-solid fa-chart-area text-2xl text-line-strong mb-2 block" aria-hidden="true"></i>
           Chưa có dữ liệu thống kê trong 7 ngày qua.
         </div>
         <ClientOnly v-else>
           <AnalyticsTrafficChart :points="trafficPoints" />
           <template #fallback>
-            <div class="rounded-xl bg-[#f4f7f4] h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
+            <div class="rounded-xl bg-surface h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
               <span class="sr-only">Đang tải biểu đồ tương tác</span>
               <div
                 v-for="(h, n) in ['h-1/3', 'h-2/3', 'h-1/2', 'h-full', 'h-3/5', 'h-2/5', 'h-4/5']"
                 :key="n"
-                :class="['flex-1 rounded-t bg-[#dfe9e0] animate-pulse motion-reduce:animate-none', h]"
+                :class="['flex-1 rounded-t bg-line animate-pulse motion-reduce:animate-none', h]"
                 aria-hidden="true"
               ></div>
             </div>
@@ -366,22 +366,22 @@ onMounted(async () => {
             <div class="flex items-center gap-2">
               <i class="fa-solid fa-globe text-brand-700 text-sm" aria-hidden="true"></i>
               <h2 class="text-[0.9rem] font-extrabold text-brand-950 m-0">Nguồn truy cập</h2>
-              <span class="text-[0.65rem] text-ink-muted bg-[#f4f7f4] border border-line rounded-full px-2 py-0.5 font-semibold">60 phút</span>
+              <span class="text-[0.65rem] text-ink-muted bg-surface border border-line rounded-full px-2 py-0.5 font-semibold">60 phút</span>
             </div>
             <nuxt-link to="/admin/analytics" class="text-[0.72rem] font-semibold text-brand-700 no-underline hover:underline">Chi tiết →</nuxt-link>
           </div>
           <div v-if="sourceLoading" class="flex items-center gap-4 h-28" role="status" aria-busy="true">
             <span class="sr-only">Đang tải nguồn truy cập</span>
-            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-[#dfe9e0] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-line animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
             <div class="flex flex-1 flex-col gap-2" aria-hidden="true">
-              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
             </div>
           </div>
           <div v-else-if="sourceError" role="alert" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i> Không thể tải dữ liệu.
             <button type="button" class="ml-1 font-bold underline" @click="loadBreakdowns()">Thử lại</button>
           </div>
-          <div v-else-if="!sourceData || sourceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] text-sm text-ink-muted gap-2">
+          <div v-else-if="!sourceData || sourceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-surface text-sm text-ink-muted gap-2">
             <i class="fa-solid fa-globe text-xl text-line-strong" aria-hidden="true"></i>
             Chưa có dữ liệu nguồn truy cập.
           </div>
@@ -417,7 +417,7 @@ onMounted(async () => {
                   v-for="(row, i) in sourceData.rows"
                   :key="row.value"
                   class="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 transition-colors"
-                  :class="activeSlice && activeSlice.scope === 'source' && activeSlice.row.value === row.value ? 'bg-surface-tint' : 'hover:bg-[#f7fbf7]'"
+                  :class="activeSlice && activeSlice.scope === 'source' && activeSlice.row.value === row.value ? 'bg-surface-tint' : 'hover:bg-surface'"
                   @click="onSliceClick('source', row)"
                 >
                   <span class="shrink-0 w-2.5 h-2.5 rounded-full" :style="`background:${SOURCE_COLORS[i % SOURCE_COLORS.length]}`" aria-hidden="true"></span>
@@ -464,22 +464,22 @@ onMounted(async () => {
             <div class="flex items-center gap-2">
               <i class="fa-solid fa-mobile-screen text-brand-700 text-sm" aria-hidden="true"></i>
               <h2 class="text-[0.9rem] font-extrabold text-brand-950 m-0">Thiết bị truy cập</h2>
-              <span class="text-[0.65rem] text-ink-muted bg-[#f4f7f4] border border-line rounded-full px-2 py-0.5 font-semibold">60 phút</span>
+              <span class="text-[0.65rem] text-ink-muted bg-surface border border-line rounded-full px-2 py-0.5 font-semibold">60 phút</span>
             </div>
             <nuxt-link to="/admin/analytics" class="text-[0.72rem] font-semibold text-brand-700 no-underline hover:underline">Chi tiết →</nuxt-link>
           </div>
           <div v-if="deviceLoading" class="flex items-center gap-4 h-28" role="status" aria-busy="true">
             <span class="sr-only">Đang tải thiết bị truy cập</span>
-            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-[#dfe9e0] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-line animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
             <div class="flex flex-1 flex-col gap-2" aria-hidden="true">
-              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
             </div>
           </div>
           <div v-else-if="deviceError" role="alert" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i> Không thể tải dữ liệu.
             <button type="button" class="ml-1 font-bold underline" @click="loadBreakdowns()">Thử lại</button>
           </div>
-          <div v-else-if="!deviceData || deviceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] text-sm text-ink-muted gap-2">
+          <div v-else-if="!deviceData || deviceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-surface text-sm text-ink-muted gap-2">
             <i class="fa-solid fa-mobile-screen text-xl text-line-strong" aria-hidden="true"></i>
             Chưa có dữ liệu thiết bị.
           </div>
@@ -515,7 +515,7 @@ onMounted(async () => {
                   v-for="(row, i) in deviceData.rows"
                   :key="row.value"
                   class="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 transition-colors"
-                  :class="activeSlice && activeSlice.scope === 'device' && activeSlice.row.value === row.value ? 'bg-surface-tint' : 'hover:bg-[#f7fbf7]'"
+                  :class="activeSlice && activeSlice.scope === 'device' && activeSlice.row.value === row.value ? 'bg-surface-tint' : 'hover:bg-surface'"
                   @click="onSliceClick('device', row)"
                 >
                   <span class="shrink-0 w-2.5 h-2.5 rounded-full" :style="`background:${DEVICE_COLORS[i % DEVICE_COLORS.length]}`" aria-hidden="true"></span>

@@ -20,12 +20,14 @@ import { describe, test } from 'node:test'
 import {
   COLOR_PREFIXES,
   buildHexMap,
+  buildMergeMap,
   collectFiles,
   formatFileReport,
   formatSummary,
   main,
   rewriteSource,
 } from '../scripts/codemod-hex-tokens.ts'
+import { COLOR_MERGES } from '../shared/color-merges.ts'
 import { COLOR_TOKENS } from '../shared/color-tokens.ts'
 
 const ROOT = path.resolve(import.meta.dirname, '..')
@@ -128,11 +130,12 @@ describe('rewrites exact matches', () => {
 })
 
 describe('leaves alone', () => {
-  test('near-duplicates of a token value', () => {
-    const source = '<i class="bg-[#2c6e34] text-[#2c3e2e] border-[#e2e8df] bg-[#f8faf8]"></i>'
+  test('near-duplicates of a token value — even those in the merge table, unless merges are on', () => {
+    // `#e2e8df` and `#f8faf8` are approved merges (shared/color-merges.ts): only `--merges` folds them.
+    const source = '<i class="bg-[#2c6e34] text-[#2c3e2f] border-[#e2e8df] bg-[#f8faf8]"></i>'
     assert.equal(rewrite(source), source)
     assert.deepEqual(reasons(source), [
-      'bg-[#2c6e34]:unmapped', 'text-[#2c3e2e]:unmapped', 'border-[#e2e8df]:unmapped', 'bg-[#f8faf8]:unmapped',
+      'bg-[#2c6e34]:unmapped', 'text-[#2c3e2f]:unmapped', 'border-[#e2e8df]:unmapped', 'bg-[#f8faf8]:unmapped',
     ])
   })
 
@@ -224,7 +227,7 @@ describe('properties of the whole run', () => {
   const SAMPLE = [
     '<template>',
     `  <div class="bg-[#2c6e33] text-white hover:bg-[#1e4620]/90 border-[#2c6e34]" :class="{ 'ring-[#4a6741]': f }">`,
-    `    <span style="color: #2c6e33" class="text-[#667768] text-[#8ed694]">x</span>`,
+    `    <span style="color: #2c6e33" class="text-[#667768] text-[#9a8b7c]">x</span>`,
     '  </div>',
     '</template>',
     '<script setup lang="ts">',
@@ -248,32 +251,32 @@ describe('properties of the whole run', () => {
   })
 
   test('per-file report: replacement count, value→token counts, then what was left alone', () => {
-    // `text-[#667768]` shares the <span> with `text-[#8ed694]`: today "[#8…" sorts last and
+    // `text-[#667768]` shares the <span> with `text-[#9a8b7c]`: today "[#9…" sorts last and
     // wins; renamed to `text-ink-muted` it would sort after "[" and win instead → left alone.
     const result = rewriteSource(SAMPLE, { fileName: 'sample.vue' })
     assert.equal(
       formatFileReport('app/sample.vue', result),
       'app/sample.vue: 5 replacements (#2c6e33→brand-700 ×2, #1e4620→brand-900 ×1, #4a6741→brand-600 ×1, #f0f7f1→surface-tint ×1)\n'
-        + '  left alone: 3 (#2c6e34 ×1 unmapped, #667768 ×1 order, #8ed694 ×1 unmapped)',
+        + '  left alone: 3 (#2c6e34 ×1 unmapped, #667768 ×1 order, #9a8b7c ×1 unmapped)',
     )
     assert.equal(formatFileReport('app/clean.vue', rewriteSource('<i class="p-2"></i>', { fileName: 'clean.vue' })), '')
     assert.equal(
-      formatFileReport('app/left.vue', rewriteSource('<i class="bg-[#8ed694]"></i>', { fileName: 'left.vue' })),
-      'app/left.vue: 0 replacements\n  left alone: 1 (#8ed694 ×1 unmapped)',
+      formatFileReport('app/left.vue', rewriteSource('<i class="bg-[#9a8b7c]"></i>', { fileName: 'left.vue' })),
+      'app/left.vue: 0 replacements\n  left alone: 1 (#9a8b7c ×1 unmapped)',
     )
   })
 
   test('summary: totals, per directory, top unmapped values, reasons', () => {
     const entries = [
       { file: 'app/a/one.vue', result: rewriteSource(SAMPLE, { fileName: 'one.vue' }) },
-      { file: 'app/b/two.ts', result: rewriteSource(`const x = 'bg-[#8ed694] text-[#2c6e33]'`, { fileName: 'two.ts' }) },
+      { file: 'app/b/two.ts', result: rewriteSource(`const x = 'bg-[#9a8b7c] text-[#2c6e33]'`, { fileName: 'two.ts' }) },
       { file: 'app/b/three.ts', result: rewriteSource(`const y = 'p-2'`, { fileName: 'three.ts' }) },
     ]
     const summary = formatSummary(entries, { write: false })
     assert.match(summary, /DRY RUN — no file written/)
     assert.match(summary, /files: 3 scanned, 2 with replacements\nreplacements: 6\nleft alone: 4 \(unmapped 3, order 1\)/)
     assert.match(summary, /\n {2}app\/a: 5 replacements in 1 file \(3 left alone\)\n {2}app\/b: 1 replacement in 1 file \(1 left alone\)\n/)
-    assert.match(summary, /top unmapped values:\n {2}#8ed694 2\n {2}#2c6e34 1/)
+    assert.match(summary, /top unmapped values:\n {2}#9a8b7c 2\n {2}#2c6e34 1/)
     assert.match(formatSummary(entries, { write: true }), /WRITTEN/)
   })
 })
@@ -330,6 +333,141 @@ describe('CLI', () => {
       assert.equal(run.status, 0, run.stderr)
       assert.match(run.stdout, /b\.ts: 1 replacement \(#667768→ink-muted ×1\)/)
       assert.equal(readFileSync(path.join(dir, 'b.ts'), 'utf8'), `export const c = 'text-[#667768]'\n`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+/**
+ * `--merges` (decision D-T1, task 3.7): the hexes of shared/color-merges.ts fold into a token
+ * although they differ from it. Off by default; on, every guard above applies to them too.
+ */
+describe('--merges: the approved merge table', () => {
+  const merged = (source: string, fileName = 'sample.vue') => rewriteSource(source, { fileName, merges: COLOR_MERGES })
+  const mergedReasons = (source: string, fileName = 'sample.vue') => merged(source, fileName).leftAlone.map((e) => `${e.text}:${e.reason}`)
+
+  test('off by default; on, a merged hex becomes its token, variants, ! and opacity kept', () => {
+    const source = '<p class="bg-[#f8faf8] hover:!border-[#E2E8DF]/40 md:text-[#556450] group-hover/x:bg-[#fff4f3]/[0.5]"></p>'
+    assert.equal(rewrite(source), source)
+    assert.deepEqual(reasons(source).map((r) => r.split(':').at(-1)), ['unmapped', 'unmapped', 'unmapped', 'unmapped'])
+    assert.equal(merged(source).output, '<p class="bg-surface hover:!border-line/40 md:text-ink-soft group-hover/x:bg-danger-bg/[0.5]"></p>')
+  })
+
+  test('the two modes do not share a cached mapping (one process may run both)', () => {
+    const source = '<i class="bg-[#f8faf8]"></i>'
+    assert.equal(rewrite(source), source)
+    assert.equal(merged(source).output, '<i class="bg-surface"></i>')
+    assert.equal(rewrite(source), source)
+  })
+
+  test('an exact match still wins; in a merge run every rewrite carries its ΔE (0 when exact)', () => {
+    const result = merged('<i class="bg-[#2c6e33] text-[#e2e8df] border-[#e2e8df] fill-[#2d5a27]"></i>')
+    assert.deepEqual(result.rewrites.map((r) => [r.value, r.token, r.dE, r.rule]), [
+      ['#2c6e33', 'brand-700', 0, undefined],
+      ['#e2e8df', 'line', 1.79, 'near'],
+      ['#e2e8df', 'line', 1.79, 'near'],
+    ])
+    // A held fold (#2d5a27 measured ΔE 5.95 from brand-800) is not in the table: it stays.
+    assert.deepEqual(result.leftAlone.map((e) => `${e.value}:${e.reason}`), ['#2d5a27:unmapped'])
+    assert.equal(
+      formatFileReport('app/x.vue', result),
+      'app/x.vue: 3 replacements (#e2e8df→line (ΔE 1.79) ×2, #2c6e33→brand-700 (ΔE 0) ×1)\n  left alone: 1 (#2d5a27 ×1 unmapped)',
+    )
+    // Without merges, no ΔE at all: the report of an exact-only run is unchanged.
+    assert.equal(rewrite('<i class="bg-[#2c6e33]"></i>'), '<i class="bg-brand-700"></i>')
+    assert.equal(rewriteSource('<i class="bg-[#2c6e33]"></i>', { fileName: 'x.vue' }).rewrites[0]!.dE, undefined)
+  })
+
+  test('the summary buckets the colour changes of a merge run', () => {
+    const entries = [{ file: 'app/a.vue', result: merged('<i class="bg-[#2c6e33] text-[#e2e8df] border-[#556450] fill-[#f8faf8]/50"></i>') }]
+    assert.match(
+      formatSummary(entries, { write: false }),
+      /\ncolour changes \(merge table\): 3 of 4 replacements \(ΔE <1 1, ΔE 1–2 1, ΔE 2–3 1, ΔE ≥3 0; max ΔE 2\.95\)/,
+    )
+    const plain = [{ file: 'app/a.vue', result: rewriteSource('<i class="bg-[#2c6e33]"></i>', { fileName: 'a.vue' }) }]
+    assert.doesNotMatch(formatSummary(plain, { write: false }), /colour changes/)
+  })
+
+  test('the table is validated before use', () => {
+    assert.equal(buildMergeMap(COLOR_TOKENS, COLOR_MERGES).size, Object.keys(COLOR_MERGES).length)
+    assert.throws(() => buildMergeMap(COLOR_TOKENS, { '#f8faf8': { token: 'nope', dE: 1 } }), /not a token/)
+    assert.throws(() => buildMergeMap(COLOR_TOKENS, { '#2c6e33': { token: 'brand-700', dE: 1 } }), /exact value of brand-700/)
+    assert.throws(() => buildMergeMap(COLOR_TOKENS, { '#F8FAF8': { token: 'surface', dE: 1 } }), /lowercase 6-digit/)
+    assert.throws(() => buildMergeMap(COLOR_TOKENS, { '#f8faf8': { token: 'surface', dE: 0 } }), /positive/)
+    assert.throws(() => rewriteSource('<i></i>', { fileName: 'x.vue', merges: { '#f8faf8': { token: 'nope', dE: 1 } } }), /not a token/)
+  })
+
+  test('the cascade-order guard applies to a merged value', () => {
+    // Before: `bg-[#f8faf8]` sorts before `bg-red-50` → red-50 wins. As `bg-surface` it would win.
+    const source = `<li class="bg-red-50" :class="{ 'bg-[#f8faf8]': selected }"></li>`
+    assert.equal(merged(source).output, source)
+    assert.deepEqual(mergedReasons(source), ['bg-[#f8faf8]:order'])
+  })
+
+  test('two hexes that would become one token on one element are both left alone (the guard is not loosened)', () => {
+    const source = `<b class="text-[#2c3e2e]" :class="{ 'text-[#2c3e2d]': on }"></b>`
+    // Exact only: the anchor is renamed, its near-duplicate stays — the order holds.
+    assert.equal(rewrite(source), `<b class="text-ink-admin" :class="{ 'text-[#2c3e2d]': on }"></b>`)
+    // With merges both would be `text-ink-admin`: no longer two rules in a known order → both stay.
+    assert.equal(merged(source).output, source)
+    assert.deepEqual(mergedReasons(source), ['text-[#2c3e2e]:order', 'text-[#2c3e2d]:order'])
+  })
+
+  test('idempotent, and every [#hex] the ratchet counts is rewritten or reported', () => {
+    const source = [
+      '<template>',
+      `  <div class="bg-[#f4f7f4] border-[#dfe9e0] hover:bg-[#2c6e33]" :class="{ 'text-[#556450]': f }">`,
+      `    <span class="text-[#8a9a88] bg-[#fce8e8] text-[#e4f2e5]/50">x</span>`,
+      '  </div>',
+      '</template>',
+    ].join('\n')
+    const once = merged(source)
+    assert.notEqual(once.output, source)
+    const twice = merged(once.output)
+    assert.equal(twice.output, once.output)
+    assert.equal(twice.rewrites.length, 0)
+    const leftCounted = once.leftAlone.filter((e) => e.reason !== 'type-hint').length
+    assert.equal(once.rewrites.length + leftCounted, ratchetCount(source))
+    assert.equal(ratchetCount(once.output), leftCounted)
+  })
+})
+
+describe('a decorative-only token (accent, 2.5:1 on white) never becomes a focus indicator', () => {
+  test('rings, outlines and any colour under a focus variant keep their hex', () => {
+    const source = '<a class="ring-[#7cb342] outline-[#7CB342] focus-visible:border-[#7cb342] group-focus-within/x:text-[#7cb342]/40 focus:!bg-[#7cb342] hover:ring-[#7cb342]/40"></a>'
+    for (const result of [rewriteSource(source, { fileName: 'x.vue' }), rewriteSource(source, { fileName: 'x.vue', merges: COLOR_MERGES })]) {
+      assert.equal(result.output, source)
+      assert.deepEqual(result.leftAlone.map((e) => e.reason), ['indicator', 'indicator', 'indicator', 'indicator', 'indicator', 'indicator'])
+    }
+  })
+
+  test('decorative uses are renamed', () => {
+    assert.equal(
+      rewrite('<a class="text-[#7cb342] border-[#7cb342] hover:border-[#7cb342] bg-[#7cb342]/20 ring-offset-[#7cb342] via-[#7CB342]"></a>'),
+      '<a class="text-accent border-accent hover:border-accent bg-accent/20 ring-offset-accent via-accent"></a>',
+    )
+    // Any other token keeps its focus rings: brand-600 is the focus colour.
+    assert.equal(rewrite('<a class="focus-visible:ring-[#4a6741] focus:border-[#4a6741]"></a>'), '<a class="focus-visible:ring-brand-600 focus:border-brand-600"></a>')
+  })
+})
+
+describe('CLI --merges', () => {
+  test('dry run reports each hex → token with its ΔE; --write --merges writes; without the flag the merge stays', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'codemod-hex-merges-'))
+    const file = path.join(dir, 'A.vue')
+    writeFileSync(file, '<template><i class="bg-[#f8faf8] text-[#2c6e33]"></i></template>\n')
+    const lines: string[] = []
+    const io = { log: (line: string) => lines.push(line), error: (line: string) => lines.push(`ERR ${line}`) }
+    try {
+      assert.equal(main(['--write', dir], io), 0)
+      assert.equal(readFileSync(file, 'utf8'), '<template><i class="bg-[#f8faf8] text-brand-700"></i></template>\n')
+      lines.length = 0
+      assert.equal(main(['--merges', dir], io), 0)
+      assert.match(lines.join('\n'), /A\.vue: 1 replacement \(#f8faf8→surface \(ΔE 0\.51\) ×1\)/)
+      assert.equal(readFileSync(file, 'utf8'), '<template><i class="bg-[#f8faf8] text-brand-700"></i></template>\n')
+      assert.equal(main(['--write', '--merges', dir], io), 0)
+      assert.equal(readFileSync(file, 'utf8'), '<template><i class="bg-surface text-brand-700"></i></template>\n')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

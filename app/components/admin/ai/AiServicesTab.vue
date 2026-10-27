@@ -170,7 +170,7 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
 
 <template>
   <div class="flex flex-col gap-5">
-    <div v-if="servicesError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
+    <div v-if="servicesError" class="rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]" role="alert">
       <strong>Lỗi:</strong> {{ servicesError }}
       <button type="button" class="font-bold underline text-brand-600 ml-2" @click="loadServices()">Thử lại</button>
     </div>
@@ -187,7 +187,7 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
     <template v-if="!servicesLoading && !servicesError">
       <div class="rounded-xl border border-line bg-white overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="bg-[#f4f7f4] text-left">
+          <thead class="bg-surface text-left">
             <tr>
               <th class="px-4 py-3 font-bold text-brand-950">Dịch vụ</th>
               <th class="px-4 py-3 font-bold text-brand-950">Nhà cung cấp</th>
@@ -229,7 +229,7 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
           <!-- 1. Chọn Nhà cung cấp -->
           <label class="flex flex-col gap-1.5 text-sm font-bold">
             <span class="text-brand-950">Nhà cung cấp (Provider)</span>
-            <select v-model="serviceForm.provider" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm bg-white">
+            <select v-model="serviceForm.provider" class="rounded-lg border border-line-strong px-3 py-2 text-sm bg-white">
               <option v-for="p in props.providers.filter(pr => pr.isActive)" :key="p.provider" :value="p.provider">
                 {{ p.label }} ({{ p.provider }})
               </option>
@@ -249,7 +249,7 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
               </span>
             </div>
             <div class="flex flex-col gap-2">
-              <select v-if="activeModelsForSelectedProvider.length > 0" v-model="serviceForm.model" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm bg-white">
+              <select v-if="activeModelsForSelectedProvider.length > 0" v-model="serviceForm.model" class="rounded-lg border border-line-strong px-3 py-2 text-sm bg-white">
                 <option value="">— Chọn model đang bật —</option>
                 <option v-for="m in activeModelsForSelectedProvider" :key="m.model" :value="m.model">
                   {{ m.model }} {{ m.label ? `(${m.label})` : '' }} — ${{ m.promptCostPerMillion }} in / ${{ m.completionCostPerMillion }} out
@@ -262,7 +262,7 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
                 v-model="serviceForm.model"
                 type="text"
                 placeholder="Hoặc nhập thủ công mã model khác..."
-                class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-xs font-mono"
+                class="rounded-lg border border-line-strong px-3 py-1.5 text-xs font-mono"
               />
             </div>
           </div>
@@ -280,12 +280,12 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
                 <i class="fa-solid fa-rotate-left mr-1" aria-hidden="true"></i> Khôi phục mặc định
               </button>
             </div>
-            <textarea v-model="serviceForm.systemPrompt" rows="7" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm font-mono resize-y" placeholder="Nhập system prompt..."></textarea>
+            <textarea v-model="serviceForm.systemPrompt" rows="7" class="rounded-lg border border-line-strong px-3 py-2 text-sm font-mono resize-y" placeholder="Nhập system prompt..."></textarea>
           </div>
           <div v-if="TEMPLATE_HINTS[editingService.serviceKey]" class="flex flex-col gap-1 text-xs text-ink-muted">
             <span class="font-bold">Biến template có sẵn:</span>
             <div class="flex flex-wrap gap-1">
-              <code v-for="hint in TEMPLATE_HINTS[editingService.serviceKey]" :key="hint" class="px-2 py-0.5 rounded bg-[#f4f7f4] text-brand-700">{{ hint }}</code>
+              <code v-for="hint in TEMPLATE_HINTS[editingService.serviceKey]" :key="hint" class="px-2 py-0.5 rounded bg-surface text-brand-700">{{ hint }}</code>
             </div>
           </div>
 
@@ -297,7 +297,7 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">Max Tokens</span>
-              <input v-model.number="serviceForm.maxTokens" type="number" min="1" max="32768" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <input v-model.number="serviceForm.maxTokens" type="number" min="1" max="32768" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
             </label>
           </div>
 
@@ -321,13 +321,13 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
         <template #footer>
             <button
               type="button"
-              class="mr-auto px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-brand-950 hover:bg-surface-tint"
+              class="mr-auto px-4 py-2 rounded-lg border border-line-strong text-sm font-semibold text-brand-950 hover:bg-surface-tint"
               :disabled="testingService"
               @click="testService()"
             >
               {{ testingService ? 'Đang test...' : 'Kiểm tra kết nối' }}
             </button>
-            <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="editingService = null">Huỷ</button>
+            <button type="button" class="px-4 py-2 rounded-lg border border-line-strong text-sm font-semibold text-ink-muted hover:bg-surface" @click="editingService = null">Huỷ</button>
             <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="saveService()" :disabled="savingService">
               {{ savingService ? 'Đang lưu...' : 'Lưu cấu hình' }}
             </button>

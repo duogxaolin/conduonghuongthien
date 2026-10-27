@@ -531,7 +531,7 @@ onMounted(() => {
       </div>
       <button
         type="button"
-        class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-brand-900 hover:bg-[#e4ece4] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
+        class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-brand-900 hover:bg-line transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
         @click="loadData"
       >
         <i class="fa-solid fa-arrows-rotate text-[0.7rem]" :class="loading ? 'animate-spin' : ''"></i>
@@ -567,7 +567,7 @@ onMounted(() => {
 
     <!-- Skeleton + Error (Languages tab — guard ghim ở file gốc) -->
     <SkeletonTable v-if="loading && activeTab === 'languages'" label="Đang tải danh sách ngôn ngữ" :rows="4" :cols="5" />
-    <div v-else-if="loadError && activeTab === 'languages'" role="alert" class="bg-[#ffebe9] text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+    <div v-else-if="loadError && activeTab === 'languages'" role="alert" class="bg-danger-bg text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
       <span>{{ loadError }}</span>
       <button type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchLanguages">Thử lại</button>
     </div>
@@ -615,7 +615,7 @@ onMounted(() => {
     >
       <template #status>
         <SkeletonTable v-if="translationsLoading" label="Đang tải bản dịch" :rows="8" :cols="4" />
-        <div v-else-if="translationsError" role="alert" class="bg-[#ffebe9] text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+        <div v-else-if="translationsError" role="alert" class="bg-danger-bg text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
           <span>{{ translationsError }}</span>
           <button type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchTranslations">Thử lại</button>
         </div>
@@ -660,7 +660,7 @@ onMounted(() => {
         <template #footer>
           <button
             type="button"
-            class="px-4 py-2 rounded-lg border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-[#f8faf8] cursor-pointer"
+            class="px-4 py-2 rounded-lg border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-surface cursor-pointer"
             @click="showMoveModal = false"
           >
             Đóng
@@ -680,7 +680,7 @@ onMounted(() => {
       <div class="flex flex-col gap-4">
         <p class="m-0 text-xs text-ink-muted">Dịch tự động các chuỗi giao diện qua AI Gateway</p>
 
-        <div class="flex flex-col gap-2 bg-surface p-3.5 rounded-lg border border-[#e8efe6]">
+        <div class="flex flex-col gap-2 bg-surface p-3.5 rounded-lg border border-line">
           <div class="flex items-center justify-between text-xs font-bold">
             <span class="text-brand-950">
               {{ progressStats.finished ? '✓ Hoàn tất bản dịch' : (progressStats.stopped ? '⏹ Đã dừng tiến trình' : 'Đang xử lý...') }}
@@ -709,7 +709,7 @@ onMounted(() => {
               <span class="w-1.5 h-1.5 rounded-full bg-brand-700 animate-ping"></span> Đang nạp...
             </span>
           </h4>
-          <div class="h-44 overflow-y-auto border border-line rounded-lg p-2 bg-[#fcfdfc] flex flex-col gap-1 text-xs font-mono">
+          <div class="h-44 overflow-y-auto border border-line rounded-lg p-2 bg-surface flex flex-col gap-1 text-xs font-mono">
             <div
               v-for="(item, idx) in progressLog"
               :key="idx"

@@ -8,7 +8,7 @@
     -->
     <div class="max-w-[1200px] mx-auto px-4">
       <!-- Breadcrumb -->
-      <nav class="text-[0.85rem] text-[#5A6C58] mb-6" :aria-label="t('a_breadcrumb_aria')">
+      <nav class="text-[0.85rem] text-ink-soft mb-6" :aria-label="t('a_breadcrumb_aria')">
         <nuxt-link to="/" class="text-brand-600 no-underline hover:underline">{{ t('a_home') }}</nuxt-link> &raquo;
         <nuxt-link :to="backTo" class="text-brand-600 no-underline hover:underline">{{ backLabelText }}</nuxt-link> &raquo;
         <slot name="crumb" :category-label="categoryLabel" />
@@ -19,17 +19,17 @@
            chờ trải hết 1200px hứa một bố cục rộng rồi trả về một cột hẹp. -->
       <div v-if="pending" role="status" aria-busy="true" class="lg:max-w-[820px] animate-pulse motion-reduce:animate-none flex flex-col gap-5">
         <span class="sr-only">Đang tải nội dung bài viết</span>
-        <div aria-hidden="true" class="h-5 w-40 bg-[#EEF2EC] rounded"></div>
-        <div aria-hidden="true" class="h-9 w-3/4 bg-[#EEF2EC] rounded"></div>
-        <div aria-hidden="true" class="h-24 w-full bg-[#EEF2EC] rounded"></div>
-        <div aria-hidden="true" class="h-64 w-full bg-[#EEF2EC] rounded-lg"></div>
+        <div aria-hidden="true" class="h-5 w-40 bg-surface-tint rounded"></div>
+        <div aria-hidden="true" class="h-9 w-3/4 bg-surface-tint rounded"></div>
+        <div aria-hidden="true" class="h-24 w-full bg-surface-tint rounded"></div>
+        <div aria-hidden="true" class="h-64 w-full bg-surface-tint rounded-lg"></div>
       </div>
 
       <!-- Load failure — distinct from "not published", so the visitor knows to retry -->
       <div
         v-else-if="loadError"
         role="alert"
-        class="lg:max-w-[820px] bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
+        class="lg:max-w-[820px] bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]"
       >
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
         Không thể tải nội dung. Vui lòng
@@ -67,7 +67,7 @@
 
         <div
           v-if="article.excerpt"
-          class="text-[0.95rem] sm:text-[1.12rem] font-semibold text-ink-secondary leading-[1.6] border-l-4 border-[#7CB342] pl-4 sm:pl-5 mb-6 sm:mb-8"
+          class="text-[0.95rem] sm:text-[1.12rem] font-semibold text-ink-secondary leading-[1.6] border-l-4 border-accent pl-4 sm:pl-5 mb-6 sm:mb-8"
         >
           <p>{{ article.excerpt }}</p>
         </div>
@@ -91,12 +91,12 @@
         -->
         <nav
           v-if="toc.headings.length >= TOC_MIN_HEADINGS"
-          class="my-8 rounded-lg border border-[#E2E8DF] bg-white px-6 py-5 shadow-sm"
+          class="my-8 rounded-lg border border-line bg-white px-6 py-5 shadow-sm"
           aria-labelledby="muc-luc-heading"
         >
           <div class="flex items-center justify-between gap-3">
-            <h2 id="muc-luc-heading" class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
-              <i class="fa-solid fa-list-ul mr-2 text-[#7CB342]" aria-hidden="true"></i>Mục lục
+            <h2 id="muc-luc-heading" class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-brand-800">
+              <i class="fa-solid fa-list-ul mr-2 text-accent" aria-hidden="true"></i>Mục lục
             </h2>
             <button
               type="button"
@@ -117,8 +117,8 @@
             >
               <a
                 :href="`#${heading.id}`"
-                class="text-[0.95rem] font-semibold text-[#4A6741] no-underline transition hover:text-[#385130] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
-                :class="heading.level > 2 ? 'font-medium text-[0.9rem] text-[#5C6B55]' : ''"
+                class="text-[0.95rem] font-semibold text-brand-600 no-underline transition hover:text-brand-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                :class="heading.level > 2 ? 'font-medium text-[0.9rem] text-ink-soft' : ''"
               >{{ heading.text }}</a>
             </li>
           </ol>
@@ -130,15 +130,15 @@
         </div>
 
         <!-- Thanh chia sẻ bài viết & in ấn -->
-        <div class="my-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#E2E8DF] bg-white p-4 shadow-sm print:hidden">
-          <div class="flex items-center gap-2 text-[0.88rem] font-bold text-[#385130]">
-            <i class="fa-solid fa-share-nodes text-[#7CB342]" aria-hidden="true"></i>
+        <div class="my-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-white p-4 shadow-sm print:hidden">
+          <div class="flex items-center gap-2 text-[0.88rem] font-bold text-brand-800">
+            <i class="fa-solid fa-share-nodes text-accent" aria-hidden="true"></i>
             <span>{{ t('a_share_label') }}</span>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-[#1877F2] transition hover:bg-[#1877F2]/10 hover:border-[#1877F2]"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-[#1877F2] transition hover:bg-[#1877F2]/10 hover:border-[#1877F2]"
               @click="shareFacebook"
               :title="t('a_share_facebook')"
             >
@@ -149,7 +149,7 @@
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-[#0068FF] transition hover:bg-[#0068FF]/10 hover:border-[#0068FF]"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-[#0068FF] transition hover:bg-[#0068FF]/10 hover:border-[#0068FF]"
               @click="shareZalo"
               :title="t('a_share_zalo')"
             >
@@ -157,16 +157,16 @@
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-brand-600 transition hover:bg-brand-600/10 hover:border-brand-600"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-brand-600 transition hover:bg-brand-600/10 hover:border-brand-600"
               @click="copyArticleLink"
               :title="copiedArticleLink ? t('a_copied') : t('a_copy_link_btn')"
             >
-              <i :class="copiedArticleLink ? 'fa-solid fa-check text-[#7CB342]' : 'fa-solid fa-link'" aria-hidden="true"></i>
+              <i :class="copiedArticleLink ? 'fa-solid fa-check text-accent' : 'fa-solid fa-link'" aria-hidden="true"></i>
               {{ copiedArticleLink ? t('a_copied') : t('a_copy_link_btn') }}
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-ink-muted transition hover:bg-ink-muted/10 hover:border-ink-muted"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-ink-muted transition hover:bg-ink-muted/10 hover:border-ink-muted"
               @click="printArticle"
               :title="t('a_print_title')"
             >
@@ -182,7 +182,7 @@
         <ArticleComments :slug="slug" />
 
         <!-- Back link -->
-        <div class="mt-10 border-t border-[#E2E8DF] pt-8">
+        <div class="mt-10 border-t border-line pt-8">
           <nuxt-link :to="backTo" class="btn btn-primary">&larr; {{ backCtaText }}</nuxt-link>
         </div>
         </div>
@@ -210,17 +210,17 @@
         -->
         <aside
           v-if="relatedPending || relatedError || relatedArticles.length || showTopics"
-          class="mt-12 border-t border-[#E2E8DF] pt-8 lg:mt-0 lg:border-t-0 lg:pt-0 lg:sticky lg:top-[100px]"
+          class="mt-12 border-t border-line pt-8 lg:mt-0 lg:border-t-0 lg:pt-0 lg:sticky lg:top-[100px]"
           aria-labelledby="noi-dung-lien-quan-heading"
         >
-          <h2 id="noi-dung-lien-quan-heading" class="m-0 mb-4 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
-            <i class="fa-solid fa-layer-group mr-2 text-[#7CB342]" aria-hidden="true"></i>{{ t('a_related_title') }}
+          <h2 id="noi-dung-lien-quan-heading" class="m-0 mb-4 text-[0.95rem] font-extrabold uppercase tracking-wide text-brand-800">
+            <i class="fa-solid fa-layer-group mr-2 text-accent" aria-hidden="true"></i>{{ t('a_related_title') }}
           </h2>
 
           <!-- Đang tải. Cùng hình dạng hàng ngang với nội dung thật bên dưới:
                một khung chờ có kích thước khác thứ nó thay thế sẽ làm trang nhảy
                đúng lúc nội dung về. -->
-          <div v-if="relatedPending" role="status" aria-busy="true" class="flex flex-col divide-y divide-[#E2E8DF]">
+          <div v-if="relatedPending" role="status" aria-busy="true" class="flex flex-col divide-y divide-line">
             <span class="sr-only">{{ t('a_related_loading') }}</span>
             <div
               v-for="n in 5"
@@ -228,10 +228,10 @@
               aria-hidden="true"
               class="flex items-start gap-3 py-3 first:pt-0 animate-pulse motion-reduce:animate-none"
             >
-              <div class="w-[72px] h-[54px] shrink-0 bg-[#EEF2EC] rounded"></div>
+              <div class="w-[72px] h-[54px] shrink-0 bg-surface-tint rounded"></div>
               <div class="min-w-0 flex-grow flex flex-col gap-2">
-                <div class="h-3.5 w-full bg-[#EEF2EC] rounded"></div>
-                <div class="h-3.5 w-3/5 bg-[#EEF2EC] rounded"></div>
+                <div class="h-3.5 w-full bg-surface-tint rounded"></div>
+                <div class="h-3.5 w-3/5 bg-surface-tint rounded"></div>
               </div>
             </div>
           </div>
@@ -241,7 +241,7 @@
           <div
             v-else-if="relatedError"
             role="alert"
-            class="bg-white border border-dashed border-[#E2A0A0] px-6 py-8 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
+            class="bg-white border border-dashed border-[#E2A0A0] px-6 py-8 rounded-lg text-center text-danger-soft text-[0.95rem]"
           >
             <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
             {{ t('a_related_error') }}
@@ -256,7 +256,7 @@
                  nội dung nó đứng cạnh. Ảnh giữ lại ở kích thước nhỏ vì nó giúp
                  nhận ra bài đã đọc trong nháy mắt; `object-cover` trên khung cố
                  định nên ảnh dọc hay ngang đều không phá hàng. -->
-            <ul v-if="relatedArticles.length" class="list-none m-0 p-0 flex flex-col divide-y divide-[#E2E8DF]">
+            <ul v-if="relatedArticles.length" class="list-none m-0 p-0 flex flex-col divide-y divide-line">
               <li v-for="item in relatedArticles" :key="item.id" class="py-3 first:pt-0">
                 <nuxt-link
                   :to="`${backTo}/${item.slug}`"
@@ -267,11 +267,11 @@
                     alt=""
                     loading="lazy"
                     decoding="async"
-                    class="w-[72px] h-[54px] shrink-0 object-cover rounded bg-[#EEF2EC]"
+                    class="w-[72px] h-[54px] shrink-0 object-cover rounded bg-surface-tint"
                   />
                   <span class="min-w-0 flex-grow">
                     <span class="block text-[0.9rem] font-bold leading-[1.4] text-ink transition-colors duration-200 group-hover:text-brand-600 line-clamp-3">{{ item.title }}</span>
-                    <span class="block mt-1 text-[0.75rem] text-[#5A6C58] font-semibold">
+                    <span class="block mt-1 text-[0.75rem] text-ink-soft font-semibold">
                       {{ formatDateVN(item.publishedAt || item.createdAt) }}
                     </span>
                   </span>
@@ -284,8 +284,8 @@
                  khác (/role-models, /documents, /legal-qa) không có category
                  filter nên chip ở đó sẽ mở ra danh sách chưa lọc — trông như bấm hụt. -->
             <div v-if="showTopics" class="mt-7">
-              <h3 class="m-0 mb-3 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
-                <i class="fa-solid fa-tags mr-2 text-[#7CB342]" aria-hidden="true"></i>{{ t('a_topics') }}
+              <h3 class="m-0 mb-3 text-[0.95rem] font-extrabold uppercase tracking-wide text-brand-800">
+                <i class="fa-solid fa-tags mr-2 text-accent" aria-hidden="true"></i>{{ t('a_topics') }}
               </h3>
               <div class="flex flex-wrap gap-2">
                 <nuxt-link
@@ -294,8 +294,8 @@
                   :to="`${backTo}/${topic.slug}`"
                   class="px-3 py-1.5 rounded-full text-[0.85rem] font-semibold border no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                   :class="topic.isCurrent
-                    ? 'bg-brand-600 border-[#4A6741] text-white'
-                    : 'bg-white border-[#E2E8DF] text-ink-secondary hover:border-[#7CB342]'"
+                    ? 'bg-brand-600 border-brand-600 text-white'
+                    : 'bg-white border-line text-ink-secondary hover:border-accent'"
                 >{{ topic.name }} <span class="opacity-70">({{ topic.total }})</span></nuxt-link>
               </div>
             </div>

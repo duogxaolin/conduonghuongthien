@@ -112,7 +112,7 @@ onMounted(() => {
           v-for="link in doc.links"
           :key="link.href"
           :to="link.href"
-          class="inline-flex items-center gap-1.5 px-3 py-2 bg-surface-tint border border-[#e2ede3] rounded-lg text-[0.8rem] font-semibold text-brand-700 hover:border-brand-700 hover:bg-[#eaf4ea] transition-colors no-underline"
+          class="inline-flex items-center gap-1.5 px-3 py-2 bg-surface-tint border border-line rounded-lg text-[0.8rem] font-semibold text-brand-700 hover:border-brand-700 hover:bg-line transition-colors no-underline"
         >
           <i class="fa-solid fa-link text-[0.65rem]" aria-hidden="true"></i>
           {{ link.label }}

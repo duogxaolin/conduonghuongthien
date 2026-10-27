@@ -246,7 +246,7 @@ onMounted(load)
         v-for="n in 5"
         :key="n"
         aria-hidden="true"
-        class="h-14 rounded-lg bg-[#eef3ee] animate-pulse motion-reduce:animate-none"
+        class="h-14 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"
       ></div>
     </div>
 
@@ -273,18 +273,18 @@ onMounted(load)
           </div>
           <span
             v-if="reader.isBanned"
-            class="rounded-full bg-[#fdecec] px-3 py-1 text-[0.8rem] font-bold text-[#b0403c]"
+            class="rounded-full bg-danger-bg px-3 py-1 text-[0.8rem] font-bold text-[#b0403c]"
           >Đã chặn</span>
-          <span v-else class="rounded-full bg-[#eef7ef] px-3 py-1 text-[0.8rem] font-bold text-brand-700">Hoạt động</span>
+          <span v-else class="rounded-full bg-surface-tint px-3 py-1 text-[0.8rem] font-bold text-brand-700">Hoạt động</span>
         </div>
 
         <dl class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-          <div><dt class="font-bold text-[#2c3e2e]">Đăng nhập lần đầu</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.createdAt) }}</dd></div>
-          <div><dt class="font-bold text-[#2c3e2e]">Truy cập gần nhất</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.lastSeenAt) }}</dd></div>
-          <div><dt class="font-bold text-[#2c3e2e]">Địa chỉ gần nhất</dt><dd class="m-0 text-[#3d4f3f]">{{ reader.lastIp || '—' }}</dd></div>
-          <div><dt class="font-bold text-[#2c3e2e]">Trình duyệt gần nhất</dt><dd class="m-0 break-all text-[#3d4f3f]">{{ reader.lastUserAgent || '—' }}</dd></div>
-          <div v-if="reader.isBanned"><dt class="font-bold text-[#2c3e2e]">Bị chặn lúc</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.bannedAt) }}<span v-if="reader.bannedByName"> — bởi {{ reader.bannedByName }}</span></dd></div>
-          <div v-if="reader.isBanned && reader.banReason"><dt class="font-bold text-[#2c3e2e]">Lý do</dt><dd class="m-0 whitespace-pre-line text-[#3d4f3f]">{{ reader.banReason }}</dd></div>
+          <div><dt class="font-bold text-ink-admin">Đăng nhập lần đầu</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.createdAt) }}</dd></div>
+          <div><dt class="font-bold text-ink-admin">Truy cập gần nhất</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.lastSeenAt) }}</dd></div>
+          <div><dt class="font-bold text-ink-admin">Địa chỉ gần nhất</dt><dd class="m-0 text-[#3d4f3f]">{{ reader.lastIp || '—' }}</dd></div>
+          <div><dt class="font-bold text-ink-admin">Trình duyệt gần nhất</dt><dd class="m-0 break-all text-[#3d4f3f]">{{ reader.lastUserAgent || '—' }}</dd></div>
+          <div v-if="reader.isBanned"><dt class="font-bold text-ink-admin">Bị chặn lúc</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.bannedAt) }}<span v-if="reader.bannedByName"> — bởi {{ reader.bannedByName }}</span></dd></div>
+          <div v-if="reader.isBanned && reader.banReason"><dt class="font-bold text-ink-admin">Lý do</dt><dd class="m-0 whitespace-pre-line text-[#3d4f3f]">{{ reader.banReason }}</dd></div>
         </dl>
 
         <div class="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
@@ -292,20 +292,20 @@ onMounted(load)
             v-if="!reader.isBanned"
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] disabled:opacity-60"
+            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-danger-bg disabled:opacity-60"
             @click="banReader"
           >Chặn tài khoản</button>
           <button
             v-else
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-bold text-[#2c3e2e] hover:bg-surface-tint disabled:opacity-60"
+            class="rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-bold text-ink-admin hover:bg-surface-tint disabled:opacity-60"
             @click="unbanReader"
           >Bỏ chặn</button>
           <button
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] disabled:opacity-60"
+            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-danger-bg disabled:opacity-60"
             @click="purgeComments"
           >Xoá toàn bộ bình luận</button>
           <button
@@ -331,15 +331,15 @@ onMounted(load)
           — tất cả sẽ bị xoá theo nếu bạn chặn hoặc xoá tài khoản này.
         </p>
 
-        <p v-if="!comments.length" class="m-0 mt-4 rounded-lg bg-[#f8faf8] px-4 py-6 text-center text-sm text-ink-muted">
+        <p v-if="!comments.length" class="m-0 mt-4 rounded-lg bg-surface px-4 py-6 text-center text-sm text-ink-muted">
           Người đọc này chưa viết bình luận nào.
         </p>
 
         <ul v-else class="m-0 mt-4 flex list-none flex-col gap-3 p-0">
-          <li v-for="comment in comments" :key="comment.id" class="rounded-lg border border-[#eef3ee] p-3.5">
+          <li v-for="comment in comments" :key="comment.id" class="rounded-lg border border-surface-tint p-3.5">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="text-[0.8rem] text-ink-muted">
-                <span v-if="comment.parentId !== null" class="mr-1.5 rounded-full bg-[#eef3ee] px-2 py-0.5 font-bold text-[#3d4f3f]">Phản hồi</span>
+                <span v-if="comment.parentId !== null" class="mr-1.5 rounded-full bg-surface-tint px-2 py-0.5 font-bold text-[#3d4f3f]">Phản hồi</span>
                 {{ formatMoment(comment.createdAt) }}
                 <span v-if="comment.articleTitle"> — Bài viết: {{ comment.articleTitle }}</span>
                 <span v-else-if="comment.mediaItemTitle"> — Video: {{ comment.mediaItemTitle }}</span>

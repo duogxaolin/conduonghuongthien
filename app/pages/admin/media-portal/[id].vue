@@ -293,7 +293,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           <button
             v-if="item.processingStatus !== 'processing'"
             :disabled="processing"
-            class="rounded-lg border border-brand-700 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-[#e8f0e8] disabled:opacity-50"
+            class="rounded-lg border border-brand-700 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-line disabled:opacity-50"
             @click="reprocess()"
           >
             <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>{{ processing ? 'Đang gửi…' : 'Xử lý lại video' }}
@@ -303,21 +303,21 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           <button
             v-if="!transcodeOpen"
             :disabled="transcoding || isPending"
-            class="rounded-lg border border-brand-700 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-[#e8f0e8] disabled:opacity-50"
+            class="rounded-lg border border-brand-700 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-line disabled:opacity-50"
             @click="openTranscode()"
           >
             <i class="fa-solid fa-film mr-1" aria-hidden="true"></i>Nén chất lượng
           </button>
           <button
             :disabled="processing || isPending"
-            class="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-[#4a5e4d] hover:bg-[#f5f8f5] disabled:opacity-50"
+            class="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-[#4a5e4d] hover:bg-surface disabled:opacity-50"
             @click="replacing = true"
           >
             <i class="fa-solid fa-arrows-rotate mr-1" aria-hidden="true"></i>Thay tệp video
           </button>
         </div>
         <!-- Khu vực chọn bản nén chất lượng (360p/720p/1080p) -->
-        <div v-if="transcodeOpen && isUpload && canUpdate" class="mt-3 rounded-lg bg-[#f5f8f5] border border-line p-3 text-sm">
+        <div v-if="transcodeOpen && isUpload && canUpdate" class="mt-3 rounded-lg bg-surface border border-line p-3 text-sm">
           <p class="font-medium text-brand-950 mb-2">Chọn các bản cần nén chất lượng:</p>
           <div class="flex flex-wrap gap-2 mb-3">
             <button
@@ -327,7 +327,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
               class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors"
               :class="transcodeRenditions.has(name)
                 ? 'bg-brand-700 text-white'
-                : 'bg-white text-[#4a5e4d] border border-line hover:bg-[#e8f0e8]'"
+                : 'bg-white text-[#4a5e4d] border border-line hover:bg-line'"
               :aria-pressed="transcodeRenditions.has(name)"
               @click="toggleRendition(name)"
             >
@@ -375,7 +375,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
                   v-if="item.thumbnailUrl && !confirmClearThumb"
                   type="button"
                   :disabled="thumbSaving"
-                  class="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-[#4a5e4d] hover:bg-[#e8f0e8] disabled:opacity-50"
+                  class="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-[#4a5e4d] hover:bg-line disabled:opacity-50"
                   @click="clearThumbnail"
                 >
                   <i class="fa-solid fa-rotate-left mr-1" aria-hidden="true"></i>Dùng ảnh mặc định

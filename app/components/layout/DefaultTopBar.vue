@@ -1,6 +1,6 @@
 <template>
   <!-- Top Bar: z-[10005] thường trực cao hơn Header (z-[10001]) để dropdown không bao giờ bị Header che lấp dù cuộn hay đứng yên -->
-  <div class="bg-[#385130] text-white py-2 text-[0.82rem] border-b border-white/10 relative z-[10005]">
+  <div class="bg-brand-800 text-white py-2 text-[0.82rem] border-b border-white/10 relative z-[10005]">
     <div class="container flex justify-between items-center">
       <div class="flex items-center gap-4">
         <span><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ t('hotline_lbl') }}: {{ siteHotline }}</span>
@@ -28,9 +28,9 @@
             role="menu"
           >
             <!-- Popover Header -->
-            <div class="px-2.5 py-1.5 flex items-center justify-between border-b border-[#f0f4f0] mb-1">
-              <span class="text-[0.68rem] font-extrabold text-[#5A6C58] uppercase tracking-wider">{{ t('language') || 'Ngôn ngữ' }}</span>
-              <span class="px-1.5 py-px rounded-full bg-[#f0f4f0] text-brand-700 text-[0.62rem] font-bold">{{ locales.length }} ngôn ngữ</span>
+            <div class="px-2.5 py-1.5 flex items-center justify-between border-b border-surface mb-1">
+              <span class="text-[0.68rem] font-extrabold text-ink-soft uppercase tracking-wider">{{ t('language') || 'Ngôn ngữ' }}</span>
+              <span class="px-1.5 py-px rounded-full bg-surface text-brand-700 text-[0.62rem] font-bold">{{ locales.length }} ngôn ngữ</span>
             </div>
 
             <!-- Language Options List -->

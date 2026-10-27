@@ -116,7 +116,7 @@ const emit = defineEmits<{
                 :style="{ width: `${Math.min(100, Math.max(0, workerData?.memoryUsageMb?.heapUsedPercent ?? 0))}%` }"
               ></div>
             </div>
-            <span class="text-[0.66rem] text-[#8a9a8b]">Đang dùng {{ workerData?.memoryUsageMb?.heapUsedPercent ?? 0 }}% giới hạn V8 (heap ceil do <code class="text-[0.64rem]">--max-old-space-size</code>).</span>
+            <span class="text-[0.66rem] text-ink-faint">Đang dùng {{ workerData?.memoryUsageMb?.heapUsedPercent ?? 0 }}% giới hạn V8 (heap ceil do <code class="text-[0.64rem]">--max-old-space-size</code>).</span>
           </div>
           <div class="flex items-center justify-between py-1 border-b border-line">
             <span class="text-ink-muted">Cấp phát Heap V8 (tự kéo theo nhu cầu):</span>
@@ -171,7 +171,7 @@ const emit = defineEmits<{
 
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <!-- Rescan All -->
-        <div class="rounded-lg border border-line-strong bg-[#f8faf8] p-4 flex flex-col justify-between gap-3">
+        <div class="rounded-lg border border-line-strong bg-surface p-4 flex flex-col justify-between gap-3">
           <div>
             <h4 class="m-0 text-xs font-bold text-brand-900 flex items-center gap-1.5">
               <i class="fa-solid fa-broom"></i> Quét & Dọn sạch nội dung cũ
@@ -209,7 +209,7 @@ const emit = defineEmits<{
         </div>
 
         <!-- Restart Worker -->
-        <div class="rounded-lg border border-line bg-[#fcfdfc] p-4 flex flex-col justify-between gap-3">
+        <div class="rounded-lg border border-line bg-surface p-4 flex flex-col justify-between gap-3">
           <div>
             <h4 class="m-0 text-xs font-bold text-brand-950 flex items-center gap-1.5">
               <i class="fa-solid fa-arrows-rotate"></i> Khởi động lại Worker

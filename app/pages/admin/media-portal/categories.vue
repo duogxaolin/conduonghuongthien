@@ -171,13 +171,13 @@ onMounted(() => { void fetchCategories() })
       <span class="sr-only">Đang tải danh sách danh mục</span>
       <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
         <div v-for="n in 6" :key="n" class="flex gap-3">
-          <div v-for="c in 6" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+          <div v-for="c in 6" :key="c" class="h-10 bg-surface-tint rounded flex-1" aria-hidden="true"></div>
         </div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchCategories()">thử lại</button>.
     </div>
@@ -198,14 +198,14 @@ onMounted(() => { void fetchCategories() })
     <!-- Table -->
     <div v-else class="bg-white rounded-xl border border-line overflow-hidden">
       <!-- Mobile cards -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <div v-for="cat in categories" :key="'m-'+cat.id" class="p-4">
           <div class="flex items-center gap-2 mb-1">
             <i class="fa-solid fa-folder text-brand-700" aria-hidden="true"></i>
             <span class="font-bold text-brand-950 text-[0.9rem]">{{ cat.name }}</span>
             <span class="text-[0.68rem] bg-surface-tint text-brand-700 px-1.5 py-0.5 rounded font-semibold">{{ cat.usageCount }} video</span>
           </div>
-          <code class="text-[0.72rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded inline-block mb-2">{{ cat.slug }}</code>
+          <code class="text-[0.72rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded inline-block mb-2">{{ cat.slug }}</code>
           <div class="flex flex-wrap items-center gap-3">
             <button v-if="canUpdate" class="text-brand-700 font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`media-category-${cat.id}`" @click="openEdit(cat)"><i class="fa-solid fa-pen text-xs" aria-hidden="true"></i> Sửa</button>
             <button v-if="canDelete" class="text-danger font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="deleteCategory(cat)"><i class="fa-regular fa-trash text-xs" aria-hidden="true"></i> Xóa</button>
@@ -218,30 +218,30 @@ onMounted(() => { void fetchCategories() })
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line">Tên danh mục</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Slug</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Số video</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thứ tự</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line">Tên danh mục</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Slug</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Số video</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thứ tự</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="cat in categories" :key="cat.id" class="hover:bg-[#fafcfa]">
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+            <tr v-for="cat in categories" :key="cat.id" class="hover:bg-surface">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <div class="flex items-center gap-2">
                   <i class="fa-solid fa-folder text-brand-700" aria-hidden="true"></i>
                   <span class="font-bold text-brand-950">{{ cat.name }}</span>
                 </div>
                 <p v-if="cat.description" class="text-xs text-[#8aa08c] mt-1 line-clamp-2">{{ cat.description }}</p>
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
-                <code class="text-[0.78rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ cat.slug }}</code>
+              <td class="px-4 py-3 border-b border-surface-tint">
+                <code class="text-[0.78rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded">{{ cat.slug }}</code>
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <span class="inline-block bg-surface-tint text-brand-700 px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap">{{ cat.usageCount }}</span>
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-ink-muted">{{ cat.displayOrder }}</td>
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint text-ink-muted">{{ cat.displayOrder }}</td>
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <div class="flex items-center gap-3 flex-wrap">
                   <button
                     v-if="canUpdate"
@@ -272,7 +272,7 @@ onMounted(() => { void fetchCategories() })
   >
           <div class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]" for="mcat-name">Tên danh mục (*)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin" for="mcat-name">Tên danh mục (*)</label>
               <input
                 id="mcat-name"
                 v-model="form.name"
@@ -282,7 +282,7 @@ onMounted(() => { void fetchCategories() })
               />
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]" for="mcat-slug">Slug (URL)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin" for="mcat-slug">Slug (URL)</label>
               <input
                 id="mcat-slug"
                 v-model="form.slug"
@@ -293,7 +293,7 @@ onMounted(() => { void fetchCategories() })
               <p class="text-[0.73rem] text-ink-muted m-0">Tự động điền từ tên. Có thể chỉnh lại thủ công.</p>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]" for="mcat-desc">Mô tả (tùy chọn)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin" for="mcat-desc">Mô tả (tùy chọn)</label>
               <textarea
                 id="mcat-desc"
                 v-model="form.description"
@@ -303,7 +303,7 @@ onMounted(() => { void fetchCategories() })
               ></textarea>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]" for="mcat-order">Thứ tự hiển thị</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin" for="mcat-order">Thứ tự hiển thị</label>
               <input
                 id="mcat-order"
                 v-model.number="form.displayOrder"
@@ -316,7 +316,7 @@ onMounted(() => { void fetchCategories() })
     <template #footer>
             <button
               type="button"
-              class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors"
+              class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-surface transition-colors"
               @click="showModal = false"
             >Hủy</button>
             <button

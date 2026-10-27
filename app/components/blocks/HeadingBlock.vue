@@ -8,16 +8,16 @@
   -->
   <section
     v-if="d.variant === 'banner'"
-    class="border-b border-[#DDE6DC] bg-gradient-to-b from-[#EEF5EB] via-[#F5FAF3] to-[#F7FAF6]"
+    class="border-b border-line bg-gradient-to-b from-surface-tint via-surface-tint to-surface"
   >
     <div class="container pt-6 sm:pt-8 pb-6 sm:pb-7">
       <div class="max-w-2xl">
-        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-3 shadow-sm">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-line border border-[#D0DFCE] text-brand-800 text-[0.72rem] font-extrabold uppercase tracking-wider mb-3 shadow-sm">
           <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
           <span>{{ t('portal_agency_badge') || 'Cổng Thông Tin Điện Tử C11 • Bộ Công An' }}</span>
         </div>
-        <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem] text-[#172516] tracking-tight leading-tight">{{ d.text || 'Tiêu đề mục' }}</h2>
-        <p v-if="d.subtitle" class="text-[1.05rem] text-[#576653] leading-relaxed">{{ d.subtitle }}</p>
+        <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem] text-ink-strong tracking-tight leading-tight">{{ d.text || 'Tiêu đề mục' }}</h2>
+        <p v-if="d.subtitle" class="text-[1.05rem] text-ink-soft leading-relaxed">{{ d.subtitle }}</p>
       </div>
     </div>
   </section>

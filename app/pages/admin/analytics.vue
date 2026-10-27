@@ -209,7 +209,7 @@ onBeforeUnmount(() => { summaryController?.abort(); drillController?.abort() })
       <ClientOnly>
         <AnalyticsLiveDashboard />
         <template #fallback>
-          <section class="rounded-xl border border-[#dbe7dc] bg-white p-6 shadow-sm" aria-labelledby="live-dashboard-loading-heading" aria-busy="true">
+          <section class="rounded-xl border border-line bg-white p-6 shadow-sm" aria-labelledby="live-dashboard-loading-heading" aria-busy="true">
             <h2 id="live-dashboard-loading-heading" class="m-0 text-lg font-bold text-brand-950">Phân tích thời gian thực</h2>
             <p class="mt-2 text-sm text-ink-muted" role="status" aria-live="polite">Đang tải bảng điều khiển thời gian thực…</p>
           </section>
@@ -222,10 +222,10 @@ onBeforeUnmount(() => { summaryController?.abort(); drillController?.abort() })
           <p class="mt-2 text-sm leading-6 text-ink-muted">Số liệu tổng hợp theo ngày và phạm vi thời gian đã chọn.</p>
         </header>
 
-        <section class="rounded-xl border border-[#dbe7dc] bg-white p-4 shadow-sm" aria-labelledby="date-filter-heading">
+        <section class="rounded-xl border border-line bg-white p-4 shadow-sm" aria-labelledby="date-filter-heading">
           <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div><h2 id="date-filter-heading" class="m-0 text-base font-bold text-brand-950">Khoảng thời gian UTC</h2><p class="mt-1 text-xs text-ink-muted">Tối đa 366 ngày. Bộ lọc được lưu trên URL để chia sẻ và tải lại.</p></div>
-            <div class="flex flex-wrap gap-2"><button v-for="preset in presets" :key="preset.days" type="button" class="rounded-lg border border-[#b8cdb9] bg-[#f6faf6] px-3 py-2 text-sm font-semibold text-[#254c29] hover:bg-[#e8f4e9] focus:outline-none focus:ring-2 focus:ring-brand-700 motion-reduce:transition-none" @click="applyPreset(preset.days)">{{ preset.label }}</button></div>
+            <div class="flex flex-wrap gap-2"><button v-for="preset in presets" :key="preset.days" type="button" class="rounded-lg border border-[#b8cdb9] bg-surface px-3 py-2 text-sm font-semibold text-[#254c29] hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 motion-reduce:transition-none" @click="applyPreset(preset.days)">{{ preset.label }}</button></div>
           </div>
           <form class="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end" @submit.prevent="applyRange">
             <label class="text-sm font-semibold text-[#334e36]">Từ ngày<input v-model="start" type="date" :max="today()" required class="mt-1 block w-full rounded-lg border border-[#b8cdb9] px-3 py-2.5 text-sm focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-700/20" :aria-invalid="Boolean(validationError)" /></label>
@@ -236,7 +236,7 @@ onBeforeUnmount(() => { summaryController?.abort(); drillController?.abort() })
         </section>
 
         <section v-if="initialLoading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy="true" aria-label="Đang tải báo cáo">
-          <div v-for="index in 4" :key="index" class="h-32 animate-pulse rounded-xl border border-line bg-white p-5 motion-reduce:animate-none"><span class="sr-only">Đang tải chỉ số</span><div class="h-3 w-24 rounded bg-[#dfe9e0]"></div><div class="mt-5 h-8 w-32 rounded bg-[#edf3ed]"></div></div>
+          <div v-for="index in 4" :key="index" class="h-32 animate-pulse rounded-xl border border-line bg-white p-5 motion-reduce:animate-none"><span class="sr-only">Đang tải chỉ số</span><div class="h-3 w-24 rounded bg-line"></div><div class="mt-5 h-8 w-32 rounded bg-surface-tint"></div></div>
         </section>
         <section v-else-if="summaryError && !summary" class="rounded-xl border border-red-200 bg-red-50 p-6" role="alert"><h2 class="m-0 text-lg font-bold text-red-900">Không thể tải báo cáo</h2><p class="mt-2 text-sm text-red-800">{{ summaryError }}</p><button type="button" class="mt-4 rounded-lg bg-red-700 px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2" @click="loadSummary">Thử lại</button></section>
 
@@ -245,29 +245,29 @@ onBeforeUnmount(() => { summaryController?.abort(); drillController?.abort() })
           <div v-if="summary.freshness.stale" class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="status"><i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i><strong>Dữ liệu có thể chưa đầy đủ.</strong> Ngày tổng hợp gần nhất: {{ formatDay(summary.freshness.lastAggregatedDay) }}.</div>
 
           <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Chỉ số tổng quan">
-            <article class="rounded-xl border border-[#dbe7dc] bg-white p-5 shadow-sm"><p class="m-0 text-sm font-semibold text-ink-muted">Lượt xem trang</p><p class="my-3 text-3xl font-extrabold tabular-nums text-brand-950">{{ formatNumber(summary.totals.pageViews) }}</p><p class="m-0 text-xs leading-5 text-ink-muted">Tổng số lượt mở trang công khai đã được tổng hợp trong khoảng chọn.</p></article>
-            <article class="rounded-xl border border-[#dbe7dc] bg-white p-5 shadow-sm"><p class="m-0 text-sm font-semibold text-ink-muted">Tổng khách duy nhất theo ngày</p><p class="my-3 text-3xl font-extrabold tabular-nums text-brand-950">{{ formatNumber(summary.totals.summedDailyUniqueVisitors) }}</p><p class="m-0 text-xs leading-5 text-ink-muted">Cộng số khách duy nhất của từng ngày; không phải số người được khử trùng lặp xuyên ngày.</p></article>
-            <article class="rounded-xl border border-[#dbe7dc] bg-white p-5 shadow-sm"><p class="m-0 text-sm font-semibold text-ink-muted">Quản trị viên hoạt động / tổng</p><p class="my-3 text-3xl font-extrabold tabular-nums text-brand-950">{{ summary.adminUsers ? `${formatNumber(summary.adminUsers.activeUsers)} / ${formatNumber(summary.adminUsers.totalUsers)}` : 'Chưa có' }}</p><p class="m-0 text-xs leading-5 text-ink-muted">Ảnh chụp theo ngày {{ summary.adminUsers ? formatDay(summary.adminUsers.snapshotDay) : 'chưa ghi nhận' }}, không phải số liệu thời gian thực.</p></article>
-            <article class="rounded-xl border border-[#dbe7dc] bg-white p-5 shadow-sm"><p class="m-0 text-sm font-semibold text-ink-muted">Ngày tổng hợp gần nhất</p><p class="my-3 text-2xl font-extrabold text-brand-950">{{ formatDay(summary.freshness.lastAggregatedDay) }}</p><p class="m-0 text-xs leading-5 text-ink-muted">Các ngày sau mốc này có thể chưa được xử lý bởi tác vụ bảo trì.</p></article>
+            <article class="rounded-xl border border-line bg-white p-5 shadow-sm"><p class="m-0 text-sm font-semibold text-ink-muted">Lượt xem trang</p><p class="my-3 text-3xl font-extrabold tabular-nums text-brand-950">{{ formatNumber(summary.totals.pageViews) }}</p><p class="m-0 text-xs leading-5 text-ink-muted">Tổng số lượt mở trang công khai đã được tổng hợp trong khoảng chọn.</p></article>
+            <article class="rounded-xl border border-line bg-white p-5 shadow-sm"><p class="m-0 text-sm font-semibold text-ink-muted">Tổng khách duy nhất theo ngày</p><p class="my-3 text-3xl font-extrabold tabular-nums text-brand-950">{{ formatNumber(summary.totals.summedDailyUniqueVisitors) }}</p><p class="m-0 text-xs leading-5 text-ink-muted">Cộng số khách duy nhất của từng ngày; không phải số người được khử trùng lặp xuyên ngày.</p></article>
+            <article class="rounded-xl border border-line bg-white p-5 shadow-sm"><p class="m-0 text-sm font-semibold text-ink-muted">Quản trị viên hoạt động / tổng</p><p class="my-3 text-3xl font-extrabold tabular-nums text-brand-950">{{ summary.adminUsers ? `${formatNumber(summary.adminUsers.activeUsers)} / ${formatNumber(summary.adminUsers.totalUsers)}` : 'Chưa có' }}</p><p class="m-0 text-xs leading-5 text-ink-muted">Ảnh chụp theo ngày {{ summary.adminUsers ? formatDay(summary.adminUsers.snapshotDay) : 'chưa ghi nhận' }}, không phải số liệu thời gian thực.</p></article>
+            <article class="rounded-xl border border-line bg-white p-5 shadow-sm"><p class="m-0 text-sm font-semibold text-ink-muted">Ngày tổng hợp gần nhất</p><p class="my-3 text-2xl font-extrabold text-brand-950">{{ formatDay(summary.freshness.lastAggregatedDay) }}</p><p class="m-0 text-xs leading-5 text-ink-muted">Các ngày sau mốc này có thể chưa được xử lý bởi tác vụ bảo trì.</p></article>
           </section>
 
-          <section v-if="isEmpty" class="rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] p-8 text-center"><i class="fa-regular fa-calendar-xmark text-3xl text-[#527a56]" aria-hidden="true"></i><h2 class="mt-3 text-lg font-bold text-[#193c1d]">Chưa có dữ liệu trong khoảng này</h2><p class="mx-auto mt-2 max-w-xl text-sm text-ink-muted">Hãy chọn khoảng ngày khác hoặc kiểm tra ngày tổng hợp gần nhất. Không có số liệu giả được hiển thị.</p><button type="button" class="mt-4 rounded-lg bg-brand-700 px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2" @click="applyPreset(30)">Xem 30 ngày gần nhất</button></section>
+          <section v-if="isEmpty" class="rounded-xl border border-dashed border-[#afc8b1] bg-surface p-8 text-center"><i class="fa-regular fa-calendar-xmark text-3xl text-[#527a56]" aria-hidden="true"></i><h2 class="mt-3 text-lg font-bold text-[#193c1d]">Chưa có dữ liệu trong khoảng này</h2><p class="mx-auto mt-2 max-w-xl text-sm text-ink-muted">Hãy chọn khoảng ngày khác hoặc kiểm tra ngày tổng hợp gần nhất. Không có số liệu giả được hiển thị.</p><button type="button" class="mt-4 rounded-lg bg-brand-700 px-4 py-2.5 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2" @click="applyPreset(30)">Xem 30 ngày gần nhất</button></section>
 
           <template v-else>
-            <section class="rounded-xl border border-[#dbe7dc] bg-white p-4 shadow-sm md:p-6" aria-labelledby="trend-heading">
+            <section class="rounded-xl border border-line bg-white p-4 shadow-sm md:p-6" aria-labelledby="trend-heading">
               <div class="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="trend-heading" class="m-0 text-lg font-bold text-brand-950">Xu hướng theo ngày</h2><p class="mt-1 text-xs text-ink-muted">Chọn một hàng trong bảng để thu hẹp báo cáo về đúng ngày đó.</p></div><button v-if="selectedDay" type="button" class="self-start rounded-md px-3 py-2 text-sm font-bold text-brand-700 underline focus:outline-none focus:ring-2 focus:ring-brand-700" @click="clearSelection">Quay lại khoảng trước</button></div>
-              <ClientOnly><AnalyticsTrafficChart :points="summary.traffic" :selected-day="selectedDay" @select="selectDay" /><template #fallback><div class="rounded-lg bg-[#f4f7f4] p-6 text-sm text-ink-muted" role="status">Đang tải biểu đồ tương tác…</div></template></ClientOnly>
+              <ClientOnly><AnalyticsTrafficChart :points="summary.traffic" :selected-day="selectedDay" @select="selectDay" /><template #fallback><div class="rounded-lg bg-surface p-6 text-sm text-ink-muted" role="status">Đang tải biểu đồ tương tác…</div></template></ClientOnly>
             </section>
 
-            <section class="rounded-xl border border-[#dbe7dc] bg-white p-4 shadow-sm md:p-6" aria-labelledby="ranking-heading">
+            <section class="rounded-xl border border-line bg-white p-4 shadow-sm md:p-6" aria-labelledby="ranking-heading">
               <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><h2 id="ranking-heading" class="m-0 text-lg font-bold text-brand-950">Xếp hạng và phân nhóm</h2><p class="mt-1 text-xs text-ink-muted">Kích hoạt một hàng bằng chuột hoặc bàn phím để lọc chi tiết; chọn “Quay lại” để bỏ lọc.</p></div><label class="text-sm font-semibold text-[#334e36]">Phân tích theo<select v-model="selectedDrill" class="mt-1 block w-full min-w-[220px] rounded-lg border border-[#b8cdb9] px-3 py-2.5 focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-700/20" @change="changeDrill"><option v-for="dimension in dimensions" :key="dimension.value" :value="dimension.value">{{ dimension.label }}</option></select></label></div>
-              <div v-if="selectedValue" class="mt-4 flex items-center justify-between gap-3 rounded-lg bg-[#edf7ee] p-3 text-sm"><span>Đang lọc: <strong class="break-all">{{ selectedValue }}</strong></span><button type="button" class="shrink-0 font-bold text-brand-700 underline focus:outline-none focus:ring-2 focus:ring-brand-700" @click="clearSelection">Quay lại</button></div>
-              <div v-if="drillLoading" class="mt-5 rounded-lg bg-[#f4f7f4] p-6 text-center text-sm text-ink-muted" role="status" aria-live="polite"><i class="fa-solid fa-spinner fa-spin mr-2 motion-reduce:animate-none" aria-hidden="true"></i>Đang tải chi tiết…</div>
+              <div v-if="selectedValue" class="mt-4 flex items-center justify-between gap-3 rounded-lg bg-surface-tint p-3 text-sm"><span>Đang lọc: <strong class="break-all">{{ selectedValue }}</strong></span><button type="button" class="shrink-0 font-bold text-brand-700 underline focus:outline-none focus:ring-2 focus:ring-brand-700" @click="clearSelection">Quay lại</button></div>
+              <div v-if="drillLoading" class="mt-5 rounded-lg bg-surface p-6 text-center text-sm text-ink-muted" role="status" aria-live="polite"><i class="fa-solid fa-spinner fa-spin mr-2 motion-reduce:animate-none" aria-hidden="true"></i>Đang tải chi tiết…</div>
               <div v-else-if="drillError" class="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">{{ drillError }} <button type="button" class="ml-2 font-bold underline focus:outline-none focus:ring-2 focus:ring-red-700" @click="loadDrill">Thử lại</button></div>
-              <div v-else-if="drill && drill.items.length === 0" class="mt-5 rounded-lg border border-dashed border-[#afc8b1] bg-[#f7fbf7] p-6 text-center text-sm text-ink-muted">Không có dữ liệu xếp hạng phù hợp với bộ lọc hiện tại.</div>
+              <div v-else-if="drill && drill.items.length === 0" class="mt-5 rounded-lg border border-dashed border-[#afc8b1] bg-surface p-6 text-center text-sm text-ink-muted">Không có dữ liệu xếp hạng phù hợp với bộ lọc hiện tại.</div>
               <div v-else-if="drill" class="mt-5">
                 <!-- Mobile Card View: Thẻ xếp hạng dễ đọc trên điện thoại -->
-                <div class="md:hidden divide-y divide-[#edf3ed] rounded-xl border border-[#dbe7dc] bg-white overflow-hidden shadow-xs">
+                <div class="md:hidden divide-y divide-surface-tint rounded-xl border border-line bg-white overflow-hidden shadow-xs">
                   <div
                     v-for="(item, index) in drill.items"
                     :key="'m-'+item.value"
@@ -289,7 +289,7 @@ onBeforeUnmount(() => { summaryController?.abort(); drillController?.abort() })
                       <span>Khách: <strong class="text-brand-950 tabular-nums">{{ formatNumber(item.summedDailyUniqueVisitors) }}</strong></span>
                     </div>
 
-                    <div class="flex justify-end pt-1 border-t border-[#f4f7f4]">
+                    <div class="flex justify-end pt-1 border-t border-surface">
                       <button
                         type="button"
                         class="inline-flex items-center gap-1 text-xs font-bold text-brand-700 bg-surface-tint hover:bg-[#e4f2e5] px-3 py-1.5 rounded-lg border-0 cursor-pointer"
@@ -306,7 +306,7 @@ onBeforeUnmount(() => { summaryController?.abort(); drillController?.abort() })
                   <table class="w-full min-w-[620px] border-collapse text-left text-sm">
                     <caption class="sr-only">Bảng xếp hạng {{ dimensions.find(item => item.value === selectedDrill)?.label }}</caption>
                     <thead>
-                      <tr class="border-b border-[#dbe7dc] text-xs uppercase tracking-wide text-ink-muted">
+                      <tr class="border-b border-line text-xs uppercase tracking-wide text-ink-muted">
                         <th class="px-3 py-3" scope="col">Hạng</th>
                         <th class="px-3 py-3" scope="col">Giá trị</th>
                         <th class="px-3 py-3 text-right" scope="col">Lượt xem</th>
@@ -315,7 +315,7 @@ onBeforeUnmount(() => { summaryController?.abort(); drillController?.abort() })
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="(item, index) in drill.items" :key="item.value" class="border-b border-[#edf3ed] hover:bg-[#f7faf7]">
+                      <tr v-for="(item, index) in drill.items" :key="item.value" class="border-b border-surface-tint hover:bg-surface">
                         <td class="px-3 py-3 font-bold text-[#527a56]">{{ index + 1 }}</td>
                         <th class="max-w-[380px] break-all px-3 py-3 font-semibold text-[#233c26]" scope="row">{{ item.value === 'other' ? 'Khác (đã gộp)' : item.value }}</th>
                         <td class="px-3 py-3 text-right tabular-nums">{{ formatNumber(item.pageViews) }}</td>

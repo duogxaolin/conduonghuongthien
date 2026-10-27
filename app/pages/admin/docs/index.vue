@@ -60,7 +60,7 @@ const handleResults = (results: SearchResult<AdminDoc>[]) => {
             <span
               v-for="q in suggestedQuestions"
               :key="q"
-              class="inline-block px-3 py-1.5 bg-surface-tint border border-[#e2ede3] rounded-full text-[0.75rem] text-brand-700 font-semibold"
+              class="inline-block px-3 py-1.5 bg-surface-tint border border-line rounded-full text-[0.75rem] text-brand-700 font-semibold"
             >
               {{ q }}
             </span>
