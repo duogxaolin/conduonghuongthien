@@ -22,11 +22,15 @@
  *   - three Layer-1 gaps found while writing this file, first pinned as they behaved
  *     (`FINDING …`) and fixed in wave3 4.3b (`regression moderation-regex-1..3`, with the
  *     shapes the differential fuzz found on the old code); two analyser DoS found during that
- *     fix (huge quantifier counts); and one gap still open, pinned as it behaves today
- *     (`FINDING moderation-regex-4`): fixing it flips its test, in its own change.
+ *     fix (huge quantifier counts); and one gap Layer 1 keeps by design
+ *     (`FINDING moderation-regex-4`, characters outside the sample table), closed at run time
+ *     by the hard timeout of Layer 2 (wave3 4.3c) — its test now proves that.
  *
  * Timing is a fake clock (`setModerationRegexTimingForTests`) and the regexes timed are
- * fakes: no assertion depends on how fast this machine is, and no slow pattern ever runs.
+ * fakes: no assertion depends on how fast this machine is. One exception: the
+ * `FINDING moderation-regex-4` test runs two real slow patterns on the real clock, to prove
+ * the hard timeout (each bounded twice — by the runtime, and by `withinWallClock` at 5 s).
+ * The rest of the real-clock proof is `tests/moderation-regex-timeout.test.ts`.
  */
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
@@ -49,6 +53,7 @@ import {
   setModerationRegexTimingForTests,
   testModerationRegex,
 } from '../server/services/moderation-regex.ts'
+import { withinWallClock } from './_wall-clock-bound.ts'
 
 type LogLine = Record<string, unknown>
 
@@ -78,7 +83,7 @@ const reasonOf = (pattern: string) => {
 
 // ── Surface ─────────────────────────────────────────────────────────────────
 
-test('the barrel exports exactly the 16 runtime values it had before the split', () => {
+test('the barrel exports exactly the 16 runtime values it had before the split, plus testModerationRegexes (4.3c)', () => {
   assert.deepEqual(Object.keys(moderationRegex).sort(), [
     'MODERATION_PATTERN_MAX_LENGTH',
     'MODERATION_REGEX_FLAGS',
@@ -96,6 +101,9 @@ test('the barrel exports exactly the 16 runtime values it had before the split',
     'resetSlowModerationRules',
     'setModerationRegexTimingForTests',
     'testModerationRegex',
+    // Added on purpose after the split (wave3 4.3c): every rule of one text in ONE bounded `vm`
+    // call — see `tests/moderation-regex-timeout.test.ts`.
+    'testModerationRegexes',
   ])
 })
 
@@ -518,11 +526,12 @@ test('the real clock comes back with setModerationRegexTimingForTests(null): a f
 // chối, nhưng từng lọt (ghim là `FINDING …`, sửa ở wave3 4.3b). Đo trên máy phát triển
 // (Node 26, bản gốc 597af6a, trước khi sửa): mẫu 1 và 2 tốn 148 ms cho 401 ký tự (bậc ba —
 // ~18 s cho một cửa sổ 2000 ký tự); mẫu 3 tốn 2,4 s cho 24 ký tự (cấp số — mỗi ký tự thêm
-// nhân đôi). Lớp 2 tắt luật SAU cửa sổ chậm đầu tiên, nên cửa sổ đó vẫn chặn vòng sự kiện
-// trọn thời gian của nó. Cần quyền sửa luật kiểm duyệt để lưu một mẫu như vậy. Mỗi test
-// kèm vài mẫu mà fuzz vi sai (`moderation-regex-fuzz.test.ts`) tìm được trên mã cũ — 77 mẫu
-// được nhận mà treo > 250 ms trên 400 ký tự — ghim bằng tên để không phụ thuộc bộ sinh.
-// `FINDING moderation-regex-4` vẫn mở: ghim đúng như hôm nay, sửa thì test đó đỏ.
+// nhân đôi). Khi đó lớp 2 tắt luật SAU cửa sổ chậm đầu tiên, nên cửa sổ đó chặn vòng sự kiện
+// trọn thời gian của nó; từ wave3 4.3c cửa sổ bị ngắt cứng ở ngân sách. Cần quyền sửa luật
+// kiểm duyệt để lưu một mẫu như vậy. Mỗi test kèm vài mẫu mà fuzz vi sai
+// (`moderation-regex-fuzz.test.ts`) tìm được trên mã cũ — 77 mẫu được nhận mà treo > 250 ms
+// trên 400 ký tự — ghim bằng tên để không phụ thuộc bộ sinh. `FINDING moderation-regex-4`
+// lớp 1 giữ lại có chủ đích; test của nó chứng minh lớp 2 chặn được.
 
 const refusedAs = (finding: { reason: string; hint: string }, pattern: string) => {
   assert.equal(findCatastrophicShape(pattern), finding.reason, pattern)
@@ -623,12 +632,34 @@ test('regression: số lần lặp khổng lồ không làm phép kiểm lúc l�
   assert.deepEqual(checkModerationPattern('(?:a{300}|b)+', 'pattern'), { ok: true })
 })
 
-test('FINDING moderation-regex-4: chồng lấn trên ký tự ngoài bảng mẫu không thấy — 日*日*$ lọt lớp 1 (bậc ba)', () => {
-  // `charset` chỉ thử 321 ký tự của `SAMPLE_CHARS`: một chữ cố định ngoài bảng (chữ Hán khác
-  // 中, Kirin, Hy Lạp…) có tập ký tự rỗng, nên hai lượng từ trên chính chữ đó trông như rời
-  // nhau. Đo trên máy phát triển (Node 26, 357109f): 155–185 ms cho 401 ký tự — cùng bậc với
-  // `\s*\s*$`, ~20 s cho một cửa sổ 2000 ký tự. Chữ có trong bảng thì bị từ chối.
+test('FINDING moderation-regex-4 (đóng ở lớp 2): 日*日*$ vẫn lọt lớp 1, nhưng lúc chạy bị ngắt cứng ở ngân sách cửa sổ và tắt', () => {
+  // Lớp 1 — vẫn lọt, có chủ đích: `charset` chỉ thử 321 ký tự của `SAMPLE_CHARS`, nên một chữ
+  // cố định ngoài bảng (chữ Hán khác 中, Kirin, Hy Lạp…) có tập ký tự rỗng và hai lượng từ trên
+  // chính chữ đó trông như rời nhau. Không vá bằng cách nới bảng: phép xét lúc lưu không thể
+  // đúng trọn trong trường hợp tổng quát (mọi chữ ngoài bảng, mọi lớp `\p{…}`), nên lớp 1 là
+  // ước lượng tốt-nhất-có-thể; bảo đảm là lớp 2. Chữ có trong bảng thì vẫn bị từ chối.
   refusedAs(ADJACENT, '中*中*$')
   for (const pattern of ['日*日*$', 'ж*ж*$', '\\u0436*\\u0436*$', '[ж]+[жз]+$'])
     assert.deepEqual(checkModerationPattern(pattern, 'pattern'), { ok: true }, pattern)
+  // Lớp 2 — đồng hồ thật, mẫu thật: cửa sổ bị ngắt ở MODERATION_RULE_WINDOW_BUDGET_MS, luật tắt
+  // 10 phút, lượt sau không chạy nó. Không có ngắt cứng thì cửa sổ chạy trọn: `日*日*$` trên
+  // 2000 ký tự ~1,2 s, `日*日*日*$` trên 401 ký tự ~15,6 s (Node 26, kiểm chứng 4.3b) —
+  // `withinWallClock` dừng lượt chạy ở 5 s để test đỏ có thông báo thay vì treo.
+  setModerationRegexTimingForTests(null)
+  resetSlowModerationRules()
+  const quiet = mock.method(console, 'error', () => {}) // the rule_slow_disabled lines
+  try {
+    for (const [pattern, text] of [['日*日*$', `${'日'.repeat(1999)}!`], ['日*日*日*$', `${'日'.repeat(400)}!`]] as const) {
+      const regex = compileModerationRegex(pattern)!
+      const started = performance.now()
+      const matched = withinWallClock(5000, pattern, () => testModerationRegex(pattern, regex, text))
+      const wallMs = performance.now() - started
+      assert.ok(wallMs < 1000, `${pattern} trên ${text.length} ký tự: ${wallMs.toFixed(0)} ms — phải bị ngắt quanh ${MODERATION_RULE_WINDOW_BUDGET_MS} ms`)
+      assert.equal(matched, false, `${pattern}: cửa sổ bị ngắt tính là không khớp`)
+      assert.equal(isModerationRuleDisabled(pattern), true, `${pattern}: luật bị tắt`)
+    }
+  } finally {
+    quiet.mock.restore()
+    resetSlowModerationRules()
+  }
 })

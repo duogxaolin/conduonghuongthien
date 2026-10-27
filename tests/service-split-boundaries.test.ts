@@ -22,8 +22,9 @@
  *     (`moderation-always-scan`); nó loại cả nhóm regex bằng chính `MODERATION_REGEX_PART`.
  *   • `moderation-regex.ts` — barrel; mã ở `moderation-regex-{limits,check,runtime,parser,
  *     analysis}.ts` (tách nguyên văn: 55 khai báo cấp đỉnh giống từng byte, 5 khai báo thêm
- *     `export`). `moderation-regex-parser.ts` barrel không xuất lại. Trạng thái quyết định
- *     luật có chạy không — đồng hồ, sổ luật bị tắt 10 phút, sổ log cắt quét — một chủ
+ *     `export`; lớp 2 viết lại ở 4.3c — ngắt cứng bằng `node:vm`). `moderation-regex-parser.ts`
+ *     barrel không xuất lại. Trạng thái quyết định luật có chạy không — đồng hồ, sổ luật bị
+ *     tắt 10 phút, sổ log cắt quét, ngữ cảnh `vm` — một chủ
  *     (`moderation-regex-runtime.ts`), cache biên dịch một chủ (`moderation-regex-check.ts`),
  *     không `export`. Mẫu `MODERATION_REGEX_PART` ở `_moderation-regex-family.ts`.
  *   • `server/utils/chatbot/chat-policy.ts` — barrel ở đường cũ; mã ở
@@ -71,7 +72,8 @@
  *      chủ (`chat-policy-rate-limit.ts`); nơi khác nới `limit` là đỏ. Nhóm `ai-gateway`: hai
  *      cache 60 s (`configCache`, `providerCache`) và bảng `PROVIDER_POLICY` — một chủ
  *      (`ai-gateway-config.ts`, không `export`). Nhóm `moderation-regex`: `timing`,
- *      `disabledUntil`, `truncationLoggedUntil` — một chủ (`moderation-regex-runtime.ts`);
+ *      `disabledUntil`, `truncationLoggedUntil`, ngữ cảnh + script `vm` của ngắt cứng
+ *      (`scanContext`, `scanScript`, 4.3c) — một chủ (`moderation-regex-runtime.ts`);
  *      `compiled` (`moderation-regex-check.ts`); hai bảng mẫu `SAMPLE_CHARS` (mảng dựng bằng
  *      IIFE) và `ALL_SAMPLES` chỉ được đọc ngoài chủ (`moderation-regex-parser.ts`). Vì luật 4
  *      không lần được đối tượng do hàm trả về, trạng thái xuất ra của nhóm này cũng bị ghim
@@ -93,7 +95,8 @@
  *      + 5 kiểu (ghim từ `0eb97bd`), hình dạng do `chatPolicyBarrelProblems`. Barrel
  *      `ai-gateway.ts`: 5 giá trị + 4 kiểu (ghim từ `25bc314`), hình dạng do
  *      `aiGatewayBarrelProblems`. Barrel `moderation-regex.ts`: 16 giá trị + 1 kiểu (ghim từ
- *      `597af6a`), hình dạng do `moderationRegexBarrelProblems`.
+ *      `597af6a`) cộng `testModerationRegexes` + `ModerationRegexRule` thêm có chủ đích ở 4.3c,
+ *      hình dạng do `moderationRegexBarrelProblems`.
  *   6. **Ngoài nhóm `moderation-worker` / `chat-policy` / `ai-gateway` / `moderation-regex`, mã
  *      chỉ tới các tệp của nhóm qua barrel.** Nhóm `moderation-regex`: không test nào mock
  *      barrel, nhưng tệp con xuất phần ruột (`Parser`, `analyzePattern`, bảng mẫu) để tệp con
@@ -591,7 +594,9 @@ const aiGatewayApiViolations = (sources: Sources) =>
  * API của `server/services/moderation-regex.ts` ngay trước khi tách (wave3 4.3): bản ở
  * `597af6a` (`wave3/integration`). Suy bằng `exportedApi` (cùng phép đọc AST của luật 5) từ
  * `git show 597af6a:server/services/moderation-regex.ts`: 16 giá trị + 1 kiểu. Chép cứng vì
- * CI checkout nông.
+ * CI checkout nông. Đổi API có chủ đích một lần, sau khi tách (wave3 4.3c, ngắt cứng lớp 2):
+ * thêm `testModerationRegexes` + kiểu `ModerationRegexRule` — mọi luật của một văn bản trong
+ * MỘT lượt `vm` có hạn giờ (một lượt mỗi luật tốn ~0,8–1,6 ms mỗi tin ở 30 luật). Nay 17 + 2.
  */
 const PRE_SPLIT_MODERATION_REGEX_API = {
   values: [
@@ -611,8 +616,9 @@ const PRE_SPLIT_MODERATION_REGEX_API = {
     'resetSlowModerationRules',
     'setModerationRegexTimingForTests',
     'testModerationRegex',
+    'testModerationRegexes',
   ],
-  types: ['ModerationPatternCheck'],
+  types: ['ModerationPatternCheck', 'ModerationRegexRule'],
 }
 
 const moderationRegexApiViolations = (sources: Sources) =>
@@ -993,6 +999,10 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/services/moderation-regex-runtime.ts#defaultTiming',
       'server/services/moderation-regex-runtime.ts#disabledUntil',
       'server/services/moderation-regex-runtime.ts#truncationLoggedUntil',
+      // Ngắt cứng (4.3c): ngữ cảnh `vm` + script dựng một lần — bản thứ hai ở tệp khác là hai
+      // ngữ cảnh, mỗi nửa mã ghi `job` vào một cái.
+      'server/services/moderation-regex-runtime.ts#scanContext',
+      'server/services/moderation-regex-runtime.ts#scanScript',
       'server/services/moderation-regex-check.ts#compiled',
       'server/services/moderation-regex-analysis.ts#charsetCache',
       'server/services/moderation-regex-parser.ts#ALL_SAMPLES',
@@ -1069,9 +1079,9 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     assert.deepEqual(aiGatewayBarrelProblems(REPO.get(AI_GATEWAY_BARREL)!), [])
   })
 
-  it('luật 5: moderation-regex.ts xuất đúng 16 giá trị + 1 kiểu của API trước khi tách', () => {
-    assert.equal(PRE_SPLIT_MODERATION_REGEX_API.values.length, 16)
-    assert.equal(PRE_SPLIT_MODERATION_REGEX_API.types.length, 1)
+  it('luật 5: moderation-regex.ts xuất đúng 16 giá trị + 1 kiểu của API trước khi tách, cộng testModerationRegexes + ModerationRegexRule (4.3c)', () => {
+    assert.equal(PRE_SPLIT_MODERATION_REGEX_API.values.length, 17)
+    assert.equal(PRE_SPLIT_MODERATION_REGEX_API.types.length, 2)
     assert.deepEqual(moderationRegexApiViolations(REPO), [])
   })
 

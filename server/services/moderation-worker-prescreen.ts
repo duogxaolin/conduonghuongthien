@@ -6,7 +6,7 @@
  * `moderation-instant.ts`.
  */
 import { getActiveModerationRules } from './moderation-rules-cache'
-import { compileModerationRegex, isRegexRuleType, testModerationRegex } from './moderation-regex'
+import { compileModerationRegex, isRegexRuleType, testModerationRegexes, type ModerationRegexRule } from './moderation-regex'
 import { workerStats } from './moderation-stats'
 import {
   INSTANT_PROFANITY,
@@ -50,25 +50,30 @@ export async function matchInstantRule(content: string): Promise<InstantRuleMatc
     if (item.pattern.test(trimmed)) return { category: 'spam_fraud', severity: 'high', label: item.label }
   }
 
-  // 2. Active custom rules from database
+  // 2. Active custom rules from database — the first rule, in order, that matches.
   try {
     const rules = await getActiveModerationRules()
     const lower = trimmed.toLowerCase()
-    for (const rule of rules) {
+    // Keyword rules are a substring test. Regex rules before the first keyword hit run in ONE
+    // bounded pass (`testModerationRegexes`: one `vm` call with a hard timeout per text, not one
+    // per rule), stopping at the first regex hit — the rules the old in-order loop would reach.
+    // Compiled through the helper shared with checkAndModerateContent: flag `iu`, the pattern
+    // never lower-cased, broken/too long/catastrophic patterns skipped.
+    const keywordHit = rules.findIndex(rule => !isRegexRuleType(rule.ruleType) && lower.includes(rule.pattern.toLowerCase().trim()))
+    const regexRules: Array<ModerationRegexRule & { index: number }> = []
+    for (const [index, rule] of rules.entries()) {
+      if (keywordHit !== -1 && index >= keywordHit) break
+      if (!isRegexRuleType(rule.ruleType)) continue
+      const regex = compileModerationRegex(rule.pattern)
+      if (regex) regexRules.push({ index, pattern: rule.pattern, regex })
+    }
+    const hits = testModerationRegexes(regexRules, trimmed, { stopAtFirstMatch: true })
+    const regexHit = regexRules.find((_, k) => hits[k])
+    const hitIndex = regexHit ? regexHit.index : keywordHit
+    const rule = hitIndex === -1 ? undefined : rules[hitIndex]
+    if (rule) {
       const severity = (rule.severity as InstantRuleMatch['severity']) || 'high'
-      if (!isRegexRuleType(rule.ruleType)) {
-        if (lower.includes(rule.pattern.toLowerCase().trim())) {
-          return { category: rule.category, severity, label: `Từ khóa: ${rule.pattern}` }
-        }
-      } else {
-        // Một helper biên dịch dùng chung với checkAndModerateContent: cờ `iu`,
-        // không hạ chữ mẫu, bỏ qua mẫu hỏng/quá dài/có hình dạng lùi vô hạn; khớp
-        // theo cửa sổ + đo giờ, luật chậm bị tắt tạm (`testModerationRegex`).
-        const regex = compileModerationRegex(rule.pattern)
-        if (regex && testModerationRegex(rule.pattern, regex, trimmed)) {
-          return { category: rule.category, severity, label: `Mẫu regex: ${rule.pattern}` }
-        }
-      }
+      return { category: rule.category, severity, label: `${regexHit ? 'Mẫu regex' : 'Từ khóa'}: ${rule.pattern}` }
     }
   } catch {
     // If DB read fails, built-in instant rules still secure the entrance
