@@ -14,10 +14,7 @@
  *   - saving a video answers `slug`/`status`, queueing a transcode a `message`, creating
  *     a category `id`/`slug`, saving one `slug` — the pages keep their own sentences.
  */
-import type { Serialize } from 'nitropack/types'
-
-/** As in app/types/admin-api.ts: what the browser holds after JSON, not what the handler returned. */
-type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
+import type { Payload } from './handler-payload'
 
 type DetailHandler = typeof import('~~/server/api/admin/media-portal/[id].get').default
 type UpdateHandler = typeof import('~~/server/api/admin/media-portal/[id].put').default

@@ -18,10 +18,7 @@
  *   - the Drive config also carries `redirectUriSource`/`publicBaseUrl`, the list answer
  *     `page`/`pageSize`.
  */
-import type { Serialize } from 'nitropack/types'
-
-/** As in app/types/admin-api.ts: what the browser holds after JSON, not what the handler returned. */
-type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
+import type { Payload } from './handler-payload'
 
 type ListHandler = typeof import('~~/server/api/admin/backup/index.get').default
 type StatusHandler = typeof import('~~/server/api/admin/backup/status.get').default
