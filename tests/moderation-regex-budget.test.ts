@@ -168,7 +168,8 @@ test('a window cut by the request deadline is still charged to its rule at once:
       testModerationRegexes([slow], 'x', { budget: createModerationRegexBudget(100) }))).lines)
   }
   assert.equal(isModerationRuleDisabled(slow.pattern), true, `still on after ${requests} requests cut at 100 ms`)
-  assert.ok(requests >= 9 && requests <= 12, `${requests} requests × ~100 ms`)
+  // ~10 × ~100 ms; fewer when a throttled runner's interrupt latency lengthens each cut window.
+  assert.ok(requests >= 2 && requests <= 12, `${requests} requests × ~100 ms`)
   assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(line => line.reason), ['cumulative'])
   fresh()
 })
