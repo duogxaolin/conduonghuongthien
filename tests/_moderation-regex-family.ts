@@ -14,6 +14,9 @@
  * barrel and every `server/services/moderation-regex-*.ts` — and checked against the files
  * that carry the code today: renaming or removing one turns the guard red instead of
  * quietly shrinking what it scans, and a new part joins the scan without anyone listing it.
+ * A file named like the family anywhere else in the production tree (a copy under
+ * `server/utils/**`, a part moved into a subfolder) is outside that scan, so it is an error
+ * (`strayModerationRegexFiles`, checked on disk by `moderationRegexFiles`).
  *
  * The family is NOT part of the moderation worker (`_moderation-worker-family.ts`): the
  * worker's file pattern is `moderation-*.ts`, and it excludes this whole family through
@@ -23,10 +26,14 @@
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import ts from 'typescript'
+import { moduleStateBindings } from './_service-split-state.ts'
 
 const SERVICES = 'server/services'
 const SERVICES_DIR = new URL('../server/services/', import.meta.url)
+/** The production tree — the same three roots as the boundaries guard (`PRODUCTION_DIRS`). */
+const PRODUCTION_ROOTS = ['server', 'scripts', 'shared']
 
 export const MODERATION_REGEX_BARREL = `${SERVICES}/moderation-regex.ts`
 
@@ -48,6 +55,29 @@ export const EXPECTED_MODERATION_REGEX_FAMILY: readonly string[] = [
 export const isModerationRegexFile = (name: string): boolean =>
   `${SERVICES}/${name}` === MODERATION_REGEX_BARREL || MODERATION_REGEX_PART.test(name)
 
+/** Any file named like the family, in any language the runtime loads: `moderation-regex*.{ts,js,…}`. */
+const FAMILY_LIKE_NAME = /^moderation-regex.*\.[cm]?[jt]s$/
+
+/**
+ * Repo paths (`server/utils/moderation-regex-parser.ts`) of files named like the family but
+ * NOT directly in `server/services/` — outside every scan, so never allowed. Under
+ * `server/utils/**` a copy is worse than unguarded: Nitro auto-imports every export there, so a
+ * copy of the parser turns `Parser` and a second, unguarded pair of sample tables into globals
+ * (a verifier's stray copy of `moderation-regex-parser.ts` there left every guard green).
+ */
+export const strayModerationRegexFiles = (repoPaths: Iterable<string>): string[] =>
+  [...repoPaths]
+    .filter(file => FAMILY_LIKE_NAME.test(path.posix.basename(file)) && path.posix.dirname(file) !== SERVICES)
+    .sort()
+
+/** Repo paths of every file under the production roots, from disk (untracked files included). */
+function productionTreePaths(): string[] {
+  return PRODUCTION_ROOTS.flatMap(root =>
+    readdirSync(new URL(`../${root}/`, import.meta.url), { recursive: true, encoding: 'utf8' })
+      .map(entry => `${root}/${entry.split(path.sep).join('/')}`),
+  )
+}
+
 /** Repo-relative paths (`server/services/…`) of the barrel and every part, sorted. */
 export function moderationRegexFiles(): string[] {
   const found = readdirSync(SERVICES_DIR).filter(isModerationRegexFile).sort()
@@ -56,6 +86,11 @@ export function moderationRegexFiles(): string[] {
       found.includes(expected),
       `${expected} vắng khỏi tập quét ${JSON.stringify(found)} — đổi tên/di chuyển tệp của moderation-regex phải cập nhật guard, không âm thầm thu hẹp tập quét`,
     )
+  assert.deepEqual(
+    strayModerationRegexFiles(productionTreePaths()),
+    [],
+    `tệp mang tên nhóm moderation-regex nằm ngoài ${SERVICES}/ — ngoài mọi tập quét (và dưới server/utils/ thì Nitro tự import nó); đặt ở ${SERVICES}/ hoặc xoá`,
+  )
   return found.map(name => `${SERVICES}/${name}`)
 }
 
@@ -113,30 +148,23 @@ export function moderationRegexBarrelProblems(source: string): string[] {
  * whether a rule runs — the clock, the 10-minute disable book, the truncation-log book, the
  * compile cache — is changed only through its owner's functions; rule 4 of the boundaries
  * guard sees writes through an import, not through an object handed back by a function, so
- * that state must stay unexported. The read-only sample tables of the parser are the only
- * exported state, by name.
+ * that state must stay unexported. The parser's two sample tables are the only exported
+ * state, by name: `SAMPLE_CHARS` (an array built once by an IIFE) and `ALL_SAMPLES` (a Set
+ * of the same characters). Both are written only by the parser — rule 4 holds that for
+ * every exported array/object, because both lists come from ONE classifier
+ * (`moduleStateBindings` of `_service-split-state.ts`, fail-closed): a second copy of the
+ * "what is state" rule here once knew only literal/`new` initialisers, so the IIFE-built
+ * `SAMPLE_CHARS` was neither listed here nor guarded by rule 4.
  */
 export const EXPORTED_STATE_ALLOWED: readonly string[] = [
   `${SERVICES}/moderation-regex-parser.ts#ALL_SAMPLES`,
+  `${SERVICES}/moderation-regex-parser.ts#SAMPLE_CHARS`,
 ]
 
 export function exportedFamilyState(sources: ReadonlyMap<string, string>): string[] {
-  const out: string[] = []
-  for (const [file, source] of sources) {
-    const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-    for (const statement of sf.statements) {
-      if (!ts.isVariableStatement(statement)) continue
-      const exported = statement.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false
-      if (!exported) continue
-      const isConst = (statement.declarationList.flags & ts.NodeFlags.Const) !== 0
-      for (const declaration of statement.declarationList.declarations) {
-        let init = declaration.initializer
-        while (init && (ts.isAsExpression(init) || ts.isSatisfiesExpression(init) || ts.isParenthesizedExpression(init)))
-          init = init.expression
-        const state = !isConst || (init !== undefined && (ts.isObjectLiteralExpression(init) || ts.isArrayLiteralExpression(init) || ts.isNewExpression(init)))
-        if (state) out.push(`${file}#${declaration.name.getText(sf)}`)
-      }
-    }
-  }
-  return out.sort()
+  return [...sources]
+    .flatMap(([file, source]) => moduleStateBindings(file, source))
+    .filter(binding => binding.exported)
+    .map(binding => `${binding.file}#${binding.name}`)
+    .sort()
 }

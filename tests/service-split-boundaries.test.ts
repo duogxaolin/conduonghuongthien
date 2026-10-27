@@ -72,9 +72,12 @@
  *      cache 60 s (`configCache`, `providerCache`) và bảng `PROVIDER_POLICY` — một chủ
  *      (`ai-gateway-config.ts`, không `export`). Nhóm `moderation-regex`: `timing`,
  *      `disabledUntil`, `truncationLoggedUntil` — một chủ (`moderation-regex-runtime.ts`);
- *      `compiled` (`moderation-regex-check.ts`); bảng mẫu `ALL_SAMPLES` chỉ được đọc. Vì luật 4
+ *      `compiled` (`moderation-regex-check.ts`); hai bảng mẫu `SAMPLE_CHARS` (mảng dựng bằng
+ *      IIFE) và `ALL_SAMPLES` chỉ được đọc ngoài chủ (`moderation-regex-parser.ts`). Vì luật 4
  *      không lần được đối tượng do hàm trả về, trạng thái xuất ra của nhóm này cũng bị ghim
- *      (`exportedFamilyState`: chỉ `ALL_SAMPLES`).
+ *      (`exportedFamilyState`: chỉ hai bảng mẫu) — cùng MỘT phép phân loại "trạng thái" với
+ *      luật 4 (`moduleStateBindings`, đóng khi nghi ngờ: lời gọi/IIFE/bí danh là trạng thái),
+ *      không phải bản chép thứ hai.
  *   5. **API công khai của barrel `comments.ts` giữ đúng 17 tên giá trị + 17 tên kiểu
  *      như trước khi tách** — bỏ, đổi tên hay đổi loại một export là đỏ; xuất thêm
  *      (helper nội bộ thành API) cũng đỏ. Hình dạng barrel (chỉ `export { … } from
@@ -161,6 +164,7 @@ import {
   moderationRegexBarrelProblems,
   moderationRegexFiles,
   moderationRegexSourcesWith,
+  strayModerationRegexFiles,
 } from './_moderation-regex-family.ts'
 import {
   EXPECTED_MODERATION_WORKER_FAMILY,
@@ -873,9 +877,38 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     assert.deepEqual(familyImportCycles(REPO, FAMILIES['moderation-regex']!), [])
   })
 
-  it('trạng thái xuất ra của nhóm moderation-regex chỉ là bảng mẫu chỉ-đọc (đồng hồ, sổ luật tắt, cache không export)', () => {
-    assert.deepEqual(EXPORTED_STATE_ALLOWED, ['server/services/moderation-regex-parser.ts#ALL_SAMPLES'])
+  it('trạng thái xuất ra của nhóm moderation-regex chỉ là hai bảng mẫu chỉ-đọc (đồng hồ, sổ luật tắt, cache không export)', () => {
+    assert.deepEqual(EXPORTED_STATE_ALLOWED, [
+      'server/services/moderation-regex-parser.ts#ALL_SAMPLES',
+      'server/services/moderation-regex-parser.ts#SAMPLE_CHARS',
+    ])
     assert.deepEqual(exportedFamilyState(moderationRegexSourcesWith()), [...EXPORTED_STATE_ALLOWED])
+  })
+
+  it('tệp mang tên nhóm moderation-regex nằm ngoài server/services/ là lỗi (bản chép dưới server/utils/**, tệp con dời vào thư mục con)', () => {
+    // Cây thật: không có (REPO đọc từ đĩa lúc nạp; `moderationRegexFiles()` kiểm thêm trên đĩa).
+    assert.deepEqual(strayModerationRegexFiles(REPO.keys()), [])
+    assert.equal(moderationRegexFiles().length, EXPECTED_MODERATION_REGEX_FAMILY.length)
+    const strays = [
+      'server/utils/moderation-regex-parser.ts',
+      'server/utils/chatbot/moderation-regex.ts',
+      'server/utils/moderation-regex-parser.js',
+      'server/services/regex/moderation-regex-analysis.ts',
+      'shared/moderation-regex-limits.ts',
+      'scripts/moderation-regex-probe.mjs',
+    ]
+    assert.deepEqual(strayModerationRegexFiles([...REPO.keys(), ...strays]), [...strays].sort())
+    // Tệp của nhóm (kể cả tệp con mới) và tên chỉ giống một phần thì không phải bản lạc.
+    assert.deepEqual(
+      strayModerationRegexFiles([
+        'server/services/moderation-regex.ts',
+        'server/services/moderation-regex-extra.ts',
+        'server/utils/moderation.ts',
+        'server/utils/moderation-regexp.json',
+        'server/utils/regex-moderation.ts',
+      ]),
+      [],
+    )
   })
 
   it('luật 1: không tệp con nào import barrel/cửa vào của chính nhóm mình', () => {
@@ -954,7 +987,8 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/services/ai-gateway-config.ts#providerCache',
       'server/services/ai-gateway-config.ts#PROVIDER_POLICY',
       // Nhóm moderation-regex: đồng hồ + sổ luật tắt 10 phút + sổ log cắt quét (chủ: tệp chạy),
-      // cache biên dịch (chủ: tệp kiểm), cache lớp ký tự và bảng mẫu (chỉ đọc ngoài chủ).
+      // cache biên dịch (chủ: tệp kiểm), cache lớp ký tự và hai bảng mẫu (chỉ đọc ngoài chủ) —
+      // `SAMPLE_CHARS` dựng bằng IIFE: lời gọi là trạng thái (đóng khi nghi ngờ).
       'server/services/moderation-regex-runtime.ts#timing',
       'server/services/moderation-regex-runtime.ts#defaultTiming',
       'server/services/moderation-regex-runtime.ts#disabledUntil',
@@ -962,6 +996,7 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/services/moderation-regex-check.ts#compiled',
       'server/services/moderation-regex-analysis.ts#charsetCache',
       'server/services/moderation-regex-parser.ts#ALL_SAMPLES',
+      'server/services/moderation-regex-parser.ts#SAMPLE_CHARS',
     ])
       assert.ok(inventory.includes(state), `${state} vắng khỏi kho ${JSON.stringify(inventory)}`)
     // …và phép giải tên thật sự đi tới trạng thái, cả thẳng lẫn qua barrel. Nhóm
@@ -973,6 +1008,7 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/services/backup-sweep.ts ← server/services/backup-names.ts#STALE_PARTIAL',
       'server/services/moderation-worker-prescreen.ts ← server/services/moderation-stats.ts#workerStats',
       'server/services/moderation-regex-analysis.ts ← server/services/moderation-regex-parser.ts#ALL_SAMPLES',
+      'server/services/moderation-regex-analysis.ts ← server/services/moderation-regex-parser.ts#SAMPLE_CHARS',
     ])
       assert.ok(stateImports.includes(edge), `${edge} vắng khỏi ${JSON.stringify(stateImports)}`)
   })
@@ -2723,6 +2759,11 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
         inject('server/services/moderation-regex-runtime.ts', 'const compiled = new Map<string, RegExp | null>()'),
         /^\[moderation-regex\] 'compiled' khai ở 2 tệp \(server\/services\/moderation-regex-check\.ts:\d+, server\/services\/moderation-regex-runtime\.ts:1\)/,
       ],
+      [
+        'bảng mẫu dựng bằng IIFE chép sang tệp kiểm (hai bảng: thêm ký tự ở một bên, bên kia không thấy)',
+        inject('server/services/moderation-regex-check.ts', "const SAMPLE_CHARS: readonly string[] = (() => [' '])()"),
+        /^\[moderation-regex\] 'SAMPLE_CHARS' khai ở 2 tệp \(server\/services\/moderation-regex-check\.ts:1, server\/services\/moderation-regex-parser\.ts:\d+\)/,
+      ],
     ]
     for (const [label, override, expected] of cases) {
       const violations = stateViolations(withOverrides(override))
@@ -2768,6 +2809,28 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
         { [analysis]: `${REPO.get(analysis)}\nexport function _widen() { (ALL_SAMPLES as Set<string>).add('ſ') }\n` },
         /^\[moderation-regex\] server\/services\/moderation-regex-analysis\.ts:\d+ \(\.add\(\)\) ghi vào 'ALL_SAMPLES' của server\/services\/moderation-regex-parser\.ts/,
       ],
+      // `SAMPLE_CHARS` là mảng dựng bằng IIFE: trước khi lời gọi được tính là trạng thái, ba
+      // ca dưới đây xanh (bằng chứng của lượt kiểm chứng: g10, g19, g20).
+      [
+        'tệp phân tích đẩy thêm vào SAMPLE_CHARS (`.push()`, ép kiểu bỏ readonly)',
+        { [analysis]: `${REPO.get(analysis)}\nexport function _widen() { (SAMPLE_CHARS as string[]).push('ſ') }\n` },
+        /^\[moderation-regex\] server\/services\/moderation-regex-analysis\.ts:\d+ \(\.push\(\)\) ghi vào 'SAMPLE_CHARS' của server\/services\/moderation-regex-parser\.ts/,
+      ],
+      [
+        'tệp phân tích ghi đè một mẫu theo chỉ số (`[0] = …`)',
+        { [analysis]: `${REPO.get(analysis)}\nexport function _swap() { (SAMPLE_CHARS as string[])[0] = 'x' }\n` },
+        /^\[moderation-regex\] server\/services\/moderation-regex-analysis\.ts:\d+ \(gán\) ghi vào 'SAMPLE_CHARS' của server\/services\/moderation-regex-parser\.ts/,
+      ],
+      [
+        'nơi gọi ngoài nhóm cắt rỗng SAMPLE_CHARS (`.length = 0`) qua import thẳng tệp con',
+        inject('server/services/moderation-worker-check.ts', "import { SAMPLE_CHARS as _S } from './moderation-regex-parser'\nexport function _drop() { (_S as string[]).length = 0 }"),
+        /^\[moderation-regex\] server\/services\/moderation-worker-check\.ts:\d+ \(gán\) ghi vào 'SAMPLE_CHARS' của server\/services\/moderation-regex-parser\.ts/,
+      ],
+      [
+        'tệp kiểm sắp lại SAMPLE_CHARS qua namespace (`ns.X.sort()`)',
+        { [check]: `import * as _parser from './moderation-regex-parser'\n${REPO.get(check)}\nexport function _reorder() { (_parser.SAMPLE_CHARS as string[]).sort() }\n` },
+        /^\[moderation-regex\] server\/services\/moderation-regex-check\.ts:\d+ \(\.sort\(\)\) ghi vào 'SAMPLE_CHARS' của server\/services\/moderation-regex-parser\.ts/,
+      ],
     ]
     for (const [label, override, expected] of cases) {
       const violations = stateViolations(withOverrides(override))
@@ -2796,7 +2859,36 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
         [`${file}#_leak`],
         file,
       )
-    // Hằng nguyên thuỷ xuất ra không phải trạng thái; tệp ngoài nhóm không lọt vào tập quét.
+    // Bảng dựng bằng lời gọi (IIFE như `SAMPLE_CHARS`, hàm dựng, `.map()`), bí danh của một
+    // đối tượng, regex literal, và `Object.freeze` chỉ khoá một tầng — đều là trạng thái.
+    const part = 'server/services/moderation-regex-extra.ts'
+    for (const [declaration, why] of [
+      ['export const TABLE: readonly string[] = (() => [\'a\'])()', 'IIFE'],
+      ['export const TABLE = buildTable()', 'lời gọi hàm dựng'],
+      ['export const TABLE = [\'a\', \'b\'].map(x => x)', '.map()'],
+      ['export const TABLE = Object.fromEntries([])', 'Object.fromEntries'],
+      ['export const TABLE = SAMPLE_CHARS', 'bí danh'],
+      ['export const TABLE = /a/g', 'regex literal (lastIndex ghi được)'],
+      ['export const TABLE = Object.freeze({ chars: [\'a\'] })', 'Object.freeze một tầng'],
+      ['export const TABLE = Object.freeze(new Set([\'a\']))', 'Object.freeze một Set'],
+      ['export const TABLE = flag ? [\'a\'] : null', 'nhánh có mảng'],
+    ] as const)
+      assert.deepEqual(extra({ [part]: `${declaration}\n` }), [`${part}#TABLE`], why)
+    // Hằng nguyên thuỷ, hàm, Symbol, Object.freeze của literal nguyên thuỷ: không ghi được.
+    for (const declaration of [
+      'export const LIMIT = 5',
+      'export const LIMIT = 10 * 60_000',
+      'export const LIMIT = -1',
+      'export const NAME = `${PREFIX}-x`',
+      'export const ON = process.env.X === \'1\'',
+      'export const KIND = typeof window',
+      'export const fn = (x: number) => x + 1',
+      'export const TOKEN = Symbol(\'t\')',
+      'export const LIMITS = Object.freeze({ a: 1, b: \'x\', c: null, d: 2 * 3 })',
+      'export const PAIR = Object.freeze([1, 2] as const)',
+    ])
+      assert.deepEqual(extra({ [part]: `${declaration}\n` }), [], declaration)
+    // Tệp ngoài nhóm không lọt vào tập quét.
     assert.deepEqual(extra({ 'server/services/moderation-regex-extra.ts': 'export const LIMIT = 5\n' }), [])
     assert.deepEqual(extra({ 'server/services/moderation-extra.ts': 'export const leak = new Set<string>()\n' }), [])
   })

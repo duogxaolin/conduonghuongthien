@@ -11,8 +11,10 @@
  * Bảng `SAMPLE_CHARS` chứa ký tự vô hình (khoảng trắng Unicode, BOM, dấu kết hợp, dấu
  * Kelvin): sửa tệp này bằng công cụ giữ nguyên byte, đừng gõ lại các chuỗi đó.
  *
- * Không có trạng thái đổi được: `SAMPLE_CHARS`/`ALL_SAMPLES` dựng một lần lúc nạp và chỉ
- * được đọc (`tests/service-split-boundaries.test.ts`, luật 4 — tệp khác ghi là đỏ).
+ * Hai bảng mẫu `SAMPLE_CHARS`/`ALL_SAMPLES` dựng một lần lúc nạp và chỉ được đọc: tệp khác
+ * ghi vào — kể cả `.push()`/`[i] = …` sau khi ép bỏ `readonly` — là đỏ
+ * (`tests/service-split-boundaries.test.ts`, luật 4). Nội dung bảng được ghim theo mã điểm,
+ * đúng thứ tự, ở `tests/moderation-regex-parts.test.ts`.
  */
 
 /**

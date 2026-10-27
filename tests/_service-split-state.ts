@@ -13,9 +13,15 @@
  *      `Object.assign(X, …)`. Chủ của trạng thái không còn là nơi duy nhất quyết
  *      định giá trị của nó.
  *
- * "Trạng thái" = khai báo cấp đỉnh của một tệp thuộc nhóm: mọi `let`/`var`, và
- * `const` khởi tạo bằng object literal, array literal hoặc `new …` (Map, Set,
- * AbortController…). `const` nguyên thuỷ/Symbol/hàm không ghi được nên không tính.
+ * "Trạng thái" = khai báo cấp đỉnh của một tệp thuộc nhóm: mọi `let`/`var`, và mọi
+ * `const` mà giá trị khởi tạo KHÔNG chứng minh được là không ghi được (`isStateInitializer`
+ * — đóng khi nghi ngờ). Không tính: nguyên thuỷ (literal, template, phép toán số/so sánh,
+ * `typeof`), hàm/lớp, `Symbol()`, và `Object.freeze` của một literal mà mọi giá trị cũng
+ * không ghi được. Mọi thứ khác là trạng thái: object/array literal, `new …` (Map, Set,
+ * AbortController…), regex literal (`lastIndex` ghi được), lời gọi — kể cả IIFE dựng bảng
+ * một lần lúc nạp (`SAMPLE_CHARS` của `moderation-regex-parser.ts` từng lọt vì danh sách cũ
+ * chỉ biết ba dạng literal/`new`, nên tệp khác `.push()` vào nó mà luật xanh) — và bí danh
+ * (`const X = Y`: cùng một đối tượng).
  *
  * Lượt ghi được dò trên AST của MỌI tệp chạy thật (không chỉ tệp trong nhóm: endpoint
  * import trạng thái qua barrel). Gốc của đích ghi được lần qua `.p`, `[k]` (kể cả
@@ -87,16 +93,88 @@ export interface StateBinding {
   file: string
   name: string
   line: number
+  /** Khai báo mang `export` — `exportedFamilyState` của nhóm moderation-regex đọc cờ này. */
+  exported: boolean
 }
 
-function isStateInitializer(initializer: ts.Expression | undefined): boolean {
-  if (!initializer) return false
-  const inner = unwrap(initializer)
-  return (
-    ts.isObjectLiteralExpression(inner) ||
-    ts.isArrayLiteralExpression(inner) ||
-    ts.isNewExpression(inner)
+const BINARY_PASSING_AN_OPERAND = new Set([
+  ts.SyntaxKind.QuestionQuestionToken,
+  ts.SyntaxKind.BarBarToken,
+  ts.SyntaxKind.AmpersandAmpersandToken,
+])
+
+/** `Symbol`, `Object.freeze`… — tên gọi của một callee dạng `a` hoặc `a.b`, hoặc null. */
+function calleeName(callee: ts.Expression): string | null {
+  const inner = unwrap(callee)
+  if (ts.isIdentifier(inner)) return inner.text
+  return ts.isPropertyAccessExpression(inner) && ts.isIdentifier(inner.expression)
+    ? `${inner.expression.text}.${inner.name.text}`
+    : null
+}
+
+/** Literal mà `Object.freeze` khoá được trọn: mọi phần tử/giá trị cũng không ghi được. */
+function isFrozenLiteral(node: ts.Expression): boolean {
+  const inner = unwrap(node)
+  if (ts.isArrayLiteralExpression(inner))
+    return inner.elements.every((element) => !ts.isSpreadElement(element) && isImmutableValue(element))
+  if (ts.isObjectLiteralExpression(inner))
+    return inner.properties.every(
+      (property) =>
+        (ts.isPropertyAssignment(property) && isImmutableValue(property.initializer)) ||
+        ts.isMethodDeclaration(property) ||
+        ts.isGetAccessorDeclaration(property),
+    )
+  return false
+}
+
+/**
+ * Giá trị mà không ai ghi vào được. Đóng khi nghi ngờ: dạng nào không có ở đây là
+ * trạng thái. `Object.freeze` chỉ khoá một tầng, nên chỉ được tính khi đối số là literal
+ * mà mọi giá trị bên trong cũng không ghi được (`CHAT_LIMITS`, `MODERATION_RESCAN_LIMITS`).
+ */
+function isImmutableValue(node: ts.Expression): boolean {
+  const inner = unwrap(node)
+  if (
+    ts.isStringLiteralLike(inner) ||
+    ts.isNumericLiteral(inner) ||
+    ts.isBigIntLiteral(inner) ||
+    ts.isTemplateExpression(inner) ||
+    ts.isPrefixUnaryExpression(inner) ||
+    ts.isTypeOfExpression(inner) ||
+    ts.isVoidExpression(inner) ||
+    ts.isArrowFunction(inner) ||
+    ts.isFunctionExpression(inner) ||
+    ts.isClassExpression(inner)
   )
+    return true
+  if (
+    inner.kind === ts.SyntaxKind.TrueKeyword ||
+    inner.kind === ts.SyntaxKind.FalseKeyword ||
+    inner.kind === ts.SyntaxKind.NullKeyword
+  )
+    return true
+  if (ts.isIdentifier(inner)) return ['undefined', 'NaN', 'Infinity'].includes(inner.text)
+  if (ts.isConditionalExpression(inner))
+    return isImmutableValue(inner.whenTrue) && isImmutableValue(inner.whenFalse)
+  if (ts.isBinaryExpression(inner)) {
+    const operator = inner.operatorToken.kind
+    if (BINARY_PASSING_AN_OPERAND.has(operator))
+      return isImmutableValue(inner.left) && isImmutableValue(inner.right)
+    if (operator === ts.SyntaxKind.CommaToken) return isImmutableValue(inner.right)
+    // `x = y` / `x ??= y` trả một toán hạng — không đoán; mọi phép khác cho số/chuỗi/boolean.
+    return operator < ts.SyntaxKind.FirstAssignment || operator > ts.SyntaxKind.LastAssignment
+  }
+  if (ts.isCallExpression(inner)) {
+    const callee = calleeName(inner.expression)
+    if (callee === 'Symbol' || callee === 'Symbol.for') return true
+    if (callee === 'Object.freeze') return inner.arguments.length === 1 && isFrozenLiteral(inner.arguments[0]!)
+  }
+  return false
+}
+
+/** `const` với giá trị khởi tạo này có phải trạng thái không (xem "Trạng thái" ở đầu tệp). */
+export function isStateInitializer(initializer: ts.Expression | undefined): boolean {
+  return initializer !== undefined && !isImmutableValue(initializer)
 }
 
 export function moduleStateBindings(file: string, source: string): StateBinding[] {
@@ -105,10 +183,11 @@ export function moduleStateBindings(file: string, source: string): StateBinding[
   for (const statement of sf.statements) {
     if (!ts.isVariableStatement(statement)) continue
     const isConst = (statement.declarationList.flags & ts.NodeFlags.Const) !== 0
+    const exported = statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false
     for (const declaration of statement.declarationList.declarations) {
       if (isConst && !isStateInitializer(declaration.initializer)) continue
       for (const id of bindingIdentifiers(declaration.name))
-        out.push({ file, name: id.text, line: lineOf(sf, id) })
+        out.push({ file, name: id.text, line: lineOf(sf, id), exported })
     }
   }
   return out
