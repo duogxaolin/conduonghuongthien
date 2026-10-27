@@ -18,7 +18,10 @@ import {
  *     needs `--raise <file>` in that PR. The two unsplittable files, whose guard tests pin
  *     the parent file's template (and, for the dashboard, run its script through
  *     `Function()`): `app/pages/admin/content/articles/index.vue`,
- *     `app/components/admin/AnalyticsLiveDashboard.client.vue`.
+ *     `app/components/admin/AnalyticsLiveDashboard.client.vue`. And
+ *     `server/services/ai-gateway-call.ts`: the wave3 4.3 split of `ai-gateway.ts` moved
+ *     `callAi` — one 545-line function — whole, so the move of this security choke-point
+ *     is provably byte-identical; splitting the function is a follow-up.
  *   - EXEMPT and uncapped (`"exempt": true`) — append-only data by nature, so growth is
  *     not a regression: `server/db/schema.ts` (single source of truth, guarded by
  *     `db:drift`), `server/db/migrations-additive.ts` (append-only), and the content/seed
@@ -40,6 +43,7 @@ const MEASURED_EXTENSIONS = /\.(?:ts|vue|js|mjs|cjs|sh)$/
 const CAPPED_WITH_REASON = [
   'app/pages/admin/content/articles/index.vue',
   'app/components/admin/AnalyticsLiveDashboard.client.vue',
+  'server/services/ai-gateway-call.ts',
 ]
 
 /** Append-only data: uncapped, but listed with a reason. */
@@ -108,6 +112,13 @@ ratchet(FILE_LENGTH, () => {
       assert.ok(typeof entry === 'object' && !isExempt(entry) && typeof entry.value === 'number' && entry.reason.trim() !== '',
         `${file} must stay CAPPED with a reason ({ "value", "reason" }) — it is unsplittable, not append-only`)
     }
+    // `callAi` kept whole by the ai-gateway split: the entry must exist (a new file over
+    // 400 lines), stay capped, and keep saying WHY — dropping the reason, or turning the
+    // entry into a bare number, is red here.
+    const gateway = baseline['server/services/ai-gateway-call.ts']
+    assert.ok(gateway !== undefined && typeof gateway === 'object' && !isExempt(gateway),
+      'server/services/ai-gateway-call.ts must stay CAPPED with a reason — callAi was moved whole on purpose')
+    assert.match(gateway.reason, /545-line function \(`callAi`\) kept whole so the move is provably unchanged; splitting it is a follow-up/)
     // The exempt allowlist is the engine's (baselineProblems): exactly these files, each one exempt.
     assert.deepEqual(baselineProblems(FILE_LENGTH, baseline), [])
     const { 'server/data/chatbot-small-talk-seed.ts': _dropped, ...withoutOne } = baseline

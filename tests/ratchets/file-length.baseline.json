@@ -68,7 +68,10 @@
     "reason": "Single source of truth for every table, guarded by npm run db:drift (design D-R). It grows with every schema change, so growth is not a regression."
   },
   "server/db/seed.ts": 500,
-  "server/services/ai-gateway.ts": 732,
+  "server/services/ai-gateway-call.ts": {
+    "value": 608,
+    "reason": "one 545-line function (`callAi`) kept whole so the move is provably unchanged; splitting it is a follow-up (wave3 4.3 split of ai-gateway.ts; the split is pinned by tests/ai-gateway-seams-behavior.test.ts). Allowed above the 400-line default, but capped: it may only shrink."
+  },
   "server/services/analytics-maintenance.ts": 522,
   "server/services/analytics-reporting.ts": 496,
   "server/services/article-translations.ts": 467,

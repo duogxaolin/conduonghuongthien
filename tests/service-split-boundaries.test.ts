@@ -1,6 +1,7 @@
 /**
- * Ranh giới của bảy nhóm tệp đã tách (wave2-hardening 5.3 / 5.4 / 5.5 / 5.6 + `backup.ts`,
- * wave3-long-term 4.3 `moderation-worker.ts` và `server/utils/chatbot/chat-policy.ts`).
+ * Ranh giới của tám nhóm tệp đã tách (wave2-hardening 5.3 / 5.4 / 5.5 / 5.6 + `backup.ts`,
+ * wave3-long-term 4.3 `moderation-worker.ts`, `server/utils/chatbot/chat-policy.ts` và
+ * `ai-gateway.ts`).
  *
  *   • `media-portal.ts`     — barrel; mã ở `media-portal-*.ts` (+ `media-validation.ts`,
  *     `media-views.ts` mà barrel xuất lại).
@@ -25,6 +26,12 @@
  *     của barrel, không thuộc nhóm (`chat.ts`/`input-length.ts` import barrel đúng chủ đích).
  *     Mẫu `CHAT_POLICY_PART` + thư mục ở `_chat-policy-family.ts` — một nguồn với ba guard an
  *     ninh đọc mã chính sách chat (SQL thô, khoá rate limit, hạn mức AI).
+ *   • `ai-gateway.ts` — barrel; mã ở `ai-gateway-{call,config,types}.ts` + ba tệp tách từ trước
+ *     (`ai-sse.ts`, `ai-text-cleaner.ts`, `ai-response-parse.ts` — `ai-sse.ts` import thẳng
+ *     `ai-text-cleaner.ts`, nên nó phải thuộc nhóm thì luật 6 mới đúng). `callAi` dời nguyên
+ *     khối sang `ai-gateway-call.ts` (giữ từng byte; trần dòng ghi ở ratchet). Mẫu
+ *     `AI_GATEWAY_PART` ở `_ai-gateway-family.ts` — một nguồn với guard một-đầu-đọc-SSE và
+ *     guard `fetch` trần.
  *
  * Sáu luật, mỗi luật chặn một kiểu hỏng không có triệu chứng lúc viết:
  *
@@ -54,7 +61,9 @@
  *      `workerStats` của `moderation-stats.ts` do đúng bốn tệp kiểm duyệt cùng ghi.
  *      Tệp khác ghi vẫn đỏ; tệp nêu tên thôi ghi cũng đỏ (mục chết). Nhóm `chat-policy`:
  *      hai luật hạn mức AI (`AI_QUOTA_RULE`, `AI_IP_CEILING_RULE`) là object literal — một
- *      chủ (`chat-policy-rate-limit.ts`); nơi khác nới `limit` là đỏ.
+ *      chủ (`chat-policy-rate-limit.ts`); nơi khác nới `limit` là đỏ. Nhóm `ai-gateway`: hai
+ *      cache 60 s (`configCache`, `providerCache`) và bảng `PROVIDER_POLICY` — một chủ
+ *      (`ai-gateway-config.ts`, không `export`).
  *   5. **API công khai của barrel `comments.ts` giữ đúng 17 tên giá trị + 17 tên kiểu
  *      như trước khi tách** — bỏ, đổi tên hay đổi loại một export là đỏ; xuất thêm
  *      (helper nội bộ thành API) cũng đỏ. Hình dạng barrel (chỉ `export { … } from
@@ -67,16 +76,20 @@
  *      Barrel `moderation-worker.ts`: cùng luật 5, 9 giá trị + 11 kiểu (ghim từ `9905d0d`);
  *      hình dạng (chỉ `export { … } from` tệp con của nhóm) do
  *      `moderationWorkerBarrelProblems` canh ngay ở đây. Barrel `chat-policy.ts`: 15 giá trị
- *      + 5 kiểu (ghim từ `0eb97bd`), hình dạng do `chatPolicyBarrelProblems`.
- *   6. **Ngoài nhóm `moderation-worker` / `chat-policy`, mã chỉ tới các tệp của nhóm qua
- *      barrel.** Bảy tệp test `mock.module('…/moderation-worker')` thay lớp kiểm duyệt cho
+ *      + 5 kiểu (ghim từ `0eb97bd`), hình dạng do `chatPolicyBarrelProblems`. Barrel
+ *      `ai-gateway.ts`: 5 giá trị + 4 kiểu (ghim từ `25bc314`), hình dạng do
+ *      `aiGatewayBarrelProblems`.
+ *   6. **Ngoài nhóm `moderation-worker` / `chat-policy` / `ai-gateway`, mã chỉ tới các tệp của
+ *      nhóm qua barrel.** Bảy tệp test `mock.module('…/moderation-worker')` thay lớp kiểm duyệt cho
  *      endpoint chatbot, bình luận, chat livestream; bốn tệp test `mock.module('…/chat-policy')`
  *      thay rate limit + trần độ dài cho hai endpoint chat (`input-length.ts` đọc `CHAT_LIMITS`
- *      qua barrel). Một nơi gọi import thẳng tệp con thì lọt khỏi mock đó: test chạy mã thật
- *      và hoặc đỏ vì lý do khác, hoặc xanh mà không còn kiểm điều nó định kiểm.
+ *      qua barrel); mười tệp test `mock.module('…/ai-gateway')` thay `callAi` cho dịch bài/khoá
+ *      giao diện, biên tập AI, chatbot, kiểm duyệt. Một nơi gọi import thẳng tệp con thì lọt
+ *      khỏi mock đó: test chạy mã thật và hoặc đỏ vì lý do khác, hoặc xanh mà không còn kiểm
+ *      điều nó định kiểm.
  *
  * Luật 2, 3 và 6 không lặp theo mọi nhóm: chúng canh một tệp/một sổ/một đường mock cụ thể
- * của nhóm `chunked-upload`/`video-processing`/`moderation-worker`/`chat-policy`.
+ * của nhóm `chunked-upload`/`video-processing`/`moderation-worker`/`chat-policy`/`ai-gateway`.
  *
  * Đọc bằng TypeScript AST (`_module-references.ts` cho đường dẫn module, một lượt
  * AST nhỏ ở `_service-split-sources.ts` cho tên được nhập): chú thích nhắc tới
@@ -90,6 +103,14 @@
  */
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import {
+  AI_GATEWAY_BARREL,
+  AI_GATEWAY_PART,
+  EXPECTED_AI_GATEWAY_FAMILY,
+  aiGatewayBarrelProblems,
+  aiGatewayFiles,
+  isAiGatewayFile,
+} from './_ai-gateway-family.ts'
 import {
   CHAT_POLICY_BARREL,
   CHAT_POLICY_PART,
@@ -186,6 +207,13 @@ const FAMILIES: Record<string, Family> = {
     barrel: CHAT_POLICY_BARREL,
     prefix: CHAT_POLICY_PART,
     dir: CHAT_POLICY_PARTS_DIR,
+  },
+  // `ai-gateway-*.ts` + ba tệp tách từ trước (`ai-sse.ts`, `ai-text-cleaner.ts`,
+  // `ai-response-parse.ts`): barrel xuất lại hai trong số đó, và `ai-sse.ts` import thẳng
+  // `ai-text-cleaner.ts` — để `ai-sse.ts` ngoài nhóm thì luật 6 đỏ trên mã đúng.
+  'ai-gateway': {
+    barrel: AI_GATEWAY_BARREL,
+    prefix: AI_GATEWAY_PART,
   },
 }
 
@@ -508,12 +536,27 @@ const PRE_SPLIT_CHAT_POLICY_API = {
 const chatPolicyApiViolations = (sources: Sources) =>
   apiPinViolations(sources, CHAT_POLICY_BARREL, PRE_SPLIT_CHAT_POLICY_API, 'PRE_SPLIT_CHAT_POLICY_API')
 
+/**
+ * API của `server/services/ai-gateway.ts` ngay trước khi tách (wave3 4.3): bản ở `25bc314`
+ * (`wave3/integration`). Suy bằng `exportedApi` (cùng phép đọc AST của luật 5) từ
+ * `git show 25bc314:server/services/ai-gateway.ts`: 5 giá trị + 4 kiểu, gồm ba tên xuất lại
+ * từ `ai-text-cleaner`/`ai-response-parse` có từ trước. Chép cứng vì CI checkout nông.
+ */
+const PRE_SPLIT_AI_GATEWAY_API = {
+  values: ['callAi', 'createStreamingCleaner', 'extractToolCallsFromMessage', 'parseToolArguments', 'substituteVariables'],
+  types: ['AiCallInput', 'AiCallResult', 'AiToolDefinition', 'AiTransportOverrides'],
+}
+
+const aiGatewayApiViolations = (sources: Sources) =>
+  apiPinViolations(sources, AI_GATEWAY_BARREL, PRE_SPLIT_AI_GATEWAY_API, 'PRE_SPLIT_AI_GATEWAY_API')
+
 // ─── Luật 6: ngoài nhóm moderation-worker / chat-policy, chỉ barrel được import ─
 
 /** Vì sao đường qua barrel là phần chịu lực — vào thông báo của luật 6. */
 const MOCKED_BARREL_NOTE: Record<string, string> = {
   'moderation-worker': 'bảy tệp test mock.module đúng đường đó',
   'chat-policy': 'bốn tệp test mock.module đúng đường đó',
+  'ai-gateway': 'mười tệp test mock.module đúng đường đó',
 }
 
 /**
@@ -524,7 +567,7 @@ const MOCKED_BARREL_NOTE: Record<string, string> = {
  */
 function consumerCheck(
   sources: Sources,
-  name: 'moderation-worker' | 'chat-policy',
+  name: 'moderation-worker' | 'chat-policy' | 'ai-gateway',
 ): {
   violations: string[]
   barrelImporters: string[]
@@ -551,6 +594,7 @@ function consumerCheck(
 
 const moderationConsumerCheck = (sources: Sources) => consumerCheck(sources, 'moderation-worker')
 const chatPolicyConsumerCheck = (sources: Sources) => consumerCheck(sources, 'chat-policy')
+const aiGatewayConsumerCheck = (sources: Sources) => consumerCheck(sources, 'ai-gateway')
 
 /**
  * Vòng import tĩnh (`import`, `import type`, `export … from`) đi qua một tệp của nhóm,
@@ -631,11 +675,14 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       ),
       // Cùng danh sách mà ba guard đọc mã chính sách chat dùng (`_chat-policy-family.ts`).
       'chat-policy': [...EXPECTED_CHAT_POLICY_PARTS],
+      // Cùng danh sách mà guard một-đầu-đọc-SSE và guard `fetch` trần dùng (`_ai-gateway-family.ts`).
+      'ai-gateway': EXPECTED_AI_GATEWAY_FAMILY.filter((file) => file !== 'ai-gateway.ts'),
     }
     assert.equal(expected.comments!.length, 7)
     assert.equal(expected.backup!.length, 6)
     assert.equal(expected['moderation-worker']!.length, 8)
     assert.equal(expected['chat-policy']!.length, 7)
+    assert.equal(expected['ai-gateway']!.length, 6)
     for (const [name, family] of Object.entries(FAMILIES)) {
       const members = familyMembers(REPO, family)
       // Tệp con nằm ở `familyHome` — thư mục của barrel, hoặc `Family.dir` (chat-policy).
@@ -716,8 +763,26 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     )
   })
 
+  it('nhóm ai-gateway và các guard đọc mã gateway là cùng một tập tệp; ai-* khác không thuộc nhóm', () => {
+    // Một mẫu, không hai bản chép.
+    assert.equal(FAMILIES['ai-gateway']!.prefix, AI_GATEWAY_PART)
+    assert.equal(FAMILIES['ai-gateway']!.barrel, AI_GATEWAY_BARREL)
+    for (const file of EXPECTED_AI_GATEWAY_FAMILY.filter((name) => name !== 'ai-gateway.ts'))
+      assert.ok(AI_GATEWAY_PART.test(file), `${file} phải là tệp con của nhóm ai-gateway`)
+    assert.ok(AI_GATEWAY_PART.test('ai-gateway-extra.ts'), 'tệp con mới (chưa xuất lại) vẫn thuộc nhóm')
+    for (const name of ['ai-gateway.ts', 'ai-gateway-.ts', 'ai-gateway-x.js', 'ai-gatewayx.ts', 'ai-sse-v2.ts', 'ai-budget.ts', 'ai-cost.ts'])
+      assert.ok(!AI_GATEWAY_PART.test(name), `${name} không phải tệp con của nhóm ai-gateway`)
+    assert.ok(isAiGatewayFile('ai-gateway.ts'))
+    // Tập của guard này (barrel + tiền tố ∪ đích barrel xuất lại) = tập hai guard đọc mã quét.
+    assert.deepEqual([AI_GATEWAY_BARREL, ...familyMembers(REPO, FAMILIES['ai-gateway']!)].sort(), aiGatewayFiles())
+  })
+
   it('luật 1: không tệp con nào import barrel/cửa vào của chính nhóm mình', () => {
     assert.deepEqual(selfImportViolations(REPO), [])
+  })
+
+  it('luật 1: không vòng import tĩnh nào đi qua nhóm ai-gateway (dò từ barrel, kể cả qua util mà callAi import)', () => {
+    assert.deepEqual(familyImportCycles(REPO, FAMILIES['ai-gateway']!), [])
   })
 
   it('luật 1: không vòng import tĩnh nào đi qua nhóm moderation-worker (dò từ barrel, kể cả qua anh em)', () => {
@@ -782,6 +847,11 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       // `Object.freeze(…)` — không ghi được, nên không phải trạng thái.
       'server/services/chat-policy-rate-limit.ts#AI_QUOTA_RULE',
       'server/services/chat-policy-rate-limit.ts#AI_IP_CEILING_RULE',
+      // Nhóm ai-gateway: hai cache 60 s và bảng provider → định dạng (không `export`).
+      // `CACHE_TTL_MS`/`TOOL_STEP_*` là số — không ghi được, nên không phải trạng thái.
+      'server/services/ai-gateway-config.ts#configCache',
+      'server/services/ai-gateway-config.ts#providerCache',
+      'server/services/ai-gateway-config.ts#PROVIDER_POLICY',
     ])
       assert.ok(inventory.includes(state), `${state} vắng khỏi kho ${JSON.stringify(inventory)}`)
     // …và phép giải tên thật sự đi tới trạng thái, cả thẳng lẫn qua barrel. Nhóm
@@ -837,6 +907,21 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     assert.deepEqual(chatPolicyBarrelProblems(REPO.get(CHAT_POLICY_BARREL)!), [])
   })
 
+  it('luật 5: ai-gateway.ts xuất đúng 5 giá trị + 4 kiểu của API trước khi tách', () => {
+    assert.equal(PRE_SPLIT_AI_GATEWAY_API.values.length, 5)
+    assert.equal(PRE_SPLIT_AI_GATEWAY_API.types.length, 4)
+    assert.deepEqual(aiGatewayApiViolations(REPO), [])
+  })
+
+  it('luật 5: tên giá trị lúc chạy của ai-gateway.ts khớp danh sách (phép đọc AST không lệch)', async () => {
+    const surface = await import('../server/services/ai-gateway.ts')
+    assert.deepEqual(Object.keys(surface).sort(), [...PRE_SPLIT_AI_GATEWAY_API.values].sort())
+  })
+
+  it('luật 5: barrel ai-gateway.ts chỉ gồm `export { … } from` tệp con của nhóm', () => {
+    assert.deepEqual(aiGatewayBarrelProblems(REPO.get(AI_GATEWAY_BARREL)!), [])
+  })
+
   it('luật 6: ngoài nhóm moderation-worker, mã chỉ tới nhóm qua barrel (đường mà các test mock)', () => {
     const { violations, barrelImporters } = moderationConsumerCheck(REPO)
     assert.deepEqual(violations, [])
@@ -864,6 +949,27 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/api/public/chatbot/index.post.ts',
       'server/utils/chatbot/chat.ts',
       'server/utils/chatbot/input-length.ts',
+    ])
+      assert.ok(barrelImporters.includes(file), `${file} vắng khỏi ${JSON.stringify(barrelImporters)}`)
+  })
+
+  it('luật 6: ngoài nhóm ai-gateway, mã chỉ tới nhóm qua barrel (đường mà mười test mock)', () => {
+    const { violations, barrelImporters } = aiGatewayConsumerCheck(REPO)
+    assert.deepEqual(violations, [])
+    // Không kiểm rỗng: nơi gọi mà mười tệp test thay `callAi` bằng mock phải đang đi qua
+    // barrel — dịch bài (article-translation-worker-behavior), chatbot (chat-policy-seams),
+    // dịch ngôn ngữ (language-translations-write-behavior: ba endpoint), dịch danh mục
+    // (model-translations), kiểm duyệt (năm tệp moderation-*/reader-flows), biên tập AI
+    // (security-ai-editorial-html). Kiểm tập con, không ghim đúng danh sách.
+    for (const file of [
+      'server/services/article-translation-worker.ts',
+      'server/services/chat-policy-provider.ts',
+      'server/api/admin/languages/ai-translate.post.ts',
+      'server/api/admin/languages/ai-translate-chunk.post.ts',
+      'server/api/admin/languages/ai-translate-key.post.ts',
+      'server/services/i18n-auto-translate.ts',
+      'server/services/moderation-worker-check.ts',
+      'server/api/admin/ai/editorial.post.ts',
     ])
       assert.ok(barrelImporters.includes(file), `${file} vắng khỏi ${JSON.stringify(barrelImporters)}`)
   })
@@ -2138,6 +2244,227 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
         withOverrides({
           ...inject(chatPolicyPart('answer'), "import { HOTLINE as _h } from './chat-policy-contract'"),
           ...inject('server/api/public/chatbot/session.post.ts', "import { HOTLINE as _h } from '../../../utils/chatbot/chat-policy'"),
+        }),
+      ).violations,
+      [],
+    )
+  })
+
+  // ─── Nhóm ai-gateway (barrel + ai-gateway-*.ts + ba tệp tách từ trước) ───────
+
+  it('luật 1 đỏ khi tệp của nhóm ai-gateway nạp barrel, ở mọi dạng — kể cả tệp tách từ trước và tệp con barrel chưa xuất lại', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'import',
+        inject('server/services/ai-gateway-call.ts', "import { substituteVariables as _s } from './ai-gateway'"),
+        /^\[ai-gateway\] server\/services\/ai-gateway-call\.ts:1 \(import\) import ngược server\/services\/ai-gateway\.ts$/,
+      ],
+      [
+        'import type, có đuôi .ts',
+        inject('server/services/ai-gateway-types.ts', "import type { AiCallResult as _R } from './ai-gateway.ts'"),
+        /^\[ai-gateway\] server\/services\/ai-gateway-types\.ts:1 \(import\)/,
+      ],
+      [
+        'export … from',
+        inject('server/services/ai-gateway-config.ts', "export { callAi as _c } from './ai-gateway'"),
+        /^\[ai-gateway\] server\/services\/ai-gateway-config\.ts:1 \(export … from\)/,
+      ],
+      [
+        'tệp tách từ trước (ai-sse.ts, đầu đọc SSE)',
+        inject('server/services/ai-sse.ts', "import { callAi as _c } from './ai-gateway'"),
+        /^\[ai-gateway\] server\/services\/ai-sse\.ts:1 \(import\) import ngược server\/services\/ai-gateway\.ts$/,
+      ],
+      [
+        'import() động trong tệp tách từ trước',
+        append('server/services/ai-text-cleaner.ts', "export async function _lazy() { return (await import('./ai-gateway')).callAi }"),
+        /^\[ai-gateway\] server\/services\/ai-text-cleaner\.ts:\d+ \(import\(\)\)/,
+      ],
+      [
+        'typeof import() qua alias #server',
+        append('server/services/ai-response-parse.ts', "export type _Api = typeof import('#server/services/ai-gateway')"),
+        /^\[ai-gateway\] server\/services\/ai-response-parse\.ts:\d+ \(import\(\) type\)/,
+      ],
+      [
+        'tệp con mới mà barrel chưa xuất lại (thuộc nhóm nhờ mẫu tệp)',
+        { 'server/services/ai-gateway-extra.ts': "import { callAi } from './ai-gateway'\nexport const _c = callAi\n" },
+        /^\[ai-gateway\] server\/services\/ai-gateway-extra\.ts:1 \(import\) import ngược server\/services\/ai-gateway\.ts$/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = selfImportViolations(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 1 KHÔNG nhầm `./ai-gateway-types` với barrel ai-gateway', () => {
+    assert.deepEqual(
+      selfImportViolations(
+        withOverrides(inject('server/services/ai-gateway-config.ts', "import type { AiCallInput as _I } from './ai-gateway-types'")),
+      ),
+      [],
+    )
+  })
+
+  it('vòng import qua util mà callAi import thì đỏ (ai-gateway) — luật 1 không thấy, phép dò vòng thấy', () => {
+    const override = inject('server/utils/ai-budget.ts', "import { callAi as _c } from '../services/ai-gateway'")
+    // ai-budget.ts không thuộc nhóm: luật 1 im lặng…
+    assert.deepEqual(selfImportViolations(withOverrides(override)), [])
+    // …nhưng barrel → ai-gateway-call → ai-budget → barrel là một vòng.
+    const cycles = familyImportCycles(withOverrides(override), FAMILIES['ai-gateway']!)
+    assert.ok(cycles.length > 0, 'không thấy vòng')
+    for (const cycle of cycles)
+      assert.match(cycle, /^server\/services\/ai-gateway\.ts → .*server\/utils\/ai-budget\.ts → server\/services\/ai-gateway\.ts$/)
+  })
+
+  it('luật 4 đỏ khi cache của gateway bị chép sang tệp con thứ hai (hai sổ cache, mỗi nửa thấy một nửa)', () => {
+    const violations = stateViolations(
+      withOverrides(inject('server/services/ai-gateway-call.ts', 'const configCache = new Map<string, unknown>()')),
+    )
+    assert.equal(violations.length, 1, JSON.stringify(violations))
+    assert.match(
+      violations[0]!,
+      /^\[ai-gateway\] 'configCache' khai ở 2 tệp \(server\/services\/ai-gateway-call\.ts:1, server\/services\/ai-gateway-config\.ts:\d+\)/,
+    )
+  })
+
+  it('luật 4 đỏ khi tệp con khác xoá cache của chủ (mở export rồi `.clear()`)', () => {
+    const call = 'server/services/ai-gateway-call.ts'
+    const violations = stateViolations(
+      withOverrides({
+        ...replaceIn('server/services/ai-gateway-config.ts', 'const providerCache = new Map', 'export const providerCache = new Map'),
+        [call]: `import { providerCache } from './ai-gateway-config'\n${REPO.get(call)}\nexport function _flush() { providerCache.clear() }\n`,
+      }),
+    )
+    assert.equal(violations.length, 1, JSON.stringify(violations))
+    assert.match(
+      violations[0]!,
+      /^\[ai-gateway\] server\/services\/ai-gateway-call\.ts:\d+ \(\.clear\(\)\) ghi vào 'providerCache' của server\/services\/ai-gateway-config\.ts/,
+    )
+  })
+
+  it('luật 4 đỏ khi endpoint đổi bảng provider → định dạng nhập qua barrel', () => {
+    const editorial = 'server/api/admin/ai/editorial.post.ts'
+    const from = "import { callAi } from '../../../services/ai-gateway'"
+    const source = REPO.get(editorial)!
+    assert.ok(source.includes(from), `${editorial} không còn đoạn ${JSON.stringify(from)} để đột biến`)
+    const violations = stateViolations(
+      withOverrides({
+        ...replaceIn('server/services/ai-gateway-config.ts', 'const PROVIDER_POLICY:', 'export const PROVIDER_POLICY:'),
+        ...append(AI_GATEWAY_BARREL, "export { PROVIDER_POLICY } from './ai-gateway-config'"),
+        [editorial]: `${source.replace(from, "import { callAi, PROVIDER_POLICY } from '../../../services/ai-gateway'")}\nexport function _loosen() { PROVIDER_POLICY.anthropic = 'openai-compatible' }\n`,
+      }),
+    )
+    assert.equal(violations.length, 1, JSON.stringify(violations))
+    assert.match(
+      violations[0]!,
+      /^\[ai-gateway\] server\/api\/admin\/ai\/editorial\.post\.ts:\d+ \(gán\) ghi vào 'PROVIDER_POLICY' của server\/services\/ai-gateway-config\.ts/,
+    )
+  })
+
+  it('luật 5 đỏ khi barrel ai-gateway.ts bỏ, đổi tên, đổi loại hay xuất thêm một tên', () => {
+    const barrel = AI_GATEWAY_BARREL
+    const cases: Array<[string, Record<string, string>, string[]]> = [
+      [
+        'bỏ parseToolArguments',
+        replaceIn(barrel, 'export { extractToolCallsFromMessage, parseToolArguments }', 'export { extractToolCallsFromMessage }'),
+        [`${barrel} thiếu giá trị 'parseToolArguments'`],
+      ],
+      [
+        'đổi tên AiCallResult',
+        replaceIn(barrel, 'AiTransportOverrides, AiCallResult }', 'AiTransportOverrides, AiCallResult as AiGatewayResult }'),
+        [`${barrel} thiếu kiểu 'AiCallResult'`, `${barrel} xuất thêm kiểu 'AiGatewayResult'`],
+      ],
+      [
+        'giá trị thành kiểu',
+        replaceIn(barrel, "export { callAi } from './ai-gateway-call'", "export type { callAi } from './ai-gateway-call'"),
+        [`${barrel} thiếu giá trị 'callAi'`, `${barrel} xuất thêm kiểu 'callAi'`],
+      ],
+      [
+        'lộ bộ đọc cache nội bộ',
+        append(barrel, "export { loadProvider } from './ai-gateway-config'"),
+        [`${barrel} xuất thêm giá trị 'loadProvider'`],
+      ],
+      ['export *', append(barrel, "export * from './ai-gateway-config'"), [`${barrel} xuất thêm giá trị '* from './ai-gateway-config''`]],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = aiGatewayApiViolations(withOverrides(override))
+      assert.deepEqual(violations.map((violation) => violation.split(' — ')[0]), expected, label)
+    }
+  })
+
+  it('hình dạng barrel ai-gateway.ts đỏ khi có mã, import, export *, hay nguồn ngoài nhóm', () => {
+    const base = REPO.get(AI_GATEWAY_BARREL)!
+    const swap = (from: string, to: string) => {
+      assert.ok(base.includes(from), `barrel không còn đoạn ${JSON.stringify(from)} để đột biến`)
+      return base.replace(from, to)
+    }
+    const cases: Array<[string, string, RegExp]> = [
+      // Luật 5 vẫn xanh với ca này (cùng tên, cùng loại) — chỉ phép kiểm hình dạng bắt.
+      [
+        'mã cùng tên dời về barrel',
+        swap("export { callAi } from './ai-gateway-call'", 'export async function callAi() { return { ok: false } }'),
+        /^not a re-export: export async function callAi/,
+      ],
+      ['import', `import { loadProvider } from './ai-gateway-config'\n${base}`, /^not a re-export: import/],
+      ['export *', `${base}\nexport * from './ai-gateway-config'\n`, /^not a named re-export/],
+      ['export * as', `${base}\nexport * as config from './ai-gateway-config'\n`, /^not a named re-export/],
+      ['util ngoài nhóm (ngân sách AI)', `${base}\nexport { checkBudget } from '../utils/ai-budget'\n`, /^not re-exported from a part of the family/],
+      ['service khác trong server/services', `${base}\nexport { HOTLINE } from './chat-policy-contract'\n`, /^not re-exported from a part of the family/],
+      ['export { … } không có module', `${base}\nexport { callAi as _c }\n`, /^a re-export without a module/],
+      ['rỗng', '', /^the barrel exports nothing$/],
+    ]
+    for (const [label, source, expected] of cases) {
+      const problems = aiGatewayBarrelProblems(source)
+      assert.equal(problems.length, 1, `${label}: ${JSON.stringify(problems)}`)
+      assert.match(problems[0]!, expected, label)
+    }
+    // Ca đầu: luật 5 đúng là không thấy gì.
+    assert.deepEqual(aiGatewayApiViolations(withOverrides({ [AI_GATEWAY_BARREL]: cases[0]![1] })), [])
+  })
+
+  it('luật 6 đỏ khi nơi gọi ngoài nhóm ai-gateway import thẳng một tệp của nhóm, ở mọi dạng', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'endpoint biên tập AI nhập callAi thẳng từ tệp con (lọt khỏi mock của security-ai-editorial-html)',
+        replaceIn('server/api/admin/ai/editorial.post.ts', "from '../../../services/ai-gateway'", "from '../../../services/ai-gateway-call'"),
+        /^\[ai-gateway\] server\/api\/admin\/ai\/editorial\.post\.ts:\d+ \(import\) import server\/services\/ai-gateway-call\.ts — .*mười tệp test mock\.module/,
+      ],
+      [
+        'lượt kiểm duyệt nhập thẳng tệp con (lọt khỏi mock của năm test kiểm duyệt)',
+        replaceIn('server/services/moderation-worker-check.ts', "from './ai-gateway'", "from './ai-gateway-call'"),
+        /^\[ai-gateway\] server\/services\/moderation-worker-check\.ts:\d+ \(import\) import server\/services\/ai-gateway-call\.ts/,
+      ],
+      [
+        'import type từ tệp kiểu',
+        inject('server/services/universal-translation.ts', "import type { AiCallResult as _R } from './ai-gateway-types'"),
+        /^\[ai-gateway\] server\/services\/universal-translation\.ts:1 \(import\) import server\/services\/ai-gateway-types\.ts/,
+      ],
+      [
+        'tệp tách từ trước (ai-text-cleaner) nhập thẳng',
+        inject('server/services/chat-policy-provider.ts', "import { cleanAiContent as _c } from './ai-text-cleaner'"),
+        /^\[ai-gateway\] server\/services\/chat-policy-provider\.ts:1 \(import\) import server\/services\/ai-text-cleaner\.ts/,
+      ],
+      [
+        'import() động',
+        append('server/services/article-translation-worker.ts', "export const _lazy = () => import('./ai-gateway-config')"),
+        /^\[ai-gateway\] server\/services\/article-translation-worker\.ts:\d+ \(import\(\)\) import server\/services\/ai-gateway-config\.ts/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const { violations } = aiGatewayConsumerCheck(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 6 KHÔNG đỏ (ai-gateway): tệp con nhập tệp con, nơi gọi mới nhập barrel', () => {
+    assert.deepEqual(
+      aiGatewayConsumerCheck(
+        withOverrides({
+          ...inject('server/services/ai-gateway-call.ts', "import type { AiToolDefinition as _T } from './ai-gateway-types'"),
+          ...inject('server/services/ai-sse.ts', "import { cleanAiContent as _c } from './ai-text-cleaner'"),
+          ...inject(chatPolicyPart('answer'), "import { substituteVariables as _s } from './ai-gateway'"),
         }),
       ).violations,
       [],
