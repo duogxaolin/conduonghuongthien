@@ -27,8 +27,12 @@
  * phải chứng minh), và chồng lấn chỉ xảy ra trên ký tự nằm ngoài bảng mẫu thử
  * (`SAMPLE_CHARS` ở `moderation-regex-parser.ts` — ASCII, khoảng trắng Unicode, chữ
  * Việt, vài ký tự đại diện): hai lớp ký tự được coi là rời nhau nếu không chung ký tự
- * mẫu nào. Ba khe hở cụ thể khác được ghim ở `tests/moderation-regex-seams-behavior.test.ts`
- * (`FINDING moderation-regex-1..3`).
+ * mẫu nào — kể cả một chữ cố định với chính nó (`日*日*$`, `ж*ж*$`: bậc ba, ghim ở
+ * `FINDING moderation-regex-4`, `tests/moderation-regex-seams-behavior.test.ts`).
+ * Ba khe hở từng lọt đã sửa (wave3 4.3b, test `regression moderation-regex-1..3`): tên nhóm
+ * không phải ASCII bị đọc thành chữ cố định, `{0}` cho độ rộng NaN (lặp 0 lần nay là chuỗi
+ * rỗng, so với trần viết dạng đóng khi nghi ngờ), chữ mà `iu` gập về nhau được so bằng
+ * `toLowerCase` (nay `foldCase`). Fuzz vi sai với engine: `tests/moderation-regex-fuzz.test.ts`.
  *
  * Trạng thái cấp module của tệp này (`charsetCache`, các `Finding` hằng) có một chủ: không
  * tệp nào khác ghi vào (`tests/service-split-boundaries.test.ts`, luật 4).
@@ -43,15 +47,24 @@ const BOUNDED_CHOICES_LIMIT = 1024
 /** Giới hạn số bước lùi ước lượng của một cụm lượng từ nối nhau (≈ 10–40 ms trên V8). */
 const SEQUENCE_COST_LIMIT = 1e7
 const LITERAL_SET_MAX = 256
+/** Trần của số cách khớp ước lượng — vượt mức này mọi phép so đã quyết xong. */
+const CHOICES_CAP = 1e12
 
 // ── Phép tính trên cây ──────────────────────────────────────────────────────
 
-/** Bóc nhóm (bắt/không bắt) và nối các chuỗi lồng nhau — nhóm không ảnh hưởng cách lùi. */
+/**
+ * Bóc nhóm (bắt/không bắt) và nối các chuỗi lồng nhau — nhóm không ảnh hưởng cách lùi.
+ * Lặp `{0}`/`{0,0}` thành chuỗi rỗng (độ rộng 0, một cách khớp, từ cố định `''`): engine
+ * không bao giờ chạy phần đó, nên nó không khớp gì, không ngăn cách gì và không lùi trong
+ * gì (`(?:\s+){0}\s*\s*$` là `\s*\s*$`).
+ */
 function normalize(node: Node): Node {
   switch (node.type) {
     case 'group': return normalize(node.child)
     case 'look': return { type: 'look', child: normalize(node.child) }
-    case 'quant': return { type: 'quant', child: normalize(node.child), min: node.min, max: node.max }
+    case 'quant':
+      if (node.max === 0) return { type: 'seq', items: [] }
+      return { type: 'quant', child: normalize(node.child), min: node.min, max: node.max }
     case 'alt': {
       const branches = node.branches.map(normalize)
       return branches.length === 1 ? branches[0]! : { type: 'alt', branches }
@@ -70,6 +83,9 @@ function normalize(node: Node): Node {
 
 interface Width { min: number; max: number }
 
+/** a·b với 0·∞ = 0 — `Infinity * 0` là NaN, và NaN so sánh nào cũng sai, nên lọt mọi trần. */
+const times = (a: number, b: number) => (a === 0 || b === 0 ? 0 : a * b)
+
 function width(node: Node): Width {
   switch (node.type) {
     case 'char': return { min: 1, max: 1 }
@@ -84,7 +100,7 @@ function width(node: Node): Width {
     case 'seq': return node.items.map(width).reduce((a, w) => ({ min: a.min + w.min, max: a.max + w.max }), { min: 0, max: 0 })
     case 'quant': {
       const w = width(node.child)
-      return { min: w.min * node.min, max: w.max === 0 ? 0 : w.max * node.max }
+      return { min: times(w.min, node.min), max: times(w.max, node.max) }
     }
   }
 }
@@ -105,10 +121,13 @@ function choices(node: Node): number {
     case 'quant': {
       if (node.max === Infinity) return width(node.child).max === 0 ? 1 : Infinity
       const c = choices(node.child)
+      // Σ c^k với k = min…max. Một cách mỗi vòng thì là số vòng — cộng từng k thì
+      // `a{0,999999999}` tốn cả tỉ bước ngay lúc lưu; c ≥ 2 thì vòng dưới vượt trần sau ≤ 40 bước.
+      if (c === 1) return Math.min(node.max - node.min + 1, CHOICES_CAP)
       let total = 0
       for (let k = node.min; k <= node.max; k += 1) {
         total += c ** k
-        if (total > 1e12) return 1e12
+        if (!(total <= CHOICES_CAP)) return CHOICES_CAP
       }
       return total
     }
@@ -142,7 +161,19 @@ function literalStrings(node: Node): string[] | null {
     }
     case 'quant': {
       if (node.max === Infinity || node.min !== node.max) return null
-      return literalStrings({ type: 'seq', items: Array.from({ length: node.min }, () => node.child) })
+      const once = literalStrings(node.child)
+      if (!once) return null
+      // Một từ: lặp chuỗi, không dựng mảng `node.min` phần tử — `(?:a{999999999}|b)+` từng làm
+      // tiến trình hết bộ nhớ ngay lúc lưu. Từ dài hơn cửa sổ không bao giờ khớp trọn trong
+      // một cửa sổ: coi như không phải từ cố định (từ chối thận trọng nếu nó bị lặp).
+      if (once.length === 1) return once[0]!.length * node.min > MODERATION_REGEX_WINDOW ? null : [once[0]!.repeat(node.min)]
+      // Nhiều từ: mỗi vòng nhân số từ lên ≥ 2, nên sau ≤ 9 vòng đã vượt LITERAL_SET_MAX.
+      let out = ['']
+      for (let k = 0; k < node.min; k += 1) {
+        out = out.flatMap(a => once.map(b => a + b))
+        if (out.length > LITERAL_SET_MAX) return null
+      }
+      return out
     }
     default: return null
   }
@@ -228,12 +259,15 @@ const ADJACENT: Finding = {
   hint: 'Gộp lượng từ kề nhau thành một (\\s* thay cho \\s*\\s*), và giữa các từ dùng giới hạn cụ thể như .{0,30} thay cho .* / .+.',
 }
 
+// Mọi phép so với trần viết dạng đóng khi nghi ngờ (`!(x <= trần)`, `!(min > 0)`): một số
+// NaN bị coi là vượt trần / khớp được rỗng, không lọt như `NaN > trần` (luôn sai).
+
 function checkQuant(node: Extract<Node, { type: 'quant' }>): Finding | null {
   if (node.max <= 1) return null
   const body = node.child
   const bodyWidth = width(body)
   if (node.max === Infinity) {
-    if (bodyWidth.min === 0 && bodyWidth.max > 0) return EMPTY_LOOP
+    if (!(bodyWidth.min > 0) && !(bodyWidth.max <= 0)) return EMPTY_LOOP
     if (choices(body) <= 1) return null
     const words = literalStrings(body)
     if (words && isPrefixFree(words)) return null
@@ -244,7 +278,7 @@ function checkQuant(node: Extract<Node, { type: 'quant' }>): Finding | null {
   const words = literalStrings(body)
   if (words && isPrefixFree(words)) return null
   if (perIteration === Infinity) return NESTED
-  if (perIteration ** node.max > BOUNDED_CHOICES_LIMIT) return BOUNDED_BLOWUP
+  if (!(perIteration ** node.max <= BOUNDED_CHOICES_LIMIT)) return BOUNDED_BLOWUP
   return null
 }
 
@@ -258,6 +292,11 @@ function checkQuant(node: Extract<Node, { type: 'quant' }>): Finding | null {
  * `\s*\s*$` (n³), `.*a.*b` (n³), `\w+.{0,20}x` (21·n²), `a?a?…a?` (2^k·n).
  */
 function checkSeq(node: Extract<Node, { type: 'seq' }>): Finding | null {
+  return clusterCosts(node).some(cost => !(cost <= SEQUENCE_COST_LIMIT)) ? ADJACENT : null
+}
+
+/** Chi phí ước lượng của từng cụm lượng từ nối nhau trong một chuỗi (xem `checkSeq`). */
+function clusterCosts(node: Extract<Node, { type: 'seq' }>): number[] {
   const items = node.items.filter(item => !isZeroWidth(item))
   const widths = items.map(width)
   const parent = items.map((_, i) => i)
@@ -279,15 +318,10 @@ function checkSeq(node: Extract<Node, { type: 'seq' }>): Finding | null {
     const root = find(i)
     groups.set(root, [...(groups.get(root) ?? []), i])
   }
-  for (const members of groups.values()) {
-    let cost = MODERATION_REGEX_WINDOW
-    for (const i of members) {
-      const w = widths[i]!
-      cost *= w.max === Infinity ? MODERATION_REGEX_WINDOW : Math.max(choices(items[i]!), w.max - w.min + 1)
-      if (cost > SEQUENCE_COST_LIMIT) return ADJACENT
-    }
-  }
-  return null
+  return [...groups.values()].map(members => members.reduce((cost, i) => {
+    const w = widths[i]!
+    return cost * (w.max === Infinity ? MODERATION_REGEX_WINDOW : Math.max(choices(items[i]!), w.max - w.min + 1))
+  }, MODERATION_REGEX_WINDOW))
 }
 
 function walk(node: Node): Finding | null {
@@ -316,14 +350,34 @@ function walk(node: Node): Finding | null {
 }
 
 export function analyzePattern(src: string): Finding | null {
-  let tree: Node
   try {
-    tree = normalize(new Parser(src).parse())
+    return walk(normalize(new Parser(src).parse()))
   } catch {
-    // Không phân tích được (cú pháp lạ mà RegExp vẫn nhận) → từ chối thận trọng.
+    // Không phân tích được (cú pháp lạ mà RegExp vẫn nhận, hay phép xét gặp lỗi) → từ chối
+    // thận trọng, không để lỗi đi lên endpoint lưu luật hay lượt nạp luật.
     return { reason: 'không phân tích được cấu trúc mẫu', hint: 'Hãy viết mẫu đơn giản hơn.' }
   }
-  return walk(tree)
+}
+
+/**
+ * Mọi số mà phép xét dựa vào — cận độ rộng và số cách khớp của từng nút, chi phí từng cụm
+ * nối nhau — trên cả cây đã chuẩn hoá, không dừng ở phát hiện đầu tiên. Chỉ cho test bất
+ * biến "không bao giờ NaN" (`tests/moderation-regex-parts.test.ts`, fuzz): NaN so sánh nào
+ * cũng sai, nên một ước lượng NaN lọt mọi trần — `(?:\s+){0}\s*\s*$` từng lọt đúng như vậy.
+ */
+export function analysisNumbers(src: string): number[] {
+  const out: number[] = []
+  const visit = (node: Node): void => {
+    const w = width(node)
+    out.push(w.min, w.max, choices(node))
+    if (node.type === 'seq') {
+      out.push(...clusterCosts(node))
+      node.items.forEach(visit)
+    } else if (node.type === 'alt') node.branches.forEach(visit)
+    else if (node.type === 'quant' || node.type === 'group' || node.type === 'look') visit(node.child)
+  }
+  visit(normalize(new Parser(src).parse()))
+  return out
 }
 
 /**

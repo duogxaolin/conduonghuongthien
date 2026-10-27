@@ -19,8 +19,11 @@
  *     10-minute cool-down at their boundaries, the 1 s per-text budget, the log fields,
  *     and the per-window consequences the header documents (`$` per window, a long match
  *     on a boundary missed);
- *   - three Layer-1 gaps found while writing this file, pinned as they behave today
- *     (`FINDING …`): fixing one flips its test, in its own change.
+ *   - three Layer-1 gaps found while writing this file, first pinned as they behaved
+ *     (`FINDING …`) and fixed in wave3 4.3b (`regression moderation-regex-1..3`, with the
+ *     shapes the differential fuzz found on the old code); two analyser DoS found during that
+ *     fix (huge quantifier counts); and one gap still open, pinned as it behaves today
+ *     (`FINDING moderation-regex-4`): fixing it flips its test, in its own change.
  *
  * Timing is a fake clock (`setModerationRegexTimingForTests`) and the regexes timed are
  * fakes: no assertion depends on how fast this machine is, and no slow pattern ever runs.
@@ -242,7 +245,7 @@ test('save time: escapes that name ONE character count as fixed words; class esc
   // `\x61` is "a", `b` is "b": (a|b) words, prefix-free → passes; `\x61` vs "a" → same word.
   assert.equal(findCatastrophicShape('(\\x61|\\u0062)+'), null)
   assert.equal(findCatastrophicShape('(\\x61|a)+'), OVERLAPPING_ALTERNATION.reason)
-  // Case folds through toLowerCase: "A" and "a" are the same word.
+  // Case folds as the iu flag folds (`foldCase`): "A" and "a" are the same word.
   assert.equal(findCatastrophicShape('(A|a)+'), OVERLAPPING_ALTERNATION.reason)
   assert.equal(findCatastrophicShape('(Đ|đa)+'), OVERLAPPING_ALTERNATION.reason)
   // `\d` is a class, never a word.
@@ -509,38 +512,123 @@ test('the real clock comes back with setModerationRegexTimingForTests(null): a f
   assert.equal(isModerationRuleDisabled('cấm'), false)
 })
 
-// ── Phát hiện lúc viết test này — ghim đúng như hôm nay, sửa ở thay đổi riêng ──
+// ── Khe hở lớp 1 tìm thấy lúc viết test này ─────────────────────────────────
 //
-// Ba mẫu dưới đây có cùng hình dạng với một mẫu lớp 1 ĐANG từ chối, nhưng lọt. Đo trên
-// máy phát triển (Node 26, bản gốc 597af6a): mẫu 1 và 2 tốn 148 ms cho 401 ký tự (bậc ba
-// — ~18 s cho một cửa sổ 2000 ký tự); mẫu 3 tốn 2,4 s cho 24 ký tự (cấp số — mỗi ký tự
-// thêm nhân đôi). Lớp 2 tắt luật SAU cửa sổ chậm đầu tiên, nên cửa sổ đó vẫn chặn vòng
-// sự kiện trọn thời gian của nó. Cần quyền sửa luật kiểm duyệt để lưu một mẫu như vậy.
-// Sửa một lỗi thì test của nó đỏ — đổi khẳng định thành "bị từ chối" trong cùng thay đổi.
+// Ba mẫu `regression moderation-regex-1..3` có cùng hình dạng với một mẫu lớp 1 đang từ
+// chối, nhưng từng lọt (ghim là `FINDING …`, sửa ở wave3 4.3b). Đo trên máy phát triển
+// (Node 26, bản gốc 597af6a, trước khi sửa): mẫu 1 và 2 tốn 148 ms cho 401 ký tự (bậc ba —
+// ~18 s cho một cửa sổ 2000 ký tự); mẫu 3 tốn 2,4 s cho 24 ký tự (cấp số — mỗi ký tự thêm
+// nhân đôi). Lớp 2 tắt luật SAU cửa sổ chậm đầu tiên, nên cửa sổ đó vẫn chặn vòng sự kiện
+// trọn thời gian của nó. Cần quyền sửa luật kiểm duyệt để lưu một mẫu như vậy. Mỗi test
+// kèm vài mẫu mà fuzz vi sai (`moderation-regex-fuzz.test.ts`) tìm được trên mã cũ — 77 mẫu
+// được nhận mà treo > 250 ms trên 400 ký tự — ghim bằng tên để không phụ thuộc bộ sinh.
+// `FINDING moderation-regex-4` vẫn mở: ghim đúng như hôm nay, sửa thì test đó đỏ.
 
-test('FINDING moderation-regex-1: nhóm có tên không phải ASCII bị phân tích sai — (?<é>\\s*)(?<ê>\\s*)$ lọt lớp 1', () => {
-  // `Parser.group` chỉ nhận tên `[A-Za-z_$][\w$]*`; `(?<é>` rơi xuống nhánh `(?:`, bỏ 2 ký
-  // tự `?<` và đọc `é>` thành chữ cố định — hai `\s*` trông như bị chữ đó ngăn cách.
-  assert.equal(findCatastrophicShape('\\s*\\s*$'), ADJACENT.reason)
-  assert.equal(findCatastrophicShape('(?<e>\\s*)(?<f>\\s*)$'), ADJACENT.reason, 'ASCII names: refused')
-  assert.equal(findCatastrophicShape('(?<é>\\s*)(?<ê>\\s*)$'), null)
-  assert.deepEqual(checkModerationPattern('(?<é>\\s*)(?<ê>\\s*)$', 'pattern'), { ok: true })
+const refusedAs = (finding: { reason: string; hint: string }, pattern: string) => {
+  assert.equal(findCatastrophicShape(pattern), finding.reason, pattern)
+  assert.deepEqual(
+    checkModerationPattern(pattern, 'pattern'),
+    { ok: false, reason: `Mẫu regex có nguy cơ treo máy chủ (${finding.reason}). ${finding.hint}` },
+    pattern,
+  )
+}
+const UNREADABLE = 'không phân tích được cấu trúc mẫu'
+
+test('regression moderation-regex-1: tên nhóm theo luật định danh JS — (?<é>\\s*)(?<ê>\\s*)$ bị từ chối như \\s*\\s*$', () => {
+  // Trước: `Parser.group` chỉ nhận tên `[A-Za-z_$][\w$]*`; `(?<é>` rơi xuống nhánh `(?:`, bỏ 2
+  // ký tự `?<` và đọc `é>` thành chữ cố định — hai `\s*` trông như bị chữ đó ngăn cách.
+  refusedAs(ADJACENT, '\\s*\\s*$')
+  refusedAs(ADJACENT, '(?<e>\\s*)(?<f>\\s*)$')
+  for (const pattern of [
+    '(?<é>\\s*)(?<ê>\\s*)$',
+    '(?<名>\\s*)(?<π>\\s*)$',
+    '(?<ſ>\\s*)(?<K>\\s*)$', // ID_Start ngoài ASCII
+    '(?<$é>\\s*)(?<_ê2>\\s*)$', // `$`/`_` đầu, chữ số sau
+    '(?<\\u00e9>\\s*)(?<\\u{1D49C}>\\s*)$', // escape \uXXXX và \u{…}
+    '(?<\\uD835\\uDC9C>\\s*)(?<a‍>\\s*)$', // cặp thay thế viết bằng hai escape; ZWJ
+  ])
+    refusedAs(ADJACENT, pattern)
+  // Fuzz trên mã cũ: tên lạ làm cả nhánh đầu thành "từ" `名0>K`, nên (K|k) trông như hai từ.
+  refusedAs(OVERLAPPING_ALTERNATION, '(?<名0>K|Kk|ſ)*!x')
+  refusedAs(OVERLAPPING_ALTERNATION, '(?<ê0>K|k)+$')
+  // Hành vi đúng giữ nguyên: nhóm tên tiếng Việt an toàn vẫn được nhận.
+  assert.deepEqual(checkModerationPattern('(?<từ>cờ|cá)\\s+bạc', 'pattern'), { ok: true })
+  // Tên engine từ chối: lỗi cú pháp lúc lưu; bộ đọc từ chối thận trọng, không đọc tên thành chữ.
+  for (const pattern of ['(?<1a>\\s*)\\s*$', '(?<a-b>x)', '(?<\\u0031>x)', '(?<\\uD835>x)', '(?<>x)', '(?<a\\x41>x)']) {
+    assert.match(reasonOf(pattern), /^Mẫu regex không hợp lệ: /, pattern)
+    assert.equal(findCatastrophicShape(pattern), UNREADABLE, pattern)
+  }
+  // Dạng `(?…` lạ không còn bị đọc như `(?:` (bộ đọc ném lỗi thay vì đoán), và dấu đóng thiếu
+  // không làm bộ đọc quay về đầu mẫu (`indexOf` = -1) và lặp mãi.
+  for (const pattern of ['(?P<a>x)', '(?#x)', '\\k<a', '\\p{L', '\\u{41', '(a', 'a)', '[a'])
+    assert.equal(findCatastrophicShape(pattern), UNREADABLE, pattern)
 })
 
-test('FINDING moderation-regex-2: {0} trên phần không giới hạn cho độ rộng NaN — (?:\\s+){0}\\s*\\s*$ lọt lớp 1', () => {
-  // `width` của `(?:\s+){0}` là { min: 0, max: Infinity * 0 = NaN }; NaN đi vào tích chi phí
-  // của cụm nối nhau và `NaN > SEQUENCE_COST_LIMIT` là false.
-  assert.equal(findCatastrophicShape('(?:\\s+){1}\\s*\\s*$'), ADJACENT.reason, '{1}: refused')
-  assert.equal(findCatastrophicShape('(?:\\s+){0}\\s*\\s*$'), null)
-  assert.deepEqual(checkModerationPattern('(?:\\s+){0}\\s*\\s*$', 'pattern'), { ok: true })
+test('regression moderation-regex-2: lặp {0} là chuỗi rỗng, không còn độ rộng NaN — (?:\\s+){0}\\s*\\s*$ bị từ chối', () => {
+  // Trước: `width` của `(?:\s+){0}` là { min: 0, max: Infinity * 0 = NaN }; NaN đi vào tích chi
+  // phí của cụm nối nhau và `NaN > SEQUENCE_COST_LIMIT` là false.
+  refusedAs(ADJACENT, '(?:\\s+){1}\\s*\\s*$')
+  for (const pattern of [
+    '(?:\\s+){0}\\s*\\s*$',
+    '(?:\\s*){0,0}\\s*\\s*$',
+    '\\s*(?:\\s+){0}\\s*$', // phần lặp 0 lần không ngăn cách hai `\s*`
+    '\\s*(?<é>x+){0}\\s*$',
+    // Fuzz trên mã cũ.
+    '(.*)(?<_0>ſ*){0}(?:.*)s*x',
+    '.*(?:K*){0}(\\s*)(?<\\u{1D49C}0>\\s*)Kx',
+  ])
+    refusedAs(ADJACENT, pattern)
+  // Phần lặp 0 lần không bao giờ chạy: không bị xét như đang khớp (chính xác, không thận trọng).
+  assert.deepEqual(checkModerationPattern('(?:(a+)+){0}x', 'pattern'), { ok: true })
+  assert.deepEqual(checkModerationPattern('x(?:\\s*){0}', 'pattern'), { ok: true })
 })
 
-test('FINDING moderation-regex-3: ký tự mà cờ iu gập về nhau nhưng toLowerCase thì không — (s|ſ)+x lọt lớp 1 (cấp số)', () => {
-  // `literalStrings` hạ chữ bằng `toLowerCase()`; `ſ` (U+017F) không đổi, nên (s|ſ) trông
-  // như hai từ khác nhau, không từ nào là phần đầu của từ kia. Với cờ `iu` cả hai nhánh
-  // khớp cùng ký tự `s`.
+test('regression moderation-regex-3: chữ mà cờ iu gập về nhau được so bằng chính phép gập đó — (s|ſ)+x bị từ chối', () => {
+  // Trước: `literalStrings` hạ chữ bằng `toLowerCase()`; `ſ` (U+017F) không đổi, nên (s|ſ)
+  // trông như hai từ khác nhau, không từ nào là phần đầu của từ kia. Với cờ `iu` cả hai
+  // nhánh khớp cùng ký tự `s`.
   assert.equal(new RegExp('^ſ$', MODERATION_REGEX_FLAGS).test('s'), true, 'iu folds ſ to s')
-  assert.equal(findCatastrophicShape('(s|s)+x'), OVERLAPPING_ALTERNATION.reason)
-  assert.equal(findCatastrophicShape('(s|ſ)+x'), null)
-  assert.deepEqual(checkModerationPattern('(s|ſ)+x', 'pattern'), { ok: true })
+  refusedAs(OVERLAPPING_ALTERNATION, '(s|s)+x')
+  for (const pattern of [
+    '(s|ſ)+x',
+    '(ſ|S)+x',
+    '(k|K)+x', // KELVIN SIGN
+    '(σ|ς)+x', // σ, ς
+    '(μ|µ)+x', // μ, MICRO SIGN
+    '(st|ſt)+x',
+    // Fuzz trên mã cũ.
+    '(?:ſ|s)*$',
+    '(?:SS|ſ|KK)*x',
+    '(?<_0>ſ|sS){2,}$',
+    '(?:s|ſ){2,}x',
+  ])
+    refusedAs(OVERLAPPING_ALTERNATION, pattern)
+  // Cờ `iu` giữ `ı` (i không chấm) khác `i`, `ß` khác `s`: hai nhánh không bao giờ khớp cùng chỗ.
+  assert.deepEqual(checkModerationPattern('(i|ı)+x', 'pattern'), { ok: true })
+  assert.deepEqual(checkModerationPattern('(s|ß)+x', 'pattern'), { ok: true })
+})
+
+test('regression: số lần lặp khổng lồ không làm phép kiểm lúc lưu treo hay làm sập tiến trình', () => {
+  // Trước (tìm khi sửa ba lỗi trên, không phải do fuzz): `choices` cộng từng k nên
+  // `a{0,999999999}b*` tốn ~15 s ngay lúc lưu và lúc nạp luật; `literalStrings` dựng mảng
+  // `node.min` phần tử nên `(?:a{999999999}|b)+` làm tiến trình hết bộ nhớ (core dump).
+  const started = performance.now()
+  refusedAs(ADJACENT, 'a{0,999999999}b*')
+  assert.equal(checkModerationPattern('x{0,2147483647}y{0,9}', 'pattern').ok, false)
+  // Từ dài hơn một cửa sổ không phải từ cố định: thận trọng, như mọi nhánh không phải từ.
+  refusedAs(OVERLAPPING_ALTERNATION, '(?:a{999999999}|b)+')
+  refusedAs(OVERLAPPING_ALTERNATION, '(?:a{2147483647}|b)+')
+  assert.ok(performance.now() - started < 1000, 'quyết trong vài mili giây, không phải vài giây')
+  // Số lần lặp vừa phải vẫn là từ cố định như trước.
+  assert.deepEqual(checkModerationPattern('(?:a{300}|b)+', 'pattern'), { ok: true })
+})
+
+test('FINDING moderation-regex-4: chồng lấn trên ký tự ngoài bảng mẫu không thấy — 日*日*$ lọt lớp 1 (bậc ba)', () => {
+  // `charset` chỉ thử 321 ký tự của `SAMPLE_CHARS`: một chữ cố định ngoài bảng (chữ Hán khác
+  // 中, Kirin, Hy Lạp…) có tập ký tự rỗng, nên hai lượng từ trên chính chữ đó trông như rời
+  // nhau. Đo trên máy phát triển (Node 26, 357109f): 155–185 ms cho 401 ký tự — cùng bậc với
+  // `\s*\s*$`, ~20 s cho một cửa sổ 2000 ký tự. Chữ có trong bảng thì bị từ chối.
+  refusedAs(ADJACENT, '中*中*$')
+  for (const pattern of ['日*日*$', 'ж*ж*$', '\\u0436*\\u0436*$', '[ж]+[жз]+$'])
+    assert.deepEqual(checkModerationPattern(pattern, 'pattern'), { ok: true }, pattern)
 })

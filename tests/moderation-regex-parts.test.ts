@@ -12,10 +12,26 @@
  * not happen to use that very character. So the table is pinned here as code points, in
  * order (`literalOfEscape` returns the first sample an escape matches), written as ASCII hex
  * — never derived from the import, and never pasted as the invisible characters themselves.
+ *
+ * The three Layer-1 holes fixed in wave3 4.3b each had a root in a part, checked here against
+ * the engine itself rather than against a list someone wrote:
+ *   - `foldCase` (literal words compare as the `iu` flag folds): over every character whose
+ *     `iu` class is not just itself, same fold ⇔ same class, class by class;
+ *   - `isRegExpGroupName` (`(?<name>` follows JS identifier rules): agrees with
+ *     `new RegExp('(?<name>)', 'u')` on every BMP code point, a stride of astral ones, and
+ *     `\u` escapes;
+ *   - `analysisNumbers` (no estimate is ever NaN — a NaN compares false against every limit).
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ALL_SAMPLES, SAMPLE_CHARS } from '../server/services/moderation-regex-parser.ts'
+import { analysisNumbers } from '../server/services/moderation-regex-analysis.ts'
+import { MODERATION_REGEX_FLAGS } from '../server/services/moderation-regex-limits.ts'
+import {
+  ALL_SAMPLES,
+  SAMPLE_CHARS,
+  foldCase,
+  isRegExpGroupName,
+} from '../server/services/moderation-regex-parser.ts'
 
 const run = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 
@@ -59,4 +75,139 @@ test('SAMPLE_CHARS: exactly these code points, in this order — one code point 
 
 test('ALL_SAMPLES is the same characters as SAMPLE_CHARS, as a set', () => {
   assert.deepEqual([...ALL_SAMPLES], [...SAMPLE_CHARS])
+})
+
+// ── Gập chữ của cờ `iu` (regression moderation-regex-3) ─────────────────────
+
+const cpEscape = (c: string) => `\\u{${c.codePointAt(0)!.toString(16)}}`
+
+test('foldCase is exactly the case folding of the iu flag: same class ⇔ same fold, over every character whose class is not just itself', () => {
+  // A non-trivial `iu` class always holds a character that changes when case-folded, so the
+  // engine's own closure of \p{Changes_When_Casefolded} under `iu` is every character that
+  // has a class; every other character only matches itself, and `foldCase` (which returns
+  // only what the engine confirms) leaves it alone. Computed from the running engine, so it
+  // holds on each Node's own Unicode version.
+  const inSomeClass = new RegExp('^[\\p{Changes_When_Casefolded}]$', MODERATION_REGEX_FLAGS)
+  const cased: string[] = []
+  for (let cp = 0; cp <= 0x10ffff; cp += 1) {
+    if (cp >= 0xd800 && cp <= 0xdfff) continue
+    const c = String.fromCodePoint(cp)
+    if (inSomeClass.test(c)) cased.push(c)
+  }
+  assert.ok(cased.length > 2000, `${cased.length} characters with a class`)
+  const byFold = new Map<string, Set<string>>()
+  for (const c of cased) {
+    const folded = foldCase(c)
+    byFold.set(folded, (byFold.get(folded) ?? new Set()).add(c))
+  }
+  const mismatches: string[] = []
+  for (const [folded, members] of byFold) {
+    if (!members.has(folded) || foldCase(folded) !== folded)
+      mismatches.push(`${cpEscape(folded)} is not a fixed member of its own class`)
+    const engineClass = new RegExp(`^[${[...members].map(cpEscape).join('')}]$`, MODERATION_REGEX_FLAGS)
+    for (const d of cased)
+      if (engineClass.test(d) !== members.has(d))
+        mismatches.push(`[${[...members].map(cpEscape).join('')}] and ${cpEscape(d)}: the engine says ${members.has(d) ? 'apart' : 'same class'}`)
+  }
+  assert.deepEqual(mismatches.slice(0, 20), [], `${mismatches.length} mismatches`)
+})
+
+test('foldCase: the folds toLowerCase misses, and the pairs iu keeps apart', () => {
+  const same = (a: string, b: string) => assert.equal(foldCase(a), foldCase(b), `${cpEscape(a)} ≡ ${cpEscape(b)}`)
+  const apart = (a: string, b: string) => assert.notEqual(foldCase(a), foldCase(b), `${cpEscape(a)} ≢ ${cpEscape(b)}`)
+  same('s', 'ſ') // LATIN SMALL LETTER LONG S — toLowerCase keeps it
+  same('S', 'ſ')
+  same('k', 'K') // KELVIN SIGN
+  same('σ', 'ς') // σ, final ς — toLowerCase keeps ς
+  same('μ', 'µ') // μ, MICRO SIGN
+  same('ß', 'ẞ') // ß, capital ẞ
+  same('a', 'A')
+  same('đ', 'Đ')
+  same('ữ', 'Ữ')
+  apart('i', 'ı') // dotless ı has no simple folding to i
+  apart('i', 'İ') // İ folds to i only in full (two-character) folding
+  apart('s', 'ß') // ß → ss is a full folding, not a simple one
+  assert.equal(foldCase('\u{1F600}'), '\u{1F600}')
+  assert.equal(foldCase('中'), '中')
+})
+
+// ── Tên nhóm (regression moderation-regex-1) ────────────────────────────────
+
+/**
+ * Does the engine take `name` as a group name? `(?<name>)` alone is ambiguous — `(?<!>)` and
+ * `(?<=>)` are lookbehinds — so the probe also refers back to it (`\k<name>`, which in `u`
+ * mode must name a group). A name holding `>` is never asked: the parser ends a name at the
+ * first `>`, and `(?<a>>)` is a group `a` holding `>`.
+ */
+const engineAcceptsName = (name: string) => {
+  try {
+    new RegExp(`(?<${name}>)\\k<${name}>`, 'u')
+    return true
+  } catch {
+    return false
+  }
+}
+
+test('isRegExpGroupName agrees with the engine: every BMP code point first and later in a name, a stride of astral ones, and \\u escapes', () => {
+  const disagreements: string[] = []
+  const check = (name: string) => {
+    if (name.includes('>')) assert.equal(isRegExpGroupName(name), false, JSON.stringify(name))
+    else if (isRegExpGroupName(name) !== engineAcceptsName(name)) disagreements.push(JSON.stringify(name))
+  }
+  const astral: number[] = []
+  for (let cp = 0x10000; cp <= 0x10ffff; cp += 61) astral.push(cp)
+  for (const cp of [...run(0, 0xffff), ...astral, 0x1d49c, 0x20000, 0xe0100]) {
+    const c = String.fromCharCode(...(cp <= 0xffff ? [cp] : [0xd800 + ((cp - 0x10000) >> 10), 0xdc00 + ((cp - 0x10000) & 0x3ff)]))
+    check(c)
+    check(`a${c}`)
+  }
+  for (let cp = 0; cp <= 0x10ffff; cp += cp < 0x3000 ? 7 : 997) {
+    const hex = cp.toString(16)
+    check(`\\u{${hex}}`)
+    check(`a\\u{${hex}}`)
+    if (cp <= 0xffff) check(`\\u${hex.padStart(4, '0')}`)
+  }
+  for (const name of [
+    '\\uD835\\uDC9C', // two escapes forming one astral letter
+    'a\\uD835\\uDC9C',
+    '\\uD835', // a lead surrogate alone
+    '\\uDC9C',
+    '\\uD835\\u0041', // a lead, then not a trail
+    '\\u{D835}\\u{DC9C}', // braced halves are two code points, never a pair
+    '\\u{110000}',
+    '\\u{0000000041}',
+    '\\x41',
+    '\\u004',
+    '\\',
+    'a\\',
+    '',
+    'a‌‍', // ZWNJ, ZWJ continue a name
+    '‍a',
+    '$',
+    '_',
+    'a$_1',
+  ])
+    check(name)
+  assert.deepEqual(disagreements.slice(0, 20), [], `${disagreements.length} disagreements`)
+})
+
+// ── Không bao giờ NaN (regression moderation-regex-2) ───────────────────────
+
+test('analysisNumbers: no width, choice count or sequence cost is ever NaN — for every shape, repeated 0, once, unbounded and a huge number of times', () => {
+  const shapes = ['a', 'ab', '\\s', '[sſ]', '.', '\\s*', '\\s+', 'a?', '(?:a|)', '(?:a|ab)', '(?:a+)+', '^', '$', '\\b', '(?=a)', '(?:)', '(x)\\1', '(?<n>x)\\k<n>', '\\s{1,3}']
+  const counts = ['{0}', '{0,0}', '{1}', '{0,1}', '*', '+', '{2,}', '{1,3}', '{999999999}', '{0,2147483647}']
+  let checked = 0
+  for (const shape of shapes)
+    for (const count of counts)
+      for (const pattern of [`(?:${shape})${count}`, `(?:${shape})${count}\\s*\\s*$`, `x(?:(?:${shape})${count})${count}y`, `\\s*(?:${shape})${count}\\s*`]) {
+        try {
+          new RegExp(pattern, MODERATION_REGEX_FLAGS)
+        } catch {
+          continue
+        }
+        checked += 1
+        const numbers = analysisNumbers(pattern)
+        assert.ok(numbers.length > 0 && numbers.every(n => !Number.isNaN(n)), `${pattern}: ${JSON.stringify(numbers)}`)
+      }
+  assert.ok(checked > 500, `${checked} patterns`)
 })
