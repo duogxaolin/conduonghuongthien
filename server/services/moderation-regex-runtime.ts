@@ -244,8 +244,8 @@ function runScan(job: ScanJob): void {
   }
 }
 
-/** Nộp hậu quả của lượt quét cho sổ (`settleRegexSpend`: tắt luật, chu kỳ, hạn mức request, log) và trả kết quả. */
-function settle(job: ScanJob, budget: ModerationRegexBudget | undefined, callMs: number): boolean[][] {
+/** Nộp hậu quả của lượt quét cho sổ (`settleRegexSpend`: tắt luật, chu kỳ, hạn mức request, log). */
+function settle(job: ScanJob, budget: ModerationRegexBudget | undefined, callMs: number): void {
   const offenders: WindowOffender[] = []
   for (const item of job.items) {
     item.scans.forEach((state, index) => {
@@ -256,26 +256,42 @@ function settle(job: ScanJob, budget: ModerationRegexBudget | undefined, callMs:
   }
   const spend: PatternSpend[] = [...job.ledger].map(([pattern, ledger]) => ({ pattern, spentMs: ledger.spentMs, inputLength: job.items[ledger.item]!.text.length }))
   settleRegexSpend({ offenders, spend, ...(budget ? { request: { budget, callMs, exhausted: job.exhausted, texts: job.items.length } } : {}) })
-  return job.items.map(item => item.scans.map(state => matchedBy(state.outcome)))
 }
 
 /**
- * Khớp mọi luật của MỖI văn bản (luật đã qua `compileModerationRegex`) trong MỘT lượt `vm` cho
- * cả lô — xem đầu tệp. Trả kết quả theo đúng thứ tự: `false` cho luật đang bị tắt, bị ngắt, bị
- * dừng vì hết ngân sách hay hạn mức, hay không tới lượt. `stopAtFirstMatch`: mỗi văn bản dừng ở
- * luật đầu tiên khớp. `budget`: hạn mức của request, dùng chung cho mọi lời gọi của request đó.
- * Một lô bằng đúng chuỗi lời gọi `testModerationRegexes` lần lượt trên từng văn bản.
+ * Văn bản này có luật ĐANG BẬT chưa xét không — hạn mức request hết trước nó (`deadline`, hay chưa
+ * tới lượt), hay lượt quét kẹt (`rule_scan_stalled`). Khác "không khớp": luật đang tắt, luật vừa bị
+ * tắt/dừng trong lời gọi này (mẫu ở `slowPatterns`) là đã có quyết định — mở khi lỗi theo luật.
+ * Văn bản đã khớp khi `stopAtFirstMatch` thì đã quét đủ.
  */
-export function testModerationRegexBatch(
+function unscanned(job: ScanJob, item: ItemScan): boolean {
+  if (job.stopAtFirstMatch && item.scans.some(state => matchedBy(state.outcome))) return false
+  return item.scans.some((state, r) => state.outcome?.kind === 'deadline'
+    || (state.outcome === null && !state.skip && !job.slowPatterns.has(item.rules[r]!.pattern)))
+}
+
+/** Kết quả một lô: `hits` như `testModerationRegexBatch`; `unscanned[i]`: văn bản i còn luật đang bật chưa xét. */
+export interface ModerationRegexBatchScan { hits: boolean[][], unscanned: boolean[] }
+
+/**
+ * Khớp mọi luật của MỖI văn bản (luật đã qua `compileModerationRegex`) trong MỘT lượt `vm` cho
+ * cả lô — xem đầu tệp. `hits` theo đúng thứ tự: `false` cho luật đang bị tắt, bị ngắt, bị dừng vì
+ * hết ngân sách hay hạn mức, hay không tới lượt — `unscanned` tách hai trường hợp cuối (hạn mức
+ * request hết, lượt kẹt) khỏi "không khớp", cho nơi gọi không được coi văn bản chưa xét là sạch
+ * (lượt cũ của chat). `stopAtFirstMatch`: mỗi văn bản dừng ở luật đầu tiên khớp. `budget`: hạn
+ * mức của request, dùng chung cho mọi lời gọi của request đó. Một lô bằng đúng chuỗi lời gọi
+ * `testModerationRegexes` lần lượt trên từng văn bản.
+ */
+export function scanModerationRegexBatch(
   input: readonly ModerationRegexBatchItem[],
   options: { stopAtFirstMatch?: boolean, budget?: ModerationRegexBudget } = {},
-): boolean[][] {
+): ModerationRegexBatchScan {
   const { budget } = options
   assertModerationRegexBudget(budget)
   const disabled = new Map<string, boolean>()
   const isDisabled = (pattern: string) => disabled.get(pattern) ?? disabled.set(pattern, isModerationRuleDisabled(pattern)).get(pattern)!
   const items: ItemScan[] = input.map(({ rules, text }) => ({ rules, text, scans: rules.map(rule => ({ outcome: null, skip: isDisabled(rule.pattern) })) }))
-  if (items.every(item => item.scans.every(state => state.skip))) return items.map(item => item.scans.map(() => false))
+  if (items.every(item => item.scans.every(state => state.skip))) return { hits: items.map(item => item.scans.map(() => false)), unscanned: items.map(() => false) }
   const allowance = ruleAllowances([...disabled].filter(([, off]) => !off).map(([pattern]) => pattern))
   const startedAt = budget ? regexElapsed() : 0
   const job: ScanJob = {
@@ -291,15 +307,22 @@ export function testModerationRegexBatch(
     ledger: new Map(),
     slowPatterns: new Set(),
   }
-  let results: boolean[][] = []
   try {
     runScan(job)
   } finally {
     // Cả khi một lượt khớp ném lỗi: luật đã quét vẫn bị tắt/tính giờ/ghi log như trước.
     const callMs = budget ? regexElapsed() - startedAt : 0
-    results = settle(job, budget, callMs)
+    settle(job, budget, callMs)
   }
-  return results
+  return { hits: items.map(item => item.scans.map(state => matchedBy(state.outcome))), unscanned: items.map(item => unscanned(job, item)) }
+}
+
+/** `scanModerationRegexBatch` chỉ lấy kết quả khớp — văn bản chưa xét đọc như không khớp (mở khi lỗi). */
+export function testModerationRegexBatch(
+  input: readonly ModerationRegexBatchItem[],
+  options: { stopAtFirstMatch?: boolean, budget?: ModerationRegexBudget } = {},
+): boolean[][] {
+  return scanModerationRegexBatch(input, options).hits
 }
 
 /** Mọi luật trên một văn bản — `testModerationRegexBatch` với một phần tử. */

@@ -3,7 +3,7 @@ import { getChatbotSettings } from '../services/chatbot-settings'
 import { answerChat } from '../utils/chatbot/chat'
 import { CHAT_RATE_LIMITED_MESSAGE, chargeChatRateLimit } from '../utils/chatbot/chat-policy'
 import { assertChatInputLength } from '../utils/chatbot/input-length'
-import { fastPreModerate, matchInstantRuleBatch } from '../services/moderation-worker'
+import { earlierTurnsToWithhold, fastPreModerate } from '../services/moderation-worker'
 import { createModerationRegexBudget } from '../services/moderation-regex'
 import { getClientIp } from '../utils/client-ip'
 import { chatHistoryShapeOk, chatTextsToScreen, withoutUserTurns } from '../utils/chatbot/chat-turns'
@@ -36,7 +36,8 @@ export default defineEventHandler(async (event) => {
   // turn that trips a rule is only withheld from the model — refusing for it locked
   // the conversation and re-filed the old line on every message. One regex budget for
   // the whole request (moderation-regex-runtime.ts), the new question first so the
-  // history cannot spend it; the history turns in one batched pass.
+  // history cannot spend it; the history turns in one batched pass, and an earlier
+  // turn that pass never reached is withheld too, never sent unscreened.
   const regexBudget = createModerationRegexBudget()
   const [latest, ...earlier] = screenedTexts
   if (latest) {
@@ -58,8 +59,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const verdicts = await matchInstantRuleBatch(earlier, { regexBudget }).catch(() => [])
-  const withheld = new Set(earlier.filter((_, index) => verdicts[index]))
+  const withheld = await earlierTurnsToWithhold(earlier, { regexBudget }).catch(() => new Set(earlier))
 
   let result
   try { result = await answerChat(event, settings, withoutUserTurns(rawMessages, withheld)) }

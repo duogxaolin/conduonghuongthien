@@ -62,8 +62,9 @@ export {
   testModerationRegex,
   testModerationRegexes,
   testModerationRegexBatch,
+  scanModerationRegexBatch,
 } from './moderation-regex-runtime'
-export type { ModerationRegexBatchItem, ModerationRegexRule } from './moderation-regex-runtime'
+export type { ModerationRegexBatchItem, ModerationRegexBatchScan, ModerationRegexRule } from './moderation-regex-runtime'
 
 export {
   MODERATION_RULE_COOLDOWN_MS,

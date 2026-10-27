@@ -6,14 +6,17 @@
  * `moderation-instant.ts`.
  */
 import type { AiModerationRule } from '../db/schema'
+import { logWarn } from '../utils/logger'
 import { getActiveModerationRules } from './moderation-rules-cache'
 import {
   compileModerationRegex,
   isRegexRuleType,
-  testModerationRegexBatch,
+  scanModerationRegexBatch,
+  type ModerationRegexBatchScan,
   type ModerationRegexBudget,
   type ModerationRegexRule,
 } from './moderation-regex'
+import { describeError } from './moderation-worker-persist'
 import { workerStats } from './moderation-stats'
 import {
   INSTANT_PROFANITY,
@@ -77,25 +80,24 @@ function databaseRulesFor(rules: AiModerationRule[], trimmed: string) {
   return { keywordHit, regexRules }
 }
 
-/**
- * `matchInstantRule` for several texts — exactly `texts.map(matchInstantRule)`, but every regex
- * rule of every text runs in ONE bounded pass (`testModerationRegexBatch`: one `vm` call with a
- * hard timeout for the whole batch, not one per text). For the chat endpoints' earlier user
- * turns (up to 29 per request): one call per turn cost ~1 ms per request in `vm` set-up alone.
- */
-export async function matchInstantRuleBatch(
-  contents: readonly string[],
-  options: { regexBudget?: ModerationRegexBudget } = {},
-): Promise<Array<InstantRuleMatch | null>> {
-  const results: Array<InstantRuleMatch | null> = []
+/** The instant decision for several texts, and which of them the request budget left half-screened. */
+interface InstantRuleScan {
+  matches: Array<InstantRuleMatch | null>
+  /** No match, but an enabled regex rule never judged the text — the request budget ran out first. */
+  unscanned: boolean[]
+}
+
+async function instantRuleScan(contents: readonly string[], regexBudget: ModerationRegexBudget | undefined): Promise<InstantRuleScan> {
+  const matches: Array<InstantRuleMatch | null> = []
+  const unscanned = contents.map(() => false)
   const pending: Array<{ at: number, trimmed: string }> = []
   for (const [at, content] of contents.entries()) {
     const trimmed = (content || '').trim()
     // 1. Built-in high-confidence rules
-    results.push(trimmed ? builtInMatch(trimmed) : null)
-    if (trimmed && !results[at]) pending.push({ at, trimmed })
+    matches.push(trimmed ? builtInMatch(trimmed) : null)
+    if (trimmed && !matches[at]) pending.push({ at, trimmed })
   }
-  if (!pending.length) return results
+  if (!pending.length) return { matches, unscanned }
 
   // 2. Active custom rules from database — per text, the first rule, in order, that matches.
   try {
@@ -106,22 +108,65 @@ export async function matchInstantRuleBatch(
     // checkAndModerateContent: flag `iu`, the pattern never lower-cased, broken/too
     // long/catastrophic patterns skipped.
     const scans = pending.map(({ trimmed }) => databaseRulesFor(rules, trimmed))
-    const hits = testModerationRegexBatch(
-      scans.map(({ regexRules }, k) => ({ rules: regexRules, text: pending[k]!.trimmed })),
-      { stopAtFirstMatch: true, budget: options.regexBudget },
-    )
+    let regex: ModerationRegexBatchScan
+    try {
+      regex = scanModerationRegexBatch(
+        scans.map(({ regexRules }, k) => ({ rules: regexRules, text: pending[k]!.trimmed })),
+        { stopAtFirstMatch: true, budget: regexBudget },
+      )
+    } catch (err: unknown) {
+      // A pass that THROWS (a timeout never does — the runtime handles it) must not take the
+      // keyword hits of the whole batch with it: those texts are still decided by their keyword
+      // rule; a text whose regex rules never ran is unscanned, not clean. Logged, never silent.
+      logWarn({ event: 'ai_moderation.instant_regex_failed', texts: pending.length, error: describeError(err) })
+      regex = { hits: scans.map(({ regexRules }) => regexRules.map(() => false)), unscanned: scans.map(({ regexRules }) => regexRules.length > 0) }
+    }
     for (const [k, { keywordHit, regexRules }] of scans.entries()) {
-      const regexHit = regexRules.find((_, r) => hits[k]![r])
+      const regexHit = regexRules.find((_, r) => regex.hits[k]![r])
       const hitIndex = regexHit ? regexHit.index : keywordHit
       const rule = hitIndex === -1 ? undefined : rules[hitIndex]
-      if (!rule) continue
+      if (!rule) {
+        unscanned[pending[k]!.at] = regex.unscanned[k]!
+        continue
+      }
       const severity = (rule.severity as InstantRuleMatch['severity']) || 'high'
-      results[pending[k]!.at] = { category: rule.category, severity, label: `${regexHit ? 'Mẫu regex' : 'Từ khóa'}: ${rule.pattern}` }
+      matches[pending[k]!.at] = { category: rule.category, severity, label: `${regexHit ? 'Mẫu regex' : 'Từ khóa'}: ${rule.pattern}` }
     }
   } catch {
     // If DB read fails, built-in instant rules still secure the entrance
   }
-  return results
+  return { matches, unscanned }
+}
+
+/**
+ * `matchInstantRule` for several texts — exactly `texts.map(matchInstantRule)`, but every regex
+ * rule of every text runs in ONE bounded pass (`scanModerationRegexBatch`: one `vm` call with a
+ * hard timeout for the whole batch, not one per text). A text the request budget left
+ * half-screened reads as no match here, as in `matchInstantRule` (the newest chat turn, a
+ * comment: fail-open, logged) — `earlierTurnsToWithhold` does NOT read it that way.
+ */
+export async function matchInstantRuleBatch(
+  contents: readonly string[],
+  options: { regexBudget?: ModerationRegexBudget } = {},
+): Promise<Array<InstantRuleMatch | null>> {
+  return (await instantRuleScan(contents, options.regexBudget)).matches
+}
+
+/**
+ * The EARLIER user turns of a chat request that must not reach the model: those that trip an
+ * instant rule — and those the request's regex budget ran out before (verify of 4.3c follow-up,
+ * W5). Slow crafted turns used to spend the budget so that an older turn behind them went to the
+ * model unscreened, `lô đề` and all. Both kinds are only withheld (`withoutUserTurns`): no
+ * refusal, no review-queue row — the visitor's new question is still answered. All earlier turns
+ * run in ONE batched pass on the request's budget, after the newest turn's check (which has the
+ * whole budget first and keeps its own, fail-open, reading of a cut — `fastPreModerate`).
+ */
+export async function earlierTurnsToWithhold(
+  turns: readonly string[],
+  options: { regexBudget?: ModerationRegexBudget } = {},
+): Promise<Set<string>> {
+  const { matches, unscanned } = await instantRuleScan(turns, options.regexBudget)
+  return new Set(turns.filter((_, index) => matches[index] !== null || unscanned[index]))
 }
 
 /**

@@ -25,6 +25,7 @@ import {
   createModerationRegexBudget,
   isModerationRuleDisabled,
   resetSlowModerationRules,
+  scanModerationRegexBatch,
   setModerationRegexTimingForTests,
   testModerationRegexBatch,
   testModerationRegexes,
@@ -289,6 +290,62 @@ test('matchInstantRuleBatch is exactly texts.map(matchInstantRule): built-ins, k
   reset([])
 })
 
+// ── Unscanned is not clean (verify of 4.3c follow-up, W5) ───────────────────
+
+test('scanModerationRegexBatch: `unscanned` marks exactly the texts the request budget left half-screened — not a rule that is off, not a text already matched', () => {
+  withFakeClock((clock) => {
+    // Off before the call: one 250-ms window (over the 200-ms window budget).
+    const off = fakeRule(clock, 'tắt', 250)
+    captureLogs(() => testModerationRegexes([off.rule], 'x'))
+    assert.equal(isModerationRuleDisabled('tắt'), true)
+    const hit = fakeRule(clock, 'khớp', 10, true)
+    const a = fakeRule(clock, 'a', 100)
+    const b = fakeRule(clock, 'b', 100)
+    const budget = createModerationRegexBudget(250)
+    // Fake clock from the call's start: 'khớp' 0→10; 'quét đủ' a 10→110, b 110→210; 'vượt mà xong'
+    // starts at 210 < 250, ends at 310 (kept); then the deadline: the last two are never judged.
+    const { value, lines } = captureLogs(() => scanModerationRegexBatch([
+      { rules: [off.rule], text: 'chỉ luật đang tắt' },
+      { rules: [hit.rule, a.rule], text: 'khớp sớm' },
+      { rules: [a.rule, b.rule], text: 'quét đủ' },
+      { rules: [a.rule], text: 'vượt mà xong' },
+      { rules: [b.rule], text: 'hết hạn trước nó' },
+      { rules: [a.rule, b.rule], text: 'không tới lượt' },
+      { rules: [], text: 'không có luật' },
+    ], { stopAtFirstMatch: true, budget }))
+    assert.deepEqual(value.hits, [[false], [true, false], [false, false], [false], [false], [false, false], []])
+    assert.deepEqual(value.unscanned, [false, false, false, false, true, true, false])
+    assert.equal(events(lines, 'ai_moderation.request_budget_exhausted').length, 1)
+    // Without a budget nothing is ever cut: nothing is unscanned.
+    assert.deepEqual(scanModerationRegexBatch([{ rules: [a.rule, b.rule], text: 'không hạn mức' }]).unscanned, [false])
+  })
+})
+
+test('a regex pass that THROWS keeps the keyword decisions of the whole batch; texts only regex rules judge are unscanned, and it is logged', async () => {
+  reset([rule('lô\\s*đề'), rule('cá độ', 'keyword')])
+  freezeClock()
+  const original = RegExp.prototype.test
+  const throwing = mock.method(RegExp.prototype, 'test', function (this: RegExp, input: string) {
+    if (this.source === 'lô\\s*đề') throw new RangeError('Maximum call stack size exceeded')
+    return original.call(this, input)
+  })
+  const lines: LogLine[] = []
+  const logs = mock.method(console, 'error', (line: unknown) => { try { lines.push(JSON.parse(String(line)) as LogLine) } catch { /* not a log line */ } })
+  let matches: unknown
+  let withheld = new Set<string>()
+  try {
+    matches = await worker.matchInstantRuleBatch(['có kèo cá độ', 'chơi lô đề', 'bình thường'])
+    withheld = await worker.earlierTurnsToWithhold(['có kèo cá độ', 'chơi lô đề', 'bình thường', 'mày dcm'])
+  } finally {
+    logs.mock.restore()
+    throwing.mock.restore()
+    reset([])
+  }
+  assert.deepEqual(matches, [{ category: 'cat-cá độ', severity: 'high', label: 'Từ khóa: cá độ' }, null, null], 'the keyword hit survives the thrown regex pass (it was null for the whole batch)')
+  assert.deepEqual([...withheld].sort(), ['bình thường', 'chơi lô đề', 'có kèo cá độ', 'mày dcm'].sort(), 'keyword and built-in hits, and the texts the regex rule never judged')
+  assert.equal(events(lines, 'ai_moderation.instant_regex_failed').length, 2, 'one line per failed pass, not silent')
+})
+
 // ── Attribution: S1 (cut between windows), S2 (stalled pass) ────────────────
 
 test('S1 + S2: an interrupt that lands BETWEEN windows (the rule already answered) blames nobody; a pass that never reaches a window is logged', () => {
@@ -299,9 +356,10 @@ test('S1 + S2: an interrupt that lands BETWEEN windows (the rule already answere
   // before it, which already has its answer — nobody ran 200 ms of matching.
   const stuck = { pattern: 'kẹt', get regex(): RegExp { const end = performance.now() + 300; while (performance.now() < end); return /x/iu } }
   const started = performance.now()
-  const { value: hits, lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'S1', () => testModerationRegexes([answered, stuck], 'x')))
+  const { value: scan, lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'S1', () => scanModerationRegexBatch([{ rules: [answered, stuck], text: 'x' }])))
   assert.ok(performance.now() - started < 3 * MODERATION_RULE_WINDOW_BUDGET_MS + 300)
-  assert.deepEqual(hits, [true, false], 'the answered rule keeps its match')
+  assert.deepEqual(scan.hits, [[true, false]], 'the answered rule keeps its match')
+  assert.deepEqual(scan.unscanned, [true], 'the rule it gave up on never judged the text: unscanned, not clean')
   assert.equal(firstCalls, 1)
   assert.equal(isModerationRuleDisabled('đã-trả-lời'), false, 'not blamed for the time after its window')
   assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled'), [])

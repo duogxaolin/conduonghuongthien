@@ -2,8 +2,9 @@
  * Kiểm duyệt nội dung — cửa vào công khai duy nhất.
  *
  * Tệp này là barrel: xuất lại ĐÚNG những tên nó luôn xuất (9 giá trị + 11 kiểu) cộng
- * `matchInstantRuleBatch` thêm có chủ đích sau khi tách (lượt cũ của chat quét trong một
- * lượt `vm`; ghim ở `tests/service-split-boundaries.test.ts` luật 5), nên mọi nơi gọi — 6 endpoint,
+ * `matchInstantRuleBatch` và `earlierTurnsToWithhold` thêm có chủ đích sau khi tách (lượt cũ của
+ * chat quét trong một lượt `vm`; lượt cũ mà hạn mức request không tới được cũng bị giữ khỏi model;
+ * ghim ở `tests/service-split-boundaries.test.ts` luật 5), nên mọi nơi gọi — 6 endpoint,
  * `comments-posting.ts`, `comments-reply-email.ts`, `livestream-chat.ts`, hai endpoint
  * chatbot, `moderation-rescan-job.ts` — giữ một đường import. Bảy tệp test
  * `mock.module` đúng đường này: nơi gọi import thẳng một tệp con sẽ lọt khỏi mock đó
@@ -12,7 +13,8 @@
  * Mã nằm ở các tệp con (wave3 D-SPLIT, tách nguyên văn — không đổi hành vi):
  *
  *   - moderation-worker-types.ts     kiểu vào/ra của một lượt kiểm
- *   - moderation-worker-prescreen.ts `matchInstantRule` (+ `…Batch`) + `fastPreModerate` (chặn tức thì)
+ *   - moderation-worker-prescreen.ts `matchInstantRule` (+ `…Batch`, `earlierTurnsToWithhold`) +
+ *                                    `fastPreModerate` (chặn tức thì)
  *   - moderation-worker-check.ts     `checkAndModerateContent` (luật + AI + ghi)
  *   - moderation-worker-persist.ts   hàng chờ duyệt + ẩn hàng đích (KHÔNG xuất lại)
  *   - moderation-worker-rescan.ts    quét lại theo lô có trần
@@ -36,7 +38,7 @@ export type {
   ModerationPersistFailure,
 } from './moderation-worker-types'
 
-export { matchInstantRule, matchInstantRuleBatch, fastPreModerate } from './moderation-worker-prescreen'
+export { matchInstantRule, matchInstantRuleBatch, earlierTurnsToWithhold, fastPreModerate } from './moderation-worker-prescreen'
 export type { InstantRuleMatch } from './moderation-worker-prescreen'
 
 export { checkAndModerateContent } from './moderation-worker-check'

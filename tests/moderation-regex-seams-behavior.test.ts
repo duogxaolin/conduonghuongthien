@@ -108,6 +108,9 @@ test('the barrel exports the runtime values it had before the split, plus the na
     'isModerationRuleDisabled',
     'isRegexRuleType',
     'resetSlowModerationRules',
+    // Verify of the 4.3c follow-up (W5): the batch with the texts the request budget left
+    // half-screened — the chat history withholds them instead of reading them as clean.
+    'scanModerationRegexBatch',
     'setModerationRegexTimingForTests',
     'testModerationRegex',
     'testModerationRegexBatch',

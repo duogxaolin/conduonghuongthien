@@ -57,13 +57,12 @@ mock.module('../server/services/moderation-worker', {
       seen.budgets.newest.push(context?.regexBudget)
       return { blocked: text.includes(PROHIBITED) }
     },
-    // Same decision, no review row: what earlier history turns go through (one batched call).
-    matchInstantRuleBatch: async (texts: string[], options?: { regexBudget?: unknown }) => {
+    // Same decision, no review row: what earlier history turns go through (one batched call) —
+    // the turns to keep from the model.
+    earlierTurnsToWithhold: async (texts: string[], options?: { regexBudget?: unknown }) => {
       seen.budgets.history.push(options?.regexBudget)
-      return texts.map((text) => {
-        seen.matched.push(text)
-        return text.includes(PROHIBITED) ? { category: 'x', severity: 'high', label: 'x' } : null
-      })
+      seen.matched.push(...texts)
+      return new Set(texts.filter(text => text.includes(PROHIBITED)))
     },
     checkAndModerateContent: async () => ({ blocked: false }),
   },

@@ -24,7 +24,7 @@
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
 import vm from 'node:vm'
-import { HANDLERS, kindOf, moderationRegex, reset, rule, send, worker } from './_chat-real-moderation.ts'
+import { HANDLERS, answeredUserTexts, kindOf, moderationRegex, reset, rule, send, state, worker } from './_chat-real-moderation.ts'
 import { withinWallClockAsync } from './_async-wall-clock-bound.ts'
 import { withinWallClock } from './_wall-clock-bound.ts'
 
@@ -263,6 +263,41 @@ for (const [name, handler] of HANDLERS) {
       assert.ok(run.maxGapMs <= REQUEST_BUDGET_MS + SLACK_MS, `${label}: the event loop was blocked ${run.maxGapMs.toFixed(0)} ms at once`)
       assert.equal(lines.filter(line => line.event === 'ai_moderation.request_budget_exhausted').length, 1, `${label}: the cut is logged once`)
       assert.deepEqual(NEWEST_TURN_RULES.filter(pattern => isModerationRuleDisabled(pattern)), [], 'the request running out blames nobody')
+      reset([])
+    })
+  })
+}
+
+/**
+ * The history half of the request budget is not a hole (verify of 4.3c follow-up, W5): slow crafted
+ * earlier turns used the budget up, and an OLDER turn the batch never reached went to the model
+ * unscreened — `lô đề` content, 4 requests in a row, until the slow rule was off. An earlier turn the
+ * budget could not reach is now withheld like a violating one (no row filed either).
+ */
+for (const [name, handler] of HANDLERS) {
+  test(`(b) ${name}: slow crafted earlier turns spend the budget — the older violating turn behind them never reaches the model`, async () => {
+    await withinWallClockAsync(WATCHDOG_MS, `${name} history past the budget`, async () => {
+      const slow = '[а-я]+[а-я]+\\d'
+      const violating = 'chơi lô đề ở đâu'
+      reset([rule(slow), rule('lô\\s*đề')])
+      const { length } = calibrate(slow, 'ж', 40)
+      const crafted = Array.from({ length: 12 }, (_, i) => ({ role: 'user', content: `${'з'.repeat(i)}${'ж'.repeat(length - 1 - i)}!` }))
+      const messages = [{ role: 'user', content: violating }, ...crafted, { role: 'user', content: 'xin chào' }]
+      const sent: string[][] = []
+      await captureLogs(async () => {
+        for (let i = 0; i < 12 && !isModerationRuleDisabled(slow); i += 1) {
+          const reply = await send(handler, messages)
+          assert.notEqual(kindOf(reply), 'moderation_blocked')
+          sent.push(answeredUserTexts())
+        }
+        sent.push((await send(handler, messages), answeredUserTexts())) // the slow rule is off: everything is screened
+      })
+      assert.equal(isModerationRuleDisabled(slow), true)
+      for (const [request, texts] of sent.entries())
+        assert.ok(!texts.includes(violating), `request ${request + 1}: the violating older turn reached the model (${texts.length} user turns sent)`)
+      assert.ok(sent.slice(0, -1).some(texts => texts.length < messages.length - 1), 'the budget did run out in the history (else this proves nothing)')
+      assert.deepEqual(sent.at(-1), [...crafted.map(turn => turn.content), 'xin chào'], 'once the rule is off: only the violating turn is withheld')
+      assert.equal(state.queue.length, 0, 'no earlier turn files a row')
       reset([])
     })
   })

@@ -47,7 +47,7 @@ mock.module('../server/services/moderation-worker', {
     fastPreModerate: async (text: string) => { order.push('moderation'); moderatedLengths.push(text.length); return { blocked: false } },
     checkAndModerateContent: async () => ({ blocked: false }),
     // Earlier history turns are checked, in one batch, without filing a review row (chat-turns.ts).
-    matchInstantRuleBatch: async (texts: string[]) => texts.map(() => null),
+    earlierTurnsToWithhold: async () => new Set<string>(),
   },
 })
 
