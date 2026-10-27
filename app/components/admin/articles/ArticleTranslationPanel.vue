@@ -15,21 +15,14 @@
  */
 import { getFlagEmoji } from '~/utils/language-flags'
 import TinyMceEditor from '~/components/admin/TinyMceEditor.vue'
+import type {
+  ArticleTranslateAllResponse, ArticleTranslateResponse, ArticleTranslationDeleteResponse, ArticleTranslationRow, ArticleTranslationSaveResponse,
+  ArticleTranslationsResponse, ArticleTranslationStatusResponse, LanguagesResponse,
+} from '~/types/admin-articles-api'
 
-interface TranslationRow {
-  id: number
-  langCode: string
-  status: string
-  title: string | null
-  excerpt: string | null
-  content: string | null
-  progress: number
-  currentChunk: number
-  totalChunks: number
-  errorMessage: string | null
-  translatedBy: string
-  completedAt: string | null
-}
+/** The columns the cards read — a Pick of the server row, so an optimistic "translating" row stays constructible. */
+type TranslationRow = Pick<ArticleTranslationRow, 'id' | 'langCode' | 'status' | 'title' | 'excerpt' | 'content' | 'progress'
+  | 'currentChunk' | 'totalChunks' | 'errorMessage' | 'translatedBy' | 'completedAt'>
 
 const props = defineProps<{
   articleId: number | null
@@ -41,9 +34,8 @@ const toast = useToast()
 const { confirm } = useConfirm()
 
 // ─── State ──────────────────────────────────────────────────────────────────
-// Phản chiếu các cột thật sự dùng từ bảng `article_translations` (schema.ts:1403).
-// `excerpt`/`content` có ở schema và API trả về (listTranslationsForArticle.select *),
-// khai báo ở đây để khỏi `as unknown as` đọc hình dạng tại nơi gọi.
+// Các cột thẻ bản dịch đọc từ hàng `article_translations` (`TranslationRow`, Pick của kiểu
+// suy từ handler — `listTranslationsForArticle` trả cả hàng, kể cả `excerpt`/`content`).
 const articleTranslations = ref<TranslationRow[]>([])
 const translatingLang = ref<string | null>(null)
 const editingTranslation = ref<{ lang: string; title: string; excerpt: string; content: string } | null>(null)
@@ -79,7 +71,7 @@ const translatingAll = ref(false)
 // ─── Fetch ──────────────────────────────────────────────────────────────────
 async function fetchDbLanguages() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ code: string; name: string; nativeName: string; isActive: boolean; isDefault: boolean }> }>)('/api/admin/languages')
+    const res = await adminFetch<LanguagesResponse>('/api/admin/languages')
     if (res.ok && Array.isArray(res.items)) {
       const nonDefault = res.items.filter(l => l.isActive && l.code !== 'vi')
       if (nonDefault.length > 0) {
@@ -98,9 +90,7 @@ async function fetchDbLanguages() {
 async function fetchArticleTranslations() {
   if (props.isNew || !props.articleId) return
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: TranslationRow[] }>)(
-      `/api/admin/articles/${props.articleId}/translations`,
-    )
+    const res = await adminFetch<ArticleTranslationsResponse>(`/api/admin/articles/${props.articleId}/translations`)
     if (res.ok) articleTranslations.value = res.items
   } catch {
     // Non-critical
@@ -141,7 +131,7 @@ async function triggerTranslation(langCode: string, targetStatus: 'ai_draft' | '
   startTranslationPolling()
 
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${props.articleId}/translations/translate`, {
+    await adminFetch<ArticleTranslateResponse>(`/api/admin/articles/${props.articleId}/translations/translate`, {
       method: 'POST',
       body: { langCode, targetStatus },
     })
@@ -186,7 +176,7 @@ async function translateAllForThisArticle(targetStatus: 'ai_draft' | 'published'
   startTranslationPolling()
 
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; queued: number; message: string }>)(
+    const res = await adminFetch<ArticleTranslateAllResponse>(
       `/api/admin/articles/${props.articleId}/translations/translate-all`,
       { method: 'POST', body: { targetStatus } },
     )
@@ -203,11 +193,14 @@ async function translateAllForThisArticle(targetStatus: 'ai_draft' | 'published'
 async function retryAllFailedTranslations() {
   if (failedTranslations.value.length === 0) return
   retryingAllFailed.value = true
+  // Counted BEFORE retrying: each retry flips its row to "translating", and the count read
+  // afterwards always said "0 bản dịch lỗi".
+  const retried = failedTranslations.value.map(t => t.langCode)
   try {
-    for (const t of failedTranslations.value) {
-      await triggerTranslation(t.langCode)
+    for (const langCode of retried) {
+      await triggerTranslation(langCode)
     }
-    toast.success(`Đã kích hoạt thử lại cho ${failedTranslations.value.length} bản dịch lỗi.`)
+    toast.success(`Đã kích hoạt thử lại cho ${retried.length} bản dịch lỗi.`)
   } finally {
     retryingAllFailed.value = false
   }
@@ -226,7 +219,7 @@ function openEditTranslation(row: TranslationRow) {
 async function saveTranslationEdit() {
   if (!editingTranslation.value || !props.articleId) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
+    await adminFetch<ArticleTranslationSaveResponse>(
       `/api/admin/articles/${props.articleId}/translations/${editingTranslation.value.lang}`,
       { method: 'PUT', body: editingTranslation.value },
     )
@@ -243,7 +236,7 @@ async function toggleTranslationStatus(row: TranslationRow) {
   if (!props.articleId) return
   const newStatus = row.status === 'published' ? 'reviewed' : 'published'
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
+    await adminFetch<ArticleTranslationStatusResponse>(
       `/api/admin/articles/${props.articleId}/translations/${row.langCode}/status`,
       { method: 'PATCH', body: { status: newStatus } },
     )
@@ -262,7 +255,7 @@ async function deleteTranslation(row: TranslationRow) {
     danger: true,
   })) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
+    await adminFetch<ArticleTranslationDeleteResponse>(
       `/api/admin/articles/${props.articleId}/translations/${row.langCode}`,
       { method: 'DELETE' },
     )

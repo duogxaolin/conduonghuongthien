@@ -33,7 +33,10 @@
  * admin: nhánh lỗi mang `role="alert"`, nút "Thử lại" gọi `loadActive()` khai
  * báo trong cùng tệp, không tải lại trang.
  */
-import type { AdminLivestreamActive } from '~/types/admin-api'
+import type { AdminLivestreamActive, AdminLivestreamStartResult, AdminLivestreamStopResult } from '~/types/admin-api'
+import type {
+  LivestreamChatHistoryResponse, LivestreamChatMessage as LiveChatMessage, LivestreamChatRemoveResponse, YoutubeMetaResponse,
+} from '~/types/admin-livestream-api'
 
 definePageMeta({
   layout: 'admin',
@@ -44,23 +47,8 @@ const toast = useToast()
 const { confirm } = useConfirm()
 const { hasPermission } = useAdminAuth()
 
-interface LiveSession {
-  id:          number
-  title:        string
-  description:  string | null
-  source:       string
-  embedUrl:     string | null
-  streamUrl:    string
-  thumbnailUrl: string | null
-  startedAt:    string | null
-}
-
-interface LiveChatMessage {
-  id: number
-  displayName: string
-  content: string
-  createdAt: string
-}
+/** The session as `active.get.ts` answers it (title, source, embed/stream URL, startedAt). */
+type LiveSession = NonNullable<AdminLivestreamActive['session']>
 
 const loading = ref(true)
 const loadError = ref('')
@@ -100,7 +88,7 @@ async function fetchMeta() {
   fetchingMeta.value = true
   metaError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, reason?: string, title?: string, authorName?: string, thumbnailUrl?: string, videoId?: string }>)(
+    const res = await adminFetch<YoutubeMetaResponse>(
       '/api/admin/media-portal/youtube-meta',
       { method: 'POST', body: { url: startForm.value.youtubeVideoId.trim() } },
     )
@@ -137,21 +125,12 @@ async function loadActive() {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminLivestreamActive>)(`/api/public/livestream/active`)
+    const res = await adminFetch<AdminLivestreamActive>(`/api/public/livestream/active`)
     if (res.ok === false) {
       loadError.value = 'Không tải được trạng thái buổi phát.'
       return
     }
-    activeSession.value = res.active && res.session ? {
-      id:          res.session.id,
-      title:       res.session.title,
-      description: res.session.description,
-      source:      res.session.source,
-      embedUrl:    res.session.embedUrl,
-      streamUrl:   res.session.streamUrl,
-      thumbnailUrl:res.session.thumbnailUrl,
-      startedAt:   res.session.startedAt,
-    } : null
+    activeSession.value = res.active && res.session ? res.session : null
     await loadChatMessages(activeSession.value?.id)
   } catch (err: unknown) {
     activeSession.value = null
@@ -169,7 +148,7 @@ async function loadChatMessages(expectedSessionId?: number) {
 
   chatLoading.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, sessionId: number | null, messages: LiveChatMessage[] }>)(`/api/public/livestream/chat/history`, {
+    const res = await adminFetch<LivestreamChatHistoryResponse>(`/api/public/livestream/chat/history`, {
       query: { limit: 100 },
     })
     // A stop/start can happen between the two requests.  Never show the old
@@ -195,7 +174,7 @@ async function removeChatMessage(message: LiveChatMessage) {
 
   removingMessageId.value = message.id
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/livestream/chat/${message.id}`, { method: 'DELETE' })
+    await adminFetch<LivestreamChatRemoveResponse>(`/api/admin/livestream/chat/${message.id}`, { method: 'DELETE' })
     chatMessages.value = chatMessages.value.filter(item => item.id !== message.id)
     toast.success('Đã gỡ tin nhắn khỏi buổi phát.')
   } catch (err: unknown) {
@@ -220,7 +199,7 @@ async function startLivestream() {
   }
   isStarting.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sessionId?: number }>)(`/api/admin/livestream/start`, {
+    const res = await adminFetch<AdminLivestreamStartResult>(`/api/admin/livestream/start`, {
       method: 'POST',
       body: {
         title:          startForm.value.title.trim(),
@@ -251,7 +230,7 @@ async function stopLivestream() {
   })) return
   isStopping.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sessionId?: number }>)(`/api/admin/livestream/stop`, {
+    const res = await adminFetch<AdminLivestreamStopResult>(`/api/admin/livestream/stop`, {
       method: 'POST',
       body: { sessionId: activeSession.value.id },
     })
@@ -339,10 +318,10 @@ onMounted(() => { void loadActive() })
         </div>
         <h2 class="text-xl font-bold text-brand-950 mb-1.5 leading-snug">{{ activeSession.title }}</h2>
         <p v-if="activeSession.description" class="text-sm text-ink-muted whitespace-pre-line break-words mb-4 max-w-3xl">{{ activeSession.description }}</p>
-        <!-- Video preview -->
+        <!-- Video preview: only a YouTube session has an embed URL (`streamUrl` is '' for it). -->
         <div v-if="activeSession.embedUrl" class="rounded-xl overflow-hidden border border-line bg-black mb-4 max-w-2xl">
           <iframe
-            :src="activeSession.streamUrl"
+            :src="activeSession.embedUrl"
             title="Xem trực tiếp"
             class="w-full aspect-video"
             frameborder="0"

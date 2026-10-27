@@ -24,6 +24,9 @@ import { beforeEach, describe, it } from 'node:test'
 import { createFetch } from 'ofetch'
 import * as Vue from 'vue'
 
+import { formatWhen } from '../app/utils/backup-format.ts'
+import { findAll, mountSfc, textOf } from './_sfc-mount.ts'
+
 // ─── Fake network under real ofetch ──────────────────────────────────────────
 
 type NetCall = { method: string, url: URL, body: unknown }
@@ -202,8 +205,7 @@ describe('useBackupSettings — loading', () => {
     assert.equal(calls.at(-1)?.method, 'PUT')
   })
 
-  // The panel renders `driveToast` in ONE branch only (SuperAdmin, OAuth on, not linked) —
-  // this pins the composable's state, not what every officer sees.
+  // What the panel shows for it — to every officer — is pinned by the panel tests below.
   it('a failed Drive link load sets driveToast to the server\'s sentence', async () => {
     const { block } = await loaded((call) => call.url.pathname === '/api/admin/backup/drive/status' ? h3Error(403, 'Không có quyền xem liên kết Drive.') : undefined)
     assert.equal(block.driveToast.value, 'Không có quyền xem liên kết Drive.')
@@ -344,5 +346,95 @@ describe('useBackupSettings — Drive', () => {
     await block.disconnectDrive()
     assert.equal(calls.length, before + 1)
     assert.equal(lastToast('error'), 'Chỉ quản trị viên cấp cao được hủy liên kết.')
+  })
+
+  it('FINDING: a link re-read that fails forgets the old link — unknown, not a stale "linked" (RED on base)', async () => {
+    let failStatus = false
+    const { block } = await loaded((call) => call.url.pathname === '/api/admin/backup/drive/status' && failStatus ? h3Error(503, 'Tạm thời không đọc được liên kết Drive.') : undefined)
+    assert.deepEqual(block.driveLink.value, LINK)
+    failStatus = true
+    await block.disconnectDrive()
+    await settle()
+    assert.equal(block.driveLink.value, null)
+    assert.equal(block.driveToast.value, 'Tạm thời không đọc được liên kết Drive.')
+  })
+
+  it('FINDING: the next Drive link load clears the previous failure (RED on base)', async () => {
+    let failStatus = true
+    const { block } = await loaded((call) => call.url.pathname === '/api/admin/backup/drive/status' && failStatus ? h3Error(403, 'Không có quyền xem liên kết Drive.') : undefined)
+    assert.equal(block.driveToast.value, 'Không có quyền xem liên kết Drive.')
+    failStatus = false
+    block.loadAll()
+    await settle()
+    assert.deepEqual(block.driveLink.value, LINK)
+    assert.equal(block.driveToast.value, '')
+  })
+})
+
+// ─── What the panel shows about the Drive link ───────────────────────────────
+
+/**
+ * `components/admin/backup/BackupSettingsPanel.vue` mounted for real (tests/_sfc-mount.ts)
+ * on the real composable. The link block is a `v-if` chain; a failed status read used to
+ * show its sentence only inside ONE branch (SuperAdmin, OAuth on) while everyone else read
+ * a claim the page could not make: "Chưa liên kết tài khoản Google Drive." for an officer
+ * whose status read had failed, "Cần nhập Client ID…" for a SuperAdmin with OAuth off.
+ */
+describe('BackupSettingsPanel — Drive link status', () => {
+  const PANEL_FILE = new URL('../app/components/admin/backup/BackupSettingsPanel.vue', import.meta.url).pathname
+  const NOT_LINKED = { linked: false, linkedEmail: null, linkedSub: null, linkedAt: null, status: 'not_linked' }
+
+  async function panel(override?: Responder) {
+    const calls = installNetwork(backupServer(override))
+    const mounted = await mountSfc(PANEL_FILE, { auto: { useBackupSettings, formatWhen, onMounted: Vue.onMounted } })
+    await settle()
+    const alerts = () => findAll(mounted.root, el => el.props.role === 'alert').map(textOf)
+    return { mounted, calls, alerts, text: () => textOf(mounted.root) }
+  }
+  const statusFails = (call: { url: URL }) => (call.url.pathname === '/api/admin/backup/drive/status' ? h3Error(403, 'Không có quyền xem liên kết Drive.') : undefined)
+
+  it('FINDING: an officer whose status read failed sees the server\'s sentence, not "Chưa liên kết" (RED on base)', async () => {
+    superAdmin = false
+    const { mounted, alerts, text } = await panel(statusFails)
+    assert.deepEqual(alerts(), ['Không có quyền xem liên kết Drive.'])
+    assert.doesNotMatch(text(), /Chưa liên kết tài khoản Google Drive/)
+    mounted.unmount()
+  })
+
+  it('FINDING: a SuperAdmin with OAuth off sees the failure too, and no "Cần nhập Client ID…" claim (RED on base)', async () => {
+    const { mounted, alerts, text } = await panel(call => statusFails(call)
+      ?? (call.url.pathname === '/api/admin/backup/drive/config' ? json({ ok: true, config: { ...CONFIG, isEnabled: false } }) : undefined))
+    assert.deepEqual(alerts(), ['Không có quyền xem liên kết Drive.'])
+    assert.doesNotMatch(text(), /Cần nhập Client ID/)
+    assert.doesNotMatch(text(), /Liên kết Google Drive$/m)
+    mounted.unmount()
+  })
+
+  it('FINDING: a SuperAdmin with OAuth on whose status read failed gets the sentence, and no "Liên kết" button while the link is unknown (RED on base)', async () => {
+    const { mounted, alerts } = await panel(statusFails)
+    assert.deepEqual(alerts(), ['Không có quyền xem liên kết Drive.'])
+    assert.equal(findAll(mounted.root, el => el.tag === 'a' && el.props.href === '/api/admin/backup/drive/start').length, 0)
+    mounted.unmount()
+  })
+
+  it('not linked: the link button for a SuperAdmin with OAuth on, "Chưa liên kết" for anyone else, no alert', async () => {
+    const notLinked = (call: { url: URL }) => (call.url.pathname === '/api/admin/backup/drive/status' ? json({ ok: true, link: NOT_LINKED, redirectUri: 'https://x/cb' }) : undefined)
+    const admin = await panel(notLinked)
+    assert.equal(findAll(admin.mounted.root, el => el.tag === 'a' && el.props.href === '/api/admin/backup/drive/start').length, 1)
+    assert.deepEqual(admin.alerts(), [])
+    admin.mounted.unmount()
+
+    superAdmin = false
+    const officer = await panel(notLinked)
+    assert.match(officer.text(), /Chưa liên kết tài khoản Google Drive\./)
+    assert.deepEqual(officer.alerts(), [])
+    officer.mounted.unmount()
+  })
+
+  it('linked: the account and when it was linked', async () => {
+    const { mounted, text, alerts } = await panel()
+    assert.ok(text().includes(`Đã liên kết: c11@example.vn — ${formatWhen(LINK.linkedAt)}`), text())
+    assert.deepEqual(alerts(), [])
+    mounted.unmount()
   })
 })

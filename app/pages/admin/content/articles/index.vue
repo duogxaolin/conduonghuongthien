@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import type { AdminArticleAuthorRow, AdminArticleRow, AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
+import type {
+  AdminArticleListResponse, ArticleAuthorsResponse, ArticleDeleteResponse, ArticleExportGoogleResponse, ArticleTranslateResponse, ArticleUpdateResponse,
+  BulkPublishTranslationsResponse, BulkTranslateResponse, BulkTranslateStatusResponse, ContentTypesResponse, TranslationStatsResponse,
+} from '~/types/admin-articles-api'
 import ArticleQuickViewModal from '~/components/admin/articles/ArticleQuickViewModal.vue'
 import ArticleGlobalTranslateModal from '~/components/admin/articles/ArticleGlobalTranslateModal.vue'
 import ArticleBoostStatsPanel from '~/components/admin/articles/ArticleBoostStatsPanel.vue'
@@ -153,7 +157,7 @@ const fetchCategories = async () => {
  */
 const fetchAuthors = async () => {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: typeof authorOptions.value; orphanCount: number }>)(`/api/admin/articles/authors`)
+    const res = await adminFetch<ArticleAuthorsResponse>(`/api/admin/articles/authors`)
     if (res.ok) {
       authorOptions.value = res.items
       orphanAuthorCount.value = res.orphanCount
@@ -164,7 +168,7 @@ const fetchAuthors = async () => {
 // Fetch content-types để render select Type + badge tên type trong bảng.
 const fetchContentTypes = async () => {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)('/api/admin/content-types')
+    const res = await adminFetch<ContentTypesResponse>('/api/admin/content-types')
     if (res.ok) contentTypes.value = res.items
   } catch { /* non-critical, select falls back to 5 system types in typeLabels */ }
 }
@@ -182,59 +186,56 @@ watch(selectedParentCategoryId, () => {
 })
 
 // ─── Articles fetch ───────────────────────────────────────────────────────────
+// Only the LATEST list request writes the table. Every request — a load (filter, page,
+// reload) or a silent refresh (after a translate; every 2.5 s while a bulk translation
+// runs) — takes a ticket, and an answer whose ticket is no longer the newest is dropped.
+// Without it, an older answer landing last put its rows back under the newer controls.
+let listRequest = 0
+
+/** One list request for `page` with the current filters — the load and the silent refresh alike. */
+function requestList(page: number) {
+  const query: Record<string, string | number> = { page, search: search.value, type: selectedType.value, status: selectedStatus.value, perPage: 15 }
+  // Wire category filter: prefer sub-category if selected, else parent
+  const effectiveCategoryId = selectedCategoryId.value ?? selectedParentCategoryId.value
+  if (effectiveCategoryId) query.categoryId = effectiveCategoryId
+  // Chuỗi rỗng nghĩa là không lọc — gửi lên thì máy chủ cũng đọc thành không
+  // lọc, nhưng để URL và query sạch thì chỉ gửi khi có chọn.
+  if (selectedAuthorId.value) query.authorId = selectedAuthorId.value
+  if (selectedTranslationFilter.value) query.translation = selectedTranslationFilter.value
+  return { ticket: ++listRequest, answer: adminFetch<AdminArticleListResponse>('/api/admin/articles', { query }) }
+}
+
+function showList(res: AdminArticleListResponse) {
+  if (!res.ok) return
+  articles.value = res.items
+  pagination.value = res.pagination
+  // Ids from the previous page/filter — or of rows gone since — no longer refer to anything on screen.
+  selection.keepOnly(visibleIds.value)
+}
+
 const fetchArticles = async (page = 1) => {
   loading.value = true
   loadError.value = ''
+  const { ticket, answer } = requestList(page)
   try {
-    const params: Record<string, string | number> = {
-      page,
-      search: search.value,
-      type: selectedType.value,
-      status: selectedStatus.value,
-      perPage: 15,
-    }
-    // Wire category filter: prefer sub-category if selected, else parent
-    const effectiveCategoryId = selectedCategoryId.value ?? selectedParentCategoryId.value
-    if (effectiveCategoryId) params.categoryId = effectiveCategoryId
-    // Chuỗi rỗng nghĩa là không lọc — gửi lên thì máy chủ cũng đọc thành không
-    // lọc, nhưng để URL và params sạch thì chỉ gửi khi có chọn.
-    if (selectedAuthorId.value) params.authorId = selectedAuthorId.value
-    if (selectedTranslationFilter.value) params.translation = selectedTranslationFilter.value
-
-    const res = await $fetch('/api/admin/articles', { params })
-    if (res.ok) {
-      articles.value = res.items
-      pagination.value = res.pagination
-      // Ids from the previous page/filter no longer refer to anything on screen.
-      selection.keepOnly(visibleIds.value)
-    }
+    const res = await answer
+    if (ticket === listRequest) showList(res)
   } catch (err: unknown) {
+    if (ticket !== listRequest) return
     toast.error(errorMessage(err, 'Lỗi tải danh sách bài viết'))
     loadError.value = errorMessage(err, 'Lỗi tải danh sách bài viết')
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
+/** Not sent while a load runs (that load brings fresh rows); asks for the page on screen. */
 const fetchArticlesSilent = async () => {
+  if (loading.value) return
+  const { ticket, answer } = requestList(pagination.value.page || 1)
   try {
-    const params: Record<string, string | number> = {
-      page: pagination.value.page || 1,
-      search: search.value,
-      type: selectedType.value,
-      status: selectedStatus.value,
-      perPage: 15,
-    }
-    const effectiveCategoryId = selectedCategoryId.value ?? selectedParentCategoryId.value
-    if (effectiveCategoryId) params.categoryId = effectiveCategoryId
-    if (selectedAuthorId.value) params.authorId = selectedAuthorId.value
-    if (selectedTranslationFilter.value) params.translation = selectedTranslationFilter.value
-
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminArticleRow[]; pagination: typeof pagination.value }>)(`/api/admin/articles`, { params })
-    if (res.ok) {
-      articles.value = res.items
-      pagination.value = res.pagination
-    }
+    const res = await answer
+    if (ticket === listRequest) showList(res)
   } catch {
     // Non-critical
   }
@@ -323,7 +324,7 @@ const triggerBulkTranslate = async (langCode: string) => {
 
   bulkTranslating.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; count: number }>)('/api/admin/articles/bulk-translate', {
+    const res = await adminFetch<BulkTranslateResponse>('/api/admin/articles/bulk-translate', {
       method: 'POST',
       body: { ids, langCode, targetStatus: 'ai_draft' },
     })
@@ -414,7 +415,7 @@ function downloadCsv(mode: 'filtered' | 'selected') {
 
 /**
  * Tải ZIP nhiều bài HTML — nhận blob từ endpoint, trigger download client-side.
- * Dùng $fetch blob thay window.open vì cần tên file động + zip lớn.
+ * Đọc blob (`responseType: 'blob'`) thay window.open vì cần tên file động + zip lớn.
  */
 async function downloadBatchHtml() {
   const ids = selection.ids.value
@@ -427,7 +428,7 @@ async function downloadBatchHtml() {
     return
   }
   try {
-    const blob = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<Blob>)(`/api/admin/articles/export-batch?ids=${ids.join(',')}`, { responseType: 'blob' })
+    const blob = await adminFetch<Blob>(`/api/admin/articles/export-batch?ids=${ids.join(',')}`, { responseType: 'blob' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -464,7 +465,7 @@ async function exportGoogle(mode: 'selected' | 'single', singleId?: number) {
   isExportingGoogle.value = true
   toast.info('Đang tạo Google Sheets + Docs... Vui lòng đợi.')
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ sheetUrl: string; folderUrl: string; count: number }>)(`/api/admin/articles/export-google`, {
+    const res = await adminFetch<ArticleExportGoogleResponse>(`/api/admin/articles/export-google`, {
       method: 'POST',
       body: { ids },
     })
@@ -494,7 +495,7 @@ async function translateSingleArticle(articleId: number, langCode: string) {
   startBulkStatusPolling()
 
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${articleId}/translations/translate`, {
+    await adminFetch<ArticleTranslateResponse>(`/api/admin/articles/${articleId}/translations/translate`, {
       method: 'POST',
       body: { langCode, targetStatus: 'ai_draft' },
     })
@@ -534,7 +535,7 @@ async function bulkPublishAi() {
   if (!ok) return
   aiPublishing.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; published: number; skipped: number; skippedTranslating: number; skippedFailed: number }>)(
+    const res = await adminFetch<BulkPublishTranslationsResponse>(
       '/api/admin/articles/bulk-publish-translations',
       { method: 'POST', body: {} },
     )
@@ -556,30 +557,13 @@ function onGlobalTranslateStarted() {
 }
 
 // ─── Active Bulk Translation Banner ──────────────────────────────────
-type BulkStatusResponse = {
-  ok: boolean
-  active: boolean
-  task: {
-    active: boolean
-    total: number
-    processed: number
-    currentArticleId: number | null
-    currentArticleTitle: string | null
-    langCode: string
-    langName: string
-    startedAt: string | null
-    completedAt: string | null
-  }
-  dbTranslatingCount: number
-}
-
-const bulkTranslateTask = ref<BulkStatusResponse | null>(null)
+const bulkTranslateTask = ref<BulkTranslateStatusResponse | null>(null)
 const completedBannerMsg = ref('')
 let bulkStatusTimer: number | undefined
 
 async function fetchBulkTranslateStatus() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<BulkStatusResponse>)('/api/admin/articles/bulk-translate-status')
+    const res = await adminFetch<BulkTranslateStatusResponse>('/api/admin/articles/bulk-translate-status')
     if (res.ok) {
       const wasActive = bulkTranslateTask.value?.active
       bulkTranslateTask.value = res
@@ -628,7 +612,7 @@ const toggleComments = async (art: AdminArticleRow) => {
   togglingComments.value = Number(art.id)
   art.commentsEnabled = next
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${art.id}`, { method: 'PUT', body: { commentsEnabled: next } })
+    await adminFetch<ArticleUpdateResponse>(`/api/admin/articles/${art.id}`, { method: 'PUT', body: { commentsEnabled: next } })
     toast.success(next ? 'Đã mở bình luận cho bài viết này.' : 'Đã đóng bình luận của bài viết này.')
   } catch (err: unknown) {
     art.commentsEnabled = !next
@@ -642,7 +626,7 @@ const deleteArticle = async (art: AdminArticleRow) => {
   const ok = await confirm({ title: 'Xóa bài viết', message: `Bạn có chắc muốn xóa bài viết "${art.title}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${art.id}`, { method: 'DELETE' })
+    await adminFetch<ArticleDeleteResponse>(`/api/admin/articles/${art.id}`, { method: 'DELETE' })
     toast.success('Đã xóa bài viết thành công!')
     await fetchArticles(pagination.value.page)
   } catch (err: unknown) {
@@ -704,10 +688,10 @@ onMounted(async () => {
 // Lấy số bản dịch AI chưa xuất bản cho badge trên nút "Xuất bản toàn bộ".
 // Nhẹ — chỉ cần field aiPendingTranslations, không phụ thuộc mở modal.
 // `globalStats` chỉ là badge counter ở cha; modal con có state stats riêng.
-const globalStats = ref<{ totalArticles: number; aiPendingTranslations: number; languages: Array<{ code: string; name: string; nativeName: string; translated: number; missing: number }> } | null>(null)
+const globalStats = ref<Pick<TranslationStatsResponse, 'totalArticles' | 'aiPendingTranslations' | 'languages'> | null>(null)
 async function fetchAiPending() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; aiPendingTranslations?: number }>)('/api/admin/articles/translation-stats')
+    const res = await adminFetch<TranslationStatsResponse>('/api/admin/articles/translation-stats')
     if (res.ok) {
       if (globalStats.value) {
         globalStats.value.aiPendingTranslations = res.aiPendingTranslations ?? 0

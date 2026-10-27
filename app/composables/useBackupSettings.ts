@@ -55,15 +55,20 @@ export function useBackupSettings() {
   const driveRedirectUri = ref('')
   const driveLinkLoading = ref(false)
   const disconnecting = ref(false)
+  // Lượt đọc trạng thái liên kết hỏng: câu của máy chủ, hiện cho MỌI cán bộ (BackupSettingsPanel).
   const driveToast = ref('')
 
   async function loadDriveStatus() {
     driveLinkLoading.value = true
+    driveToast.value = ''
     try {
       const res = await adminFetch<DriveStatusResponse>(`/api/admin/backup/drive/status`)
       driveLink.value = res.link
       driveRedirectUri.value = res.redirectUri
     } catch (err: unknown) {
+      // Không biết trạng thái thì không giữ trạng thái cũ: sau "Hủy liên kết", một lượt đọc
+      // lại hỏng từng để nguyên "Đã liên kết". `null` = chưa biết (như `backupsLocalOnly` đọc).
+      driveLink.value = null
       driveToast.value = errorMessage(err, 'Không tải được trạng thái liên kết Drive.')
     } finally {
       driveLinkLoading.value = false

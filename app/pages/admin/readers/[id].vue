@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { AdminReaderBanResult, AdminReaderCommentsDeleteResult } from '~/types/admin-api'
 import type { AdminReaderDetail, AdminReaderImpact } from '~/types/admin-api'
+import type {
+  AdminCommentDeleteResponse, AdminReader as Reader, AdminReaderComment as Comment, AdminReaderDeleteResponse, AdminReaderUnbanResponse,
+} from '~/types/admin-readers-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -12,35 +15,10 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  * happens — the portal's own published answers go too, because the parent_id
  * foreign key cascades (design.md D8). That is also why the dialog says the
  * portal's durable answers belong in the approved knowledge store instead.
+ *
+ * `Reader`/`Comment` are `getReaderDetail`'s projection (app/types/admin-readers-api.ts): a
+ * comment's `articleId` is null when it was made on a video (`mediaItemId`) instead.
  */
-
-type Comment = {
-  id: number
-  body: string
-  createdAt: string | null
-  parentId: number | null
-  /** Null when the comment was made on a media item rather than an article. */
-  articleId: number | null
-  articleTitle: string | null
-  articleSlug: string | null
-  mediaItemId: number | null
-  mediaItemTitle: string | null
-  mediaItemSlug: string | null
-}
-
-type Reader = {
-  id: number
-  displayName: string | null
-  email: string | null
-  isBanned: boolean
-  banReason: string | null
-  bannedAt: string | null
-  bannedByName: string | null
-  createdAt: string | null
-  lastSeenAt: string | null
-  lastIp: string | null
-  lastUserAgent: string | null
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -66,7 +44,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderDetail>)(`/api/admin/readers/${readerId.value}`)
+    const res = await adminFetch<AdminReaderDetail>(`/api/admin/readers/${readerId.value}`)
     if (!res?.ok) {
       error.value = 'Không tải được thông tin người đọc.'
       return
@@ -85,7 +63,7 @@ async function load() {
  *  may have arrived while the officer was reading. */
 async function currentImpact() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderImpact>)(`/api/admin/readers/${readerId.value}/impact`)
+    const res = await adminFetch<AdminReaderImpact>(`/api/admin/readers/${readerId.value}/impact`)
     return res?.impact || impact.value
   } catch {
     return impact.value
@@ -138,7 +116,7 @@ async function banReader() {
 
   busy.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderBanResult>)(`/api/admin/readers/${readerId.value}/ban`, { method: 'POST', body: { reason } })
+    const res = await adminFetch<AdminReaderBanResult>(`/api/admin/readers/${readerId.value}/ban`, { method: 'POST', body: { reason } })
     toast.success(`Đã chặn tài khoản và xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
   } catch (err: unknown) {
@@ -156,7 +134,7 @@ async function unbanReader() {
   })) return
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/readers/${readerId.value}/unban`, { method: 'POST' })
+    await adminFetch<AdminReaderUnbanResponse>(`/api/admin/readers/${readerId.value}/unban`, { method: 'POST' })
     toast.success('Đã bỏ chặn tài khoản.')
     await load()
   } catch (err: unknown) {
@@ -181,7 +159,7 @@ async function purgeComments() {
 
   busy.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderCommentsDeleteResult>)(`/api/admin/readers/${readerId.value}/comments`, { method: 'DELETE' })
+    const res = await adminFetch<AdminReaderCommentsDeleteResult>(`/api/admin/readers/${readerId.value}/comments`, { method: 'DELETE' })
     toast.success(`Đã xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
   } catch (err: unknown) {
@@ -202,7 +180,7 @@ async function deleteAccount() {
 
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/readers/${readerId.value}`, { method: 'DELETE' })
+    await adminFetch<AdminReaderDeleteResponse>(`/api/admin/readers/${readerId.value}`, { method: 'DELETE' })
     toast.success('Đã xoá tài khoản người đọc.')
     router.push('/admin/readers')
   } catch (err: unknown) {
@@ -222,7 +200,7 @@ async function deleteOneComment(comment: Comment) {
 
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
+    await adminFetch<AdminCommentDeleteResponse>(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
     toast.success('Đã xoá bình luận.')
     await load()
   } catch (err: unknown) {

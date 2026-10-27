@@ -25,9 +25,11 @@
  *        line: h3 strips every non-ASCII character from it (`Video đang xử lý` →
  *        `Video ang x l`) and HTTP/2 sends none, so the officer read mangled text or the
  *        generic fallback instead of the server's sentence;
- *      - a backup row with no `created_at` (a nullable column) read "1/1/1970";
- *      - `MediaConfig` declares `processingMaxJobs`/`processingMaxAttempts` optional: an
- *        answer without them put `undefined` in the form and the next save sent "undefined".
+ *      - a backup row with no `created_at` (a nullable column) read "1/1/1970".
+ *   (`MediaConfig.processingMaxJobs`/`processingMaxAttempts` were declared optional, so the
+ *   page guarded against an answer without them; the server always fills both, and since
+ *   batch B the type says so — the guard and its test are gone, the mount test below reads
+ *   the server's values.)
  *
  * The fetch-cast count itself is the ratchet's job (tests/ratchets/fetch-casts.test.ts);
  * the error/retry and skeleton gates still find every page as "fetching"
@@ -571,17 +573,6 @@ describe('pages/admin/settings/media-portal.vue', () => {
     const { page, lastToast } = await open<MediaPortalSettingsPage>(PAGE, portalServer(call => call.method === 'PUT' ? h3Error(400, 'Ngưỡng đĩa trống phải từ 0 đến 1024 GB.') : undefined))
     await page.save()
     assert.equal(lastToast('error'), 'Ngưỡng đĩa trống phải từ 0 đến 1024 GB.')
-  })
-
-  it('FINDING: an answer without processingMaxJobs/Attempts (MediaConfig declares them optional) keeps the form values — the save never sends "undefined" (RED on base)', async () => {
-    const config = Object.fromEntries(Object.entries(PORTAL.config).filter(([key]) => !key.startsWith('processingMax')))
-    const { page, calls } = await open<MediaPortalSettingsPage>(PAGE, portalServer(call => wire(call) === 'GET /api/admin/settings/media-portal' ? json({ ...PORTAL, config }) : undefined))
-    assert.equal(page.form.processingMaxJobs, 1)
-    assert.equal(page.form.processingMaxAttempts, 3)
-    await page.save()
-    const fields = (calls.find(c => c.method === 'PUT')!.body as { fields: Record<string, string> }).fields
-    assert.equal(fields.processingMaxJobs, '1')
-    assert.equal(fields.processingMaxAttempts, '3')
   })
 
   it('"Dọn ngay" posts the confirmation and says what was removed', async () => {

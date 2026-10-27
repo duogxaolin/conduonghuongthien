@@ -17,10 +17,7 @@
  *     the AI provider rows also carry `id`/`baseUrl`/`apiKeyLastFour`/`updatedAt`/model
  *     counts, the pricing rows `updatedAt`.
  */
-import type { Serialize } from 'nitropack/types'
-
-/** As in app/types/admin-api.ts: what the browser holds after JSON, not what the handler returned. */
-type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
+import type { Payload } from './handler-payload'
 
 type SettingsReadHandler = typeof import('~~/server/api/admin/settings/index.get').default
 type SettingsSaveHandler = typeof import('~~/server/api/admin/settings/index.put').default

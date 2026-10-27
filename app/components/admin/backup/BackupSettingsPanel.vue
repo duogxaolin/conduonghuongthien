@@ -115,16 +115,18 @@ onMounted(() => loadAll())
           <button type="button" class="rounded p-1 text-brand-700 border-0 bg-transparent cursor-pointer hover:bg-[#e4f2e5]" title="Copy" @click="copyRedirectUri"><i class="fa-regular fa-copy" aria-hidden="true"></i></button>
         </div>
 
-        <!-- Nút liên kết (chỉ khi config đã bật) -->
+        <!-- Trạng thái liên kết. Các nhánh "chưa liên kết" chỉ khi đã đọc được trạng thái
+             (`driveLink` khác null): đọc hỏng thì không khẳng định gì, chỉ hiện câu lỗi bên dưới. -->
         <div v-if="driveLinkLoading" class="text-[0.8rem] text-ink-muted">Đang tải trạng thái liên kết…</div>
-        <div v-else-if="driveLink?.linked" class="flex flex-wrap items-center gap-2">
+        <template v-else-if="driveLink">
+        <div v-if="driveLink.linked" class="flex flex-wrap items-center gap-2">
           <i class="fa-solid fa-circle-check text-brand-700" aria-hidden="true"></i>
           <span class="text-[0.84rem] text-brand-950">Đã liên kết: <strong>{{ driveLink.linkedEmail || '(không có email)' }}</strong> <span v-if="driveLink.linkedAt">— {{ formatWhen(driveLink.linkedAt) }}</span></span>
           <button v-if="isSuperAdmin" type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-danger-bg px-2.5 py-1 text-[0.72rem] font-bold text-danger border-0 cursor-pointer hover:bg-red-200 disabled:opacity-50" :disabled="disconnecting" @click="disconnectDrive">
             <i class="fa-solid fa-link-slash" :class="disconnecting ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i> Hủy liên kết
           </button>
         </div>
-        <div v-else-if="driveLink?.status === 'secret_unreadable'" class="flex flex-wrap items-center gap-2">
+        <div v-else-if="driveLink.status === 'secret_unreadable'" class="flex flex-wrap items-center gap-2">
           <i class="fa-solid fa-triangle-exclamation text-warn-ink" aria-hidden="true"></i>
           <span class="text-[0.84rem] text-warn-ink">Refresh token không giải mã được — dịch khoá CHATBOT_ENCRYPTION_SECRET hoặc liên kết lại.</span>
           <button v-if="isSuperAdmin" type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-[#fdf6e7] px-2.5 py-1 text-[0.72rem] font-bold text-warn-ink border-0 cursor-pointer hover:bg-[#f5e8c8]" @click="disconnectDrive">Xoá liên kết hỏng</button>
@@ -137,12 +139,13 @@ onMounted(() => loadAll())
           <a href="/api/admin/backup/drive/start" class="inline-flex w-fit items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white border-0 no-underline hover:bg-brand-900">
             <i class="fa-brands fa-google" aria-hidden="true"></i> Liên kết Google Drive
           </a>
-          <p v-if="driveToast" class="m-0 text-[0.78rem] text-[#a32924]" role="alert">{{ driveToast }}</p>
         </div>
         <div v-else class="text-[0.78rem] text-warn-ink">
           <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
           Cần nhập Client ID + Client Secret + bật công tắc + Lưu credentials trước khi liên kết.
         </div>
+        </template>
+        <p v-if="driveToast" class="m-0 text-[0.78rem] text-[#a32924]" role="alert">{{ driveToast }}</p>
       </div>
 
       <!-- Sub-block B: Service Account (fallback) -->

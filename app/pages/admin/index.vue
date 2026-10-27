@@ -5,18 +5,17 @@ definePageMeta({
 })
 
 import { defineAsyncComponent } from 'vue'
+import type { AnalyticsBreakdownResponse, AnalyticsBreakdownRow as BreakdownRow, AnalyticsLiveResponse, AnalyticsSummaryResponse,
+  AnalyticsTrafficPoint, DashboardArticlesResponse, DashboardMediaResponse, DashboardSubmissionsResponse } from '~/types/admin-dashboard-api'
 const AnalyticsTrafficChart = defineAsyncComponent(() => import('~/components/admin/AnalyticsTrafficChart.client.vue'))
 
 const { user, hasPermission } = useAdminAuth()
 const canReadAnalytics = computed(() => hasPermission('analytics', 'read'))
 
-type TrafficPoint = { day: string; pageViews: number; dailyUniqueVisitors: number }
-type LiveData = { fiveMinuteTotals: { pageViews: number; approximateUniqueVisitors: number; eventsPerMinute: number } }
-type BreakdownRow = { rank: number; value: string; pageViews: number; approximateUniqueVisitors: number; share: number }
 type BreakdownData = { rows: BreakdownRow[]; totalPageViews: number }
 
-const trafficPoints = ref<TrafficPoint[]>([])
-const liveData = ref<LiveData | null>(null)
+const trafficPoints = ref<AnalyticsTrafficPoint[]>([])
+const liveData = ref<AnalyticsLiveResponse | null>(null)
 const trafficLoading = ref(false)
 const liveLoading = ref(false)
 const trafficError = ref(false)
@@ -43,7 +42,7 @@ async function loadTraffic() {
   trafficLoading.value = true
   trafficError.value = false
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; traffic: TrafficPoint[] }>)(`/api/admin/analytics/summary?start=${daysAgo(6)}&end=${today()}`)
+    const res = await adminFetch<AnalyticsSummaryResponse>(`/api/admin/analytics/summary?start=${daysAgo(6)}&end=${today()}`)
     if (res?.ok) trafficPoints.value = res.traffic ?? []
   } catch {
     trafficError.value = true
@@ -57,7 +56,7 @@ async function loadLive() {
   liveLoading.value = true
   liveError.value = false
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<LiveData & { ok?: boolean }>)('/api/admin/analytics/live')
+    const res = await adminFetch<AnalyticsLiveResponse>('/api/admin/analytics/live')
     if (res) liveData.value = res
   } catch {
     liveError.value = true
@@ -73,7 +72,7 @@ async function loadBreakdowns() {
   sourceError.value = false
   deviceError.value = false
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; rows: BreakdownRow[]; totalPageViews: number }>)(`/api/admin/analytics/live/breakdown?scope=source_category&window=60`)
+    const res = await adminFetch<AnalyticsBreakdownResponse>(`/api/admin/analytics/live/breakdown?scope=source_category&window=60`)
     if (res?.ok) sourceData.value = { rows: res.rows ?? [], totalPageViews: res.totalPageViews ?? 0 }
   } catch {
     sourceError.value = true
@@ -81,7 +80,7 @@ async function loadBreakdowns() {
    sourceLoading.value = false
   }
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; rows: BreakdownRow[]; totalPageViews: number }>)(`/api/admin/analytics/live/breakdown?scope=device_class&window=60`)
+    const res = await adminFetch<AnalyticsBreakdownResponse>(`/api/admin/analytics/live/breakdown?scope=device_class&window=60`)
     if (res?.ok) deviceData.value = { rows: res.rows ?? [], totalPageViews: res.totalPageViews ?? 0 }
   } catch {
     deviceError.value = true
@@ -148,19 +147,18 @@ const quickActions = [
 onMounted(async () => {
   try {
     const [artRes, roleModelRes, subRes, mediaRes] = await Promise.all([
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; pagination?: { total?: number } }>)(`/api/admin/articles`).catch(() => null),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; pagination?: { total?: number } }>)(`/api/admin/articles`, { query: { type: 'role_model' } }).catch(() => null),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; counts?: { new?: number }; submissions?: Array<unknown> }>)(`/api/admin/submissions`).catch(() => null),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; pagination?: { total?: number } }>)(`/api/admin/media`).catch(() => null),
+      adminFetch<DashboardArticlesResponse>(`/api/admin/articles`).catch(() => null),
+      adminFetch<DashboardArticlesResponse>(`/api/admin/articles`, { query: { type: 'role_model' } }).catch(() => null),
+      adminFetch<DashboardSubmissionsResponse>(`/api/admin/submissions`).catch(() => null),
+      adminFetch<DashboardMediaResponse>(`/api/admin/media`).catch(() => null),
     ])
-    const setStat = (index: number, value: number) => {
-      const card = stats.value[index]
-      if (card) card.value = String(value)
-    }
-    if (artRes?.ok) setStat(0, artRes.pagination?.total || 0)
-    if (roleModelRes?.ok) setStat(1, roleModelRes.pagination?.total || 0)
-    if (subRes?.ok) setStat(2, subRes.counts?.new ?? subRes.submissions?.length ?? 0)
-    if (mediaRes?.ok) setStat(3, mediaRes.pagination?.total || 0)
+    // A failed card (a 403 for an officer without that resource) reads "—", not a "..." that never ends.
+    const setStat = (index: number, value: number | null) => { const card = stats.value[index]; if (card) card.value = value === null ? '—' : String(value) }
+    setStat(0, artRes?.ok ? artRes.pagination.total : null)
+    setStat(1, roleModelRes?.ok ? roleModelRes.pagination.total : null)
+    // `counts` has a key only for a status with rows: no `new` key = none pending (not all submissions).
+    setStat(2, subRes?.ok ? subRes.counts.new ?? 0 : null)
+    setStat(3, mediaRes?.ok ? mediaRes.pagination.total : null)
   } catch { /* ignore */ }
   await Promise.all([loadTraffic(), loadLive(), loadBreakdowns()])
 })
