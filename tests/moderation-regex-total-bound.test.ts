@@ -89,11 +89,12 @@ const slowText = (unit: string, length: number) => `${unit.repeat(length - 1)}!`
 function calibrate(pattern: string, unit: string, targetMs: number): { length: number, windowMs: number } {
   const regex = compileModerationRegex(pattern)
   assert.ok(regex, `Layer 1 accepts ${pattern} — that is the point`)
-  const cost = (length: number) => {
+  // The fastest of three runs: a throttled container (`--cpus 0.5`) stretches some runs ×2–×5.
+  const cost = (length: number) => Math.min(...[0, 1, 2].map(() => {
     const started = performance.now()
     regex.test(slowText(unit, length))
     return performance.now() - started
-  }
+  }))
   cost(80); cost(80); cost(300)
   let length = 300
   let ms = cost(length)
@@ -111,13 +112,13 @@ test('a rule just under the window budget, run again and again, is disabled once
   reset([])
   const pattern = 'chậm-dưới-ngưỡng'
   let calls = 0
-  // 60 ms of real busy time per window: never near the 200-ms window budget.
-  const regex = { test: () => { calls += 1; const end = performance.now() + 60; while (performance.now() < end); return false } } as unknown as RegExp
+  // 25 ms of real busy time per window: nowhere near the 200-ms window budget.
+  const regex = { test: () => { calls += 1; const end = performance.now() + 25; while (performance.now() < end); return false } } as unknown as RegExp
   const lines: LogLine[] = []
   const spy = mock.method(console, 'error', (line: unknown) => { try { lines.push(JSON.parse(String(line)) as LogLine) } catch { /* not a log line */ } })
   let spent = 0
   try {
-    for (let i = 0; i < 40 && !isModerationRuleDisabled(pattern); i += 1) {
+    for (let i = 0; i < 100 && !isModerationRuleDisabled(pattern); i += 1) {
       const started = performance.now()
       assert.equal(withinWallClock(5000, pattern, () => testModerationRegex(pattern, regex, 'một cửa sổ')), false)
       spent += performance.now() - started
@@ -126,12 +127,19 @@ test('a rule just under the window budget, run again and again, is disabled once
     spy.mock.restore()
   }
   assert.equal(isModerationRuleDisabled(pattern), true, `still enabled after ${calls} windows, ${spent.toFixed(0)} ms of blocking`)
-  assert.ok(spent <= RULE_BUDGET_MS + 60 + SLACK_MS, `blocked ${spent.toFixed(0)} ms in total before it was disabled`)
-  assert.ok(calls >= 10, `${calls} windows: disabled by the total, not by one window`)
+  assert.ok(spent <= RULE_BUDGET_MS + MODERATION_RULE_WINDOW_BUDGET_MS + SLACK_MS, `blocked ${spent.toFixed(0)} ms in total before it was disabled`)
   const logged = slowDisabledLines(lines, pattern)
   assert.equal(logged.length, 1, 'logged once')
-  assert.equal(logged[0]!.reason, 'cumulative')
-  assert.ok(Number(logged[0]!.elapsedMs) >= RULE_BUDGET_MS, `elapsedMs ${String(logged[0]!.elapsedMs)} is the total charged`)
+  if (logged[0]!.reason === 'window') {
+    // Only a throttled runner (`--cpus 0.5`) stalls one 25-ms busy window past 200 ms; the fake-clock
+    // tests (`moderation-regex-budget`, seams "per-rule budget") pin 'cumulative' deterministically.
+    assert.ok(Number(logged[0]!.elapsedMs) > MODERATION_RULE_WINDOW_BUDGET_MS, `reason window on a ${String(logged[0]!.elapsedMs)}-ms window`)
+  } else {
+    assert.equal(logged[0]!.reason, 'cumulative')
+    // ~40 windows of 25 ms; fewer on a throttled runner, where a stall lengthens a window's wall time.
+    assert.ok(calls >= 5, `${calls} windows: disabled by the total, not by one window`)
+    assert.ok(Number(logged[0]!.elapsedMs) >= RULE_BUDGET_MS, `elapsedMs ${String(logged[0]!.elapsedMs)} is the total charged`)
+  }
   const before = calls
   assert.equal(testModerationRegex(pattern, regex, 'một cửa sổ'), false)
   assert.equal(calls, before, 'disabled: not run again')
@@ -162,12 +170,12 @@ for (const [[pattern, unit], [entry, call]] of SCENARIOS) {
       reset([rule(pattern)])
       const { length, windowMs } = calibrate(pattern, unit, 40)
       const text = slowText(unit, length)
-      const cap = Math.min(200, Math.ceil((RULE_BUDGET_MS + 2 * MODERATION_RULE_WINDOW_BUDGET_MS) / Math.max(windowMs, 1)) + 5)
       let spent = 0
       let maxGap = 0
       let calls = 0
       const { lines } = await captureLogs(async () => {
-        for (; calls < cap && !isModerationRuleDisabled(pattern); calls += 1) {
+        // Stop at the bound being tested (and twice it), not at a count guessed from the calibration.
+        for (; calls < 400 && spent < 3000 && !isModerationRuleDisabled(pattern); calls += 1) {
           const run = await timed(() => call(text))
           spent += run.wallMs
           maxGap = Math.max(maxGap, run.maxGapMs)
@@ -267,8 +275,26 @@ for (const [entry, call] of ENTRY_POINTS.filter(([name]) => name !== 'fastPreMod
       // V8 compiles each regex to native code on its first long subject (a few ms each): warm the
       // very objects the runtime will run (`compileModerationRegex` caches them), not the bad one.
       for (const pattern of VIETNAMESE_RULES) for (let i = 0; i < 2; i += 1) compileModerationRegex(pattern)!.test(text)
-      const { value: run, lines } = await captureLogs(() => timed(() => call(text)))
-      assert.ok(run.wallMs <= MODERATION_RULE_WINDOW_BUDGET_MS + 150, `${run.wallMs.toFixed(0)} ms (was ~404: cut off, re-run, cut off again)`)
+      // How many times the bad rule's window ran: the deterministic tell (2 before: cut ~200 ms in
+      // as the 16th rule of its pass, re-run, cut again). Counted on the RegExp the runtime runs.
+      let badWindows = 0
+      const original = RegExp.prototype.test
+      const spy = mock.method(RegExp.prototype, 'test', function (this: RegExp, input: string) {
+        if (this.source === bad) badWindows += 1
+        return original.call(this, input)
+      })
+      let measured: { value: { wallMs: number, maxGapMs: number }, lines: LogLine[] } | undefined
+      try {
+        measured = await captureLogs(() => timed(() => call(text)))
+      } finally {
+        spy.mock.restore()
+      }
+      const { value: run, lines } = measured
+      assert.equal(badWindows, 1, 'the catastrophic window ran once — cut, blamed, never re-run')
+      // On top of the one cut window: the 29 healthy rules on 1501 chars and the rest of the call, which
+      // runs as ONE macrotask here (every await resolves at once). ~200–270 ms at 2 CPUs; a throttled
+      // runner (`--cpus 0.5`) stretches the healthy part, so the wall bound is generous.
+      assert.ok(run.maxGapMs <= MODERATION_RULE_WINDOW_BUDGET_MS + 250, `longest block ${run.maxGapMs.toFixed(0)} ms, wall ${run.wallMs.toFixed(0)} ms (was ~404–436)`)
       assert.deepEqual(patterns.filter(pattern => isModerationRuleDisabled(pattern)), [bad])
       assert.deepEqual(lines.filter(line => line.event === 'ai_moderation.rule_slow_disabled').map(line => [line.pattern, line.interrupted]), [[bad, true]])
       assert.ok(await worker.matchInstantRule('chơi lô đề ở đây'), 'a rule after it still matches')

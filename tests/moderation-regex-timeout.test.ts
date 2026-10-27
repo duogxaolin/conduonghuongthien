@@ -209,6 +209,10 @@ const compiledRules = (patterns: readonly string[]) => patterns.map(pattern => (
 
 test('one vm call per text for 30 rules over several windows: same context and script every time, timeout = the window budget', () => {
   fresh()
+  // A pass that has run > 20 ms yields before its next window (4.3c follow-up). These 30 rules take
+  // ~1–3 ms here, but a throttled runner (`--cpus 0.5`) can stall one pass past 20 ms: the clock is
+  // frozen so the count below is about the pass structure, not the machine.
+  setModerationRegexTimingForTests({ elapsed: () => 0, now: () => 1_000_000 })
   const rules = compiledRules(VIETNAMESE_RULES)
   assert.equal(rules.length, 30)
   assert.ok(rules.every(rule => rule.regex), 'all 30 pass Layer 1')

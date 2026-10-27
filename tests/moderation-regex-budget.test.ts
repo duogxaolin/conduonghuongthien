@@ -208,9 +208,17 @@ test('cumulative budget across a batch: the same as the calls one by one — 7 �
 const REAL_RULES = ['lô\\s*đề', '(?:0|\\+84)\\d{9}', 'cờ[\\s,.]+bạc', 'nhà\\s*cái\\s*uy\\s*tín', '\\b(tài|tai)\\s*xỉu\\b']
 const BATCH_TEXTS = ['', 'chơi lô đề', 'gọi 0912345678 nhé', 'bình thường', 'cờ, bạc và lô đề', 'nhà cái uy tín', `${'dài '.repeat(1500)} lô đề`]
 
+/**
+ * Pass counts below are about the pass STRUCTURE: a pass yields once it has run > 20 ms of the
+ * runtime's clock, and a throttled runner (`--cpus 0.5`) can stall even a 1-ms scan past that.
+ * Frozen, the clock never says 20 ms went by.
+ */
+const freezeClock = () => setModerationRegexTimingForTests({ elapsed: () => 0, now: () => 1_000_000 })
+
 for (const stopAtFirstMatch of [false, true]) {
   test(`testModerationRegexBatch (stopAtFirstMatch: ${stopAtFirstMatch}): the same answers as one call per text, in ONE vm pass`, () => {
     fresh()
+    freezeClock()
     const rules = REAL_RULES.map(pattern => ({ pattern, regex: compileModerationRegex(pattern)! }))
     const oneByOne = vmPasses(() => BATCH_TEXTS.map(text => testModerationRegexes(rules, text, { stopAtFirstMatch })))
     const batched = vmPasses(() => testModerationRegexBatch(BATCH_TEXTS.map(text => ({ rules, text })), { stopAtFirstMatch }))
@@ -218,6 +226,7 @@ for (const stopAtFirstMatch of [false, true]) {
     assert.equal(oneByOne.passes, BATCH_TEXTS.length)
     assert.equal(batched.passes, 1)
     assert.deepEqual(testModerationRegexBatch([]), [])
+    fresh()
   })
 }
 
@@ -229,6 +238,7 @@ test('matchInstantRuleBatch is exactly texts.map(matchInstantRule): built-ins, k
     rule('(?:0|\\+84)\\d{9}', 'regex', { severity: 'critical' }),
     rule('(a+)+'), // refused by Layer 1: skipped on both paths
   ])
+  freezeClock()
   const texts = ['', '   ', 'mày dcm', 'chơi lô đề', 'đề thi', 'cá độ và lô đề', 'gọi 0912345678', 'bình thường', 'aaaa', 'tài xỉu']
   const single = await Promise.all(texts.map(text => worker.matchInstantRule(text)))
   const spy = mock.method(vm.Script.prototype, 'runInContext')
@@ -276,11 +286,15 @@ test('S3: no window is ever run twice — a counting rule after a heavy one and 
   fresh()
 })
 
-test('a pass that has run > 20 ms yields before the next window: the catastrophic rule in the middle of 30 costs 2 vm passes and ~one window budget', () => {
+test('a pass that has run > 20 ms yields before the next window: the catastrophic rule in the middle of 16 is cut once, in ~one window budget', () => {
   fresh()
   const patterns = REAL_RULES.concat(REAL_RULES, REAL_RULES)
   const bad = '日*日*日*$'
-  const rules = [...patterns.slice(0, 7), bad, ...patterns.slice(7)].map(pattern => ({ pattern, regex: compileModerationRegex(pattern)! }))
+  const badRegex = compileModerationRegex(bad)!
+  let badWindows = 0
+  const rules = [...patterns.slice(0, 7), bad, ...patterns.slice(7)].map(pattern => (pattern === bad
+    ? { pattern, regex: { test: (s: string) => { badWindows += 1; return badRegex.test(s) } } as unknown as RegExp }
+    : { pattern, regex: compileModerationRegex(pattern)! }))
   const text = `${'日'.repeat(1500)}!`
   // V8 compiles a regex to native code on its first long subject (a few ms each): do it first,
   // or the 7 rules before the bad one can pass 20 ms and yield — one pass more, same bound.
@@ -288,7 +302,9 @@ test('a pass that has run > 20 ms yields before the next window: the catastrophi
   const started = performance.now()
   const { value, passes } = vmPasses(() => captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'middle', () => testModerationRegexes(rules, text))))
   const wallMs = performance.now() - started
-  assert.equal(passes, 2, 'the pass cut at the bad rule, then the rest (it was 3: cut, re-run, rest)')
+  assert.equal(badWindows, 1, 'cut once, blamed, never re-run (it was 2: cut, re-run, cut again)')
+  // 2: the pass cut at the bad rule, then the rest; 3 only if a stall made the rules before it pass 20 ms.
+  assert.ok(passes === 2 || passes === 3, `${passes} passes`)
   assert.ok(wallMs < MODERATION_RULE_WINDOW_BUDGET_MS + 150, `${wallMs.toFixed(0)} ms`)
   assert.deepEqual(events(value.lines, 'ai_moderation.rule_slow_disabled').map(line => [line.pattern, line.reason, line.interrupted]), [[bad, 'window', true]])
   fresh()
@@ -299,6 +315,7 @@ test('a pass that has run > 20 ms yields before the next window: the catastrophi
 for (const [name, handler] of HANDLERS) {
   test(`${name}: 30 user turns, regex rules on — the history is matched in ONE vm pass (the new question in its own)`, async () => {
     reset(REAL_RULES.map(pattern => rule(pattern)))
+    freezeClock()
     const history = Array.from({ length: 30 }, (_, i) => ({ role: 'user', content: `câu hỏi số ${i} về thủ tục hành chính` }))
     const spy = mock.method(vm.Script.prototype, 'runInContext')
     try {
