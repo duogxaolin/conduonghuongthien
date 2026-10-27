@@ -80,6 +80,16 @@ export type RunPassOptions = {
   ignoreSchedule?: boolean
   trigger?: 'scheduler' | 'cron' | 'manual'
   now?: Date
+  /**
+   * Runs once the lock is held and before the first DELETE, with the windows the
+   * pass is about to apply. If it throws, nothing is deleted, the lock is released
+   * and the error propagates. The manual run writes its attribution row here
+   * (FINDING-R3-2): the purge commits on its own pool, so an audit row written
+   * only AFTER it could fail and leave rows deleted by nobody on record. Under the
+   * lock, not before it, so a run turned away as `locked` leaves no row claiming
+   * a purge that never started.
+   */
+  beforePurge?: (start: { trigger: 'scheduler' | 'cron' | 'manual', scopes: Array<{ scope: string, days: number, maxRows: number }> }) => Promise<void>
 }
 
 /**
@@ -123,12 +133,20 @@ export async function runRetentionPass(options: RunPassOptions = {}): Promise<Ru
     // The lock lives in `server/utils/named-lock.ts`, shared with the view-boost
     // and analytics schedulers. The name and the timeout are the ones this file
     // always used, so a cron entry running the older path still cannot double-run.
-    const outcome = await withNamedLock(pool, LOCK_NAME, LOCK_TIMEOUT_SECONDS, () => runDataRetention({
-      now,
-      trigger,
-      connection: pool,
-      ...windows,
-    }))
+    const outcome = await withNamedLock(pool, LOCK_NAME, LOCK_TIMEOUT_SECONDS, async () => {
+      // Outside runDataRetention on purpose: its catch turns a throw into a
+      // `failed` result, and a failed attribution must reach the caller as an error.
+      await options.beforePurge?.({
+        trigger,
+        scopes: policy.scopes.map(({ scope, days, maxRows }) => ({ scope, days, maxRows })),
+      })
+      return runDataRetention({
+        now,
+        trigger,
+        connection: pool,
+        ...windows,
+      })
+    })
     if (!outcome.acquired) return { ran: false, reason: 'locked' }
     const result = outcome.value
 

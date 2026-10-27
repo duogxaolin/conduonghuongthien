@@ -11,16 +11,20 @@ import test, { after, beforeEach, mock } from 'node:test'
  *     cannot pass a window, so the configured policy still decides what goes;
  *   - a pass that could not take the lock (another run is going) is a 409 — not a
  *     success with zero deletions — and is not audited as a purge;
- *   - a pass that ran is audited against the actor with what each table lost.
- *
- * FINDING-R3-2 (pinned, not fixed): the purge has committed before the audit line
- * is written, on another connection; if that insert fails the caller sees a 500
- * for a purge that did happen, and the actor is recorded nowhere.
+ *   - a manual run is ALWAYS attributed: the row naming the officer is written
+ *     under the lock before anything is deleted, and if it cannot be written the
+ *     pass does not start (FINDING-R3-2, fixed — the only row used to be written
+ *     after the purge had committed, so its failure lost the actor);
+ *   - what each table lost is a second row after the pass; if that one fails the
+ *     purge is still reported as done (`auditFailed: true`), not as a 500.
  *
  * Real h3 app with the real `admin-auth` middleware; Drizzle's SQL on SQLite. The
  * purge itself (`runRetentionPass`: a MySQL named lock and raw `DELETE … LIMIT`
- * on its own pool) is the faked boundary — its behaviour has its own suites
- * (`data-retention.test.ts`, `retention-policy.test.ts`).
+ * on its own pool) is the faked boundary — modelled as the real one behaves:
+ * `beforePurge` runs only when the lock was taken, before any row goes, and a
+ * throw from it stops the pass. That ordering is pinned on the real function in
+ * `retention-pass-attribution-behavior.test.ts`; the deletion itself has its own
+ * suites (`data-retention.test.ts`, `retention-policy.test.ts`).
  */
 
 process.env.JWT_SECRET = 'retention-run-now-behavior-test-secret-0123456789'
@@ -41,20 +45,35 @@ mock.module('../server/utils/logger', {
 })
 mock.module('../server/utils/db', { namedExports: { getDb: () => harness.db, getPool: () => null } })
 
-type PassOptions = { force?: boolean, trigger?: string, [key: string]: unknown }
+type PassStart = { trigger: string, scopes: Array<{ scope: string, days: number, maxRows: number }> }
+type PassOptions = { force?: boolean, trigger?: string, beforePurge?: (start: PassStart) => Promise<void>, [key: string]: unknown }
 const purge = {
   calls: [] as PassOptions[],
   outcome: null as unknown,
+  /** How many passes actually deleted — distinct from `calls`, which counts attempts. */
+  deleted: 0,
+  /** activity_logs rows that existed when the pass started deleting. */
+  auditRowsAtPurge: -1,
+  /** Break the result row (the next audit insert after the pass has run). */
+  failResultAudit: false,
 }
 const TABLES = [
   { table: 'activity_logs', deleted: 120, deletedByAge: 100, deletedByRowCap: 20, bounded: false },
   { table: 'submissions', deleted: 0, deletedByAge: 0, deletedByRowCap: 0, bounded: false },
 ]
+const SCOPES = [{ scope: 'activity_logs', days: 365, maxRows: 0 }, { scope: 'submissions', days: 730, maxRows: 0 }]
 mock.module('../server/services/retention-scheduler', {
   namedExports: {
     runRetentionPass: async (options: PassOptions) => {
       purge.calls.push(options)
-      return purge.outcome
+      const outcome = purge.outcome as { ran: boolean }
+      if (!outcome.ran) return outcome
+      // Lock held: the hook runs before the first DELETE; a throw propagates and nothing is deleted.
+      await options.beforePurge?.({ trigger: options.trigger ?? 'scheduler', scopes: SCOPES })
+      purge.auditRowsAtPurge = harness.rows(activityLogs).length
+      purge.deleted += 1
+      if (purge.failResultAudit) harness.failNext(/^insert into `activity_logs`/)
+      return outcome
     },
   },
 })
@@ -82,6 +101,9 @@ beforeEach(async () => {
   policy.clearMfaPolicyCache()
   policy.clearMfaFactorCache()
   purge.calls.length = 0
+  purge.deleted = 0
+  purge.auditRowsAtPurge = -1
+  purge.failResultAudit = false
   purge.outcome = { ran: true, result: { status: 'ok', tables: TABLES, message: null } }
   await harness.db.insert(roles).values([
     { id: OPERATOR.roleId, name: OPERATOR.roleName, isSystem: false },
@@ -100,6 +122,7 @@ test('without settings.update the purge is never started: no session → 401, re
   assert.equal((await server.request('POST', '/api/admin/settings/retention-run', { body: { confirm: true } })).status, 401)
   assert.equal((await run({ confirm: true }, READER)).status, 403)
   assert.deepEqual(purge.calls, [])
+  assert.equal(purge.deleted, 0)
   assert.equal(harness.rows(activityLogs).length, 0)
 })
 
@@ -115,20 +138,32 @@ test('without an explicit confirm: true nothing starts', async () => {
 test('confirmed: exactly one forced manual pass, with no window the caller could widen', async () => {
   const response = await run({ confirm: true, activityLogDays: 1, force: false, trigger: 'cron', maxRows: 1 })
   assert.equal(response.status, 200)
-  assert.deepEqual(purge.calls, [{ force: true, trigger: 'manual' }])
+  assert.equal(purge.calls.length, 1)
+  const [options] = purge.calls
+  assert.deepEqual(Object.keys(options!).sort(), ['beforePurge', 'force', 'trigger'], 'only the switch, the trigger and the attribution hook — no window')
+  assert.equal(options!.force, true)
+  assert.equal(options!.trigger, 'manual')
+  assert.equal(typeof options!.beforePurge, 'function')
   assert.equal(response.body.status, 'ok')
   assert.deepEqual(response.body.tables, TABLES)
+  assert.equal(response.body.auditFailed, false)
 })
 
-test('a pass that ran is audited against the actor with what each table lost', async () => {
+test('a pass that ran is attributed before anything is deleted, then audited with what each table lost', async () => {
   assert.equal((await run({ confirm: true })).status, 200)
+  assert.equal(purge.auditRowsAtPurge, 1, 'the row naming the officer existed before the first DELETE')
   const audit = harness.rows(activityLogs)
-  assert.equal(audit.length, 1)
-  assert.equal(audit[0]!.userId, OPERATOR.id)
-  assert.equal(audit[0]!.action, 'delete')
-  assert.equal(audit[0]!.resource, 'data_retention')
-  assert.deepEqual(audit[0]!.meta, {
+  assert.equal(audit.length, 2)
+  for (const row of audit) {
+    assert.equal(row.userId, OPERATOR.id)
+    assert.equal(row.action, 'delete')
+    assert.equal(row.resource, 'data_retention')
+  }
+  assert.ok(Number(audit[0]!.id) < Number(audit[1]!.id))
+  assert.deepEqual(audit[0]!.meta, { trigger: 'manual', phase: 'started', scopes: SCOPES })
+  assert.deepEqual(audit[1]!.meta, {
     trigger: 'manual',
+    phase: 'finished',
     status: 'ok',
     tables: [
       { table: 'activity_logs', deleted: 120, byAge: 100, byRowCap: 20 },
@@ -143,23 +178,37 @@ test('another run holds the lock → 409, not a success with zero deletions, and
   assert.equal(response.status, 409)
   assert.equal(response.body.ok, undefined)
   assert.equal(purge.calls.length, 1)
-  assert.equal(harness.rows(activityLogs).length, 0)
+  assert.equal(purge.deleted, 0)
+  assert.equal(harness.rows(activityLogs).length, 0, 'a run turned away at the lock leaves no row claiming a purge')
 })
 
 /**
- * FINDING-R3-2 — severity low, NOT fixed (pinned as it behaves today).
- *
- * The purge runs on its own pool and has committed before this handler writes the
- * audit line; the two cannot share a transaction as written. If the insert fails,
- * the officer sees a 500 for a purge that did delete rows, and no row says who
- * started it (`data_retention_state` still banks the counts and `lastTrigger:
- * 'manual'`, so the deletion itself is not invisible — hence low). A fix would
- * write an "about to purge" audit line first, or pass the actor into the pass.
+ * FINDING-R3-2 — severity low, FIXED. It was pinned here as it behaved: the
+ * purge ran and committed on its own pool, then the handler wrote its only audit
+ * row; if that insert failed the officer saw a 500 for a purge that had deleted
+ * rows and nothing recorded who started it. The attribution row is now written
+ * under the lock before the first DELETE, fail-closed: no row, no purge. Make the
+ * start row best-effort again (swallow its error) and this test is red.
  */
-test('FINDING-R3-2 (low, pinned): when the audit insert fails, the purge has already happened and the actor is lost', async () => {
+test('FINDING-R3-2 (low, fixed): if the attribution row cannot be written, nothing is deleted', async () => {
   harness.failNext(/^insert into `activity_logs`/)
   const response = await run({ confirm: true })
   assert.equal(response.status, 500)
-  assert.equal(purge.calls.length, 1) // the purge ran
+  assert.match(String(response.body.statusMessage ?? response.body.message), /chưa có bản ghi nào bị xoá/)
+  assert.equal(purge.calls.length, 1, 'the pass was attempted')
+  assert.equal(purge.deleted, 0, 'and stopped before deleting anything')
   assert.equal(harness.rows(activityLogs).length, 0)
+})
+
+test('the result row failing after the purge ran: 200 with auditFailed, and the run is still on record', async () => {
+  purge.failResultAudit = true
+  const response = await run({ confirm: true })
+  assert.equal(response.status, 200, 'rows were deleted — a 500 would read as "nothing happened"')
+  assert.equal(response.body.auditFailed, true)
+  assert.deepEqual(response.body.tables, TABLES)
+  assert.equal(purge.deleted, 1)
+  const audit = harness.rows(activityLogs)
+  assert.equal(audit.length, 1)
+  assert.equal(audit[0]!.userId, OPERATOR.id)
+  assert.equal((audit[0]!.meta as { phase: string }).phase, 'started')
 })
