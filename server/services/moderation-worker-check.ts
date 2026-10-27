@@ -10,7 +10,7 @@ import { callAi } from './ai-gateway'
 import { fenceUntrustedContent } from '../utils/ai/untrusted-content'
 import { logWarn, logInfo, logError } from '../utils/logger'
 import { getActiveModerationRules } from './moderation-rules-cache'
-import { compileModerationRegex, isRegexRuleType, testModerationRegexes, type ModerationRegexRule } from './moderation-regex'
+import { compileModerationRegex, createModerationRegexBudget, isRegexRuleType, testModerationRegexes, type ModerationRegexRule } from './moderation-regex'
 import { workerStats } from './moderation-stats'
 import { fastPreModerate } from './moderation-worker-prescreen'
 import { applyAutoHide, describeError, insertQueueRowOnce, noteWorkerError } from './moderation-worker-persist'
@@ -36,8 +36,10 @@ export async function checkAndModerateContent(
     return { flagged: false, action: "allow", severity: 'low', reasons: [], matchedRules: [] }
   }
 
-  // First check fast pre-moderator — on the same regex budget as the full pass below.
-  const fast = await fastPreModerate(content, { ...input, regexBudget: options.regexBudget })
+  // First check fast pre-moderator — on the same regex budget as the full pass below (the caller's,
+  // or one for this call: no moderation call runs without the per-request bound — W7).
+  const regexBudget = options.regexBudget ?? createModerationRegexBudget()
+  const fast = await fastPreModerate(content, { ...input, regexBudget })
   if (fast.blocked) {
     // Already flagged by pre-moderator, auto-hide database target row if targetId provided
     const failures: ModerationPersistFailure[] = []
@@ -75,14 +77,15 @@ export async function checkAndModerateContent(
   // BỎ QUA (đã ghi log một lần khi biên dịch). Trước đây đường này lại khớp nó như một chuỗi con
   // thường — hai đường cho hai kết quả khác nhau với cùng một luật. Mọi luật regex chạy trong MỘT
   // lượt có hạn giờ cứng (`testModerationRegexes`: một lượt `vm` cho cả văn bản), trên hạn mức
-  // của request khi nơi gọi truyền `regexBudget` (đường đăng bình luận).
+  // của request (nơi gọi truyền `regexBudget` — bình luận, chat livestream, quét lại — hay một
+  // hạn mức riêng cho lời gọi này).
   const regexRules: Array<ModerationRegexRule & { index: number }> = []
   for (const [index, rule] of rules.entries()) {
     if (!isRegexRuleType(rule.ruleType)) continue
     const regex = compileModerationRegex(rule.pattern)
     if (regex) regexRules.push({ index, pattern: rule.pattern, regex })
   }
-  const regexHits = testModerationRegexes(regexRules, content, { budget: options.regexBudget })
+  const regexHits = testModerationRegexes(regexRules, content, { budget: regexBudget })
   const regexMatched = new Set(regexRules.filter((_, k) => regexHits[k]).map(rule => rule.index))
 
   for (const [index, rule] of rules.entries()) {

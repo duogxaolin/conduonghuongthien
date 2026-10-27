@@ -91,7 +91,8 @@ test('nội dung rỗng/khoảng trắng → allow, không tính lượt quét',
   reset(svc)
   const before = svc.getWorkerStats().totalScanned
   const r = await svc.fastPreModerate('   ')
-  assert.deepEqual(r, { blocked: false, action: 'allow', severity: 'low', reason: '', matchedRule: '' })
+  // `publicMessage` (verify of 4.3c follow-up, W8): what a blocked reader is told — empty when allowed.
+  assert.deepEqual(r, { blocked: false, action: 'allow', severity: 'low', reason: '', matchedRule: '', publicMessage: '' })
   assert.equal(svc.getWorkerStats().totalScanned, before)
 })
 
@@ -332,12 +333,16 @@ test('luật regex chạy chậm bị tắt tạm ở cả hai đường (đồn
   rec.rules = [rule({ id: 10, pattern: 'cấm\\d', ruleType: 'regex', category: 'rx', severity: 'high' })]
   const clock = { t: 0, step: regexMod.MODERATION_RULE_WINDOW_BUDGET_MS + 5 }
   regexMod.setModerationRegexTimingForTests({ elapsed: () => (clock.t += clock.step), now: () => 1_000 })
+  // Đồng hồ này nhảy 205 ms MỖI lần đọc; từ kiểm chứng 4.3c tiếp (W7) lời gọi không truyền hạn mức
+  // tự có 250 ms — với nhịp đó hạn mức hết trước cả cửa sổ đầu. Điều test này ghim là cửa sổ chậm
+  // giữ kết quả và tắt luật, nên mỗi lời gọi có hạn mức rộng.
+  const roomy = () => regexMod.createModerationRegexBudget(60_000)
   try {
     // Lượt đầu chậm: vẫn trả kết quả của chính nó, rồi luật bị tắt.
-    assert.equal((await svc.fastPreModerate('có cấm1 đây')).blocked, true)
-    assert.equal((await svc.fastPreModerate('có cấm1 đây')).blocked, false, 'luật đang tắt')
+    assert.equal((await svc.fastPreModerate('có cấm1 đây', { regexBudget: roomy() })).blocked, true)
+    assert.equal((await svc.fastPreModerate('có cấm1 đây', { regexBudget: roomy() })).blocked, false, 'luật đang tắt')
     rec.ai = { ok: true, text: '{"verdict":"safe"}' }
-    const full = await svc.checkAndModerateContent({ content: 'có cấm1 đây', targetType: 'comment', targetId: 6 })
+    const full = await svc.checkAndModerateContent({ content: 'có cấm1 đây', targetType: 'comment', targetId: 6 }, { regexBudget: roomy() })
     assert.equal(full.flagged, false)
   } finally {
     regexMod.setModerationRegexTimingForTests(null)

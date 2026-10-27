@@ -216,7 +216,8 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     regexBudget,
   })
   if (preCheck.blocked) {
-    return { ok: false, statusCode: 400, message: preCheck.reason }
+    // Never `reason`: it names the rule (pattern, keyword) — the review row keeps it for admins.
+    return { ok: false, statusCode: 400, message: preCheck.publicMessage }
   }
 
   /**

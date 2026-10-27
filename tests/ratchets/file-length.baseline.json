@@ -76,7 +76,7 @@
   "server/services/analytics-reporting.ts": 496,
   "server/services/article-translations.ts": 467,
   "server/services/backup-restore-guards.ts": 482,
-  "server/services/livestream-chat.ts": 546,
+  "server/services/livestream-chat.ts": 459,
   "server/services/livestream.ts": 513,
   "server/services/media-sync.ts": 457,
   "server/services/notifications.ts": 449,

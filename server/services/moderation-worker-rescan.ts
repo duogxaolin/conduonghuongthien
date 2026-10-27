@@ -7,6 +7,7 @@ import { and, count, desc, eq, lt } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { articleComments, livestreamMessages } from '../db/schema'
 import { logWarn, logInfo, logError } from '../utils/logger'
+import { createModerationRegexBudget, type ModerationRegexBudget } from './moderation-regex'
 import { fastPreModerate } from './moderation-worker-prescreen'
 import { checkAndModerateContent } from './moderation-worker-check'
 import { applyAutoHide, describeError } from './moderation-worker-persist'
@@ -148,8 +149,11 @@ export async function rescanExistingContent(options: RescanOptions = {}): Promis
   // moderation turns out NOT to be configured, the rest of the run is rules-only:
   // queueing every old visible comment as `flag_only` just floods the review queue.
   let aiUnavailable = false
-  const rulesOnly = async (c: { id: number; body: string }) => {
-    const check = await fastPreModerate(c.body, { targetType: 'comment', contextTitle: `Quét lại bình luận #${c.id}` })
+  // One regex budget per scanned item (`createModerationRegexBudget`, 250 ms): a comment's full
+  // check and its rules-only fallback share it; each livestream message gets its own. A run of
+  // 1000 comments × 5 slow rules no longer blocks the event loop ~1 s per item.
+  const rulesOnly = async (c: { id: number; body: string }, regexBudget: ModerationRegexBudget) => {
+    const check = await fastPreModerate(c.body, { targetType: 'comment', contextTitle: `Quét lại bình luận #${c.id}`, regexBudget })
     if (!check.blocked) return
     const failures: ModerationPersistFailure[] = []
     if (await applyAutoHide('comment', c.id, check.reason, failures)) progress.hiddenComments++
@@ -169,20 +173,21 @@ export async function rescanExistingContent(options: RescanOptions = {}): Promis
     for (const c of batch) {
       commentCursor = c.id
       progress.scannedComments++
+      const regexBudget = createModerationRegexBudget()
       try {
         if (aiUnavailable) {
-          await rulesOnly(c)
+          await rulesOnly(c, regexBudget)
         } else {
           const result = await checkAndModerateContent({
             content: c.body,
             targetType: 'comment',
             targetId: c.id,
             contextTitle: `Quét lại bình luận #${c.id}`,
-          }, { onAiUnavailable: 'skip' })
+          }, { onAiUnavailable: 'skip', regexBudget })
           if (result.aiUnavailable) {
             aiUnavailable = true
             logWarn({ event: 'ai_moderation.rescan_ai_unavailable', commentId: c.id })
-            await rulesOnly(c)
+            await rulesOnly(c, regexBudget)
           } else {
             if (result.flagged && result.action === 'auto_hide' && result.hidden) progress.hiddenComments++
             if (result.failures?.length) progress.failedComments++
@@ -218,6 +223,7 @@ export async function rescanExistingContent(options: RescanOptions = {}): Promis
         const check = await fastPreModerate(m.content, {
           targetType: 'livestream_chat',
           contextTitle: `Quét lại tin chat trực tiếp #${m.id}`,
+          regexBudget: createModerationRegexBudget(),
         })
         if (check.blocked) {
           const failures: ModerationPersistFailure[] = []

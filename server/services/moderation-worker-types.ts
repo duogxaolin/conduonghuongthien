@@ -65,7 +65,7 @@ export interface ModerationCheckOptions {
   /**
    * Hạn mức thời gian khớp regex của request (`createModerationRegexBudget`), dùng chung cho
    * lượt chặn tức thì và lượt luật đầy đủ — nơi gọi truyền CÙNG hạn mức với `fastPreModerate`
-   * của request đó. Không truyền: chỉ giới hạn mỗi cửa sổ và mỗi luật.
+   * của request đó. Không truyền: một hạn mức riêng cho lời gọi này (kiểm chứng 4.3c tiếp, W7).
    */
   regexBudget?: ModerationRegexBudget
 }

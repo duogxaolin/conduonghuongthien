@@ -10,6 +10,7 @@ import { logWarn } from '../utils/logger'
 import { getActiveModerationRules } from './moderation-rules-cache'
 import {
   compileModerationRegex,
+  createModerationRegexBudget,
   isRegexRuleType,
   scanModerationRegexBatch,
   type ModerationRegexBatchScan,
@@ -179,22 +180,22 @@ export async function fastPreModerate(
   /**
    * `capQueuePerSource` caps review-queue rows per source (MODERATION_QUEUE_CAP) — public inbound
    * flows. `regexBudget` bounds the regex matching of the whole request it belongs to (pass the
-   * same one to every moderation call of that request); without it only the per-window and
-   * per-rule bounds apply.
+   * same one to every moderation call of that request); without it this call gets a budget of
+   * its own (verify of 4.3c follow-up, W7: no moderation call runs without the per-request bound).
    */
   context?: InstantBlockContext,
 ): Promise<FastPreModerateResult> {
   const trimmed = (content || '').trim()
   if (!trimmed) {
-    return { blocked: false, action: "allow", severity: 'low', reason: '', matchedRule: '' }
+    return { blocked: false, action: "allow", severity: 'low', reason: '', matchedRule: '', publicMessage: '' }
   }
 
   workerStats.totalScanned++
   workerStats.lastScannedAt = new Date().toISOString()
 
-  const match = await matchInstantRule(trimmed, { regexBudget: context?.regexBudget })
+  const match = await matchInstantRule(trimmed, { regexBudget: context?.regexBudget ?? createModerationRegexBudget() })
   if (match) return recordInstantBlock(trimmed, match.category, match.severity, match.label, context)
 
   workerStats.allowedCount++
-  return { blocked: false, action: "allow", severity: 'low', reason: '', matchedRule: '' }
+  return { blocked: false, action: "allow", severity: 'low', reason: '', matchedRule: '', publicMessage: '' }
 }
