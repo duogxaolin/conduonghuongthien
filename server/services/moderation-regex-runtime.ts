@@ -11,7 +11,9 @@
  *     kể cả `RegExp` của realm chính). Cửa sổ bị ngắt = không khớp (mở khi lỗi), luật bị tắt
  *     `MODERATION_RULE_COOLDOWN_MS`, log `ai_moderation.rule_slow_disabled` `reason: 'window'`
  *     (`interrupted: true`). Cửa sổ chạy XONG mà đo > ngân sách cũng vậy, giữ kết quả của nó.
- *  2. Mỗi luật: mọi mili-giây khớp được cộng vào sổ của mẫu theo chu kỳ
+ *  2. Mỗi luật: thời gian CPU của luồng trong mỗi cửa sổ (kẹp bởi giờ thật; `openWindowMeter`),
+ *     khi ≥ `MODERATION_RULE_MIN_CHARGED_WINDOW_MS` (1 ms; dưới đó là
+ *     nhiễu, và giờ thật gồm cả lúc tiến trình bị dừng — xem hằng số), được cộng vào sổ theo chu kỳ
  *     `MODERATION_RULE_CUMULATIVE_PERIOD_MS` (chu kỳ mở ở lần tính đầu); chạm
  *     `MODERATION_RULE_CUMULATIVE_BUDGET_MS` thì luật tắt như trên, `reason: 'cumulative'` —
  *     mẫu bậc ba dưới ngân sách cửa sổ (`[а-я]+[а-я]+\d`, ~160 ms/1000 ký tự) không còn chạy
@@ -46,13 +48,17 @@ import { logWarn } from '../utils/logger'
 import { MODERATION_PATTERN_MAX_LENGTH, MODERATION_REGEX_WINDOW, MODERATION_REGEX_WINDOW_OVERLAP } from './moderation-regex-limits'
 import {
   assertModerationRegexBudget,
+  chargeableWindowMs,
   isModerationRuleDisabled,
+  openWindowMeter,
+  regexCpu,
   regexElapsed,
   requestDeadline,
   ruleAllowances,
   settleRegexSpend,
   type ModerationRegexBudget,
   type PatternSpend,
+  type WindowMeter,
   type WindowOffender,
 } from './moderation-regex-budget'
 
@@ -83,11 +89,14 @@ interface ItemScan { rules: readonly ModerationRegexRule[], text: string, scans:
 interface Position { item: number, rule: number, from: number }
 /**
  * Cửa sổ đang (hoặc vừa) chạy — một phép gán trước mỗi cửa sổ. `startedAt`: `regexElapsed()`
- * ngay trước nó (`null`: lượt chưa tới cửa sổ nào); `charged`: số cửa sổ của mẫu đã vào `ledger`.
+ * ngay trước nó (`null`: lượt chưa tới cửa sổ nào); `cpuAt`: thời gian CPU lúc nó bắt đầu — lần đọc
+ * `regexCpu()` gần nhất (lúc vào lượt, hay sau cửa sổ ≥ 1 ms) cộng giờ thật của các cửa sổ ngắn từ
+ * đó (CPU của chúng ≤ giờ thật); `charged`: số cửa sổ của mẫu đã vào `ledger`.
  */
-interface Cursor extends Position { startedAt: number | null, charged: number }
-interface Ledger { windows: number, spentMs: number, item: number }
-const NOTHING_CHARGED = Object.freeze({ windows: 0, spentMs: 0, item: 0 })
+interface Cursor extends Position { startedAt: number | null, cpuAt: number, charged: number }
+/** `spentMs`: giờ thật; `chargedMs`: phần vào chu kỳ của luật (CPU của cửa sổ ≥ 1 ms — `chargeableWindowMs`). */
+interface Ledger { windows: number, spentMs: number, chargedMs: number, item: number }
+const NOTHING_CHARGED = Object.freeze({ windows: 0, spentMs: 0, chargedMs: 0, item: 0 })
 
 interface ScanJob {
   items: ItemScan[]
@@ -97,6 +106,8 @@ interface ScanJob {
   at: Cursor
   /** `before` của cửa sổ đầu của lượt `vm` hiện tại. */
   passStart: number | null
+  /** Đồng hồ CPU của lượt `vm` hiện tại (`openWindowMeter`, mở lại mỗi lượt) — phần mức 2 tính cho mỗi cửa sổ. */
+  meter: WindowMeter
   done: boolean
   /** Hạn của request trên `regexElapsed()`; `Infinity` khi không có hạn mức. */
   deadlineAt: number
@@ -127,7 +138,7 @@ function scan(job: ScanJob): void {
       if (state.skip || state.outcome !== null || job.slowPatterns.has(pattern)) continue
       for (let from = i === start.item && r === start.rule ? start.from : 0; ; from += step) {
         const ledger = job.ledger.get(pattern) ?? NOTHING_CHARGED
-        if (ledger.spentMs >= job.allowance.get(pattern)!) {
+        if (ledger.chargedMs >= job.allowance.get(pattern)!) {
           state.outcome = { kind: 'spent' }
           job.slowPatterns.add(pattern)
           break
@@ -143,10 +154,10 @@ function scan(job: ScanJob): void {
           job.next = { item: i, rule: r, from } // nhường: cửa sổ này mở lượt mới, có trọn hạn giờ
           return
         }
-        job.at = { item: i, rule: r, from, startedAt: before, charged: ledger.windows }
+        job.at = { item: i, rule: r, from, startedAt: before, cpuAt: job.meter.cpuAt(), charged: ledger.windows }
         const matched = regex.test(item.text.slice(from, from + MODERATION_REGEX_WINDOW))
         const after = regexElapsed()
-        job.ledger.set(pattern, { windows: ledger.windows + 1, spentMs: ledger.spentMs + (after - before), item: i })
+        job.ledger.set(pattern, { windows: ledger.windows + 1, spentMs: ledger.spentMs + (after - before), chargedMs: ledger.chargedMs + job.meter.charge(after - before), item: i })
         if (after - before > MODERATION_RULE_WINDOW_BUDGET_MS) {
           state.outcome = { kind: 'slow', matched, elapsedMs: after - before }
           job.slowPatterns.add(pattern)
@@ -198,7 +209,8 @@ function runScan(job: ScanJob): void {
       if (remaining < 1) { job.exhausted = true; return } // `vm` chỉ nhận số nguyên dương
       timeout = Math.min(timeout, remaining)
     }
-    job.at = { ...next, startedAt: null, charged: 0 }
+    job.meter = openWindowMeter()
+    job.at = { ...next, startedAt: null, cpuAt: job.meter.cpuAt(), charged: 0 }
     job.passStart = null
     scanContext.job = job
     try {
@@ -226,9 +238,10 @@ function runScan(job: ScanJob): void {
     const item = job.items[at.item]!
     const { pattern } = item.rules[at.rule]!
     const ranFor = regexElapsed() - at.startedAt
+    const ranCpu = Math.max(0, regexCpu() - at.cpuAt)
     const ledger = job.ledger.get(pattern) ?? NOTHING_CHARGED
     // Cửa sổ đang chạy chưa vào sổ (ngắt rơi trước `ledger.set`): tính phần nó đã chạy.
-    if (ledger.windows === at.charged) job.ledger.set(pattern, { windows: ledger.windows + 1, spentMs: ledger.spentMs + ranFor, item: at.item })
+    if (ledger.windows === at.charged) job.ledger.set(pattern, { windows: ledger.windows + 1, spentMs: ledger.spentMs + ranFor, chargedMs: ledger.chargedMs + chargeableWindowMs(ranFor, ranCpu), item: at.item })
     const state = item.scans[at.rule]!
     if (state.outcome === null) {
       if (cutByDeadline) {
@@ -254,7 +267,7 @@ function settle(job: ScanJob, budget: ModerationRegexBudget | undefined, callMs:
       offenders.push({ pattern: item.rules[index]!.pattern, elapsedMs: outcome.elapsedMs, inputLength: item.text.length, interrupted: outcome.kind === 'interrupted' })
     })
   }
-  const spend: PatternSpend[] = [...job.ledger].map(([pattern, ledger]) => ({ pattern, spentMs: ledger.spentMs, inputLength: job.items[ledger.item]!.text.length }))
+  const spend: PatternSpend[] = [...job.ledger].map(([pattern, ledger]) => ({ pattern, spentMs: ledger.spentMs, chargedMs: ledger.chargedMs, inputLength: job.items[ledger.item]!.text.length }))
   settleRegexSpend({ offenders, spend, ...(budget ? { request: { budget, callMs, exhausted: job.exhausted, texts: job.items.length } } : {}) })
 }
 
@@ -298,8 +311,9 @@ export function scanModerationRegexBatch(
     items,
     stopAtFirstMatch: options.stopAtFirstMatch === true,
     next: { item: 0, rule: 0, from: 0 },
-    at: { item: 0, rule: 0, from: 0, startedAt: null, charged: 0 },
+    at: { item: 0, rule: 0, from: 0, startedAt: null, cpuAt: Number.NaN, charged: 0 },
     passStart: null,
+    meter: openWindowMeter(),
     done: false,
     deadlineAt: budget ? requestDeadline(budget, startedAt) : Infinity,
     exhausted: false,

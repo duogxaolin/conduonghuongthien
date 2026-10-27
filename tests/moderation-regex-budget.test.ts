@@ -30,6 +30,7 @@ import {
   testModerationRegexBatch,
   testModerationRegexes,
 } from '../server/services/moderation-regex.ts'
+import { MODERATION_RULE_MIN_CHARGED_WINDOW_MS } from '../server/services/moderation-regex-budget.ts'
 import { withinWallClock } from './_wall-clock-bound.ts'
 
 type LogLine = Record<string, unknown>
@@ -63,10 +64,21 @@ const busyRule = (pattern: string, ms: number, result = false) => ({
   pattern,
   regex: { test: () => { const end = performance.now() + ms; while (performance.now() < end); return result } } as unknown as RegExp,
 })
+/** This thread's CPU time (ms) — what the per-rule budget charges (W6). */
+const threadCpuMs = () => { const { user, system } = process.threadCpuUsage(); return (user + system) / 1000 }
+/**
+ * Busy-wait `ms` of this thread's CPU time per window: a constant CHARGE on any runner. A wall-time
+ * spin on a throttled one (`--cpus 0.5`) is only ~half CPU, so it is charged half (W6).
+ */
+const cpuBusyRule = (pattern: string, ms: number) => ({
+  pattern,
+  regex: { test: () => { const end = threadCpuMs() + ms; while (threadCpuMs() < end); return false } } as unknown as RegExp,
+})
 
-function withFakeClock<T>(run: (clock: { t: number, now: number }) => T): T {
-  const clock = { t: 0, now: 1_000_000 }
-  setModerationRegexTimingForTests({ elapsed: () => clock.t, now: () => clock.now })
+/** A fake clock; with `withCpu`, also a fake CPU clock (`clock.cpu`) the per-rule budget charges. */
+function withFakeClock<T>(run: (clock: { t: number, now: number, cpu: number }) => T, withCpu = false): T {
+  const clock = { t: 0, now: 1_000_000, cpu: 0 }
+  setModerationRegexTimingForTests({ elapsed: () => clock.t, now: () => clock.now, ...(withCpu ? { cpu: () => clock.cpu } : {}) })
   resetSlowModerationRules()
   try {
     return run(clock)
@@ -164,23 +176,29 @@ test('a window cut by the request deadline is still charged to its rule at once:
   const slow = busyRule('bị-cắt-mãi', 300)
   const lines: LogLine[] = []
   const walls: number[] = []
+  const cpus: number[] = []
   let requests = 0
-  for (; requests < 20 && !isModerationRuleDisabled(slow.pattern); requests += 1) {
+  for (; requests < 40 && !isModerationRuleDisabled(slow.pattern); requests += 1) {
     const started = performance.now()
+    const cpuStarted = threadCpuMs()
     lines.push(...captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'cut by deadline', () =>
       testModerationRegexes([slow], 'x', { budget: createModerationRegexBudget(100) }))).lines)
+    cpus.push(threadCpuMs() - cpuStarted)
     walls.push(performance.now() - started)
   }
   assert.equal(isModerationRuleDisabled(slow.pattern), true, `still on after ${requests} requests cut at 100 ms`)
-  // ~10 × ~100 ms; fewer when a throttled runner's interrupt latency lengthens each cut window.
-  assert.ok(requests >= 2 && requests <= 12, `${requests} requests × ~100 ms`)
-  // The bound that holds on any runner: each cut window is charged the time it ran, measured
-  // INSIDE the request, so a request's charge never exceeds its wall time — the rule cannot be
-  // off before the requests together ran ≥ 1 s. Off sooner means some window was charged more
-  // than once (mutant M15: 2 × its time — off after ~0.5 s). Exactly-once is pinned on a fake
-  // clock in the next test.
-  const totalMs = walls.reduce((sum, ms) => sum + ms, 0)
-  assert.ok(totalMs >= MODERATION_RULE_CUMULATIVE_BUDGET_MS, `${requests} requests, ${walls.map(ms => ms.toFixed(0)).join('+')} = ${totalMs.toFixed(0)} ms of wall time before it was off`)
+  // The bounds that hold on any runner. Each cut window is charged its own CPU time (≤ its wall
+  // time), measured INSIDE the request, so the charges never exceed what the requests used: the
+  // rule cannot be off before they together used ≥ 1 s of CPU (and of wall). Off sooner means
+  // some window was charged more than once (mutant M15: 2 × — off after ~0.5 s). And it is off
+  // as soon as the charges reach 1 s: the CPU of the cut windows is nearly all of the requests'
+  // (~10 requests of ~100 ms; ~20 of ~50 ms of CPU on a runner throttled to half a CPU, where the
+  // 100-ms deadline is wall time). Exactly-once is pinned on a fake clock in the next tests.
+  const total = (list: number[]) => list.reduce((sum, ms) => sum + ms, 0)
+  const label = `${requests} requests, CPU ${cpus.map(ms => ms.toFixed(0)).join('+')} = ${total(cpus).toFixed(0)} ms, wall ${total(walls).toFixed(0)} ms, before it was off`
+  assert.ok(total(walls) >= MODERATION_RULE_CUMULATIVE_BUDGET_MS, label)
+  assert.ok(total(cpus) >= MODERATION_RULE_CUMULATIVE_BUDGET_MS, label)
+  assert.ok(total(cpus) <= MODERATION_RULE_CUMULATIVE_BUDGET_MS + Math.max(...cpus) + 2 * requests, label)
   assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(line => line.reason), ['cumulative'])
   fresh()
 })
@@ -209,6 +227,57 @@ test('a window cut by the request deadline is charged its own time EXACTLY once 
   })
 })
 
+test('…and with a CPU clock the cut window is charged its CPU time, once: 60 ms wall / 40 ms CPU per request → off at the 25th, 1000 ms', () => {
+  // The same cut window, on a fake clock WITH a fake CPU clock (W6): the process was "paused"
+  // 20 of its 60 ms, so it is charged 40 — the CPU time — not 60. 24 × 40 = 960 < 1000 ≤ 25 × 40.
+  // Charged the wall time on the cut path (mutant M19) it is off at the 17th.
+  withFakeClock((clock) => {
+    const cut = { pattern: 'cắt-cpu-40', regex: { test: () => { clock.t += 60; clock.cpu += 40; for (;;); } } as unknown as RegExp }
+    const lines: LogLine[] = []
+    let requests = 0
+    for (; requests < 40 && !isModerationRuleDisabled(cut.pattern); requests += 1) {
+      lines.push(...captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'cut at 10 ms', () =>
+        testModerationRegexes([cut], 'x', { budget: createModerationRegexBudget(10) }))).lines)
+    }
+    assert.equal(requests, 25, `off after ${requests} requests: each cut window must be charged its 40 ms of CPU, once`)
+    assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(line => [line.reason, line.elapsedMs]), [['cumulative', 1000]])
+  }, true)
+})
+
+test('a completed window is charged its CPU time, capped by its wall time: paused 49.1 of 50 ms → never charged; all CPU → off at the 20th', () => {
+  // W6: a µs window that a throttled container's pause (or GC) stretched to 50 ms of wall time
+  // used 0.9 ms of CPU — under the 1-ms floor, not charged at all. Mutant M18 (the meter charges
+  // the wall time) turns it off at the 20th window. A window that really used its 50 ms is charged 50.
+  const run = (cpuPerWindow: number, limit = 100) => withFakeClock((clock) => {
+    const rule = { pattern: `cpu-${cpuPerWindow}`, regex: { test: () => { clock.t += 50; clock.cpu += cpuPerWindow; return false } } as unknown as RegExp }
+    let windows = 0
+    const { lines } = captureLogs(() => {
+      for (; windows < limit && !isModerationRuleDisabled(rule.pattern); windows += 1) testModerationRegexes([rule], 'x')
+    })
+    return { windows, off: isModerationRuleDisabled(rule.pattern), logged: events(lines, 'ai_moderation.rule_slow_disabled').map(line => [line.reason, line.elapsedMs]) }
+  }, true)
+  // 1200 × 0.9 = 1080 ms of CPU, all in sub-ms pieces: charging them (mutant M16) is off at the 1112th.
+  assert.deepEqual(run(0.9, 1200), { windows: 1200, off: false, logged: [] }, '60 s of wall, 1.08 s of CPU in sub-ms pieces: nothing charged')
+  assert.deepEqual(run(50), { windows: 20, off: true, logged: [['cumulative', 1000]] })
+  assert.deepEqual(run(80), { windows: 20, off: true, logged: [['cumulative', 1000]] }, 'CPU above wall (clock skew) is capped at the wall time')
+})
+
+test('the CPU clock is read only after a window that can be charged — the short windows before it are not billed to it', () => {
+  // `openWindowMeter` reads the CPU clock at the start of a pass and after a window of ≥ 1 ms; the
+  // CPU of the sub-ms windows in between is subtracted by their wall time. Here 30 rules of 0.5 ms
+  // (all CPU) run before one window paused 49.5 of its 50 ms: charged 0.5 → 0, every time.
+  // Billing it all the CPU since the last read (mutant M21) charges 15.5 ms → off at the 65th call.
+  withFakeClock((clock) => {
+    const quick = Array.from({ length: 30 }, (_, i) => ({ pattern: `nhanh-${i}`, regex: { test: () => { clock.t += 0.5; clock.cpu += 0.5; return false } } as unknown as RegExp }))
+    const paused = { pattern: 'bị-dừng', regex: { test: () => { clock.t += 50; clock.cpu += 0.5; return false } } as unknown as RegExp }
+    const { lines } = captureLogs(() => {
+      for (let call = 0; call < 80; call += 1) testModerationRegexes([...quick, paused], 'x')
+    })
+    assert.equal(isModerationRuleDisabled(paused.pattern), false, 'never charged its neighbours\' CPU')
+    assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled'), [])
+  }, true)
+})
+
 test('createModerationRegexBudget: a budget of 0 runs nothing; a negative one and a hand-made object are refused', () => {
   fresh()
   const { value, passes } = vmPasses(() => captureLogs(() => testModerationRegexes([{ pattern: 'a', regex: /a/iu }], 'a', { budget: createModerationRegexBudget(0) })))
@@ -219,6 +288,53 @@ test('createModerationRegexBudget: a budget of 0 runs nothing; a negative one an
   assert.throws(() => createModerationRegexBudget(Number.NaN), RangeError)
   assert.throws(() => testModerationRegexes([{ pattern: 'a', regex: /a/iu }], 'a', { budget: { limitMs: 250 } }), TypeError)
   assert.deepEqual(testModerationRegexes([{ pattern: 'a', regex: /a/iu }], 'a'), [true], 'no budget: the old behaviour')
+})
+
+// ── What the per-rule budget charges (verify of 4.3c follow-up, W6) ──────────
+
+test('a window under 1 ms is noise, not charged: a rule at 0.9 ms per window never runs out; at 1 ms it is off after exactly 1000 windows', () => {
+  // Healthy rules cost µs per window; wall time also counts what the process was NOT doing (a
+  // throttled container's pauses, GC), and charging every µs window let heavy BENIGN traffic turn
+  // healthy rules off (1 at 2 CPUs, 4 at 0.5 CPU, in 10 000 max-size chat requests). A window the
+  // budget is meant for — an attacker's slow input — costs whole milliseconds.
+  const run = (cost: number, windows: number) => withFakeClock((clock) => {
+    const rule = fakeRule(clock, `mỗi-cửa-sổ-${cost}`, cost)
+    const { lines } = captureLogs(() => {
+      for (let i = 0; i < windows && !isModerationRuleDisabled(rule.rule.pattern); i += 1) testModerationRegexes([rule.rule], 'x')
+    })
+    return { ran: rule.windows.length, off: isModerationRuleDisabled(rule.rule.pattern), logged: events(lines, 'ai_moderation.rule_slow_disabled').map(line => [line.reason, line.elapsedMs]) }
+  })
+  assert.deepEqual(run(0.9, 2000), { ran: 2000, off: false, logged: [] }, '1800 ms of sub-ms windows: none charged')
+  assert.deepEqual(run(1, 2000), { ran: 1000, off: true, logged: [['cumulative', 1000]] }, '1-ms windows are charged: off at the 1000th')
+  assert.equal(MODERATION_RULE_MIN_CHARGED_WINDOW_MS, 1)
+})
+
+test('the books run on a MONOTONIC clock: the wall clock (Date) moving forward 11 min or back 1 h neither re-enables a rule nor resets its period', () => {
+  fresh()
+  mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 })
+  try {
+    // A window over the window budget: off for 10 minutes of the MONOTONIC clock.
+    const stuck = busyRule('đồng-hồ-tiến', MODERATION_RULE_WINDOW_BUDGET_MS + 60)
+    captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'disable', () => testModerationRegexes([stuck], 'x')))
+    assert.equal(isModerationRuleDisabled(stuck.pattern), true)
+    mock.timers.tick(11 * 60_000)
+    assert.equal(isModerationRuleDisabled(stuck.pattern), true, 'Date moved 11 min forward: still off (on Date.now it came back on)')
+    // A rule charged ~600 ms, the wall clock steps back an hour, ~400 ms more: off — the period
+    // stood (on Date.now `now < periodStart` read as "period over" and forgot the 600 ms). It
+    // spins 25 ms of CPU per window: charged 25 on any runner.
+    const heavy = cpuBusyRule('đồng-hồ-lùi', 25)
+    const lines: LogLine[] = []
+    let windows = 0
+    for (; windows < 24; windows += 1) lines.push(...captureLogs(() => testModerationRegexes([heavy], 'x')).lines)
+    mock.timers.setTime(Date.now() - 60 * 60_000)
+    for (; windows < 55 && !isModerationRuleDisabled(heavy.pattern); windows += 1) lines.push(...captureLogs(() => testModerationRegexes([heavy], 'x')).lines)
+    assert.equal(isModerationRuleDisabled(heavy.pattern), true, `still on after ${windows} windows of 25 ms of CPU`)
+    assert.ok(windows <= 41, `${windows} windows: the 600 ms before the step back were forgotten`)
+    assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(line => line.reason), ['cumulative'])
+  } finally {
+    mock.timers.reset()
+    fresh()
+  }
 })
 
 // ── Per-rule cumulative budget across a batch ───────────────────────────────

@@ -9,8 +9,10 @@
  *
  * The guarantee these pin (as documented in CLAUDE.md and `docs/decisions/realm-safety.md`):
  *   - per rule: at most 1 s of matching per 60-s period (plus the one window that crosses it),
- *     then it is disabled 10 minutes and logged (`reason: 'cumulative'`);
- *   - per request (both chat endpoints, a comment): at most 250 ms of matching in total;
+ *     then it is disabled 10 minutes and logged (`reason: 'cumulative'`) — 1 s of CPU time since
+ *     W6 (wall time also counted a throttled container's pauses against healthy rules), so these
+ *     totals are asserted in this thread's CPU time;
+ *   - per request (both chat endpoints, a comment): at most 250 ms of matching in total — wall time;
  *   - a window that is interrupted is blamed on the rule running it, without a second run.
  * The numbers are written here as the documented values; `moderation-regex-seams-behavior`
  * pins the exported constants to them.
@@ -29,6 +31,13 @@ import { withinWallClockAsync } from './_async-wall-clock-bound.ts'
 import { withinWallClock } from './_wall-clock-bound.ts'
 
 const { compileModerationRegex, isModerationRuleDisabled, testModerationRegex, testModerationRegexes, MODERATION_RULE_WINDOW_BUDGET_MS } = moderationRegex
+
+/**
+ * This thread's CPU time (ms). The per-rule budget charges CPU time (W6): on a runner throttled to
+ * half a CPU the same 1 s of matching takes ~2 s of wall time, so per-rule totals are asserted in
+ * CPU; per-request bounds (level 3) stay in wall time.
+ */
+const threadCpuMs = () => { const { user, system } = process.threadCpuUsage(); return (user + system) / 1000 }
 
 /** The documented guarantee. */
 const RULE_BUDGET_MS = 1000
@@ -112,11 +121,12 @@ test('a rule just under the window budget, run again and again, is disabled once
   reset([])
   const pattern = 'chậm-dưới-ngưỡng'
   let calls = 0
-  // 25 ms of real busy time per window: nowhere near the 200-ms window budget.
-  const regex = { test: () => { calls += 1; const end = performance.now() + 25; while (performance.now() < end); return false } } as unknown as RegExp
+  // 25 ms of CPU per window: nowhere near the 200-ms window budget, and charged 25 on any runner.
+  const regex = { test: () => { calls += 1; const end = threadCpuMs() + 25; while (threadCpuMs() < end); return false } } as unknown as RegExp
   const lines: LogLine[] = []
   const spy = mock.method(console, 'error', (line: unknown) => { try { lines.push(JSON.parse(String(line)) as LogLine) } catch { /* not a log line */ } })
   let spent = 0
+  const cpuStarted = threadCpuMs()
   try {
     for (let i = 0; i < 100 && !isModerationRuleDisabled(pattern); i += 1) {
       const started = performance.now()
@@ -126,8 +136,9 @@ test('a rule just under the window budget, run again and again, is disabled once
   } finally {
     spy.mock.restore()
   }
-  assert.equal(isModerationRuleDisabled(pattern), true, `still enabled after ${calls} windows, ${spent.toFixed(0)} ms of blocking`)
-  assert.ok(spent <= RULE_BUDGET_MS + MODERATION_RULE_WINDOW_BUDGET_MS + SLACK_MS, `blocked ${spent.toFixed(0)} ms in total before it was disabled`)
+  const cpuSpent = threadCpuMs() - cpuStarted
+  assert.equal(isModerationRuleDisabled(pattern), true, `still enabled after ${calls} windows, ${cpuSpent.toFixed(0)} ms of CPU (${spent.toFixed(0)} ms of wall)`)
+  assert.ok(cpuSpent <= RULE_BUDGET_MS + MODERATION_RULE_WINDOW_BUDGET_MS + SLACK_MS, `used ${cpuSpent.toFixed(0)} ms of CPU in total before it was disabled (${spent.toFixed(0)} ms of wall)`)
   const logged = slowDisabledLines(lines, pattern)
   assert.equal(logged.length, 1, 'logged once')
   if (logged[0]!.reason === 'window') {
@@ -165,7 +176,7 @@ const SCENARIOS = [
 ]
 
 for (const [[pattern, unit], [entry, call]] of SCENARIOS) {
-  test(`(a) ${pattern} through ${entry}, repeated: the event loop is blocked < 1.5 s in total, then the rule is off and calls are instant`, async () => {
+  test(`(a) ${pattern} through ${entry}, repeated: < 1.5 s of matching (CPU) in total, then the rule is off and calls are instant`, async () => {
     await withinWallClockAsync(WATCHDOG_MS, `${pattern} via ${entry}`, async () => {
       reset([rule(pattern)])
       const { length, windowMs } = calibrate(pattern, unit, 40)
@@ -173,17 +184,19 @@ for (const [[pattern, unit], [entry, call]] of SCENARIOS) {
       let spent = 0
       let maxGap = 0
       let calls = 0
+      const cpuStarted = threadCpuMs()
       const { lines } = await captureLogs(async () => {
         // Stop at the bound being tested (and twice it), not at a count guessed from the calibration.
-        for (; calls < 400 && spent < 3000 && !isModerationRuleDisabled(pattern); calls += 1) {
+        for (; calls < 400 && threadCpuMs() - cpuStarted < 3000 && !isModerationRuleDisabled(pattern); calls += 1) {
           const run = await timed(() => call(text))
           spent += run.wallMs
           maxGap = Math.max(maxGap, run.maxGapMs)
         }
       })
-      const label = `${pattern} on ${length} chars (${windowMs.toFixed(0)} ms/window here), ${calls} calls via ${entry}`
-      assert.equal(isModerationRuleDisabled(pattern), true, `${label}: still enabled after ${spent.toFixed(0)} ms of blocking`)
-      assert.ok(spent < 1500, `${label}: blocked ${spent.toFixed(0)} ms in total`)
+      const cpuSpent = threadCpuMs() - cpuStarted
+      const label = `${pattern} on ${length} chars (${windowMs.toFixed(0)} ms/window here), ${calls} calls via ${entry}, ${cpuSpent.toFixed(0)} ms of CPU (${spent.toFixed(0)} ms of wall)`
+      assert.equal(isModerationRuleDisabled(pattern), true, `${label}: still enabled`)
+      assert.ok(cpuSpent < 1500, `${label}: over 1.5 s of CPU in total`)
       assert.ok(maxGap < MODERATION_RULE_WINDOW_BUDGET_MS * 2 + SLACK_MS, `${label}: longest single block ${maxGap.toFixed(0)} ms`)
       const logged = slowDisabledLines(lines, pattern)
       assert.equal(logged.length, 1, `${label}: logged once`)
@@ -208,21 +221,23 @@ for (const [name, handler] of HANDLERS) {
       const { length, windowMs } = calibrate(pattern, 'ж', 40)
       const history = thirtyTurns(length)
       const requests: Array<{ wallMs: number, maxGapMs: number, disabled: boolean }> = []
+      const cpuStarted = threadCpuMs()
       await captureLogs(async () => {
-        for (let i = 0; i < 12 && !isModerationRuleDisabled(pattern); i += 1) {
+        // ~4 requests of 250 ms; ~8 on a runner throttled to half a CPU (250 ms of wall, ~125 of CPU).
+        for (let i = 0; i < 16 && !isModerationRuleDisabled(pattern); i += 1) {
           const run = await timed(() => send(handler, history))
           assert.notEqual(kindOf(run.value), 'moderation_blocked', 'no turn matches')
           requests.push({ wallMs: run.wallMs, maxGapMs: run.maxGapMs, disabled: isModerationRuleDisabled(pattern) })
         }
       })
-      const label = `${length}-char turns at ${windowMs.toFixed(0)} ms/window here (unbounded: ~${(30 * windowMs).toFixed(0)} ms per request): ${requests.map(r => r.wallMs.toFixed(0)).join(', ')} ms`
+      const cpuSpent = threadCpuMs() - cpuStarted
+      const label = `${length}-char turns at ${windowMs.toFixed(0)} ms/window here (unbounded: ~${(30 * windowMs).toFixed(0)} ms per request): ${requests.map(r => r.wallMs.toFixed(0)).join(', ')} ms of wall, ${cpuSpent.toFixed(0)} ms of CPU`
       for (const request of requests) {
         assert.ok(request.wallMs <= REQUEST_BUDGET_MS + SLACK_MS, `${label}: one request over the per-request budget`)
         assert.ok(request.maxGapMs <= REQUEST_BUDGET_MS + SLACK_MS, `${label}: the event loop was blocked ${request.maxGapMs.toFixed(0)} ms at once`)
       }
       assert.equal(isModerationRuleDisabled(pattern), true, `${label}: still enabled`)
-      const total = requests.reduce((sum, request) => sum + request.wallMs, 0)
-      assert.ok(total <= RULE_BUDGET_MS + REQUEST_BUDGET_MS + SLACK_MS, `${label}: ${total.toFixed(0)} ms in total before it was disabled`)
+      assert.ok(cpuSpent <= RULE_BUDGET_MS + REQUEST_BUDGET_MS + SLACK_MS, `${label}: over ${RULE_BUDGET_MS + REQUEST_BUDGET_MS + SLACK_MS} ms of CPU in total before it was disabled`)
       const after = await timed(() => send(handler, history))
       assert.ok(after.wallMs < 50, `disabled: the next request is instant (${after.wallMs.toFixed(1)} ms)`)
       reset([])
@@ -285,7 +300,7 @@ for (const [name, handler] of HANDLERS) {
       const messages = [{ role: 'user', content: violating }, ...crafted, { role: 'user', content: 'xin chào' }]
       const sent: string[][] = []
       await captureLogs(async () => {
-        for (let i = 0; i < 12 && !isModerationRuleDisabled(slow); i += 1) {
+        for (let i = 0; i < 16 && !isModerationRuleDisabled(slow); i += 1) {
           const reply = await send(handler, messages)
           assert.notEqual(kindOf(reply), 'moderation_blocked')
           sent.push(answeredUserTexts())
