@@ -142,7 +142,7 @@ function statusLabel(s: string): string {
 }
 
 function statusBadgeClass(s: string): string {
-  if (s === 'published') return 'bg-[#e6f4ea] text-[#2c6e33]'
+  if (s === 'published') return 'bg-[#e6f4ea] text-brand-700'
   if (s === 'archived') return 'bg-[#f0f0f0] text-[#666]'
   return 'bg-[#fff3cd] text-[#856404]'
 }
@@ -181,7 +181,7 @@ onMounted(() => { void fetchMedia() })
         <NuxtLink
           v-if="canCreate"
           to="/admin/media-portal/external"
-          class="inline-flex items-center gap-2 rounded-lg bg-[#4A6741] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3d5636] transition-colors"
+          class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-[#3d5636] transition-colors"
         >
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
           Đăng video YouTube
@@ -189,7 +189,7 @@ onMounted(() => { void fetchMedia() })
         <NuxtLink
           v-if="canCreate && mediaConfig?.uploadEnabled && hasPermission('media_portal', 'read')"
           to="/admin/media-portal/upload"
-          class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245830] transition-colors"
+          class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-[#245830] transition-colors"
         >
           <i class="fa-solid fa-upload" aria-hidden="true"></i>
           Tải video lên
@@ -198,21 +198,21 @@ onMounted(() => { void fetchMedia() })
     </div>
 
     <!-- Filters -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col md:flex-row gap-3">
+    <div class="bg-white rounded-xl border border-line p-4 flex flex-col md:flex-row gap-3">
       <div class="flex-1">
         <input
           v-model="search"
           aria-label="Tìm video theo tiêu đề"
           type="text"
           placeholder="Tìm theo tiêu đề..."
-          class="w-full rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-[#4A6741]"
+          class="w-full rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-brand-600"
           @keydown.enter="applyFilters"
         />
       </div>
       <select
         v-model="statusFilter"
         aria-label="Lọc trạng thái xuất bản"
-        class="rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-[#4A6741]"
+        class="rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-brand-600"
         @change="applyFilters"
       >
         <option v-for="o in STATUS_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
@@ -220,14 +220,14 @@ onMounted(() => { void fetchMedia() })
       <select
         v-model="sourceFilter"
         aria-label="Lọc nguồn video"
-        class="rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-[#4A6741]"
+        class="rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-brand-600"
         @change="applyFilters"
       >
         <option v-for="o in SOURCE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
       </select>
       <button
         type="button"
-        class="rounded-lg bg-[#4A6741] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3d5636] transition-colors"
+        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-[#3d5636] transition-colors"
         @click="applyFilters"
       >
         Lọc
@@ -235,7 +235,7 @@ onMounted(() => { void fetchMedia() })
     </div>
 
     <!-- Table -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
+    <div class="bg-white rounded-xl border border-line overflow-hidden">
       <!-- Loading -->
       <div v-if="loading" role="status" aria-busy="true" class="p-6">
         <span class="sr-only">Đang tải danh sách video</span>
@@ -249,7 +249,7 @@ onMounted(() => { void fetchMedia() })
       <!-- Error -->
       <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-[#B04A4A] text-[0.95rem]">
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-        {{ loadError }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchMedia()">thử lại</button>.
+        {{ loadError }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchMedia()">thử lại</button>.
       </div>
 
       <!-- Empty -->
@@ -304,7 +304,7 @@ onMounted(() => { void fetchMedia() })
                 <div class="flex justify-end gap-1">
                   <NuxtLink
                     :to="`/admin/media-portal/${item.id}`"
-                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[#e6f4ea] text-[#4A6741]"
+                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[#e6f4ea] text-brand-600"
                     :title="canUpdate ? 'Sửa' : 'Xem'"
                     :aria-label="`${canUpdate ? 'Sửa' : 'Xem'} video ${item.title}`"
                   >
@@ -344,7 +344,7 @@ onMounted(() => { void fetchMedia() })
             <div class="flex gap-1 mt-3">
               <NuxtLink
                 :to="`/admin/media-portal/${item.id}`"
-                class="inline-flex items-center justify-center flex-1 h-9 rounded-lg bg-[#e6f4ea] text-[#4A6741] text-sm font-medium hover:bg-[#dcf0e0]"
+                class="inline-flex items-center justify-center flex-1 h-9 rounded-lg bg-[#e6f4ea] text-brand-600 text-sm font-medium hover:bg-[#dcf0e0]"
               >
                 <i class="fa-solid fa-pen mr-1.5 text-xs" aria-hidden="true"></i> {{ canUpdate ? 'Sửa' : 'Xem' }}
               </NuxtLink>
@@ -369,7 +369,7 @@ onMounted(() => { void fetchMedia() })
           <div class="flex gap-2">
             <button
               type="button"
-              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#dde6de] text-[#4A6741] disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#dde6de] text-brand-600 disabled:opacity-40 disabled:cursor-not-allowed"
               :disabled="currentPage <= 1"
               @click="changePage(currentPage - 1)"
             >
@@ -377,7 +377,7 @@ onMounted(() => { void fetchMedia() })
             </button>
             <button
               type="button"
-              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#dde6de] text-[#4A6741] disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#dde6de] text-brand-600 disabled:opacity-40 disabled:cursor-not-allowed"
               :disabled="currentPage >= totalPages"
               @click="changePage(currentPage + 1)"
             >

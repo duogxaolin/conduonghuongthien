@@ -1,9 +1,9 @@
 <template>
-  <div class="bg-[#F8FAF7]">
+  <div class="bg-surface">
     <PageHero>
       <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#6B7967] mb-3">
         <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
-          <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
+          <i class="fa-solid fa-house text-[0.7rem] text-brand-600" aria-hidden="true"></i>
           <span>{{ t('home') }}</span>
         </nuxt-link>
         <span class="text-[#A2B09F]" aria-hidden="true">&rsaquo;</span>
@@ -11,7 +11,7 @@
       </nav>
 
       <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
-        <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+        <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
         <span>{{ t('legal_qa') }}</span>
       </div>
       <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">{{ t('legal_qa') }}</h1>
@@ -33,8 +33,8 @@
             :class="[
               'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 cursor-pointer',
               searchKeyword === chip
-                ? 'bg-[#4A6741] text-white border-[#4A6741] shadow-sm'
-                : 'bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]'
+                ? 'bg-brand-600 text-white border-[#4A6741] shadow-sm'
+                : 'bg-white text-ink-secondary border-[#DCE5DB] hover:border-brand-600 hover:bg-[#F2F7F0]'
             ]"
           >
             <span>{{ chip }}</span>
@@ -48,7 +48,7 @@
       <div class="container grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] lg:gap-10 items-start">
         <div class="flex flex-col gap-6 min-w-0">
           <!-- Search Bar -->
-          <div class="flex items-center bg-white p-2 rounded-xl border border-[#D5E1D3] shadow-sm focus-within:border-[#4A6741] transition-all">
+          <div class="flex items-center bg-white p-2 rounded-xl border border-[#D5E1D3] shadow-sm focus-within:border-brand-600 transition-all">
             <i class="fa-solid fa-magnifying-glass text-[#5A6C58] text-sm ml-3 mr-2.5" aria-hidden="true"></i>
             <input
               v-model="searchKeyword"
@@ -71,7 +71,7 @@
           <!-- Section Divider Header -->
           <div class="flex items-center justify-between pt-1 pb-3 border-b-2 border-[#E1EADF]">
             <div class="flex items-center gap-2.5">
-              <span class="w-2.5 h-6 rounded-sm bg-[#4A6741]" aria-hidden="true"></span>
+              <span class="w-2.5 h-6 rounded-sm bg-brand-600" aria-hidden="true"></span>
               <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
                 Câu hỏi thường gặp
               </h2>
@@ -79,7 +79,7 @@
                 {{ filteredFaqs.length }} câu hỏi
               </span>
             </div>
-            <nuxt-link to="/qa-documents" class="text-xs text-[#4A6741] font-bold hover:underline flex items-center gap-1 no-underline">
+            <nuxt-link to="/qa-documents" class="text-xs text-brand-600 font-bold hover:underline flex items-center gap-1 no-underline">
               <span>Kho Hỏi – Đáp C11</span>
               <i class="fa-solid fa-arrow-right text-[0.65rem]" aria-hidden="true"></i>
             </nuxt-link>
@@ -108,10 +108,10 @@
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
             <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">Không thể tải câu hỏi</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu máy chủ.</p>
+            <p class="text-sm text-ink-muted m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu máy chủ.</p>
             <button
               type="button"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
               @click="() => refresh()"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -124,7 +124,7 @@
             v-else-if="faqs.length === 0"
             class="bg-white border border-[#E2E8DF] rounded-2xl p-10 text-center shadow-sm"
           >
-            <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-2xl">
+            <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-brand-600 flex items-center justify-center mx-auto mb-4 text-2xl">
               <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
             </div>
             <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">Chưa có câu hỏi nào được đăng tải</h3>
@@ -146,7 +146,7 @@
             <button
               type="button"
               @click="searchKeyword = ''"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
             >
               <span>Xem tất cả câu hỏi</span>
             </button>
@@ -168,7 +168,7 @@
                   type="button"
                   :aria-expanded="activeIndex === index"
                   :aria-controls="`faq-answer-${item.id}`"
-                  class="w-full px-5 sm:px-6 py-4 sm:py-4.5 flex justify-between items-center gap-4 bg-transparent border-none font-[inherit] text-left cursor-pointer transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4A6741]"
+                  class="w-full px-5 sm:px-6 py-4 sm:py-4.5 flex justify-between items-center gap-4 bg-transparent border-none font-[inherit] text-left cursor-pointer transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-600"
                   @click="toggleFaq(index)"
                 >
                   <div class="flex items-center gap-3.5 min-w-0">
@@ -191,7 +191,7 @@
                 <div
                   v-show="activeIndex === index"
                   :id="`faq-answer-${item.id}`"
-                  class="px-6 pb-5 pt-1 text-[0.92rem] text-[#4A5545] leading-relaxed border-t border-[#EEF2EC] bg-[#F9FAF8]"
+                  class="px-6 pb-5 pt-1 text-[0.92rem] text-ink-secondary leading-relaxed border-t border-[#EEF2EC] bg-[#F9FAF8]"
                 >
                   <p class="m-0 pt-3">{{ item.excerpt }}</p>
                   <div v-if="item.slug" class="pt-3 mt-3 border-t border-[#E8EEE6] flex items-center justify-between text-xs">
@@ -221,7 +221,7 @@
                 <div class="flex items-center gap-1.5 flex-wrap justify-center">
                   <button
                     type="button"
-                    class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all hover:border-[#4A6741] hover:text-[#4A6741] disabled:opacity-30 disabled:cursor-not-allowed"
+                    class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all hover:border-brand-600 hover:text-brand-600 disabled:opacity-30 disabled:cursor-not-allowed"
                     :disabled="currentPage <= 1"
                     @click="setPage(currentPage - 1)"
                     aria-label="Trang trước"
@@ -236,8 +236,8 @@
                     :class="[
                       'inline-flex items-center justify-center min-w-9 h-9 px-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all',
                       currentPage === p
-                        ? 'bg-[#4A6741] text-white border border-[#4A6741] shadow-sm'
-                        : 'bg-white border border-[#D5E1D3] text-[#4A5545] hover:border-[#4A6741] hover:text-[#4A6741]'
+                        ? 'bg-brand-600 text-white border border-[#4A6741] shadow-sm'
+                        : 'bg-white border border-[#D5E1D3] text-ink-secondary hover:border-brand-600 hover:text-brand-600'
                     ]"
                     :aria-current="currentPage === p ? 'page' : undefined"
                     @click="setPage(p)"
@@ -247,7 +247,7 @@
 
                   <button
                     type="button"
-                    class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all hover:border-[#4A6741] hover:text-[#4A6741] disabled:opacity-30 disabled:cursor-not-allowed"
+                    class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all hover:border-brand-600 hover:text-brand-600 disabled:opacity-30 disabled:cursor-not-allowed"
                     :disabled="currentPage >= totalPages"
                     @click="setPage(currentPage + 1)"
                     aria-label="Trang tiếp"
@@ -263,14 +263,14 @@
         <aside class="flex flex-col gap-6 lg:sticky lg:top-[90px] min-w-0">
           <!-- Widget 1: Xem thêm -->
           <div class="bg-white rounded-2xl border border-[#E2E8DF] shadow-sm p-5">
-            <h3 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pb-2 mb-3 border-b-2 border-[#E2E8DF] m-0">Xem thêm</h3>
+            <h3 class="text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[0.6px] pb-2 mb-3 border-b-2 border-[#E2E8DF] m-0">Xem thêm</h3>
             <ul class="list-none p-0 m-0 flex flex-col">
               <li v-for="link in quickLinks" :key="link.to" class="border-b border-[#F0F5EE] last:border-b-0">
                 <nuxt-link
                   :to="link.to"
-                  class="flex items-start gap-3 py-3 no-underline text-[#1E251C] transition-colors duration-200 hover:text-[#2D5A27] group"
+                  class="flex items-start gap-3 py-3 no-underline text-ink transition-colors duration-200 hover:text-[#2D5A27] group"
                 >
-                  <div class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-[#2D5A27] flex items-center justify-center text-xs shrink-0 mt-0.5 transition-colors group-hover:bg-[#4A6741] group-hover:text-white">
+                  <div class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-[#2D5A27] flex items-center justify-center text-xs shrink-0 mt-0.5 transition-colors group-hover:bg-brand-600 group-hover:text-white">
                     <i :class="link.icon" aria-hidden="true"></i>
                   </div>
                   <span class="min-w-0 flex-1">

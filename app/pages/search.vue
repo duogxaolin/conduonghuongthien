@@ -4,7 +4,7 @@
     <section class="bg-white border-b border-[#E2E8DF]">
       <div class="container py-7 sm:py-9">
         <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#5A6C58] mb-3">
-          <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
+          <nuxt-link to="/" class="hover:text-brand-600 transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
             <span>Trang chủ</span>
           </nuxt-link>
@@ -21,7 +21,7 @@
 
         <!-- Big Search Form -->
         <form @submit.prevent="onFormSubmit" class="mt-6 max-w-3xl">
-          <div class="relative flex items-center bg-white rounded-xl border-2 border-[#D5E1D3] focus-within:border-[#4A6741] focus-within:shadow-[0_4px_16px_rgba(74,103,65,0.12)] transition-all overflow-hidden p-1.5 shadow-sm">
+          <div class="relative flex items-center bg-white rounded-xl border-2 border-[#D5E1D3] focus-within:border-brand-600 focus-within:shadow-[0_4px_16px_rgba(74,103,65,0.12)] transition-all overflow-hidden p-1.5 shadow-sm">
             <span class="w-10 flex items-center justify-center text-[#5A6C58] text-sm shrink-0">
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             </span>
@@ -44,7 +44,7 @@
             </button>
             <button
               type="submit"
-              class="bg-[#4A6741] hover:bg-[#385132] text-white px-5 sm:px-6 py-2.5 rounded-lg text-sm font-extrabold cursor-pointer transition-all shrink-0 border-none flex items-center gap-2 shadow-sm"
+              class="bg-brand-600 hover:bg-[#385132] text-white px-5 sm:px-6 py-2.5 rounded-lg text-sm font-extrabold cursor-pointer transition-all shrink-0 border-none flex items-center gap-2 shadow-sm"
             >
               <span>Tìm kiếm</span>
               <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
@@ -68,7 +68,7 @@
             </p>
           </div>
 
-          <div v-if="pending" class="text-xs text-[#4A6741] font-semibold flex items-center gap-2">
+          <div v-if="pending" class="text-xs text-brand-600 font-semibold flex items-center gap-2">
             <i class="fa-solid fa-circle-notch animate-spin text-sm" aria-hidden="true"></i>
             <span>Đang tìm kiếm...</span>
           </div>
@@ -84,8 +84,8 @@
             :class="[
               'px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all border shrink-0 flex items-center gap-2',
               activeType === tab.key
-                ? 'bg-[#4A6741] text-white border-[#4A6741] shadow-sm'
-                : 'bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]'
+                ? 'bg-brand-600 text-white border-[#4A6741] shadow-sm'
+                : 'bg-white text-ink-secondary border-[#DCE5DB] hover:border-brand-600 hover:bg-[#F2F7F0]'
             ]"
           >
             <i :class="tab.icon" class="text-[0.75rem]" aria-hidden="true"></i>
@@ -125,7 +125,7 @@
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
         </div>
         <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">Không thể tải kết quả tìm kiếm</h3>
-        <p class="text-sm text-[#667768] m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu máy chủ.</p>
+        <p class="text-sm text-ink-muted m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu máy chủ.</p>
         <button
           type="button"
           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#C62828] text-white text-xs font-bold hover:bg-[#B71C1C] transition-all cursor-pointer border-none"
@@ -138,7 +138,7 @@
 
       <!-- No Query Initial State -->
       <div v-else-if="!searchQuery" class="bg-white border border-[#E2E8DF] rounded-2xl p-10 text-center max-w-xl mx-auto shadow-sm">
-        <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-2xl shadow-sm">
+        <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-brand-600 flex items-center justify-center mx-auto mb-4 text-2xl shadow-sm">
           <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
         </div>
         <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">Nhập từ khóa để bắt đầu tìm kiếm</h3>
@@ -152,7 +152,7 @@
             :key="kw"
             type="button"
             @click="quickSearch(kw)"
-            class="px-2.5 py-1 rounded-md bg-[#F2F7F0] text-[#385932] hover:bg-[#4A6741] hover:text-white transition-all font-bold cursor-pointer border border-[#D5E1D3]"
+            class="px-2.5 py-1 rounded-md bg-[#F2F7F0] text-[#385932] hover:bg-brand-600 hover:text-white transition-all font-bold cursor-pointer border border-[#D5E1D3]"
           >
             {{ kw }}
           </button>
@@ -173,14 +173,14 @@
             v-if="activeType !== 'all'"
             type="button"
             @click="setTab('all')"
-            class="px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+            class="px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
           >
             Xem tất cả chuyên mục
           </button>
           <button
             type="button"
             @click="inputQuery = ''; inputFocus()"
-            class="px-4 py-2 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold hover:bg-[#F2F7F0] transition-all cursor-pointer"
+            class="px-4 py-2 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold hover:bg-[#F2F7F0] transition-all cursor-pointer"
           >
             Nhập từ khóa mới
           </button>
@@ -271,7 +271,7 @@
           <div class="flex items-center gap-1.5 flex-wrap justify-center">
             <button
               type="button"
-              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all hover:border-[#4A6741] hover:text-[#4A6741] disabled:opacity-30 disabled:cursor-not-allowed"
+              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all hover:border-brand-600 hover:text-brand-600 disabled:opacity-30 disabled:cursor-not-allowed"
               :disabled="currentPage <= 1"
               @click="setPage(currentPage - 1)"
               aria-label="Trang trước"
@@ -286,8 +286,8 @@
               :class="[
                 'inline-flex items-center justify-center min-w-9 h-9 px-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all',
                 currentPage === p
-                  ? 'bg-[#4A6741] text-white border border-[#4A6741] shadow-sm'
-                  : 'bg-white border border-[#D5E1D3] text-[#4A5545] hover:border-[#4A6741] hover:text-[#4A6741]'
+                  ? 'bg-brand-600 text-white border border-[#4A6741] shadow-sm'
+                  : 'bg-white border border-[#D5E1D3] text-ink-secondary hover:border-brand-600 hover:text-brand-600'
               ]"
               @click="setPage(p)"
             >
@@ -296,7 +296,7 @@
 
             <button
               type="button"
-              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all hover:border-[#4A6741] hover:text-[#4A6741] disabled:opacity-30 disabled:cursor-not-allowed"
+              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all hover:border-brand-600 hover:text-brand-600 disabled:opacity-30 disabled:cursor-not-allowed"
               :disabled="currentPage >= searchData.pagination.totalPages"
               @click="setPage(currentPage + 1)"
               aria-label="Trang tiếp"

@@ -1,12 +1,12 @@
 <template>
-  <section class="section bg-[#F8FAF7]">
+  <section class="section bg-surface">
     <div class="container">
       <!-- Section title bar (icon + title) — mirrors the old SectionBar. -->
       <div v-if="d.title" class="flex items-center gap-3 mb-6">
-        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#4A6741] text-white">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
           <i :class="d.icon || 'fa-solid fa-building-columns'"></i>
         </span>
-        <h2 class="text-[1.4rem] font-extrabold text-[#1E251C]">{{ d.title }}</h2>
+        <h2 class="text-[1.4rem] font-extrabold text-ink">{{ d.title }}</h2>
       </div>
 
       <div class="grid grid-cols-1 gap-10 lg:grid-cols-[2fr_1fr]">
@@ -15,7 +15,7 @@
 
         <!-- Right: green organisation sidebar -->
         <aside class="flex flex-col" role="complementary" aria-label="Thông tin thêm">
-          <div class="bg-[#4A6741] text-white p-[30px] rounded-lg shadow-md">
+          <div class="bg-brand-600 text-white p-[30px] rounded-lg shadow-md">
             <h3 v-if="d.asideLabel" class="text-[0.85rem] font-bold tracking-[1px] opacity-80 mb-2">{{ d.asideLabel }}</h3>
             <p v-if="d.asideTitle" class="text-[1.2rem] font-extrabold leading-snug mb-1">{{ d.asideTitle }}</p>
             <p v-if="d.asideSubtitle"><strong>{{ d.asideSubtitle }}</strong></p>

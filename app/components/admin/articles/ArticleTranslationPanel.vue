@@ -329,20 +329,20 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
 </script>
 
 <template>
-  <div v-if="!isNew" id="article-translations-section" class="bg-white rounded-xl border border-[#e2ece3] p-5 sm:p-6 flex flex-col gap-4 shadow-xs">
+  <div v-if="!isNew" id="article-translations-section" class="bg-white rounded-xl border border-line p-5 sm:p-6 flex flex-col gap-4 shadow-xs">
     <!-- Section Header with Controls -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#e2ece3] pb-4">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-line pb-4">
       <div>
         <div class="flex items-center gap-2">
-          <span class="w-7 h-7 rounded-lg bg-[#f0f7f1] text-[#2c6e33] flex items-center justify-center text-sm">
+          <span class="w-7 h-7 rounded-lg bg-surface-tint text-brand-700 flex items-center justify-center text-sm">
             <i class="fa-solid fa-language"></i>
           </span>
-          <h3 class="text-base font-extrabold text-[#122815] m-0">Quản lý Bản dịch Đa ngôn ngữ</h3>
-          <span class="px-2 py-0.5 rounded-full bg-[#e4f2e5] text-[#1e4620] text-xs font-bold">
+          <h3 class="text-base font-extrabold text-brand-950 m-0">Quản lý Bản dịch Đa ngôn ngữ</h3>
+          <span class="px-2 py-0.5 rounded-full bg-[#e4f2e5] text-brand-900 text-xs font-bold">
             {{ articleTranslations.filter(t => t.status === 'published').length }}/{{ availableLanguages.length }} đã xuất bản
           </span>
         </div>
-        <p class="text-xs text-[#667768] m-0 mt-1">Quản lý, dịch tự động bằng AI và xuất bản các phiên bản ngôn ngữ quốc tế cho bài viết này.</p>
+        <p class="text-xs text-ink-muted m-0 mt-1">Quản lý, dịch tự động bằng AI và xuất bản các phiên bản ngôn ngữ quốc tế cho bài viết này.</p>
         <div class="mt-2 p-2.5 rounded-lg bg-[#fff8e1] border border-[#ffe082] text-xs text-[#735100] flex items-center gap-2">
           <i class="fa-solid fa-triangle-exclamation text-sm shrink-0 text-[#b78103]"></i>
           <span><strong>Lưu ý kiểm duyệt:</strong> Bài viết dịch AI xong cần rà soát lại trước khi bấm "Xuất bản" ra trang công khai (trừ khi đã chọn Xuất bản luôn).</span>
@@ -354,7 +354,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
         <button
           v-if="failedTranslations.length > 0"
           type="button"
-          class="px-3.5 py-2 rounded-lg bg-[#d12420] hover:bg-[#b71c1c] text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 border-none"
+          class="px-3.5 py-2 rounded-lg bg-danger hover:bg-[#b71c1c] text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 border-none"
           :disabled="retryingAllFailed"
           title="Kích hoạt thử lại cho tất cả các bản dịch đang bị lỗi"
           @click="retryAllFailedTranslations"
@@ -366,7 +366,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
         <!-- Nút dịch toàn bộ còn thiếu (Lưu bản nháp AI để rà soát) -->
         <button
           type="button"
-          class="px-3.5 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 border-none"
+          class="px-3.5 py-2 rounded-lg bg-brand-900 hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 border-none"
           :disabled="translatingAll"
           title="Dịch AI tất cả ngôn ngữ còn thiếu và lưu ở trạng thái Bản nháp AI để rà soát"
           @click="translateAllForThisArticle('ai_draft')"
@@ -378,7 +378,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
         <!-- Nút dịch và xuất bản luôn -->
         <button
           type="button"
-          class="px-3.5 py-2 rounded-lg bg-[#2c6e33] hover:bg-[#1e4620] text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 border-none"
+          class="px-3.5 py-2 rounded-lg bg-brand-700 hover:bg-brand-900 text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 border-none"
           :disabled="translatingAll"
           title="Dịch AI và tự động xuất bản ngay ra trang công khai khi hoàn tất"
           @click="translateAllForThisArticle('published')"
@@ -388,7 +388,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
         </button>
         <button
           type="button"
-          class="px-3 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#1e4620] hover:bg-[#f0f7f1] text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-colors"
+          class="px-3 py-2 rounded-lg border border-line-strong bg-white text-brand-900 hover:bg-surface-tint text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-colors"
           title="Làm mới trạng thái các bản dịch"
           @click="fetchArticleTranslations"
         >
@@ -421,8 +421,8 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
           <div class="flex items-center gap-2">
             <span class="text-2xl leading-none">{{ lang.flag }}</span>
             <div>
-              <h4 class="m-0 text-sm font-bold text-[#122815] leading-tight">{{ lang.label }}</h4>
-              <span class="text-[0.68rem] font-mono text-[#667768]">({{ lang.code }})</span>
+              <h4 class="m-0 text-sm font-bold text-brand-950 leading-tight">{{ lang.label }}</h4>
+              <span class="text-[0.68rem] font-mono text-ink-muted">({{ lang.code }})</span>
             </div>
           </div>
 
@@ -439,7 +439,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
                     ? 'bg-[#eef2ee] text-[#4a5545]'
                     : getTranslationRow(lang.code)?.status === 'translating'
                       ? 'bg-[#e3f2fd] text-[#1565c0]'
-                      : 'bg-[#ffebe9] text-[#d12420]'
+                      : 'bg-[#ffebe9] text-danger'
             ]"
           >
             {{
@@ -477,7 +477,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
           </div>
         </div>
         <!-- Failed error text -->
-        <div v-else-if="getTranslationRow(lang.code)?.status === 'failed'" class="text-[0.7rem] text-[#d12420] flex flex-col gap-1 bg-white p-2 rounded-lg border border-red-200">
+        <div v-else-if="getTranslationRow(lang.code)?.status === 'failed'" class="text-[0.7rem] text-danger flex flex-col gap-1 bg-white p-2 rounded-lg border border-red-200">
           <div class="flex items-center gap-1 font-bold">
             <i class="fa-solid fa-triangle-exclamation"></i>
             <span>Lỗi tạo bản dịch:</span>
@@ -487,8 +487,8 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
 
         <!-- Snippet preview if exists -->
         <div v-else-if="getTranslationRow(lang.code)?.title" class="flex flex-col gap-0.5">
-          <span class="text-[0.68rem] text-[#667768] font-medium">Tiêu đề:</span>
-          <p class="m-0 text-xs font-semibold text-[#122815] line-clamp-1" :title="getTranslationRow(lang.code)?.title || ''">{{ getTranslationRow(lang.code)?.title }}</p>
+          <span class="text-[0.68rem] text-ink-muted font-medium">Tiêu đề:</span>
+          <p class="m-0 text-xs font-semibold text-brand-950 line-clamp-1" :title="getTranslationRow(lang.code)?.title || ''">{{ getTranslationRow(lang.code)?.title }}</p>
         </div>
         <div v-else class="text-xs text-[#888] italic py-1">
           Chưa có bản dịch cho ngôn ngữ này.
@@ -501,7 +501,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
             <button
               type="button"
               class="w-full py-1.5 px-3 rounded-lg text-white text-xs font-bold border-none cursor-pointer flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
-              :class="getTranslationRow(lang.code)?.status === 'failed' ? 'bg-[#d12420] hover:bg-[#b71c1c]' : 'bg-[#2c6e33] hover:bg-[#1e4620]'"
+              :class="getTranslationRow(lang.code)?.status === 'failed' ? 'bg-danger hover:bg-[#b71c1c]' : 'bg-brand-700 hover:bg-[#1e4620]'"
               :disabled="translatingLang === lang.code"
               @click="triggerTranslation(lang.code)"
             >
@@ -514,7 +514,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
           <template v-else>
             <button
               type="button"
-              class="px-2.5 py-1 rounded-md bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1 transition-colors"
+              class="px-2.5 py-1 rounded-md bg-brand-900 hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1 transition-colors"
               @click="getTranslationRow(lang.code) && openEditTranslation(getTranslationRow(lang.code)!)"
             >
               <i class="fa-solid fa-pen-to-square text-[0.68rem]"></i> Sửa
@@ -524,8 +524,8 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
               type="button"
               class="px-2 py-1 rounded-md text-xs font-bold cursor-pointer border transition-colors"
               :class="getTranslationRow(lang.code)?.status === 'published'
-                ? 'border-[#c8d6c9] bg-white text-[#d12420] hover:bg-[#fff5f4]'
-                : 'border-[#2c6e33] bg-[#e4f2e5] text-[#1e4620] hover:bg-[#d4ebd6]'"
+                ? 'border-line-strong bg-white text-danger hover:bg-[#fff5f4]'
+                : 'border-brand-700 bg-[#e4f2e5] text-brand-900 hover:bg-[#d4ebd6]'"
               @click="getTranslationRow(lang.code) && toggleTranslationStatus(getTranslationRow(lang.code)!)"
             >
               {{ getTranslationRow(lang.code)?.status === 'published' ? 'Gỡ' : 'Xuất bản' }}
@@ -533,7 +533,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
 
             <button
               type="button"
-              class="px-2 py-1 rounded-md border border-[#e2c8c8] bg-white text-[#d12420] hover:bg-[#fff5f4] text-xs font-semibold cursor-pointer"
+              class="px-2 py-1 rounded-md border border-[#e2c8c8] bg-white text-danger hover:bg-[#fff5f4] text-xs font-semibold cursor-pointer"
               title="Xoá bản dịch này"
               @click="getTranslationRow(lang.code) && deleteTranslation(getTranslationRow(lang.code)!)"
             >
@@ -545,37 +545,37 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
     </div>
 
     <!-- Edit Translation Drawer (Rich side-by-side editing with TinyMCE) -->
-    <div v-if="showEditTranslationDrawer && editingTranslation" class="bg-[#f8faf7] rounded-xl border border-[#c8d6c9] p-4 sm:p-5 flex flex-col gap-3 shadow-md">
-      <div class="flex items-center justify-between border-b border-[#e2ece3] pb-2.5">
+    <div v-if="showEditTranslationDrawer && editingTranslation" class="bg-surface rounded-xl border border-line-strong p-4 sm:p-5 flex flex-col gap-3 shadow-md">
+      <div class="flex items-center justify-between border-b border-line pb-2.5">
         <div class="flex items-center gap-2">
           <span class="text-xl">{{ availableLanguages.find(l => l.code === editingTranslation?.lang)?.flag }}</span>
-          <span class="text-sm font-extrabold text-[#122815]">Chỉnh sửa bản dịch: {{ availableLanguages.find(l => l.code === editingTranslation?.lang)?.label }}</span>
+          <span class="text-sm font-extrabold text-brand-950">Chỉnh sửa bản dịch: {{ availableLanguages.find(l => l.code === editingTranslation?.lang)?.label }}</span>
         </div>
-        <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer font-bold" @click="showEditTranslationDrawer = false; editingTranslation = null">✕ Đóng</button>
+        <button type="button" class="text-xs text-ink-muted hover:text-danger border-none bg-transparent cursor-pointer font-bold" @click="showEditTranslationDrawer = false; editingTranslation = null">✕ Đóng</button>
       </div>
 
       <!-- Reference original title -->
-      <div class="p-2.5 rounded-lg bg-white border border-[#e2ece3] text-xs flex flex-col gap-1">
-        <span class="text-[#667768] font-bold">Tiêu đề gốc (Tiếng Việt):</span>
-        <p class="m-0 font-semibold text-[#1e4620]">{{ formTitle }}</p>
+      <div class="p-2.5 rounded-lg bg-white border border-line text-xs flex flex-col gap-1">
+        <span class="text-ink-muted font-bold">Tiêu đề gốc (Tiếng Việt):</span>
+        <p class="m-0 font-semibold text-brand-900">{{ formTitle }}</p>
       </div>
 
       <div class="flex flex-col gap-1.5">
         <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tiêu đề dịch (*)</label>
-        <input v-model="editingTranslation.title" type="text" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] bg-white font-semibold" />
+        <input v-model="editingTranslation.title" type="text" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 bg-white font-semibold" />
       </div>
 
       <div class="flex flex-col gap-1.5">
         <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tóm tắt dịch</label>
-        <textarea v-model="editingTranslation.excerpt" rows="2" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] resize-none font-[inherit] bg-white"></textarea>
+        <textarea v-model="editingTranslation.excerpt" rows="2" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 resize-none font-[inherit] bg-white"></textarea>
       </div>
 
       <div class="flex flex-col gap-1.5">
         <div class="flex items-center justify-between">
           <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Nội dung dịch (Trình soạn thảo TinyMCE)</label>
-          <span class="text-xs text-[#667768]">Hỗ trợ đầy đủ định dạng rich-text, bảng biểu, ảnh</span>
+          <span class="text-xs text-ink-muted">Hỗ trợ đầy đủ định dạng rich-text, bảng biểu, ảnh</span>
         </div>
-        <div class="bg-white rounded-lg border border-[#c8d6c9] overflow-hidden">
+        <div class="bg-white rounded-lg border border-line-strong overflow-hidden">
           <TinyMceEditor
             v-model="editingTranslation.content"
             :height="450"
@@ -583,9 +583,9 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
           />
         </div>
       </div>
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#e2ece3]">
-        <button type="button" class="px-3.5 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-50 cursor-pointer" @click="showEditTranslationDrawer = false; editingTranslation = null">Hủy</button>
-        <button type="button" class="px-5 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1.5" @click="saveTranslationEdit">
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-line">
+        <button type="button" class="px-3.5 py-2 rounded-lg border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-gray-50 cursor-pointer" @click="showEditTranslationDrawer = false; editingTranslation = null">Hủy</button>
+        <button type="button" class="px-5 py-2 rounded-lg bg-brand-900 hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1.5" @click="saveTranslationEdit">
           <i class="fa-solid fa-floppy-disk"></i>
           <span>Lưu bản dịch</span>
         </button>

@@ -123,7 +123,16 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   // `/admin/ai/moderation`. Vẫn tự fetch hai endpoint nên vẫn giữ nhánh lỗi riêng.
   { file: 'components/admin/ai/AiModerationTab.vue', refs: ['moderationError'], retries: ['loadModeration'] },
   { file: 'components/admin/ai/AiLogsTab.vue', refs: ['logsError'], retries: ['loadLogs'] },
-  { file: 'pages/admin/ai/moderation.vue', refs: ['error'], retries: ['loadData'] },
+  // Trang kiểm duyệt (đã tách panel, wave3 4.1): nhánh lỗi lượt tải TRANG (`error` →
+  // loadData) và ba nhánh lỗi của từng tab khi đọc lại SAU lần tải đầu (hàng đợi đổi bộ
+  // lọc/trang, cài đặt/quy tắc sau khi ghi). Cả bốn nằm trong file trang (panel nhận qua
+  // slot `#error`): lỗi của một tab không che các tab khác, "Thử lại" chỉ đọc lại tab đó —
+  // không chạy loadData (ghi đè chỗ đang sửa ở tab cài đặt).
+  {
+    file: 'pages/admin/ai/moderation.vue',
+    refs: ['error', 'settingsError', 'queueError', 'rulesError'],
+    retries: ['loadData', 'reloadSettings', 'loadQueue', 'reloadRules'],
+  },
 
   // Views whose panels fail independently. Each ref is its own branch, so a
   // failed history load still leaves the password form usable.

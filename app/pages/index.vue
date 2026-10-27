@@ -18,8 +18,8 @@
     <!-- Graceful fallback if the page has no blocks. -->
     <section v-else class="section bg-white">
       <div class="container text-center py-20">
-        <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">{{ t('home_fallback_title') }}</h1>
-        <p class="text-[#4A5545]">{{ t('home_fallback_desc') }}</p>
+        <h1 class="text-[1.8rem] font-extrabold text-ink mb-3">{{ t('home_fallback_title') }}</h1>
+        <p class="text-ink-secondary">{{ t('home_fallback_desc') }}</p>
       </div>
     </section>
   </div>

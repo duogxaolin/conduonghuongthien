@@ -103,13 +103,13 @@ onMounted(load)
 <template>
   <div class="flex flex-col gap-5">
     <div>
-      <h1 class="m-0 text-[1.35rem] font-extrabold text-[#122815]">Chặn địa chỉ IP</h1>
-      <p class="m-0 mt-1 text-sm text-[#667768]">
-        Áp dụng cho cả lượt đăng nhập Google và lượt gửi bình luận. Chấp nhận một địa chỉ IPv4, một dải IPv4 (ví dụ <code class="rounded bg-[#f0f7f1] px-1">203.0.113.0/24</code>), hoặc một địa chỉ IPv6 đầy đủ.
+      <h1 class="m-0 text-[1.35rem] font-extrabold text-brand-950">Chặn địa chỉ IP</h1>
+      <p class="m-0 mt-1 text-sm text-ink-muted">
+        Áp dụng cho cả lượt đăng nhập Google và lượt gửi bình luận. Chấp nhận một địa chỉ IPv4, một dải IPv4 (ví dụ <code class="rounded bg-surface-tint px-1">203.0.113.0/24</code>), hoặc một địa chỉ IPv6 đầy đủ.
       </p>
     </div>
 
-    <form class="flex flex-col gap-3 rounded-xl border border-[#e2ece3] bg-white p-4" @submit.prevent="addBan">
+    <form class="flex flex-col gap-3 rounded-xl border border-line bg-white p-4" @submit.prevent="addBan">
       <div class="flex flex-wrap items-end gap-3">
         <label class="flex min-w-[200px] flex-col gap-1.5 text-sm font-bold">
           Địa chỉ hoặc dải
@@ -117,7 +117,7 @@ onMounted(load)
             v-model="newValue"
             autocomplete="off"
             placeholder="203.0.113.45 hoặc 203.0.113.0/24"
-            class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+            class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"
           />
         </label>
         <label class="flex min-w-[240px] flex-1 flex-col gap-1.5 text-sm font-bold">
@@ -126,13 +126,13 @@ onMounted(load)
             v-model="newReason"
             maxlength="500"
             autocomplete="off"
-            class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+            class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"
           />
         </label>
         <button
           type="submit"
           :disabled="busy || !newValue.trim()"
-          class="rounded-lg bg-[#1e4620] px-4 py-2.5 font-bold text-white hover:bg-[#2c6e33] disabled:opacity-60"
+          class="rounded-lg bg-brand-900 px-4 py-2.5 font-bold text-white hover:bg-brand-700 disabled:opacity-60"
         >Thêm</button>
       </div>
       <p v-if="formError" role="alert" class="m-0 text-sm text-[#b0403c]">
@@ -141,7 +141,7 @@ onMounted(load)
     </form>
 
     <!-- Đang tải -->
-    <div v-if="loading" role="status" aria-busy="true" class="rounded-xl border border-[#e2ece3] bg-white p-4">
+    <div v-if="loading" role="status" aria-busy="true" class="rounded-xl border border-line bg-white p-4">
       <span class="sr-only">Đang tải danh sách chặn</span>
       <div
         v-for="n in 4"
@@ -159,24 +159,24 @@ onMounted(load)
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="load">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="load">Thử lại</button>
     </div>
 
     <template v-else>
       <!-- Rỗng -->
-      <p v-if="!bans.length" class="rounded-xl border border-[#e2ece3] bg-white px-5 py-8 text-center text-sm text-[#667768]">
+      <p v-if="!bans.length" class="rounded-xl border border-line bg-white px-5 py-8 text-center text-sm text-ink-muted">
         Chưa chặn địa chỉ nào.
       </p>
 
       <!-- Mobile Card View: Tối ưu dạng thẻ cho điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef3ee] rounded-xl border border-[#e2ece3] bg-white overflow-hidden shadow-xs">
+      <div class="md:hidden divide-y divide-[#eef3ee] rounded-xl border border-line bg-white overflow-hidden shadow-xs">
         <div
           v-for="ban in bans"
           :key="'m-'+ban.id"
           class="p-4 flex flex-col gap-2.5"
         >
           <div class="flex items-center justify-between gap-2">
-            <code class="font-mono font-bold text-[#122815] bg-[#f4f7f4] px-2 py-1 rounded text-sm">{{ ban.value }}</code>
+            <code class="font-mono font-bold text-brand-950 bg-[#f4f7f4] px-2 py-1 rounded text-sm">{{ ban.value }}</code>
             <button
               type="button"
               :disabled="busy"
@@ -188,7 +188,7 @@ onMounted(load)
           </div>
 
           <p class="m-0 text-xs text-[#3d4f3f]">
-            <span class="font-semibold text-[#667768]">Lý do:</span> {{ ban.reason || '—' }}
+            <span class="font-semibold text-ink-muted">Lý do:</span> {{ ban.reason || '—' }}
           </p>
 
           <div class="flex items-center justify-between text-[0.75rem] text-[#8a9a8c] pt-2 border-t border-[#f4f7f4]">
@@ -199,10 +199,10 @@ onMounted(load)
       </div>
 
       <!-- Desktop Table View: Bảng đầy đủ trên máy tính -->
-      <div class="hidden md:block overflow-x-auto rounded-xl border border-[#e2ece3] bg-white">
+      <div class="hidden md:block overflow-x-auto rounded-xl border border-line bg-white">
         <table class="w-full min-w-[640px] border-collapse text-sm">
           <thead>
-            <tr class="bg-[#f8faf8] text-left text-[0.78rem] uppercase tracking-wide text-[#667768]">
+            <tr class="bg-[#f8faf8] text-left text-[0.78rem] uppercase tracking-wide text-ink-muted">
               <th class="px-4 py-3 font-bold">Địa chỉ / dải</th>
               <th class="px-4 py-3 font-bold">Lý do</th>
               <th class="px-4 py-3 font-bold">Người thêm</th>
@@ -212,7 +212,7 @@ onMounted(load)
           </thead>
           <tbody>
             <tr v-for="ban in bans" :key="ban.id" class="border-t border-[#eef3ee]">
-              <td class="px-4 py-3 font-mono font-semibold text-[#122815]">{{ ban.value }}</td>
+              <td class="px-4 py-3 font-mono font-semibold text-brand-950">{{ ban.value }}</td>
               <td class="px-4 py-3 text-[#3d4f3f]">{{ ban.reason || '—' }}</td>
               <td class="px-4 py-3 text-[#3d4f3f]">{{ ban.createdByName || 'Tài khoản đã xoá' }}</td>
               <td class="px-4 py-3 text-[#3d4f3f]">{{ formatMoment(ban.createdAt) }}</td>

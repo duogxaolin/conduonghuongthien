@@ -1855,7 +1855,271 @@ Nhánh `wave2/backup-split-followups` (PR #143, 9 commit `4c1ad54`…`09e8dcd`),
   - Trên nhánh (PR #143): unit 4839 / 4786 pass / 0 fail / 53 skip; typecheck 0 lỗi, lint 0 error. Integration trên MySQL 8 dev, chạy lần lượt: `backup-dump` 18/18, `media-repoint` 1/1, `media-self-heal` 1/1, `media-sync-rewrite` 2/2, không DB/khoá nào sót.
   - Sau khi gộp vào `wave2/integration` (2026-10-25, Node 26.11): `npm test` 5063 / 5010 pass / 0 fail / 53 skip trước guard nhóm `backup`; sau guard 5072 / 5019 / 0 / 53 (+9, đều ở `service-split-boundaries`). Typecheck 0 lỗi. eslint 0 error / 16 warning (không cảnh báo nào ở tệp mới/sửa). Không chạy integration/E2E ở lượt này (MySQL dùng chung đang chạy suite khác).
 
-### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
+### 44. Đợt 3 — 1.1–1.4 bốn ratchet (2026-10-25)
+
+Nhánh `wave3/1-ratchets` (PR #144, `e964dda` + `9da12ab`), gộp vào `wave3/integration` ở `543a0fa`. OpenSpec `wave3-long-term` nhóm 1, design D-R. Bốn chỉ số chỉ được đi một chiều. Ratchet gộp TRƯỚC mọi lát dọn dẹp (token, tách tệp, `adminFetch`), nên mỗi lát phải hạ mức nền ngay trong PR của nó.
+
+- **Engine chung `tests/ratchets/_ratchet.ts`** (+ `engine.test.ts`):
+  - đọc `git ls-files` — tệp chưa track không bao giờ tính, không đi cây thư mục, không mạng, không `.nuxt`/`.output`; mức nền JSON theo đường dẫn ở `tests/ratchets/<tên>.baseline.json`;
+  - đỏ khi tệp trong mức nền vượt mục của nó, hoặc tệp mới vượt mặc định (hex 0, độ dài 400, ép kiểu 0); mục của tệp đã mất là đỏ (stale); giảm thì xanh và in `baseline can be lowered: <tệp> <cũ>→<mới>` — hạ mục là một sửa tay trong cùng PR, để reviewer thấy;
+  - ba loại mục: số (nợ có trần, chỉ được giảm); `{ value, reason }` (được ở trên mặc định vì lý do nêu tên, vẫn chỉ giảm); `{ exempt: true, reason }` (không trần — chỉ đường dẫn trong `exemptAllowed` của ratchet, và mỗi đường dẫn đó BẮT BUỘC exempt; không lệnh nào ghi, sửa hay xoá mục exempt);
+  - `--update` chỉ hạ/bỏ mục; nâng phải nêu tên `--raise <tệp>`; `--init` từ chối khi đã có mức nền. `--rebaseline` (thêm ở `9da12ab`) đặt mọi mục có trần theo giá trị hôm nay, lên hoặc xuống, giữ mọi lý do và mục exempt — chỉ dùng ngay sau khi gộp một nhánh nền đã đổi.
+- **Bốn ratchet:**
+  - **Mã màu hex** `[#…]` (`hex-colors`): phạm vi đọc thẳng từ `content` của `tailwind.config.js` (app + server + shared). Mức nền đầu: 8783.
+  - **Độ dài tệp** (`file-length`): tệp mới ≤ 400 dòng (đếm như `wc -l`). Hai tệp không tách được bị khoá có trần kèm lý do: `admin/content/articles/index.vue` 1272 (`admin-bulk-selection-ui` ghim `selection.*` trong template) và `AnalyticsLiveDashboard.client.vue` 1060 (test chạy script của nó qua `Function()`). Năm tệp exempt: `server/db/schema.ts`, `server/db/migrations-additive.ts` và ba tệp nội dung `default-translations-seed.ts`, `chatbot-small-talk-seed.ts`, `i18n-default-dictionary.ts`. Mức nền đầu: 70 mục.
+  - **Ép kiểu `$fetch as`** (`fetch-casts`): mọi dạng, kể cả `const t = $fetch as unknown as F`. Mục có lý do duy nhất: `app/composables/adminFetch.ts` 2 (phép ép kiểu được phép duy nhất + chú thích trích mẫu). Mức nền đầu: 351 chỗ / 107 tệp.
+  - **Độ phủ theo thư mục** (`scripts/coverage-ratchet.ts` + `tests/ratchets/coverage.test.ts`): so lcov theo 11 thư mục (`server/<cấp 1>`, `shared`, `app/utils`, `app/composables`). Giảm > 0,5 điểm là đỏ; không có ngưỡng tuyệt đối; thư mục mới phải khai `--update --add-dir <thư mục>`; hạ có chủ đích bằng `--allow-drop <thư mục>`; báo cáo thiếu/rỗng là đỏ. Bước CI **Coverage ratchet** chặn (không `continue-on-error`), `if: ${{ !cancelled() && steps.unit.outcome == 'success' }}`; `npm run test:coverage` cũng chạy nó.
+  - `npm test` và CI chạy thêm `tests/ratchets/*.test.ts`.
+- **Kiểm chứng độc lập: 1 lượt, 0 CRITICAL.** Mọi cảnh báo sửa ở `9da12ab`; mỗi ratchet có bằng chứng đỏ khi tiêm lỗi:
+  - W2: một tệp chưa test giấu được dưới thư mục mới → thư mục mới phải được khai (`--add-dir`);
+  - W3: mức nền hex/ép kiểu nhận mục exempt → danh sách exempt nằm trong engine (`exemptAllowed`);
+  - W4: hex ở `server/` + `shared/` (Tailwind có biên dịch) chưa được đo → thêm `search.get.ts`, `submission-status.ts`, `backup-offsite-status.ts`;
+  - S1: `const t = $fetch as unknown as F` lọt; S2: hai lỗi kiểu tiềm ẩn; S3: guard bước CI nhận `if:` thiếu `!cancelled()`.
+  - Mô phỏng job unit của CI trên Node 24.21, clone nông, không mạng: xanh.
+- **Mức nền trên nhánh tích hợp:**
+  - `adb47a2` — `--rebaseline` sau khi gộp đỉnh Đợt 2 đã lưu trữ: `manage.sh` 1792 → 1793 (chú thích luật Dump completed), `media-sync.ts` 450 → 457 (job media dừng khi đang khôi phục), bỏ mục `backup.ts` (tách còn 41 dòng). Độ phủ chỉ tăng: `server/services` 80.21 → 81.56, `server/api` 47.65 → 48.42, `shared` 95.26 → 95.44 (Node 24.21, lệnh của CI, đo 2 lần trùng nhau). Hex và ép kiểu không đổi.
+  - Hạ trần sau các nhánh sửa: `166c84f` (`categories/index.vue` 555 → 551, `content-types.vue` 595 → 594 — slugify, § 47), `fe99e9d` (`nuxt.config.ts` 416 → 412 — chuỗi CSP dời sang `shared/csp-policy.ts`, § 45), `b055de4` (`outbound.ts` 520 → 518, § 49).
+- **Mức nền ở đỉnh `9ee740b`:**
+  - hex 3946 (§ 46);
+  - ép kiểu 290 chỗ / 102 tệp (−29 ở § 49; −12, −12, −8 ở ba trang tách, § 52);
+  - độ dài tệp 63 mục, 5 exempt;
+  - độ phủ: `app/composables` 61.88 · `app/utils` 94.86 · `server/api` 53.4 · `server/data` 100 · `server/db` 71.84 · `server/middleware` 82.31 · `server/plugins` 44.36 · `server/routes` 40.11 · `server/services` 84.14 · `server/utils` 92.49 · `shared` 95.9 — mức ghi từ `99695ca` (lát R2), CHƯA nâng theo các lát sau (Ngôn ngữ, ba trang tách, hai module tách), nên cổng để hở tới ~5 điểm. Nâng ở `wave3/verify-fixes` (§ 53).
+- **Mức nền độ phủ sau `wave3/verify-fixes`** (`--update`, Node 24.21 trong container `cdkt-cov:node24`, `TZ=Asia/Ho_Chi_Minh` như CI; sáu thư mục không lát nào chạm đo khớp mức cũ trong 0,01): `app/composables` 61.88 → 67.28 · `app/utils` 94.86 → 95.06 · `server/api` 53.4 → 56.74 · `server/services` 84.14 → 85.13 · `server/utils` 92.49 → 93.52; `server/data` 100 · `server/db` 71.84 · `server/middleware` 82.31 · `server/plugins` 44.36 · `server/routes` 40.11 · `shared` 95.9 giữ nguyên. Trước khi nâng, xoá `tests/admin-media-scan-page.test.ts` (nơi duy nhất nạp `useMediaStorageJobs.ts`, 262 dòng) chỉ đưa `app/composables` xuống ≈ 63,15 — trên ngưỡng 61,38, CI vẫn xanh.
+- **Còn mở:** ratchet chỉ chặn đi lùi. Đưa hex và ép kiểu về gần 0 là việc của 3.7 (§ 46) và phần còn lại của 7.1 (§ 49).
+
+### 45. Đợt 3 — 2.1/2.2 CSP giai đoạn 1: quan sát (2026-10-25)
+
+Nhánh `wave3/2-csp-observe` (PR #148; `d63da9e` → `86b243d` → `f77de50` → `acbb233`), gộp ở `183e712`. OpenSpec task 2.1/2.2, design D-CSP giai đoạn 1. **CSP đang thi hành giữ nguyên từng byte** — `tests/csp-report-only-header.test.ts` ghim bản chụp. Hai chuỗi chính sách dời sang `shared/csp-policy.ts` (`nuxt.config.ts` 416 → 412, `fe99e9d`).
+
+- **`POST /api/csp-report`** (`server/api/csp-report.post.ts`, `server/utils/csp-report*.ts`):
+  - nhận `application/csp-report` lẫn `application/reports+json`;
+  - luôn 204 — kể cả thân hỏng, sai loại, quá cỡ, bị giới hạn, lỗi bất ngờ (`csp_report.failed`);
+  - thân ≤ 64 KiB, ≤ 20 báo cáo/lượt, cắt từng trường, bỏ query/fragment; trần 60 báo cáo/nguồn/phút; không ghi CSDL ngoài bộ đếm `rate_limit_counters`;
+  - log `security.csp_violation`: thuộc `SECURITY_EVENTS`, **không** thuộc `ALERT_EVENTS` (không gửi thư). Báo cáo từ trang không thuộc cổng gắn nhãn `foreign:<host>`.
+- **Gộp trong bộ nhớ** (`server/utils/csp-report-log.ts`; app chạy đúng một bản sao — compose ghim `cdkt_app`):
+  - khoá = chỉ thị + nguồn bị chặn + disposition + nhóm đường dẫn (`CSP_PAGE_SECTIONS`, test đối chiếu với `app/pages/`; còn lại `/:page`) + tiền tố SHA-256 của mẫu;
+  - dòng `first` một lần mỗi tiến trình (tập đã thấy 5000 khoá); tóm tắt `repeats` mỗi giờ kèm `count` + `sources` (số nguồn /64 khác nhau, trần 50);
+  - ngân sách 20 khoá mới/giờ cho mỗi mạng /24 hoặc /48; khoá đã biết chiếm tối đa 400/500 chỗ; khi bản đồ đầy, script inline mới vẫn có dòng `first` đủ nhận dạng (trần 100/giờ, vượt thì đếm `collapsed`);
+  - trần ≈ 1 201 dòng/giờ khi bị tấn công, ≈ 0,85 MB/ngày ở 100 loại vi phạm;
+  - bảo đảm: tổng `count` + các bộ đếm `dropped` (`overflow`/`budget`/`limited`/`failed`) = số báo cáo nhận (`tests/csp-report-aggregate.test.ts`).
+- **Cổng Origin miễn đúng `POST /api/csp-report`** (`isOriginGateExempt`, so trên mọi dạng đã giải mã của đường dẫn). `#`, `%23`, `..`, `%2F`, chữ hoa, gạch chéo thừa, phương thức khác → vẫn 403 (`tests/csp-report-endpoint-behavior.test.ts`).
+- **Header `Content-Security-Policy-Report-Only`** trên mọi phản hồi:
+  - `script-src 'self' 'report-sample'` + danh sách host ĐÍCH `CSP_TARGET_SCRIPT_SRC_HOSTS` (GTM, Facebook, TikTok, Clarity, Cloudflare Insights, `www.youtube.com`, `www.youtube-nocookie.com`) — không `'unsafe-inline'`, không wildcard, không `cdnjs.cloudflare.com`, không `*.gov.vn`;
+  - các chỉ thị khác chép nguyên bản thực thi; `report-uri /api/csp-report`; chưa `report-to` (Chromium 151 bỏ `report-uri` khi chính sách có `report-to`);
+  - bốn loại script inline do cổng tự phát (giai đoạn 3 phải băm) và lệnh `journalctl … | jq` tổng hợp 14 ngày ghi ở `docs/decisions/realm-safety.md` § "Wave 3 — CSP giai đoạn 1".
+- **`rate-limit-store.ts`:** log lỗi **đọc** CSDL (`rate_limit.database_read_failed`) nay cũng nén còn tối đa một dòng/phút như lỗi ghi, ở mọi nơi gọi (`RATE_LIMIT_FAILURE_LOG_INTERVAL_MS`, `tests/rate-limit-log-throttle.test.ts`). Đóng một mục "Chưa xử lý".
+- **Kiểm chứng độc lập — 3 lượt (CRITICAL 1 / 0 / 0):**
+  - Lượt 1 (1 CRITICAL, 5 WARNING → `86b243d`). **C1:** bản đầu để Report-Only cho phép đúng các host đang thi hành. Một chính sách chỉ-báo không bao giờ báo lượt tải từ host nó cho phép, nên hai tuần quan sát sẽ không có bằng chứng nào cho giai đoạn 2. Nay dùng danh sách ĐÍCH (tập con, không wildcard) + `'report-sample'`. W1 gộp báo cáo (lặp lại không chạm CSDL); W2 chỉ `POST` được miễn cổng Origin; W3 nén log lỗi đọc; W4 nhãn `foreign:<host>`; W5 lỗi bất ngờ vẫn 204, có test.
+  - Lượt 2 (0 CRITICAL, W6–W8 → `f77de50`). W6: 9 nguồn × 60 khoá rác làm đầy 500 khoá, vi phạm thật mới chỉ còn là con số → ngân sách theo mạng, 400 chỗ cho khoá đã biết, bản thô 100 khoá. W7: `first` lặp lại mỗi cửa sổ (~288 × số khoá mỗi ngày) → một lần mỗi tiến trình, tóm tắt mỗi giờ. W8: test cho nguồn bị từ chối hết hạn. Thêm `sources`; lỗi giữa lô đếm vào `failed`.
+  - Lượt 3 (0 CRITICAL, W9–W10 → `acbb233`). W9: nạp sẵn ~400 khoá rác rồi để 5 mạng tiêu hết ngân sách, thì một script lạ bị chèn chỉ được đếm dưới khoá thô `script-src-elem|inline` — không dòng `first`, không bộ đếm mất nào tăng → dòng `first` riêng khi bản đồ đầy (trần 100/giờ). W10: test cho kiểm lại ngân sách khi đồng thời, nhận dạng khi bản thô đầy, làm mới độ gần trong tập đã thấy (lỗ thật ở `f77de50`).
+  - Mỗi WARNING sửa kèm test đỏ-trước. Gate trên nhánh: typecheck 0, `npm test` xanh, lint 0 lỗi, build; header kiểm trên bản build ở mọi lớp route.
+- **Còn mở:**
+  - Task 2.3: đồng hồ 2 tuần quan sát chỉ bắt đầu khi bản này lên production. Sau đó tóm tắt báo cáo vào `realm-safety.md`, rồi mới tới giai đoạn 2–5 (task 6.1–6.4).
+  - Việc của người vận hành: nginx phải trả IP thật của khách sau Cloudflare (`real_ip`, `CI-CD.md` Bước 8). Nếu không, ngân sách theo mạng và `sources` tính theo IP biên của Cloudflare. Mạng dùng chung (CGNAT, /48 văn phòng) chia nhau một ngân sách: ngay sau deploy, nhận dạng đầu của vài khoá có thể chậm tới một giờ (số đếm không mất).
+
+### 46. Đợt 3 — 3.1–3.6 token màu (2026-10-25 → 2026-10-26)
+
+PR #145 (3.1/3.2), #153 (3.3), #159 (3.4), #160 (codemod giữ thứ tự cascade), #161 (3.5), #162 (3.6), cộng `ee3dfc5` trên nhánh tích hợp. OpenSpec task 3.1–3.6, design D-TOKENS. **Không lát nào đổi pixel.** Tổng mã hex trong ratchet: **8783 → 3946** (−4837).
+
+| Bước | Hex trong ratchet |
+|---|---|
+| 3.3 `app/components/admin` (`4cb48f5`) | 8783 → 7331 |
+| 4 panel kiểm duyệt mới tách (`ee3dfc5`) | 7331 → 7171 |
+| Tách `scan.vue` + codemod trên trang và panel (`995bfb0`) | 7171 → 7056 |
+| 3.4 `app/pages/admin/**` (`e016ab1`) | 7056 → 4646 |
+| 3.5 `blocks` + `layout` (`4fbe07a`) | 4646 → 4500 |
+| 3.6 công khai + phần còn lại (`f9dce1e`) | 4500 → 3946 |
+
+- **3.1/3.2 — token + codemod** (`aa10575`, `0c39ee1`; gộp `67374db`):
+  - 12 token ngữ nghĩa, một nguồn `shared/color-tokens.ts` (`COLOR_TOKENS`, khoá phẳng) mà `tailwind.config.js` trải vào `theme.extend.colors`: `brand-950/900/700/600`, `ink`, `ink-secondary`, `ink-muted`, `line`, `line-strong`, `surface`, `surface-tint`, `danger`;
+  - mỗi token một giá trị chính xác (hex 6 chữ số thường), không hai token chung giá trị, màu gần giống không có token (gộp chúng là D-T1). Khi `openspec/ui-dna.md` lệch bảng thiết kế thì theo ui-dna: `ink` `#1e251c`, `ink-secondary` `#4a5545`, `surface` `#f8faf7`. Bảng `admin-*` (0 lần dùng) bỏ. CSS build giống từng byte với trước. `tests/tailwind-color-tokens.test.ts`;
+  - `scripts/codemod-hex-tokens.ts` (+ `-order.ts`, tách để mỗi tệp dưới 400 dòng): mặc định chạy thử, `--write` mới ghi; chỉ đổi `prefix-[#hex]` khi hex khớp CHÍNH XÁC một token; 25 tiền tố màu; giữ biến thể, `!`, opacity (`/30`, `/[0.35]`); không chạm `<style>`/`style=`/`bg-[color:#…]`; báo lý do từng chỗ bỏ qua (`unmapped`, `alpha`, `suffix`, `style`, `order`…); không đổi thứ tự cascade (bản chạy thử đầu giữ nguyên 135 chỗ). Chưa đổi tệp nào trong `app/`.
+- **3.3 `app/components/admin`** (`4cb48f5`, gộp `9905d0d`): 1452 chỗ → token trong 43 tệp; 44 chỗ giữ hex vì thứ tự cascade; 584 chỗ là màu chưa có token.
+  - CSS build trước/sau (bản sao tách riêng, không chung `.nuxt`): 65/67 lớp đổi tên có khai báo hiệu lực giống hệt (2 lớp còn lại vốn không sinh CSS), tập màu như nhau (1308), 246 cặp lớp màu cùng thắng cascade.
+  - Ảnh chụp 32 trạng thái admin trên bộ E2E: không pixel nào lệch quá 1/255 (khử răng cưa — có cả giữa hai lượt của cùng một bản build); màu tính toán của mọi phần tử giống nhau.
+- **Trên nhánh tích hợp:** `ee3dfc5` chạy codemod trên 4 panel mới tách của `moderation.vue` (tạo trước khi 3.3 gộp; test bộ lọc đang chọn đọc màu qua `COLOR_TOKENS`). Nhánh tách `scan.vue` chạy codemod trên 5 panel + trang: 115 thay thế, đúng con số codemod cho ra trên tệp gốc nguyên khối (§ 52).
+- **3.4 `app/pages/admin/**`** (`e016ab1`, gộp `ce62be3`): 2410 chỗ → token trong 49 tệp; 43 chỗ giữ vì thứ tự cascade; 1368 chỗ màu chưa có token (nhiều nhất `#2c3e2e` 130, `#eef2ee` 94, `#f8faf8` 86).
+  - CSS: 66 lớp đổi tên có khai báo giống hệt, 856 giá trị màu như nhau, 940 cặp lớp phụ thuộc thứ tự — 0 cặp đổi bên thắng.
+  - Ảnh chụp 50 trạng thái trang admin (dữ liệu cố định, chuẩn hoá đồng hồ/số/animation): lệch tối đa 1/255 ở 2 trang — cùng mức nhiễu giữa hai lượt chụp một bản build; màu tính toán của 19 827 phần tử giống hệt.
+  - `skeleton-loading-ui` đọc màu chấm "đang chạy" qua `COLOR_TOKENS` và đếm đúng 1 thẻ được miễn (không thể xanh rỗng).
+- **Codemod giữ thứ tự cascade khi class gặp nhau từ nhiều nơi** (`2be61dd`, PR #160, gộp `ee8464d`):
+  - trước đây chỉ so class trên cùng một thẻ/một dòng. Nay phân tích cả biến/computed/helper trong script, module import/auto-import, phần tử gốc của component con, prop (`codemod-hex-tokens-{reach,project,sfc}.ts`, mỗi tệp ≤ 400 dòng);
+  - đổi tên nào có thể đảo bên thắng giữa hai class màu gặp nhau trên một phần tử thì giữ cả hai (lý do `order-merge`, ghi nơi gặp); nguồn không giải được → so thận trọng với mọi chuỗi class;
+  - 28 test mới (`tests/codemod-hex-tokens-merge.test.ts`), **24 đỏ trên codemod cũ**;
+  - chạy lại 3.3: giống hệt commit đã có. Chạy lại 3.4: giữ thêm 6 chỗ, là các nhánh loại trừ nhau trong một helper (mỗi phần tử chỉ gắn một nhánh) — các đổi tên đã commit vẫn an toàn pixel.
+- **3.5 `app/components/blocks` + `layout`** (`4fbe07a`, gộp `b01f1c5`): 146 chỗ trong 18 tệp. `#5A6C58` (chữ phụ công khai) và `#7CB342` không có token → giữ hex; 6 chỗ giữ vì thứ tự cascade.
+  - CSS: 27 lớp đổi tên có khai báo giống hệt; 0 cặp đổi bên thắng (120 cặp cùng thẻ + 31 nhóm gặp nhau từ nhiều nơi).
+  - Ảnh chụp 22 trạng thái trang công khai (desktop, di động 375 px, ngăn kéo, dropdown, tìm kiếm, ticker livestream, khối lỗi): 21 giống từng pixel, 1 lệch ≤ 2/255 ở 8 px (= nhiễu giữa hai lượt chụp bản gốc); màu tính toán của 13 471 phần tử giống hệt.
+  - **Test vòng focus xanh rỗng — đã sửa.** Test cũ chỉ khớp dạng `ring-[#4A6741]`, nên trên cây đã đổi token nó không kiểm gì. Nay `tests/_focus-rings.ts` (dùng chung cho `focus-ring-contrast` + `assistant-focus-ring-contrast`) giải token qua `COLOR_TOKENS` về giá trị Tailwind biên dịch ra, kèm sàn số lượng theo tệp; `carousel-motion-control`, `public-single-h1` nhận token hoặc hex qua `COLOR_TOKENS`.
+- **3.6 trang công khai + phần còn lại** (`f9dce1e`, gộp `f6b110a`): trang công khai, `ChatWidget`/`ArticleDetail`/`ArticleComments`/`SocialBubble`…, layouts, `app.vue`/`error.vue`, `app/utils` — 554 chỗ trong 40 tệp; 48 chỗ giữ vì thứ tự cascade (35 cùng thẻ + 13 gặp nhau từ nhiều nơi).
+  - CSS: 53 lớp đổi tên có khai báo giống hệt; 0 cặp đổi bên thắng (489 cặp cùng thẻ + 2360 cặp gặp nhau từ nhiều nơi).
+  - Ảnh chụp 45 trạng thái (công khai, bài + bình luận, trợ lý + widget chat, `in-bai`, page builder, 404, di động 375 px, layout admin, livestream): giống từng pixel; màu tính toán của 22 969 phần tử giống hệt.
+  - `default.vue` chỉ đổi 1 class (vẫn 401 dòng). `focus-ring-no-secondary-green` đọc màu qua `COLOR_TOKENS`, kiểm đúng 2 nút chat.
+- **Kiểm chứng:** bằng chứng không-đổi-pixel của từng lát như trên (CSS build trước/sau, ảnh chụp, màu tính toán). PR của các lát token không ghi lượt kiểm chứng độc lập nào.
+- **Còn mở:**
+  - **3.7 / D-T1 — chờ anh quyết.** 3946 mã hex còn lại phần lớn là màu chưa có token (gần giống token, như `#f8faf8` cạnh `#f8faf7`), cộng các chỗ giữ vì thứ tự cascade và `#5A6C58`/`#7CB342`. Gộp màu gần giống là đổi pixel: cần trang mẫu màu (swatch) để anh duyệt, rồi một PR đổi hình kèm ảnh chụp.
+  - **Lỗi có sẵn, cần quyết:** `bg-brand-700/12` và `/8` (trước là `bg-[#2c6e33]/12`, `/8`) trên 14 thanh khung chờ ở `docs/skeletons` không sinh CSS (12 và 8 không nằm trong thang opacity mặc định của Tailwind), nên các thanh này trong suốt từ trước tới giờ. Sửa là đổi pixel, nên chưa làm.
+  - Giá trị `ink`/`ink-secondary`/`surface` lấy theo ui-dna cần anh xác nhận (`#5a6c58`, màu chữ phụ công khai CLAUDE.md quy định, không có token).
+  - Chưa chụp: hồ sơ khi bạn đọc đã đăng nhập (cần OAuth Google), trang 500.
+
+### 47. Đợt 3 — 5.1/7.4 kiểm kê, và ba lỗi sửa kèm (2026-10-25)
+
+PR #146 (`216288c`, chỉ tài liệu, gộp `e17db2f`) và #147 (`970a019`, `3cbad6f`, `6ff4993`, gộp `a4ac5ca`).
+
+- **5.1 — xếp hạng tệp chưa test nào nạp** (`docs/test-coverage-baseline-2026-10.md`): 287 tệp (12 783 dòng mã), chia lớp rủi ro R1–R7 rồi theo cỡ — R1 xác thực/phiên/MFA/phân quyền 22 tệp, R2 backup/khôi phục/giữ dữ liệu 12, R3 media/R2/tải lên 25, R4 cổng AI/chatbot/kiểm duyệt 64, R5 đường ghi khác 83, R6 handler chỉ đọc 42, R7 còn lại 39. Top 15 viết test hành vi trước cho 5.2 (§ 50).
+- **7.4 — kiểm kê mã trùng** (`docs/decisions/duplication-inventory-2026-10-25.md`): jscpd 5.4.1 ghim, `--min-lines 15` — 0,81 %, 71 cặp; 24 nhóm thật (T1–T24), 10 chủ đích, 1 dương tính giả; mỗi nhóm thật một dòng "việc tiếp theo". Khi rà tìm ra hai lỗi thật (T3, T2).
+- **T3 — xuất Markdown/Google Docs làm hỏng chữ có entity (lỗi thật, `970a019`):**
+  - `stripTags` của `html-to-markdown.ts`/`html-to-docs.ts` (hai bản chép nhau) có bước "giải mã" không làm gì, rồi xoá mọi entity có tên: `Phòng R&amp;D` → `Phòng RD`, `Ng&agrave;y` → `Ngy`. Bản Docs còn không giải mã đoạn/tiêu đề và bỏ mất khối `<pre>`.
+  - Nay một `htmlFragmentToText()` (`server/utils/html-fragment-text.ts`, + `headingLevel`): bỏ thẻ rồi giải mã bằng `decodeHtmlEntities`, thoát ký tự theo từng định dạng ra. Tiêu đề Markdown thoát ký tự đánh dấu; mã nội dòng/khối mã giải mã không thoát (fence dài hơn mọi chuỗi backtick); bảng giữ HTML thô đã mã hoá; Docs chỉ giải mã (JSON chữ thuần).
+  - `tests/html-export-entities.test.ts`: **19/20 test đỏ trên mã cũ**.
+- **T1 — luật đích SMTP một nguồn (`3cbad6f`):** `server/utils/smtp-test-config.ts` import + re-export từ `shared/settings-credential-rules.ts` (`isTruthy` export từ `shared/`) thay bản chép. Trước khi xoá bản chép, hai bản cho kết quả giống nhau trên 1 102 843 phép so (mọi cổng 0–70000, các giá trị truthy, cặp đích). Test cặp đôi thay bằng kiểm cùng một mảng/hàm và kiểm tệp không tự khai danh sách cổng (`tests/settings-credential-rules.test.ts`). Đóng mục "hai bản" trong "Chưa xử lý".
+- **T2 — `slugify` một bản (lỗi thật, `6ff4993`):**
+  - ba `slugifyLocal` (arrow) ở `admin/content/categories/index.vue`, `content-types.vue`, `media-portal/categories.vue` thiếu bước cắt gạch treo, nên form chấp nhận và GỬI `tin-nong-`. Máy chủ (`unique*Slug()`) chuẩn hoá lại nên slug lưu vẫn đúng, nhưng form hiện sai;
+  - nay `shared/slugify.ts`: `slugifyDraft` khi gõ (giữ được dấu `-` đang gõ giữa hai từ), `slugify` khi rời ô, khi lưu và trong payload. `tests/admin-slug-input.test.ts` chạy `<script setup>` thật của ba trang;
+  - guard slugify quét `.ts/.vue/.js/.mjs` ở app/server/shared theo tên (hàm hoặc arrow) và theo mẫu NFD + thay bằng `-`; `slugifyHeading` (`toc.ts`) được miễn kèm lý do. Loại nội dung hệ thống hiện đúng slug thật (`role_model`). Ratchet độ dài hạ ở `166c84f`;
+  - phần markup form/nút cuối modal của T2 để sau.
+- **Kiểm chứng:** trên nhánh — typecheck 0, `npm test` 5100 / 5047 / 0 / 53, lint 0 lỗi, build sạch; trên `wave3/integration` sau khi gộp — 5226 / 5173 / 0 / 53, kể cả ratchet. PR không ghi lượt kiểm chứng độc lập.
+- **Còn mở:**
+  - lỗi xuất đã ghi, chưa sửa: Docs bỏ chữ trần trong `<div>`; Markdown mất vỏ `<table>`; `escapeMd` biến `1. Mục` thành `\1. Mục`; URL liên kết/ảnh trong Docs chưa giải mã; khối mã Docs chưa dùng font đơn cách; tiêu đề ghi thô vào đầu bản xuất Markdown;
+  - 21 nhóm trùng thật chưa làm (T4–T24) + phần form của T2, theo danh sách "Việc tiếp theo" của tài liệu kiểm kê. Đứng đầu: T4 (ba handler lưu menu điều hướng), T5 (`login.post.ts` gọi `loadSessionUser()`), T6 (`parseDay` dùng chung cho ba danh sách nhật ký).
+
+### 48. Đợt 3 — 7.2 kiểm kê test đọc mã nguồn (2026-10-25)
+
+Nhánh `wave3/7-2-test-inventory` (PR #149, `0b48310`), gộp `c83dc00`. Design D-TESTS.
+
+- `scripts/test-inventory.ts` (+ `-analyze`, `-bindings`, `-paths`, `-review`) và `docs/decisions/test-strategy.md`: 145 tệp test đọc mã nguồn (796 khối) — 36 ứng viên chuyển sang test hành vi, 108 cấu trúc (giữ), 1 giòn. Phân loại tay lưu dạng dữ liệu (`scripts/test-inventory-review.ts`) để `--markdown` tái tạo đúng bảng; `tests/test-inventory.test.ts` chạy trên fixture `tests/fixtures/test-inventory/`.
+- **Ba bất biến an ninh chuyển sang test chạy thật.** Mỗi test đỏ khi phá mã production (đã hoàn lại, `git diff --exit-code` sạch):
+  - thông báo của bạn đọc chỉ trong phạm vi bạn đọc đó (IDOR) — `tests/reader-notifications-scope-behavior.test.ts`. Regex cũ không bắt dạng destructure;
+  - `/uploads/**` không thoát khỏi gốc, không phục SVG — `tests/uploads-route-confinement-behavior.test.ts`, 14 đường dẫn thù địch trên cây tệp tạm;
+  - endpoint công khai lọc HTML đã lưu lúc đọc — `tests/public-translation-sanitize-behavior.test.ts`, 5 payload XSS qua bản dịch, cây trang, hàng cũ.
+- Bỏ 7 khẳng định văn bản đã được test hành vi thay thế đầy đủ (`cms-core-auth-media`, `reader-notifications`, `security-translation-html`).
+- **Kiểm chứng:** bằng chứng đỏ-khi-phá như trên. PR không ghi lượt kiểm chứng độc lập.
+- **Còn mở:** lúc kiểm kê, lớp ứng viên hành vi có 36 tệp / 214 khối; lượt này chỉ chuyển ba bất biến trên. 10 ứng viên tiếp theo (xếp ưu tiên) ở mục "Danh sách chuyển tiếp theo" của `test-strategy.md`.
+
+### 49. Đợt 3 — 7.1 `adminFetch`: AiProvidersTab + trang Ngôn ngữ, Delify qua đường gọi an toàn (2026-10-25 → 2026-10-26)
+
+PR #150 (`c488a45`, gộp `87bffd8`), #158 (`6d9c64e`, `85a22c7`, `ddf3de1`, gộp `3371285`), nhánh `wave3/languages-followups` (`5464ef3`, gộp `0dbf5ee`), và `b055de4`. OpenSpec task 7.1 lát 1, design D-FETCH.
+
+- **Lát 1 (`c488a45`):** `AiProvidersTab.vue` (15) + `admin/languages/index.vue` (14) bỏ cả 29 chỗ `($fetch as …)`, thay bằng `adminFetch<T>()` với kiểu đọc từ handler thật (union cho phản hồi test kết nối/test-call). Không dùng `useAdminList` (không phải danh sách phân trang). Template giữ nguyên từng byte. Ratchet ép kiểu bỏ 2 mục; độ dài 1032 → 1025, 759 → 757.
+  - 20 test chạy `<script setup>` thật trên ofetch thật (`tests/admin-fetch-rollout.test.ts`), **5 đỏ trên bản gốc**. Hai lỗi thật mà phép ép kiểu che:
+    - `lang_translations.value` có thể null nhưng trang khai `string` → bấm Lưu không gõ gì gửi `null`, máy chủ lưu chữ `"null"`, trang công khai hiện "null". Trang đổi null → `''` khi nhận; gốc ở máy chủ sửa ở #158;
+    - đổi ngôn ngữ/nhóm/tìm kiếm nhanh: câu trả lời cũ về sau đè danh sách mới → nay huỷ request cũ, chỉ request mới nhất được ghi.
+  - Tìm thấy, để sang #158: tab bản dịch chỉ hiện 200 khoá đầu (tìm kiếm chạy sau khi cắt); `?limit=500` bị máy chủ cắt (bản nguồn tiếng Việt thiếu, quét "khoá thiếu" báo 100 % sai); ô tìm mất focus mỗi phím; `delify/sync.post.ts` gọi `fetch` trần với API key trong query; `loadPricing` không ai gọi.
+- **#158 + `languages-followups` — lỗi thật đã sửa, mỗi lỗi có test "RED before":**
+  - **Bản dịch không bao giờ lưu chữ `"null"`.** PUT đọc bằng `readValidated` + zod: `null` = xoá (SQL NULL); giá trị không phải chuỗi/null → 400; mục thiếu `value` → 400 thay vì 200 bỏ qua (`tests/language-translations-write-behavior.test.ts`). Mọi đường ghi do AI (chunk, bulk, một khoá, dịch toàn cục, tự dịch nền) qua một bộ đọc `server/utils/ai/model-translations.ts`: chỉ nhận chuỗi không rỗng cho khoá được hỏi, bỏ `null`/`undefined`; prompt yêu cầu model trả lại số dòng, khớp theo dòng → nhóm → khoá.
+  - **Hàng đã hỏng:** `npm run db:repair-null-translations` (`scripts/repair-null-translations.ts`). Mặc định xem trước; `--apply` chỉ cho đúng `null`/`undefined`; `--apply --include-review` thêm nhóm "review" (`NULL`/`Null`/` null`, `[object Object]`, số khác bản vi). Ghi có điều kiện so `HEX(value)` đúng từng byte, giữ `updated_at` (`tests/translation-null-literal-repair.test.ts`).
+  - **Danh sách bản dịch trả đủ cả ngôn ngữ** (~630 hàng; trước đây cắt ở 200/500). Tìm key OR value trong SQL (≤ 200 ký tự); kèm khoá vi chưa có hàng ở ngôn ngữ đích (id null), để "Xem thiếu" khớp số trên thẻ; `?limit=500` cũ bị bỏ qua (`tests/language-translations-list-behavior.test.ts`).
+  - **Ngôn ngữ không tồn tại → 404 trước mọi lượt ghi và trước mọi lượt gọi AI.** Trước đây: 200 + hàng mồ côi; đường AI tốn 1 lượt (bulk ~32 lô) rồi lượt ghi mới từ chối; danh sách trả 200 với 581 hàng ảo. `requireLanguage` chạy trong transaction của `upsertTranslations` và khoá hàng ngôn ngữ `FOR UPDATE` (chạy cả MariaDB), nên `deleteLanguage` đồng thời không còn để lại hàng mồ côi (`tests/languages-write-lock.test.ts`). Tự dịch nền theo ngôn ngữ thật trong CSDL: ngôn ngữ mặc định đã xoá không còn tốn lượt AI mỗi lần lưu danh mục.
+  - **Giao diện `TranslationsTab`:** ô tìm không mất focus, chờ 300 ms (trước: một request mỗi phím); tải lại giữ bảng cũ với `aria-busy`, vùng thông báo nằm ngoài vùng `aria-busy`; nhãn trợ năng cho ô tìm + 3 ô chọn; trạng thái rỗng "Không tìm thấy bản dịch"; xoá ngôn ngữ đang chọn thì tab chuyển sang ngôn ngữ còn lại (trước: kẹt ở 404) (`tests/admin-languages-search-focus.test.ts`).
+  - **Đổi ngôn ngữ không bao giờ lưu chữ của ngôn ngữ cũ sang ngôn ngữ mới** — CRITICAL của lượt kiểm 2, do chính vòng sửa trước gây ra. Trong lúc ngôn ngữ mới đang tải, bảng cũ vẫn bấm "Sửa" được và "Lưu" gửi `PUT …/fr/` với chữ tiếng Anh. Nay đổi ngôn ngữ là một lần tải đầu (khung chờ thay bảng); ô sửa nhớ ngôn ngữ của dòng và từ chối lưu khi khác; lưu/dịch AI theo `langCode` của chính dòng; nút trên dòng bị vô hiệu khi đang tải lại.
+  - **Delify (sync, status, ai-budget):** bỏ `fetch` trần với `?key=` tới host cứng `router.delify.vn`. Nay qua `server/utils/ai/delify-usage.ts`: host lấy từ `base_url` đã kiểm (`checkProviderBaseUrl`), gửi qua `safeProviderRequest` (ghim IP, https/443, không redirect, hạn giờ, trần byte), log lỗi không chứa URL (`tests/delify-usage-client.test.ts`, `delify-usage-callers-behavior.test.ts` — `fetch` trần đỏ trên bản gốc). Kiểm ngân sách AI nhớ mọi kết quả (kể cả lỗi) 60 s, các lượt đồng thời dùng chung một lần tra; `ai_panel.delify_usage_failed` tối đa 1 dòng/phút; `status.get.ts` dùng `allSettled`. Đóng mục `fetch` trần trong "Chưa xử lý".
+  - **Hạn chót gọi nhà cung cấp tính cả DNS** (`outbound.ts`): DNS từng tra ngoài hạn chót, nên DNS chậm kéo mỗi lượt AI lên 6,5 s (`tests/outbound-deadline.test.ts`). Mã phân loại IP tách sang `public-ip.ts` (`outbound.ts` 587 → 520; trần hạ 520 → 518 ở `b055de4`, sau khi `5464ef3` bỏ import trùng `isPublicIpAddress`).
+  - **Guard AST `tests/server-bare-fetch-guard.test.ts`** (TypeChecker): `fetch`/`$fetch`/`http`/`https`/`ofetch`/`undici`/`node-fetch`/`axios`/`got`/`net`/`tls`/WebSocket ở `server/` chỉ được ở tệp nêu tên kèm lý do. Bắt cả re-export, bí danh `globalThis`, `Reflect.get`, `createRequire`, `as`/`!`/`satisfies`, destructure từ `globalThis` (`ddf3de1`, "RED before" với các dạng bản thứ hai bỏ sót). `tests/server-utils-unique-exports.test.ts` chặn một tên được hai module `server/utils` cùng xuất (Nitro auto-import).
+  - Bỏ `loadPricing` không ai gọi; danh sách đọc thân request cũ 138 → 134 (`request-body-baseline`).
+- **Kiểm chứng độc lập — 3 lượt (CRITICAL 0 / 1 / 0):** lượt 1 — 0 CRITICAL, W1–W6 → `85a22c7`; lượt 2 — 1 CRITICAL do chính vòng sửa gây ra (chữ ngôn ngữ cũ lưu sang ngôn ngữ mới) → `ddf3de1`; lượt 3 — 0 CRITICAL, 0 WARNING, các gợi ý làm ở `5464ef3`. Một test focus từng `deepEqual` cả cây node: diff đi qua liên kết `parent` làm một lượt chạy phình tới 8,8 GB. Nay không còn.
+- **Trước khi deploy (người vận hành):** kiểm `base_url` của hàng `delify` trên production là `https://router.delify.vn/...`; sao lưu CSDL rồi chạy `npm run db:repair-null-translations` (xem trước), sau đó `--apply`.
+- **Còn mở:** 290 chỗ ép kiểu `$fetch` trong 102 tệp (ratchet `fetch-casts` ở đỉnh). Nhiều nhất: `admin/content/articles/index.vue` 12, `admin/content/pages/[id].vue` 10, `admin/index.vue`/`media-portal/[id].vue`/`settings/social-links.vue` mỗi tệp 8; `ProfileActivityHistory.vue` 2 (§ 52). `AiProvidersTab.vue` vẫn 1018 dòng.
+
+### 50. Đợt 3 — 5.2 test hành vi, lát R1 và R2 (2026-10-25)
+
+PR #151 (`3598a59`, `50f031d`; gộp `d774dde`, `e1469a9`) và #157 (`99695ca`, gộp `9734910`). OpenSpec task 5.2, design D-COV. Hai lát phủ hết top 15 của § 47 (R1: hạng 1–8; R2: hạng 9–15) cùng `backup-drive.ts`.
+
+- **Lát R1 — 70 test cho 8 tệp chưa từng được nạp:** cấu hình Google OAuth (`google-oauth-settings-behavior`), lịch sử hồ sơ (`admin-profile-history-behavior`), đặt lại MFA của người khác (`admin-user-mfa-reset-behavior`), tắt MFA (`admin-mfa-disable-behavior`), gửi mã MFA qua email (`admin-mfa-send-code-behavior`), đăng xuất (`admin-logout-behavior`), nhận phiên chat của bạn đọc (`reader-claim-chats-behavior`), xác thực lại bằng mật khẩu (`mfa-reauth-behavior`).
+  - Mỗi tệp có đột biến làm đỏ (đã hoàn lại): kiểm sau khi ghi, lộ hàng đã lưu, audit ngoài transaction, bỏ điều kiện `user_id`/`tokenVersion`, đăng xuất chỉ xoá cookie, nhận chat của người khác…
+  - Helper mới: `tests/_sqlite-mysql-db.ts` (SQL MySQL thật chạy trên SQLite; transaction rollback thật; ghi ngoài transaction đang mở là lỗi; `failNext`) và `tests/_h3-handler-server.ts` (app h3 thật với middleware `admin-auth` thật).
+  - **Lỗi sửa (`50f031d`) — lịch sử hồ sơ lọc theo giờ UTC.** `profile/history.get.ts` đọc `from`/`to` bằng `new Date(raw)`: `from=to=2026-10-25` là khoảng rỗng lúc 07:00 giờ VN và trả 0 hàng cho ngày đó. Nay ngày lịch Việt Nam qua `vietnamDayStart` (`vn-day-range.ts`, như `activity-logs`/`chatbot/sessions`): `[from 00:00 +07, ngày sau to 00:00 +07)`; ISO instant, giờ không múi, ngày không có, khoảng ngược → 400. Chưa client nào gửi tham số này. Đóng mục tương ứng trong "Chưa xử lý".
+  - Độ phủ (ratchet nâng): `server/api` 48.42 → 51.32, `server/services` 81.56 → 82.34, `server/utils` 90.35 → 90.83.
+- **Lát R2 — 8 tệp chưa từng nạp → 100 % dòng lcov:** cấu hình OAuth Drive của sao lưu (chỉ SuperAdmin, bí mật mã hoá, không lộ — `backup-drive-oauth-config-behavior`), liên kết Drive (state gắn cookie, không lưu khi sai `aud`/thiếu refresh token, audit nguyên tử — `backup-drive-link-behavior`), tải lên Drive (lỗi → `failed`, tệp local giữ nguyên từng byte, thư mục theo ngày UTC, scope `drive.file` — `backup-drive-upload-behavior`), trạng thái MFA (danh sách cho phép — `admin-mfa-status-behavior`), xoá mã dự phòng (`admin-recovery-codes-delete-behavior`), xoá vai trò (`admin-role-delete-behavior`), giới hạn captcha (`admin-captcha-rate-limit-behavior`), chặn khởi động khi bí mật yếu (`require-secrets-boot-guard-behavior`).
+  - Mỗi bộ đỏ khi phá mã production ≥ 2 cách (đã hoàn lại). Helper: `_sqlite-mysql-db.ts` nhận `ON DUPLICATE KEY UPDATE` một hàng; `_h3-handler-server.ts` có `redirect: 'manual'`.
+  - **Lỗi sửa — liên kết lại Drive giữ thời điểm liên kết cũ.** `storeDriveLink` (`backup-drive-oauth.ts`) upsert thiếu `linkedAt` trong danh sách cập nhật, nên liên kết lại một tài khoản Google khác vẫn hiện thời điểm của tài khoản đầu. Test đỏ trước khi sửa.
+  - Độ phủ (theo commit): `server/api` 51.32 → 53.40, `server/plugins` 36.38 → 44.36, `server/services` 82.34 → 84.14. Commit này cũng ghi mức mới cho các thư mục khác đã tăng trên nhánh tích hợp từ lần đo trước: `app/utils` 93.27 → 94.86, `server/middleware` 81.96 → 82.31, `server/routes` 0 → 40.11, `server/utils` 90.83 → 92.49, `shared` 95.44 → 95.9.
+- **Kiểm chứng:** đột biến đỏ ở từng tệp (trên); ratchet độ phủ nâng trong mỗi PR. PR không ghi lượt kiểm chứng độc lập.
+- **Còn mở:** các lát tiếp theo theo mục "Ngay sau top 15" của `docs/test-coverage-baseline-2026-10.md`: bốn handler giữ dữ liệu (`settings/retention.get/put`, `settings/retention-run.post`, `activity-logs/retention.get`), `backup-drive-oauth-crypto.ts`, rồi R3 (`media/upload.post.ts`, `media/storage-size.get.ts`, `settings/favicon.post.ts`…), rồi R4 mở đầu bằng `universal-translation.ts`.
+
+### 51. Đợt 3 — 7.3 bảng số liệu tự sinh trong CLAUDE.md (2026-10-25)
+
+Nhánh `wave3/7-3-docs-facts` (`3492431`, không có PR riêng), gộp `a583bb8`. Design D-FACTS.
+
+- `scripts/docs-facts.ts` + `npm run docs:facts` (kiểm: in diff, exit 1 khi cũ) / `npm run docs:facts -- --write` (sinh lại). Một bảng giữa `<!-- facts:start -->`/`<!-- facts:end -->` ở đầu CLAUDE.md:
+  - bảng · cột (dùng chính parser của `db:drift`; `--write` từ chối khi drift báo lỗi); endpoint · `getDb()` · import `services/`; tệp nhắc `requireResourcePermission`; tệp import `rateLimitDeps`; số suite integration so với matrix CI; số dòng các tệp canh (`default.vue`, `init.ts`, `useI18n.ts`, `useChatbot.ts`, và từ § 52 `admin/profile.vue`); khoá i18n; block Page Builder; small talk;
+  - đọc `git ls-files`, không mạng, không `.nuxt`/`.output`. Không nạp `app/` (image chạy thật chở `scripts/`, `tests/runtime-image-sources.test.ts`) — từ điển fallback vi đếm bằng parser TypeScript trên chữ của tệp. Bảng không mang ngày.
+- `tests/docs-facts.test.ts` đỏ khi bảng lệch cây (diff nêu đúng hàng); kiểm định dạng, tính idempotent, mỗi marker đúng một lần.
+- Bỏ ~20 chỗ số viết tay trùng nhau. Vài chỗ đã lệch: 335 → 336 endpoint, 121 → 122 small talk, "172 endpoint cũ" → 173. Số lịch sử giữ. Số test/lint/integration/E2E giữ dạng văn có ngày, vì phải chạy bộ test, MySQL hay trình duyệt mới có.
+- **Kiểm chứng:** test trên — đổi một số mà không sinh lại thì đỏ. Không ghi lượt kiểm chứng độc lập.
+
+### 52. Đợt 3 — tách tệp lớn: `manage.sh` (4.4), ba trang admin (4.1), hai module máy chủ (4.3) (2026-10-25 → 2026-10-26)
+
+Design D-SPLIT. Số dòng đo bằng `wc -l` trên `9ee740b`.
+
+- **4.4 `production/manage.sh`** (PR #152, `043307a` + `8c23537`, gộp `b8cad0f`): 1793 dòng → cửa vào 99 dòng + 10 tệp `production/lib/*.sh` (`common` 261, `deploy` 323, `update` 264, `migrate` 321, `update-image` 160, `media` 131, `backup-cron` 130, `log-driver` 96, `export-env` 91, `menu` 40).
+  - 34/35 hàm giống từng byte (bộ trích hàm hiểu heredoc; người kiểm độc lập so lại bằng `declare -f`). `cmd_update` đổi một chỗ: so `manage_toolkit_digest` (băm `manage.sh` + `lib/*.sh`) thay vì chỉ `manage.sh`, để một lượt `git pull` chỉ đổi lib vẫn chạy lại bằng mã mới.
+  - Cửa vào: tìm `lib/` theo đường dẫn thật của script (theo symlink, không theo CWD); thiếu lib thì dừng trước mọi thao tác; toàn bộ nằm trong khối `{ … exit }` (không đọc dở tệp đang bị `git pull` ghi đè); lượt chạy lại dùng `exec`.
+  - Test sandbox với `git pull` thật từ origin trần (`tests/ops-scripts-sandbox.test.ts`, `tests/_ops-sandbox.ts`): (a0) `manage.sh` của `main` (`7dfed8c`, fixture `manage-main-7dfed8c.sh`) → bản tách: lần Update đầu chạy hết bằng mã cũ (exit 0), lần sau dùng bản tách; (a) bản nguyên khối có bước exec lại (`adb47a2`) → bản tách; (b) bản tách → bản chỉ đổi lib. **Đỏ trước:** lib theo CWD, digest chỉ băm `manage.sh`, thiếu `exec`. 22 kịch bản bản cũ vs bản mới cho exit code / stdout / stderr / tệp ghi giống nhau.
+  - Guard đọc `manage.sh` + mọi `lib/*.sh` qua `tests/_manage-sh-source.ts` (suy từ thư mục + danh sách mong đợi). Lib chỉ được khai hàm: guard nạp từng lib dưới `set -euo pipefail` và so `$-`, `PWD`, `umask`, `set +o`, `shopt -p` trước/sau (`common.sh` chỉ được miễn biến + một `trap EXIT`). CI có bước shellcheck `-x -a` cho `production/` (`SHELLCHECK_OPTS`).
+  - **Kiểm chứng độc lập: 1 lượt, 0 CRITICAL** (W1–W4, S1–S3 sửa ở `8c23537`). W1/S1: test đường dẫn có `%` chép cả toolkit; mọi lượt sandbox đỏ nếu thấy "không đọc được …/lib/" — trước đó test xanh rỗng khi toolkit không nạp được. W2: shellcheck `-x -a` ở CI + `CI-CD.md`. W3: guard trạng thái shell. W4: lần Update đầu từ `main` chạy hết bằng mã cũ — ghi rõ + test. Người kiểm chạy 34 kịch bản cũ vs mới giống nhau (exit code, stdout/stderr, lệnh docker, tệp ghi + quyền, `.env` 600), tự cập nhật qua symlink `/www/wwwroot`, và lùi PR này cũng an toàn.
+  - **Việc của người vận hành sau deploy:** chạy `./manage.sh` Update **hai lần** ở lần đầu (bản trên VPS là của `main`, chưa có bước exec lại). `lib/` phải nằm cạnh `manage.sh` — đừng chép riêng `manage.sh`. Đừng `chmod +x` các lib: lượt `git pull` kế tiếp sẽ dừng (`production/README.md` có cách xử lý).
+- **4.1 `app/pages/admin/ai/moderation.vue`** (PR #154, `cec33cd`, gộp `f6e3c86`; token cho panel ở `ee3dfc5`): 1155 → 394.
+  - 4 panel chỉ hiển thị trong `app/components/admin/ai/moderation/` (`ModerationSettingsPanel` 150, `ModerationQueuePanel` 177, `ModerationRulesPanel` 139, `ModerationWorkerPanel` 255) + `useModerationWorker` (217). Trang giữ state, `loadData`, cảnh báo `role="alert"` của lần tải đầu. Bỏ 12 ép kiểu `$fetch` (kiểu suy từ handler); hàng đợi dùng `useAdminList`.
+  - Lỗi tải lại sau lần đầu hiện **trong tab** đó (slot `#error`), và "Thử lại" chỉ đọc lại tab đó → chỉnh sửa cài đặt chưa lưu không mất.
+  - DOM giống bản gốc ở 66/68 trạng thái. Hai khác biệt là bản sửa: `aria-hidden` cho khối khung chờ; cảnh báo lỗi hàng đợi thay cho hàng cũ dưới bộ lọc mới.
+  - **Lỗi đã sửa, mỗi lỗi có test đỏ trên bản gốc:** câu trả lời cũ của bộ lọc đè danh sách mới; lỗi đổi bộ lọc/trang không hiện gì (unhandled rejection); thao tác thành công vẫn báo lỗi khi chỉ bước đọc lại hỏng; xoá mục cuối của trang cuối hiện "Không có mục nào"; hẹn giờ chuyển trang sau khởi động lại không huỷ khi rời trang.
+  - 53 test chạy trang thật trên DOM tối giản (`tests/admin-moderation-page.test.ts`, harness mới `tests/_sfc-mount.ts`). Test đọc mã nguồn chuyển sang đọc đúng phần đang chứa đoạn bị ghim (`tests/_moderation-page-parts.ts`).
+  - **Còn mở — cần quyết định sản phẩm:** chế độ "Chỉ dùng bộ lọc từ khóa" không lưu được. Máy chủ suy cả `enabled` lẫn `mode` từ một cột `isActive`, nên chọn từ khóa mà vẫn tick bật thì lưu thành AI. Phải chọn hai trạng thái hay ba trước khi sửa schema.
+- **4.1 `app/pages/admin/media/scan.vue`** (PR #155, `995bfb0`, gộp `fe9081b`): 908 → 228.
+  - 5 panel chỉ hiển thị trong `app/components/admin/media/scan/` (`ScanFolderPanel` 157, `StorageSyncPanel` 192, `RepairUrlsPanel` 54, `RepointDomainPanel` 83, `SelfHealPanel` 104) + `useMediaStorageJobs` (262: quét/đồng bộ — bắt đầu, hỏi 3 giây, huỷ, đặt lại). Kiểu phản hồi suy từ 12 handler; bỏ 12 ép kiểu `$fetch`.
+  - DOM giống bản gốc ở 62/62 ảnh chụp trạng thái (kể cả sau codemod token); request giống hệt.
+  - **Lỗi đã sửa (4 test đỏ trên bản gốc; 32/36 xanh → 36/36):** rời trang khi lượt đọc trạng thái đầu hoặc POST bắt đầu job còn đang bay làm vòng hỏi 3 giây chạy mãi — `startPolling()` chạy sau `onUnmounted`, toast của job hiện ở trang khác; "Hủy quét/sync" bấm sau khi job vừa xong vẫn báo "Đã yêu cầu hủy" dù máy chủ trả `{ ok: false }`.
+  - 36 test chạy trang thật (`tests/admin-media-scan-page.test.ts`, harness `tests/_sfc-mount-media-scan.ts`): 409 khi đang khôi phục, 409 đang chạy, lỗi job tới toast, dừng hỏi khi rời trang…
+  - Token: trang 0 hex; 89 hex còn lại (màu chưa có token + 3 giữ thứ tự cascade) nằm ở panel.
+- **4.1 `app/pages/admin/profile.vue`** (PR #163, `57d5fcb`, gộp `0eb97bd`): 901 → 277.
+  - 6 component hiển thị trong `app/components/admin/profile/` (`ProfilePasswordSection` 56, `ProfileMfaFactorList` 85, `ProfileRecoveryCodesCard` 84, `ProfileEnrollDialog` 170, `ProfileDisableDialog` 66, `ProfileRecoveryDialog` 77) + `useProfilePassword` (51) / `useProfileMfaFactors` (239) / `useProfileRecoveryCodes` (144). Trang giữ `loadMfa` + cảnh báo `role="alert"`, khung chờ, cảnh báo khoá ngoài. Bỏ 8 ép kiểu `$fetch` (kiểu suy từ 7 handler).
+  - DOM giống bản gốc ở 173/173 ảnh trạng thái của 31 test không đổi hành vi; 11 test sửa lỗi giống tới bước ngay trước bước lỗi, khác đúng ở bước đó. Selector của `tests/e2e/admin-mfa.spec.ts` giữ nguyên.
+  - **Lỗi đã sửa (11 test đỏ trên bản gốc; 31/42 → 42/42).** Gốc chung: Huỷ, ✕ và nền đóng được hộp thoại đang bận. Câu trả lời muộn của hộp thoại đã Huỷ ghi lỗi / đóng / đổi bước của hộp thoại mở sau; hai lượt đọc trạng thái MFA chồng nhau hiện trạng thái cũ; Enter hai lần gửi hai request (bật, xác nhận, tắt, tạo mã); hai lô mã dự phòng về sai thứ tự để lô đã bị huỷ ở lại trên màn hình.
+  - 42 test chạy trang thật (`tests/admin-profile-page.test.ts`, `tests/_profile-page-harness.ts` trên `tests/_sfc-mount.ts`, nay nhận component auto-import + auto-import cho template). `admin-modal-dialog` kiểm 3 hộp thoại mới dùng `submitOnEnter`.
+  - **Còn mở:** chuyển 3 hộp thoại sang `AdminModal` (bẫy focus, chặn đóng khi đang gửi) — đổi DOM nên để PR sau; `ProfileActivityHistory.vue` còn 2 ép kiểu và không chặn lượt đọc cũ khi đổi trang nhanh; ô `enroll-sp-confirm` (bước 2 của mật khẩu cấp 2) hiện sẵn mật khẩu vừa gõ — cần quyết định sản phẩm.
+- **4.3 `server/services/moderation-worker.ts`** (PR #156, `af44930`, gộp `26ff70b`): 822 → barrel 50 + `moderation-worker-{types (66), persist (113), prescreen (102), check (332), rescan (262)}.ts`.
+  - 22 khai báo cấp đỉnh giống từng byte (so AST); API 9 giá trị + 11 kiểu giữ nguyên (kiểm 3 cách); không vòng import; không phần nào import barrel.
+  - Guard ranh giới `tests/service-split-boundaries.test.ts` thêm nhóm `moderation-worker` (suy từ thư mục, trừ 2 tệp anh em nêu tên — `tests/_moderation-worker-family.ts`), kiểm vòng import từ barrel và dạng barrel. **Luật 6 mới:** nơi gọi ngoài nhóm chỉ đi qua barrel (7 test mock barrel dựa vào đường này).
+  - **Guard xanh rỗng — đã sửa:** `moderation-always-scan` chỉ đọc một tệp, nên sau khi tách nó không kiểm gì; nay quét cả nhóm.
+  - 12 test hành vi các đường nối (`tests/moderation-worker-seams-behavior.test.ts`), xanh trên bản gốc trước khi tách.
+  - **Còn mở:** luật "một chủ" (luật 4) vốn đỏ trên bản gốc — bộ đếm `workerStats` (`moderation-stats.ts`) bị `moderation-instant` + worker ghi trực tiếp. Miễn trừ có phạm vi đúng 4 tệp (thêm/bớt đều đỏ); sửa gốc (bộ đếm sau hàm) là việc riêng.
+- **4.3 `server/utils/chatbot/chat-policy.ts`** (PR #164, `7645792`, gộp `9ee740b`): 769 → barrel 44 (giữ đường dẫn cũ, chỉ xuất lại theo tên); mã sang `server/services/chat-policy-{contract (46), rate-limit (126), request (26), prompt (73), fallbacks (108), provider (351), answer (130)}.ts`.
+  - 35 khai báo cấp đỉnh giống từng byte; API 15 giá trị + 5 kiểu; không vòng import.
+  - Phần tách KHÔNG đặt cạnh barrel: Nitro auto-import mọi `server/utils/**`, nên sẽ thành 20 import trùng và lộ helper riêng (`callProvider`) thành auto-import — `tests/server-utils-unique-exports.test.ts` đỏ.
+  - **Guard bảo mật quét cả nhóm** qua `tests/_chat-policy-family.ts` (suy từ thư mục + danh sách mong đợi; đỏ nếu có phần đặt cạnh barrel): cấm `sql.raw`/LIKE tự ghép trong tìm bài chatbot, `xForwardedFor`, bucket trong tiến trình. Trước đó guard chỉ đọc tệp `chat-policy.ts`; nay cài lỗi vào một phần tách là đỏ.
+  - Guard ranh giới thêm nhóm `chat-policy` (luật 1/4/5/6; luật 4 canh `AI_QUOTA_RULE`, `AI_IP_CEILING_RULE`).
+  - 13 test hành vi các đường nối (`tests/chat-policy-seams-behavior.test.ts`), xanh trên bản gốc trước khi tách. Lần đầu có test cho đường AI gateway + 5 công cụ; truy vấn bài biên dịch sang MySQL để chứng minh chuỗi của model chỉ đi vào tham số.
+- **Kiểm chứng:** ngoài `manage.sh` (trên), PR của năm lần tách không ghi lượt kiểm chứng độc lập. Bằng chứng: DOM/request so với bản gốc, test đỏ trên bản gốc cho từng lỗi, khai báo giống từng byte (AST), và E2E 116/116 trên đỉnh tích hợp (§ 53).
+- **Còn mở (4.1/4.2/4.3, `wc -l` trên `9ee740b`):**
+  - 4.1: `AiProvidersTab.vue` 1018. `admin/content/articles/index.vue` 1272 và `AnalyticsLiveDashboard.client.vue` 1060 bị khoá có lý do, không tách;
+  - 4.2: `profile.vue` 741, `ArticleComments.vue` 732, `ArticleDetail.vue` 730, `news/index.vue` 724, `ChatWidget.vue` 620 (và `useChatbot.ts` 857);
+  - 4.3: `ai-gateway.ts` 732, `moderation-regex.ts` 686;
+  - gộp hai harness `tests/_sfc-mount.ts` và `tests/_sfc-mount-media-scan.ts` thành một.
+
+### 53. Đợt 3 — nhánh tích hợp `wave3/integration` (2026-10-25 → 2026-10-27)
+
+- `git log --first-parent wave2/integration..9ee740b` có 29 mục:
+  - 24 lượt gộp của 23 nhánh — 21 PR #144–#164, cùng `wave3/7-3-docs-facts` và `wave3/languages-followups` (không có PR riêng). `wave3/5-2-behaviour-tests` gộp hai lần; lần sau mang bản sửa `history.get` (`50f031d`);
+  - 5 commit trực tiếp: `adb47a2` (`--rebaseline` ratchet sau khi gộp đỉnh Đợt 2), `166c84f`/`fe99e9d`/`b055de4` (hạ trần độ dài tệp), `ee3dfc5` (token cho 4 panel kiểm duyệt tách trước khi 3.3 gộp).
+  - Xung đột gỡ lúc gộp: `docs/test-coverage-baseline-2026-10.md` (`e17db2f`), `docs/decisions/README.md` (`c83dc00`), `file-length.baseline.json` (`b8cad0f`), `hex-colors.baseline.json` (`f6e3c86`), `docs/decisions/refactor-large-files.md` (`fe9081b`), `AiDashboardTab.vue` + `TranslationsTab.vue` + `package.json` (`3371285`).
+- **Kiểm chứng trên đỉnh `9ee740b`** (2026-10-27):
+  - `npm test` 5888 / 5834 pass / 0 fail / 54 skip, gồm `tests/ratchets/*.test.ts` — +816 test so với § 43 (5072 / 5019 / 0 / 53);
+  - E2E 116/116, Playwright 5,0 phút (chạy dưới giới hạn tài nguyên `cap80`);
+  - chưa chạy lại integration trên đỉnh này (lượt gần nhất: 22/22 suite trên `wave2/integration` `3d69836`, CLAUDE.md § Test).
+- **Kiểm chứng độc lập trên đỉnh `7946592`** (2026-10-27, mọi lệnh nặng qua `cap80`, lần lượt): typecheck **0 lỗi**; `npm test` 5888 / 5834 / 0 / 54; lint **0 lỗi / 16 cảnh báo**; `npm run test:coverage` xanh (ratchet độ phủ qua); `docs:facts` sạch. **0 CRITICAL, 2 WARNING, 5 SUGGESTION.** Bằng chứng chính cho các lát chưa từng có lượt kiểm độc lập:
+  - hai module tách: khai báo cấp đỉnh giống từng byte (22/22, 35/35), API 20 + 20 tên không đổi, không vòng import; cài `sql.raw`/`xForwardedFor`/bucket trong tiến trình vào một phần tách (kể cả một tệp con MỚI chưa track), cài ngưỡng `content.length >= 5` vào `moderation-instant.ts` → guard đỏ;
+  - token: 4722/4722 cặp đổi tên trong năm commit token đúng giá trị/tiền tố/opacity; histogram lớp màu của ba trang tách giống bản gốc (178, 118, 157); codemod chạy thử trên `app shared server` đề xuất 0 thay thế, 148 hex trùng giá trị token đều có lý do `order`/`order-merge`; biên dịch Tailwind thật: mọi lớp token có CSS trừ `bg-brand-700/12` và `/8` (dạng hex cũ cũng không có — lỗi có sẵn, đã ghi ở § 46);
+  - đột biến đỏ cho § 47 (escape tiêu đề Markdown, bản chép `slugify`, danh sách cổng SMTP), § 48 (`..` ở `/uploads`, phạm vi `readerId` của thông báo, lọc HTML lúc đọc), § 50 (đăng xuất không tăng `tokenVersion`, thiếu `linkedAt`, `to` của lịch sử không cộng một ngày), § 46 (tắt bảo vệ thứ tự cascade → 24 test đỏ).
+- **`wave3/verify-fixes` — sửa theo lượt kiểm trên**, mỗi mục có bằng chứng đỏ-trước:
+  - W1: nâng mức nền độ phủ (§ 44);
+  - W2: `tests/_moderation-page-parts.ts` suy tập tệp từ thư mục `app/components/admin/ai/moderation/` (danh sách mong đợi là tập con) và thêm `utils/moderation-format.ts` + `types/moderation.ts` (mã tách ra từ trang); vòng "panel không fetch / không `role="alert"`" của `admin-moderation-page` dùng tập suy ra. Trước: bản chép `rescanSummaryText` cài vào `moderation-format.ts` xanh 6/0, một panel mới có `$fetch` + `role="alert"` xanh 2/0; sau: cả hai đỏ;
+  - S1: `useMediaStorageJobs.ts` — câu trả lời của POST bắt đầu/gỡ kẹt về sau khi đã rời trang thì bỏ: không toast "Đã khởi tạo job…", không đọc trạng thái trực tiếp (lượt đọc đó từng toast kết quả job ở trang khác). Test mới trong `admin-media-scan-page` đỏ trước (4 lượt đọc sau khi rời trang);
+  - S2: `close*()` của ba hộp thoại hồ sơ đặt lại `busy` — hộp thoại đã đóng (Huỷ khi đang gửi, hoặc tự đóng sau khi thành công) không còn kẹt "bận" tới lần mở sau. `tests/admin-profile-dialog-busy.test.ts` đỏ 4/4 trước;
+  - S4: chú thích đầu `scripts/docs-facts.ts`: chỉ chạy trên máy dev (cần `.git` + devDependencies `typescript`/`js-yaml`), không chạy trong container;
+  - S5: guard "panel không fetch" của `/admin/media/scan` đỏ khi thư mục panel vắng hoặc rỗng (trước: xanh rỗng khi thư mục bị đổi tên).
+- Việc còn mở của cả đợt: mục "(Đợt 3)" trong "Chưa xử lý" ngay dưới đây.
+
+### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.
 
@@ -1864,23 +2128,23 @@ Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏ
 - `headR2Object` vẫn trả `false` cho lỗi mạng/xác thực/5xx (chỉ cấu hình hỏng mới ném): self-heal gặp R2 chập chờn sẽ coi object là mất và đổi thumbnail + `media.url` sang ảnh mặc định (có bản `pre-self-heal` trước đó).
 - `articles/export-csv` và xuất Google không có cổng quyền ở đầu handler (phạm vi bài lọc qua `articleReadScope` / kiểm từng bài).
 - `server/middleware/https-redirect.ts` tin `x-forwarded-host` thô.
-- `fetch` trần: `ai/delify/status`, `ai/delify/sync`, `server/utils/ai-budget.ts` tới `router.delify.vn`.
-- `server/utils/smtp-test-config.ts` giữ một bản chép logic của `shared/settings-credential-rules.ts` (có test đối chiếu, nhưng vẫn là hai bản).
+- ~~`fetch` trần: `ai/delify/status`, `ai/delify/sync`, `server/utils/ai-budget.ts` tới `router.delify.vn`.~~ (đóng ở § 49: qua `delify-usage.ts` + `safeProviderRequest`; guard `server-bare-fetch-guard`)
+- ~~`server/utils/smtp-test-config.ts` giữ một bản chép logic của `shared/settings-credential-rules.ts` (có test đối chiếu, nhưng vẫn là hai bản).~~ (đóng ở § 47: import + re-export từ `shared/`)
 - Bộ nhớ đệm provider giữ baseUrl cũ tới 60 s sau khi đổi.
 - `deleteMediaItem` rò bản gốc local của video đã lên R2.
 - Media Portal: kiểm "nằm dưới `public/uploads`" của ảnh nguồn thumbnail là so chuỗi đường dẫn — thư mục cha là symlink nằm dưới uploads vẫn lọt (như route `/uploads` hiện có; tệp symlink thì bị `lstat` chặn).
 - `ai/moderation/rules/[id].put.ts` không kiểm `severity`/`action`/`category`.
 - ReDoS: parser + chạy có trần cửa sổ giảm mạnh rủi ro nhưng vẫn **không** chứng minh loại trừ.
-- `rate_limit.database_read_failed` không được giới hạn tần suất log như `database_write_failed`.
+- ~~`rate_limit.database_read_failed` không được giới hạn tần suất log như `database_write_failed`.~~ (đóng ở § 45, W3 của lượt kiểm CSP 1)
 - `server/services/analytics-maintenance.ts` vẫn tự `createPool`.
 - Trang 404 trên tuyến `swr` mang `s-maxage=60, stale-while-revalidate` (đo với CSDL seed, 2026-10-14: `/news/<chuyên mục không có>`, `/news/<x>/<bài không có>`, `/role-models/<x>`) — CDN có thể giữ 404 tới 60 s sau khi bài/chuyên mục được tạo; `/<slug>`/`/video/<x>` không có header này.
 - Đồng bộ media: bản cũ được lưới an toàn giữ lại không bao giờ bị xoá sau; tệp trùng tên từ tháng khác chặn hàng đó đồng bộ; viết lại URL làm tràn cột `VARCHAR` thì hàng đó rollback mỗi lượt; cache SWR có thể phục vụ trang trỏ tới bản cũ vừa xoá tới 60 s.
-- Tệp vượt ngưỡng ~400 dòng mà đợt rà soát này làm dài thêm (`wc -l` 2026-10-14 sau G1–G3; trong ngoặc: `origin/main` 25d0e44): `server/services/media-portal.ts` 1169 (1133), `server/services/comments.ts` 1134 (1122), `app/pages/admin/ai/moderation.vue` 1134 (1030), `app/composables/useChatbot.ts` 857 (804), `server/services/moderation-worker.ts` 767 (489), `server/utils/chatbot/chat-policy.ts` 763 (740), `server/services/ai-gateway.ts` 732 (685), `app/components/ArticleDetail.vue` 730 (717), `server/services/moderation-regex.ts` 686 (mới), `app/pages/admin/settings/media-portal.vue` 671 (645), `server/utils/chatbot/outbound.ts` 588 (388), `server/services/livestream-chat.ts` 536 (524), `app/components/ModelArticlesListPage.vue` 535 (mới), `app/pages/admin/settings/backup.vue` 529 (518), `server/services/backup-restore-guards.ts` 477 (mới; 482 sau § 20).
+- Tệp vượt ngưỡng ~400 dòng mà đợt rà soát này làm dài thêm (`wc -l` 2026-10-14 sau G1–G3; trong ngoặc: `origin/main` 25d0e44): ~~`server/services/media-portal.ts` 1169 (1133)~~ (tách ở § 41), ~~`server/services/comments.ts` 1134 (1122)~~ (§ 42), ~~`app/pages/admin/ai/moderation.vue` 1134 (1030)~~ (§ 52), `app/composables/useChatbot.ts` 857 (804), ~~`server/services/moderation-worker.ts` 767 (489)~~ (§ 52), ~~`server/utils/chatbot/chat-policy.ts` 763 (740)~~ (§ 52), `server/services/ai-gateway.ts` 732 (685), `app/components/ArticleDetail.vue` 730 (717), `server/services/moderation-regex.ts` 686 (mới), `app/pages/admin/settings/media-portal.vue` 671 (645), `server/utils/chatbot/outbound.ts` 588 (388), `server/services/livestream-chat.ts` 536 (524), `app/components/ModelArticlesListPage.vue` 535 (mới), `app/pages/admin/settings/backup.vue` 529 (518), `server/services/backup-restore-guards.ts` 477 (mới; 482 sau § 20).
 - Xoay vòng backup: một lượt khôi phục bắt đầu đúng lúc vòng xoá đang chạy sẽ thất bại sạch thay vì được ngăn trước; `deleteBackup` thủ công vẫn xoá được tệp đang khôi phục. Khôi phục chạy bằng `DB_USER` (root theo mặc định compose). Archive media 10,9 GB trong `backups/` nay qua được bước kiểm (trần 15 GiB, § 20), nhưng khôi phục theo tên chạy đồng bộ trong một request (~34 s kiểm + một lượt `tar -xzf`): sau nginx `location /` (`proxy_read_timeout` mặc định 60 s) trình duyệt có thể nhận 504 trong khi máy chủ vẫn giải nén; không kiểm dung lượng đĩa trống trước khi giải nén; một mục đơn ≥ 8 GiB do GNU tar ghi (size base-256 ở `--format=gnu`, `size=` pax + 0 trong header ở `--format=posix` — đã kiểm với GNU tar 1.35) vẫn bị từ chối `archive_unparseable`, bất kể trần.
 - Hai nơi ghi `analytics_noc_minute_aggregates` với ngữ nghĩa khác nhau.
 - Cột `GEOMETRY` (nếu thêm sau này) sẽ làm dump của app hỏng.
 - Compose: `DB_HOST`/`DB_PORT` không truyền qua (MySQL ngoài chưa hỗ trợ), service mysql không có `image:` riêng; chú thích healthcheck mysql trong `docker-compose.yml` vẫn ghi "Authenticated ping" — sai: `mysqladmin ping` trả 0 cả khi sai mật khẩu.
-- `profile/history.get.ts` còn lọc ngày theo mẫu cũ (chưa qua `vn-day-range.ts`).
+- ~~`profile/history.get.ts` còn lọc ngày theo mẫu cũ (chưa qua `vn-day-range.ts`).~~ (đóng ở § 50: `vietnamDayStart`)
 - Test: suite `analytics-ddl`/`chatbot-ddl` không xoá DB `_fresh`/`_partial` của chúng; `media-self-heal-integration` ghi một `cdkt-*-pre-self-heal.sql.gz` vào `backups/` **của repo** mỗi lượt chạy; chú thích trong `ci.yml` còn ghi "203 tệp non-integration" (thực tế 285, đếm 2026-10-24 trên nhánh tích hợp Wave 1); ~~Playwright đầy đủ (88 test) mất ~207 s trên máy dev so với `globalTimeout` 300 s (dư ~93 s)~~ (§ 30 nâng `globalTimeout` lên 480 s; nhánh tích hợp Wave 1, 2026-10-24: 93 test, 291 s cả khởi động trên máy dev, dư ~189 s) — runner CI chậm hơn vẫn có thể chạm trần, và khi chạm trần teardown bị bỏ (server mồ côi giữ cổng 3123).
 - Việc của chủ repo trên GitHub: bật branch protection cho `main` (PR + status check bắt buộc, kèm job cổng CI luôn chạy — xem `CI-CD.md`), cân nhắc `environment: production` có người duyệt, xoá environment lạc tên `VPS_HOST`; giấy phép Font Awesome Pro trong repo **public**; hash bcrypt của admin trong `migrations/002_seed_data.sql`; lịch sử git ~699 MB có dump.
 - (§ 21) Id bài viết vẫn dò được (tra theo id trần rồi 403 theo loại) ở: `articles/[id]/boost.delete.ts`, `articles/[id]/export.get.ts`, `setArticleCommentsEnabled` (`services/articles.ts`, qua `bulk-comments.post.ts`), `article-translation-bulk.ts` (id thiếu bị bỏ qua, id khác loại làm hỏng cả lô), `article-translations.ts` (4 chỗ). `tests/audit-access-control.test.ts:119` vẫn kỳ vọng 403 cho GET khác loại vì mock bỏ qua WHERE — hành vi thật (404) do `article-id-oracle-behavior` khẳng định.
@@ -1905,3 +2169,14 @@ Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏ
 - (§ 33) Mã dự phòng: phản hồi xác nhận hỏng SAU commit (thu hồi phiên/cookie/audit) thì lô mã đã lưu mà cán bộ chưa thấy — tạo lại ở trang "Tài khoản của tôi" (cần một yếu tố đang bật, đã có). Thu hồi phiên chưa nằm trong transaction vì `revokeSessions` dùng pool riêng.
 - (§ 33) Tiến trình chết đúng giữa `ensureColumn('display_name_reserved')` và lượt điền cờ → tên Google dành riêng của hàng có sẵn hiện nguyên văn tới lần đăng nhập kế tiếp của người đó (lượt điền không chạy lại vì cột đã có).
 - (§ 33) Danh sách người đọc ở admin (`services/readers.ts`) và prompt kiểm duyệt AI (`ai-moderate.post.ts`) vẫn đọc tên Google thô — chủ đích (cán bộ cần thấy tên thật), không phải đường hiển thị công khai.
+- (Đợt 3, § 45) CSP: task 2.3 (tóm tắt báo cáo vào `realm-safety.md`) và giai đoạn 2–5 (task 6.1–6.4: bỏ host script không dùng, băm script inline, loader theo dõi cùng nguồn, bỏ `'unsafe-inline'` khỏi `script-src` thi hành) cần khoảng 2 tuần báo cáo trên production SAU khi deploy. Điều kiện trước: nginx khôi phục IP thật sau Cloudflare (`real_ip`) — nếu không, ngân sách theo mạng và `sources` đếm IP biên.
+- (Đợt 3, § 46) Task 3.7 / D-T1 — **chờ anh quyết**: trang mẫu màu cho các màu gần giống, rồi một PR đổi hình kèm ảnh chụp (3946 hex còn lại). Cùng chờ quyết: `bg-brand-700/12` và `/8` trên 14 thanh khung chờ `docs/skeletons` không sinh CSS (trong suốt từ trước tới giờ); xác nhận giá trị `ink`/`ink-secondary`/`surface` theo ui-dna.
+- (Đợt 3, § 52) Tệp lớn còn lại (`wc -l` trên `9ee740b`): 4.1 `AiProvidersTab.vue` 1018; 4.2 `profile.vue` 741, `ArticleComments.vue` 732, `ArticleDetail.vue` 730, `news/index.vue` 724, `ChatWidget.vue` 620, `useChatbot.ts` 857; 4.3 `ai-gateway.ts` 732, `moderation-regex.ts` 686. Hai harness mount trang (`_sfc-mount.ts`, `_sfc-mount-media-scan.ts`) chưa gộp.
+- (Đợt 3, § 52) `admin/profile.vue`: ba hộp thoại MFA chưa dùng `AdminModal` (đóng được khi đang gửi, không bẫy Tab); `ProfileActivityHistory.vue` còn 2 ép kiểu và không chặn lượt đọc cũ; ô `enroll-sp-confirm` hiện sẵn mật khẩu vừa gõ (cần quyết định sản phẩm).
+- (Đợt 3, § 49) Phần còn lại của 7.1: 290 chỗ ép kiểu `$fetch` trong 102 tệp (ratchet `fetch-casts`).
+- (Đợt 3, § 50) Các lát 5.2 tiếp theo: bốn handler giữ dữ liệu, `backup-drive-oauth-crypto.ts`, rồi R3 (media/tải lên), R4 (AI/chatbot) theo `docs/test-coverage-baseline-2026-10.md`. Lát 7.2 kế tiếp: 10 ứng viên ở `docs/decisions/test-strategy.md`.
+- (Đợt 3, § 47) Kiểm kê trùng lặp: 21 nhóm thật T4–T24 + phần form của T2 chưa làm. Lỗi xuất đã ghi, chưa sửa: Docs bỏ chữ trần trong `<div>`, Markdown mất vỏ `<table>`, `escapeMd` biến `1. Mục` thành `\1. Mục`, URL liên kết/ảnh trong Docs chưa giải mã, khối mã Docs chưa dùng font đơn cách, tiêu đề ghi thô vào đầu bản xuất Markdown.
+- (Đợt 3, § 52) Chế độ kiểm duyệt "Chỉ dùng bộ lọc từ khóa" không lưu được (máy chủ suy `enabled` lẫn `mode` từ một cột `isActive`) — **quyết định sản phẩm**: hai trạng thái hay ba, rồi mới sửa schema.
+- (Đợt 3, § 52) Bộ đếm `workerStats` (`moderation-stats.ts`) bị 4 tệp ghi trực tiếp — miễn trừ luật "một chủ" có phạm vi đúng 4 tệp; sửa gốc (bộ đếm sau hàm) là việc riêng.
+- (§ 35, D8) Deadlock ghi analytics: `total` đầu giảm deadlock chứ không về 0 khi tải kéo dài (nạn nhân thử lại tối đa 3 lần). Sửa gốc chưa làm: đổi PK của `analytics_live_minute_buckets`/`analytics_live_deduplication` thành khoá tự nhiên (bỏ `id` tự tăng) để gỡ tranh chấp supremum.
+- (Đợt 3) Việc của người vận hành khi deploy Đợt 3: kiểm `base_url` của hàng `delify` là `https://router.delify.vn/...`; sao lưu CSDL rồi chạy `npm run db:repair-null-translations` (xem trước, rồi `--apply`) (§ 49); chạy `./manage.sh` Update **hai lần** ở lần đầu, giữ `lib/` cạnh `manage.sh`, không `chmod +x` các lib (§ 52); cấu hình `real_ip` của nginx (§ 45).

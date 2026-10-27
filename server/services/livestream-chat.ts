@@ -344,7 +344,7 @@ export async function sendChatMessage(
   // ── Broadcast ngay, kiểm duyệt nền ──
   // Tin nhắn hiện ngay cho mọi người xem qua SSE. AI kiểm duyệt chạy nền
   // (không block response): nếu AI flag vi phạm, broadcast removal event.
-  // Hàng KHÔNG bị xoá: `applyAutoHide` (moderation-worker.ts) đã đánh dấu
+  // Hàng KHÔNG bị xoá: `applyAutoHide` (moderation-worker-persist.ts) đã đánh dấu
   // `is_deleted = 1` — lịch sử công khai lọc nó ở tầng CSDL, còn tác giả, IP,
   // thời điểm ở lại làm bằng chứng cho hàng chờ duyệt. Người xem thấy tin biến
   // mất thay vì chờ 11 giây cho AI trả lời trước khi tin hiện.

@@ -1,10 +1,10 @@
 <template>
-  <section class="section bg-[#F8FAF7]">
+  <section class="section bg-surface">
     <div class="container">
       <div class="text-center max-w-[600px] mx-auto mb-[40px]">
-        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
-        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || t('block_role_title') }}</h2>
-        <p v-if="d.description" class="text-[0.95rem] text-[#4A5545] leading-[1.5]">{{ d.description }}</p>
+        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
+        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-ink mb-3">{{ d.title || t('block_role_title') }}</h2>
+        <p v-if="d.description" class="text-[0.95rem] text-ink-secondary leading-[1.5]">{{ d.description }}</p>
       </div>
 
       <!-- Tự chuyển slide do `createCarouselAutoplay` quyết định (D23): CHỈ nút
@@ -48,8 +48,8 @@
                   sizes="256px sm:384px lg:512px"
                 />
               </figure>
-              <span v-if="model.location" class="block text-[0.7rem] font-extrabold text-[#4A6741] uppercase tracking-[0.5px] leading-[1.6] mt-3 mb-1 truncate">{{ model.location }}</span>
-              <h3 class="text-[0.95rem] font-extrabold text-[#1E251C] leading-[1.35] line-clamp-2 transition-colors group-hover:text-[#4A6741]">{{ model.name }}</h3>
+              <span v-if="model.location" class="block text-[0.7rem] font-extrabold text-brand-600 uppercase tracking-[0.5px] leading-[1.6] mt-3 mb-1 truncate">{{ model.location }}</span>
+              <h3 class="text-[0.95rem] font-extrabold text-ink leading-[1.35] line-clamp-2 transition-colors group-hover:text-brand-600">{{ model.name }}</h3>
             </nuxt-link>
           </article>
         </div>
@@ -57,7 +57,7 @@
         <!-- Nút mũi tên tròn đè hai bên mép (Desktop) -->
         <button
           type="button"
-          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-1 sm:left-[-10px] xl:left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-1 sm:left-[-10px] xl:left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-brand-600 items-center justify-center cursor-pointer z-10 transition hover:bg-brand-600 hover:text-white hover:border-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
           @click="prevSlide"
           :aria-label="t('carousel_prev')"
         >
@@ -65,7 +65,7 @@
         </button>
         <button
           type="button"
-          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-1 sm:right-[-10px] xl:right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-1 sm:right-[-10px] xl:right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-brand-600 items-center justify-center cursor-pointer z-10 transition hover:bg-brand-600 hover:text-white hover:border-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
           @click="nextSlide"
           :aria-label="t('carousel_next')"
         >
@@ -78,7 +78,7 @@
           <button
             ref="autoplayToggle"
             type="button"
-            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-brand-600 flex items-center justify-center cursor-pointer transition hover:bg-brand-600 hover:text-white hover:border-brand-600 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
             :aria-label="autoplayOn ? t('carousel_pause') : t('carousel_play')"
             @click="toggleAutoplay"
           >
@@ -86,7 +86,7 @@
           </button>
           <button
             type="button"
-            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-brand-600 flex items-center justify-center cursor-pointer transition hover:bg-brand-600 hover:text-white hover:border-brand-600 shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
             :disabled="currentIndex <= 0"
             @click="prevSlide"
             :aria-label="t('carousel_prev')"
@@ -104,7 +104,7 @@
               @click="goToSlide(idx)"
               :class="[
                 'p-1.5 rounded-full transition-colors duration-300 cursor-pointer border-none',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]'
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600'
               ]"
               :aria-label="t('carousel_goto').replace('{n}', String(idx + 1))"
               :aria-current="currentIndex === idx ? 'true' : undefined"
@@ -120,7 +120,7 @@
 
           <button
             type="button"
-            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-brand-600 flex items-center justify-center cursor-pointer transition hover:bg-brand-600 hover:text-white hover:border-brand-600 shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
             :disabled="currentIndex >= totalCards - 1"
             @click="nextSlide"
             :aria-label="t('carousel_next')"

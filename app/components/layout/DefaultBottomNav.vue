@@ -11,7 +11,7 @@
       <button
         v-if="item.featured"
         class="flex-1 relative flex flex-col items-center justify-center gap-0.5 bg-transparent border-none text-[#385130] max-w-[52px] font-extrabold text-[0.65rem] -top-3.5 cursor-pointer transition-all font-[inherit]"
-        :class="{ 'text-[#4A6741]': (item.type === 'chatbot' && isChatOpen) || (item.type === 'drawer' && isMobileMenuOpen) }"
+        :class="{ 'text-brand-600': (item.type === 'chatbot' && isChatOpen) || (item.type === 'drawer' && isMobileMenuOpen) }"
         :aria-pressed="(item.type === 'chatbot' && isChatOpen) || (item.type === 'drawer' && isMobileMenuOpen)"
         :aria-label="navItemLabel(item)"
         @click="item.type === 'link' ? navigateTo(item.url) : $emit('bottom-nav-click', item)"
@@ -29,7 +29,7 @@
       <nuxt-link
         v-else-if="item.type === 'link'"
         :to="item.url || '/'"
-        class="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline text-[#6b7669] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all active:text-[#4A6741]"
+        class="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline text-[#6b7669] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all active:text-brand-600"
         :aria-current="$route.path === item.url ? 'page' : undefined"
       >
         <div

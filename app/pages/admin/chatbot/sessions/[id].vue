@@ -84,7 +84,7 @@ const kindLabel = (kind: string | null) => (kind ? (KIND_LABELS[kind] ?? kind) :
 const kindClass = (kind: string | null) =>
   kind && ['not_found', 'rate_limited', 'disabled', 'error'].includes(kind)
     ? 'bg-[#fff4e0] text-[#8a5a00]'
-    : 'bg-[#eef6ef] text-[#2c6e33]'
+    : 'bg-[#eef6ef] text-brand-700'
 
 onMounted(() => { fetchSession() })
 </script>
@@ -93,12 +93,12 @@ onMounted(() => { fetchSession() })
   <div class="flex flex-col gap-5">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 class="m-0 text-[1.3rem] font-extrabold text-[#122815]">Nội dung phiên trò chuyện</h1>
-        <p class="mt-1 mb-0 break-all text-[0.8rem] text-[#667768]">Mã phiên: {{ sessionId }}</p>
+        <h1 class="m-0 text-[1.3rem] font-extrabold text-brand-950">Nội dung phiên trò chuyện</h1>
+        <p class="mt-1 mb-0 break-all text-[0.8rem] text-ink-muted">Mã phiên: {{ sessionId }}</p>
       </div>
       <nuxt-link
         to="/admin/chatbot/sessions"
-        class="rounded-lg border border-[#c8d6c9] px-3.5 py-2 text-sm font-bold text-[#445546] hover:bg-[#f4f7f4]"
+        class="rounded-lg border border-line-strong px-3.5 py-2 text-sm font-bold text-[#445546] hover:bg-[#f4f7f4]"
       >
         <i class="fa-solid fa-arrow-left mr-1 text-[0.75rem]" aria-hidden="true"></i> Danh sách phiên
       </nuxt-link>
@@ -112,29 +112,29 @@ onMounted(() => { fetchSession() })
     <div v-else-if="loadError" role="alert" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-[#b04a4a]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ loadError }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="fetchSession()">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="fetchSession()">Thử lại</button>
     </div>
 
     <template v-else-if="session">
       <!-- Metadata -->
-      <div class="grid grid-cols-1 gap-4 rounded-xl border border-[#e2ece3] bg-white p-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-4 rounded-xl border border-line bg-white p-5 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <p class="m-0 text-[0.75rem] font-bold uppercase tracking-wide text-[#667768]">Địa chỉ IP</p>
-          <p class="m-0 mt-1 text-[0.95rem] font-bold text-[#122815]">{{ session.ip || 'Không ghi nhận' }}</p>
+          <p class="m-0 text-[0.75rem] font-bold uppercase tracking-wide text-ink-muted">Địa chỉ IP</p>
+          <p class="m-0 mt-1 text-[0.95rem] font-bold text-brand-950">{{ session.ip || 'Không ghi nhận' }}</p>
         </div>
         <div>
-          <p class="m-0 text-[0.75rem] font-bold uppercase tracking-wide text-[#667768]">Trình duyệt</p>
-          <p class="m-0 mt-1 text-[0.95rem] font-bold text-[#122815]">{{ session.browser }}</p>
+          <p class="m-0 text-[0.75rem] font-bold uppercase tracking-wide text-ink-muted">Trình duyệt</p>
+          <p class="m-0 mt-1 text-[0.95rem] font-bold text-brand-950">{{ session.browser }}</p>
           <p v-if="session.userAgent" class="m-0 mt-1 break-all text-[0.7rem] text-[#98a599]">{{ session.userAgent }}</p>
         </div>
         <div>
-          <p class="m-0 text-[0.75rem] font-bold uppercase tracking-wide text-[#667768]">Bắt đầu</p>
-          <p class="m-0 mt-1 text-[0.95rem] font-bold text-[#122815]">{{ fmtDate(session.startedAt) }}</p>
+          <p class="m-0 text-[0.75rem] font-bold uppercase tracking-wide text-ink-muted">Bắt đầu</p>
+          <p class="m-0 mt-1 text-[0.95rem] font-bold text-brand-950">{{ fmtDate(session.startedAt) }}</p>
           <p class="m-0 mt-1 text-[0.7rem] text-[#98a599]">Tin nhắn cuối: {{ fmtDate(session.lastMessageAt) }}</p>
         </div>
         <div>
-          <p class="m-0 text-[0.75rem] font-bold uppercase tracking-wide text-[#667768]">Số tin nhắn</p>
-          <p class="m-0 mt-1 text-[0.95rem] font-bold text-[#122815]">{{ session.messageCount }}</p>
+          <p class="m-0 text-[0.75rem] font-bold uppercase tracking-wide text-ink-muted">Số tin nhắn</p>
+          <p class="m-0 mt-1 text-[0.95rem] font-bold text-brand-950">{{ session.messageCount }}</p>
         </div>
       </div>
 
@@ -143,7 +143,7 @@ onMounted(() => { fetchSession() })
         v-if="session.detectedPhone || session.detectedName"
         class="rounded-xl border border-[#cfe4d1] bg-[#f4faf5] p-5"
       >
-        <p class="m-0 text-[0.8rem] font-bold uppercase tracking-wide text-[#2c6e33]">
+        <p class="m-0 text-[0.8rem] font-bold uppercase tracking-wide text-brand-700">
           <i class="fa-solid fa-id-card mr-1" aria-hidden="true"></i> Thông tin khách đã nêu trong trò chuyện
         </p>
         <div class="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-[0.92rem] text-[#1d4a22]">
@@ -157,10 +157,10 @@ onMounted(() => { fetchSession() })
           </p>
           <ul class="mt-2 flex flex-col gap-1.5">
             <li v-for="sub in relatedSubmissions" :key="sub.id" class="text-[0.85rem] text-[#2c3e2e]">
-              <nuxt-link to="/admin/submissions" class="font-bold text-[#2c6e33] hover:underline">#{{ sub.id }} {{ sub.fullName }}</nuxt-link>
+              <nuxt-link to="/admin/submissions" class="font-bold text-brand-700 hover:underline">#{{ sub.id }} {{ sub.fullName }}</nuxt-link>
               · {{ sub.phone }}
               <span v-if="sub.formTitle"> · {{ sub.formTitle }}</span>
-              <span class="text-[#667768]"> · {{ fmtDate(sub.createdAt) }}</span>
+              <span class="text-ink-muted"> · {{ fmtDate(sub.createdAt) }}</span>
             </li>
           </ul>
         </div>
@@ -170,12 +170,12 @@ onMounted(() => { fetchSession() })
       </div>
 
       <!-- Transcript -->
-      <div class="overflow-hidden rounded-xl border border-[#e2ece3] bg-white">
-        <div class="border-b border-[#e2ece3] bg-[#f8faf8] px-5 py-3">
-          <h2 class="m-0 text-[0.95rem] font-extrabold text-[#122815]">Nội dung trò chuyện</h2>
+      <div class="overflow-hidden rounded-xl border border-line bg-white">
+        <div class="border-b border-line bg-[#f8faf8] px-5 py-3">
+          <h2 class="m-0 text-[0.95rem] font-extrabold text-brand-950">Nội dung trò chuyện</h2>
         </div>
 
-        <div v-if="messages.length === 0" class="px-5 py-10 text-center text-[0.9rem] text-[#667768]">
+        <div v-if="messages.length === 0" class="px-5 py-10 text-center text-[0.9rem] text-ink-muted">
           Phiên này chưa lưu được tin nhắn nào.
         </div>
 
@@ -186,14 +186,14 @@ onMounted(() => { fetchSession() })
             class="flex flex-col gap-1"
             :class="msg.role === 'user' ? 'items-end' : 'items-start'"
           >
-            <span class="text-[0.72rem] font-bold uppercase tracking-wide text-[#667768]">
+            <span class="text-[0.72rem] font-bold uppercase tracking-wide text-ink-muted">
               {{ msg.role === 'user' ? 'Khách' : 'Trợ lý' }} · {{ fmtTime(msg.createdAt) }}
             </span>
             <div
               class="max-w-[85%] whitespace-pre-wrap rounded-xl px-4 py-2.5 text-[0.9rem] leading-relaxed"
               :class="msg.role === 'user'
                 ? 'bg-[#2c6e33] text-white'
-                : 'border border-[#e2ece3] bg-[#f8faf8] text-[#1f2f21]'"
+                : 'border border-line bg-[#f8faf8] text-[#1f2f21]'"
             >{{ msg.content }}</div>
             <span
               v-if="msg.role === 'assistant' && msg.kind"
