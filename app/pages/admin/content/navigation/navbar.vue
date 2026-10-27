@@ -177,30 +177,30 @@ onMounted(loadMenu)
     <div v-if="loading" class="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" role="status" aria-busy="true">
       <span class="sr-only">Đang tải cấu hình menu</span>
       <div class="flex flex-col gap-3" aria-hidden="true">
-        <div class="h-3 w-48 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-3 w-48 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
         <div
           v-for="n in 5"
           :key="'nv-' + n"
           class="rounded-xl border border-line bg-white shadow-sm overflow-hidden"
         >
-          <div class="flex items-center gap-3 px-4 py-3 bg-[#fafcfa]">
-            <div class="w-6 h-11 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none shrink-0"></div>
+          <div class="flex items-center gap-3 px-4 py-3 bg-surface">
+            <div class="w-6 h-11 rounded bg-surface-tint animate-pulse motion-reduce:animate-none shrink-0"></div>
             <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
-              <div class="h-8 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
-              <div class="h-8 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              <div class="h-8 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
+              <div class="h-8 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
             </div>
-            <div class="h-8 w-24 rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none shrink-0"></div>
+            <div class="h-8 w-24 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none shrink-0"></div>
           </div>
         </div>
       </div>
       <div class="rounded-xl border border-line bg-white p-4 flex flex-col gap-3" aria-hidden="true">
-        <div class="h-3 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-        <div class="h-[220px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-3 w-40 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-[220px] w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="loadMenu()">thử lại</button>.
     </div>
@@ -221,7 +221,7 @@ onMounted(loadMenu)
             class="rounded-xl border border-line bg-white shadow-sm overflow-hidden"
           >
             <!-- Item header row -->
-            <div class="flex items-center gap-3 px-4 py-3 bg-[#fafcfa]">
+            <div class="flex items-center gap-3 px-4 py-3 bg-surface">
               <div class="flex flex-col gap-0.5 shrink-0">
                 <button type="button" :disabled="idx === 0" class="w-6 h-5 flex items-center justify-center rounded text-ink-muted hover:bg-line disabled:opacity-30 focus:outline-none" @click="moveItem(idx, -1)" aria-label="Lên trên">
                   <i class="fa-solid fa-chevron-up text-[0.6rem]" aria-hidden="true"></i>
@@ -231,9 +231,9 @@ onMounted(loadMenu)
                 </button>
               </div>
               <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
-                <input v-model="item.label" type="text" placeholder="Nhãn hiển thị" maxlength="80" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-brand-950 font-semibold focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit" />
+                <input v-model="item.label" type="text" placeholder="Nhãn hiển thị" maxlength="80" class="w-full px-3 py-1.5 rounded-lg border border-line text-sm text-brand-950 font-semibold focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit" />
                 <div class="flex flex-col gap-1">
-                  <input v-model="item.url" type="text" placeholder="URL (vd: /about)" maxlength="512" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#334e36] font-mono focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit || item.url === '#'" />
+                  <input v-model="item.url" type="text" placeholder="URL (vd: /about)" maxlength="512" class="w-full px-3 py-1.5 rounded-lg border border-line text-sm text-[#334e36] font-mono focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit || item.url === '#'" />
                   <span v-if="item.url === '#'" class="text-[0.65rem] text-[#8ea98f] leading-none">Chỉ mở dropdown — không cần URL</span>
                 </div>
               </div>
@@ -251,7 +251,7 @@ onMounted(loadMenu)
                 />
                 <span class="hidden sm:inline">Chỉ dropdown</span>
               </label>
-              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-semibold text-[#334e36] hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700 shrink-0" :class="expanded.has(item.id) ? 'bg-surface-tint border-[#8ed694]' : ''" @click="toggleExpanded(item.id)" :aria-expanded="expanded.has(item.id)">
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-semibold text-[#334e36] hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700 shrink-0" :class="expanded.has(item.id) ? 'bg-surface-tint border-brand-300' : ''" @click="toggleExpanded(item.id)" :aria-expanded="expanded.has(item.id)">
                 <i class="fa-solid fa-sitemap text-[0.65rem]" aria-hidden="true"></i>
                 <span>{{ item.children.length ? `${item.children.length} con` : 'Dropdown' }}</span>
                 <i class="fa-solid text-[0.6rem]" :class="expanded.has(item.id) ? 'fa-chevron-up' : 'fa-chevron-down'" aria-hidden="true"></i>
@@ -272,7 +272,7 @@ onMounted(loadMenu)
               </div>
               <div v-if="item.children.length === 0" class="text-xs text-[#afc8b1] py-2">Không có mục con. Bấm "Thêm mục con" để tạo dropdown.</div>
               <div class="flex flex-col gap-2">
-                <div v-for="(child, cidx) in item.children" :key="child.id" class="flex items-center gap-2 rounded-lg bg-[#f7fbf7] border border-line px-3 py-2">
+                <div v-for="(child, cidx) in item.children" :key="child.id" class="flex items-center gap-2 rounded-lg bg-surface border border-line px-3 py-2">
                   <div class="flex flex-col gap-0.5 shrink-0">
                     <button type="button" :disabled="cidx === 0" class="w-5 h-4 flex items-center justify-center rounded text-[#8ea98f] hover:bg-line disabled:opacity-30 focus:outline-none" @click="moveChild(idx, cidx, -1)">
                       <i class="fa-solid fa-chevron-up text-[0.5rem]" aria-hidden="true"></i>
@@ -281,8 +281,8 @@ onMounted(loadMenu)
                       <i class="fa-solid fa-chevron-down text-[0.5rem]" aria-hidden="true"></i>
                     </button>
                   </div>
-                  <input v-model="child.label" type="text" placeholder="Nhãn mục con" maxlength="80" class="flex-1 min-w-0 px-2.5 py-1 rounded-lg border border-[#dce8dd] text-sm font-semibold text-brand-950 focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit" />
-                  <input v-model="child.url" type="text" placeholder="URL" maxlength="512" class="flex-1 min-w-0 px-2.5 py-1 rounded-lg border border-[#dce8dd] text-sm font-mono text-[#334e36] focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit" />
+                  <input v-model="child.label" type="text" placeholder="Nhãn mục con" maxlength="80" class="flex-1 min-w-0 px-2.5 py-1 rounded-lg border border-line text-sm font-semibold text-brand-950 focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit" />
+                  <input v-model="child.url" type="text" placeholder="URL" maxlength="512" class="flex-1 min-w-0 px-2.5 py-1 rounded-lg border border-line text-sm font-mono text-[#334e36] focus:outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" :disabled="!canEdit" />
                   <label class="flex items-center gap-1 text-xs text-ink-muted shrink-0 cursor-pointer select-none" :title="'Mở liên kết ở tab mới'">
                     <input type="checkbox" v-model="child.openNewTab" :disabled="!canEdit" class="w-3.5 h-3.5 accent-brand-700" />
                     <span class="hidden sm:inline">Tab mới</span>
@@ -317,11 +317,11 @@ onMounted(loadMenu)
           <!-- Browser window mockup -->
           <div class="rounded-xl border border-[#d7e3d8] bg-white shadow-lg overflow-hidden">
             <!-- Browser chrome -->
-            <div class="flex items-center gap-2 px-3 py-2 bg-[#eef1ee] border-b border-[#dce8dd]">
+            <div class="flex items-center gap-2 px-3 py-2 bg-surface border-b border-line">
               <span class="w-3 h-3 rounded-full bg-[#ff5f57] inline-block"></span>
               <span class="w-3 h-3 rounded-full bg-[#febc2e] inline-block"></span>
               <span class="w-3 h-3 rounded-full bg-[#28c840] inline-block"></span>
-              <span class="ml-3 flex-1 flex items-center gap-1.5 text-[0.68rem] text-[#7c8c7d] bg-white rounded-md px-2.5 py-1 border border-[#dce8dd] font-mono">
+              <span class="ml-3 flex-1 flex items-center gap-1.5 text-[0.68rem] text-[#7c8c7d] bg-white rounded-md px-2.5 py-1 border border-line font-mono">
                 <i class="fa-solid fa-lock text-[0.55rem] text-[#8ea98f]" aria-hidden="true"></i>
               </span>
             </div>
@@ -329,7 +329,7 @@ onMounted(loadMenu)
             <!-- ===== Real website header replica ===== -->
             <div class="bg-white">
               <!-- Top bar -->
-              <div class="bg-[#385130] text-white px-4 py-1.5 text-[0.62rem] flex justify-between items-center">
+              <div class="bg-brand-800 text-white px-4 py-1.5 text-[0.62rem] flex justify-between items-center">
                 <span><i class="fa-solid fa-phone" aria-hidden="true"></i> Hotline: 0903.480.985</span>
                 <div class="flex items-center gap-1">
                   <span class="px-1.5 py-0.5 rounded bg-brand-600 font-semibold">VN</span>
@@ -338,7 +338,7 @@ onMounted(loadMenu)
               </div>
 
               <!-- Logo row -->
-              <div class="border-b border-[#E2E8DF] px-4 py-2.5 flex justify-between items-center">
+              <div class="border-b border-line px-4 py-2.5 flex justify-between items-center">
                 <div class="flex items-center gap-2">
                   <div class="w-8 h-8 rounded-full bg-[#e4f0e2] flex items-center justify-center shrink-0">
                     <i class="fa-solid fa-shield-halved text-brand-600 text-sm" aria-hidden="true"></i>
@@ -349,7 +349,7 @@ onMounted(loadMenu)
                   </div>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <span class="w-7 h-7 rounded-full bg-surface border border-[#E2E8DF] flex items-center justify-center text-brand-600 text-[0.65rem]">
+                  <span class="w-7 h-7 rounded-full bg-surface border border-line flex items-center justify-center text-brand-600 text-[0.65rem]">
                     <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                   </span>
                   <span class="inline-flex items-center gap-1 bg-brand-600 text-white text-[0.58rem] font-bold px-2.5 py-1.5 rounded-sm">
@@ -359,7 +359,7 @@ onMounted(loadMenu)
               </div>
 
               <!-- Horizontal nav bar (the thing being configured) -->
-              <div class="bg-white border-b border-[#e1e8e0] px-2 min-h-[38px] flex items-center relative">
+              <div class="bg-white border-b border-line px-2 min-h-[38px] flex items-center relative">
                 <ul class="flex list-none w-full items-center gap-0 flex-wrap">
                   <li
                     v-for="item in menu"
@@ -368,7 +368,7 @@ onMounted(loadMenu)
                     @mouseenter="item.children && item.children.length ? previewOpen = item.id : null"
                     @mouseleave="previewOpen = null"
                   >
-                    <div class="flex items-center gap-1 text-brand-900 font-bold text-[0.66rem] px-2 py-2 rounded-md whitespace-nowrap cursor-default select-none transition-all hover:bg-[#f0f6ef] hover:text-[#143516]">
+                    <div class="flex items-center gap-1 text-brand-900 font-bold text-[0.66rem] px-2 py-2 rounded-md whitespace-nowrap cursor-default select-none transition-all hover:bg-surface-tint hover:text-[#143516]">
                       {{ item.label || '(trống)' }}
                       <i v-if="item.children && item.children.length" class="fa-solid fa-chevron-down text-[0.45rem] text-[#557757] transition-transform duration-200" :class="{ 'rotate-180': previewOpen === item.id }" aria-hidden="true"></i>
                     </div>
@@ -391,13 +391,13 @@ onMounted(loadMenu)
 
               <!-- Fake page body -->
               <div class="p-4 bg-surface space-y-2">
-                <div class="h-16 rounded-lg bg-gradient-to-r from-[#e4f0e2] to-[#f0f6ef] flex items-center justify-center">
+                <div class="h-16 rounded-lg bg-gradient-to-r from-[#e4f0e2] to-surface-tint flex items-center justify-center">
                   <span class="text-[0.6rem] text-[#8ea98f] italic">Nội dung trang chủ</span>
                 </div>
                 <div class="grid grid-cols-3 gap-2">
-                  <div class="h-10 rounded bg-[#eef4ed]"></div>
-                  <div class="h-10 rounded bg-[#eef4ed]"></div>
-                  <div class="h-10 rounded bg-[#eef4ed]"></div>
+                  <div class="h-10 rounded bg-surface-tint"></div>
+                  <div class="h-10 rounded bg-surface-tint"></div>
+                  <div class="h-10 rounded bg-surface-tint"></div>
                 </div>
               </div>
             </div>
@@ -409,7 +409,7 @@ onMounted(loadMenu)
           </p>
 
           <!-- Info note -->
-          <div class="rounded-xl border border-line bg-[#f7fbf7] p-3.5 text-[0.78rem] text-ink-muted leading-relaxed">
+          <div class="rounded-xl border border-line bg-surface p-3.5 text-[0.78rem] text-ink-muted leading-relaxed">
             <i class="fa-solid fa-circle-info text-brand-700 mr-1.5" aria-hidden="true"></i>
             Cấu hình này áp dụng cho <strong class="text-brand-950">cả navbar ngang trên desktop và menu ☰ (hamburger) trên mobile</strong>. Thanh nổi cố định ở đáy màn hình điện thoại quản lý riêng tại trang
             <nuxt-link to="/admin/content/navigation/mobile" class="text-brand-700 font-semibold hover:underline">Thanh nổi dưới (Mobile)</nuxt-link>.

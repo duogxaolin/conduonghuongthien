@@ -226,7 +226,7 @@ function saveEdit(t: TranslationRow) {
       :aria-busy="props.loading ? 'true' : undefined"
     >
       <!-- Mobile Card View -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <p v-if="filteredTranslations.length === 0" class="m-0 p-6 text-center text-sm text-ink-muted">Không tìm thấy bản dịch</p>
         <div
           v-for="t in filteredTranslations"
@@ -236,12 +236,12 @@ function saveEdit(t: TranslationRow) {
           <div class="flex items-center justify-between gap-2">
             <code class="font-mono text-xs text-brand-700 bg-surface-tint px-1.5 py-0.5 rounded break-all">{{ t.key }}</code>
             <div class="flex items-center gap-1.5 shrink-0">
-              <span class="text-[0.65rem] font-bold bg-[#f4f7f4] text-ink-muted px-1.5 py-0.5 rounded">{{ t.group }}</span>
+              <span class="text-[0.65rem] font-bold bg-surface text-ink-muted px-1.5 py-0.5 rounded">{{ t.group }}</span>
               <span v-if="t.isAiTranslated" class="px-1.5 py-0.5 rounded bg-[#e4f2e5] text-brand-900 text-[0.65rem] font-bold">AI</span>
             </div>
           </div>
 
-          <div class="bg-[#fafcfa] border border-[#eef2ee] rounded-lg p-2 text-xs text-ink-secondary">
+          <div class="bg-surface border border-surface-tint rounded-lg p-2 text-xs text-ink-secondary">
             <span class="font-bold text-ink-muted block text-[0.68rem] mb-0.5">Tiếng Việt (Gốc):</span>
             {{ props.viTranslationsMap.get(`${t.group}::${t.key}`) || '—' }}
           </div>
@@ -260,7 +260,7 @@ function saveEdit(t: TranslationRow) {
             </div>
           </div>
 
-          <div class="flex items-center justify-end gap-2 pt-1.5 border-t border-[#f4f7f4]">
+          <div class="flex items-center justify-end gap-2 pt-1.5 border-t border-surface">
             <button
               type="button"
               class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-[#e4f2e5] border border-[#c8dcc9] text-brand-900 hover:bg-[#d6ecd8] cursor-pointer flex items-center gap-1 disabled:opacity-50"
@@ -296,14 +296,14 @@ function saveEdit(t: TranslationRow) {
               <th class="px-4 py-3 text-center font-bold text-brand-950 w-[110px]">Thao tác</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-[#eef2ee]">
+          <tbody class="divide-y divide-surface-tint">
             <tr v-if="filteredTranslations.length === 0">
               <td colspan="6" class="px-4 py-8 text-center text-sm text-ink-muted">Không tìm thấy bản dịch</td>
             </tr>
             <tr v-for="t in filteredTranslations" :key="`${t.group}::${t.key}`" class="hover:bg-surface-tint">
               <td class="px-4 py-2.5 font-mono text-[0.78rem] text-ink-muted">{{ t.key }}</td>
               <td class="px-4 py-2.5 text-[0.78rem] text-ink-muted">{{ t.group }}</td>
-              <td class="px-4 py-2.5 text-xs text-ink-secondary bg-[#fafcfa]">
+              <td class="px-4 py-2.5 text-xs text-ink-secondary bg-surface">
                 {{ props.viTranslationsMap.get(`${t.group}::${t.key}`) || '—' }}
               </td>
               <td class="px-4 py-2.5 text-ink">

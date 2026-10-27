@@ -96,7 +96,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
 
     <!-- Tiêu đề trang -->
     <div class="flex items-start gap-4">
-      <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#e8f0e8] text-brand-700">
+      <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-line text-brand-700">
         <i class="fa-solid fa-cloud-arrow-up text-xl" aria-hidden="true"></i>
       </div>
       <div>
@@ -147,7 +147,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
         <p v-if="progressError" role="alert" class="rounded-lg bg-red-50 p-3 text-sm text-red-800">{{ progressError }} <button class="underline font-semibold" @click="refreshProcessing()">Thử lại</button></p>
 
         <!-- Hành động -->
-        <div class="flex flex-wrap items-center gap-3 border-t border-[#eef2ee] pt-4">
+        <div class="flex flex-wrap items-center gap-3 border-t border-surface-tint pt-4">
           <button
             type="button"
             class="inline-flex items-center gap-2 rounded-lg bg-brand-900 px-4 py-2 text-sm font-bold text-white cursor-pointer border-0 hover:bg-brand-700 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
@@ -159,7 +159,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           <button
             v-if="uploadedItem.processingStatus === 'ready'"
             type="button"
-            class="inline-flex items-center gap-2 rounded-lg border border-line-strong px-4 py-2 text-sm font-semibold text-[#2c3e2e] cursor-pointer bg-white hover:bg-[#f8faf8] transition-colors focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
+            class="inline-flex items-center gap-2 rounded-lg border border-line-strong px-4 py-2 text-sm font-semibold text-ink-admin cursor-pointer bg-white hover:bg-surface transition-colors focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
             @click="uploadAnother()"
           >
             <i class="fa-solid fa-upload" aria-hidden="true"></i>

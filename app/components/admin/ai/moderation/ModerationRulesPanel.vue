@@ -84,7 +84,7 @@ const RULE_CATEGORY_LABELS: Record<string, string> = {
     <!-- Rules List Table -->
     <div v-else class="rounded-xl border border-line bg-white overflow-x-auto shadow-xs">
       <table class="w-full text-xs">
-        <thead class="bg-[#f7faf7] text-left">
+        <thead class="bg-surface text-left">
           <tr>
             <th class="px-3.5 py-3 font-bold text-brand-950">Nhóm danh mục</th>
             <th class="px-3.5 py-3 font-bold text-brand-950">Từ khóa / Mẫu nhận diện</th>
@@ -95,7 +95,7 @@ const RULE_CATEGORY_LABELS: Record<string, string> = {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in rules" :key="r.id" class="border-t border-line hover:bg-[#fcfdfc]">
+          <tr v-for="r in rules" :key="r.id" class="border-t border-line hover:bg-surface">
             <td class="px-3.5 py-2.5 font-bold text-brand-950">
               {{ RULE_CATEGORY_LABELS[r.category] || r.category }}
             </td>

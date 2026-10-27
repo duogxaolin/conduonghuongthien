@@ -141,7 +141,7 @@ function moveLanguageToPosition(targetIndex: number) {
       </div>
       <div class="flex gap-2 pt-1">
         <button class="px-4 py-2 rounded-lg bg-brand-700 hover:bg-brand-900 text-white text-sm font-bold border-none cursor-pointer" @click="addLanguage">Thêm ngôn ngữ</button>
-        <button class="px-4 py-2 rounded-lg border border-line-strong bg-white text-sm font-semibold text-ink-muted cursor-pointer hover:bg-[#f8faf8]" @click="showAddForm = false">Hủy</button>
+        <button class="px-4 py-2 rounded-lg border border-line-strong bg-white text-sm font-semibold text-ink-muted cursor-pointer hover:bg-surface" @click="showAddForm = false">Hủy</button>
       </div>
     </div>
 
@@ -159,7 +159,7 @@ function moveLanguageToPosition(targetIndex: number) {
           <div class="flex items-center gap-1.5">
             <button
               type="button"
-              class="inline-flex items-center justify-center min-w-7 h-7 px-1.5 rounded-md bg-[#f0f4f0] text-brand-900 font-bold text-xs border border-line-strong hover:bg-[#e4ece4] hover:border-brand-700 cursor-pointer transition-colors shadow-2xs group"
+              class="inline-flex items-center justify-center min-w-7 h-7 px-1.5 rounded-md bg-surface text-brand-900 font-bold text-xs border border-line-strong hover:bg-line hover:border-brand-700 cursor-pointer transition-colors shadow-2xs group"
               title="Bấm để chuyển đổi vị trí thứ tự"
               @click="emit('open-move', lang)"
             >
@@ -213,7 +213,7 @@ function moveLanguageToPosition(targetIndex: number) {
           </div>
         </div>
         <!-- Translation Progress & Missing Keys -->
-        <div class="flex flex-col gap-1.5 bg-[#fcfdfc] p-2.5 rounded-lg border border-[#eef2ee]">
+        <div class="flex flex-col gap-1.5 bg-surface p-2.5 rounded-lg border border-surface-tint">
           <div class="flex items-center justify-between text-xs">
             <span class="text-ink-muted font-medium text-[0.75rem]">Tiến độ:</span>
             <span
@@ -237,7 +237,7 @@ function moveLanguageToPosition(targetIndex: number) {
         </div>
 
         <!-- Action buttons -->
-        <div class="flex items-center gap-1.5 pt-2 border-t border-[#eef2ee] flex-wrap">
+        <div class="flex items-center gap-1.5 pt-2 border-t border-surface-tint flex-wrap">
           <button
             v-if="lang.code !== 'vi' && (lang.stats?.missingKeys || 0) > 0"
             type="button"
@@ -293,7 +293,7 @@ function moveLanguageToPosition(targetIndex: number) {
 
       <!-- Add new language dashed card -->
       <div
-        class="rounded-xl border-2 border-dashed border-line-strong hover:border-brand-700 bg-[#fafcfa] hover:bg-surface-tint p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all min-h-[140px] text-center"
+        class="rounded-xl border-2 border-dashed border-line-strong hover:border-brand-700 bg-surface hover:bg-surface-tint p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all min-h-[140px] text-center"
         @click="showAddForm = !showAddForm"
       >
         <div class="w-10 h-10 rounded-full bg-white border border-line-strong flex items-center justify-center text-brand-700 text-lg shadow-2xs">

@@ -12,8 +12,8 @@
 -->
 <template>
   <PageHero>
-    <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#6B7967] mb-4">
-      <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
+    <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-ink-muted mb-4">
+      <nuxt-link to="/" class="hover:text-brand-800 transition-colors flex items-center gap-1.5 no-underline text-ink-soft">
         <i class="fa-solid fa-house text-[0.7rem] text-brand-600" aria-hidden="true"></i>
         <span>Trang chủ</span>
       </nuxt-link>
@@ -22,14 +22,14 @@
     </nav>
 
     <div class="max-w-2xl">
-      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
+      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-line border border-[#D0DFCE] text-brand-800 text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
         <span class="w-2 h-2 rounded-full bg-brand-600" aria-hidden="true"></span>
         <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
       </div>
-      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
+      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-ink-strong tracking-tight leading-[1.2] m-0">
         Thư Viện Video
       </h1>
-      <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
+      <p class="text-[0.92rem] sm:text-base text-ink-soft mt-2 mb-0 leading-relaxed">
         {{ description }}
       </p>
     </div>

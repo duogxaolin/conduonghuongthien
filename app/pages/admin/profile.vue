@@ -133,8 +133,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       </div>
       <div class="ml-auto flex items-center gap-2 text-[0.78rem] font-bold px-3 py-1.5 rounded-full border"
            :class="activeFactors.length > 0
-             ? 'bg-[#eef7ee] border-[#cce5cd] text-[#1e4620]'
-             : 'bg-[#fdf6e7] border-[#f0dcae] text-[#8a6412]'">
+             ? 'bg-[#eef7ee] border-[#cce5cd] text-brand-900'
+             : 'bg-[#fdf6e7] border-[#f0dcae] text-warn-ink'">
         <i class="fa-solid" :class="activeFactors.length > 0 ? 'fa-shield-halved' : 'fa-shield'" aria-hidden="true"></i>
         <span>{{ activeFactors.length > 0 ? `Đã bật ${activeFactors.length} yếu tố thứ hai` : 'Chưa bật xác thực hai bước' }}</span>
       </div>
@@ -171,20 +171,20 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           class="rounded-xl border border-line bg-white p-4 flex items-start gap-4 flex-wrap"
           aria-hidden="true"
         >
-          <div class="w-10 h-10 rounded-xl bg-[#dfe9e0] animate-pulse motion-reduce:animate-none shrink-0"></div>
+          <div class="w-10 h-10 rounded-xl bg-line animate-pulse motion-reduce:animate-none shrink-0"></div>
           <div class="flex-1 min-w-[220px] flex flex-col gap-2">
             <div class="flex items-center gap-2">
-              <div class="h-4 w-44 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-              <div class="h-4 w-24 rounded-full bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              <div class="h-4 w-44 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+              <div class="h-4 w-24 rounded-full bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
             </div>
-            <div class="h-3 w-full max-w-[420px] rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            <div class="h-3 w-full max-w-[420px] rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
           </div>
-          <div class="h-9 w-28 rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-9 w-28 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
       </div>
 
       <!-- Error -->
-      <div v-else-if="mfaError" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-3 rounded-lg text-[0.84rem]" role="alert">
+      <div v-else-if="mfaError" class="flex items-start gap-2 bg-danger-bg border border-[#ffc1ba] text-danger px-3.5 py-3 rounded-lg text-[0.84rem]" role="alert">
         <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
         <div>
           <div>{{ mfaError }}</div>
@@ -194,7 +194,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
       <template v-else-if="mfa">
         <!-- Cảnh báo nguy cơ mất quyền truy cập: theo `lockoutRisk` của máy chủ -->
-        <div v-if="mfa.lockoutRisk" class="flex items-start gap-2.5 bg-[#fdf6e7] border border-[#f0dcae] text-[#8a6412] px-3.5 py-3 rounded-lg text-[0.84rem] mb-4" role="alert">
+        <div v-if="mfa.lockoutRisk" class="flex items-start gap-2.5 bg-[#fdf6e7] border border-[#f0dcae] text-warn-ink px-3.5 py-3 rounded-lg text-[0.84rem] mb-4" role="alert">
           <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
           <span>
             Bạn đã bật xác thực hai bước nhưng <strong>không có cách dự phòng nào</strong>. Mất thiết bị là mất quyền vào hệ thống —

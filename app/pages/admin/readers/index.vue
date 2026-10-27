@@ -104,11 +104,11 @@ onMounted(reload)
       >Tìm</button>
       <nuxt-link
         to="/admin/comments"
-        class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-semibold text-[#2c3e2e] no-underline hover:bg-surface-tint"
+        class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-semibold text-ink-admin no-underline hover:bg-surface-tint"
       >Kiểm duyệt bình luận</nuxt-link>
       <nuxt-link
         to="/admin/settings/ip-bans"
-        class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-semibold text-[#2c3e2e] no-underline hover:bg-surface-tint"
+        class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-semibold text-ink-admin no-underline hover:bg-surface-tint"
       >Chặn địa chỉ IP</nuxt-link>
     </form>
 
@@ -119,7 +119,7 @@ onMounted(reload)
         v-for="n in 6"
         :key="n"
         aria-hidden="true"
-        class="mb-2 h-11 rounded-lg bg-[#eef3ee] animate-pulse motion-reduce:animate-none"
+        class="mb-2 h-11 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"
       ></div>
     </div>
 
@@ -141,11 +141,11 @@ onMounted(reload)
       </p>
 
       <!-- Mobile Card View: Tối ưu cho màn hình điện thoại, dễ thao tác ngón cái -->
-      <div class="md:hidden divide-y divide-[#eef3ee] rounded-xl border border-line bg-white overflow-hidden shadow-xs">
+      <div class="md:hidden divide-y divide-surface-tint rounded-xl border border-line bg-white overflow-hidden shadow-xs">
         <div
           v-for="reader in readers"
           :key="'m-'+reader.id"
-          class="p-4 flex flex-col gap-2.5 transition-colors active:bg-[#f8faf8]"
+          class="p-4 flex flex-col gap-2.5 transition-colors active:bg-surface"
         >
           <div class="flex items-start justify-between gap-2.5">
             <div class="flex items-center gap-2.5 min-w-0">
@@ -157,23 +157,23 @@ onMounted(reload)
             </div>
             <span
               v-if="reader.isBanned"
-              class="inline-block rounded-full bg-[#fdecec] px-2.5 py-0.5 text-[0.7rem] font-bold text-[#b0403c] shrink-0"
+              class="inline-block rounded-full bg-danger-bg px-2.5 py-0.5 text-[0.7rem] font-bold text-[#b0403c] shrink-0"
             >Đã chặn</span>
-            <span v-else class="inline-block rounded-full bg-[#eef7ef] px-2.5 py-0.5 text-[0.7rem] font-bold text-brand-700 shrink-0">Hoạt động</span>
+            <span v-else class="inline-block rounded-full bg-surface-tint px-2.5 py-0.5 text-[0.7rem] font-bold text-brand-700 shrink-0">Hoạt động</span>
           </div>
 
-          <div class="flex items-center justify-between text-xs text-ink-muted pt-2 border-t border-[#f4f7f4]">
+          <div class="flex items-center justify-between text-xs text-ink-muted pt-2 border-t border-surface">
             <span class="flex items-center gap-1.5">
               <i class="fa-regular fa-comment text-[0.75rem] text-brand-700" aria-hidden="true"></i>
               <span>{{ reader.commentCount }} bình luận</span>
             </span>
-            <span class="text-[0.72rem] text-[#8a9a8c]">
+            <span class="text-[0.72rem] text-ink-faint">
               {{ formatMoment(reader.lastSeenAt) }}
             </span>
           </div>
 
           <div class="flex items-center justify-between pt-1">
-            <code v-if="reader.lastIp" class="text-[0.72rem] bg-[#f4f7f4] px-1.5 py-0.5 rounded text-ink-muted">{{ reader.lastIp }}</code>
+            <code v-if="reader.lastIp" class="text-[0.72rem] bg-surface px-1.5 py-0.5 rounded text-ink-muted">{{ reader.lastIp }}</code>
             <span v-else></span>
             <nuxt-link
               :to="`/admin/readers/${reader.id}`"
@@ -190,7 +190,7 @@ onMounted(reload)
       <div class="hidden md:block overflow-x-auto rounded-xl border border-line bg-white">
         <table class="w-full min-w-[760px] border-collapse text-sm">
           <thead>
-            <tr class="bg-[#f8faf8] text-left text-[0.78rem] uppercase tracking-wide text-ink-muted">
+            <tr class="bg-surface text-left text-[0.78rem] uppercase tracking-wide text-ink-muted">
               <th class="px-4 py-3 font-bold">Người đọc</th>
               <th class="px-4 py-3 font-bold">Bình luận</th>
               <th class="px-4 py-3 font-bold">Truy cập gần nhất</th>
@@ -199,7 +199,7 @@ onMounted(reload)
             </tr>
           </thead>
           <tbody>
-            <tr v-for="reader in readers" :key="reader.id" class="border-t border-[#eef3ee]">
+            <tr v-for="reader in readers" :key="reader.id" class="border-t border-surface-tint">
               <td class="px-4 py-3">
                 <div class="flex items-center gap-2.5">
                   <ReaderAvatar :initials="(reader.displayName || '?').slice(0, 1)" size="sm" />
@@ -209,17 +209,17 @@ onMounted(reload)
                   </div>
                 </div>
               </td>
-              <td class="px-4 py-3 font-semibold text-[#2c3e2e]">{{ reader.commentCount }}</td>
+              <td class="px-4 py-3 font-semibold text-ink-admin">{{ reader.commentCount }}</td>
               <td class="px-4 py-3 text-[#3d4f3f]">
                 {{ formatMoment(reader.lastSeenAt) }}
-                <span v-if="reader.lastIp" class="block text-[0.78rem] text-[#8a9a8c]">{{ reader.lastIp }}</span>
+                <span v-if="reader.lastIp" class="block text-[0.78rem] text-ink-faint">{{ reader.lastIp }}</span>
               </td>
               <td class="px-4 py-3">
                 <span
                   v-if="reader.isBanned"
-                  class="inline-block rounded-full bg-[#fdecec] px-2.5 py-1 text-[0.75rem] font-bold text-[#b0403c]"
+                  class="inline-block rounded-full bg-danger-bg px-2.5 py-1 text-[0.75rem] font-bold text-[#b0403c]"
                 >Đã chặn</span>
-                <span v-else class="inline-block rounded-full bg-[#eef7ef] px-2.5 py-1 text-[0.75rem] font-bold text-brand-700">Hoạt động</span>
+                <span v-else class="inline-block rounded-full bg-surface-tint px-2.5 py-1 text-[0.75rem] font-bold text-brand-700">Hoạt động</span>
               </td>
               <td class="px-4 py-3 text-right">
                 <nuxt-link

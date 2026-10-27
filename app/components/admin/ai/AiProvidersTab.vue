@@ -537,7 +537,7 @@ defineExpose<{
         <div class="flex items-center gap-2">
           <button
             type="button"
-            class="px-3 py-1.5 rounded-lg border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-[#f0f4f0]"
+            class="px-3 py-1.5 rounded-lg border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-surface"
             @click="selectedProviderIds.clear()"
           >
             Bỏ chọn
@@ -562,7 +562,7 @@ defineExpose<{
           class="rounded-xl border border-line bg-white overflow-hidden shadow-sm transition-all"
         >
           <!-- Provider Card Header -->
-          <div class="p-4 sm:p-5 flex flex-col gap-3 border-b border-line bg-[#fafcfa]">
+          <div class="p-4 sm:p-5 flex flex-col gap-3 border-b border-line bg-surface">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex items-center gap-3">
                 <!-- Checkbox to select provider -->
@@ -585,7 +585,7 @@ defineExpose<{
                 <div>
                   <div class="flex items-center gap-2">
                     <h2 class="m-0 text-base font-extrabold text-brand-950">{{ p.label }}</h2>
-                    <span class="text-xs font-mono text-ink-muted bg-[#f0f4f0] px-2 py-0.5 rounded">({{ p.provider }})</span>
+                    <span class="text-xs font-mono text-ink-muted bg-surface px-2 py-0.5 rounded">({{ p.provider }})</span>
                     <span
                       class="px-2 py-0.5 rounded-full text-xs font-semibold"
                       :class="p.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'"
@@ -629,7 +629,7 @@ defineExpose<{
                 </button>
                 <button
                   type="button"
-                  class="p-1.5 rounded-lg text-ink-muted hover:bg-[#e4ece4]"
+                  class="p-1.5 rounded-lg text-ink-muted hover:bg-line"
                   :title="isProviderPanelOpen(p.provider) ? 'Thu gọn models' : 'Mở rộng models'"
                   @click="toggleProviderPanel(p.provider)"
                 >
@@ -691,7 +691,7 @@ defineExpose<{
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    class="px-2.5 py-1 rounded border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-[#f0f4f0]"
+                    class="px-2.5 py-1 rounded border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-surface"
                     @click="modelsForProvider(p.provider).forEach(m => selectedModelKeys.delete(m.model))"
                   >
                     Bỏ chọn
@@ -721,7 +721,7 @@ defineExpose<{
 
               <div v-else class="rounded-lg border border-line overflow-x-auto">
                 <table class="w-full text-xs">
-                  <thead class="bg-[#f7faf7] text-left">
+                  <thead class="bg-surface text-left">
                     <tr>
                       <th class="px-2.5 py-2 w-8 text-center">
                         <input
@@ -745,7 +745,7 @@ defineExpose<{
                     <tr
                       v-for="m in modelsForProvider(p.provider)"
                       :key="m.model"
-                      class="border-t border-line hover:bg-[#fafcfa] transition-colors"
+                      class="border-t border-line hover:bg-surface transition-colors"
                       :class="!m.isActive ? 'opacity-50 bg-[#fafafa]' : ''"
                     >
                       <td class="px-2.5 py-2 text-center">
@@ -812,7 +812,7 @@ defineExpose<{
           <div class="flex flex-col gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">Loại nhà cung cấp</span>
-              <select v-model="newProviderForm.provider" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm bg-white" @change="onNewProviderPresetChange()">
+              <select v-model="newProviderForm.provider" class="rounded-lg border border-line-strong px-3 py-2 text-sm bg-white" @change="onNewProviderPresetChange()">
                 <option v-for="preset in PROVIDER_PRESETS" :key="preset.value" :value="preset.value">{{ preset.label }}</option>
               </select>
               <span v-if="PROVIDER_PRESETS.find(p => p.value === newProviderForm.provider)?.hint" class="text-xs text-ink-muted font-normal">
@@ -821,11 +821,11 @@ defineExpose<{
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">Nhãn hiển thị</span>
-              <input v-model="newProviderForm.label" type="text" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <input v-model="newProviderForm.label" type="text" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">Base URL</span>
-              <input v-model="newProviderForm.baseUrl" type="text" placeholder="https://..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <input v-model="newProviderForm.baseUrl" type="text" placeholder="https://..." class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
             </label>
             <label class="flex items-center gap-3 text-sm font-semibold">
               <input v-model="newProviderForm.isActive" type="checkbox" class="w-4 h-4 accent-brand-700" />
@@ -833,13 +833,13 @@ defineExpose<{
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">API Key</span>
-              <input v-model="newProviderForm.apiKey" type="password" placeholder="Nhập API key" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <input v-model="newProviderForm.apiKey" type="password" placeholder="Nhập API key" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
               <span class="text-xs text-ink-muted font-normal">Có thể nhập sau nếu chưa có.</span>
             </label>
             <div v-if="newProviderError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ newProviderError }}</div>
           </div>
           <template #footer>
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="showCreateForm = false">Huỷ</button>
+              <button type="button" class="px-4 py-2 rounded-lg border border-line-strong text-sm font-semibold text-ink-muted hover:bg-surface" @click="showCreateForm = false">Huỷ</button>
               <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="createProvider()" :disabled="savingNewProvider">
                 {{ savingNewProvider ? 'Đang thêm...' : 'Thêm' }}
               </button>
@@ -856,11 +856,11 @@ defineExpose<{
           <div v-if="editingProvider" class="flex flex-col gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">Nhãn hiển thị</span>
-              <input v-model="providerForm.label" type="text" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <input v-model="providerForm.label" type="text" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">Base URL</span>
-              <input v-model="providerForm.baseUrl" type="text" placeholder="https://..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <input v-model="providerForm.baseUrl" type="text" placeholder="https://..." class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
               <span class="text-xs text-ink-muted font-normal">Chỉ nhận https:// với tên miền công khai. Đổi Base URL thì phải nhập lại API key bên dưới.</span>
             </label>
             <label class="flex items-center gap-3 text-sm font-semibold">
@@ -869,16 +869,16 @@ defineExpose<{
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">API Key mới</span>
-              <input v-model="providerForm.apiKey" type="password" :placeholder="editingProvider.apiKeyLastFour ? '••••' + editingProvider.apiKeyLastFour + ' (đã lưu)' : 'Nhập API key'" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <input v-model="providerForm.apiKey" type="password" :placeholder="editingProvider.apiKeyLastFour ? '••••' + editingProvider.apiKeyLastFour + ' (đã lưu)' : 'Nhập API key'" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
               <span class="text-xs text-ink-muted font-normal">Để trống để giữ nguyên key hiện tại.</span>
             </label>
             <div v-if="testResult" class="rounded-lg p-3 text-sm" :class="testResult.includes('Thất bại') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'" role="status">{{ testResult }}</div>
           </div>
           <template #footer>
-              <button v-if="editingProvider" type="button" class="mr-auto px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="testProvider(editingProvider.id)" :disabled="!!testingProvider">
+              <button v-if="editingProvider" type="button" class="mr-auto px-4 py-2 rounded-lg border border-line-strong text-sm font-semibold text-ink-muted hover:bg-surface" @click="testProvider(editingProvider.id)" :disabled="!!testingProvider">
                 {{ testingProvider ? 'Đang kiểm tra...' : 'Kiểm tra kết nối' }}
               </button>
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="editingProvider = null">Huỷ</button>
+              <button type="button" class="px-4 py-2 rounded-lg border border-line-strong text-sm font-semibold text-ink-muted hover:bg-surface" @click="editingProvider = null">Huỷ</button>
               <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="saveProvider()" :disabled="savingProvider">
                 {{ savingProvider ? 'Đang lưu...' : 'Lưu' }}
               </button>
@@ -895,20 +895,20 @@ defineExpose<{
           <div class="flex flex-col gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">Mã Model (ID gọi API)</span>
-              <input v-model="newModelForm.model" type="text" placeholder="flash, glm-5.3, gpt-4o..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm font-mono" />
+              <input v-model="newModelForm.model" type="text" placeholder="flash, glm-5.3, gpt-4o..." class="rounded-lg border border-line-strong px-3 py-2 text-sm font-mono" />
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">Tên hiển thị (Label)</span>
-              <input v-model="newModelForm.label" type="text" placeholder="GLM 5.3 Thông minh..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <input v-model="newModelForm.label" type="text" placeholder="GLM 5.3 Thông minh..." class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
             </label>
             <div class="grid grid-cols-2 gap-3">
               <label class="flex flex-col gap-1.5 text-sm font-bold">
                 <span class="text-brand-950">Giá Input ($ / 1M)</span>
-                <input v-model.number="newModelForm.promptCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+                <input v-model.number="newModelForm.promptCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
               </label>
               <label class="flex flex-col gap-1.5 text-sm font-bold">
                 <span class="text-brand-950">Giá Output ($ / 1M)</span>
-                <input v-model.number="newModelForm.completionCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+                <input v-model.number="newModelForm.completionCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
               </label>
             </div>
             <label class="flex items-center gap-3 text-sm font-semibold">
@@ -918,7 +918,7 @@ defineExpose<{
             <div v-if="newModelError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ newModelError }}</div>
           </div>
           <template #footer>
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="showAddModelModal = false">Huỷ</button>
+              <button type="button" class="px-4 py-2 rounded-lg border border-line-strong text-sm font-semibold text-ink-muted hover:bg-surface" @click="showAddModelModal = false">Huỷ</button>
               <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="addModelToProvider()" :disabled="savingNewModel">
                 {{ savingNewModel ? 'Đang thêm...' : 'Thêm Model' }}
               </button>
@@ -936,16 +936,16 @@ defineExpose<{
             <p class="m-0 text-xs text-ink-muted">Nhà cung cấp: <strong>{{ editingModel.provider }}</strong></p>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-brand-950">Tên hiển thị</span>
-              <input v-model="editModelForm.label" type="text" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <input v-model="editModelForm.label" type="text" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
             </label>
             <div class="grid grid-cols-2 gap-3">
               <label class="flex flex-col gap-1.5 text-sm font-bold">
                 <span class="text-brand-950">Giá Input ($ / 1M)</span>
-                <input v-model.number="editModelForm.promptCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+                <input v-model.number="editModelForm.promptCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
               </label>
               <label class="flex flex-col gap-1.5 text-sm font-bold">
                 <span class="text-brand-950">Giá Output ($ / 1M)</span>
-                <input v-model.number="editModelForm.completionCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+                <input v-model.number="editModelForm.completionCostPerMillion" type="number" step="0.001" min="0" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
               </label>
             </div>
             <label class="flex items-center gap-3 text-sm font-semibold">
@@ -954,7 +954,7 @@ defineExpose<{
             </label>
           </div>
           <template #footer>
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="editingModel = null">Huỷ</button>
+              <button type="button" class="px-4 py-2 rounded-lg border border-line-strong text-sm font-semibold text-ink-muted hover:bg-surface" @click="editingModel = null">Huỷ</button>
               <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="saveEditModel()" :disabled="savingModelEdit">
                 {{ savingModelEdit ? 'Đang lưu...' : 'Lưu' }}
               </button>
@@ -981,7 +981,7 @@ defineExpose<{
             </div>
 
             <!-- Metrics if success -->
-            <div v-if="!modelTestModal.error" class="grid grid-cols-3 gap-2 p-3 rounded-xl bg-[#f4f7f4] text-xs">
+            <div v-if="!modelTestModal.error" class="grid grid-cols-3 gap-2 p-3 rounded-xl bg-surface text-xs">
               <div>
                 <span class="text-ink-muted">Thời gian</span>
                 <p class="m-0 font-bold text-brand-950 font-mono">{{ modelTestModal.durationMs }}ms</p>
@@ -999,7 +999,7 @@ defineExpose<{
             <!-- Response text or error -->
             <div v-if="!modelTestModal.error" class="flex flex-col gap-1.5">
               <span class="text-xs font-bold text-ink-muted uppercase">Phản hồi từ Model:</span>
-              <div class="rounded-xl border border-line-strong bg-[#fafcfa] p-3.5 text-sm text-brand-950 whitespace-pre-wrap font-sans leading-relaxed max-h-[220px] overflow-y-auto">
+              <div class="rounded-xl border border-line-strong bg-surface p-3.5 text-sm text-brand-950 whitespace-pre-wrap font-sans leading-relaxed max-h-[220px] overflow-y-auto">
                 {{ modelTestModal.reply }}
               </div>
             </div>

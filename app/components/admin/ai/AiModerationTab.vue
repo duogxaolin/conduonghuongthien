@@ -53,7 +53,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
 
     <div v-if="moderationLoading" role="status" aria-busy="true" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <span class="sr-only">Đang tải số liệu kiểm duyệt an ninh</span>
-      <div v-for="n in 2" :key="n" class="h-24 rounded-xl bg-[#EEF2EC] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+      <div v-for="n in 2" :key="n" class="h-24 rounded-xl bg-surface-tint animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
     </div>
 
     <div

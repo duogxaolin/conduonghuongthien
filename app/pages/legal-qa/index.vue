@@ -1,8 +1,8 @@
 <template>
   <div class="bg-surface">
     <PageHero>
-      <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#6B7967] mb-3">
-        <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
+      <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-ink-muted mb-3">
+        <nuxt-link to="/" class="hover:text-brand-800 transition-colors flex items-center gap-1.5 no-underline text-ink-soft">
           <i class="fa-solid fa-house text-[0.7rem] text-brand-600" aria-hidden="true"></i>
           <span>{{ t('home') }}</span>
         </nuxt-link>
@@ -10,12 +10,12 @@
         <span class="text-[#2A3B27] font-bold">{{ t('legal_qa') }}</span>
       </nav>
 
-      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
+      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-line border border-[#D0DFCE] text-brand-800 text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
         <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
         <span>{{ t('legal_qa') }}</span>
       </div>
-      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">{{ t('legal_qa') }}</h1>
-      <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed max-w-3xl">
+      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-ink-strong tracking-tight leading-[1.2] m-0">{{ t('legal_qa') }}</h1>
+      <p class="text-[0.92rem] sm:text-base text-ink-soft mt-2 mb-0 leading-relaxed max-w-3xl">
         Ngân hàng câu hỏi, giải đáp pháp luật về chính sách vay vốn ưu đãi, đào tạo nghề, thủ tục xóa án tích và tái hòa nhập cộng đồng.
       </p>
     </PageHero>
@@ -24,7 +24,7 @@
     <section class="pt-6 lg:pt-8">
       <div class="container">
         <div class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-          <span class="text-xs text-[#5A6C58] font-medium shrink-0 mr-1">Chủ đề thường gặp:</span>
+          <span class="text-xs text-ink-soft font-medium shrink-0 mr-1">Chủ đề thường gặp:</span>
           <button
             v-for="chip in filterChips"
             :key="chip"
@@ -33,8 +33,8 @@
             :class="[
               'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 cursor-pointer',
               searchKeyword === chip
-                ? 'bg-brand-600 text-white border-[#4A6741] shadow-sm'
-                : 'bg-white text-ink-secondary border-[#DCE5DB] hover:border-brand-600 hover:bg-[#F2F7F0]'
+                ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+                : 'bg-white text-ink-secondary border-line hover:border-brand-600 hover:bg-surface-tint'
             ]"
           >
             <span>{{ chip }}</span>
@@ -49,18 +49,18 @@
         <div class="flex flex-col gap-6 min-w-0">
           <!-- Search Bar -->
           <div class="flex items-center bg-white p-2 rounded-xl border border-[#D5E1D3] shadow-sm focus-within:border-brand-600 transition-all">
-            <i class="fa-solid fa-magnifying-glass text-[#5A6C58] text-sm ml-3 mr-2.5" aria-hidden="true"></i>
+            <i class="fa-solid fa-magnifying-glass text-ink-soft text-sm ml-3 mr-2.5" aria-hidden="true"></i>
             <input
               v-model="searchKeyword"
               type="search"
               placeholder="Tìm nhanh câu hỏi (Ví dụ: xóa án tích, vay vốn, học nghề...)"
-              class="flex-1 py-2 text-[0.95rem] text-[#172516] outline-none border-none bg-transparent font-medium placeholder:text-[#9AABA0]"
+              class="flex-1 py-2 text-[0.95rem] text-ink-strong outline-none border-none bg-transparent font-medium placeholder:text-[#9AABA0]"
               aria-label="Tìm kiếm câu hỏi pháp luật"
             />
             <button
               v-if="searchKeyword"
               type="button"
-              class="text-[#8A9A88] hover:text-[#2D5A27] w-7 h-7 rounded-lg flex items-center justify-center text-xs cursor-pointer border-none bg-transparent mr-1"
+              class="text-ink-faint hover:text-[#2D5A27] w-7 h-7 rounded-lg flex items-center justify-center text-xs cursor-pointer border-none bg-transparent mr-1"
               @click="searchKeyword = ''"
               aria-label="Xóa từ khóa"
             >
@@ -69,13 +69,13 @@
           </div>
 
           <!-- Section Divider Header -->
-          <div class="flex items-center justify-between pt-1 pb-3 border-b-2 border-[#E1EADF]">
+          <div class="flex items-center justify-between pt-1 pb-3 border-b-2 border-line">
             <div class="flex items-center gap-2.5">
               <span class="w-2.5 h-6 rounded-sm bg-brand-600" aria-hidden="true"></span>
               <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
                 Câu hỏi thường gặp
               </h2>
-              <span v-if="!pending" class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-[#EBF3E8] text-[#385932]">
+              <span v-if="!pending" class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-line text-brand-800">
                 {{ filteredFaqs.length }} câu hỏi
               </span>
             </div>
@@ -92,9 +92,9 @@
               v-for="n in 5"
               :key="n"
               aria-hidden="true"
-              class="bg-white rounded-2xl border border-[#E2E8DF] px-6 py-5 animate-pulse motion-reduce:animate-none shadow-sm"
+              class="bg-white rounded-2xl border border-line px-6 py-5 animate-pulse motion-reduce:animate-none shadow-sm"
             >
-              <div class="h-4 w-3/4 bg-[#EEF2EC] rounded"></div>
+              <div class="h-4 w-3/4 bg-surface-tint rounded"></div>
             </div>
           </div>
 
@@ -102,16 +102,16 @@
           <div
             v-else-if="loadError"
             role="alert"
-            class="bg-white border-2 border-dashed border-[#F0B8B8] px-6 py-12 rounded-2xl text-center text-[#B04A4A] shadow-sm"
+            class="bg-white border-2 border-dashed border-[#F0B8B8] px-6 py-12 rounded-2xl text-center text-danger-soft shadow-sm"
           >
-            <div class="w-12 h-12 rounded-full bg-[#FCE8E8] text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
+            <div class="w-12 h-12 rounded-full bg-danger-bg text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
             <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">Không thể tải câu hỏi</h3>
             <p class="text-sm text-ink-muted m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu máy chủ.</p>
             <button
               type="button"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-800 transition-all cursor-pointer border-none"
               @click="() => refresh()"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -122,31 +122,31 @@
           <!-- Empty -->
           <div
             v-else-if="faqs.length === 0"
-            class="bg-white border border-[#E2E8DF] rounded-2xl p-10 text-center shadow-sm"
+            class="bg-white border border-line rounded-2xl p-10 text-center shadow-sm"
           >
-            <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-brand-600 flex items-center justify-center mx-auto mb-4 text-2xl">
+            <div class="w-16 h-16 rounded-full bg-line text-brand-600 flex items-center justify-center mx-auto mb-4 text-2xl">
               <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
             </div>
-            <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">Chưa có câu hỏi nào được đăng tải</h3>
-            <p class="text-sm text-[#556450] m-0 mb-4">Hiện tại cơ sở dữ liệu giải đáp pháp luật đang được cập nhật.</p>
+            <h3 class="text-lg font-extrabold text-ink-strong m-0 mb-2">Chưa có câu hỏi nào được đăng tải</h3>
+            <p class="text-sm text-ink-soft m-0 mb-4">Hiện tại cơ sở dữ liệu giải đáp pháp luật đang được cập nhật.</p>
           </div>
 
           <!-- Empty Search -->
           <div
             v-else-if="filteredFaqs.length === 0"
-            class="bg-white border border-[#E2E8DF] rounded-2xl p-10 text-center shadow-sm"
+            class="bg-white border border-line rounded-2xl p-10 text-center shadow-sm"
           >
-            <div class="w-16 h-16 rounded-full bg-[#FCE8E8] text-[#C62828] flex items-center justify-center mx-auto mb-4 text-2xl">
+            <div class="w-16 h-16 rounded-full bg-danger-bg text-[#C62828] flex items-center justify-center mx-auto mb-4 text-2xl">
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             </div>
-            <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">Không tìm thấy câu hỏi phù hợp</h3>
-            <p class="text-sm text-[#556450] m-0 mb-4">
+            <h3 class="text-lg font-extrabold text-ink-strong m-0 mb-2">Không tìm thấy câu hỏi phù hợp</h3>
+            <p class="text-sm text-ink-soft m-0 mb-4">
               Không tìm thấy nội dung khớp với từ khóa &laquo;<strong>{{ searchKeyword }}</strong>&raquo;.
             </p>
             <button
               type="button"
               @click="searchKeyword = ''"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-800 transition-all cursor-pointer border-none"
             >
               <span>Xem tất cả câu hỏi</span>
             </button>
@@ -160,8 +160,8 @@
                 :key="item.id"
                 class="bg-white rounded-2xl border transition-all duration-300 overflow-hidden"
                 :class="activeIndex === index
-                  ? 'border-[#4A6741] shadow-[0_4px_16px_rgba(74,103,65,0.08)]'
-                  : 'border-[#E2E8DF] shadow-[0_1px_4px_rgba(0,0,0,0.02)] hover:border-[#BAC8B6]'"
+                  ? 'border-brand-600 shadow-[0_4px_16px_rgba(74,103,65,0.08)]'
+                  : 'border-line shadow-[0_1px_4px_rgba(0,0,0,0.02)] hover:border-[#BAC8B6]'"
               >
                 <button
                   :id="`faq-question-${item.id}`"
@@ -174,7 +174,7 @@
                   <div class="flex items-center gap-3.5 min-w-0">
                     <div
                       class="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 transition-colors"
-                      :class="activeIndex === index ? 'bg-[#4A6741] text-white' : 'bg-[#EBF3E8] text-[#2D5A27]'"
+                      :class="activeIndex === index ? 'bg-brand-600 text-white' : 'bg-line text-[#2D5A27]'"
                     >
                       <i class="fa-solid fa-circle-question"></i>
                     </div>
@@ -185,19 +185,19 @@
                       {{ item.title }}
                     </span>
                   </div>
-                  <span class="text-[1.4rem] text-[#5A6C58] shrink-0 select-none" aria-hidden="true">{{ activeIndex === index ? '−' : '+' }}</span>
+                  <span class="text-[1.4rem] text-ink-soft shrink-0 select-none" aria-hidden="true">{{ activeIndex === index ? '−' : '+' }}</span>
                 </button>
 
                 <div
                   v-show="activeIndex === index"
                   :id="`faq-answer-${item.id}`"
-                  class="px-6 pb-5 pt-1 text-[0.92rem] text-ink-secondary leading-relaxed border-t border-[#EEF2EC] bg-[#F9FAF8]"
+                  class="px-6 pb-5 pt-1 text-[0.92rem] text-ink-secondary leading-relaxed border-t border-surface-tint bg-surface"
                 >
                   <p class="m-0 pt-3">{{ item.excerpt }}</p>
-                  <div v-if="item.slug" class="pt-3 mt-3 border-t border-[#E8EEE6] flex items-center justify-between text-xs">
+                  <div v-if="item.slug" class="pt-3 mt-3 border-t border-line flex items-center justify-between text-xs">
                     <nuxt-link
                       :to="`/news/${item.slug}`"
-                      class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] no-underline group/link"
+                      class="inline-flex items-center gap-1.5 font-bold text-brand-800 hover:text-[#1B3617] no-underline group/link"
                     >
                       <span>Xem toàn bộ bài giải đáp</span>
                       <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover/link:translate-x-1" aria-hidden="true"></i>
@@ -211,7 +211,7 @@
               <!-- Pagination -->
               <nav
                 v-if="filteredFaqs.length > 0"
-                class="mt-8 pt-6 border-t border-[#DDE6DC] flex flex-col sm:flex-row items-center justify-between gap-4"
+                class="mt-8 pt-6 border-t border-line flex flex-col sm:flex-row items-center justify-between gap-4"
                 aria-label="Phân trang câu hỏi"
               >
                 <div class="text-xs text-[#6F7F6C] font-medium">
@@ -262,20 +262,20 @@
         <!-- Cột phải Sidebar -->
         <aside class="flex flex-col gap-6 lg:sticky lg:top-[90px] min-w-0">
           <!-- Widget 1: Xem thêm -->
-          <div class="bg-white rounded-2xl border border-[#E2E8DF] shadow-sm p-5">
-            <h3 class="text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[0.6px] pb-2 mb-3 border-b-2 border-[#E2E8DF] m-0">Xem thêm</h3>
+          <div class="bg-white rounded-2xl border border-line shadow-sm p-5">
+            <h3 class="text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[0.6px] pb-2 mb-3 border-b-2 border-line m-0">Xem thêm</h3>
             <ul class="list-none p-0 m-0 flex flex-col">
-              <li v-for="link in quickLinks" :key="link.to" class="border-b border-[#F0F5EE] last:border-b-0">
+              <li v-for="link in quickLinks" :key="link.to" class="border-b border-surface-tint last:border-b-0">
                 <nuxt-link
                   :to="link.to"
                   class="flex items-start gap-3 py-3 no-underline text-ink transition-colors duration-200 hover:text-[#2D5A27] group"
                 >
-                  <div class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-[#2D5A27] flex items-center justify-center text-xs shrink-0 mt-0.5 transition-colors group-hover:bg-brand-600 group-hover:text-white">
+                  <div class="w-7 h-7 rounded-lg bg-line text-[#2D5A27] flex items-center justify-center text-xs shrink-0 mt-0.5 transition-colors group-hover:bg-brand-600 group-hover:text-white">
                     <i :class="link.icon" aria-hidden="true"></i>
                   </div>
                   <span class="min-w-0 flex-1">
                     <span class="block text-[0.88rem] font-bold leading-snug">{{ link.title }}</span>
-                    <span class="block text-[0.75rem] text-[#5A6C58] leading-relaxed mt-0.5">{{ link.description }}</span>
+                    <span class="block text-[0.75rem] text-ink-soft leading-relaxed mt-0.5">{{ link.description }}</span>
                   </span>
                 </nuxt-link>
               </li>

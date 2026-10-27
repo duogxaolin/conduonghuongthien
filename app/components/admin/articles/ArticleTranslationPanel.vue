@@ -495,7 +495,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
         </div>
 
         <!-- Card Action Buttons -->
-        <div class="flex items-center justify-between pt-2 border-t border-[#eef2ee] gap-1">
+        <div class="flex items-center justify-between pt-2 border-t border-surface-tint gap-1">
           <!-- Untranslated or Failed: Direct AI Translate Button -->
           <template v-if="!getTranslationRow(lang.code) || getTranslationRow(lang.code)?.status === 'failed'">
             <button
@@ -561,18 +561,18 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tiêu đề dịch (*)</label>
+        <label class="text-[0.82rem] font-bold text-ink-admin">Tiêu đề dịch (*)</label>
         <input v-model="editingTranslation.title" type="text" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 bg-white font-semibold" />
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tóm tắt dịch</label>
+        <label class="text-[0.82rem] font-bold text-ink-admin">Tóm tắt dịch</label>
         <textarea v-model="editingTranslation.excerpt" rows="2" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 resize-none font-[inherit] bg-white"></textarea>
       </div>
 
       <div class="flex flex-col gap-1.5">
         <div class="flex items-center justify-between">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Nội dung dịch (Trình soạn thảo TinyMCE)</label>
+          <label class="text-[0.82rem] font-bold text-ink-admin">Nội dung dịch (Trình soạn thảo TinyMCE)</label>
           <span class="text-xs text-ink-muted">Hỗ trợ đầy đủ định dạng rich-text, bảng biểu, ảnh</span>
         </div>
         <div class="bg-white rounded-lg border border-line-strong overflow-hidden">

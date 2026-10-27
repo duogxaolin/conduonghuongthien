@@ -347,7 +347,7 @@ const filteredMenuGroups = computed(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#f4f7f4] font-[Inter,system-ui,sans-serif] text-[#2c3e2e]">
+  <div class="min-h-screen bg-surface font-[Inter,system-ui,sans-serif] text-ink-admin">
     <ToastContainer />
 
     <!-- Mobile backdrop -->
@@ -361,24 +361,24 @@ const filteredMenuGroups = computed(() => {
     </Transition>
     <!-- Sidebar -->
     <aside
-      class="sidebar fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-[#0d1f11] text-[#e2ede3] border-r border-white/[0.08] shadow-[4px_0_24px_rgba(0,0,0,0.25)] overflow-hidden select-none"
+      class="sidebar fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-[#0d1f11] text-line border-r border-white/[0.08] shadow-[4px_0_24px_rgba(0,0,0,0.25)] overflow-hidden select-none"
       :class="{ 'is-open': isMobileMenuOpen, 'collapsed': isSidebarCollapsed }"
     >
       <!-- Sidebar Header -->
       <div class="h-16 flex items-center justify-between px-3.5 border-b border-white/10 shrink-0 bg-black/10">
         <!-- Brand / Logo (Expanded) -->
         <div v-if="!isSidebarCollapsed" class="flex items-center gap-3 overflow-hidden min-w-0">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-700 to-[#1a441e] border border-[#8ed694]/30 shadow-[0_2px_10px_rgba(44,110,51,0.3)] flex items-center justify-center text-[#8ed694] shrink-0">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 border border-brand-300/30 shadow-[0_2px_10px_rgba(44,110,51,0.3)] flex items-center justify-center text-brand-300 shrink-0">
             <i class="fa-solid fa-leaf text-base"></i>
           </div>
           <div class="flex flex-col min-w-0">
             <span class="font-black text-[0.92rem] tracking-wide text-white truncate leading-tight">HƯỚNG THIỆN</span>
-            <span class="text-[0.62rem] font-semibold text-[#8ed694] tracking-wider uppercase opacity-90 truncate mt-0.5">Cục C11 • Quản Trị</span>
+            <span class="text-[0.62rem] font-semibold text-brand-300 tracking-wider uppercase opacity-90 truncate mt-0.5">Cục C11 • Quản Trị</span>
           </div>
         </div>
 
         <!-- Brand / Logo (Collapsed) -->
-        <div v-else class="w-9 h-9 mx-auto rounded-xl bg-gradient-to-br from-brand-700 to-[#1a441e] border border-[#8ed694]/30 shadow-[0_2px_10px_rgba(44,110,51,0.3)] flex items-center justify-center text-[#8ed694] shrink-0 cursor-pointer" @click="toggleSidebar" title="Mở rộng menu">
+        <div v-else class="w-9 h-9 mx-auto rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 border border-brand-300/30 shadow-[0_2px_10px_rgba(44,110,51,0.3)] flex items-center justify-center text-brand-300 shrink-0 cursor-pointer" @click="toggleSidebar" title="Mở rộng menu">
           <i class="fa-solid fa-leaf text-base"></i>
         </div>
 
@@ -386,7 +386,7 @@ const filteredMenuGroups = computed(() => {
         <button
           v-if="!isSidebarCollapsed"
           type="button"
-          class="hidden lg:flex w-7 h-7 items-center justify-center rounded-lg bg-white/[0.07] hover:bg-white/[0.14] text-[#8ed694] hover:text-white transition-all cursor-pointer border-0 shrink-0"
+          class="hidden lg:flex w-7 h-7 items-center justify-center rounded-lg bg-white/[0.07] hover:bg-white/[0.14] text-brand-300 hover:text-white transition-all cursor-pointer border-0 shrink-0"
           @click="toggleSidebar"
           title="Thu gọn sidebar"
         >
@@ -396,7 +396,7 @@ const filteredMenuGroups = computed(() => {
         <!-- Close Button for Mobile -->
         <button
           type="button"
-          class="flex lg:hidden w-8 h-8 items-center justify-center rounded-lg bg-white/[0.07] hover:bg-white/[0.14] text-[#8ed694] hover:text-white transition-all cursor-pointer border-0 shrink-0"
+          class="flex lg:hidden w-8 h-8 items-center justify-center rounded-lg bg-white/[0.07] hover:bg-white/[0.14] text-brand-300 hover:text-white transition-all cursor-pointer border-0 shrink-0"
           @click="isMobileMenuOpen = false"
           title="Đóng menu"
         >
@@ -414,7 +414,7 @@ const filteredMenuGroups = computed(() => {
             v-model="searchQuery"
             type="text"
             placeholder="Tìm nhanh chức năng..."
-            class="w-full bg-white/[0.05] hover:bg-white/[0.08] focus:bg-white/[0.12] border border-white/10 focus:border-[#8ed694]/50 rounded-lg pl-8 pr-7 py-1.5 text-xs text-white placeholder-white/35 focus:outline-none transition-all duration-150"
+            class="w-full bg-white/[0.05] hover:bg-white/[0.08] focus:bg-white/[0.12] border border-white/10 focus:border-brand-300/50 rounded-lg pl-8 pr-7 py-1.5 text-xs text-white placeholder-white/35 focus:outline-none transition-all duration-150"
           />
           <button
             v-if="searchQuery"
@@ -432,14 +432,14 @@ const filteredMenuGroups = computed(() => {
           v-if="!searchQuery"
           to="/"
           target="_blank"
-          class="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-[0.74rem] text-white/70 hover:text-[#8ed694] no-underline font-medium transition-colors border border-white/[0.06] group/portal"
+          class="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-[0.74rem] text-white/70 hover:text-brand-300 no-underline font-medium transition-colors border border-white/[0.06] group/portal"
           title="Mở cổng thông tin công cộng trong tab mới"
         >
           <span class="flex items-center gap-2">
-            <i class="fa-solid fa-globe text-[11px] text-[#8ed694] group-hover/portal:scale-110 transition-transform"></i>
+            <i class="fa-solid fa-globe text-[11px] text-brand-300 group-hover/portal:scale-110 transition-transform"></i>
             <span>Xem Website công khai</span>
           </span>
-          <i class="fa-solid fa-arrow-up-right-from-square text-[9px] text-white/40 group-hover/portal:text-[#8ed694]"></i>
+          <i class="fa-solid fa-arrow-up-right-from-square text-[9px] text-white/40 group-hover/portal:text-brand-300"></i>
         </nuxt-link>
       </div>
 
@@ -448,7 +448,7 @@ const filteredMenuGroups = computed(() => {
         <button
           type="button"
           @click="focusSearch"
-          class="w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.05] hover:bg-white/[0.12] text-white/60 hover:text-[#8ed694] transition-colors border-0 cursor-pointer"
+          class="w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.05] hover:bg-white/[0.12] text-white/60 hover:text-brand-300 transition-colors border-0 cursor-pointer"
           title="Tìm kiếm chức năng (Mở rộng)"
         >
           <i class="fa-solid fa-magnifying-glass text-xs"></i>
@@ -456,7 +456,7 @@ const filteredMenuGroups = computed(() => {
         <nuxt-link
           to="/"
           target="_blank"
-          class="w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.03] hover:bg-white/[0.12] text-white/60 hover:text-[#8ed694] transition-colors border border-white/[0.06] no-underline"
+          class="w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.03] hover:bg-white/[0.12] text-white/60 hover:text-brand-300 transition-colors border border-white/[0.06] no-underline"
           title="Xem Website công khai ↗"
         >
           <i class="fa-solid fa-globe text-xs"></i>
@@ -473,7 +473,7 @@ const filteredMenuGroups = computed(() => {
           <button
             type="button"
             @click="searchQuery = ''"
-            class="mt-2 px-3 py-1 rounded-md bg-white/[0.08] hover:bg-white/[0.15] text-[#8ed694] text-xs border-0 cursor-pointer transition-colors"
+            class="mt-2 px-3 py-1 rounded-md bg-white/[0.08] hover:bg-white/[0.15] text-brand-300 text-xs border-0 cursor-pointer transition-colors"
           >
             Xoá bộ lọc
           </button>
@@ -485,12 +485,12 @@ const filteredMenuGroups = computed(() => {
             <button
               v-if="!isSidebarCollapsed"
               type="button"
-              class="w-full flex items-center justify-between gap-2 text-[0.68rem] uppercase tracking-[0.9px] text-[#8ed694]/75 font-bold px-3 py-2 rounded-lg hover:bg-white/[0.06] hover:text-[#8ed694] transition-colors bg-transparent border-0 cursor-pointer select-none"
+              class="w-full flex items-center justify-between gap-2 text-[0.68rem] uppercase tracking-[0.9px] text-brand-300/75 font-bold px-3 py-2 rounded-lg hover:bg-white/[0.06] hover:text-brand-300 transition-colors bg-transparent border-0 cursor-pointer select-none"
               :aria-expanded="openAccordions.has(group.title) || isSearching"
               @click="toggleAccordion(group.title)"
             >
               <span class="flex items-center gap-2">
-                <i class="fa-solid fa-sliders text-xs text-[#8ed694]"></i>
+                <i class="fa-solid fa-sliders text-xs text-brand-300"></i>
                 <span>{{ group.title }}</span>
               </span>
               <div class="flex items-center gap-1.5">
@@ -499,7 +499,7 @@ const filteredMenuGroups = computed(() => {
                 </span>
                 <i
                   class="fa-solid fa-chevron-right text-[0.6rem] transition-transform duration-200 text-white/40"
-                  :class="{ 'rotate-90 !text-[#8ed694]': openAccordions.has(group.title) || isSearching }"
+                  :class="{ 'rotate-90 !text-brand-300': openAccordions.has(group.title) || isSearching }"
                 ></i>
               </div>
             </button>
@@ -522,10 +522,10 @@ const filteredMenuGroups = computed(() => {
                             ? 'w-10 h-10 mx-auto justify-center text-white/70 hover:text-white hover:bg-white/[0.08]'
                             : 'px-2.5 py-1.5 text-white/70 hover:text-white hover:bg-white/[0.07] text-[0.82rem]'
                         ]"
-                        active-class="!bg-gradient-to-r !from-brand-700 !to-[#1f5225] !text-white !font-semibold shadow-[0_2px_8px_rgba(44,110,51,0.35)] border border-[#8ed694]/30 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-[#8ed694] before:rounded-r-full"
+                        active-class="!bg-gradient-to-r !from-brand-700 !to-[#1f5225] !text-white !font-semibold shadow-[0_2px_8px_rgba(44,110,51,0.35)] border border-brand-300/30 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-brand-300 before:rounded-r-full"
                         :title="item.label"
                       >
-                        <i :class="item.icon" class="text-[0.92rem] shrink-0 w-4 text-center text-[#8ed694]/70 group-hover:text-[#8ed694] group-[.router-link-active]:text-white transition-colors"></i>
+                        <i :class="item.icon" class="text-[0.92rem] shrink-0 w-4 text-center text-brand-300/70 group-hover:text-brand-300 group-[.router-link-active]:text-white transition-colors"></i>
                         <span v-if="!isSidebarCollapsed" class="truncate flex-1">{{ item.label }}</span>
                       </nuxt-link>
                     </li>
@@ -539,7 +539,7 @@ const filteredMenuGroups = computed(() => {
           <template v-else>
             <div
               v-if="!isSidebarCollapsed"
-              class="text-[0.66rem] uppercase tracking-[0.9px] text-[#8ed694]/70 font-bold px-3 pt-2 pb-1 select-none"
+              class="text-[0.66rem] uppercase tracking-[0.9px] text-brand-300/70 font-bold px-3 pt-2 pb-1 select-none"
             >
               {{ group.title }}
             </div>
@@ -555,11 +555,11 @@ const filteredMenuGroups = computed(() => {
                       ? 'w-10 h-10 mx-auto justify-center text-white/70 hover:text-white hover:bg-white/[0.08]'
                       : 'gap-3 px-3 py-2 text-white/70 hover:text-white hover:bg-white/[0.07] text-[0.84rem]'
                   ]"
-                  :active-class="item.path === '/admin' ? '' : '!bg-gradient-to-r !from-brand-700 !to-[#1f5225] !text-white !font-semibold shadow-[0_3px_12px_rgba(44,110,51,0.35)] border border-[#8ed694]/30 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:bg-[#8ed694] before:rounded-r-full'"
-                  :exact-active-class="'!bg-gradient-to-r !from-brand-700 !to-[#1f5225] !text-white !font-semibold shadow-[0_3px_12px_rgba(44,110,51,0.35)] border border-[#8ed694]/30 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:bg-[#8ed694] before:rounded-r-full'"
+                  :active-class="item.path === '/admin' ? '' : '!bg-gradient-to-r !from-brand-700 !to-[#1f5225] !text-white !font-semibold shadow-[0_3px_12px_rgba(44,110,51,0.35)] border border-brand-300/30 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:bg-brand-300 before:rounded-r-full'"
+                  :exact-active-class="'!bg-gradient-to-r !from-brand-700 !to-[#1f5225] !text-white !font-semibold shadow-[0_3px_12px_rgba(44,110,51,0.35)] border border-brand-300/30 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:bg-brand-300 before:rounded-r-full'"
                   :title="item.label"
                 >
-                  <i :class="item.icon" class="text-[0.98rem] shrink-0 w-5 text-center text-[#8ed694]/75 group-hover:text-[#8ed694] group-[.router-link-active]:text-white transition-colors"></i>
+                  <i :class="item.icon" class="text-[0.98rem] shrink-0 w-5 text-center text-brand-300/75 group-hover:text-brand-300 group-[.router-link-active]:text-white transition-colors"></i>
                   <span v-if="!isSidebarCollapsed" class="truncate flex-1">{{ item.label }}</span>
                 </nuxt-link>
               </li>
@@ -578,16 +578,16 @@ const filteredMenuGroups = computed(() => {
             title="Trang tài khoản của tôi"
           >
             <div class="relative shrink-0">
-              <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-700 to-[#3a8b43] text-white flex items-center justify-center font-bold text-sm shadow-sm border border-[#8ed694]/30">
+              <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-700 to-[#3a8b43] text-white flex items-center justify-center font-bold text-sm shadow-sm border border-brand-300/30">
                 {{ user.username.charAt(0).toUpperCase() }}
               </div>
               <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-[#4caf50] rounded-full border-2 border-[#0d1f11]" title="Đang trực tuyến"></span>
             </div>
             <div class="flex flex-col min-w-0">
-              <span class="text-[0.82rem] font-bold text-white truncate group-hover/user:text-[#8ed694] transition-colors leading-tight">
+              <span class="text-[0.82rem] font-bold text-white truncate group-hover/user:text-brand-300 transition-colors leading-tight">
                 {{ user.username }}
               </span>
-              <span class="text-[0.66rem] text-[#8ed694] font-medium truncate mt-0.5">
+              <span class="text-[0.66rem] text-brand-300 font-medium truncate mt-0.5">
                 {{ user.isSuperAdmin ? 'SuperAdmin' : user.roleName }}
               </span>
             </div>
@@ -608,7 +608,7 @@ const filteredMenuGroups = computed(() => {
         <div v-else class="flex flex-col items-center gap-2">
           <nuxt-link
             to="/admin/profile"
-            class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 to-[#3a8b43] text-white flex items-center justify-center font-bold text-sm shadow-sm border border-[#8ed694]/30 no-underline"
+            class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 to-[#3a8b43] text-white flex items-center justify-center font-bold text-sm shadow-sm border border-brand-300/30 no-underline"
             :title="`${user.username} (${user.isSuperAdmin ? 'SuperAdmin' : user.roleName}) - Tài khoản`"
           >
             {{ user.username.charAt(0).toUpperCase() }}

@@ -25,7 +25,7 @@ const onProfile = computed(() => isMfaEnrollmentPage(route.path))
     v-if="required || enforceAfter"
     role="status"
     class="mb-4 flex flex-wrap items-start gap-2 rounded-xl border px-4 py-3 text-sm"
-    :class="required ? 'border-[#ffc1ba] bg-[#ffebe9] text-[#8a1c19]' : 'border-[#f0dcae] bg-[#fdf6e7] text-[#7a5a12]'"
+    :class="required ? 'border-[#ffc1ba] bg-danger-bg text-[#8a1c19]' : 'border-[#f0dcae] bg-[#fdf6e7] text-[#7a5a12]'"
   >
     <i class="fa-solid fa-shield-halved mt-0.5" aria-hidden="true"></i>
     <p class="m-0 flex-1 min-w-[200px]">

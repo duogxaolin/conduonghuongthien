@@ -303,7 +303,7 @@ onBeforeUnmount(deactivate)
         @click="onBackdropClick"
       >
         <div data-admin-modal-panel :class="panelClass">
-          <div class="flex shrink-0 items-start justify-between gap-3 border-b border-line bg-[#f8faf8] px-6 py-4">
+          <div class="flex shrink-0 items-start justify-between gap-3 border-b border-line bg-surface px-6 py-4">
             <h2 :id="titleId" class="m-0 min-w-0 text-[1.05rem] font-extrabold leading-normal text-brand-950 break-words">
               <i v-if="icon" :class="icon" class="mr-2 text-brand-700" aria-hidden="true"></i>{{ title }}
             </h2>

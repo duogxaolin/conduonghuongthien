@@ -239,7 +239,7 @@ onMounted(load)
       <div class="flex gap-2 shrink-0">
         <button
           type="button"
-          class="inline-flex items-center gap-2 px-4 py-2.5 border border-line-strong bg-[#f4f7f4] text-brand-900 rounded-lg font-bold cursor-pointer hover:bg-[#e6f2e6] hover:border-brand-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          class="inline-flex items-center gap-2 px-4 py-2.5 border border-line-strong bg-surface text-brand-900 rounded-lg font-bold cursor-pointer hover:bg-line hover:border-brand-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           :disabled="running || loading"
           @click="runNow"
         >
@@ -263,14 +263,14 @@ onMounted(load)
       <span class="sr-only">Đang tải cấu hình dọn dữ liệu</span>
       <div class="flex flex-col gap-4">
         <div v-for="n in 5" :key="n" class="animate-pulse motion-reduce:animate-none">
-          <div class="h-4 bg-[#EEF2EC] rounded w-1/4 mb-2" aria-hidden="true"></div>
-          <div class="h-10 bg-[#EEF2EC] rounded" aria-hidden="true"></div>
+          <div class="h-4 bg-surface-tint rounded w-1/4 mb-2" aria-hidden="true"></div>
+          <div class="h-10 bg-surface-tint rounded" aria-hidden="true"></div>
         </div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="load()">thử lại</button>.
     </div>
@@ -302,7 +302,7 @@ onMounted(load)
       </div>
       <div
         v-else-if="anyOverdue"
-        class="rounded-xl border border-[#e8b4b4] bg-[#fdf1f1] px-5 py-4 flex gap-3 items-start"
+        class="rounded-xl border border-[#e8b4b4] bg-danger-bg px-5 py-4 flex gap-3 items-start"
       >
         <i class="fa-solid fa-triangle-exclamation text-[#a83232] mt-0.5"></i>
         <div class="text-[0.85rem] text-[#7a2323]">
@@ -315,7 +315,7 @@ onMounted(load)
       </div>
       <div
         v-else
-        class="rounded-xl border border-line-strong bg-[#eef6ef] px-5 py-4 flex gap-3 items-start"
+        class="rounded-xl border border-line-strong bg-surface-tint px-5 py-4 flex gap-3 items-start"
       >
         <i class="fa-solid fa-circle-check text-brand-700 mt-0.5"></i>
         <div class="text-[0.85rem] text-brand-900">
@@ -335,11 +335,11 @@ onMounted(load)
           <p class="text-[0.78rem] text-ink-muted mt-0 mb-4">{{ SCOPE_NOTES[scope.scope] }}</p>
 
           <div class="grid grid-cols-3 gap-3 mb-4">
-            <div class="rounded-lg bg-[#f4f7f4] px-3 py-3">
+            <div class="rounded-lg bg-surface px-3 py-3">
               <p class="text-[0.7rem] text-ink-muted m-0 mb-1 uppercase tracking-wide">Đang lưu</p>
               <p class="text-[1.15rem] font-extrabold text-brand-950 m-0">{{ formatNumber(scope.total) }}</p>
             </div>
-            <div class="rounded-lg bg-[#f4f7f4] px-3 py-3">
+            <div class="rounded-lg bg-surface px-3 py-3">
               <p class="text-[0.7rem] text-ink-muted m-0 mb-1 uppercase tracking-wide">Đã dọn</p>
               <p class="text-[1.15rem] font-extrabold text-brand-950 m-0">{{ formatNumber(scope.purgedTotal) }}</p>
             </div>
@@ -389,29 +389,29 @@ onMounted(load)
           Đặt <strong>0</strong> để tắt riêng từng điều kiện.
         </p>
 
-        <label class="flex items-start gap-3 rounded-lg border border-line-strong bg-[#f4f7f4] px-4 py-3 cursor-pointer mb-5">
+        <label class="flex items-start gap-3 rounded-lg border border-line-strong bg-surface px-4 py-3 cursor-pointer mb-5">
           <input type="checkbox" v-model="form.autoEnabled" class="mt-0.5 w-4 h-4 accent-brand-700 cursor-pointer" />
           <span>
             <span class="block text-[0.88rem] font-bold text-brand-950">Tự động dọn theo lịch hằng ngày</span>
             <span class="block text-[0.78rem] text-ink-muted mt-0.5">
               Máy chủ tự chạy, không cần đặt cron. Tắt đi thì chỉ còn cách bấm “Dọn ngay” hoặc chạy
               <code class="bg-line px-1 rounded">{{ command }}</code>.
-              <span class="text-[#8a9a8c]">({{ SOURCE_LABELS[autoEnabledSource] }})</span>
+              <span class="text-ink-faint">({{ SOURCE_LABELS[autoEnabledSource] }})</span>
             </span>
           </span>
         </label>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Giờ chạy hằng ngày</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Giờ chạy hằng ngày</label>
             <select v-model.number="form.runHour" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border bg-white">
               <option v-for="hour in 24" :key="hour - 1" :value="hour - 1">
                 {{ String(hour - 1).padStart(2, '0') }}:00
               </option>
             </select>
-            <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+            <p class="text-[0.72rem] text-ink-faint m-0">
               Theo giờ máy chủ. Nếu máy tắt qua giờ này, lượt dọn sẽ chạy bù ở lần kiểm tra kế tiếp.
-              <span class="text-[#8a9a8c]">({{ SOURCE_LABELS[runHourSource] }})</span>
+              <span class="text-ink-faint">({{ SOURCE_LABELS[runHourSource] }})</span>
             </p>
           </div>
           <div></div>
@@ -420,16 +420,16 @@ onMounted(load)
             <p class="text-[0.88rem] font-bold text-brand-950 m-0 mb-3">Lịch sử hoạt động</p>
             <div class="flex flex-col gap-3">
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số ngày lưu</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số ngày lưu</label>
                 <input type="number" min="0" max="3650" v-model.number="form.activityLogDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+                <p class="text-[0.72rem] text-ink-faint m-0">
                   0 hoặc từ 30 đến 3650. <span v-if="activity">Hiện {{ SOURCE_LABELS[activity.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số bản ghi tối đa</label>
                 <input type="number" min="0" v-model.number="form.activityLogMaxRows" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">0 (không giới hạn) hoặc từ 1.000 trở lên.</p>
+                <p class="text-[0.72rem] text-ink-faint m-0">0 (không giới hạn) hoặc từ 1.000 trở lên.</p>
               </div>
             </div>
           </div>
@@ -438,17 +438,17 @@ onMounted(load)
             <p class="text-[0.88rem] font-bold text-brand-950 m-0 mb-3">Đơn đăng ký hỗ trợ</p>
             <div class="flex flex-col gap-3">
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số ngày lưu</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số ngày lưu</label>
                 <input type="number" min="0" max="3650" v-model.number="form.submissionDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+                <p class="text-[0.72rem] text-ink-faint m-0">
                   Mặc định 0 (giữ vô thời hạn) vì thời hạn lưu hồ sơ công dân do quy định của cơ quan quyết định.
                   <span v-if="submission">Hiện {{ SOURCE_LABELS[submission.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số bản ghi tối đa</label>
                 <input type="number" min="0" v-model.number="form.submissionMaxRows" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">Nên để 0: đơn của công dân không nên bị xoá vì bảng đầy.</p>
+                <p class="text-[0.72rem] text-ink-faint m-0">Nên để 0: đơn của công dân không nên bị xoá vì bảng đầy.</p>
               </div>
             </div>
           </div>
@@ -457,17 +457,17 @@ onMounted(load)
             <p class="text-[0.88rem] font-bold text-brand-950 m-0 mb-3">Phiên trò chuyện chatbot</p>
             <div class="flex flex-col gap-3">
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số ngày lưu</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số ngày lưu</label>
                 <input type="number" min="0" max="3650" v-model.number="form.chatSessionDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+                <p class="text-[0.72rem] text-ink-faint m-0">
                   0 hoặc từ 30 đến 3650. Tin nhắn trong phiên tự xoá theo (ON DELETE CASCADE) — chỉ cần đặt điều kiện dọn cho bảng phiên.
                   <span v-if="chatSession">Hiện {{ SOURCE_LABELS[chatSession.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số bản ghi tối đa</label>
                 <input type="number" min="0" v-model.number="form.chatSessionMaxRows" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">0 (không giới hạn) hoặc từ 1.000 trở lên.</p>
+                <p class="text-[0.72rem] text-ink-faint m-0">0 (không giới hạn) hoặc từ 1.000 trở lên.</p>
               </div>
             </div>
           </div>
@@ -475,17 +475,17 @@ onMounted(load)
             <p class="text-[0.88rem] font-bold text-brand-950 m-0 mb-3">Tài khoản người đọc</p>
             <div class="flex flex-col gap-3">
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số ngày lưu</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số ngày lưu</label>
                 <input type="number" min="0" max="3650" v-model.number="form.readerAccountDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+                <p class="text-[0.72rem] text-ink-faint m-0">
                   0 hoặc từ 30 đến 3650. Tính theo lần truy cập gần nhất, không theo ngày tạo — một tài khoản mở từ lâu nhưng vừa bình luận hôm qua vẫn là người đọc đang hoạt động.
                   <span v-if="readerAccount">Hiện {{ SOURCE_LABELS[readerAccount.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số bản ghi tối đa</label>
                 <input type="number" min="0" v-model.number="form.readerAccountMaxRows" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">Nên để 0: xoá một tài khoản là xoá luôn toàn bộ bình luận công khai của người đó.</p>
+                <p class="text-[0.72rem] text-ink-faint m-0">Nên để 0: xoá một tài khoản là xoá luôn toàn bộ bình luận công khai của người đó.</p>
               </div>
             </div>
           </div>
@@ -493,17 +493,17 @@ onMounted(load)
             <p class="text-[0.88rem] font-bold text-brand-950 m-0 mb-3">Phiên phát trực tiếp</p>
             <div class="flex flex-col gap-3">
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số ngày lưu</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số ngày lưu</label>
                 <input type="number" min="0" max="3650" v-model.number="form.livestreamSessionDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+                <p class="text-[0.72rem] text-ink-faint m-0">
                   0 hoặc từ 30 đến 3650. Tính theo thời điểm kết thúc buổi phát, không theo lúc bắt đầu. Buổi đang phát không bao giờ bị xoá.
                   <span v-if="livestreamSession">Hiện {{ SOURCE_LABELS[livestreamSession.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
+                <label class="text-[0.8rem] font-bold text-ink-admin">Số bản ghi tối đa</label>
                 <input type="number" min="0" v-model.number="form.livestreamSessionMaxRows" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-                <p class="text-[0.72rem] text-[#8a9a8c] m-0">Nên để 0: xoá một phiên là xoá luôn phần trò chuyện của khách trong buổi phát đó.</p>
+                <p class="text-[0.72rem] text-ink-faint m-0">Nên để 0: xoá một phiên là xoá luôn phần trò chuyện của khách trong buổi phát đó.</p>
               </div>
             </div>
           </div>

@@ -74,7 +74,7 @@ useSeoMeta({
         </div>
 
         <!-- Mã lỗi + tiêu đề -->
-        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.5px] text-[#5A6C58] m-0 mb-2">
+        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.5px] text-ink-soft m-0 mb-2">
           <span v-if="is4xx">Lỗi {{ code }}</span>
           <span v-else>Lỗi máy chủ {{ code }}</span>
         </p>
@@ -89,7 +89,7 @@ useSeoMeta({
         <div class="flex flex-wrap items-center justify-center gap-3">
           <button
             type="button"
-            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-bold hover:bg-[#385132] transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-brand-600 text-white text-sm font-bold hover:bg-brand-800 transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
             @click="handleHome"
           >
             <i class="fa-solid fa-house text-xs" aria-hidden="true"></i>
@@ -97,7 +97,7 @@ useSeoMeta({
           </button>
           <button
             type="button"
-            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-white border border-[#D5E1D3] text-[#385932] text-sm font-bold hover:bg-[#F2F7F0] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-white border border-[#D5E1D3] text-brand-800 text-sm font-bold hover:bg-surface-tint transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
             @click="handleRetry"
           >
             <i class="fa-solid fa-rotate-right text-xs" aria-hidden="true"></i>

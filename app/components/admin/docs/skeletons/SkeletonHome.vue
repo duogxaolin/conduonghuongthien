@@ -19,26 +19,26 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
     <!-- Topbar: hotline + social -->
     <button
       v-if="findHotspot('top')"
-      class="h-7 bg-[#0d1f11] border-2 border-dashed border-brand-700 rounded text-[#8ed694] text-[0.6rem] font-semibold flex items-center justify-between px-4 cursor-pointer hover:border-[#8ed694] hover:bg-brand-950 focus:outline-none focus:ring-2 focus:ring-[#8ed694] transition-colors"
+      class="h-7 bg-[#0d1f11] border-2 border-dashed border-brand-700 rounded text-brand-300 text-[0.6rem] font-semibold flex items-center justify-between px-4 cursor-pointer hover:border-brand-300 hover:bg-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-300 transition-colors"
       :aria-label="findHotspot('top')!.label"
       :title="`${findHotspot('top')!.label} — ${findHotspot('top')!.hint}`"
       @click="hotspotClick(findHotspot('top')!)"
     >
       <span aria-hidden="true" class="flex items-center gap-2">
-        <i class="fa-solid fa-phone text-[#8ed694] text-[0.55rem]"></i>
-        <span class="h-1.5 w-16 bg-[#8ed694]/30 rounded"></span>
+        <i class="fa-solid fa-phone text-brand-300 text-[0.55rem]"></i>
+        <span class="h-1.5 w-16 bg-brand-300/30 rounded"></span>
       </span>
       <span aria-hidden="true" class="flex items-center gap-1.5">
-        <i class="fa-brands fa-facebook text-[#8ed694]/60 text-[0.55rem]"></i>
-        <i class="fa-brands fa-youtube text-[#8ed694]/60 text-[0.55rem]"></i>
-        <span class="h-1.5 w-8 bg-[#8ed694]/30 rounded"></span>
+        <i class="fa-brands fa-facebook text-brand-300/60 text-[0.55rem]"></i>
+        <i class="fa-brands fa-youtube text-brand-300/60 text-[0.55rem]"></i>
+        <span class="h-1.5 w-8 bg-brand-300/30 rounded"></span>
       </span>
     </button>
 
     <!-- Header: logo + nav -->
     <button
       v-if="findHotspot('header')"
-      class="h-14 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-between px-4 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+      class="h-14 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-between px-4 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
       :aria-label="findHotspot('header')!.label"
       :title="`${findHotspot('header')!.label} — ${findHotspot('header')!.hint}`"
       @click="hotspotClick(findHotspot('header')!)"
@@ -73,7 +73,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
     <div class="grid grid-cols-3 gap-2.5">
       <button
         v-if="findHotspot('news')"
-        class="h-24 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors p-2 text-center"
+        class="h-24 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors p-2 text-center"
         :aria-label="findHotspot('news')!.label"
         :title="`${findHotspot('news')!.label} — ${findHotspot('news')!.hint}`"
         @click="hotspotClick(findHotspot('news')!)"
@@ -84,7 +84,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
       </button>
       <button
         v-if="findHotspot('role-models')"
-        class="h-24 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors p-2 text-center"
+        class="h-24 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors p-2 text-center"
         :aria-label="findHotspot('role-models')!.label"
         :title="`${findHotspot('role-models')!.label} — ${findHotspot('role-models')!.hint}`"
         @click="hotspotClick(findHotspot('role-models')!)"
@@ -95,7 +95,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
       </button>
       <button
         v-if="findHotspot('reintegration')"
-        class="h-24 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors p-2 text-center"
+        class="h-24 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors p-2 text-center"
         :aria-label="findHotspot('reintegration')!.label"
         :title="`${findHotspot('reintegration')!.label} — ${findHotspot('reintegration')!.hint}`"
         @click="hotspotClick(findHotspot('reintegration')!)"
@@ -109,7 +109,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
     <!-- Stats row -->
     <button
       v-if="findHotspot('stats')"
-      class="h-20 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-around cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors px-4"
+      class="h-20 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-around cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors px-4"
       :aria-label="findHotspot('stats')!.label"
       :title="`${findHotspot('stats')!.label} — ${findHotspot('stats')!.hint}`"
       @click="hotspotClick(findHotspot('stats')!)"
@@ -133,22 +133,22 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
     <!-- Footer -->
     <button
       v-if="findHotspot('footer')"
-      class="h-14 bg-[#0d1f11] border-2 border-dashed border-brand-700 rounded text-[#8ed694] text-[0.65rem] font-semibold flex items-center justify-between px-4 cursor-pointer hover:border-[#8ed694] hover:bg-brand-950 focus:outline-none focus:ring-2 focus:ring-[#8ed694] transition-colors"
+      class="h-14 bg-[#0d1f11] border-2 border-dashed border-brand-700 rounded text-brand-300 text-[0.65rem] font-semibold flex items-center justify-between px-4 cursor-pointer hover:border-brand-300 hover:bg-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-300 transition-colors"
       :aria-label="findHotspot('footer')!.label"
       :title="`${findHotspot('footer')!.label} — ${findHotspot('footer')!.hint}`"
       @click="hotspotClick(findHotspot('footer')!)"
     >
       <span aria-hidden="true" class="flex flex-col gap-1">
-        <span class="h-2 w-16 bg-[#8ed694]/25 rounded"></span>
-        <span class="h-1.5 w-12 bg-[#8ed694]/15 rounded"></span>
+        <span class="h-2 w-16 bg-brand-300/25 rounded"></span>
+        <span class="h-1.5 w-12 bg-brand-300/15 rounded"></span>
       </span>
       <span aria-hidden="true" class="flex flex-col gap-1">
-        <span class="h-2 w-16 bg-[#8ed694]/25 rounded"></span>
-        <span class="h-1.5 w-12 bg-[#8ed694]/15 rounded"></span>
+        <span class="h-2 w-16 bg-brand-300/25 rounded"></span>
+        <span class="h-1.5 w-12 bg-brand-300/15 rounded"></span>
       </span>
       <span aria-hidden="true" class="flex flex-col gap-1">
-        <span class="h-2 w-16 bg-[#8ed694]/25 rounded"></span>
-        <span class="h-1.5 w-12 bg-[#8ed694]/15 rounded"></span>
+        <span class="h-2 w-16 bg-brand-300/25 rounded"></span>
+        <span class="h-1.5 w-12 bg-brand-300/15 rounded"></span>
       </span>
     </button>
   </div>

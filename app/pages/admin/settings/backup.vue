@@ -318,7 +318,7 @@ watch([running, restoring], ([r, rr]) => {
     </header>
 
     <!-- Banner trạng thái khôi phục — luôn hiển thị khi restoring, không rụt về 0 -->
-    <div v-if="restoring" class="rounded-xl border border-[#f0dcae] bg-[#fdf6e7] p-4 text-sm text-[#8a6412] flex flex-col gap-3" role="status" :aria-busy="restoring">
+    <div v-if="restoring" class="rounded-xl border border-[#f0dcae] bg-[#fdf6e7] p-4 text-sm text-warn-ink flex flex-col gap-3" role="status" :aria-busy="restoring">
       <div class="flex items-start gap-2">
         <i class="fa-solid fa-spinner animate-spin mt-0.5 motion-reduce:animate-none" aria-hidden="true"></i>
         <div class="flex-1 min-w-0">
@@ -327,31 +327,31 @@ watch([running, restoring], ([r, rr]) => {
           </strong>
           <span class="text-ink-muted break-words">{{ restoreStatus?.message || 'đang xử lý...' }}</span>
         </div>
-        <span v-if="restoreElapsed" class="text-xs font-bold tabular-nums text-[#8a6412] shrink-0">{{ restoreElapsed }}</span>
+        <span v-if="restoreElapsed" class="text-xs font-bold tabular-nums text-warn-ink shrink-0">{{ restoreElapsed }}</span>
       </div>
       <!-- Progress bar: upload phase (0-100 từ XHR) hoặc extract phase (từ backend) -->
       <div class="flex items-center gap-2">
         <div class="h-2.5 flex-1 overflow-hidden rounded-full bg-[#f0e0c0]" role="progressbar" :aria-valuenow="currentRestorePercent" aria-valuemin="0" aria-valuemax="100" :aria-label="`Tiến độ khôi phục ${currentRestorePercent}%`">
-          <div class="h-full rounded-full bg-[#8a6412] transition-all duration-300 motion-reduce:transition-none" :style="{ width: `${currentRestorePercent}%` }"></div>
+          <div class="h-full rounded-full bg-warn-ink transition-all duration-300 motion-reduce:transition-none" :style="{ width: `${currentRestorePercent}%` }"></div>
         </div>
-        <span class="text-xs font-bold tabular-nums text-[#8a6412] min-w-[3rem] text-right">{{ currentRestorePercent }}%</span>
+        <span class="text-xs font-bold tabular-nums text-warn-ink min-w-[3rem] text-right">{{ currentRestorePercent }}%</span>
       </div>
       <!-- Thông tin thêm: dung lượng + tốc độ khi đang upload -->
       <div v-if="uploadProgress >= 0 && uploadProgress < 100 && uploadBytesTotal > 0" class="flex items-center gap-3 text-[0.78rem] text-ink-muted">
         <span><i class="fa-solid fa-file-arrow-up mr-1" aria-hidden="true"></i>{{ formatBytes(uploadBytesLoaded) }} / {{ formatBytes(uploadBytesTotal) }}</span>
-        <span v-if="uploadSpeed" class="text-[#8a6412] font-semibold"><i class="fa-solid fa-gauge-high mr-1" aria-hidden="true"></i>{{ uploadSpeed }}</span>
+        <span v-if="uploadSpeed" class="text-warn-ink font-semibold"><i class="fa-solid fa-gauge-high mr-1" aria-hidden="true"></i>{{ uploadSpeed }}</span>
       </div>
       <!-- Log các phase đã đi qua -->
       <ol v-if="restoreLog.length > 1" class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem]">
         <li v-for="(log, i) in restoreLog" :key="i" class="flex items-start gap-2">
           <i class="fa-solid fa-check text-brand-700 mt-0.5 text-[0.7rem]" aria-hidden="true" v-if="i < restoreLog.length - 1 || currentRestorePercent === 100"></i>
-          <i class="fa-solid fa-circle-notch fa-spin text-[#8a6412] mt-0.5 text-[0.7rem] motion-reduce:animate-none" aria-hidden="true" v-else></i>
+          <i class="fa-solid fa-circle-notch fa-spin text-warn-ink mt-0.5 text-[0.7rem] motion-reduce:animate-none" aria-hidden="true" v-else></i>
           <span class="text-[#3d4a3e]"><strong>{{ RESTORE_PHASE_LABEL[log.phase] ?? log.phase }}:</strong> {{ log.message }}<span v-if="log.percent !== undefined" class="text-ink-muted"> ({{ log.percent }}%)</span></span>
         </li>
       </ol>
       <p class="m-0 text-[0.78rem] text-ink-muted"><i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>Cổng có thể chậm trong giây lát. Có thể đóng trang — worker tiếp tục trong nền.</p>
     </div>
-    <div v-else-if="running" class="rounded-xl border border-[#cce5cd] bg-[#eef7ee] px-4 py-3 text-sm text-brand-900 flex items-center gap-2" role="status">
+    <div v-else-if="running" class="rounded-xl border border-[#cce5cd] bg-surface-tint px-4 py-3 text-sm text-brand-900 flex items-center gap-2" role="status">
       <i class="fa-solid fa-spinner animate-spin motion-reduce:animate-none" aria-hidden="true"></i>
       <span>Đang backup — {{ backupStatus?.message }}</span>
     </div>
@@ -387,7 +387,7 @@ watch([running, restoring], ([r, rr]) => {
           <p class="m-0 mt-0.5 text-[0.82rem] text-ink-muted">Chọn file backup (.sql.gz hoặc .tar.gz) tải lên để khôi phục. File sẽ ghi đè dữ liệu hiện tại.</p>
         </div>
       </div>
-      <div class="rounded-lg border border-dashed border-[#b8cdba] bg-[#f8faf8] p-4 flex flex-col gap-2">
+      <div class="rounded-lg border border-dashed border-[#b8cdba] bg-surface p-4 flex flex-col gap-2">
         <label class="inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg bg-brand-700 px-4 py-2.5 text-sm font-bold text-white border-0 hover:bg-brand-900 disabled:opacity-50 disabled:cursor-not-allowed" :class="{ 'pointer-events-none opacity-50': restoring || running }">
           <i class="fa-solid fa-upload" aria-hidden="true"></i> Chọn file backup
           <input type="file" accept=".sql.gz,.tar.gz,application/gzip" class="sr-only" :disabled="restoring || running" @change="onRestoreUpload" />
@@ -430,7 +430,7 @@ watch([running, restoring], ([r, rr]) => {
       </div>
 
       <!-- Mobile Card View: Hiển thị dạng thẻ trên điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef2ee] rounded-xl border border-line overflow-hidden">
+      <div class="md:hidden divide-y divide-surface-tint rounded-xl border border-line overflow-hidden">
         <div
           v-for="item in items"
           :key="'m-'+item.id"
@@ -439,7 +439,7 @@ watch([running, restoring], ([r, rr]) => {
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0 flex-1">
               <p class="m-0 font-mono font-bold text-xs text-brand-950 truncate" :title="item.filename">{{ item.filename }}</p>
-              <span class="inline-block mt-1 rounded-full border border-[#cce5cd] bg-[#eef7ee] px-2 py-0.5 text-[0.7rem] font-bold text-brand-900">
+              <span class="inline-block mt-1 rounded-full border border-[#cce5cd] bg-surface-tint px-2 py-0.5 text-[0.7rem] font-bold text-brand-900">
                 {{ typeLabel(item.type) }}
               </span>
             </div>
@@ -451,7 +451,7 @@ watch([running, restoring], ([r, rr]) => {
             <BackupOffsiteBadge :item="item" />
           </div>
 
-          <div v-if="isSuperAdmin" class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
+          <div v-if="isSuperAdmin" class="flex items-center justify-end gap-2 pt-2 border-t border-surface">
             <button
               type="button"
               class="inline-flex items-center gap-1.5 rounded-lg bg-surface-tint px-3 py-1.5 text-xs font-bold text-brand-700 border-0 cursor-pointer hover:bg-[#e4f2e5]"
@@ -462,7 +462,7 @@ watch([running, restoring], ([r, rr]) => {
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg bg-[#fdf6e7] px-3 py-1.5 text-xs font-bold text-[#8a6412] border-0 cursor-pointer hover:bg-[#f5e8c8] disabled:opacity-60"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-[#fdf6e7] px-3 py-1.5 text-xs font-bold text-warn-ink border-0 cursor-pointer hover:bg-[#f5e8c8] disabled:opacity-60"
               title="Khôi phục"
               :disabled="restoring || running"
               @click="restoreBackup(item.filename)"
@@ -471,7 +471,7 @@ watch([running, restoring], ([r, rr]) => {
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg bg-[#ffebe9] px-3 py-1.5 text-xs font-bold text-danger border-0 cursor-pointer hover:bg-red-200"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-danger-bg px-3 py-1.5 text-xs font-bold text-danger border-0 cursor-pointer hover:bg-red-200"
               title="Xoá"
               @click="deleteBackup(item)"
             >
@@ -484,7 +484,7 @@ watch([running, restoring], ([r, rr]) => {
       <!-- Desktop Table View: Bảng đầy đủ trên máy tính -->
       <div class="hidden md:block overflow-x-auto">
         <table class="w-full border-collapse text-left text-[0.84rem]">
-          <thead class="bg-[#f4f7f4] text-xs uppercase tracking-wide text-ink-muted">
+          <thead class="bg-surface text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th class="px-3.5 py-3">Thời điểm</th>
               <th class="px-3.5 py-3">Loại</th>
@@ -495,17 +495,17 @@ watch([running, restoring], ([r, rr]) => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in items" :key="item.id" class="border-t border-[#eef2ee] hover:bg-[#fafcfa]">
+            <tr v-for="item in items" :key="item.id" class="border-t border-surface-tint hover:bg-surface">
               <td class="px-3.5 py-2.5 whitespace-nowrap text-[#3d4a3e]">{{ formatWhen(item.createdAt) }}</td>
-              <td class="px-3.5 py-2.5"><span class="rounded-full border border-[#cce5cd] bg-[#eef7ee] px-2 py-0.5 text-[0.72rem] font-bold text-brand-900">{{ typeLabel(item.type) }}</span></td>
+              <td class="px-3.5 py-2.5"><span class="rounded-full border border-[#cce5cd] bg-surface-tint px-2 py-0.5 text-[0.72rem] font-bold text-brand-900">{{ typeLabel(item.type) }}</span></td>
               <td class="px-3.5 py-2.5 truncate max-w-[200px] text-brand-950" :title="item.filename">{{ item.filename }}</td>
               <td class="px-3.5 py-2.5 text-ink-muted">{{ formatBytes(item.bytes) }}</td>
               <td class="px-3.5 py-2.5"><BackupOffsiteBadge :item="item" /></td>
               <td v-if="isSuperAdmin" class="px-3.5 py-2.5">
                 <div class="flex gap-1.5">
                   <button type="button" class="rounded-md bg-surface-tint px-2 py-1 text-[0.72rem] font-medium text-brand-700 border-0 cursor-pointer hover:bg-[#e4f2e5]" title="Tải về" @click="downloadBackup(item.filename)"><i class="fa-solid fa-download" aria-hidden="true"></i></button>
-                  <button type="button" class="rounded-md bg-[#fdf6e7] px-2 py-1 text-[0.72rem] font-medium text-[#8a6412] border-0 cursor-pointer hover:bg-[#f5e8c8]" title="Khôi phục" :disabled="restoring || running" @click="restoreBackup(item.filename)"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
-                  <button type="button" class="rounded-md bg-[#ffebe9] px-2 py-1 text-[0.72rem] font-medium text-danger border-0 cursor-pointer hover:bg-red-200" title="Xoá" @click="deleteBackup(item)"><i class="fa-regular fa-trash" aria-hidden="true"></i></button>
+                  <button type="button" class="rounded-md bg-[#fdf6e7] px-2 py-1 text-[0.72rem] font-medium text-warn-ink border-0 cursor-pointer hover:bg-[#f5e8c8]" title="Khôi phục" :disabled="restoring || running" @click="restoreBackup(item.filename)"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>
+                  <button type="button" class="rounded-md bg-danger-bg px-2 py-1 text-[0.72rem] font-medium text-danger border-0 cursor-pointer hover:bg-red-200" title="Xoá" @click="deleteBackup(item)"><i class="fa-regular fa-trash" aria-hidden="true"></i></button>
                 </div>
               </td>
             </tr>

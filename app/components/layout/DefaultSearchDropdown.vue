@@ -1,11 +1,11 @@
 <template>
   <!-- Search Dropdown Bar -->
   <transition name="slide-down">
-    <div :ref="mountBar" class="absolute top-full left-0 w-full bg-[#385130] py-4 shadow-xl z-[99] border-b border-[#2A3E24]" v-if="isSearchActive">
+    <div :ref="mountBar" class="absolute top-full left-0 w-full bg-brand-800 py-4 shadow-xl z-[99] border-b border-[#2A3E24]" v-if="isSearchActive">
       <div class="container relative">
         <form @submit.prevent="$emit('handle-search')" class="flex flex-col sm:flex-row gap-3 items-center">
           <div class="relative flex-1 w-full">
-            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#5A6C58] text-sm pointer-events-none">
+            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-ink-soft text-sm pointer-events-none">
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             </span>
             <input
@@ -15,13 +15,13 @@
               :value="searchQuery"
               @input="$emit('search-input', ($event.target as HTMLInputElement).value)"
               :ref="mountInput"
-              class="w-full py-3 pl-11 pr-10 rounded-lg border border-brand-600 bg-white font-[inherit] text-[0.95rem] text-[#172516] outline-none focus:ring-2 focus:ring-brand-600 shadow-inner"
+              class="w-full py-3 pl-11 pr-10 rounded-lg border border-brand-600 bg-white font-[inherit] text-[0.95rem] text-ink-strong outline-none focus:ring-2 focus:ring-brand-600 shadow-inner"
             />
             <button
               v-if="searchQuery"
               type="button"
               @click="$emit('clear-search')"
-              class="absolute right-3 top-1/2 -translate-y-1/2 text-[#8A9A88] hover:text-[#2D5A27] w-6 h-6 rounded-full flex items-center justify-center text-xs cursor-pointer border-none bg-transparent transition-colors"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-ink-faint hover:text-[#2D5A27] w-6 h-6 rounded-full flex items-center justify-center text-xs cursor-pointer border-none bg-transparent transition-colors"
               aria-label="Xóa từ khóa"
             >
               <i class="fa-solid fa-xmark" aria-hidden="true"></i>
@@ -50,10 +50,10 @@
         <!-- Instant Live Preview Dropdown -->
         <div
           v-if="showLivePreview && searchQuery.trim().length >= 2"
-          class="absolute left-0 right-0 top-full mt-2 bg-white rounded-xl shadow-[0_12px_40px_rgba(0,0,0,0.25)] border border-[#DDE6DC] overflow-hidden z-[105] max-h-[440px] flex flex-col text-[#172516]"
+          class="absolute left-0 right-0 top-full mt-2 bg-white rounded-xl shadow-[0_12px_40px_rgba(0,0,0,0.25)] border border-line overflow-hidden z-[105] max-h-[440px] flex flex-col text-ink-strong"
         >
           <!-- Header -->
-          <div class="px-4 py-2.5 bg-[#F7FAF6] border-b border-[#E8EFE6] flex items-center justify-between text-xs font-semibold text-[#556450]">
+          <div class="px-4 py-2.5 bg-surface border-b border-line flex items-center justify-between text-xs font-semibold text-ink-soft">
             <span v-if="isSearchingLive" class="flex items-center gap-2 text-brand-600">
               <i class="fa-solid fa-circle-notch animate-spin text-sm" aria-hidden="true"></i>
               <span>Đang tìm kiếm...</span>
@@ -61,7 +61,7 @@
             <span v-else>
               Gợi ý kết quả cho: <strong class="text-[#2D5A27]">&laquo;{{ searchQuery }}&raquo;</strong>
             </span>
-            <span v-if="!isSearchingLive && liveSearchResults.length" class="text-[0.72rem] text-[#5A6C58]">
+            <span v-if="!isSearchingLive && liveSearchResults.length" class="text-[0.72rem] text-ink-soft">
               {{ liveSearchResults.length }} kết quả nổi bật
             </span>
           </div>
@@ -74,7 +74,7 @@
             <span class="block mb-3 font-semibold">{{ t('search_live_error') }}</span>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-bold border-none cursor-pointer hover:bg-[#385132] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-bold border-none cursor-pointer hover:bg-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
               @click="$emit('search-input', searchQuery)"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -83,18 +83,18 @@
           </div>
 
           <!-- List -->
-          <div v-else-if="liveSearchResults.length" class="overflow-y-auto divide-y divide-[#F0F5EE] p-1.5">
+          <div v-else-if="liveSearchResults.length" class="overflow-y-auto divide-y divide-surface-tint p-1.5">
             <nuxt-link
               v-for="item in liveSearchResults"
               :key="item.id"
               :to="item.url"
               @click="$emit('close-search-navigate')"
-              class="flex items-center gap-3.5 p-2.5 rounded-lg hover:bg-[#F2F7F0] transition-colors no-underline text-inherit group"
+              class="flex items-center gap-3.5 p-2.5 rounded-lg hover:bg-surface-tint transition-colors no-underline text-inherit group"
             >
-              <div v-if="item.thumbnailUrl" class="w-12 h-12 rounded-lg overflow-hidden bg-[#EBF1EA] shrink-0 border border-[#E2E8DF]">
+              <div v-if="item.thumbnailUrl" class="w-12 h-12 rounded-lg overflow-hidden bg-surface-tint shrink-0 border border-line">
                 <NuxtImg :src="item.thumbnailUrl" :alt="item.title" width="48" height="48" sizes="48px" format="webp" class="w-full h-full object-cover" />
               </div>
-              <div v-else class="w-10 h-10 rounded-lg bg-[#EBF1EA] text-brand-600 flex items-center justify-center shrink-0 text-sm">
+              <div v-else class="w-10 h-10 rounded-lg bg-surface-tint text-brand-600 flex items-center justify-center shrink-0 text-sm">
                 <i :class="item.typeIcon" aria-hidden="true"></i>
               </div>
 
@@ -103,11 +103,11 @@
                   <span :class="['text-[0.65rem] font-extrabold px-1.5 py-px rounded uppercase tracking-wider', item.typeBadgeClass]">
                     {{ item.typeLabel }}
                   </span>
-                  <span v-if="item.categoryName" class="text-[0.7rem] text-[#5A6C58] truncate font-medium">
+                  <span v-if="item.categoryName" class="text-[0.7rem] text-ink-soft truncate font-medium">
                     {{ item.categoryName }}
                   </span>
                 </div>
-                <p class="text-xs sm:text-[0.88rem] font-bold text-[#172516] group-hover:text-[#2D5A27] truncate m-0 leading-snug">
+                <p class="text-xs sm:text-[0.88rem] font-bold text-ink-strong group-hover:text-[#2D5A27] truncate m-0 leading-snug">
                   {{ item.title }}
                 </p>
               </div>
@@ -117,17 +117,17 @@
           </div>
 
           <!-- Empty State -->
-          <div v-else-if="!isSearchingLive" class="p-6 text-center text-xs text-[#5A6C58]">
+          <div v-else-if="!isSearchingLive" class="p-6 text-center text-xs text-ink-soft">
             <i class="fa-solid fa-magnifying-glass text-lg mb-2 text-[#BAC8B6] block" aria-hidden="true"></i>
             <span>Không tìm thấy kết quả phù hợp cho &laquo;{{ searchQuery }}&raquo;</span>
           </div>
 
           <!-- Footer -->
-          <div class="p-2.5 bg-[#F7FAF6] border-t border-[#E8EFE6] text-center">
+          <div class="p-2.5 bg-surface border-t border-line text-center">
             <button
               type="button"
               @click="$emit('handle-search')"
-              class="w-full py-2 px-3 rounded-lg text-xs font-extrabold text-[#2D5A27] hover:bg-[#EBF3E8] transition-colors border-none bg-transparent cursor-pointer flex items-center justify-center gap-2"
+              class="w-full py-2 px-3 rounded-lg text-xs font-extrabold text-[#2D5A27] hover:bg-line transition-colors border-none bg-transparent cursor-pointer flex items-center justify-center gap-2"
             >
               <span>{{ t('search_view_all') }}</span>
               <i class="fa-solid fa-arrow-right text-[0.7rem]" aria-hidden="true"></i>

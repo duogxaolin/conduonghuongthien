@@ -19,7 +19,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
     <!-- Category tab bar -->
     <button
       v-if="findHotspot('top')"
-      class="h-9 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-center gap-3 px-4 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+      class="h-9 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-center gap-3 px-4 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
       :aria-label="findHotspot('top')!.label"
       :title="`${findHotspot('top')!.label} — ${findHotspot('top')!.hint}`"
       @click="hotspotClick(findHotspot('top')!)"
@@ -33,7 +33,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
     <!-- Search input -->
     <button
       v-if="findHotspot('search')"
-      class="h-10 bg-white border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-between px-4 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+      class="h-10 bg-white border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-between px-4 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
       :aria-label="findHotspot('search')!.label"
       :title="`${findHotspot('search')!.label} — ${findHotspot('search')!.hint}`"
       @click="hotspotClick(findHotspot('search')!)"
@@ -74,7 +74,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
     <!-- Pagination -->
     <button
       v-if="findHotspot('pagination')"
-      class="h-9 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-center gap-2 px-4 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+      class="h-9 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-center gap-2 px-4 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
       :aria-label="findHotspot('pagination')!.label"
       :title="`${findHotspot('pagination')!.label} — ${findHotspot('pagination')!.hint}`"
       @click="hotspotClick(findHotspot('pagination')!)"

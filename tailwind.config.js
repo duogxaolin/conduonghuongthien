@@ -21,8 +21,8 @@ module.exports = {
   theme: {
     extend: {
       // The old `admin-*` palette (0 uses) is folded in: darkest/dark/green/border/muted
-      // are brand-950/brand-900/brand-700/line/ink-muted. `light` (#8ed694) and `bg`
-      // (#f4f7f4) have no token yet and stay arbitrary hexes.
+      // are brand-950/brand-900/brand-700/line/ink-muted. `light` (#8ed694) is now
+      // brand-300 and `bg` (#f4f7f4) is merged into surface.
       colors: { ...COLOR_TOKENS },
       // Custom animations belong here, not in a component's `<style scoped>`.
       // Vue rewrites scoped keyframe names (`blinkCursor` → `blinkCursor-a1b2c3`),

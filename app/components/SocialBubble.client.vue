@@ -223,7 +223,7 @@ function getIconStyle(item: SocialLink) {
         <div class="hidden md:flex items-center gap-2.5 group">
           <button
             type="button"
-            class="w-12 h-12 rounded-full bg-white/95 text-ink-secondary hover:text-[#b42318] hover:bg-[#fee4e2] border border-[#dce6dc] shadow-[0_4px_10px_rgba(0,0,0,0.15)] flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700"
+            class="w-12 h-12 rounded-full bg-white/95 text-ink-secondary hover:text-[#b42318] hover:bg-[#fee4e2] border border-line shadow-[0_4px_10px_rgba(0,0,0,0.15)] flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700"
             :title="t('social_collapse')"
             :aria-label="t('social_collapse_aria')"
             @click.stop="toggleExpand"
@@ -316,7 +316,7 @@ function getIconStyle(item: SocialLink) {
     >
       <div
         v-if="open"
-        class="w-[285px] sm:w-[315px] max-h-[350px] sm:max-h-[410px] bg-white rounded-2xl border border-[#dce6dc] shadow-[0_20px_50px_-12px_rgba(20,50,25,0.25),0_4px_16px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col motion-reduce:transition-none"
+        class="w-[285px] sm:w-[315px] max-h-[350px] sm:max-h-[410px] bg-white rounded-2xl border border-line shadow-[0_20px_50px_-12px_rgba(20,50,25,0.25),0_4px_16px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col motion-reduce:transition-none"
         role="dialog"
         :aria-label="t('social_panel_aria')"
       >
@@ -354,7 +354,7 @@ function getIconStyle(item: SocialLink) {
             :href="item.url"
             target="_blank"
             rel="noopener noreferrer"
-            class="group flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-[#f2f7f2] border border-transparent hover:border-[#dce6dc] transition-all duration-150 no-underline"
+            class="group flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-surface-tint border border-transparent hover:border-line transition-all duration-150 no-underline"
             :aria-label="openLinkAria(item)"
           >
             <!-- Khung icon squircle chuẩn hóa 36x36px -->
@@ -403,9 +403,9 @@ function getIconStyle(item: SocialLink) {
         </div>
 
         <!-- Footer chứng nhận uy tín C11 (shrink-0 cố định đáy) -->
-        <div class="shrink-0 px-3.5 py-2 bg-surface border-t border-line flex items-center justify-between text-[0.68rem] text-[#556655]">
+        <div class="shrink-0 px-3.5 py-2 bg-surface border-t border-line flex items-center justify-between text-[0.68rem] text-ink-soft">
           <span class="flex items-center gap-1.5 font-medium">
-            <i class="fa-solid fa-shield-check text-[#385130] text-[0.75rem]" aria-hidden="true"></i>
+            <i class="fa-solid fa-shield-check text-brand-800 text-[0.75rem]" aria-hidden="true"></i>
             C11 - BCA
           </span>
         </div>
@@ -415,7 +415,7 @@ function getIconStyle(item: SocialLink) {
     <!-- Nút launcher kích hoạt dạng viên nang hoàn mỹ (Nhỏ gọn, tinh tế, không méo tròn) -->
     <button
       type="button"
-      class="group flex items-center gap-2 bg-gradient-to-r from-brand-900 to-[#153317] hover:from-[#153317] hover:to-[#0f2311] text-white px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-full border border-white/20 shadow-[0_8px_24px_rgba(30,70,32,0.28)] hover:shadow-[0_12px_28px_rgba(30,70,32,0.38)] hover:-translate-y-0.5 cursor-pointer transition-all duration-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-900 motion-reduce:transition-none"
+      class="group flex items-center gap-2 bg-gradient-to-r from-brand-900 to-[#153317] hover:from-[#153317] hover:to-brand-950 text-white px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-full border border-white/20 shadow-[0_8px_24px_rgba(30,70,32,0.28)] hover:shadow-[0_12px_28px_rgba(30,70,32,0.38)] hover:-translate-y-0.5 cursor-pointer transition-all duration-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-900 motion-reduce:transition-none"
       :class="{ 'ring-2 ring-[#7CB342] shadow-[0_12px_28px_rgba(30,70,32,0.45)]': open }"
       :aria-expanded="open"
       aria-haspopup="dialog"

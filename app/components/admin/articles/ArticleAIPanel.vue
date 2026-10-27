@@ -167,7 +167,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
       <div class="flex items-center gap-2 flex-wrap">
         <button
           type="button"
-          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-brand-900 hover:bg-[#e4ece4] transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
+          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-brand-900 hover:bg-line transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
           :disabled="aiLoading"
           @click="callAiEditorial('suggest_titles')"
         >
@@ -176,7 +176,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
         </button>
         <button
           type="button"
-          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-brand-900 hover:bg-[#e4ece4] transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
+          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-brand-900 hover:bg-line transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
           :disabled="aiLoading"
           @click="callAiEditorial('summary')"
         >
@@ -185,7 +185,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
         </button>
         <button
           type="button"
-          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-brand-900 hover:bg-[#e4ece4] transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
+          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-brand-900 hover:bg-line transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
           :disabled="aiLoading"
           @click="callAiEditorial('polish')"
         >
@@ -231,7 +231,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
         <div
           v-for="(s, idx) in suggestedSummaries"
           :key="idx"
-          class="p-3 rounded-lg border border-line hover:border-brand-700 bg-[#fcfdfc] hover:bg-surface-tint transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          class="p-3 rounded-lg border border-line hover:border-brand-700 bg-surface hover:bg-surface-tint transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
         >
           <p class="m-0 text-xs text-[#2d3748] leading-relaxed flex-1">{{ s }}</p>
           <button
@@ -264,7 +264,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
 
       <!-- Summary note -->
       <div v-if="polishedPreview.summaryNotes" class="text-xs font-medium text-brand-700 bg-surface-tint p-2.5 rounded-lg border border-line-strong flex items-start gap-2">
-        <i class="fa-solid fa-lightbulb text-sm mt-0.5 shrink-0 text-[#7CB342]"></i>
+        <i class="fa-solid fa-lightbulb text-sm mt-0.5 shrink-0 text-accent"></i>
         <span>{{ polishedPreview.summaryNotes }}</span>
       </div>
 
@@ -312,7 +312,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
       </div>
 
       <!-- Nếu không có danh sách chi tiết mà chỉ có nội dung đã sửa -->
-      <div v-else class="max-h-60 overflow-y-auto p-3 rounded-lg border border-line bg-[#fcfdfc] text-xs leading-relaxed text-[#2d3748]">
+      <div v-else class="max-h-60 overflow-y-auto p-3 rounded-lg border border-line bg-surface text-xs leading-relaxed text-[#2d3748]">
         <!-- eslint-disable-next-line vue/no-v-html -- đầu ra AI, đã sanitizeHtml ở server/api/admin/ai/editorial.post.ts -->
         <div v-html="polishedPreview.content"></div>
       </div>
@@ -321,7 +321,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
       <div class="flex items-center justify-between pt-2 border-t border-line flex-wrap gap-2">
         <button
           type="button"
-          class="px-3 py-1.5 rounded-md border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-[#f8faf8] cursor-pointer"
+          class="px-3 py-1.5 rounded-md border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-surface cursor-pointer"
           @click="polishedPreview = null"
         >
           Đóng

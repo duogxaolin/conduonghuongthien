@@ -931,13 +931,13 @@ onUnmounted(() => {
       <SkeletonTable v-if="loading" label="Đang tải danh sách bài viết" :rows="6" :cols="8" />
 
       <!-- Error -->
-      <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-[#b04a4a] text-[0.9rem]">
+      <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-danger-soft text-[0.9rem]">
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
         {{ loadError }}. Vui lòng <button type="button" class="text-brand-700 font-bold underline bg-transparent border-0 cursor-pointer p-0" @click="fetchArticles(1)">thử lại</button>.
       </div>
 
       <!-- Mobile Card View -->
-      <div v-else class="md:hidden divide-y divide-[#eef2ee]">
+      <div v-else class="md:hidden divide-y divide-surface-tint">
         <div v-for="a in articles" :key="'m-'+a.id" class="p-4 flex gap-3" :class="selection.isSelected(Number(a.id)) ? 'bg-surface-tint' : ''">
           <input
             type="checkbox"
@@ -946,7 +946,7 @@ onUnmounted(() => {
             :aria-label="`Chọn bài viết: ${a.title}`"
             @change="selection.toggle(Number(a.id))"
           />
-          <div class="w-14 h-10 rounded-lg overflow-hidden bg-[#f0f4f0] flex-shrink-0 border border-line">
+          <div class="w-14 h-10 rounded-lg overflow-hidden bg-surface flex-shrink-0 border border-line">
             <img v-if="a.thumbnailUrl" :src="a.thumbnailUrl" class="w-full h-full object-cover" />
             <div v-else class="w-full h-full flex items-center justify-center"><i class="fa-regular fa-image text-sm text-line-strong"></i></div>
           </div>
@@ -1006,7 +1006,7 @@ onUnmounted(() => {
         <table class="w-full min-w-[960px] border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
-              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-line">
+              <th class="bg-surface w-10 px-4 py-3 border-b border-line">
                 <input
                   type="checkbox"
                   class="h-4 w-4 accent-brand-700"
@@ -1016,25 +1016,25 @@ onUnmounted(() => {
                   @change="selection.toggleAll(visibleIds)"
                 />
               </th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line min-w-[280px]">Bài viết</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thể loại</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Danh mục</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Trạng thái</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Lượt xem</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Bình luận</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap text-center">Bản dịch</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Ngày tạo</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line min-w-[280px]">Bài viết</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thể loại</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Danh mục</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Trạng thái</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Lượt xem</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Bình luận</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap text-center">Bản dịch</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Ngày tạo</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="a in articles"
               :key="a.id"
-              class="hover:bg-[#fafcfa] group"
+              class="hover:bg-surface group"
               :class="selection.isSelected(Number(a.id)) ? 'bg-surface-tint' : ''"
             >
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <input
                   type="checkbox"
                   class="h-4 w-4 accent-brand-700"
@@ -1044,9 +1044,9 @@ onUnmounted(() => {
                 />
               </td>
               <!-- Thumbnail + Title combined -->
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <div class="flex items-center gap-3">
-                  <div class="w-16 h-10 rounded-lg overflow-hidden bg-[#f0f4f0] flex-shrink-0 border border-line">
+                  <div class="w-16 h-10 rounded-lg overflow-hidden bg-surface flex-shrink-0 border border-line">
                     <img v-if="a.thumbnailUrl" :src="a.thumbnailUrl" class="w-full h-full object-cover" />
                     <div v-else class="w-full h-full flex items-center justify-center">
                       <i class="fa-regular fa-image text-lg text-line-strong"></i>
@@ -1059,7 +1059,7 @@ onUnmounted(() => {
                 </div>
               </td>
               <!-- Type badge with icon + color -->
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <span
                   class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap"
                   :class="typeColors[a.type] || 'bg-gray-100 text-gray-600'"
@@ -1069,14 +1069,14 @@ onUnmounted(() => {
                 </span>
               </td>
               <!-- Category with hierarchy -->
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <span v-if="categoryDisplay(a)" class="text-[0.82rem] text-[#445546]">
                   {{ categoryDisplay(a) }}
                 </span>
                 <span v-else class="text-[0.8rem] text-[#bbb] italic">Chưa phân loại</span>
               </td>
               <!-- Status -->
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <span
                   class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[0.72rem] font-bold whitespace-nowrap"
                   :class="a.status === 'published' ? 'bg-[#e4f2e5] text-[#2c6e33]' : a.status === 'draft' ? 'bg-[#fff8e1] text-[#b78103]' : 'bg-[#f5f5f5] text-[#888]'"
@@ -1086,7 +1086,7 @@ onUnmounted(() => {
                 </span>
               </td>
               <!-- Views -->
-              <td class="px-4 py-3 border-b border-[#eef2ee] whitespace-nowrap">
+              <td class="px-4 py-3 border-b border-surface-tint whitespace-nowrap">
                 <button
                   type="button"
                   class="inline-flex items-center gap-1.5 rounded-md border border-line bg-white px-2 py-1 text-[0.82rem] font-bold text-brand-700 transition-colors hover:bg-surface-tint focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-700/40"
@@ -1099,7 +1099,7 @@ onUnmounted(() => {
               </td>
               <!-- Comments switch. Bật/tắt tại chỗ qua chính route sửa bài, nên
                    vẫn chịu đúng kiểm tra quyền theo thể loại và vẫn ghi audit. -->
-              <td class="px-4 py-3 border-b border-[#eef2ee] whitespace-nowrap">
+              <td class="px-4 py-3 border-b border-surface-tint whitespace-nowrap">
                 <button
                   type="button"
                   :disabled="togglingComments === Number(a.id)"
@@ -1114,7 +1114,7 @@ onUnmounted(() => {
                 </button>
               </td>
               <!-- Translation badges -->
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-center whitespace-nowrap">
+              <td class="px-4 py-3 border-b border-surface-tint text-center whitespace-nowrap">
                 <div class="flex items-center justify-center gap-1 flex-wrap">
                   <template v-if="parseTranslations(a.translatedLangs).length > 0">
                     <span
@@ -1144,9 +1144,9 @@ onUnmounted(() => {
                 </div>
               </td>
               <!-- Date -->
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-ink-muted text-[0.82rem] whitespace-nowrap">{{ formatDateTimeVN(a.createdAt) }}</td>
+              <td class="px-4 py-3 border-b border-surface-tint text-ink-muted text-[0.82rem] whitespace-nowrap">{{ formatDateTimeVN(a.createdAt) }}</td>
               <!-- Actions -->
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <div class="flex items-center gap-2 flex-wrap">
                   <nuxt-link
                     :to="`/admin/content/articles/${a.id}`"
@@ -1210,7 +1210,7 @@ onUnmounted(() => {
                         <i class="fa-solid fa-print text-[0.65rem]"></i> In / Lưu PDF
                       </button>
                       <span v-else class="px-2 py-1 text-[0.65rem] text-[#afc8b1]" title="Chỉ bài đã xuất bản mới in được qua trang công khai">In PDF (cần xuất bản)</span>
-                      <div class="my-0.5 border-t border-[#e9efea]"></div>
+                      <div class="my-0.5 border-t border-surface-tint"></div>
                       <button type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-surface-tint text-brand-950 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-2 disabled:opacity-50" :disabled="isExportingGoogle" @click="exportGoogle('single', Number(a.id))">
                         <i class="fa-brands fa-google-sheets text-[0.65rem]"></i> Google Sheets
                       </button>

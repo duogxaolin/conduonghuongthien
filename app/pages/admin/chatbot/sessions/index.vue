@@ -86,13 +86,13 @@ onMounted(reload)
       </label>
       <div class="flex gap-2">
         <button type="button" class="rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white hover:bg-[#245a2a]" @click="applyFilters">Lọc</button>
-        <button type="button" class="rounded-lg border border-line-strong px-4 py-2 text-sm font-bold text-[#445546] hover:bg-[#f4f7f4]" @click="resetFilters">Xóa lọc</button>
+        <button type="button" class="rounded-lg border border-line-strong px-4 py-2 text-sm font-bold text-[#445546] hover:bg-surface" @click="resetFilters">Xóa lọc</button>
       </div>
     </div>
 
     <SkeletonTable v-if="loading" label="Đang tải danh sách phiên trò chuyện" :rows="6" :cols="6" />
 
-    <div v-else-if="error" role="alert" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-[#b04a4a]">
+    <div v-else-if="error" role="alert" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-danger-soft">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
       <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="reload()">Thử lại</button>
@@ -104,12 +104,12 @@ onMounted(reload)
 
     <template v-else>
       <!-- Mobile cards -->
-      <div class="divide-y divide-[#eef2ee] overflow-hidden rounded-xl border border-line bg-white md:hidden">
+      <div class="divide-y divide-surface-tint overflow-hidden rounded-xl border border-line bg-white md:hidden">
         <nuxt-link
           v-for="s in rows"
           :key="'m-' + s.id"
           :to="`/admin/chatbot/sessions/${s.id}`"
-          class="block p-4 hover:bg-[#fafcfa]"
+          class="block p-4 hover:bg-surface"
         >
           <div class="mb-1 flex items-center justify-between gap-2">
             <span class="truncate text-[0.9rem] font-bold text-brand-950">
@@ -133,25 +133,25 @@ onMounted(reload)
           <table class="w-full border-collapse text-left text-[0.88rem]">
             <thead>
               <tr>
-                <th class="whitespace-nowrap border-b border-line bg-[#f8faf8] px-4 py-3 font-bold text-ink-muted">Địa chỉ IP</th>
-                <th class="whitespace-nowrap border-b border-line bg-[#f8faf8] px-4 py-3 font-bold text-ink-muted">Trình duyệt</th>
-                <th class="whitespace-nowrap border-b border-line bg-[#f8faf8] px-4 py-3 font-bold text-ink-muted">Bắt đầu</th>
-                <th class="whitespace-nowrap border-b border-line bg-[#f8faf8] px-4 py-3 font-bold text-ink-muted">Tin nhắn cuối</th>
-                <th class="whitespace-nowrap border-b border-line bg-[#f8faf8] px-4 py-3 font-bold text-ink-muted">Số tin</th>
-                <th class="whitespace-nowrap border-b border-line bg-[#f8faf8] px-4 py-3 font-bold text-ink-muted">Liên hệ đã nêu</th>
-                <th class="whitespace-nowrap border-b border-line bg-[#f8faf8] px-4 py-3 font-bold text-ink-muted">Thao tác</th>
+                <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Địa chỉ IP</th>
+                <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Trình duyệt</th>
+                <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Bắt đầu</th>
+                <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Tin nhắn cuối</th>
+                <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Số tin</th>
+                <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Liên hệ đã nêu</th>
+                <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in rows" :key="s.id" class="hover:bg-[#fafcfa]">
-                <td class="border-b border-[#eef2ee] px-4 py-3.5">
-                  <code class="rounded bg-[#f4f7f4] px-1.5 py-0.5 text-xs">{{ s.ip || '—' }}</code>
+              <tr v-for="s in rows" :key="s.id" class="hover:bg-surface">
+                <td class="border-b border-surface-tint px-4 py-3.5">
+                  <code class="rounded bg-surface px-1.5 py-0.5 text-xs">{{ s.ip || '—' }}</code>
                 </td>
-                <td class="border-b border-[#eef2ee] px-4 py-3.5 text-[#2c3e2e]">{{ s.browser }}</td>
-                <td class="whitespace-nowrap border-b border-[#eef2ee] px-4 py-3.5 text-ink-muted">{{ fmtDate(s.startedAt) }}</td>
-                <td class="whitespace-nowrap border-b border-[#eef2ee] px-4 py-3.5 text-ink-muted">{{ fmtDate(s.lastMessageAt) }}</td>
-                <td class="border-b border-[#eef2ee] px-4 py-3.5 text-[#2c3e2e]">{{ s.messageCount }}</td>
-                <td class="border-b border-[#eef2ee] px-4 py-3.5">
+                <td class="border-b border-surface-tint px-4 py-3.5 text-ink-admin">{{ s.browser }}</td>
+                <td class="whitespace-nowrap border-b border-surface-tint px-4 py-3.5 text-ink-muted">{{ fmtDate(s.startedAt) }}</td>
+                <td class="whitespace-nowrap border-b border-surface-tint px-4 py-3.5 text-ink-muted">{{ fmtDate(s.lastMessageAt) }}</td>
+                <td class="border-b border-surface-tint px-4 py-3.5 text-ink-admin">{{ s.messageCount }}</td>
+                <td class="border-b border-surface-tint px-4 py-3.5">
                   <span v-if="s.detectedPhone || s.detectedName" class="text-brand-700">
                     <span v-if="s.detectedName" class="font-bold">{{ s.detectedName }}</span>
                     <span v-if="s.detectedName && s.detectedPhone"> · </span>
@@ -159,7 +159,7 @@ onMounted(reload)
                   </span>
                   <span v-else class="text-[#98a599]">—</span>
                 </td>
-                <td class="whitespace-nowrap border-b border-[#eef2ee] px-4 py-3.5">
+                <td class="whitespace-nowrap border-b border-surface-tint px-4 py-3.5">
                   <nuxt-link :to="`/admin/chatbot/sessions/${s.id}`" class="font-bold text-brand-700 hover:underline">
                     Xem nội dung
                   </nuxt-link>

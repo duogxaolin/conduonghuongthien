@@ -20,7 +20,7 @@ const canEnroll = (type: FactorType) => canEnrollMfaFactor(type, props)
       v-for="f in factors"
       :key="f.factorType"
       class="rounded-xl border p-4 flex items-start gap-4 flex-wrap"
-      :class="f.state === 'active' ? 'border-[#cce5cd] bg-[#fafcfa]' : 'border-line bg-white'"
+      :class="f.state === 'active' ? 'border-[#cce5cd] bg-surface' : 'border-line bg-white'"
     >
       <div class="w-10 h-10 rounded-xl bg-surface-tint border border-line flex items-center justify-center shrink-0">
         <i :class="MFA_FACTOR_META[f.factorType].icon" class="text-brand-700" aria-hidden="true"></i>
@@ -32,16 +32,16 @@ const canEnroll = (type: FactorType) => canEnrollMfaFactor(type, props)
           <span
             class="inline-flex items-center gap-1 text-[0.7rem] font-bold px-2 py-0.5 rounded-full border"
             :class="f.state === 'active'
-              ? 'bg-[#eef7ee] border-[#cce5cd] text-[#1e4620]'
+              ? 'bg-[#eef7ee] border-[#cce5cd] text-brand-900'
               : f.state === 'pending'
-                ? 'bg-[#fdf6e7] border-[#f0dcae] text-[#8a6412]'
-                : 'bg-[#f4f7f4] border-[#dce8dd] text-[#667768]'"
+                ? 'bg-[#fdf6e7] border-[#f0dcae] text-warn-ink'
+                : 'bg-[#f4f7f4] border-[#dce8dd] text-ink-muted'"
           >
             <i class="fa-solid" :class="f.state === 'active' ? 'fa-circle-check' : f.state === 'pending' ? 'fa-clock' : 'fa-circle-minus'" aria-hidden="true"></i>
             {{ f.state === 'active' ? 'Đang bật' : f.state === 'pending' ? 'Chờ xác nhận' : 'Đang tắt' }}
           </span>
           <span v-if="f.state === 'active' && !f.usable"
-                class="inline-flex items-center gap-1 text-[0.7rem] font-bold px-2 py-0.5 rounded-full border bg-[#ffebe9] border-[#ffc1ba] text-danger">
+                class="inline-flex items-center gap-1 text-[0.7rem] font-bold px-2 py-0.5 rounded-full border bg-danger-bg border-[#ffc1ba] text-danger">
             <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
             Không dùng được
           </span>
@@ -50,7 +50,7 @@ const canEnroll = (type: FactorType) => canEnrollMfaFactor(type, props)
         <p v-if="f.state === 'active' && !f.usable" class="text-[0.78rem] text-danger mt-1.5 mb-0">
           Bí mật lưu trữ không giải mã được (thường do khóa JWT_SECRET đã bị đổi). Hãy tắt rồi bật lại yếu tố này.
         </p>
-        <p v-if="f.factorType === 'email_otp' && !canEnroll('email_otp')" class="text-[0.78rem] text-[#8a6412] mt-1.5 mb-0">
+        <p v-if="f.factorType === 'email_otp' && !canEnroll('email_otp')" class="text-[0.78rem] text-warn-ink mt-1.5 mb-0">
           <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
           <template v-if="!email">Tài khoản chưa có email — cần bổ sung email trước.</template>
           <template v-else>Chưa cấu hình SMTP nên chưa gửi được mã. Cấu hình tại Cài đặt → Cấu hình Email.</template>

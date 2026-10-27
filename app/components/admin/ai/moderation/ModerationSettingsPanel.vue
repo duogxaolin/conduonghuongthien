@@ -51,7 +51,7 @@ function restoreDefaultPrompt() {
       <div class="grid gap-3 sm:grid-cols-2">
         <label
           class="flex cursor-pointer flex-col gap-1 rounded-xl border p-3.5 transition-all"
-          :class="mode === 'keyword_only' ? 'border-brand-700 bg-surface-tint shadow-xs' : 'border-line-strong hover:bg-[#f8faf8]'"
+          :class="mode === 'keyword_only' ? 'border-brand-700 bg-surface-tint shadow-xs' : 'border-line-strong hover:bg-surface'"
         >
           <span class="flex items-center gap-2 text-sm font-bold text-brand-950">
             <input v-model="mode" type="radio" value="keyword_only" class="h-4 w-4 accent-brand-700" />
@@ -64,7 +64,7 @@ function restoreDefaultPrompt() {
 
         <label
           class="flex cursor-pointer flex-col gap-1 rounded-xl border p-3.5 transition-all"
-          :class="mode === 'ai' ? 'border-brand-700 bg-surface-tint shadow-xs' : 'border-line-strong hover:bg-[#f8faf8]'"
+          :class="mode === 'ai' ? 'border-brand-700 bg-surface-tint shadow-xs' : 'border-line-strong hover:bg-surface'"
         >
           <span class="flex items-center gap-2 text-sm font-bold text-brand-950">
             <input v-model="mode" type="radio" value="ai" class="h-4 w-4 accent-brand-700" />

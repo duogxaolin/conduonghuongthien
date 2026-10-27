@@ -98,7 +98,7 @@ onMounted(() => { fetchSession() })
       </div>
       <nuxt-link
         to="/admin/chatbot/sessions"
-        class="rounded-lg border border-line-strong px-3.5 py-2 text-sm font-bold text-[#445546] hover:bg-[#f4f7f4]"
+        class="rounded-lg border border-line-strong px-3.5 py-2 text-sm font-bold text-[#445546] hover:bg-surface"
       >
         <i class="fa-solid fa-arrow-left mr-1 text-[0.75rem]" aria-hidden="true"></i> Danh sách phiên
       </nuxt-link>
@@ -109,7 +109,7 @@ onMounted(() => { fetchSession() })
       <SkeletonTable label="Đang tải nội dung trò chuyện" :rows="6" :cols="2" />
     </div>
 
-    <div v-else-if="loadError" role="alert" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-[#b04a4a]">
+    <div v-else-if="loadError" role="alert" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-danger-soft">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ loadError }}
       <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="fetchSession()">Thử lại</button>
@@ -141,22 +141,22 @@ onMounted(() => { fetchSession() })
       <!-- Detected contact + cross-link to submissions -->
       <div
         v-if="session.detectedPhone || session.detectedName"
-        class="rounded-xl border border-[#cfe4d1] bg-[#f4faf5] p-5"
+        class="rounded-xl border border-[#cfe4d1] bg-surface-tint p-5"
       >
         <p class="m-0 text-[0.8rem] font-bold uppercase tracking-wide text-brand-700">
           <i class="fa-solid fa-id-card mr-1" aria-hidden="true"></i> Thông tin khách đã nêu trong trò chuyện
         </p>
-        <div class="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-[0.92rem] text-[#1d4a22]">
+        <div class="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-[0.92rem] text-brand-900">
           <span v-if="session.detectedName"><strong>Họ tên:</strong> {{ session.detectedName }}</span>
           <span v-if="session.detectedPhone"><strong>Số điện thoại:</strong> {{ session.detectedPhone }}</span>
         </div>
 
         <div v-if="relatedSubmissions.length" class="mt-4 border-t border-[#cfe4d1] pt-3">
-          <p class="m-0 text-[0.82rem] font-bold text-[#1d4a22]">
+          <p class="m-0 text-[0.82rem] font-bold text-brand-900">
             Khách này đã gửi {{ relatedSubmissions.length }} đơn đăng ký trước đó:
           </p>
           <ul class="mt-2 flex flex-col gap-1.5">
-            <li v-for="sub in relatedSubmissions" :key="sub.id" class="text-[0.85rem] text-[#2c3e2e]">
+            <li v-for="sub in relatedSubmissions" :key="sub.id" class="text-[0.85rem] text-ink-admin">
               <nuxt-link to="/admin/submissions" class="font-bold text-brand-700 hover:underline">#{{ sub.id }} {{ sub.fullName }}</nuxt-link>
               · {{ sub.phone }}
               <span v-if="sub.formTitle"> · {{ sub.formTitle }}</span>
@@ -164,14 +164,14 @@ onMounted(() => { fetchSession() })
             </li>
           </ul>
         </div>
-        <p v-else-if="session.detectedPhone" class="m-0 mt-3 border-t border-[#cfe4d1] pt-3 text-[0.82rem] text-[#5a6b5b]">
+        <p v-else-if="session.detectedPhone" class="m-0 mt-3 border-t border-[#cfe4d1] pt-3 text-[0.82rem] text-ink-soft">
           Chưa tìm thấy đơn đăng ký nào trùng số điện thoại này.
         </p>
       </div>
 
       <!-- Transcript -->
       <div class="overflow-hidden rounded-xl border border-line bg-white">
-        <div class="border-b border-line bg-[#f8faf8] px-5 py-3">
+        <div class="border-b border-line bg-surface px-5 py-3">
           <h2 class="m-0 text-[0.95rem] font-extrabold text-brand-950">Nội dung trò chuyện</h2>
         </div>
 
@@ -192,8 +192,8 @@ onMounted(() => { fetchSession() })
             <div
               class="max-w-[85%] whitespace-pre-wrap rounded-xl px-4 py-2.5 text-[0.9rem] leading-relaxed"
               :class="msg.role === 'user'
-                ? 'bg-[#2c6e33] text-white'
-                : 'border border-line bg-[#f8faf8] text-[#1f2f21]'"
+                ? 'bg-brand-700 text-white'
+                : 'border border-line bg-surface text-[#1f2f21]'"
             >{{ msg.content }}</div>
             <span
               v-if="msg.role === 'assistant' && msg.kind"
@@ -202,7 +202,7 @@ onMounted(() => { fetchSession() })
             >{{ kindLabel(msg.kind) }}</span>
           </div>
 
-          <p v-if="truncated" class="m-0 border-t border-[#eef2ee] pt-3 text-center text-[0.8rem] text-[#8a5a00]">
+          <p v-if="truncated" class="m-0 border-t border-surface-tint pt-3 text-center text-[0.8rem] text-[#8a5a00]">
             <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
             Phiên này dài hơn giới hạn hiển thị — chỉ hiện 500 tin nhắn đầu tiên.
           </p>

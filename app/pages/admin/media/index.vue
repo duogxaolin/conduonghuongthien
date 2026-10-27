@@ -194,7 +194,7 @@ onMounted(() => {
         </button>
       </div>
 
-      <div v-if="storageError" role="alert" class="flex items-center gap-2 text-xs text-[#b04a4a] py-2">
+      <div v-if="storageError" role="alert" class="flex items-center gap-2 text-xs text-danger-soft py-2">
         <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
         <span>{{ storageError }}</span>
       </div>
@@ -206,7 +206,7 @@ onMounted(() => {
 
       <div v-else-if="storageSize" class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <!-- Local -->
-        <div class="rounded-lg border border-line bg-[#f8fbf8] p-3.5">
+        <div class="rounded-lg border border-line bg-surface p-3.5">
           <div class="flex items-center justify-between gap-2 mb-2">
             <div class="flex items-center gap-2">
               <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-brand-700 text-white text-xs">
@@ -256,7 +256,7 @@ onMounted(() => {
             <li v-if="!storageSize.r2.configured" class="text-[#9ca3af]">
               R2 chưa cấu hình — nhập credential ở Cài đặt.
             </li>
-            <li v-else-if="storageSize.r2.bucketBytes == null" class="text-[#b04a4a]">
+            <li v-else-if="storageSize.r2.bucketBytes == null" class="text-danger-soft">
               Không đọc được bucket R2 (credential hỏng hoặc lỗi mạng).
             </li>
             <template v-else>
@@ -280,7 +280,7 @@ onMounted(() => {
 
     <!-- Upload Zone -->
     <label
-      class="flex flex-col items-center justify-content-center gap-1.5 border-2 border-dashed border-line-strong rounded-2xl py-9 px-6 bg-[#f8fbf8] cursor-pointer text-center transition-all duration-150"
+      class="flex flex-col items-center justify-content-center gap-1.5 border-2 border-dashed border-line-strong rounded-2xl py-9 px-6 bg-surface cursor-pointer text-center transition-all duration-150"
       :class="{ 'border-brand-700 bg-[#edf7ed]': isDragOver, 'opacity-70 cursor-not-allowed pointer-events-none': uploading }"
       @dragover.prevent="isDragOver = true"
       @dragleave="isDragOver = false"
@@ -359,7 +359,7 @@ onMounted(() => {
     <!-- Media Grid -->
     <SkeletonCards v-if="loading" label="Đang tải danh sách media" :count="12" />
 
-    <div v-else-if="loadError" role="alert" class="flex flex-col items-center gap-3 py-16 text-[#b04a4a]">
+    <div v-else-if="loadError" role="alert" class="flex flex-col items-center gap-3 py-16 text-danger-soft">
       <i class="fa-solid fa-triangle-exclamation text-4xl text-[#e2a0a0]" aria-hidden="true"></i>
       <p class="m-0 text-[0.9rem]">{{ loadError }}</p>
       <button type="button" class="inline-flex items-center gap-2 bg-brand-700 hover:bg-brand-900 text-white font-bold px-4 py-2 rounded-lg cursor-pointer border-0 transition-colors text-sm" @click="fetchMedia(1)">
@@ -387,7 +387,7 @@ onMounted(() => {
          !loadError is part of the condition, not decoration: a failed reload keeps
          the previous page's items in mediaItems, so without it the alert appears
          above a grid of stale tiles that look current. -->
-    <label v-if="!loading && !loadError && mediaItems.length" class="flex w-fit items-center gap-2 text-sm font-semibold text-[#2c3e2e]">
+    <label v-if="!loading && !loadError && mediaItems.length" class="flex w-fit items-center gap-2 text-sm font-semibold text-ink-admin">
       <input
         type="checkbox"
         class="h-4 w-4 accent-brand-700"
@@ -405,7 +405,7 @@ onMounted(() => {
         class="bg-white border rounded-xl overflow-hidden flex flex-col"
         :class="selection.isSelected(Number(m.id)) ? 'border-brand-700 ring-2 ring-brand-700/25' : 'border-line'"
       >
-        <div class="h-[140px] bg-[#f8faf8] relative flex items-center justify-center">
+        <div class="h-[140px] bg-surface relative flex items-center justify-center">
           <img v-if="m.mimeType?.startsWith('image/')" :src="m.url" :alt="m.originalName" loading="lazy" class="w-full h-full object-cover" />
           <div v-else class="flex items-center justify-center">
             <i class="fa-regular fa-file-lines text-4xl text-[#9ca3af]"></i>
@@ -436,7 +436,7 @@ onMounted(() => {
               @click="copyLink(m.url)"
             ><i class="fa-regular fa-link"></i> Link</button>
             <button
-              class="flex-1 text-[0.75rem] py-1 rounded-md bg-[#ffebe9] text-danger border-0 cursor-pointer hover:bg-red-200 transition-colors font-medium"
+              class="flex-1 text-[0.75rem] py-1 rounded-md bg-danger-bg text-danger border-0 cursor-pointer hover:bg-red-200 transition-colors font-medium"
               @click="deleteMedia(m)"
             ><i class="fa-regular fa-trash"></i> Xóa</button>
           </div>

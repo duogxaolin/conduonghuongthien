@@ -141,7 +141,7 @@ async function toggleStatus() {
           </div>
 
           <!-- Excerpt -->
-          <div v-if="quickViewData.excerpt" class="flex flex-col gap-1 bg-[#fcfdfc] p-3 rounded-lg border border-[#eef2ee]">
+          <div v-if="quickViewData.excerpt" class="flex flex-col gap-1 bg-surface p-3 rounded-lg border border-surface-tint">
             <span class="text-xs font-bold text-ink-muted uppercase tracking-wide">Tóm tắt:</span>
             <p class="m-0 text-xs leading-relaxed text-ink-secondary">{{ quickViewData.excerpt }}</p>
           </div>
@@ -149,7 +149,7 @@ async function toggleStatus() {
           <!-- Content HTML -->
           <div class="flex flex-col gap-1">
             <span class="text-xs font-bold text-ink-muted uppercase tracking-wide">Nội dung chi tiết (HTML):</span>
-            <div class="p-4 rounded-lg border border-line bg-[#fafcfa] text-xs leading-relaxed text-[#1f2937] max-h-80 overflow-y-auto font-sans" v-html="quickViewData.content || '(Chưa có nội dung)'"></div>
+            <div class="p-4 rounded-lg border border-line bg-surface text-xs leading-relaxed text-[#1f2937] max-h-80 overflow-y-auto font-sans" v-html="quickViewData.content || '(Chưa có nội dung)'"></div>
           </div>
         </template>
       </div>

@@ -35,7 +35,7 @@ const label = computed(() => `Đã chọn ${props.count} ${props.noun || 'mục'
       <button
         type="button"
         :disabled="busy"
-        class="rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-semibold text-[#2c3e2e] hover:bg-white/70 focus:outline-none focus:ring-2 focus:ring-brand-700/30 disabled:cursor-not-allowed disabled:opacity-60"
+        class="rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-semibold text-ink-admin hover:bg-white/70 focus:outline-none focus:ring-2 focus:ring-brand-700/30 disabled:cursor-not-allowed disabled:opacity-60"
         @click="emit('clear')"
       >
         Bỏ chọn

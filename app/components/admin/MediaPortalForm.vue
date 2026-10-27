@@ -108,7 +108,7 @@ function submit() {
           <button
             type="button"
             :disabled="fetchingMeta || !youtubeVideoId.trim()"
-            class="shrink-0 rounded-lg bg-[#e8f0e8] px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-[#d4e6d4] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 border border-[#cce5cd]"
+            class="shrink-0 rounded-lg bg-line px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-[#d4e6d4] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 border border-[#cce5cd]"
             @click="fetchMeta"
           >
             <i class="fa-solid fa-cloud-arrow-down text-xs" aria-hidden="true"></i>

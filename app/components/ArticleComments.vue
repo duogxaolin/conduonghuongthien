@@ -23,12 +23,12 @@
 <template>
   <section
     v-if="enabled || pending || errorMessage"
-    class="mt-12 border-t border-[#E2E8DF] pt-8"
+    class="mt-12 border-t border-line pt-8"
     aria-labelledby="comments-heading"
   >
     <h2 id="comments-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-ink">
-      <i class="fa-solid fa-comments mr-2 text-[#7CB342]" aria-hidden="true"></i>{{ t('comments') }}
-      <span v-if="total" class="ml-1 text-[0.95rem] font-semibold text-[#5A6C58]">({{ total }})</span>
+      <i class="fa-solid fa-comments mr-2 text-accent" aria-hidden="true"></i>{{ t('comments') }}
+      <span v-if="total" class="ml-1 text-[0.95rem] font-semibold text-ink-soft">({{ total }})</span>
     </h2>
 
     <!-- 1. Đang tải -->
@@ -40,11 +40,11 @@
         aria-hidden="true"
         class="flex gap-3 animate-pulse motion-reduce:animate-none"
       >
-        <div class="w-9 h-9 rounded-full bg-[#EEF2EC] shrink-0"></div>
+        <div class="w-9 h-9 rounded-full bg-surface-tint shrink-0"></div>
         <div class="flex-grow flex flex-col gap-2">
-          <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>
-          <div class="h-4 w-full bg-[#EEF2EC] rounded"></div>
-          <div class="h-4 w-3/4 bg-[#EEF2EC] rounded"></div>
+          <div class="h-3 w-32 bg-surface-tint rounded"></div>
+          <div class="h-4 w-full bg-surface-tint rounded"></div>
+          <div class="h-4 w-3/4 bg-surface-tint rounded"></div>
         </div>
       </div>
     </div>
@@ -54,7 +54,7 @@
     <div
       v-else-if="errorMessage"
       role="alert"
-      class="bg-white border border-dashed border-[#E2A0A0] px-6 py-8 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
+      class="bg-white border border-dashed border-[#E2A0A0] px-6 py-8 rounded-lg text-center text-danger-soft text-[0.95rem]"
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ errorMessage }} Vui lòng
@@ -81,7 +81,7 @@
       </div>
 
       <!-- 3. Chưa có bình luận -->
-      <p v-if="!comments.length" class="bg-[#F7FAF6] border border-[#E2E8DF] rounded-lg px-6 py-8 text-center text-[0.95rem] text-ink-secondary m-0 mb-6">
+      <p v-if="!comments.length" class="bg-surface border border-line rounded-lg px-6 py-8 text-center text-[0.95rem] text-ink-secondary m-0 mb-6">
         {{ t('no_comments_yet') || 'Chưa có bình luận nào. Hãy là người đầu tiên đặt câu hỏi hoặc chia sẻ ý kiến về nội dung này.' }}
       </p>
 
@@ -91,8 +91,8 @@
             :id="`comment-${comment.id}`"
             class="bg-white border rounded-lg p-4 transition-colors duration-700"
             :class="highlightId === comment.id
-              ? 'border-[#7CB342] bg-[#F4F9F0] ring-2 ring-[#7CB342]/40'
-              : 'border-[#E2E8DF]'"
+              ? 'border-accent bg-surface-tint ring-2 ring-[#7CB342]/40'
+              : 'border-line'"
           >
             <div class="flex gap-3">
               <ReaderAvatar :initials="comment.initials" :is-admin="comment.isAdminReply" />
@@ -103,7 +103,7 @@
                     v-if="comment.isAdminReply"
                     class="px-2 py-0.5 rounded-full bg-brand-600 text-white text-[0.7rem] font-bold uppercase tracking-wide"
                   >{{ t('admin_badge') || 'Ban quản trị' }}</span>
-                  <span class="text-[0.78rem] text-[#5A6C58]">{{ formatDateVN(comment.createdAt) }}</span>
+                  <span class="text-[0.78rem] text-ink-soft">{{ formatDateVN(comment.createdAt) }}</span>
                 </div>
                 <p class="m-0 text-[0.95rem] leading-[1.6] text-[#2C3529] whitespace-pre-line break-words">{{ comment.body }}</p>
 
@@ -120,7 +120,7 @@
                        neo `#qa-<id>` của /qa-documents. -->
                   <button
                     type="button"
-                    class="text-[0.82rem] font-semibold text-[#5A6C58] hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
+                    class="text-[0.82rem] font-semibold text-ink-soft hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
                     @click="copyLink(comment.id)"
                   >
                     <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
@@ -129,7 +129,7 @@
                   <button
                     v-if="comment.canDelete"
                     type="button"
-                    class="text-[0.82rem] font-semibold text-[#B04A4A] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded"
+                    class="text-[0.82rem] font-semibold text-danger-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded"
                     :disabled="deletingId === comment.id"
                     @click="removeComment(comment)"
                   >
@@ -141,12 +141,12 @@
                 <!-- Trả lời một cấp. Không lồng sâu hơn: sâu hơn thì một cuộc
                      trao đổi dài thành cái thang thụt lề không đọc được trên
                      điện thoại. -->
-                <ul v-if="comment.replies && comment.replies.length" class="list-none p-0 mt-4 mb-0 flex flex-col gap-3 border-l-2 border-[#E2E8DF] pl-4">
+                <ul v-if="comment.replies && comment.replies.length" class="list-none p-0 mt-4 mb-0 flex flex-col gap-3 border-l-2 border-line pl-4">
                   <li v-for="reply in comment.replies" :key="reply.id">
                     <div
                       :id="`comment-${reply.id}`"
                       class="flex gap-2.5 rounded-lg transition-colors duration-700"
-                      :class="highlightId === reply.id ? 'bg-[#F4F9F0] ring-2 ring-[#7CB342]/40 p-2 -m-2' : ''"
+                      :class="highlightId === reply.id ? 'bg-surface-tint ring-2 ring-[#7CB342]/40 p-2 -m-2' : ''"
                     >
                       <ReaderAvatar :initials="reply.initials" :is-admin="reply.isAdminReply" size="sm" />
                       <div class="flex-grow min-w-0">
@@ -156,13 +156,13 @@
                             v-if="reply.isAdminReply"
                             class="px-2 py-0.5 rounded-full bg-brand-600 text-white text-[0.68rem] font-bold uppercase tracking-wide"
                           >{{ t('admin_badge') }}</span>
-                          <span class="text-[0.75rem] text-[#5A6C58]">{{ formatDateVN(reply.createdAt) }}</span>
+                          <span class="text-[0.75rem] text-ink-soft">{{ formatDateVN(reply.createdAt) }}</span>
                         </div>
                         <p class="m-0 text-[0.9rem] leading-[1.55] text-[#2C3529] whitespace-pre-line break-words">{{ reply.body }}</p>
                         <div class="mt-1.5 flex flex-wrap items-center gap-3">
                           <button
                             type="button"
-                            class="text-[0.8rem] font-semibold text-[#5A6C58] hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
+                            class="text-[0.8rem] font-semibold text-ink-soft hover:text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
                             @click="copyLink(reply.id)"
                           >
                             <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
@@ -171,7 +171,7 @@
                           <button
                             v-if="reply.canDelete"
                             type="button"
-                            class="text-[0.8rem] font-semibold text-[#B04A4A] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded"
+                            class="text-[0.8rem] font-semibold text-danger-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded"
                             :disabled="deletingId === reply.id"
                             @click="removeComment(reply)"
                           >
@@ -218,11 +218,11 @@
               : 'border-[#E2E8DF] bg-[#F8FAF7] opacity-60'"
           >
             <div class="flex items-center gap-2 mb-1.5">
-              <span v-if="p.status === 'sending'" class="inline-flex items-center gap-1.5 text-[0.78rem] text-[#5A6C58] font-medium">
+              <span v-if="p.status === 'sending'" class="inline-flex items-center gap-1.5 text-[0.78rem] text-ink-soft font-medium">
                 <i class="fa-solid fa-circle-notch fa-spin text-[0.7rem]" aria-hidden="true"></i>
                 {{ t('sending') || 'Đang gửi…' }}
               </span>
-              <span v-else class="inline-flex items-center gap-1.5 text-[0.78rem] text-[#B04A4A] font-medium" role="alert">
+              <span v-else class="inline-flex items-center gap-1.5 text-[0.78rem] text-danger-soft font-medium" role="alert">
                 <i class="fa-solid fa-circle-exclamation text-[0.75rem]" aria-hidden="true"></i>
                 {{ p.error }}
               </span>
@@ -232,7 +232,7 @@
               <button type="button" class="text-[0.82rem] font-semibold text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded" @click="retryPendingComment(p.tempId)">
                 <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>{{ t('retry') || 'Thử lại' }}
               </button>
-              <button type="button" class="text-[0.82rem] font-semibold text-[#5A6C58] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded" @click="dismissPendingComment(p.tempId)">
+              <button type="button" class="text-[0.82rem] font-semibold text-ink-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded" @click="dismissPendingComment(p.tempId)">
                 <i class="fa-solid fa-xmark mr-1" aria-hidden="true"></i>{{ t('dismiss') || 'Bỏ qua' }}
               </button>
             </div>
@@ -243,21 +243,21 @@
       <div v-if="totalPages > 1" class="mb-6 flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
-          class="px-3 py-1.5 rounded-lg border border-[#E2E8DF] bg-white text-[0.85rem] font-semibold text-ink-secondary disabled:opacity-50"
+          class="px-3 py-1.5 rounded-lg border border-line bg-white text-[0.85rem] font-semibold text-ink-secondary disabled:opacity-50"
           :disabled="page <= 1 || pending"
           @click="goToPage(page - 1)"
         >{{ t('page_prev') || 'Trang trước' }}</button>
         <span class="text-[0.85rem] text-ink-secondary">{{ t('page_of') || 'Trang' }} {{ page }} / {{ totalPages }}</span>
         <button
           type="button"
-          class="px-3 py-1.5 rounded-lg border border-[#E2E8DF] bg-white text-[0.85rem] font-semibold text-ink-secondary disabled:opacity-50"
+          class="px-3 py-1.5 rounded-lg border border-line bg-white text-[0.85rem] font-semibold text-ink-secondary disabled:opacity-50"
           :disabled="page >= totalPages || pending"
           @click="goToPage(page + 1)"
         >{{ t('page_next') || 'Trang sau' }}</button>
       </div>
 
       <!-- 4. Chưa đăng nhập -->
-      <div v-if="!isSignedIn" class="bg-[#F7FAF6] border border-[#E2E8DF] rounded-lg px-5 py-6 text-center">
+      <div v-if="!isSignedIn" class="bg-surface border border-line rounded-lg px-5 py-6 text-center">
         <!-- Lý do phải hiện Ở ĐÂY, không phải trong form.
 
              Khi phiên hết hạn giữa lúc trang đang mở, `forgetReader()` thay khung
@@ -266,7 +266,7 @@
              thấy form đột nhiên đổi thành một nút đăng nhập, và **không có gì nói
              vì sao**: nội dung họ vừa gõ cũng đi theo form. Nói rõ nguyên nhân là
              thứ biến một thay đổi khó hiểu thành một việc họ hiểu và làm được. -->
-        <p v-if="sessionLapsed" role="alert" class="m-0 mb-3 text-[0.92rem] font-semibold text-[#B04A4A]">
+        <p v-if="sessionLapsed" role="alert" class="m-0 mb-3 text-[0.92rem] font-semibold text-danger-soft">
           <i class="fa-solid fa-circle-exclamation mr-1.5" aria-hidden="true"></i>
           {{ t('c_session_lapsed') }}
           <span v-if="body.trim()" class="block mt-1 font-normal text-ink-secondary">
@@ -282,8 +282,8 @@
       </div>
 
       <!-- 5. Khung soạn bình luận -->
-      <form v-else class="bg-white border border-[#E2E8DF] rounded-lg p-4" @submit.prevent="submit(null)">
-        <label for="comment-body" class="block mb-2 text-[0.9rem] font-bold text-[#385130]">{{ t('c_your_comment') }}</label>
+      <form v-else class="bg-white border border-line rounded-lg p-4" @submit.prevent="submit(null)">
+        <label for="comment-body" class="block mb-2 text-[0.9rem] font-bold text-brand-800">{{ t('c_your_comment') }}</label>
         <textarea
           id="comment-body"
           v-model="body"
@@ -294,12 +294,12 @@
           class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-[0.95rem] outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15 box-border resize-y"
         ></textarea>
 
-        <p v-if="submitError" role="alert" class="mt-2 mb-0 text-[0.88rem] text-[#B04A4A]">
+        <p v-if="submitError" role="alert" class="mt-2 mb-0 text-[0.88rem] text-danger-soft">
           <i class="fa-solid fa-circle-exclamation mr-1.5" aria-hidden="true"></i>{{ submitError }}
         </p>
 
         <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <span class="text-[0.8rem] text-[#5A6C58]">{{ body.length }} / {{ MAX_LENGTH }} {{ t('c_chars') }}</span>
+          <span class="text-[0.8rem] text-ink-soft">{{ body.length }} / {{ MAX_LENGTH }} {{ t('c_chars') }}</span>
           <button type="submit" class="btn btn-primary" :disabled="submitting || !body.trim()">
             {{ submitting ? t('sending') : t('c_send') }}
           </button>

@@ -271,7 +271,7 @@ onMounted(() => {
         <button
           type="button"
           class="flex flex-col gap-2 p-3 rounded-lg border text-left transition-colors cursor-pointer"
-          :class="layoutDraft.socialDisplayMode === 'popup' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong bg-white hover:bg-[#f4f7f4]'"
+          :class="layoutDraft.socialDisplayMode === 'popup' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong bg-white hover:bg-surface'"
           @click="layoutDraft.socialDisplayMode = 'popup'"
         >
           <div class="flex items-center justify-between">
@@ -279,7 +279,7 @@ onMounted(() => {
             <i v-if="layoutDraft.socialDisplayMode === 'popup'" class="fa-solid fa-circle-check text-brand-700" aria-hidden="true"></i>
           </div>
           <!-- mini preview -->
-          <div class="relative h-16 rounded-md bg-[#f4f7f4] border border-line overflow-hidden">
+          <div class="relative h-16 rounded-md bg-surface border border-line overflow-hidden">
             <div class="absolute bottom-2 left-2 w-8 h-10 rounded-lg bg-white shadow flex flex-col items-center justify-center gap-0.5">
               <div class="w-4 h-1 rounded bg-[#1877f2]"></div>
               <div class="w-4 h-1 rounded bg-[#ff0000]"></div>
@@ -293,7 +293,7 @@ onMounted(() => {
         <button
           type="button"
           class="flex flex-col gap-2 p-3 rounded-lg border text-left transition-colors cursor-pointer"
-          :class="layoutDraft.socialDisplayMode === 'floating' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong bg-white hover:bg-[#f4f7f4]'"
+          :class="layoutDraft.socialDisplayMode === 'floating' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong bg-white hover:bg-surface'"
           @click="layoutDraft.socialDisplayMode = 'floating'"
         >
           <div class="flex items-center justify-between">
@@ -301,7 +301,7 @@ onMounted(() => {
             <i v-if="layoutDraft.socialDisplayMode === 'floating'" class="fa-solid fa-circle-check text-brand-700" aria-hidden="true"></i>
           </div>
           <!-- mini preview -->
-          <div class="relative h-16 rounded-md bg-[#f4f7f4] border border-line overflow-hidden">
+          <div class="relative h-16 rounded-md bg-surface border border-line overflow-hidden">
             <div class="absolute bottom-2 left-2 flex flex-col gap-1">
               <div class="w-5 h-5 rounded-full bg-[#1877f2]"></div>
               <div class="w-5 h-5 rounded-full bg-[#ff0000]"></div>
@@ -312,7 +312,7 @@ onMounted(() => {
         </button>
       </div>
 
-      <label class="flex items-center gap-2 text-xs font-semibold text-[#3d4f3f] select-none cursor-pointer pt-1 border-t border-[#f0f4f0]">
+      <label class="flex items-center gap-2 text-xs font-semibold text-[#3d4f3f] select-none cursor-pointer pt-1 border-t border-surface">
         <input v-model="layoutDraft.socialAutoOpen" type="checkbox" class="w-4 h-4 accent-brand-700" />
         <span>Tự mở khi tải trang. <strong>Nút tròn rời</strong>: mở trên cả PC lẫn mobile. <strong>Bảng nổi</strong>: chỉ mở trên PC (mobile thu gọn để không che nội dung). Tắt để thu gọn ở mọi nơi.</span>
       </label>
@@ -426,7 +426,7 @@ onMounted(() => {
         </label>
       </div>
 
-      <div v-if="formError" role="alert" class="text-xs text-[#b04a4a] flex items-center gap-1.5">
+      <div v-if="formError" role="alert" class="text-xs text-danger-soft flex items-center gap-1.5">
         <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>{{ formError }}
       </div>
 
@@ -452,7 +452,7 @@ onMounted(() => {
     <!-- List -->
     <SkeletonTable v-if="loading" label="Đang tải danh sách mạng xã hội" :rows="4" :cols="5" />
 
-    <div v-else-if="loadError" role="alert" class="flex flex-col items-center gap-3 py-12 text-[#b04a4a]">
+    <div v-else-if="loadError" role="alert" class="flex flex-col items-center gap-3 py-12 text-danger-soft">
       <i class="fa-solid fa-triangle-exclamation text-3xl text-[#e2a0a0]" aria-hidden="true"></i>
       <p class="m-0 text-sm">{{ loadError }}</p>
       <button type="button" class="inline-flex items-center gap-2 bg-brand-700 hover:bg-brand-900 text-white font-bold px-4 py-2 rounded-lg cursor-pointer border-0 text-sm" @click="load">
@@ -486,7 +486,7 @@ onMounted(() => {
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5">
               <span class="text-[0.95rem] font-extrabold text-brand-950 truncate">{{ item.platform }}</span>
-              <span class="text-[0.62rem] font-bold text-[#9ca3af] bg-[#f4f7f4] rounded px-1.5 py-0.5 shrink-0">#{{ idx + 1 }}</span>
+              <span class="text-[0.62rem] font-bold text-[#9ca3af] bg-surface rounded px-1.5 py-0.5 shrink-0">#{{ idx + 1 }}</span>
             </div>
             <p class="m-0 text-[0.78rem] text-ink-secondary truncate">{{ item.label }}</p>
           </div>
@@ -505,7 +505,7 @@ onMounted(() => {
         </a>
 
         <!-- Hàng 3: thao tác -->
-        <div class="flex items-center gap-1 pt-1 border-t border-[#eef2ee]">
+        <div class="flex items-center gap-1 pt-1 border-t border-surface-tint">
           <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg text-ink-muted hover:bg-surface-tint hover:text-brand-700 disabled:opacity-25 disabled:hover:bg-transparent" :disabled="idx === 0" :aria-label="`Di chuyển ${item.label} lên`" @click="move(item, -1)"><i class="fa-solid fa-arrow-up text-[0.7rem]" aria-hidden="true"></i></button>
           <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg text-ink-muted hover:bg-surface-tint hover:text-brand-700 disabled:opacity-25 disabled:hover:bg-transparent" :disabled="idx === items.length - 1" :aria-label="`Di chuyển ${item.label} xuống`" @click="move(item, 1)"><i class="fa-solid fa-arrow-down text-[0.7rem]" aria-hidden="true"></i></button>
           <button
@@ -521,7 +521,7 @@ onMounted(() => {
           <button type="button" class="inline-flex items-center gap-1 text-[0.72rem] font-bold text-brand-700 hover:bg-surface-tint px-2 py-1 rounded-lg" @click="startEdit(item)">
             <i class="fa-solid fa-pen text-[0.65rem]" aria-hidden="true"></i> Sửa
           </button>
-          <button type="button" class="inline-flex items-center gap-1 text-[0.72rem] font-bold text-danger hover:bg-[#fdecec] px-2 py-1 rounded-lg" @click="remove(item)">
+          <button type="button" class="inline-flex items-center gap-1 text-[0.72rem] font-bold text-danger hover:bg-danger-bg px-2 py-1 rounded-lg" @click="remove(item)">
             <i class="fa-solid fa-trash text-[0.65rem]" aria-hidden="true"></i> Xóa
           </button>
         </div>

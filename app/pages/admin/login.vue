@@ -239,7 +239,7 @@ function backToPassword() {
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0d1e10] to-brand-900 p-5 font-[Inter,system-ui,sans-serif]">
     <div class="w-full max-w-[420px] bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden">
-      <div class="px-8 pt-8 pb-6 text-center bg-[#f8faf8] border-b border-[#eef2ee]">
+      <div class="px-8 pt-8 pb-6 text-center bg-surface border-b border-surface-tint">
         <div v-if="siteMainLogo || siteLogo" class="flex items-center justify-center gap-3 mb-4 flex-wrap">
           <img
             v-if="siteMainLogo"
@@ -265,13 +265,13 @@ function backToPassword() {
       </div>
 
       <form v-if="step === 'password'" @submit.prevent="handleLogin" class="px-8 py-8">
-        <div v-if="errorMsg" class="flex items-center gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-5" role="alert">
+        <div v-if="errorMsg" class="flex items-center gap-2 bg-danger-bg border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-5" role="alert">
           <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i>
           {{ errorMsg }}
         </div>
 
         <div class="mb-5">
-          <label class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">Tài khoản</label>
+          <label class="block text-[0.82rem] font-bold text-ink-admin mb-2">Tài khoản</label>
           <input
             type="text"
             v-model="username"
@@ -283,7 +283,7 @@ function backToPassword() {
         </div>
 
         <div class="mb-5">
-          <label class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">Mật khẩu</label>
+          <label class="block text-[0.82rem] font-bold text-ink-admin mb-2">Mật khẩu</label>
           <input
             type="password"
             v-model="password"
@@ -295,7 +295,7 @@ function backToPassword() {
         </div>
 
         <div v-if="captchaRequired" class="mb-5">
-          <label class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">Mã captcha</label>
+          <label class="block text-[0.82rem] font-bold text-ink-admin mb-2">Mã captcha</label>
           <div class="flex items-center gap-3">
             <div
               v-if="captchaSvg"
@@ -345,18 +345,18 @@ function backToPassword() {
           </div>
         </div>
 
-        <div v-if="errorMsg" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="alert">
+        <div v-if="errorMsg" class="flex items-start gap-2 bg-danger-bg border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="alert">
           <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
           <span>{{ errorMsg }}</span>
         </div>
-        <div v-if="infoMsg" class="flex items-start gap-2 bg-[#eef7ee] border border-[#cce5cd] text-brand-900 px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="status">
+        <div v-if="infoMsg" class="flex items-start gap-2 bg-surface-tint border border-[#cce5cd] text-brand-900 px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="status">
           <i class="fa-solid fa-circle-check shrink-0 mt-0.5" aria-hidden="true"></i>
           <span>{{ infoMsg }}</span>
         </div>
 
         <!-- Chọn cách xác thực (chỉ hiện khi có nhiều hơn một cách) -->
         <div v-if="methodChoices.length > 1" class="mb-4">
-          <span class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">Chọn cách xác thực</span>
+          <span class="block text-[0.82rem] font-bold text-ink-admin mb-2">Chọn cách xác thực</span>
           <div class="flex flex-col gap-2">
             <button
               v-for="m in methodChoices"
@@ -389,7 +389,7 @@ function backToPassword() {
         </button>
 
         <div class="mb-5">
-          <label for="mfa-code" class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">{{ currentMeta.inputLabel }}</label>
+          <label for="mfa-code" class="block text-[0.82rem] font-bold text-ink-admin mb-2">{{ currentMeta.inputLabel }}</label>
           <input
             id="mfa-code"
             ref="codeInput"
@@ -421,7 +421,7 @@ function backToPassword() {
         </button>
       </form>
 
-      <div class="px-8 py-4 bg-[#f8faf8] border-t border-[#eef2ee] text-center text-[0.75rem] text-[#88998a]">
+      <div class="px-8 py-4 bg-surface border-t border-surface-tint text-center text-[0.75rem] text-ink-faint">
         Cổng thông tin Hỗ trợ Tái hòa nhập Cộng đồng — Bộ Công an
       </div>
     </div>

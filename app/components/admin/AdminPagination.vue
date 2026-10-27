@@ -48,7 +48,7 @@ function applyJump() {
     <nav class="flex flex-wrap items-center gap-1.5" aria-label="Phân trang">
       <button
         type="button"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page <= 1"
         title="Trang đầu"
         aria-label="Trang đầu"
@@ -58,7 +58,7 @@ function applyJump() {
       </button>
       <button
         type="button"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page <= 1"
         title="Trang trước"
         aria-label="Trang trước"
@@ -79,7 +79,7 @@ function applyJump() {
           class="flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm font-semibold"
           :class="s === page
             ? 'border-brand-700 bg-brand-700 text-white'
-            : 'border-line-strong bg-white text-[#3d4f3f] hover:bg-[#f4f7f4]'"
+            : 'border-line-strong bg-white text-[#3d4f3f] hover:bg-surface'"
           :aria-current="s === page ? 'page' : undefined"
           :aria-label="`Trang ${s}`"
           @click="go(s as number)"
@@ -88,7 +88,7 @@ function applyJump() {
 
       <button
         type="button"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page >= totalPages"
         title="Trang sau"
         aria-label="Trang sau"
@@ -98,7 +98,7 @@ function applyJump() {
       </button>
       <button
         type="button"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page >= totalPages"
         title="Trang cuối"
         aria-label="Trang cuối"
@@ -125,7 +125,7 @@ function applyJump() {
         />
         <button
           type="submit"
-          class="flex h-9 items-center justify-center rounded-lg border border-line-strong bg-white px-2.5 text-sm font-semibold text-brand-700 hover:bg-[#f4f7f4]"
+          class="flex h-9 items-center justify-center rounded-lg border border-line-strong bg-white px-2.5 text-sm font-semibold text-brand-700 hover:bg-surface"
           :aria-label="`Đi đến trang đã nhập`"
         >Đi</button>
       </form>

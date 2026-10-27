@@ -52,22 +52,22 @@
       <span class="sr-only">Đang tải trình dựng trang</span>
       <aside class="flex w-64 shrink-0 flex-col border-r border-gray-200" aria-hidden="true">
         <div class="shrink-0 border-b border-gray-200 p-3">
-          <div class="h-9 w-full rounded-lg bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-9 w-full rounded-lg bg-line animate-pulse motion-reduce:animate-none"></div>
         </div>
         <div class="flex-1 p-2 flex flex-col gap-2">
-          <div v-for="n in 6" :key="'bt-' + n" class="h-8 w-full rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div v-for="n in 6" :key="'bt-' + n" class="h-8 w-full rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
       </aside>
       <div class="min-w-0 flex-1 p-6 flex flex-col gap-4" aria-hidden="true">
-        <div class="h-[180px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
-        <div class="h-[120px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
-        <div class="h-[120px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-[180px] w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-[120px] w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-[120px] w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
       </div>
       <aside class="w-80 shrink-0 border-l border-gray-200 p-4 flex flex-col gap-3" aria-hidden="true">
-        <div class="h-4 w-32 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-4 w-32 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
         <div v-for="n in 4" :key="'pp-' + n" class="flex flex-col gap-1.5">
-          <div class="h-3 w-24 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-9 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-24 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-9 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
       </aside>
     </div>

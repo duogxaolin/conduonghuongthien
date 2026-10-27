@@ -260,7 +260,7 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
               class="px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer"
               :class="delifyPeriod === p.key
                 ? 'bg-brand-700 text-white shadow-xs'
-                : 'bg-white text-ink-muted border border-line-strong hover:bg-[#e4ece4]'"
+                : 'bg-white text-ink-muted border border-line-strong hover:bg-line'"
               :disabled="delifyStatusLoading"
               @click="loadDelifyStatus(p.key)"
             >
@@ -269,7 +269,7 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
 
             <button
               type="button"
-              class="px-2.5 py-1 rounded-md bg-white border border-line-strong text-xs font-bold text-brand-700 hover:bg-[#e4ece4] ml-1 flex items-center gap-1"
+              class="px-2.5 py-1 rounded-md bg-white border border-line-strong text-xs font-bold text-brand-700 hover:bg-line ml-1 flex items-center gap-1"
               :disabled="delifyStatusLoading"
               title="Làm mới dữ liệu từ Delify Router"
               @click="loadDelifyStatus()"

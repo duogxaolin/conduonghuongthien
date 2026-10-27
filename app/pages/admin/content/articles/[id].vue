@@ -468,7 +468,7 @@ onUnmounted(() => {
             class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border text-sm font-bold cursor-pointer transition-colors"
             :class="autoTranslateLangs.length > 0
               ? 'border-brand-700 bg-surface-tint text-brand-900'
-              : 'border-line-strong bg-white text-ink-muted hover:bg-[#f8faf8]'"
+              : 'border-line-strong bg-white text-ink-muted hover:bg-surface'"
             @click="showAutoTranslateMenu = !showAutoTranslateMenu"
           >
             <i class="fa-solid fa-language text-sm"></i>
@@ -525,7 +525,7 @@ onUnmounted(() => {
         </button>
         <nuxt-link
           to="/admin/content/articles"
-          class="inline-flex items-center bg-white border border-line-strong text-ink-muted no-underline px-4 py-2.5 rounded-lg font-semibold hover:bg-[#f8faf8] transition-colors"
+          class="inline-flex items-center bg-white border border-line-strong text-ink-muted no-underline px-4 py-2.5 rounded-lg font-semibold hover:bg-surface transition-colors"
         >Hủy & Quay lại</nuxt-link>
         <button
           class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -538,7 +538,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="errorMsg" role="alert" class="bg-[#ffebe9] text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+    <div v-if="errorMsg" role="alert" class="bg-danger-bg text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
       <span>{{ errorMsg }}</span>
       <button v-if="!loading && !saving" type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline whitespace-nowrap" @click="fetchArticle">Thử lại</button>
     </div>
@@ -554,29 +554,29 @@ onUnmounted(() => {
       <span class="sr-only">Đang tải nội dung bài viết</span>
       <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-5" aria-hidden="true">
         <div class="flex flex-col gap-1.5">
-          <div class="h-3 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-[50px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-40 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-[50px] w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
         <div class="flex flex-col gap-1.5">
-          <div class="h-3 w-48 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-20 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-48 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-20 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
         <div class="flex flex-col gap-2">
-          <div class="h-3 w-56 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="min-h-[700px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-56 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="min-h-[700px] w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
       </div>
       <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-4 self-start" aria-hidden="true">
-        <div class="h-4 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-4 w-40 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
         <div v-for="n in 3" :key="'sf-' + n" class="flex flex-col gap-1.5">
-          <div class="h-3 w-28 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-10 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-28 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-10 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
         <div class="flex flex-col gap-2">
-          <div class="h-3 w-36 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-40 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-10 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-10 w-full rounded-lg bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-36 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-40 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-10 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-10 w-full rounded-lg bg-line animate-pulse motion-reduce:animate-none"></div>
         </div>
       </div>
     </div>
@@ -595,7 +595,7 @@ onUnmounted(() => {
           @update:excerpt="form.excerpt = $event"
         />
         <div class="flex flex-col gap-1.5">
-          <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Tiêu đề bài viết (*)</label>
+          <label class="text-[0.84rem] font-bold text-ink-admin">Tiêu đề bài viết (*)</label>
           <input
             type="text"
             v-model="form.title"
@@ -605,7 +605,7 @@ onUnmounted(() => {
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Tóm tắt bài viết (Excerpt)</label>
+          <label class="text-[0.84rem] font-bold text-ink-admin">Tóm tắt bài viết (Excerpt)</label>
           <textarea
             v-model="form.excerpt"
             rows="3"
@@ -616,9 +616,9 @@ onUnmounted(() => {
 
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">
-            <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Nội dung chi tiết (HTML / Editor)</label>
+            <label class="text-[0.84rem] font-bold text-ink-admin">Nội dung chi tiết (HTML / Editor)</label>
             <button
-              class="inline-flex items-center gap-1.5 bg-surface-tint text-brand-700 border border-[#8ed694] px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
+              class="inline-flex items-center gap-1.5 bg-surface-tint text-brand-700 border border-brand-300 px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
               @click="openMediaPicker('content')"
             >
               <i class="fa-regular fa-images"></i> Chèn Ảnh Từ Thư Viện
@@ -633,7 +633,7 @@ onUnmounted(() => {
         <h3 class="text-[1rem] font-bold text-brand-950 m-0">Cấu hình xuất bản</h3>
 
         <div class="flex flex-col gap-1.5">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Thể loại bài viết (*)</label>
+          <label class="text-[0.82rem] font-bold text-ink-admin">Thể loại bài viết (*)</label>
           <select v-model="form.type" class="w-full px-3 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border">
             <option v-for="ct in contentTypes" :key="ct.id" :value="ct.slug">
               {{ ct.icon ? ct.icon.replace('fa-solid ', '').replace('fa-regular ', '') : '' }} {{ ct.name }}
@@ -643,7 +643,7 @@ onUnmounted(() => {
 
         <!-- Dynamic category select — populated from DB by type -->
         <div v-if="availableCategories.length > 0" class="flex flex-col gap-1.5">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">
+          <label class="text-[0.82rem] font-bold text-ink-admin">
             Danh mục
             <span class="font-normal text-ink-muted">— tùy chọn</span>
           </label>
@@ -657,7 +657,7 @@ onUnmounted(() => {
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Trạng thái (*)</label>
+          <label class="text-[0.82rem] font-bold text-ink-admin">Trạng thái (*)</label>
           <select v-model="form.status" class="w-full px-3 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border">
             <option value="published">🟢 Xuất Bản Ngay</option>
             <option value="draft">🟡 Bản Nháp (Draft)</option>
@@ -666,7 +666,7 @@ onUnmounted(() => {
         </div>
 
         <div class="flex flex-col gap-2">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Ảnh đại diện (Thumbnail)</label>
+          <label class="text-[0.82rem] font-bold text-ink-admin">Ảnh đại diện (Thumbnail)</label>
           <div v-if="form.thumbnailUrl" class="relative w-full h-40 rounded-lg overflow-hidden border border-line">
             <img :src="form.thumbnailUrl" class="w-full h-full object-cover" />
             <button type="button" aria-label="Xóa ảnh đại diện" class="absolute top-2 right-2 bg-black/70 text-white border-0 w-6 h-6 rounded-full cursor-pointer flex items-center justify-center text-xs" @click="form.thumbnailUrl = ''">
@@ -674,7 +674,7 @@ onUnmounted(() => {
             </button>
           </div>
           <button
-            class="w-full flex items-center justify-center gap-2 bg-surface-tint border border-[#8ed694] text-brand-700 px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm hover:bg-[#e4f2e5] transition-colors"
+            class="w-full flex items-center justify-center gap-2 bg-surface-tint border border-brand-300 text-brand-700 px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm hover:bg-[#e4f2e5] transition-colors"
             @click="openMediaPicker('thumbnail')"
           >
             <i class="fa-regular fa-images"></i> {{ form.thumbnailUrl ? 'Đổi từ thư viện' : 'Chọn từ thư viện' }}
@@ -737,7 +737,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Publish Option -->
-        <label class="flex items-center gap-2.5 p-3 rounded-xl bg-[#fcfdfc] border border-[#eef2ee] cursor-pointer text-xs text-ink">
+        <label class="flex items-center gap-2.5 p-3 rounded-xl bg-surface border border-surface-tint cursor-pointer text-xs text-ink">
           <input
             type="checkbox"
             v-model="reTranslatePublishImmediately"

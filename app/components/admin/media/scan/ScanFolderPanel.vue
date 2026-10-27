@@ -66,7 +66,7 @@ const scanStalled = computed(() => {
       <button
         v-if="scanning"
         type="button"
-        class="inline-flex items-center gap-2 rounded-lg border border-[#a32924] bg-white px-4 py-2.5 text-sm font-bold text-[#a32924] cursor-pointer transition-colors hover:bg-[#fdf0f0] disabled:cursor-not-allowed disabled:opacity-50"
+        class="inline-flex items-center gap-2 rounded-lg border border-[#a32924] bg-white px-4 py-2.5 text-sm font-bold text-[#a32924] cursor-pointer transition-colors hover:bg-danger-bg disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="scanJob?.cancelling"
         @click="emit('cancel')"
       >
@@ -102,14 +102,14 @@ const scanStalled = computed(() => {
             aria-hidden="true"
           ></i>
           {{ scanPhaseLabel[scanJob.phase] }}
-          <span v-if="scanJob.cancelling" class="text-[#8a6412]">(đang dừng)</span>
+          <span v-if="scanJob.cancelling" class="text-warn-ink">(đang dừng)</span>
         </span>
         <span class="text-xs text-ink-muted">
           {{ scanJob.done }} / {{ scanJob.total }} file
           <span v-if="scanJob.total > 0">· {{ scanProgressPercent }}%</span>
         </span>
       </div>
-      <div class="h-2 w-full overflow-hidden rounded-full bg-[#d0ddd1]" role="progressbar" :aria-valuenow="scanProgressPercent" aria-valuemin="0" aria-valuemax="100">
+      <div class="h-2 w-full overflow-hidden rounded-full bg-line-strong" role="progressbar" :aria-valuenow="scanProgressPercent" aria-valuemin="0" aria-valuemax="100">
         <div class="h-full rounded-full bg-brand-700 transition-all duration-300" :style="{ width: `${scanProgressPercent}%` }"></div>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
@@ -117,7 +117,7 @@ const scanStalled = computed(() => {
         <div><span class="font-bold text-ink-muted">{{ scanJob.skipped }}</span><span class="text-ink-muted"> bỏ qua</span></div>
         <div class="text-ink-muted">{{ scanJob.message }}</div>
       </div>
-      <div v-if="scanJob.truncated" class="text-xs text-[#8a6412]">
+      <div v-if="scanJob.truncated" class="text-xs text-warn-ink">
         <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
         Đạt giới hạn 5000 tệp — chạy lại để quét tiếp.
       </div>
@@ -129,7 +129,7 @@ const scanStalled = computed(() => {
         <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
         {{ scanJob.legacyMatched }} tệp đã được lượt quét trước nhập lên R2 — không nhập lại.
       </div>
-      <div v-if="scanJob.conflicts > 0" class="text-xs text-[#8a6412] break-all">
+      <div v-if="scanJob.conflicts > 0" class="text-xs text-warn-ink break-all">
         <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
         {{ scanJob.conflicts }} tệp trùng tên với ảnh đã có trên R2 — bỏ qua, không ghi đè: {{ scanJob.conflictFiles.slice(0, 5).join(', ') }}{{ scanJob.conflicts > 5 ? '...' : '' }}
       </div>
@@ -137,17 +137,17 @@ const scanStalled = computed(() => {
 
     <!-- Kết quả quét (giữ hiện sau khi xong) -->
     <div v-if="scanResult && !scanning" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
-      <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
+      <div class="rounded-lg border border-[#cce5cd] bg-surface-tint p-3">
         <p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Đã nhập</p>
         <p class="m-0 mt-1 text-xl font-extrabold text-brand-900">{{ scanResult.imported }}</p>
       </div>
-      <div class="rounded-lg border border-line bg-[#f8faf8] p-3">
+      <div class="rounded-lg border border-line bg-surface p-3">
         <p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Bỏ qua</p>
         <p class="m-0 mt-1 text-xl font-extrabold text-ink-muted">{{ scanResult.skipped }}</p>
       </div>
       <div v-if="scanResult.truncated" class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] p-3">
-        <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#8a6412]">Cắt ngang</p>
-        <p class="m-0 mt-1 text-sm font-bold text-[#8a6412]">Đạt 5000 tệp — chạy lại để quét tiếp</p>
+        <p class="m-0 text-xs font-bold uppercase tracking-wide text-warn-ink">Cắt ngang</p>
+        <p class="m-0 mt-1 text-sm font-bold text-warn-ink">Đạt 5000 tệp — chạy lại để quét tiếp</p>
       </div>
     </div>
     <p v-if="scanResult && scanResult.imported > 0 && !scanning" class="m-0 text-sm">

@@ -19,17 +19,17 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
     <!-- Sidebar -->
     <button
       v-if="findHotspot('sidebar')"
-      class="w-32 bg-[#0d1f11] border-2 border-dashed border-brand-700 rounded text-[#8ed694] text-[0.65rem] font-semibold flex flex-col items-center gap-3 py-4 px-2 cursor-pointer hover:border-[#8ed694] hover:bg-brand-950 focus:outline-none focus:ring-2 focus:ring-[#8ed694] transition-colors"
+      class="w-32 bg-[#0d1f11] border-2 border-dashed border-brand-700 rounded text-brand-300 text-[0.65rem] font-semibold flex flex-col items-center gap-3 py-4 px-2 cursor-pointer hover:border-brand-300 hover:bg-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-300 transition-colors"
       :aria-label="findHotspot('sidebar')!.label"
       :title="`${findHotspot('sidebar')!.label} — ${findHotspot('sidebar')!.hint}`"
       @click="hotspotClick(findHotspot('sidebar')!)"
     >
-      <i class="fa-solid fa-shield-halved text-[#8ed694] text-base" aria-hidden="true"></i>
+      <i class="fa-solid fa-shield-halved text-brand-300 text-base" aria-hidden="true"></i>
       <span aria-hidden="true" class="flex flex-col gap-2 w-full items-center">
-        <span class="h-2 w-20 bg-[#8ed694]/25 rounded"></span>
-        <span class="h-2 w-16 bg-[#8ed694]/15 rounded"></span>
-        <span class="h-2 w-16 bg-[#8ed694]/15 rounded"></span>
-        <span class="h-2 w-16 bg-[#8ed694]/15 rounded"></span>
+        <span class="h-2 w-20 bg-brand-300/25 rounded"></span>
+        <span class="h-2 w-16 bg-brand-300/15 rounded"></span>
+        <span class="h-2 w-16 bg-brand-300/15 rounded"></span>
+        <span class="h-2 w-16 bg-brand-300/15 rounded"></span>
       </span>
     </button>
 
@@ -76,7 +76,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
       <!-- Chart -->
       <button
         v-if="findHotspot('chart')"
-        class="h-32 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+        class="h-32 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
         :aria-label="findHotspot('chart')!.label"
         :title="`${findHotspot('chart')!.label} — ${findHotspot('chart')!.hint}`"
         @click="hotspotClick(findHotspot('chart')!)"
@@ -96,7 +96,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
       <div class="grid grid-cols-2 gap-2">
         <button
           v-if="findHotspot('recent')"
-          class="h-20 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col gap-1.5 justify-center px-3 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+          class="h-20 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col gap-1.5 justify-center px-3 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
           :aria-label="findHotspot('recent')!.label"
           :title="`${findHotspot('recent')!.label} — ${findHotspot('recent')!.hint}`"
           @click="hotspotClick(findHotspot('recent')!)"
@@ -116,7 +116,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
         </button>
         <button
           v-if="findHotspot('quick')"
-          class="h-20 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+          class="h-20 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
           :aria-label="findHotspot('quick')!.label"
           :title="`${findHotspot('quick')!.label} — ${findHotspot('quick')!.hint}`"
           @click="hotspotClick(findHotspot('quick')!)"

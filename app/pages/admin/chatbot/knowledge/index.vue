@@ -140,7 +140,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
     <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load(1)">thử lại</button>.</div><SkeletonTable v-if="loading" label="Đang tải kho kiến thức" :rows="6" :cols="7" /><div v-else-if="!items.length" class="rounded-xl border border-line bg-white p-12 text-center"><i class="fa-solid fa-book-open mb-3 text-3xl text-line-strong" aria-hidden="true"></i><p class="m-0 font-semibold text-ink-muted">{{ search || topic || status || quick ? 'Không có kết quả phù hợp.' : 'Chưa có mục kiến thức nào.' }}</p></div>
     <div v-else class="overflow-hidden rounded-xl border border-line bg-white shadow-xs">
       <!-- Mobile Card View: Tối ưu hiển thị dạng thẻ trên điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <div
           v-for="item in items"
           :key="'m-'+item.id"
@@ -158,7 +158,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
             <div class="min-w-0 flex-1">
               <p class="m-0 font-bold text-brand-950 text-[0.92rem] leading-snug">{{ item.canonicalQuestion }}</p>
               <div class="flex flex-wrap items-center gap-2 mt-2">
-                <span class="inline-flex items-center gap-1 rounded-md bg-[#f4f7f4] px-2 py-0.5 text-xs text-[#445546]">
+                <span class="inline-flex items-center gap-1 rounded-md bg-surface px-2 py-0.5 text-xs text-[#445546]">
                   <i class="fa-solid fa-tag text-[0.65rem] text-ink-muted" aria-hidden="true"></i>
                   {{ item.topic }}
                 </span>
@@ -170,8 +170,8 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
             </div>
           </div>
 
-          <div class="flex items-center justify-between text-xs text-ink-muted pt-2 border-t border-[#f4f7f4]">
-            <label class="inline-flex items-center gap-1.5 font-semibold text-[#2c3e2e] cursor-pointer">
+          <div class="flex items-center justify-between text-xs text-ink-muted pt-2 border-t border-surface">
+            <label class="inline-flex items-center gap-1.5 font-semibold text-ink-admin cursor-pointer">
               <input
                 type="checkbox"
                 class="h-3.5 w-3.5 accent-brand-700"
@@ -181,13 +181,13 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
               />
               <span>{{ item.isQuickQuestion ? 'Câu hỏi nhanh' : 'Bình thường' }}</span>
             </label>
-            <span class="text-[0.72rem] text-[#8a9a8c]">
+            <span class="text-[0.72rem] text-ink-faint">
               {{ item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('vi-VN') : '—' }}
             </span>
           </div>
 
           <!-- Thao tác nhanh -->
-          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-surface">
             <nuxt-link
               :to="`/admin/chatbot/knowledge/${item.id}`"
               class="inline-flex items-center gap-1 text-xs font-bold text-brand-700 bg-surface-tint hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg no-underline"
@@ -225,7 +225,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
       <div class="hidden md:block overflow-x-auto">
         <table class="w-full min-w-[820px] border-collapse text-left text-sm">
           <caption class="sr-only">Danh sách kho kiến thức chatbot</caption>
-          <thead class="bg-[#f4f7f4] text-xs uppercase tracking-wide text-ink-muted">
+          <thead class="bg-surface text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th class="w-10 px-4 py-3">
                 <input
@@ -249,7 +249,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
             <tr
               v-for="item in items"
               :key="item.id"
-              class="border-t border-[#eef2ee] align-top"
+              class="border-t border-surface-tint align-top"
               :class="selection.isSelected(Number(item.id)) ? 'bg-surface-tint' : ''"
             >
               <td class="px-4 py-3">
@@ -261,7 +261,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
                   @change="selection.toggle(Number(item.id))"
                 />
               </td>
-              <td class="max-w-[360px] px-4 py-3 font-semibold text-[#2c3e2e]">{{ item.canonicalQuestion }}</td>
+              <td class="max-w-[360px] px-4 py-3 font-semibold text-ink-admin">{{ item.canonicalQuestion }}</td>
               <td class="px-4 py-3 text-ink-muted">{{ item.topic }}</td>
               <td class="px-4 py-3">
                 <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-bold" :class="statusTone[item.status]">
@@ -270,7 +270,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
                 </span>
               </td>
               <td class="px-4 py-3">
-                <label class="inline-flex items-center gap-2 text-xs font-semibold text-[#2c3e2e]">
+                <label class="inline-flex items-center gap-2 text-xs font-semibold text-ink-admin">
                   <input
                     type="checkbox"
                     class="h-4 w-4 accent-brand-700"
@@ -294,7 +294,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
           </tbody>
         </table>
       </div>
-      <nav v-if="pagination.totalPages > 1" class="border-t border-[#eef2ee] p-4">
+      <nav v-if="pagination.totalPages > 1" class="border-t border-surface-tint p-4">
         <AdminPagination :page="page" :total-pages="pagination.totalPages" :total="pagination.total" item-label="mục" @update:page="load" />
       </nav>
     </div>
@@ -339,7 +339,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
                 <div v-for="([field, value]) in importRawFields(e)" :key="field">
                   <dt class="font-bold">
                     {{ importRawLabels[field] || field }}
-                    <span v-if="importFieldTruncated(e, field)" class="ml-1 rounded bg-[#fbe5e3] px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
+                    <span v-if="importFieldTruncated(e, field)" class="ml-1 rounded bg-danger-bg px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
                   </dt>
                   <dd class="m-0 mt-0.5 whitespace-pre-wrap break-words rounded bg-[#fff8f7] px-2 py-1.5 font-mono text-xs text-[#6f1b18]">{{ value }}</dd>
                 </div>
@@ -350,7 +350,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
                   <div v-for="(entry, index) in importExtraColumns(e)" :key="`${entry.column}-${index}`">
                     <dt class="font-bold">
                       {{ importExtraColumnLabel(entry) }}
-                      <span v-if="importExtraColumnTruncated(e, index)" class="ml-1 rounded bg-[#fbe5e3] px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
+                      <span v-if="importExtraColumnTruncated(e, index)" class="ml-1 rounded bg-danger-bg px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
                     </dt>
                     <dd class="m-0 mt-0.5 whitespace-pre-wrap break-words rounded bg-[#fff8f7] px-2 py-1.5 font-mono text-xs text-[#6f1b18]">{{ entry.value }}</dd>
                   </div>
@@ -361,7 +361,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
           </div>
         </section>
         <div class="mt-5 flex justify-end gap-2">
-          <button type="button" class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-bold text-[#2c3e2e] hover:bg-surface-tint" @click="closeImport">Đóng</button>
+          <button type="button" class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-bold text-ink-admin hover:bg-surface-tint" @click="closeImport">Đóng</button>
           <button type="button" :disabled="importing || !importFile" class="rounded-lg bg-brand-900 px-5 py-2.5 font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60" @click="runImport">{{ importing ? 'Đang nhập...' : 'Nhập' }}</button>
         </div>
       </div>

@@ -256,13 +256,13 @@ onMounted(() => {
       <span class="sr-only">Đang tải danh sách danh mục</span>
       <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
         <div v-for="n in 6" :key="n" class="flex gap-3">
-          <div v-for="c in 6" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+          <div v-for="c in 6" :key="c" class="h-10 bg-surface-tint rounded flex-1" aria-hidden="true"></div>
         </div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchCategories()">thử lại</button>.
     </div>
@@ -282,7 +282,7 @@ onMounted(() => {
     <!-- Tree table -->
     <div v-else class="bg-white rounded-xl border border-line overflow-hidden">
       <!-- Mobile Card View -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <template v-for="root in tree" :key="'m-'+root.id">
           <div class="p-4" :class="selection.isSelected(Number(root.id)) ? 'bg-surface-tint' : ''">
             <div class="flex items-center gap-2 mb-1">
@@ -299,7 +299,7 @@ onMounted(() => {
             </div>
             <div class="flex flex-wrap items-center gap-2 mb-2">
               <span class="inline-block bg-surface-tint text-brand-700 px-1.5 py-0.5 rounded text-[0.7rem] font-bold">{{ typeLabels[root.type] || root.type }}</span>
-              <code class="text-[0.72rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ root.slug }}</code>
+              <code class="text-[0.72rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded">{{ root.slug }}</code>
             </div>
             <div class="flex flex-wrap items-center gap-3">
               <button class="text-brand-700 font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-add-child-${root.id}`" @click="openCreate(root.id)"><i class="fa-solid fa-folder-plus text-xs"></i> Thêm con</button>
@@ -317,8 +317,8 @@ onMounted(() => {
                     :aria-label="`Chọn danh mục ${child.name}`"
                     @change="selection.toggle(Number(child.id))"
                   />
-                  <i class="fa-regular fa-folder text-[#8ed694] text-xs"></i>
-                  <span class="text-[0.82rem] text-[#2c3e2e]">{{ child.name }}</span>
+                  <i class="fa-regular fa-folder text-brand-300 text-xs"></i>
+                  <span class="text-[0.82rem] text-ink-admin">{{ child.name }}</span>
                 </div>
                 <div class="flex items-center gap-2">
                   <button class="text-brand-700 text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-${child.id}`" @click="openEdit(child)"><i class="fa-solid fa-pen"></i></button>
@@ -335,7 +335,7 @@ onMounted(() => {
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
-              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-line">
+              <th class="bg-surface w-10 px-4 py-3 border-b border-line">
                 <input
                   type="checkbox"
                   class="h-4 w-4 accent-brand-700"
@@ -345,18 +345,18 @@ onMounted(() => {
                   @change="selection.toggleAll(visibleIds)"
                 />
               </th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line">Tên danh mục</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Slug</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Loại</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thứ tự</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line">Tên danh mục</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Slug</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Loại</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thứ tự</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             <template v-for="root in tree" :key="root.id">
               <!-- Root row -->
-              <tr class="hover:bg-[#fafcfa]" :class="selection.isSelected(Number(root.id)) ? 'bg-[#f0f7f1]' : 'bg-[#f8faf8]/60'">
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <tr class="hover:bg-surface" :class="selection.isSelected(Number(root.id)) ? 'bg-surface-tint' : 'bg-surface/60'">
+                <td class="px-4 py-3 border-b border-surface-tint">
                   <input
                     type="checkbox"
                     class="h-4 w-4 accent-brand-700"
@@ -365,23 +365,23 @@ onMounted(() => {
                     @change="selection.toggle(Number(root.id))"
                   />
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <td class="px-4 py-3 border-b border-surface-tint">
                   <div class="flex items-center gap-2">
                     <i class="fa-solid fa-folder text-brand-700"></i>
                     <span class="font-bold text-brand-950">{{ root.name }}</span>
                     <span class="text-[0.72rem] bg-surface-tint text-brand-700 px-1.5 py-0.5 rounded font-semibold">{{ root.children.length }} con</span>
                   </div>
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
-                  <code class="text-[0.78rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ root.slug }}</code>
+                <td class="px-4 py-3 border-b border-surface-tint">
+                  <code class="text-[0.78rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded">{{ root.slug }}</code>
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <td class="px-4 py-3 border-b border-surface-tint">
                   <span class="inline-block bg-surface-tint text-brand-700 px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap">
                     {{ typeLabels[root.type] || root.type }}
                   </span>
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee] text-ink-muted">{{ root.displayOrder }}</td>
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <td class="px-4 py-3 border-b border-surface-tint text-ink-muted">{{ root.displayOrder }}</td>
+                <td class="px-4 py-3 border-b border-surface-tint">
                   <div class="flex items-center gap-3 flex-wrap">
                     <button
                       class="inline-flex items-center gap-1 bg-none border-0 text-brand-700 cursor-pointer font-bold text-[0.82rem] hover:underline"
@@ -406,10 +406,10 @@ onMounted(() => {
               <tr
                 v-for="child in root.children"
                 :key="child.id"
-                class="hover:bg-[#fafcfa]"
+                class="hover:bg-surface"
                 :class="selection.isSelected(Number(child.id)) ? 'bg-surface-tint' : ''"
               >
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <td class="px-4 py-3 border-b border-surface-tint">
                   <input
                     type="checkbox"
                     class="h-4 w-4 accent-brand-700"
@@ -418,22 +418,22 @@ onMounted(() => {
                     @change="selection.toggle(Number(child.id))"
                   />
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <td class="px-4 py-3 border-b border-surface-tint">
                   <div class="flex items-center gap-2 pl-8">
-                    <i class="fa-regular fa-folder text-[#8ed694]"></i>
-                    <span class="text-[#2c3e2e]">{{ child.name }}</span>
+                    <i class="fa-regular fa-folder text-brand-300"></i>
+                    <span class="text-ink-admin">{{ child.name }}</span>
                   </div>
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
-                  <code class="text-[0.78rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ child.slug }}</code>
+                <td class="px-4 py-3 border-b border-surface-tint">
+                  <code class="text-[0.78rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded">{{ child.slug }}</code>
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <td class="px-4 py-3 border-b border-surface-tint">
                   <span class="inline-block bg-surface-tint text-brand-700 px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap">
                     {{ typeLabels[child.type] || child.type }}
                   </span>
                 </td>
-                <td class="px-4 py-3 border-b border-[#eef2ee] text-ink-muted">{{ child.displayOrder }}</td>
-                <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <td class="px-4 py-3 border-b border-surface-tint text-ink-muted">{{ child.displayOrder }}</td>
+                <td class="px-4 py-3 border-b border-surface-tint">
                   <div class="flex items-center gap-3 flex-wrap">
                     <nuxt-link
                       :to="`/admin/content/articles?categoryId=${child.id}`"
@@ -468,7 +468,7 @@ onMounted(() => {
           <div class="flex flex-col gap-4">
             <!-- Tên -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tên danh mục (*)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Tên danh mục (*)</label>
               <input
                 v-model="form.name"
                 type="text"
@@ -478,7 +478,7 @@ onMounted(() => {
             </div>
             <!-- Slug -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Slug (URL)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Slug (URL)</label>
               <input
                 v-model="form.slug"
                 type="text"
@@ -496,14 +496,14 @@ onMounted(() => {
             </div>
             <!-- Loại -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Loại nội dung (*)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Loại nội dung (*)</label>
               <select v-model="form.type" @change="form.parentId = null" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700">
                 <option v-for="t in typeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
               </select>
             </div>
             <!-- Danh mục cha -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Danh mục cha</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Danh mục cha</label>
               <select v-model="form.parentId" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700">
                 <option :value="null">— Không có (Danh mục gốc) —</option>
                 <option v-for="p in parentOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
@@ -512,7 +512,7 @@ onMounted(() => {
             </div>
             <!-- Mô tả -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Mô tả (tùy chọn)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Mô tả (tùy chọn)</label>
               <textarea
                 v-model="form.description"
                 rows="2"
@@ -522,7 +522,7 @@ onMounted(() => {
             </div>
             <!-- Thứ tự -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Thứ tự hiển thị</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Thứ tự hiển thị</label>
               <input
                 v-model.number="form.displayOrder"
                 type="number"
@@ -534,7 +534,7 @@ onMounted(() => {
     <template #footer>
             <button
               type="button"
-              class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors"
+              class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-surface transition-colors"
               @click="showModal = false"
             >Hủy</button>
             <button

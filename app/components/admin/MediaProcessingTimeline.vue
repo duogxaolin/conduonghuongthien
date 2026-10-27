@@ -131,9 +131,9 @@ const isPending = computed(() => props.item.processingStatus === 'pending' || pr
           <p
             class="text-sm font-medium"
             :class="{
-              'text-[#1e251c]': stage.status === 'done' || stage.status === 'active',
+              'text-ink': stage.status === 'done' || stage.status === 'active',
               'text-red-700': stage.status === 'failed',
-              'text-[#8a9a8d]': stage.status === 'pending',
+              'text-ink-faint': stage.status === 'pending',
             }"
           >
             {{ stage.label }}

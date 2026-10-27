@@ -422,7 +422,7 @@ onBeforeUnmount(() => {
           { label: 'Lượt xem (5 phút)', value: liveData?.fiveMinuteTotals.pageViews ?? '—', icon: 'fa-eye', color: 'text-[#2c6e33]', bg: 'bg-[#f0f7f1]' },
           { label: 'Khách ước tính (5 phút)', value: liveData?.fiveMinuteTotals.approximateUniqueVisitors ?? '—', icon: 'fa-users', color: 'text-[#2c6e33]', bg: 'bg-[#f0f7f1]' },
           { label: 'Sự kiện / phút', value: liveData?.fiveMinuteTotals.eventsPerMinute ?? '—', icon: 'fa-bolt', color: 'text-[#5a9e60]', bg: 'bg-[#f4fbf4]' },
-          { label: 'Độ trễ dữ liệu', value: liveDelaySeconds, icon: 'fa-clock', color: 'text-ink-muted', bg: 'bg-[#f7f9f7]' },
+          { label: 'Độ trễ dữ liệu', value: liveDelaySeconds, icon: 'fa-clock', color: 'text-ink-muted', bg: 'bg-surface' },
         ]"
         :key="card.label"
         class="rounded-xl border border-line bg-white p-5 shadow-sm"
@@ -493,7 +493,7 @@ onBeforeUnmount(() => {
 
         <!-- Bar chart -->
         <div class="relative overflow-x-auto pb-2">
-          <div class="flex h-48 min-w-[700px] items-end gap-px border-b border-l border-[#dbe7dc] bg-[#fafcfa] px-2 pt-4" role="img" :aria-label="`Biểu đồ ${liveData?.points.length || 0} mốc phút: lượt xem và khách ước tính`">
+          <div class="flex h-48 min-w-[700px] items-end gap-px border-b border-l border-line bg-surface px-2 pt-4" role="img" :aria-label="`Biểu đồ ${liveData?.points.length || 0} mốc phút: lượt xem và khách ước tính`">
             <template v-if="liveData?.points.length">
               <div
                 v-for="(point, index) in liveData.points"
@@ -541,15 +541,15 @@ onBeforeUnmount(() => {
           <div class="overflow-x-auto rounded-lg border border-line">
             <table class="min-w-full text-left text-sm">
               <caption class="sr-only">Dữ liệu chi tiết biểu đồ trực tiếp</caption>
-              <thead class="bg-[#f4f7f4]">
+              <thead class="bg-surface">
                 <tr class="text-[0.72rem] font-bold uppercase tracking-wide text-ink-muted">
                   <th class="px-4 py-2.5">Mốc UTC</th>
                   <th class="px-4 py-2.5 text-right">Lượt xem</th>
                   <th class="px-4 py-2.5 text-right">Khách ước tính</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-[#f0f4f0]">
-                <tr v-for="point in liveTableRows" :key="`lp-${point.bucketStart}`" class="hover:bg-[#fafcfa]">
+              <tbody class="divide-y divide-surface">
+                <tr v-for="point in liveTableRows" :key="`lp-${point.bucketStart}`" class="hover:bg-surface">
                   <td class="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-[#334e36]">{{ formatUtc(point.bucketStart) }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-semibold" :class="point.pageViews > 0 ? 'text-[#2c6e33]' : 'text-[#afc8b1]'">{{ point.pageViews }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-semibold" :class="point.approximateUniqueVisitors > 0 ? 'text-[#5b8fce]' : 'text-[#afc8b1]'">{{ point.approximateUniqueVisitors }}</td>
@@ -610,7 +610,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Active filter badge -->
-        <div v-if="selectedFilter" class="mt-3 flex items-center gap-2 rounded-lg bg-[#edf7ee] border border-[#c8ddc9] px-3 py-2 text-[0.82rem] text-brand-900">
+        <div v-if="selectedFilter" class="mt-3 flex items-center gap-2 rounded-lg bg-surface-tint border border-[#c8ddc9] px-3 py-2 text-[0.82rem] text-brand-900">
           <i class="fa-solid fa-filter text-brand-700" aria-hidden="true"></i>
           <span>Đang lọc: <strong>{{ selectedFilter }}</strong></span>
           <button type="button" class="ml-auto rounded px-2 py-0.5 font-bold text-brand-700 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-700" @click="clearFilter">Xóa bộ lọc</button>
@@ -696,7 +696,7 @@ onBeforeUnmount(() => {
           <div class="overflow-x-auto rounded-lg border border-line">
             <table class="min-w-[700px] w-full text-left text-sm">
               <caption class="sr-only">Bảng xếp hạng phân tích chi tiết</caption>
-              <thead class="bg-[#f4f7f4]">
+              <thead class="bg-surface">
                 <tr class="text-[0.72rem] font-bold uppercase tracking-wide text-ink-muted">
                   <th class="px-4 py-2.5 w-12">Hạng</th>
                   <th class="px-4 py-2.5">Giá trị</th>
@@ -706,8 +706,8 @@ onBeforeUnmount(() => {
                   <th class="px-4 py-2.5"></th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-[#f0f4f0]">
-                <tr v-for="row in breakdownTableRows" :key="`bd-${row.rank}-${row.value}`" class="hover:bg-[#fafcfa]">
+              <tbody class="divide-y divide-surface">
+                <tr v-for="row in breakdownTableRows" :key="`bd-${row.rank}-${row.value}`" class="hover:bg-surface">
                   <td class="px-4 py-2.5 font-bold text-[#8ea98f]">{{ row.rank }}</td>
                   <td class="px-4 py-2.5 max-w-xs truncate font-semibold text-[#233c26]" :title="row.value">{{ row.value }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-semibold text-brand-700">{{ row.pageViews }}</td>
@@ -825,7 +825,7 @@ onBeforeUnmount(() => {
             Chỉ hiện cảnh báo / lỗi
             <button type="button" class="ml-1 rounded px-1 font-extrabold hover:text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400" @click="toggleNocSeverityFilter" aria-label="Xóa bộ lọc">✕</button>
           </span>
-          <span v-if="dismissedNocIds.size > 0" class="inline-flex items-center gap-2 rounded-full border border-line bg-[#f7f9f7] px-3 py-1 text-xs font-bold text-ink-muted">
+          <span v-if="dismissedNocIds.size > 0" class="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-bold text-ink-muted">
             <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
             Đã ẩn {{ dismissedNocIds.size }} mục
             <button type="button" class="ml-1 rounded px-1 font-semibold text-brand-700 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-700" @click="undismissAll">Hiện lại</button>
@@ -836,7 +836,7 @@ onBeforeUnmount(() => {
         <div class="overflow-x-auto rounded-lg border border-line">
           <table class="min-w-[900px] w-full text-left text-sm">
             <caption class="sr-only">Danh sách sự kiện vận hành NOC</caption>
-            <thead class="bg-[#f4f7f4]">
+            <thead class="bg-surface">
               <tr class="text-[0.72rem] font-bold uppercase tracking-wide text-ink-muted">
                 <th class="px-4 py-2.5 w-6"></th>
                 <th class="px-4 py-2.5">Thời gian UTC</th>
@@ -853,9 +853,9 @@ onBeforeUnmount(() => {
               <template v-for="row in nocTableRows" :key="row.id">
                 <!-- Main row -->
                 <tr
-                  class="border-b border-[#f0f4f0] cursor-pointer transition-colors"
+                  class="border-b border-surface cursor-pointer transition-colors"
                   :class="[
-                    expandedNocId === row.id ? 'bg-surface-tint' : 'hover:bg-[#fafcfa]',
+                    expandedNocId === row.id ? 'bg-surface-tint' : 'hover:bg-surface',
                     isWarningOrError(row.severity) ? 'border-l-2 border-l-amber-300' : ''
                   ]"
                   :aria-expanded="expandedNocId === row.id"
@@ -894,7 +894,7 @@ onBeforeUnmount(() => {
 
                 <!-- Expandable detail row -->
                 <tr v-if="expandedNocId === row.id" :id="`noc-detail-${row.id}`" role="region" :aria-label="`Chi tiết sự kiện ${row.eventType}`">
-                  <td colspan="9" class="px-6 py-4 bg-[#f7fbf7] border-b border-line">
+                  <td colspan="9" class="px-6 py-4 bg-surface border-b border-line">
                     <!-- Khung giải thích chi tiết & hướng dẫn xử lý NOC -->
                     <div
                       class="mb-4 rounded-xl border p-4 transition-all"
@@ -946,7 +946,7 @@ onBeforeUnmount(() => {
                                 <i class="fa-solid fa-magnifying-glass text-[0.7rem] text-brand-700" aria-hidden="true"></i>
                                 Nguyên nhân
                               </p>
-                              <p class="m-0 leading-relaxed text-[#2c3e2d] flex-1">
+                              <p class="m-0 leading-relaxed text-ink-admin flex-1">
                                 {{ explainNocEvent(row).cause }}
                               </p>
                             </div>
@@ -957,7 +957,7 @@ onBeforeUnmount(() => {
                                 <i class="fa-solid fa-shield-halved text-[0.7rem] text-brand-700" aria-hidden="true"></i>
                                 Đánh giá mức độ
                               </p>
-                              <p class="m-0 leading-relaxed text-[#2c3e2d] flex-1">
+                              <p class="m-0 leading-relaxed text-ink-admin flex-1">
                                 {{ explainNocEvent(row).impact }}
                               </p>
                             </div>
@@ -968,7 +968,7 @@ onBeforeUnmount(() => {
                                 <i class="fa-solid fa-hand-holding-hand text-[0.7rem] text-brand-700" aria-hidden="true"></i>
                                 Khuyến nghị xử lý
                               </p>
-                              <p class="m-0 leading-relaxed text-[#2c3e2d] flex-1">
+                              <p class="m-0 leading-relaxed text-ink-admin flex-1">
                                 {{ explainNocEvent(row).action }}
                               </p>
                             </div>
@@ -1007,7 +1007,7 @@ onBeforeUnmount(() => {
                         <!-- Native disclosure: keyboard-operable without JS; content is escaped by safeDetails(). -->
                         <details v-if="row.details">
                           <summary class="cursor-pointer text-[0.8rem] font-semibold text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-700">Xem chi tiết an toàn</summary>
-                          <pre class="mt-2 rounded-lg bg-brand-950 text-[#8ed694] px-4 py-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">{{ safeDetails(row.details) }}</pre>
+                          <pre class="mt-2 rounded-lg bg-brand-950 text-brand-300 px-4 py-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">{{ safeDetails(row.details) }}</pre>
                         </details>
                       </div>
                     </div>
@@ -1035,7 +1035,7 @@ onBeforeUnmount(() => {
 
               <tr v-if="!filteredNocRows.length">
                 <td colspan="9" class="px-4 py-8 text-center text-sm text-ink-muted">
-                  <i class="fa-regular fa-circle-check text-2xl text-[#8ed694] block mb-2" aria-hidden="true"></i>
+                  <i class="fa-regular fa-circle-check text-2xl text-brand-300 block mb-2" aria-hidden="true"></i>
                   <span v-if="nocSeverityFilter">Không có cảnh báo / lỗi nào.</span>
                   <span v-else-if="dismissedNocIds.size > 0">Tất cả sự kiện đã được xử lý.
                     <button type="button" class="ml-2 text-brand-700 font-bold underline focus:outline-none focus:ring-2 focus:ring-brand-700" @click="undismissAll">Hiện lại</button>

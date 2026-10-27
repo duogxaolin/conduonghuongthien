@@ -224,15 +224,15 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
         <div v-if="!retention.purgeDisabled"><p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Quá hạn chưa xoá</p><p class="m-0 mt-0.5 text-lg font-extrabold" :class="retention.purgeOverdue ? 'text-[#a32924]' : 'text-[#1e4620]'">{{ retention.overdue.toLocaleString('vi-VN') }}</p></div>
       </div>
 
-      <div v-if="retention.purgeOverdue" class="mt-3 flex items-start gap-2 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3.5 py-2.5 text-[0.82rem] text-[#8a6412]" role="status">
+      <div v-if="retention.purgeOverdue" class="mt-3 flex items-start gap-2 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3.5 py-2.5 text-[0.82rem] text-warn-ink" role="status">
         <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
         <span>Có {{ retention.overdue.toLocaleString('vi-VN') }} bản ghi vượt thời hạn {{ retention.retentionDays }} ngày nhưng chưa bị xoá. Tác vụ dọn dẹp không tự chạy — cần đặt cron trên máy chủ: <code class="rounded bg-white px-1.5 py-0.5 font-mono">{{ retention.command }}</code></span>
       </div>
-      <div v-else-if="retention.purgeDisabled" class="mt-3 flex items-start gap-2 rounded-lg border border-line bg-[#fafcfa] px-3.5 py-2.5 text-[0.82rem] text-ink-muted" role="status">
+      <div v-else-if="retention.purgeDisabled" class="mt-3 flex items-start gap-2 rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[0.82rem] text-ink-muted" role="status">
         <i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true"></i>
         <span>Đang cấu hình giữ nhật ký vô thời hạn (<code class="font-mono">ACTIVITY_LOG_RETENTION_DAYS=0</code>). Bảng sẽ lớn dần và không có gì tự xoá.</span>
       </div>
-      <div v-else class="mt-3 flex items-start gap-2 rounded-lg border border-[#cce5cd] bg-[#eef7ee] px-3.5 py-2.5 text-[0.82rem] text-brand-900" role="status">
+      <div v-else class="mt-3 flex items-start gap-2 rounded-lg border border-[#cce5cd] bg-surface-tint px-3.5 py-2.5 text-[0.82rem] text-brand-900" role="status">
         <i class="fa-solid fa-circle-check mt-0.5" aria-hidden="true"></i>
         <span>Không có bản ghi nào quá hạn {{ retention.retentionDays }} ngày. Tác vụ dọn dẹp <code class="rounded bg-white px-1.5 py-0.5 font-mono">{{ retention.command }}</code> đang hoạt động đúng.</span>
       </div>
@@ -277,7 +277,7 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
 
     <div v-else class="overflow-hidden rounded-xl border border-line bg-white shadow-xs">
       <!-- Mobile Card View: Thẻ hoạt động dễ đọc trên điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <div
           v-for="item in items"
           :key="'m-'+item.id"
@@ -299,14 +299,14 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
               <span class="font-semibold text-brand-900">{{ actionLabel(item) }}</span>
               <span v-if="item.resourceId" class="text-ink-muted text-xs"> #{{ item.resourceId }}</span>
             </div>
-            <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 rounded-full border border-[#cce5cd] bg-[#eef7ee] px-2 py-0.5 text-[0.7rem] font-bold text-brand-900">
+            <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 rounded-full border border-[#cce5cd] bg-surface-tint px-2 py-0.5 text-[0.7rem] font-bold text-brand-900">
               <i class="fa-solid fa-shield-halved text-[0.65rem]" aria-hidden="true"></i>
               {{ MFA_METHOD_LABELS[item.mfaMethod] ?? item.mfaMethod }}
             </span>
           </div>
 
-          <div class="flex items-center justify-between text-[0.72rem] text-[#8a9a8c] pt-1.5 border-t border-[#f4f7f4]">
-            <code class="font-mono bg-[#f4f7f4] px-1.5 py-0.5 rounded text-[#445546]">{{ item.ip || '—' }}</code>
+          <div class="flex items-center justify-between text-[0.72rem] text-ink-faint pt-1.5 border-t border-surface">
+            <code class="font-mono bg-surface px-1.5 py-0.5 rounded text-[#445546]">{{ item.ip || '—' }}</code>
             <span class="truncate max-w-[180px]">{{ shortAgent(item.userAgent) }}</span>
           </div>
         </div>
@@ -316,7 +316,7 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
       <div class="hidden md:block overflow-x-auto">
         <table class="w-full min-w-[860px] border-collapse text-left text-[0.84rem]">
           <caption class="sr-only">Lịch sử truy cập và hoạt động của mọi tài khoản, mới nhất trước</caption>
-          <thead class="bg-[#f4f7f4] text-xs uppercase tracking-wide text-ink-muted">
+          <thead class="bg-surface text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th scope="col" class="whitespace-nowrap px-3.5 py-3">Thời điểm</th>
               <th scope="col" class="px-3.5 py-3">Tài khoản</th>
@@ -327,7 +327,7 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in items" :key="item.id" class="border-t border-[#eef2ee] transition-colors hover:bg-[#fafcfa]">
+            <tr v-for="item in items" :key="item.id" class="border-t border-surface-tint transition-colors hover:bg-surface">
               <td class="whitespace-nowrap px-3.5 py-2.5 text-[#3d4a3e]">{{ formatWhen(item.createdAt) }}</td>
               <td class="px-3.5 py-2.5 font-semibold text-brand-950">
                 {{ item.username || (item.userId ? `#${item.userId}` : 'Hệ thống') }}
@@ -340,7 +340,7 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
               <td class="px-3.5 py-2.5 font-mono text-[0.8rem] text-ink-muted">{{ item.ip || '—' }}</td>
               <td class="px-3.5 py-2.5 text-ink-muted">{{ shortAgent(item.userAgent) }}</td>
               <td class="px-3.5 py-2.5 text-ink-muted">
-                <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 rounded-full border border-[#cce5cd] bg-[#eef7ee] px-2 py-0.5 text-[0.72rem] font-bold text-brand-900">
+                <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 rounded-full border border-[#cce5cd] bg-surface-tint px-2 py-0.5 text-[0.72rem] font-bold text-brand-900">
                   <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
                   {{ MFA_METHOD_LABELS[item.mfaMethod] ?? item.mfaMethod }}
                 </span>
@@ -351,7 +351,7 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
         </table>
       </div>
 
-      <nav class="border-t border-[#eef2ee] p-4" aria-label="Phân trang">
+      <nav class="border-t border-surface-tint p-4" aria-label="Phân trang">
         <AdminPagination
           :page="page"
           :total-pages="totalPages"

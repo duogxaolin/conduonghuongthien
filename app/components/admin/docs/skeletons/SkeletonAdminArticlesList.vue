@@ -19,17 +19,17 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
     <!-- Sidebar -->
     <button
       v-if="findHotspot('sidebar')"
-      class="w-32 bg-[#0d1f11] border-2 border-dashed border-brand-700 rounded text-[#8ed694] text-[0.65rem] font-semibold flex flex-col items-center gap-3 py-4 px-2 cursor-pointer hover:border-[#8ed694] hover:bg-brand-950 focus:outline-none focus:ring-2 focus:ring-[#8ed694] transition-colors"
+      class="w-32 bg-[#0d1f11] border-2 border-dashed border-brand-700 rounded text-brand-300 text-[0.65rem] font-semibold flex flex-col items-center gap-3 py-4 px-2 cursor-pointer hover:border-brand-300 hover:bg-brand-950 focus:outline-none focus:ring-2 focus:ring-brand-300 transition-colors"
       :aria-label="findHotspot('sidebar')!.label"
       :title="`${findHotspot('sidebar')!.label} — ${findHotspot('sidebar')!.hint}`"
       @click="hotspotClick(findHotspot('sidebar')!)"
     >
-      <i class="fa-solid fa-shield-halved text-[#8ed694] text-base" aria-hidden="true"></i>
+      <i class="fa-solid fa-shield-halved text-brand-300 text-base" aria-hidden="true"></i>
       <span aria-hidden="true" class="flex flex-col gap-2 w-full items-center">
-        <span class="h-2 w-20 bg-[#8ed694]/25 rounded"></span>
-        <span class="h-2 w-16 bg-[#8ed694]/15 rounded"></span>
-        <span class="h-2 w-16 bg-[#8ed694]/15 rounded"></span>
-        <span class="h-2 w-16 bg-[#8ed694]/15 rounded"></span>
+        <span class="h-2 w-20 bg-brand-300/25 rounded"></span>
+        <span class="h-2 w-16 bg-brand-300/15 rounded"></span>
+        <span class="h-2 w-16 bg-brand-300/15 rounded"></span>
+        <span class="h-2 w-16 bg-brand-300/15 rounded"></span>
       </span>
     </button>
 
@@ -38,7 +38,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
       <div class="flex gap-2">
         <button
           v-if="findHotspot('filter')"
-          class="flex-1 h-9 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center gap-2 px-3 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+          class="flex-1 h-9 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center gap-2 px-3 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
           :aria-label="findHotspot('filter')!.label"
           :title="`${findHotspot('filter')!.label} — ${findHotspot('filter')!.hint}`"
           @click="hotspotClick(findHotspot('filter')!)"
@@ -49,7 +49,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
         </button>
         <button
           v-if="findHotspot('create')"
-          class="w-28 h-9 bg-brand-900 border-2 border-dashed border-brand-700 rounded text-white text-[0.65rem] font-semibold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-brand-700 hover:border-[#8ed694] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+          class="w-28 h-9 bg-brand-900 border-2 border-dashed border-brand-700 rounded text-white text-[0.65rem] font-semibold flex items-center justify-center gap-1.5 cursor-pointer hover:bg-brand-700 hover:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
           :aria-label="findHotspot('create')!.label"
           :title="`${findHotspot('create')!.label} — ${findHotspot('create')!.hint}`"
           @click="hotspotClick(findHotspot('create')!)"
@@ -62,7 +62,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
       <!-- Table -->
       <button
         v-if="findHotspot('table')"
-        class="h-56 bg-white border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors overflow-hidden"
+        class="h-56 bg-white border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex flex-col cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors overflow-hidden"
         :aria-label="findHotspot('table')!.label"
         :title="`${findHotspot('table')!.label} — ${findHotspot('table')!.hint}`"
         @click="hotspotClick(findHotspot('table')!)"
@@ -76,7 +76,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
           <span class="w-16 h-2 bg-brand-700/15 rounded"></span>
         </span>
         <!-- Table body rows -->
-        <span aria-hidden="true" v-for="n in 4" :key="n" class="flex items-center h-8 border-b border-[#eef4ee] px-3 gap-2 w-full shrink-0">
+        <span aria-hidden="true" v-for="n in 4" :key="n" class="flex items-center h-8 border-b border-surface-tint px-3 gap-2 w-full shrink-0">
           <span class="w-4 h-4 border border-line-strong rounded"></span>
           <span class="flex-1 h-2 bg-brand-700/12 rounded"></span>
           <span class="w-16 h-2 bg-brand-700/10 rounded"></span>
@@ -91,7 +91,7 @@ const findHotspot = (area: string) => props.hotspots.find(h => h.area === area)
       <!-- Bulk action bar -->
       <button
         v-if="findHotspot('bulk')"
-        class="h-9 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-center gap-3 px-4 cursor-pointer hover:border-brand-700 hover:bg-[#eaf4ea] focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
+        class="h-9 bg-surface-tint border-2 border-dashed border-line-strong rounded text-ink-muted text-[0.65rem] font-semibold flex items-center justify-center gap-3 px-4 cursor-pointer hover:border-brand-700 hover:bg-line focus:outline-none focus:ring-2 focus:ring-brand-700 transition-colors"
         :aria-label="findHotspot('bulk')!.label"
         :title="`${findHotspot('bulk')!.label} — ${findHotspot('bulk')!.hint}`"
         @click="hotspotClick(findHotspot('bulk')!)"

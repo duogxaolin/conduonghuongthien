@@ -17,7 +17,7 @@
         </div>
       </div>
 
-      <p v-else class="text-center text-[0.9rem] text-[#5A6C58] italic">Chưa có hình ảnh nào.</p>
+      <p v-else class="text-center text-[0.9rem] text-ink-soft italic">Chưa có hình ảnh nào.</p>
     </div>
   </section>
 </template>

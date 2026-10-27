@@ -218,7 +218,7 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <button
-          class="inline-flex items-center gap-2 bg-white border border-line-strong text-brand-700 font-bold px-3.5 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-[#f8faf8]"
+          class="inline-flex items-center gap-2 bg-white border border-line-strong text-brand-700 font-bold px-3.5 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-surface"
           @click="showTree = !showTree"
         >
           <i :class="showTree ? 'fa-solid fa-list' : 'fa-solid fa-sitemap'"></i>
@@ -248,13 +248,13 @@ onMounted(() => {
       <span class="sr-only">Đang tải danh sách thể loại</span>
       <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
         <div v-for="n in 6" :key="n" class="flex gap-3">
-          <div v-for="c in 7" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+          <div v-for="c in 7" :key="c" class="h-10 bg-surface-tint rounded flex-1" aria-hidden="true"></div>
         </div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchTypes()">thử lại</button>.
     </div>
@@ -312,7 +312,7 @@ onMounted(() => {
 
           <!-- Levels 2 & 3: Danh mục → Danh mục con -->
           <div class="px-4 py-3">
-            <p v-if="ct.children.length === 0" class="text-[0.82rem] text-[#8a9a8c] italic m-0">
+            <p v-if="ct.children.length === 0" class="text-[0.82rem] text-ink-faint italic m-0">
               Chưa có danh mục nào trong thể loại này.
             </p>
             <ul v-else class="flex flex-col gap-2 m-0 p-0 list-none">
@@ -320,16 +320,16 @@ onMounted(() => {
                 <!-- Level 2: Danh mục gốc -->
                 <div class="flex items-center gap-2 text-[0.88rem]">
                   <i class="fa-solid fa-folder text-brand-700"></i>
-                  <span class="font-bold text-[#2c3e2e]">{{ cat.name }}</span>
-                  <code class="text-[0.72rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ cat.slug }}</code>
+                  <span class="font-bold text-ink-admin">{{ cat.name }}</span>
+                  <code class="text-[0.72rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded">{{ cat.slug }}</code>
                   <span v-if="cat.children.length" class="text-[0.7rem] bg-surface-tint text-brand-700 px-1.5 py-0.5 rounded font-semibold">{{ cat.children.length }} con</span>
                 </div>
                 <!-- Level 3: Danh mục con -->
                 <ul v-if="cat.children.length" class="flex flex-col gap-1 m-0 p-0 list-none pl-6 border-l-2 border-line ml-2">
                   <li v-for="sub in cat.children" :key="sub.id" class="flex items-center gap-2 text-[0.84rem] text-[#3a4a3c]">
-                    <i class="fa-regular fa-folder text-[#8ed694]"></i>
+                    <i class="fa-regular fa-folder text-brand-300"></i>
                     <span>{{ sub.name }}</span>
-                    <code class="text-[0.7rem] text-[#8a9a8c] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ sub.slug }}</code>
+                    <code class="text-[0.7rem] text-ink-faint bg-surface px-1.5 py-0.5 rounded">{{ sub.slug }}</code>
                   </li>
                 </ul>
               </li>
@@ -348,7 +348,7 @@ onMounted(() => {
     <!-- Table -->
     <div v-else class="bg-white rounded-xl border border-line overflow-hidden shadow-xs">
       <!-- Mobile Card View: Thẻ thể loại tiện thao tác ngón cái trên điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <div
           v-for="ct in types"
           :key="'m-'+ct.id"
@@ -375,20 +375,20 @@ onMounted(() => {
           </div>
 
           <div class="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-            <code class="text-[0.75rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded font-mono">{{ ct.slug }}</code>
+            <code class="text-[0.75rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded font-mono">{{ ct.slug }}</code>
             <span>•</span>
             <span>{{ ct.categoryCount }} danh mục</span>
             <span>•</span>
             <span>{{ ct.articleCount }} bài viết</span>
           </div>
 
-          <p v-if="ct.description" class="m-0 text-xs text-[#8a9a8c] line-clamp-2">{{ ct.description }}</p>
+          <p v-if="ct.description" class="m-0 text-xs text-ink-faint line-clamp-2">{{ ct.description }}</p>
 
           <!-- Thao tác -->
-          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-surface">
             <nuxt-link
               :to="`/admin/content/categories?type=${ct.slug}`"
-              class="inline-flex items-center gap-1 text-xs font-bold text-ink-muted bg-[#f4f7f4] hover:bg-[#eef2ee] px-2.5 py-1.5 rounded-lg no-underline transition-colors"
+              class="inline-flex items-center gap-1 text-xs font-bold text-ink-muted bg-surface hover:bg-surface-tint px-2.5 py-1.5 rounded-lg no-underline transition-colors"
             >
               <i class="fa-regular fa-folder-open text-[0.7rem]"></i> Danh mục
             </nuxt-link>
@@ -417,7 +417,7 @@ onMounted(() => {
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
-              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-line">
+              <th class="bg-surface w-10 px-4 py-3 border-b border-line">
                 <input
                   type="checkbox"
                   class="h-4 w-4 accent-brand-700"
@@ -427,22 +427,22 @@ onMounted(() => {
                   @change="selection.toggleAll(visibleIds)"
                 />
               </th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line">Thể loại</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Định danh (slug)</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Danh mục</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Bài viết</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thứ tự</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line">Thể loại</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Định danh (slug)</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Danh mục</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Bài viết</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thứ tự</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="ct in types"
               :key="ct.id"
-              class="hover:bg-[#fafcfa]"
+              class="hover:bg-surface"
               :class="selection.isSelected(Number(ct.id)) ? 'bg-surface-tint' : ''"
             >
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <!-- A system type can never be deleted, so it gets no checkbox: an
                      operator should not be able to tick a row that is certain to
                      come back as a failure. -->
@@ -455,7 +455,7 @@ onMounted(() => {
                   @change="selection.toggle(Number(ct.id))"
                 />
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <div class="flex items-center gap-2.5">
                   <i :class="ct.icon || 'fa-solid fa-folder'" class="text-brand-700 w-5 text-center"></i>
                   <div class="flex flex-col">
@@ -463,17 +463,17 @@ onMounted(() => {
                       {{ ct.name }}
                       <span v-if="ct.isSystem" class="text-[0.68rem] bg-[#eef2ff] text-[#3050b0] px-1.5 py-0.5 rounded font-semibold">Hệ thống</span>
                     </span>
-                    <span v-if="ct.description" class="text-[0.75rem] text-[#8a9a8c]">{{ ct.description }}</span>
+                    <span v-if="ct.description" class="text-[0.75rem] text-ink-faint">{{ ct.description }}</span>
                   </div>
                 </div>
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
-                <code class="text-[0.78rem] text-ink-muted bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ ct.slug }}</code>
+              <td class="px-4 py-3 border-b border-surface-tint">
+                <code class="text-[0.78rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded">{{ ct.slug }}</code>
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-ink-muted">{{ ct.categoryCount }}</td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-ink-muted">{{ ct.articleCount }}</td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-ink-muted">{{ ct.displayOrder }}</td>
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint text-ink-muted">{{ ct.categoryCount }}</td>
+              <td class="px-4 py-3 border-b border-surface-tint text-ink-muted">{{ ct.articleCount }}</td>
+              <td class="px-4 py-3 border-b border-surface-tint text-ink-muted">{{ ct.displayOrder }}</td>
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <div class="flex items-center gap-3 flex-wrap">
                   <nuxt-link
                     :to="`/admin/content/categories?type=${ct.slug}`"
@@ -509,7 +509,7 @@ onMounted(() => {
           <div class="flex flex-col gap-4">
             <!-- Tên -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tên thể loại (*)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Tên thể loại (*)</label>
               <input
                 v-model="form.name"
                 type="text"
@@ -519,13 +519,13 @@ onMounted(() => {
             </div>
             <!-- Slug -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Định danh — slug</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Định danh — slug</label>
               <input
                 v-model="form.slug"
                 type="text"
                 :disabled="editingIsSystem"
                 placeholder="video-tuyen-truyen"
-                class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-brand-700/15 font-mono disabled:bg-[#f4f7f4] disabled:text-[#8a9a8c] disabled:cursor-not-allowed"
+                class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-brand-700/15 font-mono disabled:bg-surface disabled:text-ink-faint disabled:cursor-not-allowed"
                 :class="slugError ? 'border-[#d12420] focus:border-danger' : 'border-[#c8d6c9] focus:border-brand-700'"
                 :aria-invalid="!!slugError"
                 @blur="onSlugBlur"
@@ -539,9 +539,9 @@ onMounted(() => {
             </div>
             <!-- Icon -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Icon (FontAwesome)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Icon (FontAwesome)</label>
               <div class="flex items-center gap-2.5">
-                <span class="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg border border-line-strong bg-[#f8faf8]">
+                <span class="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg border border-line-strong bg-surface">
                   <i :class="form.icon || 'fa-solid fa-folder'" class="text-brand-700"></i>
                 </span>
                 <input
@@ -555,7 +555,7 @@ onMounted(() => {
             </div>
             <!-- Mô tả -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Mô tả (tùy chọn)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Mô tả (tùy chọn)</label>
               <textarea
                 v-model="form.description"
                 rows="2"
@@ -565,7 +565,7 @@ onMounted(() => {
             </div>
             <!-- Thứ tự -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Thứ tự hiển thị</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Thứ tự hiển thị</label>
               <input
                 v-model.number="form.displayOrder"
                 type="number"
@@ -577,7 +577,7 @@ onMounted(() => {
     <template #footer>
             <button
               type="button"
-              class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors"
+              class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-surface transition-colors"
               @click="showModal = false"
             >Hủy</button>
             <button

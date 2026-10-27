@@ -103,11 +103,11 @@ onMounted(() => { fetchRoles() })
           <div
             v-for="n in 4"
             :key="'rs-' + n"
-            class="rounded-lg border border-line bg-[#f8faf8] p-3 flex flex-col gap-2"
+            class="rounded-lg border border-line bg-surface p-3 flex flex-col gap-2"
             aria-hidden="true"
           >
-            <div class="h-4 w-32 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-            <div class="h-3 w-44 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            <div class="h-4 w-32 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+            <div class="h-3 w-44 rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
           </div>
         </div>
         <div v-else class="flex flex-col gap-2">
@@ -115,7 +115,7 @@ onMounted(() => { fetchRoles() })
             v-for="r in roles"
             :key="r.id"
             class="text-left border rounded-lg p-3 cursor-pointer transition-all"
-            :class="selectedRole?.id === r.id ? 'bg-[#e4f2e5] border-brand-700' : 'bg-[#f8faf8] border-line hover:border-[#8ed694]'"
+            :class="selectedRole?.id === r.id ? 'bg-[#e4f2e5] border-brand-700' : 'bg-surface border-line hover:border-brand-300'"
             @click="selectRole(r)"
           >
             <div class="flex items-center justify-between mb-1">
@@ -134,27 +134,27 @@ onMounted(() => { fetchRoles() })
         <span class="sr-only">Đang tải ma trận phân quyền</span>
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4" aria-hidden="true">
           <div class="flex flex-col gap-2">
-            <div class="h-5 w-64 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-            <div class="h-3 w-48 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            <div class="h-5 w-64 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+            <div class="h-3 w-48 rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
           </div>
-          <div class="h-10 w-40 rounded-lg bg-[#dfe9e0] animate-pulse motion-reduce:animate-none shrink-0"></div>
+          <div class="h-10 w-40 rounded-lg bg-line animate-pulse motion-reduce:animate-none shrink-0"></div>
         </div>
         <div class="overflow-x-auto" aria-hidden="true">
-          <div class="flex items-center gap-3 bg-[#f8faf8] border-b border-line px-3 py-3">
-            <div class="h-3 flex-1 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-            <div v-for="c in 4" :key="'mh-' + c" class="h-3 w-24 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          <div class="flex items-center gap-3 bg-surface border-b border-line px-3 py-3">
+            <div class="h-3 flex-1 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+            <div v-for="c in 4" :key="'mh-' + c" class="h-3 w-24 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
           </div>
-          <div v-for="n in 11" :key="'mr-' + n" class="flex items-center gap-3 border-b border-[#eef2ee] px-3 py-3">
-            <div class="h-4 flex-1 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div v-for="n in 11" :key="'mr-' + n" class="flex items-center gap-3 border-b border-surface-tint px-3 py-3">
+            <div class="h-4 flex-1 rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
             <div v-for="c in 4" :key="'mc-' + c" class="h-4 w-24 flex justify-center">
-              <div class="h-4 w-4 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              <div class="h-4 w-4 rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Error -->
-      <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+      <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
         {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchRoles()">thử lại</button>.
       </div>
@@ -174,7 +174,7 @@ onMounted(() => { fetchRoles() })
           </button>
         </div>
 
-        <div v-if="selectedRoleLocked" class="bg-[#eef7ee] border border-[#cce5cd] text-brand-900 px-4 py-3 rounded-lg text-[0.85rem] mb-4">
+        <div v-if="selectedRoleLocked" class="bg-surface-tint border border-[#cce5cd] text-brand-900 px-4 py-3 rounded-lg text-[0.85rem] mb-4">
           🔒 Vai trò hệ thống <strong>(SuperAdmin)</strong> mặc định có toàn bộ quyền trên website.
         </div>
 
@@ -182,17 +182,17 @@ onMounted(() => { fetchRoles() })
           <table class="w-full border-collapse text-[0.88rem]">
             <thead>
               <tr>
-                <th class="bg-[#f8faf8] px-3 py-3 text-left text-ink-muted font-bold border-b border-line">Tài nguyên / Tính năng</th>
-                <th v-for="action in PERMISSION_ACTIONS" :key="action.flag" class="bg-[#f8faf8] px-3 py-3 text-center text-ink-muted font-bold border-b border-line whitespace-nowrap">{{ action.label }}</th>
+                <th class="bg-surface px-3 py-3 text-left text-ink-muted font-bold border-b border-line">Tài nguyên / Tính năng</th>
+                <th v-for="action in PERMISSION_ACTIONS" :key="action.flag" class="bg-surface px-3 py-3 text-center text-ink-muted font-bold border-b border-line whitespace-nowrap">{{ action.label }}</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="{ res, perm } in matrixRows" :key="res.key" class="hover:bg-[#fafcfa]">
-                <td class="px-3 py-3 border-b border-[#eef2ee]">
+              <tr v-for="{ res, perm } in matrixRows" :key="res.key" class="hover:bg-surface">
+                <td class="px-3 py-3 border-b border-surface-tint">
                   <strong>{{ res.label }}</strong>
                   <code class="ml-1.5 text-[0.72rem] text-[#888]">({{ res.key }})</code>
                 </td>
-                <td v-for="action in PERMISSION_ACTIONS" :key="action.flag" class="px-3 py-3 border-b border-[#eef2ee] text-center">
+                <td v-for="action in PERMISSION_ACTIONS" :key="action.flag" class="px-3 py-3 border-b border-surface-tint text-center">
                   <input type="checkbox" v-model="perm[action.flag]" :aria-label="`${res.label}: ${action.label}`" :disabled="selectedRoleLocked" class="w-4 h-4 accent-brand-700" />
                 </td>
               </tr>

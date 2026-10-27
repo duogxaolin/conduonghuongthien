@@ -16,7 +16,7 @@
         <article
           v-for="item in list"
           :key="item.id"
-          class="group bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm flex flex-col transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-[#7CB342]"
+          class="group bg-white rounded-lg overflow-hidden border border-line shadow-sm flex flex-col transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-accent"
         >
           <nuxt-link :to="`/reintegration-models/${item.id}`" class="block overflow-hidden no-underline">
             <SafeImg
@@ -28,7 +28,7 @@
             />
           </nuxt-link>
           <div class="p-4 flex flex-col gap-2 flex-1">
-            <span v-if="item.location" class="inline-block self-start bg-[#EDF3EA] text-brand-600 text-[0.68rem] font-bold uppercase tracking-[0.3px] px-2 py-[3px] rounded-sm">{{ item.location }}</span>
+            <span v-if="item.location" class="inline-block self-start bg-surface-tint text-brand-600 text-[0.68rem] font-bold uppercase tracking-[0.3px] px-2 py-[3px] rounded-sm">{{ item.location }}</span>
             <h3 class="text-[0.95rem] font-extrabold leading-[1.4] m-0">
               <nuxt-link
                 :to="`/reintegration-models/${item.id}`"
@@ -50,7 +50,7 @@
       />
 
       <!-- Chỉ nói "chưa có" khi đã tải xong: lúc đang tải câu đó là một lời sai. -->
-      <p v-else-if="!pending" class="text-center text-[0.9rem] text-[#5A6C58] italic">{{ t('block_reintegration_empty') }}</p>
+      <p v-else-if="!pending" class="text-center text-[0.9rem] text-ink-soft italic">{{ t('block_reintegration_empty') }}</p>
 
       <!-- Nút xem tất cả — chỉ hiện khi có dữ liệu và trang danh mục tồn tại.
            Carousel "Tấm Gương" không có nút này, nên đây thêm một điểm khác biệt
@@ -58,7 +58,7 @@
       <div v-if="list.length" class="text-center mt-[36px]">
         <nuxt-link
           to="/reintegration-models"
-          class="inline-flex items-center gap-2 bg-brand-600 text-white px-6 py-3 rounded-lg text-[0.9rem] font-bold no-underline transition-colors duration-300 hover:bg-[#385130]"
+          class="inline-flex items-center gap-2 bg-brand-600 text-white px-6 py-3 rounded-lg text-[0.9rem] font-bold no-underline transition-colors duration-300 hover:bg-brand-800"
         >{{ t('view_all_models') || 'Xem tất cả mô hình' }} <i class="fa-solid fa-arrow-right text-[0.78rem]" aria-hidden="true"></i></nuxt-link>
       </div>
     </div>

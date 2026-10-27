@@ -224,7 +224,7 @@ onMounted(reload)
         role="tab"
         :aria-selected="filters.visibility === 'visible'"
         class="rounded-lg px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
-        :class="filters.visibility === 'visible' ? 'bg-brand-900 text-white' : 'bg-white border border-line-strong text-[#2c3e2e] hover:bg-surface-tint'"
+        :class="filters.visibility === 'visible' ? 'bg-brand-900 text-white' : 'bg-white border border-line-strong text-ink-admin hover:bg-surface-tint'"
         @click="switchVisibility('visible')"
       >
         Bình luận hiện
@@ -234,11 +234,11 @@ onMounted(reload)
         role="tab"
         :aria-selected="filters.visibility === 'hidden'"
         class="rounded-lg px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
-        :class="filters.visibility === 'hidden' ? 'bg-[#7a3520] text-white' : 'bg-white border border-line-strong text-[#2c3e2e] hover:bg-surface-tint'"
+        :class="filters.visibility === 'hidden' ? 'bg-[#7a3520] text-white' : 'bg-white border border-line-strong text-ink-admin hover:bg-surface-tint'"
         @click="switchVisibility('hidden')"
       >
         Đã ẩn
-        <span v-if="hiddenCount > 0" class="ml-1.5 rounded-full bg-[#fef2f2] px-1.5 py-0.5 text-[0.7rem] font-bold text-[#991b1b]">{{ hiddenCount }}</span>
+        <span v-if="hiddenCount > 0" class="ml-1.5 rounded-full bg-danger-bg px-1.5 py-0.5 text-[0.7rem] font-bold text-[#991b1b]">{{ hiddenCount }}</span>
       </button>
     </div>
 
@@ -270,11 +270,11 @@ onMounted(reload)
       >Áp dụng</button>
       <nuxt-link
         to="/admin/readers"
-        class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-semibold text-[#2c3e2e] no-underline hover:bg-surface-tint"
+        class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-semibold text-ink-admin no-underline hover:bg-surface-tint"
       >Danh sách người đọc</nuxt-link>
       <button
         type="button"
-        class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#a2cca4] bg-surface-tint px-4 py-2.5 font-bold text-brand-900 hover:bg-[#e4ece4] transition-all disabled:opacity-50 cursor-pointer shadow-2xs"
+        class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#a2cca4] bg-surface-tint px-4 py-2.5 font-bold text-brand-900 hover:bg-line transition-all disabled:opacity-50 cursor-pointer shadow-2xs"
         :disabled="moderating || !comments.length"
         @click="runAiModerationScan"
       >
@@ -290,7 +290,7 @@ onMounted(reload)
         v-for="n in 5"
         :key="n"
         aria-hidden="true"
-        class="h-20 rounded-lg bg-[#eef3ee] animate-pulse motion-reduce:animate-none"
+        class="h-20 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"
       ></div>
     </div>
 
@@ -317,7 +317,7 @@ onMounted(reload)
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
                 <span v-if="comment.adminUserId !== null" class="rounded-full bg-brand-900 px-2 py-0.5 text-[0.7rem] font-bold uppercase tracking-wide text-white">Ban quản trị</span>
-                <span v-if="comment.parentId !== null" class="rounded-full bg-[#eef3ee] px-2 py-0.5 text-[0.72rem] font-bold text-[#3d4f3f]">Phản hồi</span>
+                <span v-if="comment.parentId !== null" class="rounded-full bg-surface-tint px-2 py-0.5 text-[0.72rem] font-bold text-[#3d4f3f]">Phản hồi</span>
                 <span class="font-bold text-brand-950">
                   {{ comment.adminUserId !== null ? (comment.adminName || 'Tài khoản đã xoá') : (comment.readerName || 'Người dùng') }}
                 </span>
@@ -396,8 +396,8 @@ onMounted(reload)
             </span>
           </div>
 
-          <form v-if="replyTo === comment.id" class="mt-3 border-t border-[#eef3ee] pt-3" @submit.prevent="submitReply(comment)">
-            <label :for="`reply-${comment.id}`" class="mb-1.5 block text-sm font-bold text-[#2c3e2e]">Phản hồi của Ban quản trị</label>
+          <form v-if="replyTo === comment.id" class="mt-3 border-t border-surface-tint pt-3" @submit.prevent="submitReply(comment)">
+            <label :for="`reply-${comment.id}`" class="mb-1.5 block text-sm font-bold text-ink-admin">Phản hồi của Ban quản trị</label>
             <textarea
               :id="`reply-${comment.id}`"
               v-model="replyBody"

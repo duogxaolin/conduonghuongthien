@@ -40,7 +40,7 @@ function submitOnEnter(event: KeyboardEvent) {
         </button>
       </div>
       <div class="px-5 py-4 flex flex-col gap-3.5">
-        <div v-if="error" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
+        <div v-if="error" class="flex items-start gap-2 bg-danger-bg border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem]" role="alert">
           <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
           <span>{{ error }}</span>
         </div>

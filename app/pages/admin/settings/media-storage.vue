@@ -165,14 +165,14 @@ onMounted(() => { fetchSettings() })
       <span class="sr-only">Đang tải cấu hình lưu trữ media</span>
       <div class="flex flex-col gap-4 animate-pulse motion-reduce:animate-none">
         <div v-for="n in 5" :key="n">
-          <div class="h-4 bg-[#EEF2EC] rounded w-1/4 mb-2" aria-hidden="true"></div>
-          <div class="h-10 bg-[#EEF2EC] rounded" aria-hidden="true"></div>
+          <div class="h-4 bg-surface-tint rounded w-1/4 mb-2" aria-hidden="true"></div>
+          <div class="h-10 bg-surface-tint rounded" aria-hidden="true"></div>
         </div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchSettings()">thử lại</button>.
     </div>
@@ -184,7 +184,7 @@ onMounted(() => { fetchSettings() })
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <label
             class="flex gap-4 border-2 rounded-xl p-5 cursor-pointer transition-all"
-            :class="settings.media_provider === 'local' ? 'border-brand-700 bg-[#f8faf8]' : 'border-line hover:border-[#8ed694]'"
+            :class="settings.media_provider === 'local' ? 'border-brand-700 bg-surface' : 'border-line hover:border-brand-300'"
           >
             <input type="radio" value="local" v-model="settings.media_provider" class="mt-1 accent-brand-700 shrink-0" />
             <div>
@@ -195,7 +195,7 @@ onMounted(() => { fetchSettings() })
 
           <label
             class="flex gap-4 border-2 rounded-xl p-5 cursor-pointer transition-all"
-            :class="settings.media_provider === 'r2' ? 'border-brand-700 bg-[#f8faf8]' : 'border-line hover:border-[#8ed694]'"
+            :class="settings.media_provider === 'r2' ? 'border-brand-700 bg-surface' : 'border-line hover:border-brand-300'"
           >
             <input type="radio" value="r2" v-model="settings.media_provider" class="mt-1 accent-brand-700 shrink-0" />
             <div>
@@ -211,7 +211,7 @@ onMounted(() => { fetchSettings() })
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <h3 class="text-[1.05rem] font-bold text-brand-950 m-0">Thông số kết nối Cloudflare R2</h3>
           <button
-            class="inline-flex items-center gap-2 bg-surface-tint text-brand-700 border border-[#8ed694] px-3.5 py-2 rounded-lg font-bold cursor-pointer text-[0.82rem] hover:bg-[#e4f2e5] transition-colors disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+            class="inline-flex items-center gap-2 bg-surface-tint text-brand-700 border border-brand-300 px-3.5 py-2 rounded-lg font-bold cursor-pointer text-[0.82rem] hover:bg-[#e4f2e5] transition-colors disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
             :disabled="testingR2"
             @click="handleTestR2"
           >
@@ -221,30 +221,30 @@ onMounted(() => { fetchSettings() })
         </div>
 
         <div v-if="testMessage" role="status" class="bg-[#e4f2e5] text-brand-700 px-4 py-3 rounded-lg text-[0.9rem] font-bold mb-4">{{ testMessage }}</div>
-        <div v-if="testError" role="alert" class="bg-[#ffebe9] text-danger px-4 py-3 rounded-lg text-[0.85rem] mb-4">{{ testError }}</div>
+        <div v-if="testError" role="alert" class="bg-danger-bg text-danger px-4 py-3 rounded-lg text-[0.85rem] mb-4">{{ testError }}</div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div class="flex flex-col gap-1.5">
-            <label for="r2-account-id" class="text-[0.82rem] font-bold text-[#2c3e2e]">Cloudflare Account ID (*)</label>
-            <input id="r2-account-id" type="text" v-model="settings.r2_account_id" placeholder="32 ký tự hex, vd: 4f8b9…c312" maxlength="32" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(accountIdError)" aria-describedby="r2-account-id-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm font-mono outline-none focus:border-brand-700 box-border" :class="accountIdError ? 'border-[#B04A4A]' : 'border-line-strong'" />
+            <label for="r2-account-id" class="text-[0.82rem] font-bold text-ink-admin">Cloudflare Account ID (*)</label>
+            <input id="r2-account-id" type="text" v-model="settings.r2_account_id" placeholder="32 ký tự hex, vd: 4f8b9…c312" maxlength="32" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(accountIdError)" aria-describedby="r2-account-id-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm font-mono outline-none focus:border-brand-700 box-border" :class="accountIdError ? 'border-danger-soft' : 'border-line-strong'" />
             <span id="r2-account-id-hint" class="text-[0.75rem]" :class="accountIdError ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">{{ accountIdError || 'Đúng 32 ký tự hex (0-9, a-f). Đổi Account ID thì phải nhập lại Secret Access Key.' }}</span>
           </div>
           <div class="flex flex-col gap-1.5">
-            <label for="r2-bucket" class="text-[0.82rem] font-bold text-[#2c3e2e]">Bucket Name (*)</label>
-            <input id="r2-bucket" type="text" v-model="settings.r2_bucket" placeholder="eg: cdkt-uploads" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(bucketError)" :aria-describedby="bucketError ? 'r2-bucket-error' : undefined" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 box-border" :class="bucketError ? 'border-[#B04A4A]' : 'border-line-strong'" />
-            <span v-if="bucketError" id="r2-bucket-error" class="text-[0.75rem] text-[#B04A4A] font-semibold">{{ bucketError }}</span>
+            <label for="r2-bucket" class="text-[0.82rem] font-bold text-ink-admin">Bucket Name (*)</label>
+            <input id="r2-bucket" type="text" v-model="settings.r2_bucket" placeholder="eg: cdkt-uploads" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(bucketError)" :aria-describedby="bucketError ? 'r2-bucket-error' : undefined" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 box-border" :class="bucketError ? 'border-danger-soft' : 'border-line-strong'" />
+            <span v-if="bucketError" id="r2-bucket-error" class="text-[0.75rem] text-danger-soft font-semibold">{{ bucketError }}</span>
           </div>
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Access Key ID (*)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Access Key ID (*)</label>
             <input type="text" v-model="settings.r2_access_key" placeholder="eg: a1b2c3d4e5f6..." class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
-            <label for="r2-secret" class="text-[0.82rem] font-bold text-[#2c3e2e]">Secret Access Key (*)</label>
-            <input id="r2-secret" type="password" v-model="settings.r2_secret_key" placeholder="••••••••••••••••" autocomplete="new-password" :aria-invalid="Boolean(secretError)" aria-describedby="r2-secret-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 box-border" :class="secretError ? 'border-[#B04A4A]' : 'border-line-strong'" />
+            <label for="r2-secret" class="text-[0.82rem] font-bold text-ink-admin">Secret Access Key (*)</label>
+            <input id="r2-secret" type="password" v-model="settings.r2_secret_key" placeholder="••••••••••••••••" autocomplete="new-password" :aria-invalid="Boolean(secretError)" aria-describedby="r2-secret-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 box-border" :class="secretError ? 'border-danger-soft' : 'border-line-strong'" />
             <span id="r2-secret-hint" class="text-[0.75rem]" :class="secretError || (secretNeedsReentry && !secretRetyped) ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">{{ secretHint }}</span>
           </div>
           <div class="flex flex-col gap-1.5 sm:col-span-2">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Public Domain / R2 Public URL (*)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Public Domain / R2 Public URL (*)</label>
             <input type="text" v-model="settings.r2_public_url" placeholder="eg: https://cdn.conduonghuongthien.com.vn" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border" />
             <span class="text-[0.75rem] text-[#888]">Tên miền công khai được gắn vào R2 bucket (Custom Domain hoặc pub-xxx.r2.dev)</span>
           </div>

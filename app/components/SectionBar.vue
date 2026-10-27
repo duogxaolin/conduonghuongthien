@@ -1,8 +1,8 @@
 <template>
   <div
-    class="flex items-center justify-between px-4 py-2.5 border-l-4 border-[#4A6741] mb-4"
+    class="flex items-center justify-between px-4 py-2.5 border-l-4 border-brand-600 mb-4"
     :class="variant === 'light'
-      ? 'bg-white border-b border-[#E2E8DF]'
+      ? 'bg-white border-b border-line'
       : 'bg-brand-600'"
   >
     <h2
@@ -18,7 +18,7 @@
       :to="to"
       class="text-sm font-medium transition-colors duration-200"
       :class="variant === 'light'
-        ? 'text-brand-600 hover:text-[#385130]'
+        ? 'text-brand-600 hover:text-brand-800'
         : 'text-white/80 hover:text-white'"
     >
       {{ localizedViewall }}

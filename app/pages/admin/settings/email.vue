@@ -149,15 +149,15 @@ onMounted(() => { fetchSettings() })
       <div v-for="n in 2" :key="n" class="bg-white rounded-xl border border-line p-6">
         <div class="flex flex-col gap-4 animate-pulse motion-reduce:animate-none">
           <div v-for="i in 4" :key="i">
-            <div class="h-4 bg-[#EEF2EC] rounded w-1/4 mb-2" aria-hidden="true"></div>
-            <div class="h-10 bg-[#EEF2EC] rounded" aria-hidden="true"></div>
+            <div class="h-4 bg-surface-tint rounded w-1/4 mb-2" aria-hidden="true"></div>
+            <div class="h-10 bg-surface-tint rounded" aria-hidden="true"></div>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchSettings()">thử lại</button>.
     </div>
@@ -168,13 +168,13 @@ onMounted(() => { fetchSettings() })
         <h3 class="text-[1.05rem] font-bold text-brand-950 m-0 mb-4">Máy chủ SMTP</h3>
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">SMTP Host (*)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">SMTP Host (*)</label>
             <input type="text" v-model="settings.smtp_host" placeholder="smtp.gmail.com" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="flex flex-col gap-1.5">
-              <label for="smtp-port" class="text-[0.82rem] font-bold text-[#2c3e2e]">Cổng (Port)</label>
-              <input id="smtp-port" type="text" inputmode="numeric" v-model="settings.smtp_port" placeholder="587" :aria-invalid="portInvalid" aria-describedby="smtp-port-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" :class="portInvalid ? 'border-[#B04A4A]' : 'border-line-strong'" />
+              <label for="smtp-port" class="text-[0.82rem] font-bold text-ink-admin">Cổng (Port)</label>
+              <input id="smtp-port" type="text" inputmode="numeric" v-model="settings.smtp_port" placeholder="587" :aria-invalid="portInvalid" aria-describedby="smtp-port-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" :class="portInvalid ? 'border-danger-soft' : 'border-line-strong'" />
               <p id="smtp-port-hint" class="text-[0.72rem] m-0" :class="portInvalid ? 'text-[#B04A4A]' : 'text-[#667768]'">
                 <template v-if="portError">{{ portError }}</template>
                 <template v-else-if="portInvalid">Cổng đang lưu không được phép — gửi email sẽ bị từ chối. Hãy đổi sang {{ SMTP_ALLOWED_PORTS.join(', ') }}.</template>
@@ -182,7 +182,7 @@ onMounted(() => { fetchSettings() })
               </p>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Bảo mật (SSL/TLS)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Bảo mật (SSL/TLS)</label>
               <select v-model="settings.smtp_secure" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border bg-white">
                 <option value="false">Không / STARTTLS (587)</option>
                 <option value="true">SSL/TLS (465)</option>
@@ -197,12 +197,12 @@ onMounted(() => { fetchSettings() })
         <h3 class="text-[1.05rem] font-bold text-brand-950 m-0 mb-4">Thông tin đăng nhập</h3>
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tài khoản (User) (*)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Tài khoản (User) (*)</label>
             <input type="text" v-model="settings.smtp_user" placeholder="you@gmail.com" autocomplete="off" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
-            <label for="smtp-pass" class="text-[0.82rem] font-bold text-[#2c3e2e]">Mật khẩu (Password)</label>
-            <input id="smtp-pass" type="password" v-model="settings.smtp_pass" placeholder="••••••••" autocomplete="new-password" :aria-invalid="Boolean(passwordError)" aria-describedby="smtp-pass-hint smtp-pass-status" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" :class="passwordError ? 'border-[#B04A4A]' : 'border-line-strong'" />
+            <label for="smtp-pass" class="text-[0.82rem] font-bold text-ink-admin">Mật khẩu (Password)</label>
+            <input id="smtp-pass" type="password" v-model="settings.smtp_pass" placeholder="••••••••" autocomplete="new-password" :aria-invalid="Boolean(passwordError)" aria-describedby="smtp-pass-hint smtp-pass-status" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" :class="passwordError ? 'border-danger-soft' : 'border-line-strong'" />
             <p id="smtp-pass-hint" class="text-[0.72rem] text-ink-muted m-0">Giữ nguyên dấu ******** để dùng mật khẩu đã lưu. Xoá trắng ô này rồi lưu sẽ XOÁ mật khẩu đã lưu. Đổi host, cổng, tài khoản hoặc chế độ bảo mật thì phải nhập lại mật khẩu trong cùng lần lưu.</p>
             <p id="smtp-pass-status" class="text-[0.72rem] m-0" :class="passwordError || passwordWillBeDeleted || (passwordNeedsReentry && !passwordRetyped) ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">
               <template v-if="passwordError">{{ passwordError }}</template>
@@ -212,9 +212,9 @@ onMounted(() => { fetchSettings() })
             </p>
           </div>
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Email người gửi (From)</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Email người gửi (From)</label>
             <input type="text" v-model="settings.smtp_from" placeholder="Con Đường Hướng Thiện <no-reply@domain.vn>" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
-            <p class="text-[0.72rem] text-[#8a9a8c] m-0">Để trống sẽ dùng chính tài khoản đăng nhập làm địa chỉ gửi.</p>
+            <p class="text-[0.72rem] text-ink-faint m-0">Để trống sẽ dùng chính tài khoản đăng nhập làm địa chỉ gửi.</p>
           </div>
         </div>
       </div>
@@ -225,12 +225,12 @@ onMounted(() => { fetchSettings() })
         <p class="text-[0.8rem] text-ink-muted mt-0 mb-4">Nhập một địa chỉ email để kiểm tra cấu hình. Nếu ô mật khẩu để trống hoặc giữ dấu ********, hệ thống thử bằng cấu hình ĐÃ LƯU; muốn thử máy chủ khác trước khi lưu, hãy nhập mật khẩu của máy chủ đó.</p>
         <div class="flex gap-2 items-end flex-wrap">
           <div class="flex flex-col gap-1.5 flex-1 min-w-[220px]">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Địa chỉ nhận thử</label>
+            <label class="text-[0.82rem] font-bold text-ink-admin">Địa chỉ nhận thử</label>
             <input type="email" v-model="testEmail" placeholder="test@example.com" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
           </div>
           <button
             type="button"
-            class="inline-flex items-center gap-2 h-[42px] px-5 border border-line-strong bg-[#f4f7f4] text-brand-900 rounded-lg font-bold cursor-pointer hover:bg-[#e6f2e6] hover:border-brand-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+            class="inline-flex items-center gap-2 h-[42px] px-5 border border-line-strong bg-surface text-brand-900 rounded-lg font-bold cursor-pointer hover:bg-line hover:border-brand-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
             :disabled="testing"
             @click="handleTest"
           >

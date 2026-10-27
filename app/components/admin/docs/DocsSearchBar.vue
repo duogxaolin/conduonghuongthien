@@ -27,7 +27,7 @@ const intentLabels: Record<SearchIntent, string> = {
 <template>
   <div class="w-full">
     <div class="relative">
-      <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-[#8a9a8c] text-sm" aria-hidden="true"></i>
+      <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-ink-faint text-sm" aria-hidden="true"></i>
       <input
         v-model="query"
         type="text"

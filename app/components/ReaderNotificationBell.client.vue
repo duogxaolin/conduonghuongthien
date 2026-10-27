@@ -112,7 +112,7 @@ defineExpose({ close: () => { isOpen.value = false } })
   <div ref="rootRef" class="relative">
     <button
       type="button"
-      class="relative flex items-center justify-center w-9 h-9 rounded-full bg-surface border border-[#E2E8DF] text-[#385130] transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+      class="relative flex items-center justify-center w-9 h-9 rounded-full bg-surface border border-line text-brand-800 transition-all hover:bg-surface-tint hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
       :aria-expanded="isOpen"
       aria-haspopup="menu"
       :aria-label="unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'"
@@ -123,17 +123,17 @@ defineExpose({ close: () => { isOpen.value = false } })
            `animate-pulse` để phải miễn trừ. -->
       <span
         v-if="unreadCount > 0"
-        class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-[#B04A4A] text-white text-[0.65rem] font-bold leading-none"
+        class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-danger-soft text-white text-[0.65rem] font-bold leading-none"
       >{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
     </button>
 
     <div
       v-if="isOpen"
       role="menu"
-      class="absolute right-0 top-[calc(100%+8px)] z-[10004] w-[340px] max-w-[calc(100vw-2rem)] rounded-xl border border-[#E2E8DF] bg-white shadow-[0_12px_32px_rgba(15,35,18,0.14)]"
+      class="absolute right-0 top-[calc(100%+8px)] z-[10004] w-[340px] max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-white shadow-[0_12px_32px_rgba(15,35,18,0.14)]"
     >
-      <div class="flex items-center justify-between gap-2 border-b border-[#EEF2EC] px-3.5 py-2.5">
-        <span class="text-[0.82rem] font-extrabold uppercase tracking-wide text-[#385130]">Thông báo</span>
+      <div class="flex items-center justify-between gap-2 border-b border-surface-tint px-3.5 py-2.5">
+        <span class="text-[0.82rem] font-extrabold uppercase tracking-wide text-brand-800">Thông báo</span>
         <button
           v-if="unreadCount > 0"
           type="button"
@@ -146,36 +146,36 @@ defineExpose({ close: () => { isOpen.value = false } })
         <div v-if="pending" role="status" aria-busy="true" class="p-3.5">
           <span class="sr-only">Đang tải thông báo</span>
           <div v-for="n in 3" :key="n" aria-hidden="true" class="mb-3 last:mb-0">
-            <div class="h-3 w-28 animate-pulse rounded bg-[#EEF2EC] motion-reduce:animate-none"></div>
-            <div class="mt-2 h-3.5 w-full animate-pulse rounded bg-[#F1F5F0] motion-reduce:animate-none"></div>
+            <div class="h-3 w-28 animate-pulse rounded bg-surface-tint motion-reduce:animate-none"></div>
+            <div class="mt-2 h-3.5 w-full animate-pulse rounded bg-surface-tint motion-reduce:animate-none"></div>
           </div>
         </div>
 
-        <p v-else-if="failed" role="alert" class="m-0 px-3.5 py-6 text-center text-[0.85rem] text-[#B04A4A]">
+        <p v-else-if="failed" role="alert" class="m-0 px-3.5 py-6 text-center text-[0.85rem] text-danger-soft">
           <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>
           Không thể tải thông báo.
           <button type="button" class="font-bold text-brand-600 underline" @click="load()">Thử lại</button>.
         </p>
 
-        <p v-else-if="!notifications.length" class="m-0 px-3.5 py-8 text-center text-[0.85rem] text-[#5A6C58]">
+        <p v-else-if="!notifications.length" class="m-0 px-3.5 py-8 text-center text-[0.85rem] text-ink-soft">
           Chưa có thông báo nào. Khi có người trả lời bình luận của bạn, thông báo sẽ hiện ở đây.
         </p>
 
         <ul v-else class="m-0 list-none p-0">
-          <li v-for="item in notifications" :key="item.id" class="border-b border-[#F1F5F0] last:border-b-0">
+          <li v-for="item in notifications" :key="item.id" class="border-b border-surface-tint last:border-b-0">
             <component
               :is="item.target ? NuxtLink : 'div'"
               v-bind="item.target ? { to: item.target.url } : {}"
               class="flex w-full gap-2.5 px-3.5 py-3 no-underline transition-colors"
               :class="[
-                item.target ? 'cursor-pointer hover:bg-[#F7FAF6]' : 'cursor-default',
-                item.isRead ? '' : 'bg-[#F4F9F0]',
+                item.target ? 'cursor-pointer hover:bg-surface' : 'cursor-default',
+                item.isRead ? '' : 'bg-surface-tint',
               ]"
               @click="onItemClick(item)"
             >
               <span
                 class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                :class="item.isRead ? 'bg-transparent' : 'bg-[#7CB342]'"
+                :class="item.isRead ? 'bg-transparent' : 'bg-accent'"
                 aria-hidden="true"
               ></span>
               <span class="min-w-0 flex-1">
@@ -184,8 +184,8 @@ defineExpose({ close: () => { isOpen.value = false } })
                   đã trả lời bình luận của bạn
                 </span>
                 <span class="mt-0.5 block line-clamp-2 break-words text-[0.8rem] leading-snug text-ink-secondary">{{ item.excerpt }}</span>
-                <span v-if="item.target" class="mt-1 block truncate text-[0.74rem] text-[#5A6C58]">{{ item.target.articleTitle }}</span>
-                <span v-else class="mt-1 block text-[0.74rem] italic text-[#5A6C58]">Bài viết hiện không mở bình luận</span>
+                <span v-if="item.target" class="mt-1 block truncate text-[0.74rem] text-ink-soft">{{ item.target.articleTitle }}</span>
+                <span v-else class="mt-1 block text-[0.74rem] italic text-ink-soft">Bài viết hiện không mở bình luận</span>
               </span>
             </component>
           </li>
@@ -194,7 +194,7 @@ defineExpose({ close: () => { isOpen.value = false } })
 
       <nuxt-link
         to="/profile"
-        class="block border-t border-[#EEF2EC] px-3.5 py-2.5 text-center text-[0.8rem] font-bold text-brand-600 no-underline transition-colors hover:bg-[#F7FAF6]"
+        class="block border-t border-surface-tint px-3.5 py-2.5 text-center text-[0.8rem] font-bold text-brand-600 no-underline transition-colors hover:bg-surface"
         @click="isOpen = false"
       >Xem tất cả trên trang cá nhân</nuxt-link>
     </div>

@@ -51,7 +51,7 @@
           <i class="fa-regular fa-clock text-[0.6rem]" aria-hidden="true"></i>
           {{ startedLabel }}
         </span>
-        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#7CB342] text-brand-950 text-[0.68rem] font-bold transition-colors group-hover:bg-[#8BC34A]">
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-brand-950 text-[0.68rem] font-bold transition-colors group-hover:bg-[#8BC34A]">
           Xem ngay
           <i class="fa-solid fa-arrow-right text-[0.55rem]" aria-hidden="true"></i>
         </span>
