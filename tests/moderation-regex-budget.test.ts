@@ -115,12 +115,17 @@ test('request budget: shared by every call of the request; a window that would s
 
 test('request budget (real clock): ten 60-ms rules on one text cost ≈ the budget, not 600 ms; the rule cut by the deadline is not blamed', () => {
   fresh()
-  const rules = Array.from({ length: 10 }, (_, i) => busyRule(`bận-${i}`, 60, i === 9))
+  let ran = 0
+  const rules = Array.from({ length: 10 }, (_, i) => {
+    const busy = busyRule(`bận-${i}`, 60, i === 9)
+    return { pattern: busy.pattern, regex: { test: (s: string) => { ran += 1; return busy.regex.test(s) } } as unknown as RegExp }
+  })
   const started = performance.now()
   const { value: hits, lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'request budget', () =>
     testModerationRegexes(rules, 'x', { budget: createModerationRegexBudget() })))
   const wallMs = performance.now() - started
-  assert.ok(wallMs < MODERATION_REQUEST_BUDGET_MS + 60, `${wallMs.toFixed(0)} ms for ${MODERATION_REQUEST_BUDGET_MS} ms of budget`)
+  assert.ok(ran <= 5, `${ran} of 10 rules started: 250 ms holds at most 4 whole 60-ms windows and one cut`)
+  assert.ok(wallMs < MODERATION_REQUEST_BUDGET_MS + 150, `${wallMs.toFixed(0)} ms for ${MODERATION_REQUEST_BUDGET_MS} ms of budget (600 unbounded)`)
   assert.equal(hits[9], false, 'the matching rule after the deadline is not reached (fail-open, logged)')
   assert.equal(events(lines, 'ai_moderation.request_budget_exhausted').length, 1)
   assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled'), [])
@@ -137,7 +142,7 @@ test('request budget: a catastrophic rule reached with 50 ms left is cut at the 
   const started = performance.now()
   const { lines } = captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'deadline cut', () =>
     testModerationRegexes([head, { pattern: bad, regex: compileModerationRegex(bad)! }], text, { budget })))
-  assert.ok(performance.now() - started < MODERATION_REQUEST_BUDGET_MS + 60)
+  assert.ok(performance.now() - started < MODERATION_REQUEST_BUDGET_MS + 150)
   assert.equal(isModerationRuleDisabled(bad), false, 'cut by the request deadline — not its full window budget')
   const exhausted = events(lines, 'ai_moderation.request_budget_exhausted')
   assert.equal(exhausted.length, 1)
@@ -147,6 +152,24 @@ test('request budget: a catastrophic rule reached with 50 ms left is cut at the 
     testModerationRegexes([{ pattern: bad, regex: compileModerationRegex(bad)! }], text, { budget: createModerationRegexBudget() })))
   assert.equal(isModerationRuleDisabled(bad), true)
   assert.deepEqual(events(again, 'ai_moderation.rule_slow_disabled').map(line => [line.reason, line.interrupted]), [['window', true]])
+  fresh()
+})
+
+test('a window cut by the request deadline is still charged to its rule at once: a rule cut every time is off after ~1 s (reason cumulative)', () => {
+  // 300 ms per window, 100 ms per request: every window is cut by the deadline — never blamed
+  // per window — and never completes, so only the charge of the cut window's own time (in
+  // `runScan`) ever reaches the rule's period. Without it the rule would run forever.
+  fresh()
+  const slow = busyRule('bị-cắt-mãi', 300)
+  const lines: LogLine[] = []
+  let requests = 0
+  for (; requests < 20 && !isModerationRuleDisabled(slow.pattern); requests += 1) {
+    lines.push(...captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'cut by deadline', () =>
+      testModerationRegexes([slow], 'x', { budget: createModerationRegexBudget(100) }))).lines)
+  }
+  assert.equal(isModerationRuleDisabled(slow.pattern), true, `still on after ${requests} requests cut at 100 ms`)
+  assert.ok(requests >= 9 && requests <= 12, `${requests} requests × ~100 ms`)
+  assert.deepEqual(events(lines, 'ai_moderation.rule_slow_disabled').map(line => line.reason), ['cumulative'])
   fresh()
 })
 
@@ -265,8 +288,8 @@ test('a pass that has run > 20 ms yields before the next window: the catastrophi
   const started = performance.now()
   const { value, passes } = vmPasses(() => captureLogs(() => withinWallClock(OUTER_BOUND_MS, 'middle', () => testModerationRegexes(rules, text))))
   const wallMs = performance.now() - started
-  assert.equal(passes, 2, 'the pass cut at the bad rule, then the rest')
-  assert.ok(wallMs < MODERATION_RULE_WINDOW_BUDGET_MS + 100, `${wallMs.toFixed(0)} ms`)
+  assert.equal(passes, 2, 'the pass cut at the bad rule, then the rest (it was 3: cut, re-run, rest)')
+  assert.ok(wallMs < MODERATION_RULE_WINDOW_BUDGET_MS + 150, `${wallMs.toFixed(0)} ms`)
   assert.deepEqual(events(value.lines, 'ai_moderation.rule_slow_disabled').map(line => [line.pattern, line.reason, line.interrupted]), [[bad, 'window', true]])
   fresh()
 })

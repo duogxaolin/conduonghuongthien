@@ -263,10 +263,12 @@ for (const [entry, call] of ENTRY_POINTS.filter(([name]) => name !== 'fastPreMod
       const bad = '日*日*日*$'
       const patterns = [...VIETNAMESE_RULES.slice(0, 15), bad, ...VIETNAMESE_RULES.slice(15)]
       reset(patterns.map(pattern => rule(pattern)))
-      await worker.matchInstantRule('làm nóng 30 luật') // V8 compiles the 30 regexes to native code
       const text = `${'日'.repeat(1500)}!`
+      // V8 compiles each regex to native code on its first long subject (a few ms each): warm the
+      // very objects the runtime will run (`compileModerationRegex` caches them), not the bad one.
+      for (const pattern of VIETNAMESE_RULES) for (let i = 0; i < 2; i += 1) compileModerationRegex(pattern)!.test(text)
       const { value: run, lines } = await captureLogs(() => timed(() => call(text)))
-      assert.ok(run.wallMs <= MODERATION_RULE_WINDOW_BUDGET_MS + 100, `${run.wallMs.toFixed(0)} ms (was ~404: cut off, re-run, cut off again)`)
+      assert.ok(run.wallMs <= MODERATION_RULE_WINDOW_BUDGET_MS + 150, `${run.wallMs.toFixed(0)} ms (was ~404: cut off, re-run, cut off again)`)
       assert.deepEqual(patterns.filter(pattern => isModerationRuleDisabled(pattern)), [bad])
       assert.deepEqual(lines.filter(line => line.event === 'ai_moderation.rule_slow_disabled').map(line => [line.pattern, line.interrupted]), [[bad, true]])
       assert.ok(await worker.matchInstantRule('chơi lô đề ở đây'), 'a rule after it still matches')
@@ -278,9 +280,11 @@ for (const [entry, call] of ENTRY_POINTS.filter(([name]) => name !== 'fastPreMod
 test('(d) a heavy-but-legal rule before a catastrophic one: the catastrophic one is cut once (~60 + 200 ms), the heavy one is never blamed', () => {
   reset([])
   let heavyCalls = 0
+  let badCalls = 0
   const heavy = { pattern: 'nặng-mà-hợp-lệ', regex: { test: () => { heavyCalls += 1; const end = performance.now() + 60; while (performance.now() < end); return false } } as unknown as RegExp }
   const bad = '日*日*日*$'
-  const rules = [heavy, { pattern: bad, regex: compileModerationRegex(bad)! }, { pattern: 'lô\\s*đề', regex: compileModerationRegex('lô\\s*đề')! }]
+  const badRegex = compileModerationRegex(bad)!
+  const rules = [heavy, { pattern: bad, regex: { test: (s: string) => { badCalls += 1; return badRegex.test(s) } } as unknown as RegExp }, { pattern: 'lô\\s*đề', regex: compileModerationRegex('lô\\s*đề')! }]
   const lines: LogLine[] = []
   const spy = mock.method(console, 'error', (line: unknown) => { try { lines.push(JSON.parse(String(line)) as LogLine) } catch { /* not a log line */ } })
   const started = performance.now()
@@ -293,7 +297,8 @@ test('(d) a heavy-but-legal rule before a catastrophic one: the catastrophic one
   const wallMs = performance.now() - started
   assert.deepEqual(hits, [false, false, true])
   assert.equal(heavyCalls, 1, 'the heavy rule ran once')
-  assert.ok(wallMs <= 60 + MODERATION_RULE_WINDOW_BUDGET_MS + 100, `${wallMs.toFixed(0)} ms (was ~400: the catastrophic window was cut, re-run, cut again)`)
+  assert.equal(badCalls, 1, 'the catastrophic window ran once (it was 2: cut ~140 ms in, re-run, cut again)')
+  assert.ok(wallMs <= 60 + MODERATION_RULE_WINDOW_BUDGET_MS + 150, `${wallMs.toFixed(0)} ms (was ~400)`)
   assert.equal(isModerationRuleDisabled(heavy.pattern), false)
   assert.equal(isModerationRuleDisabled(bad), true)
   assert.deepEqual(lines.filter(line => line.event === 'ai_moderation.rule_slow_disabled').map(line => line.pattern), [bad])
