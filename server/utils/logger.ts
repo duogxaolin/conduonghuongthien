@@ -162,6 +162,17 @@ export const SECURITY_EVENTS = {
   // on every page view by design, and the endpoint is public — a report flood must
   // never become an e-mail flood. Bounded by aggregation and a per-source limit instead.
   cspViolation: 'security.csp_violation',
+  // Moderation regex layer 2 (`server/services/moderation-regex-budget.ts`, verify of wave3 4.3c
+  // follow-up W8). A rule turned off for 10 minutes for running slow (`reason: 'window'` — one
+  // window over 200 ms; `'cumulative'` — 1 s of CPU in 60 s): while it is off it judges nothing,
+  // and crafted input can be what slowed it. Payload: pattern (≤ 200 chars), reason, elapsedMs,
+  // inputLength — never the text. In ALERT_EVENTS: someone must look at the rule.
+  moderationRuleSlowDisabled: 'ai_moderation.rule_slow_disabled',
+  // A request used up its 250-ms regex budget; the rules it did not reach did not judge it (the
+  // newest chat turn, a comment: fail-open; earlier chat turns: withheld from the model). Once per
+  // request, anyone can trigger it — logged for alert rules, NOT e-mailed. Payload: budgetMs,
+  // spentMs, topPattern, topPatternMs, texts.
+  moderationRequestBudgetExhausted: 'ai_moderation.request_budget_exhausted',
 } as const
 
 /**
@@ -199,7 +210,8 @@ export const BOOT_MIGRATION_EVENTS = {
  * event per window). Kept short on purpose: each one means an operator must act —
  * a restore failed or was refused, someone holding a valid password is guessing
  * second factors, an e-mail link was asked for on a forged Host, a browser posted to
- * the API on behalf of another site (the origin gate, wave2 2A), a scheduled backup
+ * the API on behalf of another site (the origin gate, wave2 2A), a moderation rule was
+ * turned off for running slow (it judges nothing for 10 minutes), a scheduled backup
  * slot was given up, a scheduled slot was lost to "busy" refusals (another backup or a
  * restore held the lock past the slot's window — `busyStreakDeadline`), the boot
  * migration cannot reach its schema without losing data.
@@ -217,6 +229,7 @@ export const ALERT_EVENTS: readonly string[] = [
   SECURITY_EVENTS.mfaChallengeLocked,
   SECURITY_EVENTS.linkHostRejected,
   SECURITY_EVENTS.crossSiteRefused,
+  SECURITY_EVENTS.moderationRuleSlowDisabled,
   'backup.slot_abandoned',
   'backup.scheduler_blocked',
   BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked,

@@ -17,7 +17,7 @@
  * phần ngân sách còn lại (`ruleAllowances`, `requestDeadline`) và nộp kết quả một lượt
  * (`settleRegexSpend`). Không import `node:vm` (guard S4 ở `tests/moderation-regex-budget.test.ts`).
  */
-import { logWarn } from '../utils/logger'
+import { logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { MODERATION_PATTERN_MAX_LENGTH } from './moderation-regex-limits'
 
 /** Thời gian một luật chậm bị tắt (tự bật lại sau đó). */
@@ -182,7 +182,7 @@ export function ruleAllowances(patterns: Iterable<string>): Map<string, number> 
 function disable(pattern: string, fields: Record<string, unknown>): void {
   disabledUntil.set(pattern, timing.now() + MODERATION_RULE_COOLDOWN_MS)
   ruleSpend.delete(pattern) // bật lại sau thời gian chờ thì bắt đầu một chu kỳ mới
-  logWarn({ event: 'ai_moderation.rule_slow_disabled', pattern: pattern.slice(0, MODERATION_PATTERN_MAX_LENGTH), ...fields, disabledForMs: MODERATION_RULE_COOLDOWN_MS })
+  logWarn({ event: SECURITY_EVENTS.moderationRuleSlowDisabled, pattern: pattern.slice(0, MODERATION_PATTERN_MAX_LENGTH), ...fields, disabledForMs: MODERATION_RULE_COOLDOWN_MS })
 }
 
 /** Cửa sổ quá ngân sách cửa sổ (chạy xong mà đo quá, hay bị ngắt cứng): luật của nó tắt, `reason: 'window'`. */
@@ -229,7 +229,7 @@ export function settleRegexSpend(input: {
     state.logged = true
     const [topPattern, topMs] = [...state.byPattern].reduce((top, entry) => (entry[1] > top[1] ? entry : top), ['', 0])
     logWarn({
-      event: 'ai_moderation.request_budget_exhausted',
+      event: SECURITY_EVENTS.moderationRequestBudgetExhausted,
       budgetMs: budget.limitMs,
       spentMs: Math.round(state.spentMs),
       topPattern: topPattern.slice(0, MODERATION_PATTERN_MAX_LENGTH),
