@@ -501,7 +501,7 @@ defineExpose<{
 
 <template>
   <div class="flex flex-col gap-5">
-    <div v-if="providersError" class="rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]" role="alert">
+    <div v-if="providersError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
       <strong>Lỗi:</strong> {{ providersError }}
       <button type="button" class="font-bold underline text-brand-600 ml-2" @click="loadProviders()">Thử lại</button>
     </div>
@@ -836,7 +836,7 @@ defineExpose<{
               <input v-model="newProviderForm.apiKey" type="password" placeholder="Nhập API key" class="rounded-lg border border-line-strong px-3 py-2 text-sm" />
               <span class="text-xs text-ink-muted font-normal">Có thể nhập sau nếu chưa có.</span>
             </label>
-            <div v-if="newProviderError" class="rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]" role="alert">{{ newProviderError }}</div>
+            <div v-if="newProviderError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ newProviderError }}</div>
           </div>
           <template #footer>
               <button type="button" class="px-4 py-2 rounded-lg border border-line-strong text-sm font-semibold text-ink-muted hover:bg-surface" @click="showCreateForm = false">Huỷ</button>
@@ -915,7 +915,7 @@ defineExpose<{
               <input v-model="newModelForm.isActive" type="checkbox" class="w-4 h-4 accent-brand-700" />
               <span class="text-brand-950">Kích hoạt model (cho phép các dịch vụ sử dụng)</span>
             </label>
-            <div v-if="newModelError" class="rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]" role="alert">{{ newModelError }}</div>
+            <div v-if="newModelError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ newModelError }}</div>
           </div>
           <template #footer>
               <button type="button" class="px-4 py-2 rounded-lg border border-line-strong text-sm font-semibold text-ink-muted hover:bg-surface" @click="showAddModelModal = false">Huỷ</button>

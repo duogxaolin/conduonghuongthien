@@ -146,7 +146,7 @@ onMounted(load)
       <nuxt-link to="/admin/chatbot/knowledge" class="font-bold text-brand-700">Quay lại danh sách</nuxt-link>
     </header>
 
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]" role="alert">{{ error }}<template v-if="!isNew && !saving"> Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load()">thử lại</button>.</template></div>
+    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }}<template v-if="!isNew && !saving"> Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load()">thử lại</button>.</template></div>
     <div v-if="loading" class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]">
       <SkeletonForm label="Đang tải mục kiến thức" :fields="4" />
       <SkeletonForm label="Đang tải mục kiến thức" :fields="3" :has-action="false" />

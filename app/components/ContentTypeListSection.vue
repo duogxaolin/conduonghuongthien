@@ -149,7 +149,7 @@ const subPillClass = (active: boolean) => [
   'shrink-0 whitespace-nowrap rounded-lg border cursor-pointer px-3 py-1 font-bold transition-all duration-200 text-xs',
   active
     ? 'bg-brand-800 border-brand-800 text-white shadow-sm'
-    : 'bg-white border-line text-ink-soft hover:border-brand-800 hover:text-brand-800 hover:bg-surface-tint',
+    : 'bg-white border-line text-[#556350] hover:border-brand-800 hover:text-brand-800 hover:bg-surface-tint',
 ]
 const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
 </script>

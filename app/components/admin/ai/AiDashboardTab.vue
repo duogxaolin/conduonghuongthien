@@ -179,7 +179,7 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
 
 <template>
   <div class="flex flex-col gap-5">
-    <div v-if="usageError" class="rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]" role="alert">
+    <div v-if="usageError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
       <strong>Lỗi:</strong> {{ usageError }}
       <button type="button" class="font-bold underline text-brand-600 ml-2" @click="loadUsage()">Thử lại</button>
     </div>

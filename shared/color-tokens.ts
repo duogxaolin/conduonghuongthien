@@ -52,9 +52,10 @@ export const COLOR_TOKENS = Object.freeze({
   'brand-300': '#8ed694',
   'brand-800': '#385130',
   // The secondary green of ui-dna. Decorative only: it reaches 2.5:1 on white, so it must
-  // never colour a keyboard-focus indicator of any kind, nor text on a white or light
-  // surface (CLAUDE.md, focus colour rule). tests/focus-ring-no-secondary-green.test.ts
-  // fails on either spelling, and the codemod never emits this name for those utilities.
+  // never colour a keyboard-focus indicator of any kind (CLAUDE.md, focus colour rule).
+  // tests/focus-ring-no-secondary-green.test.ts fails on either spelling, and the codemod
+  // never emits this name for those utilities. Text on white is NOT enforced: a few older
+  // uses (qa-documents eyebrow, rank numbers) already do it — a separate a11y task.
   accent: '#7cb342',
 
   // Text: the strongest heading text, the admin body text, the public secondary text

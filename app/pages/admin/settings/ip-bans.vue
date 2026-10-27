@@ -180,7 +180,7 @@ onMounted(load)
             <button
               type="button"
               :disabled="busy"
-              class="inline-flex items-center gap-1 text-xs font-bold text-[#b0403c] bg-danger-bg hover:bg-[#fde2e0] px-3 py-1.5 rounded-lg border-0 cursor-pointer disabled:opacity-60 transition-colors"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#b0403c] bg-[#fff4f3] hover:bg-[#fde2e0] px-3 py-1.5 rounded-lg border-0 cursor-pointer disabled:opacity-60 transition-colors"
               @click="liftBan(ban)"
             >
               <i class="fa-solid fa-lock-open text-[0.65rem]"></i> Bỏ chặn

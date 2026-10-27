@@ -292,7 +292,7 @@ onMounted(load)
             v-if="!reader.isBanned"
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-danger-bg disabled:opacity-60"
+            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] disabled:opacity-60"
             @click="banReader"
           >Chặn tài khoản</button>
           <button
@@ -305,7 +305,7 @@ onMounted(load)
           <button
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-danger-bg disabled:opacity-60"
+            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] disabled:opacity-60"
             @click="purgeComments"
           >Xoá toàn bộ bình luận</button>
           <button

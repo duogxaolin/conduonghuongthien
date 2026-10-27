@@ -403,7 +403,7 @@ onMounted(() => {
             <button
               v-if="!ct.isSystem"
               type="button"
-              class="inline-flex items-center gap-1 text-xs font-bold text-danger bg-danger-bg hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg border-0 cursor-pointer transition-colors"
+              class="inline-flex items-center gap-1 text-xs font-bold text-danger bg-[#fff4f3] hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg border-0 cursor-pointer transition-colors"
               @click="deleteType(ct)"
             >
               <i class="fa-regular fa-trash text-[0.65rem]"></i> Xóa

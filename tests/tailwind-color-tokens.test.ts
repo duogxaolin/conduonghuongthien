@@ -328,8 +328,9 @@ describe('approved colour merges (shared/color-merges.ts)', () => {
   const NEW_TOKENS = Object.keys(EXPECTED).filter((name) => !ORIGINAL_TOKENS.includes(name))
 
   test('the table is not empty, frozen, and keyed by lowercase 6-digit hex', () => {
-    // 91 near-duplicates (part A) + 17 members + 12 fold entries (part B), measured on 81bfb5e.
-    assert.equal(entries.length, 120)
+    // 91 near-duplicates (part A) + 17 members + 10 fold entries (part B), measured on 81bfb5e.
+    // #fff4f3 and #556350 were dropped after verify: see the held-colours test below.
+    assert.equal(entries.length, 118)
     assert.ok(Object.isFrozen(COLOR_MERGES))
     for (const [hex, merge] of entries) {
       assert.match(hex, /^#[0-9a-f]{6}$/, hex)
@@ -374,15 +375,22 @@ describe('approved colour merges (shared/color-merges.ts)', () => {
           assert.equal(merge.anchor, undefined)
           break
         case 'fold':
-          // Part B, approved folds: the anchor's own entry is in the table, same token, and
+          // Part B, approved folds: the anchor's own entry is in the table (same token; #fff4f3 is held), and
           // nothing lands farther from the token than the largest approved figure (3.75).
           assert.ok(NEW_TOKENS.includes(merge.token), `${hex}: fold into ${merge.token}, not a D-T1 token`)
           assert.ok(merge.dE <= 3.75, `${hex}: ΔE ${merge.dE} above 3.75`)
-          assert.ok(merge.anchor && COLOR_MERGES[merge.anchor]?.token === merge.token, `${hex}: anchor ${merge.anchor} is not folded into ${merge.token}`)
+          // #fff4f3 is the one anchor held back (it stays hex, see the held-colours test); it only labels its group.
+          assert.ok(merge.anchor === '#fff4f3' || COLOR_MERGES[merge.anchor!]?.token === merge.token, `${hex}: anchor ${merge.anchor} is not folded into ${merge.token}`)
           break
         default:
           assert.fail(`${hex}: unknown rule ${String(merge.rule)}`)
       }
+    }
+  })
+
+  test('held colours stay hex: #fff4f3 (split from its twin #fff5f4) and #556350 (3.36, above the approved 3.0)', () => {
+    for (const hex of ['#fff4f3', '#fff5f4', '#fff6f5', '#fdf6f6', '#fff8f7', '#556350']) {
+      assert.equal(COLOR_MERGES[hex as keyof typeof COLOR_MERGES], undefined, `${hex} must stay a hex until re-approved`)
     }
   })
 

@@ -348,7 +348,7 @@ describe('--merges: the approved merge table', () => {
   const mergedReasons = (source: string, fileName = 'sample.vue') => merged(source, fileName).leftAlone.map((e) => `${e.text}:${e.reason}`)
 
   test('off by default; on, a merged hex becomes its token, variants, ! and opacity kept', () => {
-    const source = '<p class="bg-[#f8faf8] hover:!border-[#E2E8DF]/40 md:text-[#556450] group-hover/x:bg-[#fff4f3]/[0.5]"></p>'
+    const source = '<p class="bg-[#f8faf8] hover:!border-[#E2E8DF]/40 md:text-[#556450] group-hover/x:bg-[#fdf0f0]/[0.5]"></p>'
     assert.equal(rewrite(source), source)
     assert.deepEqual(reasons(source).map((r) => r.split(':').at(-1)), ['unmapped', 'unmapped', 'unmapped', 'unmapped'])
     assert.equal(merged(source).output, '<p class="bg-surface hover:!border-line/40 md:text-ink-soft group-hover/x:bg-danger-bg/[0.5]"></p>')

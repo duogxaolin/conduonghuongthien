@@ -260,7 +260,7 @@ onMounted(load)
           v-if="settings.hasClientSecret || secretUnreadable"
           type="button"
           :disabled="clearing || saving"
-          class="self-start rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-danger-bg focus:outline-none focus:ring-2 focus:ring-danger/30 disabled:cursor-not-allowed disabled:opacity-60"
+          class="self-start rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] focus:outline-none focus:ring-2 focus:ring-danger/30 disabled:cursor-not-allowed disabled:opacity-60"
           @click="clearSecret"
         >{{ clearing ? 'Đang xoá…' : 'Xoá Client secret' }}</button>
 

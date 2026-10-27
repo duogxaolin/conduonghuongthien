@@ -166,19 +166,18 @@ export const COLOR_MERGES: Readonly<Record<string, ColorMerge>> = Object.freeze(
   '#576653': fold('ink-soft', 2.29, '#556450'), // 7
   '#556653': fold('ink-soft', 2.19, '#556450'), // 6
   '#556655': fold('ink-soft', 2.39, '#556450'), // 4
-  '#556350': fold('ink-soft', 3.36, '#556450'), // 2
   // ink-faint
   '#8a9a88': member('ink-faint', 1.6), // 10
   '#88998a': member('ink-faint', 0.7), // 1
   '#8a9a8b': member('ink-faint', 0.41), // 1
   '#8a9a8d': member('ink-faint', 0.42), // 1
-  // danger-bg, with the approved fold of the #fff4f3 group (entries within 3.75)
+  // danger-bg, with the approved fold of the #fff4f3 group. #fff4f3 itself (3.75) stays hex:
+  // folding it would split it from its near twin #fff5f4 (0.45 apart), which is held too.
   '#fce8e8': member('danger-bg', 1.11), // 12
   '#fdecec': member('danger-bg', 1.31), // 7
   '#fbe5e3': member('danger-bg', 1.39), // 2
   '#fbe6e6': member('danger-bg', 1.45), // 2
   '#fdecea': member('danger-bg', 1.12), // 2
-  '#fff4f3': fold('danger-bg', 3.75, '#fff4f3'), // 24
   '#fdf0f0': fold('danger-bg', 2.76, '#fff4f3'), // 4
   '#fef2f2': fold('danger-bg', 3.24, '#fff4f3'), // 2
   '#fff0ef': fold('danger-bg', 2.03, '#fff4f3'), // 2

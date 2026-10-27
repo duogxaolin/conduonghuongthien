@@ -137,7 +137,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
       <button type="button" class="rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-bold text-ink-muted hover:bg-white/70" @click="bulkQuickQuestion(false)">Bỏ khỏi câu hỏi nhanh</button>
       <button type="button" class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-danger-bg p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load(1)">thử lại</button>.</div><SkeletonTable v-if="loading" label="Đang tải kho kiến thức" :rows="6" :cols="7" /><div v-else-if="!items.length" class="rounded-xl border border-line bg-white p-12 text-center"><i class="fa-solid fa-book-open mb-3 text-3xl text-line-strong" aria-hidden="true"></i><p class="m-0 font-semibold text-ink-muted">{{ search || topic || status || quick ? 'Không có kết quả phù hợp.' : 'Chưa có mục kiến thức nào.' }}</p></div>
+    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load(1)">thử lại</button>.</div><SkeletonTable v-if="loading" label="Đang tải kho kiến thức" :rows="6" :cols="7" /><div v-else-if="!items.length" class="rounded-xl border border-line bg-white p-12 text-center"><i class="fa-solid fa-book-open mb-3 text-3xl text-line-strong" aria-hidden="true"></i><p class="m-0 font-semibold text-ink-muted">{{ search || topic || status || quick ? 'Không có kết quả phù hợp.' : 'Chưa có mục kiến thức nào.' }}</p></div>
     <div v-else class="overflow-hidden rounded-xl border border-line bg-white shadow-xs">
       <!-- Mobile Card View: Tối ưu hiển thị dạng thẻ trên điện thoại -->
       <div class="md:hidden divide-y divide-surface-tint">
@@ -212,7 +212,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1 text-xs font-bold text-danger bg-danger-bg hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg cursor-pointer border-0"
+              class="inline-flex items-center gap-1 text-xs font-bold text-danger bg-[#fff4f3] hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg cursor-pointer border-0"
               @click="remove(item)"
             >
               <i class="fa-solid fa-trash text-[0.65rem]" aria-hidden="true"></i> Xóa
@@ -332,7 +332,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
             <article v-for="e in importResult.errors" :key="`${e.row}-${e.endRow}-${e.stage}-${e.code}`" class="rounded-lg border border-[#e4a4a1] bg-white p-3 text-[#8f211d]">
               <header class="flex flex-wrap items-center gap-2">
                 <strong>{{ importRowLabel(e) }}</strong>
-                <span class="rounded-full border border-[#e4a4a1] bg-danger-bg px-2 py-0.5 text-xs font-bold">{{ importStageLabel[e.stage] || e.stage }}</span>
+                <span class="rounded-full border border-[#e4a4a1] bg-[#fff4f3] px-2 py-0.5 text-xs font-bold">{{ importStageLabel[e.stage] || e.stage }}</span>
               </header>
               <p class="m-0 mt-2 font-semibold">{{ e.message }}</p>
               <dl v-if="importRawFields(e).length" class="m-0 mt-3 flex flex-col gap-2 border-t border-[#f1d0ce] pt-3">
