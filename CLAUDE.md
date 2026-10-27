@@ -19,7 +19,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 | Số liệu | Giá trị |
 |---|---|
 | Bảng · cột (`db:drift`) | 62 · 641 |
-| Endpoint `server/api` · có `getDb()` · import `services/` | 336 · 173 · 215 |
+| Endpoint `server/api` · có `getDb()` · import `services/` | 336 · 172 · 215 |
 | Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 222 · 209 |
 | Tệp import `rateLimitDeps` | 22 |
 | Suite `*-integration` (so matrix CI) | 22 (khớp) |

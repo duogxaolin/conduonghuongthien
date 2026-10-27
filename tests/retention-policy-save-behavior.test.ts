@@ -14,11 +14,11 @@ import test, { after, beforeEach, mock } from 'node:test'
  *     cannot reach them;
  *   - a saved value is the one the purge will use (source `database`), updated in
  *     place on a second save;
- *   - the change is audited with the values before and after, against the actor.
- *
- * FINDING-R3-1 (pinned, not fixed): the save and its audit line are two separate
- * writes on the pool, so a failed audit leaves a changed deletion policy with no
- * record of who changed it.
+ *   - the change is audited with the values before and after, against the actor,
+ *     in the same transaction as the keys: a failed audit leaves the stored policy
+ *     exactly as it was (FINDING-R3-1, fixed — it used to be two pool writes);
+ *   - a stored value that no longer parses is the server's state, not the form's
+ *     fault: 500, not 400, and nothing written.
  *
  * Real h3 app with the real `admin-auth` middleware; Drizzle's SQL (including the
  * `ON DUPLICATE KEY UPDATE` upsert) on SQLite (`_sqlite-mysql-db.ts`).
@@ -171,24 +171,32 @@ test('the change is audited against the actor with the values before and after',
 })
 
 /**
- * FINDING-R3-1 — severity medium, NOT fixed (pinned as it behaves today).
- *
- * `saveRetentionPolicy` writes each key on the pool, and the handler then writes
- * the audit line on the pool — no transaction (CLAUDE.md: a write and its
- * `activity_logs` row commit together). When the audit insert fails, the request
- * is a 500 but the shortened window is already stored and the next purge uses it:
- * a change to what gets deleted, with no record of who made it. The audit-atomicity
- * guard does not see it (it only asks files that write directly — noted in
- * `tests/reader-audit-atomicity.test.ts`). The fix is not a one-liner:
- * `saveRetentionPolicy` must take the transaction handle, and the handler's
- * "after" snapshot reads through `getDb()`, which on MySQL would not see the
- * uncommitted values. When it is fixed this test turns red: flip the two
- * assertions marked below (policy unchanged, still no audit).
+ * FINDING-R3-1 — severity medium, FIXED. It was pinned here as it behaved:
+ * `saveRetentionPolicy` wrote each key on the pool and the handler then wrote the
+ * audit line on the pool, so a failed audit answered 500 while the shortened
+ * window was already stored and the next purge used it — a change to what gets
+ * deleted with no record of who made it. The keys and the audit row now commit in
+ * one transaction inside `saveRetentionPolicy`; reverse that boundary (audit on
+ * the pool after the transaction) and this test is red again.
  */
-test('FINDING-R3-1 (medium, pinned): an audit failure still leaves the changed policy in force', async () => {
+test('FINDING-R3-1 (medium, fixed): an audit failure leaves the stored policy exactly as it was', async () => {
+  const before = snapshot()
   harness.failNext(/^insert into `activity_logs`/)
-  const response = await save({ activityLogDays: 30 })
+  const response = await save({ activityLogDays: 30, runHour: 5, submissionMaxRows: 5_000 })
   assert.equal(response.status, 500)
-  assert.equal(stored().retention_activity_log_days, '30') // fixed: '365'
-  assert.equal(harness.rows(activityLogs).length, 0)
+  assert.equal(stored().retention_activity_log_days, '365')
+  assert.deepEqual(snapshot(), before, 'no key of the new policy survives a failed audit')
+  // And the same save, once the audit can be written, goes through whole.
+  assert.equal((await save({ activityLogDays: 30, runHour: 5, submissionMaxRows: 5_000 })).status, 200)
+  assert.equal(stored().retention_activity_log_days, '30')
+  assert.equal(harness.rows(activityLogs).length, 1)
+})
+
+test('a stored value that no longer parses is a 500, not a 400 blaming the form, and nothing is written', async () => {
+  // Below today's 30-day floor: what a raised bound would leave behind.
+  harness.sqlite.prepare("UPDATE settings SET value = '5' WHERE key = 'retention_activity_log_days'").run()
+  const before = snapshot()
+  const response = await save({ runHour: 4 })
+  assert.equal(response.status, 500)
+  assert.deepEqual(snapshot(), before)
 })

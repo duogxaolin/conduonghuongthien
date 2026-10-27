@@ -1,6 +1,7 @@
 import { createAnalyticsPool } from './analytics-maintenance'
 import { runDataRetention, type DataRetentionResult } from './data-retention'
-import { resolveRetentionPolicy, lastRetentionRunAt, RETENTION_SCOPES, SCOPE_SETTINGS, type RetentionDaysField, type RetentionMaxRowsField, type RetentionPolicy } from './retention-policy'
+import { resolveRetentionPolicy, RETENTION_SCOPES, SCOPE_SETTINGS, type RetentionDaysField, type RetentionMaxRowsField, type RetentionPolicy } from './retention-policy'
+import { lastRetentionRunAt } from './retention-state'
 import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn, logError } from '../utils/logger'
 

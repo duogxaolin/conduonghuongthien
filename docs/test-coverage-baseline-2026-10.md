@@ -595,15 +595,15 @@ Số trong ngoặc ở cột "Trước" là dòng có mã của tệp chưa nạ
 | `ai-provider-probe-behavior` | 6 | 6 | — |
 | **Tổng** | **65** | **62** | **3**, đều có lớp phòng thủ thứ hai |
 
-### Lỗi tìm thấy (ghim, chưa sửa)
+### Lỗi tìm thấy (ghim lúc viết test, sửa sau đó)
 
-| Mã | Mức | Tệp | Lỗi | Vì sao chưa sửa |
+| Mã | Mức | Tệp | Lỗi | Trạng thái |
 |---|---|---|---|---|
-| FINDING-R3-1 | trung bình | `settings/retention.put.ts` + `saveRetentionPolicy` | Lưu chính sách (từng khoá trên pool) rồi mới ghi audit trên pool, không transaction. Audit hỏng → 500 nhưng cửa sổ xoá mới đã có hiệu lực, không ai biết ai đổi. Guard audit không thấy (chỉ hỏi tệp tự ghi). | `saveRetentionPolicy` phải nhận handle tx; ảnh "sau" của handler đọc qua `getDb()`, trên MySQL sẽ không thấy giá trị chưa commit — không phải sửa một dòng |
+| FINDING-R3-1 | trung bình | `settings/retention.put.ts` + `saveRetentionPolicy` | Lưu chính sách (từng khoá trên pool) rồi mới ghi audit trên pool, không transaction. Audit hỏng → 500 nhưng cửa sổ xoá mới đã có hiệu lực, không ai biết ai đổi. Guard audit không thấy (chỉ hỏi tệp tự ghi). | **Đã sửa**: `saveRetentionPolicy(input, { userId })` ghi các khoá + dòng audit trong MỘT transaction; ảnh trước/sau tính từ một lượt đọc khoá đã lưu (không đọc lại qua `getDb()` trong tx); giá trị đã lưu hỏng → 500, không phải 400. Hàm vào `AUDITED_WRITES`; phần sổ sách `data_retention_state` tách sang `retention-state.ts` (tệp chính sách chạm trần 400 dòng). Test ghim đã lật; 3 đột biến đều đỏ |
 | FINDING-R3-2 | thấp | `settings/retention-run.post.ts` | Lượt dọn commit trên pool riêng trước khi ghi audit; audit hỏng → 500 cho một lượt đã xoá, không lưu ai chạy (`data_retention_state` vẫn ghi số và `manual`) | Cần ghi audit "sắp dọn" trước hoặc truyền actor vào lượt dọn |
 | FINDING-R3-3 | thấp | 16 handler dưới `server/api/admin/ai/**` + `comments/[id]/visibility.patch.ts` (17 tệp, ghim ở `ai/budget/index.put.ts`) | `meta: JSON.stringify(…)` trước khi Drizzle mã hoá cột JSON lần nữa → `meta` là một chuỗi JSON, `JSON_EXTRACT(meta, '$.type')` không thấy gì | Sửa diện rộng (17 tệp + nơi đọc), ngoài phạm vi lát test |
 
-Mỗi lỗi có một test tên `FINDING-R3-n` khẳng định hành vi **hiện tại**, kèm chú thích phải lật khẳng định nào khi sửa (test sẽ đỏ khi lỗi được sửa — đó là chủ ý).
+Mỗi lỗi có một test tên `FINDING-R3-n`. Lúc viết, test khẳng định hành vi **hiện tại** kèm chú thích phải lật khẳng định nào khi sửa; lỗi đã sửa thì test được lật để khẳng định hành vi đúng (đảo lại ranh giới transaction / ghi chuỗi lại → đỏ).
 
 Ghi nhận, không ghim: `deleteLocalFile` chỉ kiểm đường dẫn theo chữ, nên một thư mục symlink nằm **trong** `public/uploads` sẽ bị đi theo — chỉ người có quyền vào máy chủ mới tạo được (khôi phục backup từ chối mục link); tải lên hỏng ở bước ghi CSDL để lại tệp mồ côi trên đĩa/R2 (lượt quét ảnh mồ côi sau đó có thể nhập lại nó); tên tệp `Date.now()_tên` có thể trùng khi hai lượt tải cùng tên trong cùng một mili giây (tệp sau ghi đè tệp trước).
 

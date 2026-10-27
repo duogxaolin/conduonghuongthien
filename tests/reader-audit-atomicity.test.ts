@@ -67,6 +67,12 @@ const AUDITED_WRITES: Array<{ file: string, fn: string, why: string }> = [
   // answerable: a moderator acting on a report about a name needs to be able to
   // tell a renamed account from the wrong account.
   { file: 'server/services/readers.ts', fn: 'renameReader', why: 'a display name changes on every comment already published with nothing recording the old one' },
+  // The policy that decides what the purge deletes. Until FINDING-R3-1 the keys
+  // were written here on the pool and `settings/retention.put.ts` audited them
+  // afterwards — a shape the endpoint scan cannot see (the handler holds no raw
+  // write) and the service scan did not ask about (this file did not touch
+  // `activityLogs`). Named by function so moving the audit back out turns this red.
+  { file: 'server/services/retention-policy.ts', fn: 'saveRetentionPolicy', why: 'a shortened deletion window is in force with no record of who set it, or from what' },
 ]
 
 describe('a row and its audit row commit together', () => {
@@ -364,10 +370,13 @@ describe('cookie-writing endpoints are excluded on purpose', () => {
  *
  * ⚠️ GIỚI HẠN CÓ CHỦ ĐÍCH: guard chỉ hỏi những tệp **tự tay** ghi (`db.update(`,
  * `db.delete(`, `db.insert(` vào bảng khác `activityLogs`). Endpoint uỷ quyền
- * mutation cho một service rồi tự ghi audit — `settings/retention.put.ts`,
- * `profile/mfa/disable.post.ts` — không có lệnh ghi thô nào ở đây nên không bị
- * hỏi; chính service đó do cổng quét `server/services/` bên dưới canh. Ghi ra vì
- * một giới hạn không nêu tên sẽ được đọc thành một bảo đảm không tồn tại.
+ * mutation cho một service rồi tự ghi audit trên pool — vd. `profile/mfa/disable.post.ts`
+ * — không có lệnh ghi thô nào ở đây nên không bị hỏi, và cổng quét `server/services/`
+ * bên dưới cũng không hỏi service đó nếu nó không chạm `activityLogs`. Đó đúng là
+ * hình của FINDING-R3-1: `settings/retention.put.ts` từng gọi `saveRetentionPolicy`
+ * (ghi khoá trên pool) rồi tự ghi audit — lọt qua cả hai cổng. Nay cặp ghi + audit
+ * nằm trong transaction của service và hàm được nêu tên ở `AUDITED_WRITES`. Ghi ra
+ * vì một giới hạn không nêu tên sẽ được đọc thành một bảo đảm không tồn tại.
  */
 const MUTATION_SCAN_EXEMPTIONS: Record<string, string> = {
   // Cả bốn ghi một cookie HTTP **giữa** hai lượt ghi CSDL. Cookie là tác dụng phụ
