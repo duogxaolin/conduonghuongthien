@@ -249,8 +249,11 @@ for (const [name, handler] of HANDLERS) {
  * The NEWEST turn's check runs on the request budget too (verify of 4.3c follow-up, W2): one
  * text, twenty sub-budget rules of the same cubic shape — each window ~40 ms, far under the
  * 200-ms window budget even on a throttled runner, so no window is cut and only the request
- * budget bounds the request. Unbounded (mutant M11: the newest turn's `fastPreModerate` without
- * `regexBudget`) it is twenty windows, ~700–800 ms; bounded it is cut at 250 ms, nobody blamed.
+ * budget bounds the request. Unbounded it is twenty windows, ~700–800 ms; bounded it is cut at
+ * 250 ms, nobody blamed. Three earlier turns, slow on the same rules, come after it: on ONE budget
+ * the history finds it spent and is withheld (W5) — the request stays ~250 ms. The newest turn's
+ * `fastPreModerate` without the request's budget (mutant M11) gets one of its own since W7, and the
+ * history then a second 250 ms: ~500 ms.
  */
 const NEWEST_TURN_RULES = ['а-я', 'а-ю', 'б-я', 'в-я', 'г-я'].flatMap(first => ['а-я', 'а-ю', 'б-я', 'в-я'].map(second => `[${first}]+[${second}]+\\d`))
 
@@ -258,25 +261,33 @@ for (const [name, handler] of HANDLERS) {
   test(`(b) ${name}: a newest turn slow on several rules is cut at the request budget (250 ms), not one window per rule`, async () => {
     await withinWallClockAsync(WATCHDOG_MS, `${name} newest turn`, async () => {
       reset(NEWEST_TURN_RULES.map(pattern => rule(pattern)))
-      const { length } = calibrate(NEWEST_TURN_RULES[0]!, 'ж', 40)
-      const text = slowText('ж', length)
       // What the newest turn costs UNBOUNDED on this runner: each rule's one window, measured
       // after V8 compiled the regex to native code (its first, interpreted run on a long subject
-      // is ~10× slower — warm it on short ones) — so the bound below is not vacuous.
-      const unboundedMs = NEWEST_TURN_RULES.reduce((sum, pattern) => {
-        const regex = compileModerationRegex(pattern)!
-        for (const warm of [80, 80, 300]) regex.test(slowText('ж', warm))
+      // is ~10× slower — warm it on short ones) — so the bound below is not vacuous. The variants
+      // do not cost quite what the calibrated one does: if the sum falls short of ~700 ms, the
+      // text grows (cost ∝ n³, ≤ 1000 chars) and the sum is measured again.
+      for (const pattern of NEWEST_TURN_RULES) for (const warm of [80, 80, 300]) compileModerationRegex(pattern)!.test(slowText('ж', warm))
+      const unbounded = (text: string) => NEWEST_TURN_RULES.reduce((sum, pattern) => {
         const started = performance.now()
-        regex.test(text)
+        compileModerationRegex(pattern)!.test(text)
         return sum + performance.now() - started
       }, 0)
+      let { length } = calibrate(NEWEST_TURN_RULES[0]!, 'ж', 40)
+      let unboundedMs = unbounded(slowText('ж', length))
+      for (let i = 0; i < 2 && unboundedMs < 700 && length < 1000; i += 1) {
+        length = Math.min(1000, Math.round(length * Math.cbrt(770 / Math.max(unboundedMs, 1))))
+        unboundedMs = unbounded(slowText('ж', length))
+      }
+      const text = slowText('ж', length)
       assert.ok(unboundedMs > REQUEST_BUDGET_MS + 2 * SLACK_MS, `precondition: ${unboundedMs.toFixed(0)} ms unbounded must clearly exceed the bound`)
-      const { value: run, lines } = await captureLogs(() => timed(() => send(handler, [{ role: 'user', content: text }])))
+      const earlier = [1, 2, 3].map(i => ({ role: 'user', content: `${'з'.repeat(i)}${text.slice(i)}` }))
+      const { value: run, lines } = await captureLogs(() => timed(() => send(handler, [...earlier, { role: 'user', content: text }])))
       const label = `${length} chars, ${NEWEST_TURN_RULES.length} rules, ${unboundedMs.toFixed(0)} ms unbounded here: ${run.wallMs.toFixed(0)} ms`
       assert.notEqual(kindOf(run.value), 'moderation_blocked', 'no rule matches')
       assert.ok(run.wallMs <= REQUEST_BUDGET_MS + SLACK_MS, `${label}: over the per-request budget`)
       assert.ok(run.maxGapMs <= REQUEST_BUDGET_MS + SLACK_MS, `${label}: the event loop was blocked ${run.maxGapMs.toFixed(0)} ms at once`)
       assert.equal(lines.filter(line => line.event === 'ai_moderation.request_budget_exhausted').length, 1, `${label}: the cut is logged once`)
+      assert.deepEqual(answeredUserTexts(), [text], 'the newest turn is answered; the history the spent budget never reached is withheld')
       assert.deepEqual(NEWEST_TURN_RULES.filter(pattern => isModerationRuleDisabled(pattern)), [], 'the request running out blames nobody')
       reset([])
     })
@@ -373,7 +384,13 @@ for (const [entry, call] of ENTRY_POINTS.filter(([name]) => name !== 'fastPreMod
       })
       let measured: { value: { wallMs: number, maxGapMs: number }, lines: LogLine[] } | undefined
       try {
-        measured = await captureLogs(() => timed(() => call(text)))
+        // Attribution is what this pins, not the request budget: since W7 a `checkAndModerateContent`
+        // handed no budget gets its own 250 ms, and on a loaded runner the 15 rules before the bad one
+        // can use > 50 ms of it — the bad window is then cut by the DEADLINE (charged, not blamed;
+        // `moderation-budget-wiring.test.ts`). A roomy budget gives it the full window here.
+        measured = await captureLogs(() => timed(() => (entry === 'checkAndModerateContent'
+          ? worker.checkAndModerateContent({ content: text, targetType: 'comment', targetId: 7 }, { regexBudget: moderationRegex.createModerationRegexBudget(60_000) })
+          : call(text))))
       } finally {
         spy.mock.restore()
       }
