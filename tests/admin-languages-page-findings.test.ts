@@ -194,6 +194,24 @@ describe('FINDING-L2 — one AI batch at a time', () => {
     await click(button(card(ctx.page, 'fr'), 'Dịch AI ('))
     await ctx.settle()
     assert.equal(lastToast(ctx.toasts, 'success'), 'Đã hoàn tất dịch 1/1 key cho French!')
+    // …and after a whole "Dịch tất cả còn thiếu" too.
+    await click(button(dialog(ctx.page), 'Hoàn tất & Đóng'))
+    ctx.server.state.rows.en![0]!.value = null
+    await click(button(ctx.page, 'Làm mới CSDL'))
+    await ctx.settle()
+    await click(header(ctx.page, 'Dịch tất cả còn thiếu'))
+    await ctx.settle()
+    assert.equal(lastToast(ctx.toasts, 'success'), 'Đã hoàn tất dịch 1/1 key cho English!')
+    ctx.server.state.rows.fr![0]!.value = null
+    await click(button(dialog(ctx.page), 'Hoàn tất & Đóng'))
+    await click(button(ctx.page, 'Làm mới CSDL'))
+    await ctx.settle()
+    const infos = ctx.toasts.filter(x => x.type === 'info').length
+    await click(button(card(ctx.page, 'fr'), 'Dịch AI ('))
+    await ctx.settle()
+    assert.equal(ctx.toasts.filter(x => x.type === 'info').length, infos, 'not refused')
+    assert.equal(lastToast(ctx.toasts, 'success'), 'Đã hoàn tất dịch 1/1 key cho French!')
+    assert.equal(ctx.server.state.rows.fr![0]!.value, 'AI(fr): Trang chủ')
   })
 
   it('"Dừng lại" still stops the batch that runs (RED before: a second start had cleared the stop)', async (t) => {
