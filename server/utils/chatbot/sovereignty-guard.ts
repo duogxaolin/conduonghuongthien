@@ -100,22 +100,33 @@ const MARKED_PATTERNS = [
 ]
 // Viết hoa là tên riêng: khớp bất kể từ đứng sau ("Trường Sa vào tay…", "Biển Đông người Trung Quốc gọi…",
 // "Tây Sa"/"Nam Sa"/"Tam Sa" — trừ khi "Sa" mở đầu một địa danh khác ("miền Tây Sa Đéc", "Việt Nam Sa Pa",
-// "Quảng Nam Sa Huỳnh") hoặc là động từ ("anh Nam sa thải tôi")), trừ hướng "(vùng) biển Đông Bắc / Đông Nam".
-const PROPER_NAMES = /(?<![\p{L}])(?:(?:Trường|Truong|TRƯỜNG|TRUONG)\s*(?:Sa|SA)|(?:Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)\s*(?:Sa|SA)(?!\s+(?:\p{Lu}|(?:thải|ngã|đọa|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\p{L}])))|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)[\s-]+(?:Đông|Dong|ĐÔNG|DONG)(?!\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\p{L}])))(?![\p{L}])/u
+// "TÂY SA PA"), đứng trước một tên riêng khác ("công ty Tam Sa Việt Nam" — trừ "Tây Sa Trung Quốc gọi…",
+// "Nam Sa Islands") hoặc là động từ ("anh Nam Sa thải tôi")), trừ hướng "(vùng) biển Đông Bắc / Đông Nam".
+// Địa danh Sa… so không phân biệt hoa/thường ("Việt Nam Sa pa" gõ vội).
+const SA_PLACES = ['pa', 'đéc', 'huỳnh', 'thầy', 'vỹ', 'vĩ', 'rài']
+  .map(word => [...word].map(char => `[${char}${char.toUpperCase()}]`).join('')).join('|')
+const NOT_SA_PLACE = `(?!\\s+(?:(?:${SA_PLACES})(?![\\p{L}])|(?!Trung|Island|Archipelago)\\p{Lu}\\p{Ll}|(?:thải|ngã|đọa|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\\p{L}])))`
+const PROPER_NAMES = new RegExp(`(?<![\\p{L}])(?:(?:Trường|Truong|TRƯỜNG|TRUONG)\\s*(?:Sa|SA)|(?:Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)\\s*(?:Sa|SA)${NOT_SA_PLACE}|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)[\\s-]+(?:Đông|Dong|ĐÔNG|DONG)(?!\\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\\p{L}])))(?![\\p{L}])`, 'u')
 const OTHER_SCRIPTS = /パラセル|スプラトリー|파라셀|스프래틀리|남중국해/
 
 // Yêu sách không gọi tên quần đảo ("lãnh thổ không thể tách rời của Trung Quốc", "中国对这些岛屿拥有…主权").
 // Chỉ xét ở ĐẦU RA (câu trả lời của model, lượt trợ lý cũ), và chỉ khi cùng đoạn có nói tới đảo/biển: người
 // hoàn lương từng chấp hành án "trên lãnh thổ Trung Quốc" là đúng đối tượng của cổng, không phải yêu sách.
-// Kể cả tên riêng của từng đảo/bãi hay được hỏi lẻ ("Đá Chữ Thập thuộc chủ quyền của Trung Quốc"). "đảo" động từ
-// ("đảo lộn", "đảo nợ", "khuynh đảo") không tính.
-const ISLAND_HAN = /岛|礁|海域|领海|太平|黄岩|中业/
+// Kể cả tên riêng của từng đảo/bãi hay được hỏi lẻ ("Đá Chữ Thập thuộc chủ quyền của Trung Quốc") — chỉ dạng
+// không trùng chữ thường: "đá Chữ Thập" (không phải "Hội Chữ thập đỏ"), không "Phú Lâm" (tên phường), không
+// 太平/黄岩/中业 trần (太平洋, "过程中业务"; 太平岛/黄岩岛 đã khớp qua 岛), không "mischief/woody/subi" trần.
+// "đảo" động từ ("đảo lộn", "đảo nợ", "khuynh đảo") và "Côn Đảo" (trại giam) không tính.
+const ISLAND_HAN = /岛|礁|海域|领海/
 const ISLAND_WORDS = new RegExp([
-  '(?<![\\p{L}])(?:vùng biển|lãnh hải|hải phận|bãi đá|đá ngầm|ba bình|phú lâm|chữ thập|vành khăn|xu bi|hoàng nham',
-  '|islands?|islets?|archipelagos?|reefs?|shoals?|atolls?|itu aba|woody|fiery cross|mischief|subi|scarborough)(?![\\p{L}])',
-  '|(?<![\\p{L}])(?<!(?:khuynh|điên|lảo|chao)\\s+)đảo(?![\\p{L}])',
+  '(?<![\\p{L}])(?:vùng biển|lãnh hải|hải phận|bãi đá|đá ngầm|ba bình|đá chữ thập|vành khăn|xu bi|hoàng nham',
+  '|islands?|islets?|archipelagos?|reefs?|shoals?|atolls?|itu aba|fiery cross|scarborough)(?![\\p{L}])',
+  '|(?<![\\p{L}])(?<!(?:khuynh|điên|lảo|chao|côn)\\s+)đảo(?![\\p{L}])',
   '(?!\\s+(?:lộn|ngược|nợ|chính|mắt|chiều|điên|ngũ|mạch|hướng|vòng|phách)(?![\\p{L}]))',
 ].join(''), 'u')
+// Ngữ cảnh lấy từ CÂU HỎI thì hẹp hơn: hỏi về một hòn đảo, không phải người ở "huyện đảo Lý Sơn" hay ngư dân
+// "bị bắt trên vùng biển" kể chuyện thụ án ở Trung Quốc.
+const QUESTION_ISLAND_HAN = /群岛|岛礁|礁/
+const QUESTION_ISLAND_WORDS = /(?<![\p{L}])(?:quần đảo|hòn đảo|đảo (?:này|đó|ấy|kia|nào)|ba bình|đá chữ thập|vành khăn|xu bi|hoàng nham|islands?|archipelagos?|reefs?|itu aba|fiery cross|scarborough)(?![\p{L}])/u
 const HAN_CLAIMS = /中国.{0,6}领土|领土.{0,6}中国|固有领土|属于中国|中国.{0,15}主权|主权.{0,4}中国|自古以来.{0,4}中国|中国.{0,4}管辖/
 const LATIN_CLAIMS = [
   / lanh tho (?:\S+ ){0,5}trung quoc /,
@@ -133,6 +144,11 @@ const LATIN_CLAIMS = [
 /** Chữ do model viết có nói tới đảo/biển — điều kiện để tính yêu sách. */
 function islandContext(folded: string, han: string): boolean {
   return ISLAND_HAN.test(han) || ISLAND_WORDS.test(folded.toLowerCase())
+}
+
+function questionIslandContext(question: string): boolean {
+  const folded = fold(question)
+  return QUESTION_ISLAND_HAN.test(hanKey(folded)) || QUESTION_ISLAND_WORDS.test(folded.toLowerCase())
 }
 
 /** Chỉ cụm yêu sách, trên phần đã chốt (bỏ từ cuối chưa viết xong) — để biết khi nào phải giữ chữ lại. */
@@ -212,8 +228,7 @@ export function createSovereigntyOutputGuard(hooks: {
   let han = ''
   let released = 0
   let tripped = false
-  const questionFolded = fold(hooks.question ?? '')
-  let island = islandContext(questionFolded, hanKey(questionFolded))
+  let island = questionIslandContext(hooks.question ?? '')
   // Đã có cụm yêu sách mà chưa có chữ đảo/biển: chưa chặn, nhưng không nhả thêm chữ nào cho tới khi biết.
   let claimHeld = false
 

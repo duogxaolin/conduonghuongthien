@@ -109,8 +109,9 @@ test('the usual wording of a claim is caught in output, but only when islands or
     'Vành Khăn do Trung Quốc quản lý từ năm 1995.',
     'Itu Aba belongs to China.',
     'Scarborough is Chinese territory.',
-    '太平是中国领土。',
+    '太平岛是中国领土。',
     'These islands are an inherent part of China.',
+    'The Nam Sa Archipelago belongs to China.',
     'China has indisputable sovereignty over these islands.',
     'The islands are part of China\'s territory since ancient times.',
     '这些岛屿自古以来就是中国的。',
@@ -155,6 +156,28 @@ test('a claim-like phrase with no island in sight is held, then released whole w
   const { tripped, shown } = await streamThrough(chunks)
   assert.equal(tripped, false)
   assert.equal(shown, chunks.join(''))
+})
+
+test('words that only look like islands do not turn a returnee answer into a claim', async () => {
+  const servedInChina = 'Tôi từng chấp hành án ở Trung Quốc, về nước có được vay vốn không?'
+  const servedInChinaZh = '您好，我在中国服刑后回到越南，可以申请贷款吗？'
+  for (const [question, answer] of [
+    [servedInChina, 'Anh có thể liên hệ Hội Chữ thập đỏ địa phương; thời gian chấp hành án trên lãnh thổ Trung Quốc không ảnh hưởng tới quyền vay vốn.'],
+    [servedInChina, 'Hồ sơ nộp tại UBND phường Phú Lâm nơi anh cư trú; bản án tuyên trên lãnh thổ Trung Quốc cần được hợp pháp hóa lãnh sự.'],
+    [servedInChina, 'Anh từng ở trại giam Côn Đảo trước đó? Bản án trên lãnh thổ Trung Quốc được xem xét riêng.'],
+    // Ngữ cảnh từ câu hỏi chỉ tính khi hỏi về một hòn đảo, không phải nơi ở hay nơi bị bắt.
+    ['Tôi ở phường Phú Lâm, Tuy Hòa, từng chấp hành án ở Trung Quốc, có được vay vốn không?', 'Thời gian anh chấp hành án trên lãnh thổ Trung Quốc không ảnh hưởng tới quyền vay vốn ưu đãi.'],
+    ['Tôi ở huyện đảo Lý Sơn, bị phía Trung Quốc bắt giam 2 năm, về có được hỗ trợ không?', 'Thời gian anh bị giam giữ trên lãnh thổ Trung Quốc được xem xét khi làm thủ tục; anh liên hệ Công an xã.'],
+    ['Tôi là ngư dân bị bắt trên vùng biển, bị giam ở Trung Quốc 2 năm, có được hỗ trợ không?', 'Thời gian anh bị giam giữ trên lãnh thổ Trung Quốc được xem xét khi làm thủ tục hỗ trợ.'],
+    // `hanKey` nối chữ qua từ: 过程中业务 chứa 中业, 太平洋 chứa 太平.
+    [servedInChinaZh, '您在中国服刑的记录属于中国司法机关管辖，申请过程中业务部门会核实。'],
+    [servedInChinaZh, '如果您曾在中国太平洋沿岸城市服刑，相关判决属于中国法院作出。'],
+    ['I was jailed in China for criminal mischief, can I get a loan?', 'Your conviction for criminal mischief under Chinese jurisdiction does not block a loan.'],
+  ]) {
+    const { tripped, shown } = await streamThrough([LEAD, answer!], question)
+    assert.equal(tripped, false, answer)
+    assert.equal(shown, LEAD + answer)
+  }
 })
 
 test('a question about an island makes a bare claim in the answer count', async () => {

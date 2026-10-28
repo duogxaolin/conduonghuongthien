@@ -91,6 +91,8 @@ test('the incident questions and their variants are recognised', () => {
     'Trường Sa vào tay Trung Quốc năm nào?',
     'trường sa lấy lại được không?',
     'Biển Đông có tranh chấp gì?',
+    'TÂY SA THUỘC NƯỚC NÀO?',
+    'Tây Sa Trung Quốc gọi là gì?',
     'Biển  Đông của ai?',
     'Biển-Đông thuộc ai',
     'Biển\nĐông thuộc nước nào',
@@ -129,6 +131,7 @@ test('everyday questions that share syllables or characters are not caught', () 
     'Tôi ở Quảng Nam Sa Huỳnh có được hỗ trợ không?',
     'TÔI LÀ NGƯỜI TÂY SA PA',
     'Anh Nam Sa thải tôi khỏi xưởng vì có tiền án, có đúng luật không?',
+    'Việt Nam Sa pa có việc làm thời vụ không?', // gõ vội, địa danh viết thường
     'Tôi làm ở công ty Tam Sa Việt Nam có được vay vốn không?',
     '长沙市的社区矫正怎么办理?', // Trường Sa (thành phố Changsha), không phải quần đảo
     '我在越南海防市，如何申请贷款?',
