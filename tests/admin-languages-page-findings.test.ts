@@ -91,6 +91,37 @@ describe('FINDING-L1 — the Vietnamese source text is read again after a write 
   })
 })
 
+describe('FINDING-L1 — (cont.) an AI answer stored on a Vietnamese row is the new source too', () => {
+  it('after "Dịch AI cho riêng khóa này" on a vi row, translating that key into English sends the vi text the AI wrote (RED before)', async (t) => {
+    const ctx = await openPage(t)
+    await click(tabButton(ctx.page, 'Bản dịch UI'))
+    await ctx.settle()
+    const language = findAll(ctx.page.root, el => el.tag === 'select' && el.props['aria-label'] === 'Ngôn ngữ')[0]!
+    await fire(language, 'change', { target: { value: 'vi' } })
+    await ctx.settle()
+    await click(byTitle(tableRows(ctx.page).find(r => textOf(r.children[0] as never) === 'news')!, 'Dịch AI cho riêng khóa này')[0]!)
+    await ctx.settle()
+    assert.equal(ctx.server.state.rows.vi!.find(r => r.key === 'news')?.value, 'AI(vi): Tin tức')
+    await fire(findAll(ctx.page.root, el => el.tag === 'select' && el.props['aria-label'] === 'Ngôn ngữ')[0]!, 'change', { target: { value: 'en' } })
+    await ctx.settle()
+    const from = ctx.calls.length
+    await click(byTitle(tableRows(ctx.page).find(r => textOf(r.children[0] as never) === 'news')!, 'Dịch AI cho riêng khóa này')[0]!)
+    await ctx.settle()
+    const sent = ctx.calls.slice(from).find(c => wire(c) === 'POST /api/admin/languages/ai-translate-key')!
+    assert.equal((sent.body as { sourceText: string }).sourceText, 'AI(vi): Tin tức')
+  })
+
+  it('a write to another language does not re-read the vi source', async (t) => {
+    const ctx = await openPage(t)
+    await click(tabButton(ctx.page, 'Bản dịch UI'))
+    await ctx.settle()
+    const from = ctx.calls.length
+    await click(byTitle(tableRows(ctx.page).find(r => textOf(r.children[0] as never) === 'news')!, 'Dịch AI cho riêng khóa này')[0]!)
+    await ctx.settle()
+    assert.deepEqual(ctx.calls.slice(from).map(wire), ['POST /api/admin/languages/ai-translate-key', 'GET /api/admin/languages'])
+  })
+})
+
 describe('FINDING-L2 — one AI batch at a time', () => {
   async function runningInBackground(t: Parameters<typeof openPage>[0]) {
     const server = languagesServer()

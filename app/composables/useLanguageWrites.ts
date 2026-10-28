@@ -28,6 +28,8 @@ export interface LanguageWritesDeps {
   viTranslationsMap: Ref<Map<string, string>>
   fetchLanguages: () => Promise<void>
   fetchTranslations: () => Promise<void>
+  /** Re-read every vi row into `viTranslationsMap` (the page's `loadViSourceMap`). */
+  loadViSourceMap: () => Promise<void>
   /** Languages + table + vi source (the page's `loadData`). */
   loadData: () => Promise<void>
   /** Point the table at the language it opens on (after a delete of the one it shows). */
@@ -36,8 +38,14 @@ export interface LanguageWritesDeps {
 
 export function useLanguageWrites({
   toast, confirm, languages, selectedLangCode, viTranslationsMap,
-  fetchLanguages, fetchTranslations, loadData, selectDefaultTranslationLanguage,
+  fetchLanguages, fetchTranslations, loadViSourceMap, loadData, selectDefaultTranslationLanguage,
 }: LanguageWritesDeps) {
+  /**
+   * `viTranslationsMap` is what the AI translates FROM (`sourceText`). A write that changes a
+   * vi row reads it again, or the next translation sends the old text — or, for a key that
+   * had no vi text when the map was read, the key itself (FINDING-L1, wave3 4.2).
+   */
+  const reloadViSourceAfterWriteTo = (langCode: string) => (langCode === 'vi' ? loadViSourceMap() : Promise.resolve())
   // ─── Language cards ──────────────────────────────────────────────────────
   async function addLanguage(data: { code: string; name: string; nativeName: string; displayOrder: number }) {
     try {
@@ -170,7 +178,7 @@ export function useLanguageWrites({
         t.value = res.value
         t.isAiTranslated = true
         toast.success(`Đã dịch khóa "${t.key}" bằng AI!`)
-        await fetchLanguages()
+        await Promise.all([fetchLanguages(), reloadViSourceAfterWriteTo(t.langCode)])
       }
     } catch (err: unknown) {
       toast.error(errorMessage(err, `Không thể dịch khóa "${t.key}".`))
@@ -186,7 +194,7 @@ export function useLanguageWrites({
         body: { items: [{ group: t.group, key: t.key, value }] },
       })
       toast.success('Đã lưu bản dịch.')
-      await fetchTranslations()
+      await Promise.all([fetchTranslations(), reloadViSourceAfterWriteTo(t.langCode)])
     } catch (err: unknown) {
       toast.error(errorMessage(err, 'Không thể lưu.'))
     }
@@ -203,7 +211,8 @@ export function useLanguageWrites({
     try {
       const res = await adminFetch<{ ok: true; result: { languagesSeeded: number; translationsSeeded: number }; message: string }>(`/api/admin/languages/seed-default`, { method: 'POST' })
       toast.success(res.message || 'Đã nạp bản dịch mặc định thành công!')
-      await Promise.all([fetchLanguages(), fetchTranslations()])
+      // The seed inserts vi rows too (most default keys carry vi only): the vi source with them.
+      await loadData()
     } catch (err: unknown) {
       toast.error(errorMessage(err, 'Không thể nạp bản dịch mặc định.'))
     } finally {

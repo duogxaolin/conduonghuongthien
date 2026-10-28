@@ -131,7 +131,7 @@ const {
   seedingDefault, seedDefaultTranslations, syncing, syncAllLanguages,
 } = useLanguageWrites({
   toast, confirm, languages, selectedLangCode, viTranslationsMap,
-  fetchLanguages, fetchTranslations, loadData, selectDefaultTranslationLanguage,
+  fetchLanguages, fetchTranslations, loadViSourceMap, loadData, selectDefaultTranslationLanguage,
 })
 
 // ─── Batch AI translation with progress modal ────────────────────────

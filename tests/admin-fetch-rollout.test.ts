@@ -707,7 +707,9 @@ describe(`${LANGUAGES_PAGE} — actions`, () => {
     page.searchQuery = ''
     assert.deepEqual(await sent(page.fetchTranslations), ['GET /api/admin/languages/en/translations'])
 
-    assert.deepEqual(await sent(page.seedDefaultTranslations), ['POST /api/admin/languages/seed-default', reloadLanguages, 'GET /api/admin/languages/en/translations'])
+    // Since FINDING-L1 (wave3 4.2, tests/admin-languages-page-findings.test.ts) the seed also
+    // re-reads the vi source: it inserts vi rows, which the AI translates FROM.
+    assert.deepEqual(await sent(page.seedDefaultTranslations), ['POST /api/admin/languages/seed-default', ...reloadAll])
     assert.equal(lastToast(toasts, 'success'), 'Đã nạp 0 ngôn ngữ và 4 bản dịch mặc định.')
     assert.deepEqual(await sent(page.syncAllLanguages), ['POST /api/admin/languages/sync', ...reloadAll])
     assert.equal(lastToast(toasts, 'success'), 'Tất cả các ngôn ngữ đã được đồng bộ đầy đủ các khóa từ ngôn ngữ mặc định.')
