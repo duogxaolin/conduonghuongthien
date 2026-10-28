@@ -19,6 +19,7 @@ import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
 import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+import { ARTICLE_COMMENTS_FAMILY, ARTICLE_DETAIL_FAMILY, familyVueFiles } from './_component-family.ts'
 import { COLOR_TOKENS, type ColorToken } from '../shared/color-tokens.ts'
 
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
@@ -291,9 +292,12 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
     ...VIEWS_WITH_LOADING_BRANCH.map((v) => v.file),
     // Public placeholders that predate this change and were retrofitted with the guard.
     'components/NewsCategoryList.vue',
-    'components/ArticleDetail.vue',
-    // The public comment thread's loading state.
-    'components/ArticleComments.vue',
+    // The article page and the public comment thread: the parents (which draw both
+    // skeletons) AND every display part split out of them in wave3 4.2 — derived from
+    // components/article/ and components/comments/, so a part added later with a pulse of
+    // its own is checked too (tests/_component-family.ts).
+    ...familyVueFiles(ARTICLE_DETAIL_FAMILY).map(f => f.file),
+    ...familyVueFiles(ARTICLE_COMMENTS_FAMILY).map(f => f.file),
     'pages/legal-qa/index.vue',
     'pages/role-models/index.vue',
     'pages/reintegration-models/index.vue',

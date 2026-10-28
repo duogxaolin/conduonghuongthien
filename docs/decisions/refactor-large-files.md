@@ -251,3 +251,52 @@ Wave 3, task 4.1 + 7.1. Bản tách giữ lại. Khác lần thử 2026-10 (875 
   - 11 test sửa lỗi: 75/75 ảnh chụp giống hệt tới bước ngay trước bước lỗi lộ ra; khác đúng ở bước đó.
 - **Mã màu hex:** codemod `--write` trên trang và 6 component: 0 thay thế, như trên tệp gốc. Tổng vẫn 70 (66 giá trị chưa có token — quyết định D-T1 — + 4 giữ vì thứ tự cascade). Trang 70 → 16; 6 component vào ratchet bằng `--raise` (5/14/15/5/9/6).
 - **Việc sau:** `ProfileActivityHistory.vue` còn 2 chỗ ép kiểu `$fetch` và không chặn lượt đọc cũ khi đổi trang/tài khoản nhanh. Ô `enroll-sp-confirm` (bước 2 của mật khẩu cấp 2) gắn cùng giá trị với ô bước 1 nên hiện sẵn mật khẩu vừa gõ — giữ nguyên ở đây, cần quyết định sản phẩm.
+
+## 2026-10-28 — `components/ArticleDetail.vue` (730 → 367)
+
+Wave 3, task 4.2. Bản tách giữ lại.
+
+- **Đường tách:**
+  - 5 phần chỉ hiển thị trong `app/components/article/`: `ArticleMetaHeader` (84 — dòng danh mục/ngày/tác giả/lượt xem, tiêu đề, sapo, ảnh), `ArticleToc` (53 — mục lục, `v-model:open`), `ArticleBody` (86 — `v-html` thân bài + toàn bộ luật `.article-body :deep()` + ẩn ảnh 404), `ArticleShareBar` (120 — Facebook/Zalo/chép link/in, handler riêng, không fetch), `ArticleRelatedList` (80 — danh sách đã tải + chip chủ đề).
+  - `useArticleRelated` (84 — `useAsyncData` của khối liên quan, gọi tại đúng chỗ cũ trong setup nên hai lượt đọc vẫn song song, cả trên máy chủ), `useArticleReadTracking` (63 — lượt xem sau mount, nuốt lỗi + lịch sử đọc), `useArticleDetailLabels` (39 — nhãn theo `variant`).
+- **Giữ ở cha:** lượt đọc bài + `fetchOutcome`/`loadError` + `useSsrFailureStatus` (503/404 SSR — ghim bởi `public-detail-ssr-status`), khung chờ + nhánh lỗi + "thử lại" của trang VÀ của cột "Bài viết khác", bố cục lưới, settings + SEO, trạng thái gập mục lục (mục lục bị gỡ mỗi khi bài tải lại — đổi ngôn ngữ — nên trạng thái phải sống ở cha), nhãn danh mục theo thứ tự ưu tiên.
+- **Bốn lượt `$fetch` ép kiểu ở lại cha** (bài, liên quan, settings, lượt xem); hai composable nhận request dưới dạng hàm. Ratchet ép kiểu không đổi (4).
+- **`v-html` chuyển sang `ArticleBody.vue`:** kiểm kê `security-ai-editorial-html` đổi tên mục, cùng lý do lọc; thêm guard "ArticleBody chỉ được ArticleDetail.vue dùng, đúng `:html="toc.html"`" (bắt cả `<article-body>`, `<LazyArticleBody>`, import) với bằng chứng cấy lỗi.
+- **Một lỗi sửa kèm** (`FINDING-D1`, đỏ trên bản gốc): ẩn ảnh 404 gắn lúc ArticleDetail mount — khi bài tới SAU mount (điều hướng phía client, đổi ngôn ngữ) thân bài chưa có, không ảnh lỗi nào được ẩn. Nay gắn khi `ArticleBody` mount.
+- **Hành vi:** `tests/article-detail-page.test.ts` (24 test, `tests/_article-detail-harness.ts`: `useAsyncData`/`useSeoMeta`/`useI18n` giả mỏng + ofetch thật trên mạng giả). Bản gốc 23/24 (đỏ đúng FINDING-D1), sau tách 24/24. `tests/_sfc-mount.ts` mở rộng: `v-show` thành bộ ghi (`isShown`).
+- **Sau kiểm chứng độc lập (follow-up):**
+  - lượt đọc "Bài viết khác" được ghim chạy song song với lượt đọc bài: harness ghi lại từng lượt `useAsyncData` (lúc đăng ký: setup hay sau mount, `server`/`immediate`/`lazy`; `immediate: false` không chạy như Nuxt), test 25 khẳng định nó đăng ký trong setup ngay sau lượt đọc bài, không `server:false`/`immediate:false`, và request đã đi khi bài chưa về. Guard nguồn: không `server: false`/`immediate: false` trong `useArticleRelated`, lời gọi ở cấp cao nhất của setup giữa lượt đọc bài và settings, fetcher không chờ bài. Đột biến thêm `server: false` (M17) và `immediate: false` (M18) đều đỏ (cả test hành vi lẫn guard);
+  - guard người gọi `ArticleBody` bắt thêm render gián tiếp: `:is`/`v-bind:is`/`is=` (định danh hoặc tên), `resolveComponent(...)`, `import(...)` động (`defineAsyncComponent`), `#components`, dùng như giá trị (`h(ArticleBody…)`, `const X = ArticleBody`, `components: { ArticleBody }`) — ở mọi tệp, kể cả ArticleDetail.vue; 11 mẫu cấy đều đỏ.
+- **Chứng minh không đổi:**
+  - DOM (`ARTICLE_DETAIL_DOM_LOG`, một lần, không commit): 36/36 ảnh chụp giống hệt (DOM + request + toast + `window.open` + SEO), 1 ảnh thêm là bước sau đổi ngôn ngữ của FINDING-D1;
+  - build: CSS Tailwind `entry.*.css` giống từng byte; CSS của chunk ArticleDetail giống hệt sau khi chuẩn hoá scope id (luật `:deep()` nay gắn scope của ArticleBody);
+  - ảnh chụp trình duyệt (build e444621 vs bản tách, CSDL e2e, luồng bình luận + danh tính giả ở trình duyệt): 12 trạng thái × desktop 1440 + phone 390 — 22/24 trùng từng điểm ảnh (max diff 0), 2/24 khác đúng ở nhãn phân trang (FINDING-C1 của ArticleComments).
+- **Mã màu hex:** codemod 0 thay thế. 8 → cha 2 (`#E2A0A0` của hai nhánh lỗi) + `ArticleShareBar` 6 (màu Facebook/Zalo, không có token; `--raise`).
+- **Khác biệt không phải điểm ảnh, đã biết:** nhãn "Đã sao chép" (2,5 s) mất sớm nếu bài tải lại trong khoảng đó; `ArticleMetaHeader` gốc nhiều nút nên HTML SSR thêm dấu `<!--[-->…<!--]-->`.
+- **Việc sau:** chưa có helper fetch công khai có kiểu (`publicFetch` kiểu `adminFetch`), nên 4 ép kiểu còn đó; `onMounted` vẫn đọc lại khối liên quan khi danh sách rỗng hợp lệ (một request thừa mỗi lượt xem bài không có bài liên quan).
+
+## 2026-10-28 — `components/ArticleComments.vue` (732 → 325)
+
+Wave 3, task 4.2 (component công khai > 600 dòng). Bản tách giữ lại.
+
+- **Đường tách:**
+  - 3 phần chỉ hiển thị trong `app/components/comments/` — props vào, emit ra, `defineModel` cho khung soạn/khung trả lời, không phần nào tự fetch: `CommentThreadItem` (163 dòng — một bình luận gốc + một cấp trả lời + khung trả lời, hai neo `#comment-<id>`), `CommentPendingList` (50 — mục gửi lạc quan), `CommentComposer` (78 — lời mời đăng nhập + lý do phiên hết hạn, hoặc khung soạn).
+  - Luồng GHI → `app/composables/useCommentWrites.ts` (277): soạn/trả lời, gửi lạc quan, thử lại/bỏ qua, xoá, 401 (lưu nháp TRƯỚC khi bỏ danh tính), điểm kiểm duyệt ngầm 2,5/6/11/18 s.
+  - Neo/chép liên kết → `useCommentAnchor.ts` (73); hàm thuần (id neo, `?comments=`, gỡ bình luận khỏi luồng, khoá nháp) → `app/utils/comment-thread.ts` (75).
+- **Giữ ở cha:** state của luồng, `loadThread` + nhánh lỗi `role="alert"` + "thử lại" (ghim bởi `reader-comments-ui`), khung chờ, trạng thái rỗng, thông báo thu hồi, phân trang, thứ tự mount (`?comments=` đọc TRƯỚC lượt tải đầu, ghim bởi `reader-notifications`), trục bài viết/video (`threadQuery`/`writeBody`, ghim bởi `media-comments` 10.9).
+- **Bốn lượt `$fetch` ép kiểu ở lại cha** (ratchet chỉ được hạ; phía công khai chưa có helper kiểu `adminFetch`): `loadThread` gọi thẳng, ba lượt ghi đi vào composable dưới dạng hàm `api.post/remove/checkpoint`.
+- **Bốn lỗi sửa kèm** (test `FINDING-C*` đỏ trên bản gốc):
+  - C1 nhãn phân trang in nguyên khuôn i18n: "Trang {current} / {total} 1 / 2" — nay thay chỗ trống như mọi trang danh sách khác;
+  - C2 bốn hẹn giờ kiểm duyệt ngầm mỗi lần gửi không bao giờ bị huỷ → tới 4 request sau khi rời trang; nay huỷ ở `onBeforeUnmount`, câu trả lời về muộn không ghi gì;
+  - C3 "Thử lại" trên mục gửi lỗi trong lúc một bình luận khác đang gửi: mục bị gỡ, chữ vào khung soạn, `submit()` thoát ngay, rồi lượt đang gửi về và xoá khung — bình luận mất hẳn; nay mục ở lại và "Thử lại" bị khoá (`disabled`, mờ) khi đang gửi — luồng ghi cũng tự từ chối;
+  - C4 nháp của video được phục hồi vào bài viết trùng slug (một khoá `cdkt:comment-draft:<slug>` cho cả hai loại); khoá video nay có `media:` (khoá bài viết giữ nguyên).
+- **Hành vi:** `tests/article-comments-thread.test.ts` (29 test) mount component thật cùng các phần trên DOM tối giản (`tests/_article-comments-harness.ts`, ofetch thật trên mạng giả trả lời như `server/api/public/comments/**`). Bản gốc: 25/29, 4 đỏ đúng là 4 test FINDING. Sau tách: 29/29. `ARTICLE_COMMENTS_FILE=<tệp>` chạy cùng bộ test trên bản khác.
+- **Chứng minh DOM không đổi** (chạy một lần, không commit — `ARTICLE_COMMENTS_DOM_LOG`): 95 ảnh chụp (DOM tuần tự hoá + request): 79 giống hệt; 13 giống hệt sau khi chuẩn hoá đúng nhãn C1; 3 khác đúng ở bước lỗi C3 (2) và C4 (1).
+- **Guard đọc cả họ tệp** (`tests/_component-family.ts`): `reader-comments-ui` (v-html, class nội suy, nhịp chờ, chữ thân bình luận — nay theo TỪNG phần tử thân, 401/nháp/xoá khung sau khi ghi), `media-comments` 10.9, `reader-notifications` (2 neo, `isSafeInteger`, reduced-motion), `skeleton-loading-ui`. Mỗi guard có bằng chứng cấy lỗi vào một phần tách ra.
+- **Mã màu hex:** codemod 0 thay thế (như trên tệp gốc). 17 → cha 5 + `CommentThreadItem` 6 + `CommentPendingList` 6 (`--raise`); sau đó `bg-[#F8FAF7]` của mục đang gửi → `bg-surface` (cùng giá trị; codemod để lại vì lý do "order" nhưng hai lớp nền ở hai nhánh của một toán tử ba ngôi, không bao giờ cùng phần tử) → `CommentPendingList` 5. `ring-[#7CB342]/40` (vòng tô sáng neo) GIỮ hex: `accent` là token chỉ để trang trí, `tests/focus-ring-no-secondary-green.test.ts` chặn mọi `ring-accent`.
+- **Sau kiểm chứng độc lập (follow-up):**
+  - C3 có phản hồi: `CommentPendingList` nhận `submitting`, nút "Thử lại" `disabled` + `disabled:opacity-50 disabled:cursor-not-allowed` (test đỏ trước khi sửa);
+  - cờ `left` chặn MỌI tác dụng phụ của câu trả lời về sau khi rời trang: POST về sau khi rời trang không đọc lại luồng/không hẹn kiểm duyệt/không ghi state (chỉ dọn nháp của bình luận đã nhận); DELETE cũng vậy; lượt gửi hỏng về sau khi rời trang không lưu nháp. Ba test mới; bốn đột biến (bỏ từng `if (left) …`, bỏ `:disabled`) đều đỏ.
+  - Test: 33 (bản gốc 25/29 trên 29 test ban đầu).
+  - Độ phủ đo lại trên Node 24.21 (image `cdkt-cov:node24`, `TZ=Asia/Ho_Chi_Minh`, lệnh của CI, toàn bộ xanh): `app/composables` 73,19 % (5198/7102), `app/utils` 96,02 % (5590/5822) → mốc 73.19 / 96.01, không cao hơn số đo (mốc 73.14 trước đó đo trên Node 26). Các thư mục khác cũng RISE nhưng không do lô này — không nâng.
+- **Khác biệt đã biết, chủ đích:** nháp video đang nằm dưới khoá cũ `cdkt:comment-draft:<slug>` lúc deploy không còn được phục hồi (chỉ sống trong tab, một lần).

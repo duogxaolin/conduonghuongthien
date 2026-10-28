@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { layoutSource, readPart } from './_layout-parts'
+import { ARTICLE_DETAIL_FAMILY, familyFiles } from './_component-family.ts'
 
 /**
  * The public pages were built by copy-and-paste: four article-detail pages and
@@ -169,10 +170,33 @@ test('the exempted local-time formatter is still confined to client-only, device
   )
 })
 
+/**
+ * ArticleDetail is a family since wave3 4.2 (tests/_component-family.ts): the date it
+ * formats with `formatDateVN` (the related list) lives in a part. Every file of the family
+ * that formats a date with it must import it from the helper, and at least one does — so a
+ * part that drops the helper for a local formatter of its own fails here, as the
+ * local-time scan above fails on `getDate()`.
+ */
+function utcHelperProblems(files: Array<{ file: string, source: string }>): string[] {
+  const IMPORT = /import \{ formatDateVN \} from '~\/utils\/formatDate'/
+  const users = files.filter(f => /formatDateVN\(/.test(f.source))
+  if (!users.length) return ['no file of the family formats a date with formatDateVN']
+  return users.filter(f => !IMPORT.test(f.source)).map(f => `${f.file} calls formatDateVN without importing the helper`)
+}
+
 test('the shared components format dates through the UTC-safe helper', () => {
-  for (const file of ['components/ArticleDetail.vue', 'components/NewsCategoryList.vue']) {
-    assert.match(read(file), /import \{ formatDateVN \} from '~\/utils\/formatDate'/, `${file} stopped using formatDateVN`)
-  }
+  assert.match(read('components/NewsCategoryList.vue'), /import \{ formatDateVN \} from '~\/utils\/formatDate'/, 'NewsCategoryList stopped using formatDateVN')
+  assert.deepEqual(utcHelperProblems(familyFiles(ARTICLE_DETAIL_FAMILY)), [], 'ArticleDetail stopped using formatDateVN')
+})
+
+test('the UTC-helper check bites on a part of ArticleDetail (injection proof)', () => {
+  const list = 'components/article/ArticleRelatedList.vue'
+  const source = read(list)
+  const dropped = source.replace("import { formatDateVN } from '~/utils/formatDate'\n", '')
+  assert.notEqual(dropped, source)
+  assert.equal(utcHelperProblems(familyFiles(ARTICLE_DETAIL_FAMILY, { [list]: dropped })).length, 1)
+  const noUser = source.replace(/formatDateVN\(/g, 'localDate(')
+  assert.deepEqual(utcHelperProblems(familyFiles(ARTICLE_DETAIL_FAMILY, { [list]: noUser })), ['no file of the family formats a date with formatDateVN'])
 })
 
 // ─── News category consolidation ─────────────────────────────────────────────

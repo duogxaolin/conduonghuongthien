@@ -27,6 +27,7 @@ import {
   NOTIFICATION_EXCERPT_LENGTH,
 } from '../server/services/notifications.ts'
 import { fileDeclaring } from './_comments-service-source'
+import { ARTICLE_COMMENTS_FAMILY, familySource } from './_component-family.ts'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
 
@@ -324,7 +325,12 @@ describe('the old Vietnamese paths keep working', () => {
 })
 
 describe('every comment is addressable', () => {
+  // ArticleComments.vue keeps the mount sequence; since wave3 4.2 the comment markup is in
+  // components/comments/ and the anchor logic in useCommentAnchor/utils/comment-thread.ts —
+  // the checks on what moved read the whole family (tests/_component-family.ts).
   const component = read('app/components/ArticleComments.vue')
+  const thread = familySource(ARTICLE_COMMENTS_FAMILY)
+  const anchorIds = (source: string) => source.match(/:id="`comment-\$\{(comment|reply)\.id\}`"/g) ?? []
 
   /**
    * A notification has to have somewhere to land, and a reader has to be able to
@@ -333,8 +339,16 @@ describe('every comment is addressable', () => {
    * what a "copy link" on that reply produces.
    */
   it('top-level comments and replies both carry an anchor id', () => {
-    const anchors = component.match(/:id="`comment-\$\{(comment|reply)\.id\}`"/g) ?? []
+    const anchors = anchorIds(thread)
     assert.equal(anchors.length, 2, `expected an id on both comments and replies, found ${anchors.length}`)
+  })
+
+  it('the anchor count bites on the part that renders them (injection proof)', () => {
+    const item = 'components/comments/CommentThreadItem.vue'
+    const source = read(`app/${item}`)
+    const dropped = source.replace(':id="`comment-${reply.id}`"', '')
+    assert.notEqual(dropped, source)
+    assert.equal(anchorIds(familySource(ARTICLE_COMMENTS_FAMILY, { [item]: dropped })).length, 1)
   })
 
   it('reads the requested page before the first load', () => {
@@ -350,14 +364,14 @@ describe('every comment is addressable', () => {
    * as the string "NaN". Same check /qa-documents uses for `#qa-<id>`.
    */
   it('validates the hash as a safe integer', () => {
-    assert.match(component, /Number\.isSafeInteger\(raw\)/, 'the anchor id is no longer validated')
+    assert.match(thread, /Number\.isSafeInteger\(raw\)/, 'the anchor id is no longer validated')
   })
 
   it('respects prefers-reduced-motion when scrolling', () => {
-    assert.match(component, /prefers-reduced-motion/, 'the scroll no longer honours reduced motion')
+    assert.match(thread, /prefers-reduced-motion/, 'the scroll no longer honours reduced motion')
   })
 
   it('renders bodies as text, never v-html', () => {
-    assert.ok(!/v-html/.test(stripComments(component)), 'a comment body is being rendered as HTML')
+    assert.ok(!/v-html/.test(stripComments(thread)), 'a comment body is being rendered as HTML')
   })
 })
