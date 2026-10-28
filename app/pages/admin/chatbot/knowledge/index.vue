@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminKnowledgeImportError, AdminKnowledgeImportResult } from '~/types/admin-api'
 import type { AdminKnowledgeRow } from '~/types/admin-api'
+import type { AdminKnowledgeDeleteResponse, AdminKnowledgeListResponse, AdminKnowledgeTransitionResponse, AdminKnowledgeUpdateResponse } from '~/types/admin-chatbot-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 const route = useRoute(); const router = useRouter()
 const activeTab = computed(() => route.query.tab === 'small-talk' ? 'small-talk' : 'knowledge')
@@ -8,7 +9,17 @@ function selectTab(tab: 'knowledge' | 'small-talk') { return router.replace({ qu
 const toast = useToast(); const { confirm } = useConfirm(); const items = ref<AdminKnowledgeRow[]>([]); const loading = ref(true); const error = ref(''); const search = ref(''); const topic = ref(''); const status = ref(''); const quick = ref(''); const pagination = ref({ page: 1, totalPages: 1, total: 0 }); const page = ref(1)
 const statusLabel: Record<string, string> = { draft: 'Bản nháp', published: 'Đã xuất bản', archived: 'Đã lưu trữ' }
 const statusTone: Record<string, string> = { draft: 'border-[#d8c99a] bg-[#fffaf0] text-[#765b00]', published: 'border-[#8ed694] bg-[#f0f7f1] text-[#1e4620]', archived: 'border-[#c8d6c9] bg-[#f4f7f4] text-[#667768]' }
-async function load(next = 1) { loading.value = true; error.value = ''; page.value = next; try { const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ items: AdminKnowledgeRow[]; pagination: { page: number; perPage: number; total: number; totalPages: number } }>)('/api/admin/chatbot/knowledge', { params: { page: next, perPage: 15, search: search.value, topic: topic.value, status: status.value, quick: quick.value } }); items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value) } catch (err: unknown) { error.value = errorMessage(err, 'Không thể tải kho kiến thức.') } finally { loading.value = false } }
+/** Only the LATEST list request writes: "Chủ đề" reloads per keystroke, and an older answer landing last replaced the
+ *  newer filter's rows. Not `useAdminList` — rows are edited in place (docs/decisions/fetch-rollout-d-fetch.md). */
+let listRequest = 0
+async function load(next = 1) {
+  const ticket = ++listRequest
+  loading.value = true; error.value = ''; page.value = next
+  try {
+    const res = await adminFetch<AdminKnowledgeListResponse>('/api/admin/chatbot/knowledge', { query: { page: next, perPage: 15, search: search.value, topic: topic.value, status: status.value, quick: quick.value } })
+    if (ticket === listRequest) { items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value) }
+  } catch (err: unknown) { if (ticket === listRequest) error.value = errorMessage(err, 'Không thể tải kho kiến thức.') } finally { if (ticket === listRequest) loading.value = false }
+}
 
 // ── Bulk selection ──
 const selection = useBulkSelection()
@@ -51,15 +62,15 @@ async function toggleQuickQuestion(item: AdminKnowledgeRow) {
   const target = !(item.isQuickQuestion === true)
   item.isQuickQuestion = target
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'PUT', body: { isQuickQuestion: target } })
+    await adminFetch<AdminKnowledgeUpdateResponse>(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'PUT', body: { isQuickQuestion: target } })
     toast.success(target ? 'Đã đưa vào câu hỏi nhanh.' : 'Đã bỏ khỏi câu hỏi nhanh.')
   } catch (err: unknown) {
     item.isQuickQuestion = !target
     toast.error(errorMessage(err, 'Không thể cập nhật câu hỏi nhanh.'))
   }
 }
-async function transition(item: AdminKnowledgeRow, action: 'publish' | 'archive') { const verb = action === 'publish' ? 'xuất bản' : 'lưu trữ'; const ok = await confirm({ message: `Bạn có chắc muốn ${verb} mục này?`, confirmLabel: verb === 'xuất bản' ? 'Xuất bản' : 'Lưu trữ' }); if (!ok) return; try { await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/knowledge/${item.id}/${action}`, { method: "POST" }); toast.success(`Đã ${verb} mục kiến thức.`); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Đã xảy ra lỗi.') || `Không thể ${verb} mục kiến thức.`) } }
-async function remove(item: AdminKnowledgeRow) { const ok = await confirm({ title: 'Xóa mục kiến thức', message: 'Xóa mục kiến thức này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return; try { await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/knowledge/${item.id}`, { method: "DELETE" }); toast.success('Đã xóa mục kiến thức.'); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa mục kiến thức.')) } }
+async function transition(item: AdminKnowledgeRow, action: 'publish' | 'archive') { const verb = action === 'publish' ? 'xuất bản' : 'lưu trữ'; const ok = await confirm({ message: `Bạn có chắc muốn ${verb} mục này?`, confirmLabel: verb === 'xuất bản' ? 'Xuất bản' : 'Lưu trữ' }); if (!ok) return; try { await adminFetch<AdminKnowledgeTransitionResponse>(`/api/admin/chatbot/knowledge/${item.id}/${action}`, { method: "POST" }); toast.success(`Đã ${verb} mục kiến thức.`); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, `Không thể ${verb} mục kiến thức.`)) } }
+async function remove(item: AdminKnowledgeRow) { const ok = await confirm({ title: 'Xóa mục kiến thức', message: 'Xóa mục kiến thức này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return; try { await adminFetch<AdminKnowledgeDeleteResponse>(`/api/admin/chatbot/knowledge/${item.id}`, { method: "DELETE" }); toast.success('Đã xóa mục kiến thức.'); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa mục kiến thức.')) } }
 // ── Excel/CSV import ──
 const showImport = ref(false); const importFile = ref<File | null>(null); const importPublish = ref(false); const importTopic = ref(''); const importing = ref(false); const importResult = ref<AdminKnowledgeImportResult | null>(null)
 const importStageLabel: Record<string, string> = { parse: 'Đọc tệp', save: 'Lưu dữ liệu', publish: 'Xuất bản' }
@@ -93,7 +104,7 @@ const downloadingTemplate = ref(false)
 async function downloadTemplate() {
   downloadingTemplate.value = true
   try {
-    const blob = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<Blob>)("/api/admin/chatbot/knowledge/template", { responseType: "blob" })
+    const blob = await adminFetch<Blob>("/api/admin/chatbot/knowledge/template", { responseType: "blob" })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -110,7 +121,7 @@ async function runImport() {
   importing.value = true; importResult.value = null
   try {
     const fd = new FormData(); fd.append('file', importFile.value); fd.append('publish', importPublish.value ? '1' : '0'); if (importTopic.value.trim()) fd.append('topic', importTopic.value.trim())
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminKnowledgeImportResult>)("/api/admin/chatbot/knowledge/import", { method: "POST", body: fd })
+    const res = await adminFetch<AdminKnowledgeImportResult>("/api/admin/chatbot/knowledge/import", { method: "POST", body: fd })
     importResult.value = res
     const message = `Đã nhập ${res.imported}/${res.total} mục${res.published ? `, xuất bản ${res.published}` : ''}.`
     if (res.errors?.length) toast.warning(message, 'Nhập tệp chưa hoàn tất')
@@ -137,7 +148,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
       <button type="button" class="rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-bold text-ink-muted hover:bg-white/70" @click="bulkQuickQuestion(false)">Bỏ khỏi câu hỏi nhanh</button>
       <button type="button" class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load(1)">thử lại</button>.</div><SkeletonTable v-if="loading" label="Đang tải kho kiến thức" :rows="6" :cols="7" /><div v-else-if="!items.length" class="rounded-xl border border-line bg-white p-12 text-center"><i class="fa-solid fa-book-open mb-3 text-3xl text-line-strong" aria-hidden="true"></i><p class="m-0 font-semibold text-ink-muted">{{ search || topic || status || quick ? 'Không có kết quả phù hợp.' : 'Chưa có mục kiến thức nào.' }}</p></div>
+    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load(1)">thử lại</button>.</div><SkeletonTable v-if="loading" label="Đang tải kho kiến thức" :rows="6" :cols="7" /><template v-else-if="!items.length"><!-- After a failed load the list was never read: the alert alone, no "empty" claim. --><div v-if="!error" class="rounded-xl border border-line bg-white p-12 text-center"><i class="fa-solid fa-book-open mb-3 text-3xl text-line-strong" aria-hidden="true"></i><p class="m-0 font-semibold text-ink-muted">{{ search || topic || status || quick ? 'Không có kết quả phù hợp.' : 'Chưa có mục kiến thức nào.' }}</p></div></template>
     <div v-else class="overflow-hidden rounded-xl border border-line bg-white shadow-xs">
       <!-- Mobile Card View: Tối ưu hiển thị dạng thẻ trên điện thoại -->
       <div class="md:hidden divide-y divide-surface-tint">
