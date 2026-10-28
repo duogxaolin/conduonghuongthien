@@ -67,11 +67,11 @@ export default defineEventHandler(async (event) => {
       action: 'delete',
       resource: 'ai',
       resourceId: null,
-      meta: JSON.stringify({
+      meta: {
         type: 'provider_bulk_delete',
         count: ids.length,
         providers: providerNames,
-      }),
+      },
     })
   })
 

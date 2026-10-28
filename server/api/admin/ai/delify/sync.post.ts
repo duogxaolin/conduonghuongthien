@@ -175,13 +175,13 @@ export default defineEventHandler(async (event) => {
       action: 'update',
       resource: 'ai',
       resourceId: delifyProvider.id,
-      meta: JSON.stringify({
+      meta: {
         action: 'delify-pricing-and-logs-sync',
         upserted,
         skipped,
         syncedLogs,
         totalFromApi: models.length,
-      }),
+      },
     })
   })
 

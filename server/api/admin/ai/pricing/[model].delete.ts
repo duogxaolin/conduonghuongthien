@@ -30,11 +30,11 @@ export default defineEventHandler(async (event) => {
       action: 'delete',
       resource: 'ai',
       resourceId: null,
-      meta: JSON.stringify({
+      meta: {
         type: 'pricing_delete',
         model: modelParam,
         provider: existing.provider,
-      }),
+      },
     })
   })
 

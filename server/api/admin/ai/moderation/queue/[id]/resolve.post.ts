@@ -115,12 +115,12 @@ export default defineEventHandler(async (event) => {
       action: 'update',
       resource: 'ai',
       resourceId: id,
-      meta: JSON.stringify({
+      meta: {
         type: 'resolve_moderation_queue',
         action,
         targetType: queueItem.targetType,
         targetId: queueItem.targetId,
-      }),
+      },
     })
   })
   return { ok: true, action, id }

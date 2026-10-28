@@ -65,13 +65,13 @@ export default defineEventHandler(async (event) => {
       action: 'create',
       resource: 'ai',
       resourceId: null,
-      meta: JSON.stringify({
+      meta: {
         type: 'pricing_create',
         model,
         provider,
         promptCostPerMillion: promptCost,
         completionCostPerMillion: completionCost,
-      }),
+      },
     })
   })
 

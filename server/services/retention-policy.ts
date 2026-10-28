@@ -1,6 +1,6 @@
-import { eq, inArray } from 'drizzle-orm'
+import { inArray } from 'drizzle-orm'
 import { getDb } from '../utils/db'
-import { settings, dataRetentionState } from '../db/schema'
+import { settings, activityLogs } from '../db/schema'
 import {
   DATA_RETENTION_BOUNDS,
   parseRetentionDays,
@@ -305,11 +305,30 @@ export type RetentionPolicyInput = {
   runHour?: unknown
 } & Partial<Record<RetentionDaysField | RetentionMaxRowsField, unknown>>
 
+/** What the audit row keeps of a policy: the values, not where each came from. */
+function summarisePolicy(policy: RetentionPolicy) {
+  return {
+    autoEnabled: policy.autoEnabled,
+    runHour: policy.runHour,
+    scopes: policy.scopes.map(scope => ({ scope: scope.scope, days: scope.days, maxRows: scope.maxRows })),
+  }
+}
+
 /**
- * Persist the policy. Every field is validated before anything is written, so a
- * form with one bad value cannot leave half a policy applied.
+ * Persist the policy and its audit row. Every field is validated before anything
+ * is written, so a form with one bad value cannot leave half a policy applied.
+ *
+ * The keys and the `activity_logs` row commit in ONE transaction. They used to be
+ * two pool writes (save here, audit in the handler), so a failed audit answered
+ * 500 with the new deletion window already in force and nobody recorded as having
+ * set it (FINDING-R3-1). `before`/`after` come from one read of the stored keys,
+ * not a re-read: a `getDb()` read inside the transaction runs on another pool
+ * connection and, on MySQL, would not see the uncommitted values.
  */
-export async function saveRetentionPolicy(input: RetentionPolicyInput): Promise<string[]> {
+export async function saveRetentionPolicy(
+  input: RetentionPolicyInput,
+  actor: { userId: number },
+): Promise<{ keys: string[], before: RetentionPolicy, after: RetentionPolicy }> {
   const pending: Array<[string, string]> = []
 
   if (input.autoEnabled !== undefined) {
@@ -346,54 +365,34 @@ export async function saveRetentionPolicy(input: RetentionPolicyInput): Promise<
 
   if (pending.length === 0) fail('Không có giá trị nào để lưu.')
 
-  const db = getDb()
-  for (const [key, value] of pending) {
-    await db.insert(settings).values({ key, value, type: 'string', group: 'retention' })
-      .onDuplicateKeyUpdate({ set: { value, type: 'string', group: 'retention' } })
+  const stored = await loadStoredRetentionSettings()
+  let before: RetentionPolicy
+  let after: RetentionPolicy
+  try {
+    before = buildRetentionPolicy(stored)
+    after = buildRetentionPolicy({ ...stored, ...Object.fromEntries(pending) })
+  } catch (error) {
+    // Only a STORED value can fail here (pending ones passed the same parsers): the
+    // server's state, not the form's fault — not the 400 a validation error maps to.
+    throw new Error(`stored retention policy is unreadable: ${error instanceof Error ? error.message : String(error)}`)
   }
-  return pending.map(([key]) => key)
-}
 
-export type ScopeState = {
-  scope: RetentionScope
-  purgedTotal: number
-  lastRunAt: Date | null
-  lastDeleted: number
-  lastTrigger: string | null
-  lastStatus: string | null
-  lastMessage: string | null
-}
-
-export async function loadRetentionState(): Promise<ScopeState[]> {
+  const keys = pending.map(([key]) => key)
   const db = getDb()
-  const rows = await db.select().from(dataRetentionState)
-  const byScope = new Map(rows.map(row => [row.scope, row]))
-  return RETENTION_SCOPES.map((scope) => {
-    const row = byScope.get(scope)
-    return {
-      scope,
-      purgedTotal: Number(row?.purgedTotal ?? 0),
-      lastRunAt: row?.lastRunAt ?? null,
-      lastDeleted: Number(row?.lastDeleted ?? 0),
-      lastTrigger: row?.lastTrigger ?? null,
-      lastStatus: row?.lastStatus ?? null,
-      lastMessage: row?.lastMessage ?? null,
+  await db.transaction(async (tx) => {
+    for (const [key, value] of pending) {
+      await tx.insert(settings).values({ key, value, type: 'string', group: 'retention' })
+        .onDuplicateKeyUpdate({ set: { value, type: 'string', group: 'retention' } })
     }
+    await tx.insert(activityLogs).values({
+      userId: actor.userId,
+      action: 'update',
+      resource: 'data_retention',
+      meta: { keysUpdated: keys, before: summarisePolicy(before), after: summarisePolicy(after) },
+    })
   })
+  return { keys, before, after }
 }
 
-/** The most recent run across all scopes — what the scheduler checks. */
-export async function lastRetentionRunAt(): Promise<Date | null> {
-  const db = getDb()
-  const rows = await db.select({ lastRunAt: dataRetentionState.lastRunAt }).from(dataRetentionState)
-  let latest: Date | null = null
-  for (const row of rows) {
-    if (row.lastRunAt && (!latest || row.lastRunAt > latest)) latest = row.lastRunAt
-  }
-  return latest
-}
-
-export async function clearRetentionScopeState(scope: RetentionScope): Promise<void> {
-  const db = getDb()
-  await db.delete(dataRetentionState).where(eq(dataRetentionState.scope, scope))
-}
+// `data_retention_state` (the purge's bookkeeping: loadRetentionState,
+// lastRetentionRunAt, clearRetentionScopeState) lives in `retention-state.ts`.

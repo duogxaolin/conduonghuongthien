@@ -536,3 +536,84 @@ Kết quả: 13 tệp R1 có logic thật, rồi hai service R2 lớn nhất. Vi
 - Cục bộ: `npm run test:coverage`. Bảng của script in ở cuối log; lcov ở `node_modules/.cache/cdkt-coverage/lcov.info`; sau đó là ratchet. Các cờ và script chạy được trên Node 22, 24 và 26. Một test đỏ thì dừng trước bước tóm tắt (`&&`).
 - CI: mở một lần chạy → *Summary* → mục **Test coverage** và **Coverage ratchet**.
 - Khi viết test hành vi mới cho một file trong danh sách trên, chạy lại và nâng mức nền bằng `--update` trong cùng PR.
+
+## Lát R3 của task 5.2 — đo lại 2026-10-27 (Node 24, `ebbffa5`)
+
+"R3" ở đây là **lát thứ ba** của task 5.2 (sau lát R1 `3598a59` và R2 `99695ca`), **không** phải lớp rủi ro R3 ở bảng trên.
+
+**Đo ở đâu.** `npm run test:coverage` trên `wave3/integration` = `ebbffa5`, image `cdkt-cov:node24` (Node 24.21, `TZ=Asia/Ho_Chi_Minh`, lệnh của CI). Trước lát: 759 tệp, 248 chưa nạp, **80,06 %** (67 169 / 83 896). Trên cây chưa đụng gì, ratchet đã báo RISE ở `app/utils` (+0,59), `server/services` (+0,15) và `shared` (+3,58) — do các nhánh gộp trước, không do lát này.
+
+### Cách chọn
+
+- Danh sách gốc: mọi tệp `server/**` và `shared/**` có độ phủ dòng < 40 % — 235 tệp, không tệp nào ở `shared/`. Giữ tệp thuộc sáu lớp của task (xác thực, phân quyền, backup, giữ dữ liệu, tải lên/đồng bộ/phục tệp media, cổng AI).
+- Xếp theo: (1) ranh giới an ninh — đường công khai không cần đăng nhập trước, (2) mất dữ liệu, (3) tiền/xác thực, rồi cỡ.
+- Bỏ: tệp lát R1/R2 đã làm; `moderation-*` và endpoint chat (agent khác đang làm); handler mỏng trên service ≥ 80 %; tệp chỉ có kiểu — `server/services/ai-gateway-types.ts` (36 dòng, 0 %) chỉ có `import type` và khai báo kiểu, con số 0 % là ảo giác đo.
+
+### Đã làm trong lát này (14 tệp)
+
+| # | Tệp | Trước | Sau | Vì sao ở đây | Suite |
+|---|---|---|---|---|---|
+| 1 | `server/services/livestream-hls.ts` | 20,3 % (37/182) | 98,4 % (179/182) | Công khai, không đăng nhập; khách chọn đường dẫn tệp trên đĩa | `livestream-hls-serving-behavior` |
+| 2 | `server/api/public/livestream/[id]/assets/[...path].get.ts` | 0 % (12) | 100 % | như trên | như trên |
+| 3 | `server/api/public/livestream/[id]/stream.get.ts` | 0 % (11) | 100 % | như trên | như trên |
+| 4 | `server/api/admin/media/upload.post.ts` | 0 % (155) | 94,1 % | Tệp vào thư mục công khai / R2 — XSS lưu trữ nếu tin tên/header | `media-upload-behavior` |
+| 5 | `server/routes/favicon.ico.ts` | 0 % (52) | 93,0 % | Công khai; phục tệp đĩa do một giá trị CSDL chọn | `favicon-lifecycle-behavior` |
+| 6 | `server/utils/media-local.ts` | 36,4 % (16/44) | 100 % | Xoá tệp theo `storage_path` của hàng `media` | `media-local-confinement-behavior` |
+| 7 | `server/api/admin/settings/favicon.post.ts` | 0 % (81) | 100 % | Ghi tệp vào `public/` | `favicon-lifecycle-behavior` |
+| 8 | `server/api/admin/settings/favicon.delete.ts` | 0 % (24) | 100 % | như trên | như trên |
+| 9 | `server/api/admin/ai/providers/[id]/test.post.ts` | 0 % (73) | 97,8 % | Gửi API key đã lưu tới địa chỉ cán bộ gõ (SSRF / lộ key) | `ai-provider-probe-behavior` |
+| 10 | `server/api/admin/settings/retention-run.post.ts` | 0 % (34) | 100 % | Xoá dữ liệu ngay | `retention-run-now-behavior` |
+| 11 | `server/api/admin/settings/retention.put.ts` | 0 % (41) | 97,1 % | Chính sách quyết định xoá gì | `retention-policy-save-behavior` |
+| 12 | `server/api/admin/settings/retention.get.ts` | 0 % (72) | 100 % | Phải đếm "quá hạn" trên đúng cột mà lượt dọn xoá | `retention-status-behavior` |
+| 13 | `server/api/admin/activity-logs/retention.get.ts` | 0 % (52) | 100 % | như trên | như trên |
+| 14 | `server/api/admin/ai/budget/index.put.ts` | 0 % (45) | 96,7 % | Trần chi AI (tiền) | `ai-budget-update-behavior` |
+
+Số trong ngoặc ở cột "Trước" là dòng có mã của tệp chưa nạp; cột "Sau" đếm mọi dòng vật lý của tệp đã nạp (xem "Cách đọc cho đúng"). Kéo theo: `server/services/retention-policy.ts` 79,9 % → 97,2 %.
+
+**Sau lát:** 759 tệp, 236 chưa nạp, **81,23 %** (68 506 / 84 339). Theo thư mục: `server/api` 56,74 → 60,75, `server/routes` 40,12 → 77,43, `server/services` 85,28 → 86,00, `server/utils` 93,53 → 93,90. Mức nền ratchet nâng đúng bốn thư mục đó (`server/services` lấy số đo mới 85,99, gồm cả +0,15 có sẵn trên cây); `app/utils` và `shared` giữ 95,13 / 95,9 vì lát này không đụng tới (lần nâng của chúng thuộc nhánh khác).
+
+### Cách chạy và cái bẫy đã gặp
+
+- Cùng kiểu R1/R2: app h3 thật + middleware `admin-auth` thật (`_h3-handler-server.ts`), SQL MySQL của Drizzle chạy trên SQLite (`_sqlite-mysql-db.ts`), tệp thật dưới thư mục làm việc tạm, sharp thật, phong bì AES-GCM thật. Biên giả: SDK S3 (upload), hai đường mạng của `safeProviderRequest` — DNS và socket HTTPS (`resolveHost`, `request`) — còn chính sách URL, kiểm IP công khai, ghim địa chỉ, từ chối redirect là mã thật; `runRetentionPass` (khoá tên MySQL + `DELETE … LIMIT` trên pool riêng — có suite riêng).
+- Helper `_h3-handler-server.ts`: thân `FormData` gửi multipart như trình duyệt, `origin` cho request thô, thêm `readMultipartFormData`/`setResponseHeaders`/`sendStream` vào danh sách auto-import.
+- **Đường dẫn có `..` phải gửi bằng `node:http` với `{ host, port, path }`.** `fetch` và `http.request(<chuỗi URL>)` đều tự giải `.`/`..` trước khi gửi — test "không thoát thư mục" qua chúng xanh mà không bao giờ gửi đòn tấn công (đã gặp: `./seg0.ts` trả 200). Suite HLS có một đường dẫn đối chứng (`v720/../seg0.ts` phải 404) để chứng minh đường dẫn tới máy chủ nguyên văn.
+- Câu tổng hợp `NOW() - INTERVAL n DAY` của hai trang trạng thái giữ dữ liệu không chạy được trên SQLite (harness cố ý không xấp xỉ). Suite ghi lại SQL MySQL đã biên dịch của câu đó, trả số đếm soạn sẵn, và so **cột tuổi + số ngày** với câu `DELETE` mà `runDataRetention` thật gửi đi — bất biến xuyên tệp, đỏ khi một bên đổi cột (đột biến ở cả handler lẫn `data-retention.ts` đều bị giết).
+- Một đột biến (`Content-Length` lớn hơn thân) làm request treo thay vì đỏ: request thô có hạn 5 s, script đột biến có `--test-timeout` + `timeout`. (Trong log đột biến HLS, dòng `hls-range-no-clip: KILLED (ℹ fail 0) … 311176ms` là lượt bị dừng bằng tay khi treo, không phải bằng chứng; bằng chứng là lượt chạy lại ngay sau, đỏ sau 5 s.)
+
+### Đột biến (≥ 2 mỗi tệp, đỏ rồi hoàn lại; kịch bản và log ở thư mục bằng chứng)
+
+| Suite | Đột biến | Đỏ | Sống sót (tương đương) |
+|---|---|---|---|
+| `media-upload-behavior` | 9 | 8 | bỏ nhánh 415 magic byte: `effectiveMime` thành `null` nên bước tra đuôi vẫn trả 415 — đột biến mạnh hơn (tin header khi magic byte không nhận ra) bị giết |
+| `livestream-hls-serving-behavior` | 12 | 11 | bỏ `start >= size`: `end` đã kẹp ≤ size − 1 nên `start ≥ size` kéo theo `start > end` → vẫn 416. (Đột biến "handler assets nhận id bất kỳ" sống sót lượt đầu → test thêm ca id của phiên đã kết thúc → đỏ. Mỗi handler mỏng có hai đột biến: bỏ so id, bỏ so nguồn `upload`.) |
+| `media-local-confinement-behavior` | 4 | 4 | — |
+| `favicon-lifecycle-behavior` | 9 | 8 | bỏ riêng phép chặn `..` của tuyến `/favicon.ico`: lớp `startsWith(publicRoot + sep)` vẫn chặn; bỏ cả hai lớp → đỏ |
+| `retention-policy-save-behavior` | 6 | 6 | — |
+| `retention-run-now-behavior` | 5 | 5 | — |
+| `retention-status-behavior` | 9 | 9 | — |
+| `ai-budget-update-behavior` | 5 | 5 | — |
+| `ai-provider-probe-behavior` | 6 | 6 | — |
+| **Tổng** | **65** | **62** | **3**, đều có lớp phòng thủ thứ hai |
+
+### Lỗi tìm thấy (ghim lúc viết test, sửa sau đó)
+
+| Mã | Mức | Tệp | Lỗi | Trạng thái |
+|---|---|---|---|---|
+| FINDING-R3-1 | trung bình | `settings/retention.put.ts` + `saveRetentionPolicy` | Lưu chính sách (từng khoá trên pool) rồi mới ghi audit trên pool, không transaction. Audit hỏng → 500 nhưng cửa sổ xoá mới đã có hiệu lực, không ai biết ai đổi. Guard audit không thấy (chỉ hỏi tệp tự ghi). | **Đã sửa**: `saveRetentionPolicy(input, { userId })` ghi các khoá + dòng audit trong MỘT transaction; ảnh trước/sau tính từ một lượt đọc khoá đã lưu (không đọc lại qua `getDb()` trong tx); giá trị đã lưu hỏng → 500, không phải 400. Hàm vào `AUDITED_WRITES`; phần sổ sách `data_retention_state` tách sang `retention-state.ts` (tệp chính sách chạm trần 400 dòng). Test ghim đã lật; 3 đột biến đều đỏ |
+| FINDING-R3-2 | thấp | `settings/retention-run.post.ts` | Lượt dọn commit trên pool riêng trước khi ghi audit; audit hỏng → 500 cho một lượt đã xoá, không lưu ai chạy (`data_retention_state` vẫn ghi số và `manual`) | **Đã sửa**: `runRetentionPass` nhận `beforePurge`, gọi khi đã giữ khoá và trước DELETE đầu tiên (ném → không xoá gì, nhả khoá, lỗi tới người gọi; bị khoá → không gọi). Handler ghi dòng `phase: 'started'` (ai, cửa sổ sắp áp) ở đó, fail-closed: không ghi được → 500 "chưa có bản ghi nào bị xoá". Dòng `phase: 'finished'` (mỗi bảng mất bao nhiêu) ghi sau, hỏng → `logError` + 200 `auditFailed: true`. Cùng khuôn bắt đầu/kết thúc của `rescan-all.post.ts`, khác ở chỗ dòng bắt đầu là bắt buộc vì job này xoá dữ liệu. Thứ tự ghim trên `runRetentionPass` thật (`retention-pass-attribution-behavior`); 4 đột biến đều đỏ |
+| FINDING-R3-3 | thấp | 16 handler dưới `server/api/admin/ai/**` + `comments/[id]/visibility.patch.ts` (17 tệp, ghim ở `ai/budget/index.put.ts`) | `meta: JSON.stringify(…)` trước khi Drizzle mã hoá cột JSON lần nữa → `meta` là một chuỗi JSON, `JSON_EXTRACT(meta, '$.type')` không thấy gì | **Đã sửa**: cả 17 tệp truyền thẳng object (chỉ đổi dòng `meta`). Nơi đọc không cần sửa, không backfill: hai trang nhật ký (`activity-logs/index.get.ts`, `profile/history.get.ts`) chỉ lấy `ip`/`userAgent`/`mfaMethod` — 17 tệp chưa bao giờ ghi ba khoá đó — và coi chuỗi là "không có khoá" (`admin-profile-history-behavior` đã nạp sẵn một hàng meta chuỗi); `media-sync-rewrite.ts` chỉ đọc `resource = 'media'`; không có `JSON_EXTRACT` hay xuất `activity_logs`. Guard mới `activity-log-meta-shape` quét `server/` + `scripts/` (tệp có mã chạm `activityLogs`, cột `meta` duy nhất) chặn `meta: JSON.stringify(` và `const meta = JSON.stringify(`, kèm bằng chứng tiêm vào tệp thật; giới hạn nêu tên: biến tên khác / qua helper. Test ghim đã lật (kiểm cả chữ thô trong cột); đột biến ghi chuỗi lại ở 2 handler → đỏ |
+
+Mỗi lỗi có một test tên `FINDING-R3-n`. Lúc viết, test khẳng định hành vi **hiện tại** kèm chú thích phải lật khẳng định nào khi sửa; lỗi đã sửa thì test được lật để khẳng định hành vi đúng (đảo lại ranh giới transaction / ghi chuỗi lại → đỏ). Sau đợt sửa (Node 24, image `cdkt-cov:node24`): mốc ratchet `server/api` 60,75 → 60,81, `server/services` 85,99 → 86,21; không thư mục nào giảm; `app/utils` và `shared` vẫn giữ mốc cũ (lần tăng không do đợt này).
+
+Ghi nhận, không ghim: `deleteLocalFile` chỉ kiểm đường dẫn theo chữ, nên một thư mục symlink nằm **trong** `public/uploads` sẽ bị đi theo — chỉ người có quyền vào máy chủ mới tạo được (khôi phục backup từ chối mục link); tải lên hỏng ở bước ghi CSDL để lại tệp mồ côi trên đĩa/R2 (lượt quét ảnh mồ côi sau đó có thể nhập lại nó); tên tệp `Date.now()_tên` có thể trùng khi hai lượt tải cùng tên trong cùng một mili giây (tệp sau ghi đè tệp trước).
+
+### Lát sau (theo thứ tự xếp hạng)
+
+1. `server/api/admin/ai/test-call.post.ts` (270, 0 %) — tốn tiền thật + gọi ra ngoài; cần harness cho `checkBudget`/`logAiUsage`.
+2. `server/api/admin/media/storage-size.get.ts` (88) — chỉ đọc, liệt kê bucket R2.
+3. Cấu hình giá/nhà cung cấp AI kèm audit: `ai/services/[id].put.ts` (89), `ai/pricing/index.post.ts` (63), `[model].put.ts` (52), `bulk-delete.post.ts` (34), `[model].delete.ts` (32), `ai/providers/bulk-delete.post.ts` (53), `[id].delete.ts` (36).
+4. Handler mỏng media-portal (`[id]/thumbnail.post.ts` 42, `thumbnail.delete.ts` 24, `upload/{init,chunk,complete,housekeep,status}`) — service đã phủ hoặc có suite integration.
+5. Chỉ đọc, một truy vấn: `ai/usage.get.ts` (79), `backup/status.get.ts` (14), `backup/index.get.ts` (13), `users/index.get.ts` (24), `roles/index.get.ts` (15).
+6. Ngoài sáu lớp của task: `server/services/readers.ts` (36 %, 550), `ip-bans.ts` (36,4 %, 118) — quyết định kiểm duyệt (lớp R5/R6 ở bảng trên).
+
+Test văn bản mã nguồn mà các suite trên nay thay được (không xoá trong lát này): khối `upload.post.ts` của `cms-core-auth-media`, khối "kiểm hết trước khi ghi" của `retention-policy` (đột biến `rput-write-as-you-go` bị giết).

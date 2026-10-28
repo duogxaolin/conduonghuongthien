@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
       action: 'delete',
       resource: 'ai',
       resourceId: id,
-      meta: JSON.stringify({ type: 'delete_moderation_rule', pattern: existing.pattern }),
+      meta: { type: 'delete_moderation_rule', pattern: existing.pattern },
     })
   })
 

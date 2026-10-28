@@ -200,7 +200,7 @@ test('saving the policy validates everything before writing anything', () => {
   // One bad field must not leave half a policy applied — a saved run hour with a
   // rejected window would delete on a schedule nobody configured.
   const save = policySource.slice(policySource.indexOf('export async function saveRetentionPolicy'))
-  const firstWrite = save.search(/db\s*\.\s*(insert|update)|\.onDuplicateKeyUpdate/)
+  const firstWrite = save.search(/(?:db|tx)\s*\.\s*(insert|update|transaction)|\.onDuplicateKeyUpdate/)
   assert.ok(firstWrite > 0, 'saveRetentionPolicy no longer writes; this contract needs rewriting')
   for (const parser of ['parseRunHour', 'parseMaxRows', 'parseRetentionDays']) {
     const at = save.indexOf(parser)
@@ -224,12 +224,18 @@ test('the read endpoint is gated on settings and never deletes', () => {
 test('changing what gets deleted needs an update grant and leaves an audit trail', () => {
   const put = codeOnly(source('../server/api/admin/settings/retention.put.ts'))
   assert.match(put, /requireResourcePermission\(admin, 'settings', 'update'\)/)
-  // "Who shortened the audit-log window, and from what" is exactly the question
-  // this table has to be able to answer about itself.
-  assert.match(put, /activityLogs\)|insert\(activityLogs/)
-  assert.match(put, /resource: 'data_retention'/)
+  assert.match(put, /saveRetentionPolicy\(body, \{ userId: admin\.id \}\)/)
   assert.match(put, /RetentionPolicyValidationError/)
   assert.match(put, /statusCode: 400/)
+  // "Who shortened the audit-log window, and from what" is exactly the question
+  // this table has to be able to answer about itself. The audit row is written by
+  // the service, on the transaction that writes the keys (FINDING-R3-1) — the
+  // handler writing it on the pool is what let a change stand unattributed.
+  assert.doesNotMatch(put, /activityLogs/, 'the handler audits on its own again — the row belongs in the service transaction')
+  const service = codeOnly(source('../server/services/retention-policy.ts'))
+  const save = service.slice(service.indexOf('export async function saveRetentionPolicy'))
+  assert.match(save, /tx\.insert\(activityLogs\)/)
+  assert.match(save, /resource: 'data_retention'/)
 })
 
 test('the manual run is a POST that needs explicit confirmation and reports a collision', () => {

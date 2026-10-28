@@ -19,6 +19,7 @@ import * as h3 from 'h3'
 const AUTO_IMPORTS = [
   'defineEventHandler', 'createError', 'readBody', 'getQuery', 'getRouterParam', 'getCookie', 'setCookie',
   'deleteCookie', 'setResponseHeader', 'getRequestHeader', 'getRequestURL', 'getRequestIP', 'getHeader',
+  'readMultipartFormData', 'setResponseHeaders', 'sendStream',
 ] as const
 
 /**
@@ -54,9 +55,17 @@ export interface HandlerServer {
    * `redirect: 'manual'` answers a 3xx as it is (status + `Location`) instead of
    * following it — a handler that redirects to an outside host (an OAuth start)
    * would otherwise send the test to the network.
+   *
+   * A `FormData` body is sent as `multipart/form-data` exactly as a browser would
+   * (fetch writes the boundary); any other non-string body goes as JSON.
    */
   request(method: string, path: string, options?: { cookie?: string, body?: unknown, headers?: Record<string, string>, redirect?: 'follow' | 'manual' }): Promise<HandlerResponse>
   close(): Promise<void>
+  /**
+   * `http://127.0.0.1:<port>`, for a suite that must send a path `fetch` would
+   * normalise first (`/a/../b`) — with `node:http`, which sends it as written.
+   */
+  origin: string
 }
 
 /** A failure a suite injected on purpose (`_sqlite-mysql-db.ts` `failNext`), anywhere in the cause chain. */
@@ -91,8 +100,10 @@ export async function startHandlerServer(routes: HandlerRoute[], middleware: h3.
     async request(method, path, options = {}) {
       const headers: Record<string, string> = { ...options.headers }
       if (options.cookie) headers.cookie = options.cookie
-      let body: string | undefined
-      if (options.body !== undefined) {
+      let body: string | FormData | undefined
+      if (options.body instanceof FormData) {
+        body = options.body
+      } else if (options.body !== undefined) {
         body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body)
         headers['content-type'] ??= 'application/json'
       }
@@ -109,5 +120,6 @@ export async function startHandlerServer(routes: HandlerRoute[], middleware: h3.
       return { status: response.status, body: parsed, headers: response.headers, cookies }
     },
     close: () => new Promise<void>(resolve => server.close(() => resolve())),
+    origin: `http://127.0.0.1:${port}`,
   }
 }
