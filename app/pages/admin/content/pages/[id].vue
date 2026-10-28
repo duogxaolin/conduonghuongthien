@@ -1,45 +1,17 @@
 <template>
   <div class="flex h-[calc(100vh-6.5rem)] flex-col">
     <!-- Top bar -->
-    <div class="flex shrink-0 items-center justify-between border-b border-gray-200 pb-3">
-      <div class="flex items-center gap-3">
-        <nuxt-link to="/admin/content/pages" class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50">
-          <i class="fa-solid fa-arrow-left"></i>
-        </nuxt-link>
-        <div>
-          <h1 class="text-lg font-bold text-gray-800">{{ page?.title || 'Trình dựng trang' }}</h1>
-          <p class="mt-0.5 text-xs text-gray-500">
-            <code class="rounded bg-gray-100 px-1.5 py-0.5">/{{ page?.slug === 'home' ? '' : page?.slug }}</code>
-            <span v-if="page?.isSystem" class="ml-2 text-blue-600"><i class="fa-solid fa-lock"></i> Trang hệ thống</span>
-          </p>
-        </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="mr-1 flex items-center gap-1.5 text-xs font-semibold" :class="saveState.color">
-          <i :class="saveState.icon"></i> {{ saveState.text }}
-        </span>
-        <button v-if="hasUnpublished" class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-50" title="Bỏ thay đổi chưa xuất bản" @click="discardDraft">
-          <i class="fa-solid fa-rotate-left mr-1"></i> Hủy sửa
-        </button>
-        <button class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" @click="openVersions">
-          <i class="fa-solid fa-clock-rotate-left mr-1"></i> Phiên bản
-        </button>
-        <nuxt-link v-if="page" :to="page.slug === 'home' ? '/' : `/${page.slug}`" target="_blank" class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-          <i class="fa-solid fa-up-right-from-square mr-1"></i> Xem trang
-        </nuxt-link>
-        <button class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" @click="openMeta">
-          <i class="fa-solid fa-gear mr-1"></i> Cấu hình
-        </button>
-        <button
-          class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-800 disabled:opacity-50"
-          :disabled="publishing || !hasUnpublished"
-          @click="publish"
-        >
-          <i :class="publishing ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-cloud-arrow-up'"></i>
-          {{ publishing ? 'Đang xuất bản…' : 'Xuất bản' }}
-        </button>
-      </div>
-    </div>
+    <PageBuilderTopBar
+      :page="page"
+      :loaded="loaded"
+      :draft-status="draftStatus"
+      :has-unpublished="hasUnpublished"
+      :publishing="publishing"
+      @discard="discardDraft"
+      @open-versions="openVersions"
+      @open-meta="openMeta"
+      @publish="publish"
+    />
 
     <!-- Loading — the 3-pane workspace footprint (tree / canvas / properties),
          inline because this layout exists nowhere else in the project. -->
@@ -122,139 +94,86 @@
     </div>
 
     <!-- Block palette drawer (context-filtered) -->
-    <AdminModal :open="showPalette" title="Thêm khối" size="drawer" :busy="adding" @close="showPalette = false">
-        <p class="mb-4 mt-0 text-xs text-gray-500">{{ paletteContextLabel }}</p>
-        <div v-for="group in paletteGroups" :key="group.key" class="mb-6">
-          <h3 class="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">{{ group.title }}</h3>
-          <div class="grid grid-cols-2 gap-2">
-            <button
-              v-for="item in group.items"
-              :key="item.type"
-              class="flex flex-col items-start gap-2 rounded-lg border border-gray-200 p-3 text-left transition hover:border-green-500 hover:bg-green-50 disabled:opacity-50"
-              :disabled="adding"
-              @click="addBlock(item.type)"
-            >
-              <i :class="[item.icon, 'text-green-700']"></i>
-              <span class="text-sm font-semibold text-gray-700">{{ item.label }}</span>
-            </button>
-          </div>
-        </div>
-        <p v-if="!paletteGroups.length" class="py-8 text-center text-sm text-gray-400">Không có khối phù hợp cho vị trí này.</p>
-    </AdminModal>
+    <BlockPaletteDrawer
+      :open="showPalette"
+      :adding="adding"
+      :context-label="paletteContextLabel"
+      :groups="paletteGroups"
+      @close="showPalette = false"
+      @add="addBlock"
+    />
 
     <!-- Meta modal -->
-    <AdminModal :open="showMeta" title="Cấu hình trang" :busy="savingMeta" @close="showMeta = false">
-        <div class="space-y-4">
-          <div>
-            <label class="mb-1 block text-sm font-semibold text-gray-700">Tiêu đề trang</label>
-            <input v-model="metaForm.title" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600" />
-          </div>
-          <div>
-            <label class="mb-1 block text-sm font-semibold text-gray-700">Đường dẫn (slug)</label>
-            <input v-model="metaForm.slug" type="text" :disabled="page?.isSystem === true" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600 disabled:bg-gray-100 disabled:text-gray-400" />
-            <p v-if="page?.isSystem" class="mt-1 text-xs text-gray-400">Trang hệ thống không thể đổi đường dẫn.</p>
-          </div>
-          <div>
-            <label class="mb-1 block text-sm font-semibold text-gray-700">SEO Title</label>
-            <input v-model="metaForm.seoTitle" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600" />
-          </div>
-          <div>
-            <label class="mb-1 block text-sm font-semibold text-gray-700">SEO Description</label>
-            <textarea v-model="metaForm.seoDescription" rows="3" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"></textarea>
-          </div>
-        </div>
-        <template #footer>
-          <button type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100" @click="showMeta = false">Hủy</button>
-          <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50" :disabled="savingMeta" @click="saveMeta">
-            <i v-if="savingMeta" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Lưu
-          </button>
-        </template>
-    </AdminModal>
+    <PageMetaModal
+      v-model:form="metaForm"
+      :open="showMeta"
+      :saving="savingMeta"
+      :is-system="page?.isSystem === true"
+      @close="showMeta = false"
+      @save="saveMeta"
+    />
 
     <!-- Versions drawer -->
-    <AdminModal :open="showVersions" title="Phiên bản" size="drawer" :busy="savingBackup" @close="showVersions = false">
-        <p class="mb-4 mt-0 text-xs text-gray-500">1 bản gốc · tối đa 4 bản sao lưu · 5 bản tự động (cuộn vòng)</p>
-
-        <!-- Actions -->
-        <div class="mb-4 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <div class="flex gap-2">
-            <input
-              v-model="backupLabel"
-              type="text"
-              placeholder="Tên bản sao lưu…"
-              class="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
-              @keydown.enter="onBackupLabelEnter"
-            />
-            <button
-              class="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"
-              :disabled="savingBackup || manualCount >= 4"
-              :title="manualCount >= 4 ? 'Đã đạt tối đa 4 bản sao lưu' : 'Lưu nội dung đang dựng thành bản sao lưu'"
-              @click="saveBackup"
-            >
-              <i :class="savingBackup ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-bookmark'"></i> Lưu ({{ manualCount }}/4)
-            </button>
-          </div>
-          <button class="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100" @click="setOrigin">
-            <i class="fa-solid fa-anchor"></i> {{ hasOrigin ? 'Cập nhật bản gốc' : 'Chỉ định làm bản gốc' }}
-          </button>
+    <PageVersionsDrawer
+      v-model:label="backupLabel"
+      :open="showVersions"
+      :versions="versions"
+      :loading="versionsLoading"
+      :failed="!!versionsError"
+      :saving="savingBackup"
+      :manual-count="manualCount"
+      :has-origin="hasOrigin"
+      @close="showVersions = false"
+      @save="saveBackup"
+      @set-origin="setOrigin"
+      @restore="restoreVersion"
+      @delete="deleteVersion"
+    >
+      <!-- Danh sách đọc hỏng: lỗi + "Thử lại" (chỉ lượt đọc danh sách) thay chỗ danh sách (FINDING-B1) -->
+      <template #error>
+        <div v-if="versionsError" role="alert" class="bg-danger-bg text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+          <span>{{ versionsError }}</span>
+          <button type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="loadVersions">Thử lại</button>
         </div>
-
-        <!-- List -->
-        <div>
-          <div v-if="versionsLoading" class="flex justify-center py-10 text-gray-400"><i class="fa-solid fa-spinner fa-spin text-xl"></i></div>
-          <p v-else-if="!versions.length" class="py-10 text-center text-sm text-gray-400">Chưa có phiên bản nào. Bấm Xuất bản để tạo bản tự động đầu tiên.</p>
-          <div
-            v-for="v in versions"
-            :key="v.id"
-            class="mb-2 rounded-lg border border-gray-200 p-3"
-          >
-            <div class="flex items-start justify-between gap-2">
-              <div class="min-w-0">
-                <p class="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
-                  <i :class="[kindMeta[v.kind]?.icon, kindMeta[v.kind]?.color]"></i>
-                  <span class="truncate">{{ v.label || kindMeta[v.kind]?.label || v.kind }}</span>
-                </p>
-                <p class="mt-0.5 text-xs text-gray-400">{{ kindMeta[v.kind]?.label }} · {{ v.blockCount }} block · {{ v.createdAt ? fmtDate(v.createdAt) : '—' }}</p>
-              </div>
-              <span v-if="v.kind === 'origin'" class="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[0.65rem] font-semibold text-blue-600">KHÓA</span>
-            </div>
-            <div class="mt-2 flex gap-2">
-              <button class="flex-1 rounded-md border border-green-200 bg-green-50 px-2 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-100" @click="restoreVersion(v)">
-                <i class="fa-solid fa-rotate-left mr-1"></i> Khôi phục
-              </button>
-              <button
-                v-if="v.kind !== 'origin'"
-                class="rounded-md border border-gray-200 px-2 py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50"
-                :aria-label="`Xóa phiên bản ${v.label || kindMeta[v.kind]?.label || v.kind}`"
-                @click="deleteVersion(v)"
-              >
-                <i class="fa-solid fa-trash" aria-hidden="true"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-    </AdminModal>
+      </template>
+    </PageVersionsDrawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { PageVersionRow, AdminPageDetail, AdminPageUpdateResult } from '~/types/admin-api'
-import type { PageDraftSaveResponse, PagePublishResponse, PageVersionCreateResponse, PageVersionDeleteResponse, PageVersionRestoreResponse, PageVersionsResponse } from '~/types/admin-pages-api'
+/**
+ * Trình dựng trang (Page Builder). Tách (wave3 4.2, docs/decisions/refactor-large-files.md):
+ *  - `components/admin/page-builder/*.vue` — thanh trên, ngăn "Thêm khối", hộp "Cấu hình
+ *    trang", ngăn "Phiên bản": chỉ hiển thị, props vào, sự kiện ra;
+ *  - `useBuilderTreeEdits` (thêm từ bảng chọn, nhân đôi, ẩn/hiện, xoá, di chuyển),
+ *    `usePageVersions` (sao lưu, bản gốc, khôi phục, xoá phiên bản), `usePageMeta`;
+ *  - `utils/blocks/builder-tree.ts` — tìm/định vị nút, chuẩn hoá, tuần tự hoá, sao chép cây.
+ * Trang giữ: trang + cây đang dựng + lựa chọn, lượt tải `fetchPage` với khung chờ và nhánh lỗi
+ * `role="alert"` + "Thử lại", toàn bộ vòng đời bản nháp (`hydrating`, hẹn giờ lưu, xuất bản,
+ * huỷ sửa, nạp một bản vào cây), danh sách phiên bản + lượt tải của nó, `provide('builderTree')`.
+ */
+import type { PageVersionRow, AdminPageDetail } from '~/types/admin-api'
+import type { PageDraftSaveResponse, PagePublishResponse, PageVersionsResponse } from '~/types/admin-pages-api'
 import { provide } from 'vue'
-import { BLOCK_REGISTRY, blocksByCategory, getDefaultData, isContainerType, clampColSpan, DEFAULT_COL_SPAN } from '~/utils/blocks/registry'
 import { blockText } from '~/utils/blocks/types'
 import type { BuilderTreeApi, NodeId } from '~/utils/blocks/types'
-import type { BlockNode, BuilderNode, NodeLocation } from '~/utils/blocks/types'
+import type { BuilderNode } from '~/utils/blocks/types'
+import { createTmpIds, findNode, hydrateNodes, locateNode, serializeNodes, strip } from '~/utils/blocks/builder-tree'
+import { useBuilderTreeEdits } from '~/composables/useBuilderTreeEdits'
+import { usePageVersions } from '~/composables/usePageVersions'
+import { usePageMeta } from '~/composables/usePageMeta'
 
 /** A node id: numeric once persisted, `tmp_*` while unsaved, null for "root". */
 // `undefined` is part of the domain: BlockNode.id is optional until the node is
 // persisted, so every lookup by id has to accept a not-yet-saved node.
 
-import AdminModal from '~/components/admin/AdminModal.vue'
-import { isDeliberateEnter } from '~/utils/admin-modal'
 import BuilderCanvas from '~/components/admin/builder/BuilderCanvas.vue'
 import PropertyPanel from '~/components/admin/builder/PropertyPanel.vue'
 import BlockTreeNode from '~/components/admin/builder/BlockTreeNode.vue'
+import PageBuilderTopBar from '~/components/admin/page-builder/PageBuilderTopBar.vue'
+import BlockPaletteDrawer from '~/components/admin/page-builder/BlockPaletteDrawer.vue'
+import PageMetaModal from '~/components/admin/page-builder/PageMetaModal.vue'
+import PageVersionsDrawer from '~/components/admin/page-builder/PageVersionsDrawer.vue'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -263,13 +182,6 @@ const pageId = computed(() => Number(route.params.id))
 const toast = useToast()
 const { confirm } = useConfirm()
 
-const registry = BLOCK_REGISTRY
-
-/** Một mục trong bảng chọn khối — đúng phần tử `blocksByCategory()` sinh ra, nên
- *  thêm block mới vào registry là kiểu này tự theo. */
-type PaletteItem = ReturnType<typeof blocksByCategory>['section'][number]
-const grouped = blocksByCategory()
-
 // Hàng từ endpoint CHI TIẾT, không phải từ danh sách: danh sách kèm thêm
 // `blockCount` mà trang này không nhận, nên dùng nhầm kiểu sẽ khai một trường
 // vĩnh viễn `undefined`.
@@ -277,59 +189,28 @@ const page = ref<AdminPageDetail['page'] | null>(null)
 const blocks = ref<BuilderNode[]>([])
 const loading = ref(true)
 const loadError = ref('')
+// Cờ DƯƠNG: cây đang dựng là trang thật chỉ sau một lượt tải thành công. Chưa có (đang tải,
+// tải hỏng, "Thử lại" đang bay) thì mọi thao tác trên trang — xuất bản, huỷ sửa, lưu nháp,
+// "Phiên bản", "Cấu hình" — không chạy: cây rỗng từng được xuất bản đè trang thật (FINDING-B2).
+const loaded = ref(false)
 
 const selectedId = ref<number | string | null>(null)
 const viewport = ref<'desktop' | 'tablet' | 'mobile'>('desktop')
 
-// ── Tree helpers ─────────────────────────────────────────────────────────────
-// The working copy `blocks` is a tree of nodes { id, blockType, data, isVisible,
-// colSpan?, children?[] }. A legacy flat page is a list of childless root nodes.
-// These walkers locate nodes/parents/sibling-arrays by id at any depth.
-const findNode = (id: NodeId, list: BuilderNode[] = blocks.value): BuilderNode | null => {
-  for (const n of list) {
-    if (n.id === id) return n
-    if (Array.isArray(n.children)) {
-      const hit = findNode(id, n.children)
-      if (hit) return hit
-    }
-  }
-  return null
-}
-// Returns { siblings, index, parent } for the node with `id`; parent is null at root.
-const locateNode = (id: NodeId, list: BuilderNode[] = blocks.value, parent: BuilderNode | null = null): NodeLocation | null => {
-  const idx = list.findIndex(n => n.id === id)
-  if (idx !== -1) return { siblings: list, index: idx, parent }
-  for (const n of list) {
-    if (Array.isArray(n.children)) {
-      const hit = locateNode(id, n.children, n)
-      if (hit) return hit
-    }
-  }
-  return null
-}
-
-const selectedBlock = computed(() => (selectedId.value == null ? null : findNode(selectedId.value)))
+const selectedBlock = computed(() => (selectedId.value == null ? null : findNode(selectedId.value, blocks.value)))
 // Index of the selected node among its own siblings (for move ▲/▼ bounds).
-const selectedLoc = computed(() => (selectedId.value == null ? null : locateNode(selectedId.value)))
+const selectedLoc = computed(() => (selectedId.value == null ? null : locateNode(selectedId.value, blocks.value)))
 const selectedIndex = computed(() => selectedLoc.value?.index ?? -1)
 const selectedSiblingCount = computed(() => selectedLoc.value?.siblings.length ?? 0)
 
 // Temp ids for blocks not yet persisted to page_blocks (assigned real ids on publish).
-let tmpCounter = 1
-const nextTmpId = () => `tmp_${tmpCounter++}`
+const nextTmpId = createTmpIds()
 
-// Snapshot of what's actually LIVE (published), for the dirty comparison. Walks
-// the whole tree so structural edits (nesting, colSpan, order) are detected.
+// Snapshot of what's actually LIVE (published), for the dirty comparison.
 const publishedSnapshot = ref('')
-const strip = (arr: BuilderNode[]): BuilderNode[] => arr.map(b => {
-  const o: BuilderNode = { blockType: b.blockType, isVisible: b.isVisible !== false, data: b.data || {} }
-  if (b.blockType === 'column') o.colSpan = b.colSpan ?? 12
-  if (Array.isArray(b.children)) o.children = strip(b.children)
-  return o
-})
 const hasUnpublished = computed(() => JSON.stringify(strip(blocks.value)) !== publishedSnapshot.value)
 
-// Draft-save network state (independent of the publish/dirty state).
+// Draft-save network state (independent of the publish/dirty state); the top bar shows it.
 type DraftStatus = 'idle' | 'saving' | 'saved' | 'error'
 const draftStatus = ref<DraftStatus>('idle')
 const publishing = ref(false)
@@ -337,28 +218,14 @@ const publishing = ref(false)
 // Public route the preview iframe loads ('home' → '/', others → '/<slug>').
 const previewPath = computed(() => (!page.value ? '/' : page.value.slug === 'home' ? '/' : `/${page.value.slug}`))
 
-// Recursively normalize a loaded node tree into the working-copy shape: ensure
-// every node has an id (tmp for unsaved), a data object, a boolean isVisible,
-// columns carry colSpan, and containers carry a (possibly empty) children array.
-const hydrateNodes = (list: unknown): BuilderNode[] => (Array.isArray(list) ? list : []).map((b: BuilderNode) => {
-  const node: BuilderNode = {
-    ...b,
-    id: b.id ?? nextTmpId(),
-    data: b.data || {},
-    isVisible: b.isVisible === undefined ? true : !!b.isVisible,
-  }
-  if (b.blockType === 'column') node.colSpan = clampColSpan(b.colSpan)
-  if (isContainerType(b.blockType)) node.children = hydrateNodes(b.children || [])
-  return node
-})
-
 const fetchPage = async () => {
   loading.value = true
   loadError.value = ''
+  loaded.value = false // trước await: lượt tải lại đang bay không giữ quyền thao tác của lượt trước
   hydrating = true
   try {
     /**
-     * Kiểu suy từ chính handler, không từ URL: `$fetch` trần suy theo **chuỗi URL**, mà URL
+     * Kiểu suy từ chính handler, không từ URL: fetch trần của Nuxt suy theo **chuỗi URL**, mà URL
      * ở đây dựng động nên nó khớp nhầm sang một route khác cùng tiền tố — rồi báo là
      * `res.draft` không tồn tại trong khi endpoint có trả.
      */
@@ -366,18 +233,19 @@ const fetchPage = async () => {
     if (res.ok) {
       page.value = res.page
       // Published blocks are the live baseline for the dirty check.
-      const published = hydrateNodes(res.blocks || [])
+      const published = hydrateNodes(res.blocks || [], nextTmpId)
       publishedSnapshot.value = JSON.stringify(strip(published))
       // If a draft exists on the server, load it as the working copy instead.
       const draftBlocks = res.draft?.blocks
       if (Array.isArray(draftBlocks) && res.draft) {
-        blocks.value = hydrateNodes(draftBlocks)
+        blocks.value = hydrateNodes(draftBlocks, nextTmpId)
         draftStatus.value = 'saved'
       } else {
         blocks.value = published
         draftStatus.value = 'idle'
       }
       selectedId.value = blocks.value[0]?.id ?? null
+      loaded.value = true
     }
   } catch (err: unknown) {
     loadError.value = errorMessage(err, 'Không tải được trang.')
@@ -397,149 +265,17 @@ const blockPreviewText = (block: BuilderNode) => {
   return html ? html.replace(/<[^>]+>/g, '').slice(0, 40) : '—'
 }
 
-// ── Palette / add (local only; persisted to draft) ──
-// `paletteParentId` = the container the palette is adding INTO (null = root).
-const showPalette = ref(false)
-const adding = ref(false)
-const paletteParentId = ref<NodeId>(null)
-
-// Build a fresh node for `type`; containers start with an empty children array,
-// columns with a default colSpan.
-const makeNode = (type: string) => {
-  const node: BuilderNode = { id: nextTmpId(), blockType: type, data: getDefaultData(type), isVisible: true }
-  if (type === 'column') node.colSpan = DEFAULT_COL_SPAN
-  if (isContainerType(type)) node.children = []
-  return node
-}
-
-// Open the add-palette targeting a specific parent container (from the tree's
-// "+" affordance), or at root level when no parent is given.
-const openPalette = (parentId: NodeId = null) => {
-  paletteParentId.value = parentId ?? null
-  showPalette.value = true
-}
-
-// Which block groups the palette offers, filtered by the parent context:
-//   root/section → section blocks + layout containers
-//   row          → column only
-//   column       → element (section + content) blocks only, no containers
-const paletteGroups = computed<Array<{ key: string; title: string; items: PaletteItem[] }>>(() => {
-  const parent = paletteParentId.value == null ? null : findNode(paletteParentId.value)
-  const pType = parent?.blockType
-  if (pType === 'row') {
-    return [{ key: 'layout', title: 'Bố cục', items: grouped.layout.filter(i => i.type === 'column') }]
-  }
-  if (pType === 'column') {
-    return [
-      { key: 'content', title: 'Khối nội dung', items: grouped.content },
-      { key: 'section', title: 'Khối trang chủ', items: grouped.section },
-    ]
-  }
-  // root or section: section blocks + layout containers (row/section)
-  return [
-    { key: 'layout', title: 'Bố cục', items: grouped.layout.filter(i => i.type !== 'column') },
-    { key: 'section', title: 'Khối trang chủ', items: grouped.section },
-    { key: 'content', title: 'Khối nội dung', items: grouped.content },
-  ]
-})
-
-// Human-readable hint of where the new block will land.
-const paletteContextLabel = computed(() => {
-  const parent = paletteParentId.value == null ? null : findNode(paletteParentId.value)
-  if (!parent) return 'Thêm vào cấp gốc của trang.'
-  const label = registry[parent.blockType]?.label || parent.blockType
-  if (parent.blockType === 'row') return `Thêm Cột vào ${label}.`
-  if (parent.blockType === 'column') return `Thêm nội dung vào ${label}.`
-  return `Thêm vào ${label}.`
-})
-
-// Bridge injected by the recursive BlockTreeNode navigator: selection + contextual
-// add. selectedId is exposed as the raw ref so children read `.value` reactively.
-provide<BuilderTreeApi>('builderTree', {
-  selectedId,
-  select: (id: NodeId) => { selectedId.value = id ?? null },
-  openPalette,
-})
-
-const addBlock = (type: string) => {
-  const node = makeNode(type)
-  const parentId = paletteParentId.value
-  if (parentId == null) {
-    // Root: insert after the selected root node (if any), else append.
-    const loc = selectedId.value != null ? locateNode(selectedId.value) : null
-    if (loc && loc.parent === null) blocks.value.splice(loc.index + 1, 0, node)
-    else blocks.value.push(node)
-  } else {
-    const parent = findNode(parentId)
-    if (parent) {
-      if (!Array.isArray(parent.children)) parent.children = []
-      parent.children.push(node)
-    } else {
-      blocks.value.push(node)
-    }
-  }
-  selectedId.value = node.id ?? null
-  showPalette.value = false
-  paletteParentId.value = null
-  scheduleDraftSave()
-  toast.success('Đã thêm block. Nhớ bấm Xuất bản để đưa lên site.')
-}
-
-// ── Duplicate (local only) — deep-clones the node and its whole subtree ──
-const cloneSubtree = (node: BuilderNode): BuilderNode => {
-  const copy: BuilderNode = {
-    id: nextTmpId(),
-    blockType: node.blockType,
-    data: JSON.parse(JSON.stringify(node.data || {})),
-    isVisible: node.isVisible !== false,
-  }
-  if (node.blockType === 'column') copy.colSpan = clampColSpan(node.colSpan)
-  if (Array.isArray(node.children)) copy.children = node.children.map(cloneSubtree)
-  return copy
-}
-const duplicateBlock = (block: BuilderNode) => {
-  const loc = locateNode(block.id)
-  if (!loc) return
-  const copy = cloneSubtree(block)
-  loc.siblings.splice(loc.index + 1, 0, copy)
-  selectedId.value = copy.id ?? null
-  scheduleDraftSave()
-  toast.success('Đã nhân đôi block.')
-}
-
 // ── Draft auto-save (debounced) — saves the WHOLE working copy as draft JSON ──
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let hydrating = true // suppress draft saves during the initial load
 
-const saveState = computed(() => {
-  if (publishing.value) return { text: 'Đang xuất bản…', icon: 'fa-solid fa-spinner fa-spin', color: 'text-gray-500' }
-  if (draftStatus.value === 'saving') return { text: 'Đang lưu nháp…', icon: 'fa-solid fa-spinner fa-spin', color: 'text-gray-500' }
-  if (draftStatus.value === 'error') return { text: 'Lỗi lưu nháp', icon: 'fa-solid fa-triangle-exclamation', color: 'text-red-600' }
-  if (hasUnpublished.value) return { text: 'Nháp — chưa xuất bản', icon: 'fa-solid fa-pen', color: 'text-orange-500' }
-  return { text: 'Đã xuất bản', icon: 'fa-solid fa-circle-check', color: 'text-green-600' }
-})
-
 const scheduleDraftSave = () => {
-  if (hydrating) return
+  if (hydrating || !loaded.value) return
   draftStatus.value = 'saving'
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(saveDraft, 800)
 }
 
-// Recursively serialize the working tree for draft/publish/version payloads.
-// Preserves nesting (children), column widths (colSpan), and per-level order.
-const serializeNodes = (list: BuilderNode[]): BlockNode[] => list.map((b, i) => {
-  const out: BlockNode = {
-    id: typeof b.id === 'number' ? b.id : undefined,
-    blockType: b.blockType,
-    displayOrder: i + 1,
-    data: b.data || {},
-    isVisible: b.isVisible !== false,
-  }
-  if (b.blockType === 'column') out.colSpan = clampColSpan(b.colSpan)
-  if (Array.isArray(b.children)) out.children = serializeNodes(b.children)
-  return out
-})
 const draftPayload = () => serializeNodes(blocks.value)
 
 const saveDraft = async () => {
@@ -556,9 +292,18 @@ const saveDraft = async () => {
 // Deep-watch the whole working copy → debounce a draft save.
 watch(blocks, () => scheduleDraftSave(), { deep: true })
 
+/** A copy loaded from the server (a restored version) becomes the working copy — a draft, not saved back. */
+const loadWorkingCopy = (list: unknown) => {
+  hydrating = true
+  blocks.value = hydrateNodes(list || [], nextTmpId)
+  selectedId.value = blocks.value[0]?.id ?? null
+  draftStatus.value = 'saved'
+  nextTick(() => { hydrating = false })
+}
+
 // ── Publish: push draft → live, create an auto version, clear draft ──
 const publish = async () => {
-  if (publishing.value) return
+  if (publishing.value || !loaded.value) return
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
   publishing.value = true
   try {
@@ -566,12 +311,12 @@ const publish = async () => {
     if (res.ok) {
       const prevSelected = selectedId.value
       hydrating = true
-      blocks.value = hydrateNodes(res.blocks || [])
+      blocks.value = hydrateNodes(res.blocks || [], nextTmpId)
       publishedSnapshot.value = JSON.stringify(strip(blocks.value))
       draftStatus.value = 'idle'
       // Keep the same node selected if it survived (real ids are stable on flat
       // pages); otherwise fall back to the first root node.
-      selectedId.value = (prevSelected != null && findNode(prevSelected)) ? prevSelected : (blocks.value[0]?.id ?? null)
+      selectedId.value = (prevSelected != null && findNode(prevSelected, blocks.value)) ? prevSelected : (blocks.value[0]?.id ?? null)
       nextTick(() => { hydrating = false })
       toast.success('Đã xuất bản lên site.')
     }
@@ -584,6 +329,7 @@ const publish = async () => {
 
 // ── Discard draft → revert working copy back to what's live ──
 const discardDraft = async () => {
+  if (!loaded.value) return
   const ok = await confirm({ title: 'Hủy thay đổi', message: 'Bỏ toàn bộ chỉnh sửa chưa xuất bản và quay lại bản đang chạy trên site?', danger: true, confirmLabel: 'Hủy thay đổi' })
   if (!ok) return
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
@@ -598,100 +344,29 @@ const discardDraft = async () => {
   }
 }
 
-// ── Visibility (local) ──
-const toggleVisible = (block: BuilderNode) => {
-  block.isVisible = !block.isVisible
-  scheduleDraftSave()
-}
+// ── Tree edits: palette/add, duplicate, visibility, delete, reorder (local; saved as draft) ──
+const {
+  showPalette, adding, openPalette, paletteGroups, paletteContextLabel, addBlock,
+  duplicateBlock, toggleVisible, removeBlock, move,
+} = useBuilderTreeEdits({ toast, confirm, blocks, selectedId, nextTmpId, scheduleDraftSave })
 
-// ── Delete (local) — removes the node (and its subtree) from its own parent ──
-const removeBlock = async (block: BuilderNode) => {
-  const ok = await confirm({ title: 'Xóa block', message: `Xóa block "${registry[block.blockType]?.label || block.blockType}"?`, danger: true, confirmLabel: 'Xóa' })
-  if (!ok) return
-  const loc = locateNode(block.id)
-  if (!loc) return
-  loc.siblings.splice(loc.index, 1)
-  if (selectedId.value === block.id) {
-    // Prefer a remaining sibling, else the parent, else the first root node.
-    const sib = loc.siblings[loc.index] ?? loc.siblings[loc.index - 1]
-    selectedId.value = sib?.id ?? loc.parent?.id ?? blocks.value[0]?.id ?? null
-  }
-  scheduleDraftSave()
-  toast.success('Đã xóa block khỏi bản nháp.')
-}
-
-// ── Reorder (arrows in canvas / property panel) — within the node's own siblings ──
-// `index` is the node's index among its siblings; move swaps within that array so
-// nesting is preserved.
-const move = (index: number, dir: number) => {
-  if (selectedId.value == null) return
-  const loc = locateNode(selectedId.value)
-  if (!loc) return
-  const arr = loc.siblings
-  const from = loc.index
-  const target = from + dir
-  if (target < 0 || target >= arr.length) return
-  const a = arr[from]
-  const b = arr[target]
-  if (a === undefined || b === undefined) return
-  arr[from] = b
-  arr[target] = a
-  scheduleDraftSave()
-}
+// Bridge injected by the recursive BlockTreeNode navigator: selection + contextual
+// add. selectedId is exposed as the raw ref so children read `.value` reactively.
+provide<BuilderTreeApi>('builderTree', {
+  selectedId,
+  select: (id: NodeId) => { selectedId.value = id ?? null },
+  openPalette,
+})
 
 // ── Meta ──
-const showMeta = ref(false)
-const savingMeta = ref(false)
-const metaForm = reactive({ title: '', slug: '', seoTitle: '', seoDescription: '' })
-const openMeta = () => {
-  metaForm.title = page.value?.title || ''
-  metaForm.slug = page.value?.slug || ''
-  metaForm.seoTitle = page.value?.seoTitle || ''
-  metaForm.seoDescription = page.value?.seoDescription || ''
-  showMeta.value = true
-}
-const saveMeta = async () => {
-  savingMeta.value = true
-  try {
-    const body: Record<string, unknown> = { title: metaForm.title, seoTitle: metaForm.seoTitle, seoDescription: metaForm.seoDescription }
-    if (!page.value?.isSystem) body.slug = metaForm.slug
-    const res = await adminFetch<AdminPageUpdateResult>(`/api/admin/pages/${pageId.value}`, { method: 'PUT', body })
-    // `page.value` đọc lại sau `await`: điều hướng khỏi trang giữa lúc lưu sẽ
-    // gỡ nó về null, và gán vào null là một lỗi thật chứ không phải giả định.
-    if (res.ok && page.value) {
-      page.value.title = metaForm.title
-      page.value.slug = res.slug
-      page.value.seoTitle = metaForm.seoTitle
-      page.value.seoDescription = metaForm.seoDescription
-      toast.success('Đã lưu cấu hình trang.')
-      showMeta.value = false
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không lưu được cấu hình.'))
-  } finally {
-    savingMeta.value = false
-  }
-}
+const { showMeta, savingMeta, metaForm, openMeta, saveMeta } = usePageMeta({ toast, pageId, page, loaded })
 
-// ── Versions ──
-const showVersions = ref(false)
+// ── Versions: the list + its load here; the drawer's writes in usePageVersions ──
 const versions = ref<PageVersionRow[]>([])
 const versionsLoading = ref(false)
-const savingBackup = ref(false)
-const backupLabel = ref('')
+// Lượt đọc danh sách hỏng: ngăn kéo hiện lỗi thay danh sách — không phải "chưa có phiên bản nào".
+const versionsError = ref('')
 
-const kindMeta: Record<string, { label: string; icon: string; color: string }> = {
-  origin: { label: 'Bản gốc', icon: 'fa-solid fa-anchor', color: 'text-blue-600' },
-  manual: { label: 'Bản sao lưu', icon: 'fa-solid fa-bookmark', color: 'text-green-700' },
-  auto: { label: 'Tự động', icon: 'fa-solid fa-clock-rotate-left', color: 'text-gray-500' },
-}
-const manualCount = computed(() => versions.value.filter(v => v.kind === 'manual').length)
-const hasOrigin = computed(() => versions.value.some(v => v.kind === 'origin'))
-
-const openVersions = async () => {
-  showVersions.value = true
-  await loadVersions()
-}
 // Chỉ lượt tải MỚI NHẤT được ghi danh sách: lưu bản sao lưu ngay sau khi mở ngăn kéo
 // làm hai lượt tải chồng nhau, và phản hồi của lượt đầu (chưa có bản vừa lưu) về sau
 // thì đè mất bản mới.
@@ -699,97 +374,21 @@ let versionsLoadSeq = 0
 const loadVersions = async () => {
   const seq = ++versionsLoadSeq
   versionsLoading.value = true
+  versionsError.value = ''
   try {
     const res = await adminFetch<PageVersionsResponse>(`/api/admin/pages/${pageId.value}/versions`)
     if (seq === versionsLoadSeq && res.ok) versions.value = res.versions || []
   } catch (err: unknown) {
-    if (seq === versionsLoadSeq) toast.error(errorMessage(err, 'Không tải được danh sách phiên bản.'))
+    if (seq === versionsLoadSeq) versionsError.value = errorMessage(err, 'Không tải được danh sách phiên bản.')
   } finally {
     if (seq === versionsLoadSeq) versionsLoading.value = false
   }
 }
 
-/**
- * Enter trong ô tên bản sao lưu = bấm "Lưu". Bắt ở `keydown`, KHÔNG `keyup`: mở ngăn
- * kéo bằng Enter trên nút "Phiên bản" đưa focus vào ô này trước khi phím được thả —
- * `@keyup.enter` từng tự lưu một bản sao lưu không ai yêu cầu (mất 1/4 chỗ). Bỏ qua lúc
- * đang gõ dấu (IME tiếng Việt chốt chữ bằng Enter).
- */
-const onBackupLabelEnter = (event: KeyboardEvent) => {
-  // Phím lặp (giữ Enter) mỗi lần một bản sao lưu — chỉ nhận lần nhấn có chủ đích.
-  if (!isDeliberateEnter(event)) return
-  event.preventDefault()
-  if (manualCount.value < 4 && !savingBackup.value) void saveBackup()
-}
-
-// Load a version into the working copy (draft) — user must Publish to go live.
-const restoreVersion = async (v: PageVersionRow) => {
-  const ok = await confirm({ title: 'Khôi phục phiên bản', message: `Nạp "${v.label || kindMeta[v.kind]?.label}" vào bản nháp? Bản đang chạy trên site không đổi cho tới khi bạn Xuất bản.`, confirmLabel: 'Khôi phục' })
-  if (!ok) return
-  try {
-    const res = await adminFetch<PageVersionRestoreResponse>(`/api/admin/pages/${pageId.value}/versions/${v.id}/restore`, { method: 'POST' })
-    if (res.ok) {
-      hydrating = true
-      blocks.value = hydrateNodes(res.blocks || [])
-      selectedId.value = blocks.value[0]?.id ?? null
-      draftStatus.value = 'saved'
-      nextTick(() => { hydrating = false })
-      showVersions.value = false
-      toast.success('Đã nạp vào bản nháp. Xem trước rồi bấm Xuất bản.')
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không khôi phục được.'))
-  }
-}
-
-const deleteVersion = async (v: PageVersionRow) => {
-  const ok = await confirm({ title: 'Xóa phiên bản', message: `Xóa "${v.label || kindMeta[v.kind]?.label}"?`, danger: true, confirmLabel: 'Xóa' })
-  if (!ok) return
-  try {
-    await adminFetch<PageVersionDeleteResponse>(`/api/admin/pages/${pageId.value}/versions/${v.id}`, { method: 'DELETE' })
-    await loadVersions()
-    toast.success('Đã xóa phiên bản.')
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không xóa được phiên bản.'))
-  }
-}
-
-// Save current working copy as a named manual backup (max 4).
-const saveBackup = async () => {
-  savingBackup.value = true
-  try {
-    const res = await adminFetch<PageVersionCreateResponse>(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'manual', label: backupLabel.value, blocks: draftPayload() } })
-    if (res.ok) {
-      backupLabel.value = ''
-      await loadVersions()
-      toast.success('Đã lưu bản sao lưu.')
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không lưu được bản sao lưu.'))
-  } finally {
-    savingBackup.value = false
-  }
-}
-
-// Designate the current working copy as the locked origin baseline.
-const setOrigin = async () => {
-  const ok = await confirm({ title: 'Chỉ định bản gốc', message: hasOrigin.value ? 'Ghi đè bản gốc hiện tại bằng nội dung đang dựng?' : 'Đặt nội dung đang dựng làm bản gốc (khóa, dùng để khôi phục sau này)?', confirmLabel: 'Chỉ định' })
-  if (!ok) return
-  try {
-    const res = await adminFetch<PageVersionCreateResponse>(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'origin', blocks: draftPayload() } })
-    if (res.ok) {
-      await loadVersions()
-      toast.success('Đã chỉ định bản gốc.')
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không chỉ định được bản gốc.'))
-  }
-}
-
-const fmtDate = (d: string) => {
-  if (!d) return ''
-  try { return new Date(d).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) } catch { return d }
-}
+const {
+  showVersions, savingBackup, backupLabel, manualCount, hasOrigin,
+  openVersions, restoreVersion, deleteVersion, saveBackup, setOrigin,
+} = usePageVersions({ toast, confirm, pageId, loaded, versions, loadVersions, draftPayload, loadWorkingCopy })
 
 onMounted(fetchPage)
 </script>

@@ -80,7 +80,10 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   // rendered trong `role="alert"` + nút "Thử lại" gọi lại `fetchTypes` (cùng file).
   { file: 'components/admin/ContentTypePicker.vue', refs: ['error'], retries: ['fetchTypes'] },
   { file: 'pages/admin/content/pages/index.vue', refs: ['loadError'], retries: ['fetchPages'] },
-  { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError'], retries: ['fetchPage'] },
+  // The builder's versions drawer (a wave3 4.2 part) shows a failed list read in the page's
+  // `#error` slot — the load and its error branch stay in the page (FINDING-B1: it used to
+  // read as "no versions").
+  { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError', 'versionsError'], retries: ['fetchPage', 'loadVersions'] },
   { file: 'pages/admin/content/navigation/navbar.vue', refs: ['error'], retries: ['loadMenu'] },
   { file: 'pages/admin/content/navigation/mobile.vue', refs: ['error'], retries: ['loadMenu'] },
 

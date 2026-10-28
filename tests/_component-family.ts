@@ -4,8 +4,8 @@
  * source, so a guard that used to grep the 730-line file keeps reading everything the file
  * used to contain.
  *
- * Three families today (`ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, and the admin
- * `AI_PROVIDERS_TAB_FAMILY`). The parts are
+ * Families today: `ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, and the admin
+ * `AI_PROVIDERS_TAB_FAMILY`, `LANGUAGES_PAGE_FAMILY` and `PAGE_BUILDER_FAMILY`. The parts are
  * DERIVED from the directory, not listed (the design of tests/_moderation-page-parts.ts):
  * a part added later joins every "must appear nowhere" scan without anyone editing this
  * file. The named parts are a subset check, so a renamed/moved part turns the scan red
@@ -58,6 +58,29 @@ export const AI_PROVIDERS_TAB_FAMILY: ComponentFamily = {
     'ProviderCreateModal.vue', 'ProviderEditModal.vue', 'ProviderModelsPanel.vue',
   ],
   modules: ['composables/useAiModelWrites.ts', 'composables/useAiProviderWrites.ts'],
+}
+
+/**
+ * `/admin/languages` (756 lines before its wave3 4.2 split). The three tabs in
+ * `components/admin/languages/` are an older split of the same page with their own suites;
+ * this family is the page and what the 4.2 split pulled out of it.
+ */
+export const LANGUAGES_PAGE_FAMILY: ComponentFamily = {
+  parent: 'pages/admin/languages/index.vue',
+  partsDir: 'components/admin/languages/page',
+  expectedParts: ['LanguagesMoveModal.vue', 'LanguagesPageHeader.vue', 'LanguagesTranslateProgressModal.vue'],
+  modules: ['composables/useLanguageBatchTranslate.ts', 'composables/useLanguageWrites.ts'],
+}
+
+/** The page builder (`/admin/content/pages/[id]`, 795 lines before its wave3 4.2 split). */
+export const PAGE_BUILDER_FAMILY: ComponentFamily = {
+  parent: 'pages/admin/content/pages/[id].vue',
+  partsDir: 'components/admin/page-builder',
+  expectedParts: ['BlockPaletteDrawer.vue', 'PageBuilderTopBar.vue', 'PageMetaModal.vue', 'PageVersionsDrawer.vue'],
+  modules: [
+    'composables/useBuilderTreeEdits.ts', 'composables/usePageMeta.ts', 'composables/usePageVersions.ts',
+    'utils/blocks/builder-tree.ts', 'utils/page-builder/versions.ts',
+  ],
 }
 
 export const readAppFile = (file: string): string => readFileSync(new URL(file, APP), 'utf8').replace(/\r\n/g, '\n')

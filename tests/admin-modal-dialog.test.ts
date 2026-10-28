@@ -371,7 +371,11 @@ const MIGRATED_TO_ADMIN_MODAL: Record<string, number> = {
   'pages/admin/content/content-types.vue': 1,
   'pages/admin/content/categories/index.vue': 1,
   'pages/admin/content/pages/index.vue': 1,
-  'pages/admin/content/pages/[id].vue': 3,
+  // Trình dựng trang: ngăn "Thêm khối", hộp "Cấu hình trang", ngăn "Phiên bản" — mỗi hộp
+  // một phần tách (wave3 4.2); tệp trang không còn hộp thoại nào.
+  'components/admin/page-builder/BlockPaletteDrawer.vue': 1,
+  'components/admin/page-builder/PageMetaModal.vue': 1,
+  'components/admin/page-builder/PageVersionsDrawer.vue': 1,
   'pages/admin/users/index.vue': 2,
   'pages/admin/media-portal/categories.vue': 1,
   'components/admin/SubmissionDetailModal.vue': 1,
@@ -384,7 +388,10 @@ const MIGRATED_TO_ADMIN_MODAL: Record<string, number> = {
   'components/admin/ai/providers/ModelAddModal.vue': 1,
   'components/admin/ai/providers/ModelEditModal.vue': 1,
   'components/admin/ai/providers/ModelTestCallModal.vue': 1,
-  'pages/admin/languages/index.vue': 2,
+  // /admin/languages: hai hộp thoại (chuyển vị trí, tiến trình dịch AI), mỗi hộp một phần
+  // tách (wave3 4.2) — tệp trang không còn hộp thoại nào.
+  'components/admin/languages/page/LanguagesMoveModal.vue': 1,
+  'components/admin/languages/page/LanguagesTranslateProgressModal.vue': 1,
   'pages/admin/content/articles/[id].vue': 1,
   'components/admin/articles/ArticleQuickViewModal.vue': 1,
   'components/admin/articles/ArticleGlobalTranslateModal.vue': 1,
@@ -749,9 +756,18 @@ test('hộp thoại nuốt phím giữ từ trước khi mở; ô Enter trong h�
     'components/admin/profile/ProfileDisableDialog.vue',
     'components/admin/profile/ProfileRecoveryDialog.vue',
   ]
-  for (const file of ['pages/admin/content/pages/[id].vue', 'components/admin/MediaLibraryModal.vue', ...PROFILE_DIALOGS]) {
+  // Trình dựng trang (wave3 4.2): ô tên bản sao lưu nay ở ngăn "Phiên bản" tách riêng.
+  const VERSIONS_DRAWER = 'components/admin/page-builder/PageVersionsDrawer.vue'
+  for (const file of [VERSIONS_DRAWER, 'components/admin/MediaLibraryModal.vue', ...PROFILE_DIALOGS]) {
     assert.match(read(file), /isDeliberateEnter\(/, `${file}: Enter lặp/đang gõ dấu không được gửi`)
   }
+  // …và chặt hơn trước: MỌI ô bắt Enter của ngăn đi qua `onBackupLabelEnter` (hàm gọi
+  // `isDeliberateEnter` rồi mới gửi), ở `keydown`; tệp trang không còn ô nào bắt Enter.
+  const drawerEnter = read(VERSIONS_DRAWER).match(/@key(?:down|up)\.enter="[^"]*"/g) ?? []
+  assert.ok(drawerEnter.length > 0, `${VERSIONS_DRAWER}: không còn ô nào bắt Enter để kiểm`)
+  for (const binding of drawerEnter) assert.equal(binding, '@keydown.enter="onBackupLabelEnter"', `${VERSIONS_DRAWER}: ${binding}`)
+  assert.match(read(VERSIONS_DRAWER), /const onBackupLabelEnter = \(event: KeyboardEvent\) => \{\n(?:\s*\/\/.*\n)*\s*if \(!isDeliberateEnter\(event\)\) return/)
+  assert.doesNotMatch(read('pages/admin/content/pages/[id].vue'), /@key(?:down|up)\.enter=/, '[id].vue: Enter của ngăn Phiên bản thuộc về phần tách')
   // Có `isDeliberateEnter(` ở đâu đó trong tệp chưa đủ: MỌI ô nhập bắt Enter của hộp thoại
   // hồ sơ phải đi qua `submitOnEnter` (hàm gọi nó), và ở `keydown` — `keyup` từng gửi biểu
   // mẫu trống khi hộp mở bằng Enter.
@@ -819,8 +835,11 @@ test('AdminModal nối dây: phím qua adminModalKeyAction, nền qua adminModal
   // Escape của hộp xác nhận đánh dấu đã xử lý (panel thuộc tính không thu nhỏ theo).
   assert.match(confirm, /if \(e\.key !== 'Escape'\) return\n[\s\S]*?e\.preventDefault\(\)\n\s*cancel\(\)/)
   // Hộp tiến trình dịch AI: biểu tượng quay khi đang dịch (như trước khi chuyển sang
-  // AdminModal), dừng khi người dùng chọn giảm chuyển động.
-  assert.match(read('pages/admin/languages/index.vue'), /:icon="!progressStats\.finished && !progressStats\.stopped \? 'fa-solid fa-wand-magic-sparkles animate-spin motion-reduce:animate-none' : 'fa-solid fa-wand-magic-sparkles'"/)
+  // AdminModal), dừng khi người dùng chọn giảm chuyển động. Hộp là phần tách của trang
+  // /admin/languages (wave3 4.2): chốt đi theo, và trang phải còn vẽ đúng phần đó.
+  assert.match(read('components/admin/languages/page/LanguagesTranslateProgressModal.vue'), /:icon="!progressStats\.finished && !progressStats\.stopped \? 'fa-solid fa-wand-magic-sparkles animate-spin motion-reduce:animate-none' : 'fa-solid fa-wand-magic-sparkles'"/)
+  assert.match(read('pages/admin/languages/index.vue'), /<LanguagesTranslateProgressModal\b/)
+  assert.doesNotMatch(read('pages/admin/languages/index.vue'), /<AdminModal\b/, 'hộp thoại của /admin/languages thuộc về phần tách')
   // Panel thuộc tính mở rộng (nghe Escape ở window) bỏ qua Escape mà một hộp thoại đã
   // xử lý — đóng thư viện ảnh mở từ panel không thu nhỏ luôn panel.
   assert.match(read('components/admin/builder/PropertyPanel.vue'), /e\.key === 'Escape' && expanded\.value && !e\.defaultPrevented/)

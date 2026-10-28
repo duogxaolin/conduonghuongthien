@@ -179,6 +179,11 @@ async function mountPage(options: { manualOpen?: boolean } = {}) {
     '~/components/admin/languages/LanguagesListTab.vue': { default: stub },
     '~/components/admin/languages/UniversalTab.vue': { default: stub },
     '~/components/admin/AdminModal.vue': { default: stub },
+    // The wave3 4.2 parts (header, two dialogs): display-only, not part of the search box —
+    // tests/admin-languages-page.test.ts mounts them for real.
+    '~/components/admin/languages/page/LanguagesPageHeader.vue': { default: stub },
+    '~/components/admin/languages/page/LanguagesMoveModal.vue': { default: stub },
+    '~/components/admin/languages/page/LanguagesTranslateProgressModal.vue': { default: stub },
   }, auto)
 
   const app = createApp(page)

@@ -45,7 +45,7 @@ import * as Vue from 'vue'
 
 import { adminFetch } from '../app/composables/adminFetch.ts'
 import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
-import { AI_PROVIDERS_TAB_FAMILY, familyFiles, readAppFile } from './_component-family.ts'
+import { AI_PROVIDERS_TAB_FAMILY, LANGUAGES_PAGE_FAMILY, familyFiles, readAppFile } from './_component-family.ts'
 
 const PROVIDERS_TAB = 'components/admin/ai/AiProvidersTab.vue'
 const LANGUAGES_PAGE = 'pages/admin/languages/index.vue'
@@ -707,7 +707,9 @@ describe(`${LANGUAGES_PAGE} — actions`, () => {
     page.searchQuery = ''
     assert.deepEqual(await sent(page.fetchTranslations), ['GET /api/admin/languages/en/translations'])
 
-    assert.deepEqual(await sent(page.seedDefaultTranslations), ['POST /api/admin/languages/seed-default', reloadLanguages, 'GET /api/admin/languages/en/translations'])
+    // Since FINDING-L1 (wave3 4.2, tests/admin-languages-page-findings.test.ts) the seed also
+    // re-reads the vi source: it inserts vi rows, which the AI translates FROM.
+    assert.deepEqual(await sent(page.seedDefaultTranslations), ['POST /api/admin/languages/seed-default', ...reloadAll])
     assert.equal(lastToast(toasts, 'success'), 'Đã nạp 0 ngôn ngữ và 4 bản dịch mặc định.')
     assert.deepEqual(await sent(page.syncAllLanguages), ['POST /api/admin/languages/sync', ...reloadAll])
     assert.equal(lastToast(toasts, 'success'), 'Tất cả các ngôn ngữ đã được đồng bộ đầy đủ các khóa từ ngôn ngữ mặc định.')
@@ -788,6 +790,23 @@ describe('source', () => {
 
   it('no file of the split providers tab — parent, parts, composables — calls or casts $fetch', () => {
     assert.deepEqual(bareFetchIn(familyFiles(AI_PROVIDERS_TAB_FAMILY)), [])
+  })
+
+  // /admin/languages since its wave3 4.2 split: the page, its display parts
+  // (`components/admin/languages/page/*.vue`) and the two write composables.
+  it('no file of the split languages page — parent, parts, composables — calls or casts $fetch', () => {
+    assert.deepEqual(bareFetchIn(familyFiles(LANGUAGES_PAGE_FAMILY)), [])
+  })
+
+  it('proof: $fetch planted in a part or in a composable of the languages page is caught', () => {
+    const part = 'components/admin/languages/page/LanguagesMoveModal.vue'
+    const composable = 'composables/useLanguageBatchTranslate.ts'
+    const plant = (file: string) => readAppFile(file).replace('</script>', "const x = await ($fetch as (u: string) => Promise<unknown>)('/api/x')\n</script>")
+    const plantTs = (file: string) => `${readAppFile(file)}\nexport const leak = () => $fetch('/api/admin/languages')\n`
+    assert.deepEqual(bareFetchIn(familyFiles(LANGUAGES_PAGE_FAMILY, { [part]: plant(part) })), [part])
+    assert.deepEqual(bareFetchIn(familyFiles(LANGUAGES_PAGE_FAMILY, { [composable]: plantTs(composable) })), [composable])
+    const added = 'components/admin/languages/page/LanguagesExtra.vue'
+    assert.deepEqual(bareFetchIn(familyFiles(LANGUAGES_PAGE_FAMILY, { [added]: '<script setup lang="ts">\n$fetch(\'/x\')\n</script>' })), [added])
   })
 
   it('proof: $fetch planted in a part or in a composable of the tab is caught', () => {
