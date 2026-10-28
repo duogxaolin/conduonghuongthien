@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { WindowWithTinyMce } from '~/types/tinymce'
-import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
+import type { AdminCategoryRow, AdminContentTypeRow, AdminMediaUploadResult } from '~/types/admin-api'
+import type { ArticleCreateResponse, ArticleReadResponse, ArticleTranslateResponse, ArticleUpdateResponse } from '~/types/admin-articles-api'
+import type { AdminCategoriesResponse, AdminContentTypesResponse } from '~/types/admin-taxonomy-api'
 import type { MediaItem } from '~/types/media'
 import TinyMceEditor from '~/components/admin/TinyMceEditor.vue'
 import AdminModal from '~/components/admin/AdminModal.vue'
@@ -33,7 +35,9 @@ const form = reactive({
 // has nothing to fetch, so it starts false.
 const loading = ref(!isNew.value)
 const saving = ref(false)
+/** Tải bài hỏng ("Thử lại" tải lại). Lưu hỏng là `saveError`: không tải lại đè lên chữ đang gõ. */
 const errorMsg = ref('')
+const saveError = ref('')
 const tinymceReady = ref(false)
 
 function setEditorContent(html: string): void {
@@ -98,16 +102,18 @@ const contentTypes = ref<AdminContentTypeRow[]>([])
 
 const fetchContentTypes = async () => {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)('/api/admin/content-types')
-    if (res.ok) contentTypes.value = res.items
+    contentTypes.value = (await adminFetch<AdminContentTypesResponse>('/api/admin/content-types')).items
   } catch { /* keep empty — select falls back to nothing */ }
 }
 
+// Chỉ lượt mới nhất được ghi: danh mục của thể loại chọn trước, về sau, không lấp ô "Danh mục".
+let categoriesRequest = 0
 const fetchCategories = async (type: string) => {
+  const ticket = ++categoriesRequest
   try {
-    const res = await $fetch('/api/admin/categories', { params: { type } })
-    if (res.ok) availableCategories.value = res.items
-  } catch { availableCategories.value = [] }
+    const { items } = await adminFetch<AdminCategoriesResponse>('/api/admin/categories', { query: { type } })
+    if (ticket === categoriesRequest) availableCategories.value = items
+  } catch { if (ticket === categoriesRequest) availableCategories.value = [] }
 }
 
 // Guard: true while fetchArticle is populating the form on initial load.
@@ -127,8 +133,9 @@ const fetchArticle = async () => {
   if (isNew.value || !articleId.value) return
   suppressTypeReset = true  // block watcher resets during form population
   loading.value = true
+  errorMsg.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; article: { title: string; type: string; category: string; categoryId: number | null; excerpt: string; content: string; thumbnailUrl: string; status: string } }>)(`/api/admin/articles/${articleId.value}`)
+    const res = await adminFetch<ArticleReadResponse>(`/api/admin/articles/${articleId.value}`)
     if (res.ok && res.article) {
       form.title = res.article.title || ''
       form.type = res.article.type || 'news'
@@ -226,17 +233,17 @@ async function translateAllForThisArticle(targetStatus: 'ai_draft' | 'published'
   await translationPanelRef.value?.translateAllForThisArticle(targetStatus)
 }
 
-
 const handleSave = async () => {
+  if (errorMsg.value) return // bài chưa tải được: lưu biểu mẫu trống là ghi đè bài thật
   if (!form.title.trim()) {
     toast.warning('Tiêu đề bài viết không được để trống'); return
   }
   form.content = getEditorContent()
-  errorMsg.value = ''
+  saveError.value = ''
   saving.value = true
   try {
     if (isNew.value) {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; id: number }>)('/api/admin/articles', { method: 'POST', body: form })
+      const res = await adminFetch<ArticleCreateResponse>('/api/admin/articles', { method: 'POST', body: form })
       if (res.ok) {
         toast.success('Tạo bài viết mới thành công!')
         // Saved: the redirect to the new article's page must not ask "leave without saving?".
@@ -245,29 +252,23 @@ const handleSave = async () => {
         if (autoTranslateLangs.value.length > 0 && newId) {
           try {
             for (const langCode of autoTranslateLangs.value) {
-              await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${newId}/translations/translate`, {
-                method: 'POST',
-                body: { langCode },
-              })
+              await adminFetch<ArticleTranslateResponse>(`/api/admin/articles/${newId}/translations/translate`, { method: 'POST', body: { langCode } })
             }
             toast.success(`Đã kích hoạt dịch tự động sang ${autoTranslateLangs.value.length} ngôn ngữ trong nền!`)
-          } catch {
-            // Non-blocking
-          }
+          } catch { /* Non-blocking */ }
         }
         navigateTo(`/admin/content/articles/${newId}`)
       }
     } else {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
-      if (res.ok) {
-        toast.success('Đã cập nhật bài viết thành công!')
-        markSaved()
-        checkAndPromptReTranslation()
-      }
+      // Máy chủ chỉ trả `{ ok: true }` — từ chối là ném lỗi, nên không còn nhánh `ok` để kiểm.
+      await adminFetch<ArticleUpdateResponse>(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
+      toast.success('Đã cập nhật bài viết thành công!')
+      markSaved()
+      checkAndPromptReTranslation()
     }
   } catch (err: unknown) {
-    errorMsg.value = errorMessage(err, 'Lỗi lưu bài viết')
-    toast.error(errorMsg.value)
+    saveError.value = errorMessage(err, 'Lỗi lưu bài viết')
+    toast.error(saveError.value)
   } finally {
     saving.value = false
   }
@@ -350,7 +351,7 @@ const initTinyMCE = () => {
     images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', blobInfo.blob(), blobInfo.filename())
-      void ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; media?: { url: string } }>)(`/api/admin/media/upload`, { method: 'POST', body: formData })
+      void adminFetch<AdminMediaUploadResult>(`/api/admin/media/upload`, { method: 'POST', body: formData })
         .then((res) => {
           if (res.ok && res.media?.url) resolve(res.media.url)
           else reject('Upload thất bại')
@@ -529,7 +530,7 @@ onUnmounted(() => {
         >Hủy & Quay lại</nuxt-link>
         <button
           class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed"
-          :disabled="saving"
+          :disabled="saving || !!errorMsg"
           @click="handleSave"
         >
           <i class="fa-solid fa-floppy-disk"></i>
@@ -538,9 +539,9 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="errorMsg" role="alert" class="bg-danger-bg text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
-      <span>{{ errorMsg }}</span>
-      <button v-if="!loading && !saving" type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline whitespace-nowrap" @click="fetchArticle">Thử lại</button>
+    <div v-if="errorMsg || saveError" role="alert" class="bg-danger-bg text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+      <span>{{ errorMsg || saveError }}</span>
+      <button v-if="errorMsg && !loading && !saving" type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline whitespace-nowrap" @click="fetchArticle">Thử lại</button>
     </div>
 
     <!-- Loading — shaped like the editor grid below, which is `v-else`, so the
@@ -706,7 +707,6 @@ onUnmounted(() => {
       :is-new="isNew"
       :form-title="form.title"
     />
-
 
     <!-- Modal: Nhắc nhở cập nhật bản dịch khi nội dung Tiếng Việt thay đổi -->
     <AdminModal
