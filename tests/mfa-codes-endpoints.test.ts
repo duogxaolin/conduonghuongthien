@@ -248,7 +248,9 @@ test('every lifecycle action that mints material bumps the session generation', 
     'server/api/admin/profile/mfa/disable.post.ts',
     'server/api/admin/profile/mfa/recovery-codes.post.ts',
   ]) {
-    assert.match(read(file), /revokeSessions\(admin\.id\)/, `${file} must revoke sessions`)
+    // `, tx`: `disable.post.ts` bumps the generation inside its transaction (the effect is
+    // pinned on a real request in tests/admin-mfa-disable-behavior.test.ts).
+    assert.match(read(file), /revokeSessions\(admin\.id(?:, tx)?\)/, `${file} must revoke sessions`)
     assert.match(read(file), /setSessionCookie\(event, \{/, `${file} must keep the caller signed in`)
   }
   assert.match(

@@ -287,6 +287,10 @@ const AUDITED_MUTATION_ENDPOINTS: string[] = [
   'server/api/admin/pages/[id]/blocks/index.post.ts',
   'server/api/admin/pages/[id]/versions/[versionId]/restore.post.ts',
   'server/api/admin/pages/index.post.ts',
+  // Factor, recovery codes, session generation and audit row in one transaction; the
+  // cookie is written AFTER the commit, so it is no longer a cookie-between-writes
+  // exception (2026-10-28 — the audit used to follow the cookie on the pool).
+  'server/api/admin/profile/mfa/disable.post.ts',
   'server/api/admin/roles/index.post.ts',
   'server/api/admin/settings/index.put.ts',
   'server/api/admin/settings/navigation.put.ts',
@@ -355,7 +359,7 @@ describe('cookie-writing endpoints are excluded on purpose', () => {
  * Cùng câu hỏi, nhưng QUÉT CẢ THƯ MỤC `server/api/admin/**` thay vì đọc một danh
  * sách tên tệp.
  *
- * `AUDITED_MUTATION_ENDPOINTS` phía trên liệt kê 17 đường dẫn, nên nó **xanh vĩnh
+ * `AUDITED_MUTATION_ENDPOINTS` phía trên liệt kê 18 đường dẫn, nên nó **xanh vĩnh
  * viễn với bất cứ tệp nào không ai nghĩ ra để thêm vào** — đúng lớp hỏng mà cổng
  * tầng service đã được viết lại để thoát khỏi, và lời giải thích đó đã nằm ngay
  * trong tệp này suốt thời gian qua trong khi nhóm endpoint vẫn là một danh sách.
@@ -370,7 +374,9 @@ describe('cookie-writing endpoints are excluded on purpose', () => {
  *
  * ⚠️ GIỚI HẠN CÓ CHỦ ĐÍCH: guard chỉ hỏi những tệp **tự tay** ghi (`db.update(`,
  * `db.delete(`, `db.insert(` vào bảng khác `activityLogs`). Endpoint uỷ quyền
- * mutation cho một service rồi tự ghi audit trên pool — vd. `profile/mfa/disable.post.ts`
+ * mutation cho một service rồi tự ghi audit trên pool — như `profile/mfa/disable.post.ts`
+ * tới 2026-10-28 (nay bọc trong một transaction và nằm trong
+ * `AUDITED_MUTATION_ENDPOINTS` ở trên, test hành vi ở `admin-mfa-disable-behavior`)
  * — không có lệnh ghi thô nào ở đây nên không bị hỏi, và cổng quét `server/services/`
  * bên dưới cũng không hỏi service đó nếu nó không chạm `activityLogs`. Đó đúng là
  * hình của FINDING-R3-1: `settings/retention.put.ts` từng gọi `saveRetentionPolicy`
