@@ -441,6 +441,30 @@ describe('models of a provider', () => {
     assert.ok(row(card(page, 'OpenAI'), 'gpt-4o'))
   })
 
+  it('the add-model and edit-model dialogs are busy while their request runs: frame locked, button locked', async (t) => {
+    const server = aiServer()
+    const { page, calls, settle } = await openTab(t, server)
+    const busyWhile = async (open: () => MiniElement, fill: (d: MiniElement) => Promise<void>, submit: string, pendingLabel: string) => {
+      await click(open())
+      await settle()
+      await fill(dialog(page))
+      server.state.override = call => (call.method === 'POST' || call.method === 'PUT' ? HOLD : undefined)
+      const pending = click(button(dialog(page), submit))
+      await settle()
+      const d = dialog(page)
+      assert.equal(d.props['aria-busy'], 'true', `${d.props['aria-label']}: aria-busy`)
+      assert.equal(button(d, pendingLabel).props.disabled, true)
+      assert.throws(() => click(closeX(d)), /disabled/)
+      server.state.override = () => undefined
+      server.answer(calls.at(-1)!)
+      await pending
+      await settle()
+      assert.equal(dialogs(page).length, 0)
+    }
+    await busyWhile(() => button(card(page, 'OpenAI'), 'Thêm Model'), d => input(field(d, 'Mã Model (ID gọi API)'), 'gpt-4o'), 'Thêm Model', 'Đang thêm...')
+    await busyWhile(() => button(row(page, 'org/flash'), 'Sửa giá'), async () => {}, 'Lưu', 'Đang lưu...')
+  })
+
   it('"Thêm Model" refused by the server shows the sentence in the dialog', async (t) => {
     const { page, settle } = await openTab(t)
     await click(button(card(page, 'Delify Router'), 'Thêm Model'))
@@ -527,6 +551,17 @@ describe('models of a provider', () => {
   it('ticked models get a bar per provider; the header box ticks all of them; the delete asks and reloads', async (t) => {
     const { page, calls, confirms, toasts, settle } = await openTab(t)
     const head = () => checkboxes(card(page, 'Delify Router')).find(el => el.props.title === 'Chọn tất cả model của nhà cung cấp này')!
+    // One row (a model WITH a label: the tick is keyed by the model id, not by what is shown).
+    await tick(checkboxes(row(page, 'glm-5.3'))[0]!)
+    await settle()
+    assert.equal(checkboxes(row(page, 'glm-5.3'))[0]!.props.checked, true)
+    assert.equal(checkboxes(row(page, 'org/flash'))[0]!.props.checked, false)
+    assert.equal(head().props.checked, false)
+    assert.match(spaced(card(page, 'Delify Router')), /Đã chọn 1 model của Delify Router Bỏ chọn Xoá 1 model đã chọn/)
+    await tick(checkboxes(row(page, 'glm-5.3'))[0]!)
+    await settle()
+    assert.doesNotMatch(spaced(card(page, 'Delify Router')), /Đã chọn/)
+
     await tick(head())
     await settle()
     assert.equal(head().props.checked, true)

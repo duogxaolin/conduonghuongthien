@@ -92,6 +92,7 @@ describe('FINDING-P2 — the selection follows the reloaded lists', () => {
     const { page, settle } = await openTab(t)
     await tick(checkboxes(row(page, 'glm-5.3'))[0]!)
     await settle()
+    assert.equal(checkboxes(row(page, 'glm-5.3'))[0]!.props.checked, true, 'precondition: ticked')
     await click(button(row(page, 'glm-5.3'), 'Xoá'))
     await settle()
     await click(button(card(page, 'Delify Router'), 'Thêm Model'))
