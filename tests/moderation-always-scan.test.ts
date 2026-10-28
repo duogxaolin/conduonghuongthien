@@ -24,6 +24,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   moderationFileDeclaring,
+  moderationWorkerFiles,
   moderationWorkerSource,
   moderationWorkerSourceWith,
 } from './_moderation-worker-family.ts'
@@ -96,11 +97,12 @@ describe('moderation-always-scan — lớp AI quét lọc mọi comment', () => 
       }),
     )
     assert.ok(!OLD_LENGTH_FLOOR.test(commented) && !OLD_THRESHOLD_EXPR.test(commented))
-    // Anh em không thuộc nhóm: tệp tên lạ không lọt vào tập quét qua lối tiêm.
-    assert.equal(
-      moderationWorkerSourceWith({ 'moderation-regex.ts': old }),
-      moderationWorkerSource(),
-    )
+    // Anh em không thuộc nhóm: tệp tên lạ không lọt vào tập quét qua lối tiêm — kể cả các
+    // tệp con của nhóm moderation-regex (tách ở wave3 4.3, cùng tiền tố `moderation-`).
+    for (const sibling of ['moderation-regex.ts', 'moderation-regex-runtime.ts', 'moderation-regex-check.ts', 'moderation-regex-extra.ts'])
+      assert.equal(moderationWorkerSourceWith({ [sibling]: old }), moderationWorkerSource(), sibling)
+    for (const file of moderationWorkerFiles())
+      assert.ok(!/\/moderation-regex(?:-[a-z0-9-]+)?\.ts$/.test(file), `${file} thuộc nhóm moderation-regex, không thuộc tập quét của worker`)
   })
 
   it('checkAndModerateContent chạy AI cho mọi content không rỗng', () => {

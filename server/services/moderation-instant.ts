@@ -10,9 +10,12 @@ import { logError } from '../utils/logger'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
 import { workerStats } from './moderation-stats'
+import type { ModerationRegexBudget } from './moderation-regex'
 
 /** Ngữ cảnh một lượt chặn tức thì — chung cho `fastPreModerate` và `recordInstantBlock`. */
 export interface InstantBlockContext {
+  /** Hạn mức thời gian khớp regex của request (`createModerationRegexBudget`); chỉ `fastPreModerate` đọc. */
+  regexBudget?: ModerationRegexBudget
   authorName?: string
   authorIp?: string
   targetType?: 'comment' | 'chat' | 'livestream_chat' | 'article'
@@ -107,9 +110,21 @@ export interface FastPreModerateResult {
   blocked: boolean
   action: "allow" | "block"
   severity: 'low' | 'medium' | 'high' | 'critical'
+  /** For admins (review-queue row, hide reason): names the rule — `Mẫu regex: <mẫu>`, `Từ khóa: …`. */
   reason: string
   matchedRule: string
+  /** What the SUBMITTER may be told — `INSTANT_BLOCK_PUBLIC_MESSAGE` when blocked, never the rule; `''` when allowed. */
+  publicMessage: string
 }
+
+/**
+ * The refusal a reader sees when the instant check blocks a comment or a livestream message
+ * (verify of 4.3c follow-up, W8). It used to be `reason` — `… (Mẫu regex: <mẫu>).` — so the
+ * submitter learnt the exact pattern that matched: enough to step around it, or to craft input
+ * that makes THAT rule slow (`moderation-regex-runtime.ts`) until it is disabled for everyone. The
+ * detail stays with the admins: the review-queue row and the hide reason carry `reason`.
+ */
+export const INSTANT_BLOCK_PUBLIC_MESSAGE = 'Nội dung vi phạm tiêu chuẩn an ninh và quy định cộng đồng nên không được đăng.'
 
 // ── Built-in Instant Reject Patterns (< 1ms, zero latency) ────────────────
 /**
@@ -196,5 +211,6 @@ function blockedResult(severity: 'low' | 'medium' | 'high' | 'critical', reason:
     severity,
     reason: `Nội dung vi phạm tiêu chuẩn an ninh và quy định cộng đồng (${reason}).`,
     matchedRule: reason,
+    publicMessage: INSTANT_BLOCK_PUBLIC_MESSAGE,
   }
 }

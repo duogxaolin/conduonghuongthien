@@ -10,7 +10,7 @@ import { callAi } from './ai-gateway'
 import { fenceUntrustedContent } from '../utils/ai/untrusted-content'
 import { logWarn, logInfo, logError } from '../utils/logger'
 import { getActiveModerationRules } from './moderation-rules-cache'
-import { compileModerationRegex, isRegexRuleType, testModerationRegex } from './moderation-regex'
+import { compileModerationRegex, createModerationRegexBudget, isRegexRuleType, testModerationRegexes, type ModerationRegexRule } from './moderation-regex'
 import { workerStats } from './moderation-stats'
 import { fastPreModerate } from './moderation-worker-prescreen'
 import { applyAutoHide, describeError, insertQueueRowOnce, noteWorkerError } from './moderation-worker-persist'
@@ -36,8 +36,10 @@ export async function checkAndModerateContent(
     return { flagged: false, action: "allow", severity: 'low', reasons: [], matchedRules: [] }
   }
 
-  // First check fast pre-moderator
-  const fast = await fastPreModerate(content, input)
+  // First check fast pre-moderator — on the same regex budget as the full pass below (the caller's,
+  // or one for this call: no moderation call runs without the per-request bound — W7).
+  const regexBudget = options.regexBudget ?? createModerationRegexBudget()
+  const fast = await fastPreModerate(content, { ...input, regexBudget })
   if (fast.blocked) {
     // Already flagged by pre-moderator, auto-hide database target row if targetId provided
     const failures: ModerationPersistFailure[] = []
@@ -69,23 +71,28 @@ export async function checkAndModerateContent(
   const matchedKeywords: Array<{ pattern: string; category: string; severity: string; action: string }> = []
   const lowerContent = content.toLowerCase()
 
-  for (const rule of rules) {
-    // Từ khoá so trên bản đã hạ chữ. Regex thì KHÔNG bao giờ hạ chữ mẫu (sẽ đổi
-    // `\S \W \D \B` thành `\s \w \d \b`) — biên dịch qua helper dùng chung với
-    // fastPreModerate, không phân biệt hoa/thường bằng cờ `i`.
-    const keyword = rule.pattern.toLowerCase().trim()
-    let isMatch = false
+  // Regex KHÔNG bao giờ hạ chữ mẫu (sẽ đổi `\S \W \D \B` thành `\s \w \d \b`) — biên dịch qua
+  // helper dùng chung với fastPreModerate, không phân biệt hoa/thường bằng cờ `i`. Cùng cách xử
+  // lý với `fastPreModerate`: mẫu không biên dịch được (hỏng / quá dài / hình dạng nguy hiểm) bị
+  // BỎ QUA (đã ghi log một lần khi biên dịch). Trước đây đường này lại khớp nó như một chuỗi con
+  // thường — hai đường cho hai kết quả khác nhau với cùng một luật. Mọi luật regex chạy trong MỘT
+  // lượt có hạn giờ cứng (`testModerationRegexes`: một lượt `vm` cho cả văn bản), trên hạn mức
+  // của request (nơi gọi truyền `regexBudget` — bình luận, chat livestream, quét lại — hay một
+  // hạn mức riêng cho lời gọi này).
+  const regexRules: Array<ModerationRegexRule & { index: number }> = []
+  for (const [index, rule] of rules.entries()) {
+    if (!isRegexRuleType(rule.ruleType)) continue
+    const regex = compileModerationRegex(rule.pattern)
+    if (regex) regexRules.push({ index, pattern: rule.pattern, regex })
+  }
+  const regexHits = testModerationRegexes(regexRules, content, { budget: regexBudget })
+  const regexMatched = new Set(regexRules.filter((_, k) => regexHits[k]).map(rule => rule.index))
 
-    if (!isRegexRuleType(rule.ruleType)) {
-      if (lowerContent.includes(keyword)) isMatch = true
-    } else {
-      // Cùng cách xử lý với `fastPreModerate`: mẫu không biên dịch được (hỏng / quá
-      // dài / hình dạng nguy hiểm) bị BỎ QUA (đã ghi log một lần khi biên dịch).
-      // Trước đây đường này lại khớp nó như một chuỗi con thường — hai đường cho hai
-      // kết quả khác nhau với cùng một luật.
-      const regex = compileModerationRegex(rule.pattern)
-      if (regex && testModerationRegex(rule.pattern, regex, content)) isMatch = true
-    }
+  for (const [index, rule] of rules.entries()) {
+    // Từ khoá so trên bản đã hạ chữ.
+    const isMatch = isRegexRuleType(rule.ruleType)
+      ? regexMatched.has(index)
+      : lowerContent.includes(rule.pattern.toLowerCase().trim())
 
     if (isMatch) {
       matchedKeywords.push({

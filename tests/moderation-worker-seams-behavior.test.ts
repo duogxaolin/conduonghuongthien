@@ -134,15 +134,21 @@ function delta(before: ReturnType<typeof counters>) {
   return Object.fromEntries(Object.entries(after).map(([k, v]) => [k, v - before[k as keyof typeof before]]))
 }
 
-test('the barrel exposes exactly the pre-split runtime API (9 values), and the rescan limits are frozen', () => {
+test('the barrel exposes exactly the pre-split runtime API (9 values) plus matchInstantRuleBatch and earlierTurnsToWithhold, and the rescan limits are frozen', () => {
   assert.deepEqual(Object.keys(svc).sort(), [
     'MODERATION_RESCAN_LIMITS',
     'checkAndModerateContent',
+    // Added on purpose (verify of 4.3c follow-up, W5): the chat history's withhold set — a turn
+    // that trips a rule OR that the request budget never reached (`moderation-worker-prescreen.ts`).
+    'earlierTurnsToWithhold',
     'fastPreModerate',
     'getActiveModerationRules',
     'getWorkerStats',
     'invalidateModerationRulesCache',
     'matchInstantRule',
+    // Added on purpose after the split (wave3 4.3c follow-up): the chat endpoints' earlier user
+    // turns in ONE bounded `vm` pass — `tests/moderation-regex-budget.test.ts`.
+    'matchInstantRuleBatch',
     'rescanExistingContent',
     'resetWorkerStats',
   ])

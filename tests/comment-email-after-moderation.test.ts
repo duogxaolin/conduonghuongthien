@@ -75,11 +75,17 @@ mock.module('../server/services/ip-bans', { namedExports: { loadIpBanValues: asy
 type Behaviour = 'clean' | 'hide' | 'hide-write-failed' | 'flag-only' | 'ai-failed' | 'throw' | 'slow-clean' | 'slow-ai-failed' | 'deferred'
 let behaviour: Behaviour = 'clean'
 const moderationCalls: Array<{ targetId?: number }> = []
+/** What each moderation call was given besides the text — the request's regex budget. */
+const budgetsSeen = { instant: [] as unknown[], full: [] as unknown[] }
 mock.module('../server/services/moderation-worker', {
   namedExports: {
-    fastPreModerate: async () => ({ blocked: false, action: 'allow', severity: 'low', reason: '', matchedRule: '' }),
-    checkAndModerateContent: (input: { targetId?: number }) => {
+    fastPreModerate: async (_body: string, context?: { regexBudget?: unknown }) => {
+      budgetsSeen.instant.push(context?.regexBudget)
+      return { blocked: false, action: 'allow', severity: 'low', reason: '', matchedRule: '' }
+    },
+    checkAndModerateContent: (input: { targetId?: number }, options?: { regexBudget?: unknown }) => {
       moderationCalls.push(input)
+      budgetsSeen.full.push(options?.regexBudget)
       switch (behaviour) {
         case 'clean': return Promise.resolve({ flagged: false, action: 'allow', severity: 'low', reasons: [], matchedRules: [] })
         case 'hide': return Promise.resolve({ flagged: true, action: 'auto_hide', severity: 'high', reasons: ['x'], matchedRules: [], hidden: true, failures: [] })
@@ -267,4 +273,29 @@ test('a top-level comment (nobody to notify) is still moderated, and nothing is 
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(moderationCalls.length, 1)
   assert.equal(mails.length, 0)
+})
+
+/**
+ * The regex matching of one comment — the instant check in the request AND the full moderation
+ * that runs behind it, on the same event loop — shares ONE budget (wave3 4.3c follow-up, C1:
+ * a sub-budget cubic rule cost 0.42–0.50 s per comment, every comment). The bound itself is
+ * proven in `moderation-regex-budget.test.ts`; this pins that the posting path passes it.
+ */
+test('one regex budget per comment, shared by the instant check and the full moderation; a new comment gets a new one', async () => {
+  const { MODERATION_REQUEST_BUDGET_MS } = await import('../server/services/moderation-regex.ts')
+  behaviour = 'clean'
+  budgetsSeen.instant.length = 0
+  budgetsSeen.full.length = 0
+  await reply('Bình luận thứ nhất')
+  await reply('Bình luận thứ hai')
+  assert.equal(budgetsSeen.instant.length, 2)
+  assert.equal(budgetsSeen.full.length, 2)
+  const [first, second] = budgetsSeen.instant as Array<{ limitMs: number }>
+  assert.equal(first!.limitMs, MODERATION_REQUEST_BUDGET_MS)
+  // By IDENTITY: every budget is a frozen `{ limitMs: 250 }`, so a structural comparison
+  // (`deepEqual`) also passes when the full moderation is handed a NEW budget — another
+  // 250 ms for the same comment (verify of 4.3c follow-up, W1: that mutant stayed green).
+  assert.strictEqual(budgetsSeen.full[0], first, 'the full moderation of comment 1 runs on comment 1\'s budget object')
+  assert.strictEqual(budgetsSeen.full[1], second, 'the full moderation of comment 2 runs on comment 2\'s budget object')
+  assert.notStrictEqual(first, second, 'each comment has its own')
 })

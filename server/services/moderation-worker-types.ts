@@ -4,6 +4,7 @@
  * Tệp riêng vì cả đường ghi (`moderation-worker-persist.ts`) lẫn lượt kiểm
  * (`moderation-worker-check.ts`) đều cần — để chung tệp lượt kiểm sẽ thành vòng import.
  */
+import type { ModerationRegexBudget } from './moderation-regex'
 
 export interface ModerationCheckInput {
   content: string
@@ -61,6 +62,12 @@ export interface ModerationCheckOptions {
    *    làm ngập hàng chờ — lượt quét lại chuyển sang chỉ chạy luật.
    */
   onAiUnavailable?: 'queue' | 'skip'
+  /**
+   * Hạn mức thời gian khớp regex của request (`createModerationRegexBudget`), dùng chung cho
+   * lượt chặn tức thì và lượt luật đầy đủ — nơi gọi truyền CÙNG hạn mức với `fastPreModerate`
+   * của request đó. Không truyền: một hạn mức riêng cho lời gọi này (kiểm chứng 4.3c tiếp, W7).
+   */
+  regexBudget?: ModerationRegexBudget
 }
 
 export type ModerationPersistFailure = 'queue' | 'hide'

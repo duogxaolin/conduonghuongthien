@@ -21,6 +21,7 @@ import { createReplyNotification } from './notifications'
 import { sendReplyEmail } from './notification-email'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { checkAndModerateContent, fastPreModerate, type ModerationCheckOutput } from './moderation-worker'
+import { createModerationRegexBudget } from './moderation-regex'
 import { logError } from '../utils/logger'
 import { checkParentEligibility, resolveCommentTarget } from './comments-rules'
 import { logReplyEmailHeld, MODERATION_FAILED, replyEmailHoldReason, type ModerationFailure } from './comments-reply-email'
@@ -200,7 +201,10 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
 
   // ── Kiểm duyệt tức thì (< 1ms): chặn ngay từ ngữ thô tục, chống phá, cờ bạc ──
   // AFTER the limits: a block writes a review row (see the function comment).
-  // The row cap is per account AND per address — MODERATION_QUEUE_CAP.
+  // The row cap is per account AND per address — MODERATION_QUEUE_CAP. One regex
+  // budget for this comment: this check AND the full moderation below (which runs on
+  // the same event loop after the response) together match for at most its limit.
+  const regexBudget = createModerationRegexBudget()
   const preCheck = await fastPreModerate(input.body, {
     authorName: (reader ? effectiveDisplayName(reader) : null) || 'Người đọc',
     authorIp: input.ip ?? undefined,
@@ -209,9 +213,11 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     contextTitle: contextTitle || undefined,
     contextUrl: contextUrl || undefined,
     capQueuePerSource: true,
+    regexBudget,
   })
   if (preCheck.blocked) {
-    return { ok: false, statusCode: 400, message: preCheck.reason }
+    // Never `reason`: it names the rule (pattern, keyword) — the review row keeps it for admins.
+    return { ok: false, statusCode: 400, message: preCheck.publicMessage }
   }
 
   /**
@@ -267,7 +273,7 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     authorIp: input.ip ?? undefined,
     contextTitle: contextTitle || undefined,
     contextUrl: contextUrl || undefined,
-  }).catch((error: unknown) => {
+  }, { regexBudget }).catch((error: unknown) => {
     logError({ event: 'comment.moderation_failed', commentId: id, error })
     return MODERATION_FAILED
   })

@@ -20,6 +20,7 @@
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import ts from 'typescript'
+import { MODERATION_REGEX_PART } from './_moderation-regex-family.ts'
 
 const SERVICES = 'server/services'
 const SERVICES_DIR = new URL('../server/services/', import.meta.url)
@@ -29,7 +30,9 @@ export const MODERATION_WORKER_BARREL = `${SERVICES}/moderation-worker.ts`
 /**
  * `moderation-*.ts` files that were never part of `moderation-worker.ts`:
  *  - `moderation-regex.ts`: its own module (pattern validation, timing, slow-rule state),
- *    also imported by the rules endpoints;
+ *    also imported by the rules endpoints — a barrel since wave3 4.3, whose parts
+ *    `moderation-regex-*.ts` (`MODERATION_REGEX_PART`, `_moderation-regex-family.ts`) are
+ *    excluded with it below;
  *  - `moderation-rescan-job.ts`: a CONSUMER — it imports the barrel on purpose
  *    (`rescanExistingContent`). Counting it as a part would turn "a part never imports
  *    its barrel" red on correct code.
@@ -53,9 +56,14 @@ export const EXPECTED_MODERATION_WORKER_FAMILY: readonly string[] = [
 
 const escape = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** A part of the family: `moderation-<seam>.ts`, minus the barrel and the siblings. */
+/**
+ * A part of the family: `moderation-<seam>.ts`, minus the barrel, the siblings, and every
+ * part of the `moderation-regex` family (the same pattern its guards use — a regex part
+ * read here would be a worker file that the regex rules 1/4/5/6 also own, and the regex
+ * barrel importing it would read as a consumer bypassing the worker barrel).
+ */
 export const MODERATION_WORKER_PART = new RegExp(
-  `^(?!(?:${['moderation-worker.ts', ...MODERATION_SIBLINGS].map(escape).join('|')})$)moderation-[a-z0-9-]+\\.ts$`,
+  `^(?!(?:${['moderation-worker.ts', ...MODERATION_SIBLINGS].map(escape).join('|')})$)(?!${MODERATION_REGEX_PART.source})moderation-[a-z0-9-]+\\.ts$`,
 )
 
 export const isModerationWorkerFile = (name: string): boolean =>
