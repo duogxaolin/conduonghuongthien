@@ -57,7 +57,6 @@
   "app/pages/admin/media-portal/index.vue": 3,
   "app/pages/admin/media-portal/upload.vue": 1,
   "app/pages/admin/media/index.vue": 3,
-  "app/pages/admin/users/activity.vue": 3,
   "app/pages/admin/users/roles.vue": 2,
   "app/pages/contact.vue": 1,
   "app/pages/in-bai/[slug].vue": 2,

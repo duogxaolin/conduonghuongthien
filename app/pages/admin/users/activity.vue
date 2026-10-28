@@ -1,26 +1,15 @@
 <script setup lang="ts">
 import type { ActivityRetentionStatus } from '~/types/admin-api'
+import type { AdminActivityLogItem, AdminActivityLogsResponse, AdminUsersResponse } from '~/types/admin-users-api'
 /**
  * System-wide activity log. Complements /admin/profile, which only shows the
  * signed-in account's own trail: this page reads every account's, so it is
  * gated on `users.read` server-side and hidden from the menu without it.
+ *
+ * Row type derived from the handler (`AdminActivityLogItem`); `phase` is `meta.phase` — the
+ * start and finish rows of a manual retention run, null on every other row.
  */
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
-
-type LogItem = {
-  id: number
-  userId: number | null
-  username: string | null
-  action: string
-  resource: string | null
-  resourceId: number | null
-  createdAt: string
-  ip: string | null
-  userAgent: string | null
-  mfaMethod: string | null
-  /** `meta.phase` — the start and finish rows of a manual retention run; null on every other row. */
-  phase: string | null
-}
 
 /**
  * Nhãn của bộ lọc là một hợp đồng HAI CHIỀU với những chuỗi mà máy chủ thật sự
@@ -108,7 +97,7 @@ const MFA_METHOD_LABELS: Record<string, string> = {
 /** `meta.phase` of a manual retention run's two rows. Only these get a label; any other value is not printed raw. */
 const PHASE_LABELS: Record<string, string> = { started: 'bắt đầu', finished: 'kết thúc' }
 
-const items = ref<LogItem[]>([])
+const items = ref<AdminActivityLogItem[]>([])
 const loading = ref(true)
 const error = ref('')
 const page = ref(1)
@@ -127,22 +116,30 @@ const retention = ref<ActivityRetentionStatus | null>(null)
 
 async function loadAccounts() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ users?: Array<{ id: number; username: string }> }>)('/api/admin/users')
+    const res = await adminFetch<AdminUsersResponse>('/api/admin/users')
     accounts.value = (res.users ?? []).map(item => ({ id: item.id, username: item.username }))
   } catch { accounts.value = [] }
 }
 
 async function loadRetention() {
-  try { retention.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ActivityRetentionStatus>)('/api/admin/activity-logs/retention') } catch { retention.value = null }
+  try { retention.value = await adminFetch<ActivityRetentionStatus>('/api/admin/activity-logs/retention') } catch { retention.value = null }
 }
 
+/**
+ * Only the LATEST load writes rows, totals, error and loading (the ticket of
+ * docs/decisions/fetch-rollout-d-fetch.md): filter by an account, then "Xoá lọc" before the
+ * first answer is back, and the older answer landing last used to show one account's trail
+ * under cleared filters (tests/admin-fetch-rollout-activity.test.ts).
+ */
+let listRequest = 0
 async function load(next = page.value) {
+  const ticket = ++listRequest
   loading.value = true
   error.value = ''
   page.value = next
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ items?: LogItem[]; total?: number; totalPages?: number }>)(`/api/admin/activity-logs`, {
-      params: {
+    const res = await adminFetch<AdminActivityLogsResponse>(`/api/admin/activity-logs`, {
+      query: {
         page: next,
         pageSize,
         ...(filterUserId.value ? { userId: filterUserId.value } : {}),
@@ -155,14 +152,16 @@ async function load(next = page.value) {
         ...(filterTo.value ? { to: filterTo.value } : {}),
       },
     })
+    if (ticket !== listRequest) return
     items.value = res.items ?? []
     total.value = res.total ?? 0
     totalPages.value = res.totalPages ?? 1
   } catch (err: unknown) {
+    if (ticket !== listRequest) return
     error.value = errorMessage(err, 'Không tải được lịch sử hoạt động.')
     items.value = []
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
@@ -177,14 +176,16 @@ function goPage(next: number) {
   return load(next)
 }
 
-function actionLabel(item: LogItem) {
+function actionLabel(item: AdminActivityLogItem) {
   const action = ACTION_LABELS[item.action] ?? item.action
   const resource = item.resource ? (RESOURCE_LABELS[item.resource] ?? item.resource) : ''
   const label = resource ? `${action} · ${resource}` : action
   const phase = item.phase ? PHASE_LABELS[item.phase] : undefined
   return phase ? `${label} (${phase})` : label
 }
-function formatWhen(value: string) {
+/** `created_at` is nullable: `new Date(null)` is a valid 1970 date, so null reads "—". */
+function formatWhen(value: string | null) {
+  if (!value) return '—'
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString('vi-VN')
 }
@@ -272,9 +273,11 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
       </div>
     </div>
 
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load()">thử lại</button>.</div>
-
+    <!-- Loading / error / empty / rows: ONE chain — the alert used to sit outside it, so a
+         failed load also read "Không có bản ghi nào khớp điều kiện lọc." under it. -->
     <SkeletonTable v-if="loading" label="Đang tải lịch sử hoạt động" :rows="8" :cols="6" />
+
+    <div v-else-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load()">thử lại</button>.</div>
 
     <div v-else-if="!items.length" class="rounded-xl border border-line bg-white p-12 text-center">
       <i class="fa-solid fa-clock-rotate-left mb-3 text-3xl text-line-strong" aria-hidden="true"></i>
