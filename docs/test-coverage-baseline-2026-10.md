@@ -727,3 +727,94 @@ Ghi nhận, không ghim (không sửa ở lát này):
 3. `server/api/admin/ai/translate.post.ts` (116), `translate-ui.post.ts` (72), `editorial.post.ts` — dịch/biên tập AI qua hạn mức; rào nội dung không tin cậy.
 4. `server/services/universal-translation.ts` (452, 0 %) — job dịch toàn hệ thống.
 5. Hai việc giao diện ở "Ghi nhận" trên (`/admin/media` phân biệt lỗi đĩa/R2; trang cấu hình chung không lưu đè sau lần tải hỏng) — cần lát được đụng `app/**`.
+
+## Lát R5 của task 5.2 — đo lại 2026-10-28 (Node 24, `0778e988`)
+
+"R5" là **lát thứ năm** của task 5.2, không phải lớp rủi ro R5 ở bảng xếp hạng. Lát mở đầu bằng một sửa an ninh (phần A: rào nội dung người dùng trong prompt kiểm duyệt bình luận), rồi đi theo mục 1–3 của "Lát sau" ở lát R4, cộng bốn route đọc `settings/**` còn 0 %.
+
+**Đo ở đâu.** `npm run test:coverage` trong image `cdkt-cov:node24` (Node 24.21, `TZ=Asia/Ho_Chi_Minh`, lệnh của CI) trên `wave3/integration` = `0778e988`, trước khi đụng gì: 776 tệp, 212 chưa nạp, **83,43 %** (72 822 / 87 282). Trên cây chưa đụng, ratchet đã báo RISE ở `app/utils` (+0,39) và `shared` (+3,58) — do các nhánh gộp trước.
+
+### Đã làm trong lát này
+
+| # | Tệp | Trước | Sau | Vì sao ở đây | Suite |
+|---|---|---|---|---|---|
+| 1 | `server/api/admin/comments/ai-moderate.post.ts` | 0 % (138) | 92,0 % (162/176) | Bình luận + tên người đọc (dữ liệu công khai) vào prompt kiểm duyệt — phần A | `comments-ai-moderate-behavior` |
+| 2 | `server/api/admin/ai/usage.get.ts` | 0 % (79) | 100 % | "Tháng này" / "ngày" của chi phí AI — câu hỏi múi giờ | `ai-usage-month-behavior` |
+| 3 | `server/api/admin/ai/budget/index.get.ts` | 0 % (17) | 100 % | GET có ghi (tạo hàng mặc định) | như trên |
+| 4 | `server/utils/ai-budget.ts` | 96,4 % | 96,4 % | `checkBudget` dùng cùng mốc đầu tháng — nay có test hành vi cho mốc đó | như trên |
+| 5 | `server/api/admin/ai/delify/sync.post.ts` | 91,4 % (203/222) | 99,2 % (252/254) | Ghi bảng giá + lịch sử gọi (chi phí `checkBudget` cộng) từ dữ liệu của router | `ai-delify-sync-behavior` |
+| 6 | `server/api/admin/ai/delify/status.get.ts` | 95,8 % (181/189) | 100 % | Chuyển dữ liệu router cho mọi người có `ai.read` | như trên |
+| 7 | `server/api/admin/ai/translate.post.ts` | 0 % (116) | 98,6 % (140/142) | Dịch AI; HTML do model viết | `ai-translate-editorial-behavior` |
+| 8 | `server/api/admin/ai/translate-ui.post.ts` | 0 % (72) | 97,6 % (80/82) | như trên | như trên |
+| 9 | `server/api/admin/ai/editorial.post.ts` | 73,3 % (159/217) | 93,2 % (204/219) | Trợ lý biên tập (`ArticleAIPanel.vue`) | như trên |
+| 10 | `server/api/admin/settings/navigation.get.ts`, `navigation/navbar.get.ts`, `navigation/mobile.get.ts` | 0 % (16 + 17 + 16) | 100 % | Route `settings/**` còn 0 % | `settings-navigation-sitemap-read-behavior` |
+| 11 | `server/api/admin/settings/sitemap/generate.post.ts` (+ `server/utils/sitemap-builder.ts`) | 0 % (10); builder 50,0 % (92/184) | 100 %; builder 99,5 % (185/186) | Sitemap công khai sinh từ CSDL | như trên |
+
+Hai tệp mới: `server/utils/ai/target-language.ts` (100 % — bảng tên ngôn ngữ + kiểm mã, dùng chung cho hai route dịch, xem FINDING-R5-13) và `tests/_ai-route-harness.ts` (harness dùng chung của năm suite: app h3 + `admin-auth`, SQL trên SQLite, phong bì khoá AES-GCM thật, `checkBudget`/`callAi`/`logAiUsage` thật, `safeProviderRequest` thật chỉ thay DNS + socket HTTPS, logger ghi lại từng dòng). `vn-day-range.ts` thêm `vietnamDayStartOf` / `vietnamMonthStart` (vẫn 100 %). Cột "Sau" đếm mọi dòng vật lý của tệp đã nạp (xem "Cách đọc cho đúng").
+
+**Sau lát** (`npm run test:coverage`, Node 24, cây cuối của nhánh lát, log `coverage-after.log`): 777 tệp, 203 chưa nạp, **84,19 %** (73 683 / 87 521). Theo thư mục: `server/api` 67,20 → 70,31, `server/utils` 94,57 → 95,14; các thư mục khác không đổi. Mức nền ratchet nâng đúng hai thư mục lát này đụng, bằng số đo làm tròn xuống: `server/api` 67,2 → 70,3, `server/utils` 94,56 → 95,13; `app/utils` và `shared` giữ 96,01 / 95,9 vì lát này không đụng tới. `server/services` không đổi (86,99 — lát này không sửa service nào). Toàn bộ unit + ratchet (lệnh của CI, Node 26 cục bộ, `TZ=Asia/Ho_Chi_Minh`, log `unit-full.log`): 6 852 test, 0 đỏ, 54 bỏ qua (suite integration không có MySQL).
+
+### Quyết định múi giờ (`usage.get.ts`, `checkBudget`)
+
+Câu hỏi của lát R4: pool khai `timezone: '+07:00'` trong khi quy ước nói phiên MySQL chạy UTC. Kiểm, không giả định:
+- Drizzle gửi một `Date` so với cột TIMESTAMP thành chuỗi **UTC** (`mapToDriverValue` = `toISOString()`; `toSQL()` cho `'2026-09-30 17:00:00.000'` với 00:00 ngày 1/10 giờ VN), và đọc ngày thành **chuỗi** (session mysql2 của Drizzle đặt `typeCast` → `field.string()`). `timezone` của pool không tham gia các truy vấn này — nó chỉ chạm `pool.query` trần (lý do của `utc-query.ts`).
+- MySQL đọc chuỗi đó, và tính `DATE()`, theo `time_zone` của **phiên**: `SYSTEM` = UTC trên container dev (MySQL 8.0.46, `@@system_time_zone = UTC`, log `mysql-tz-evidence.log`) — đúng chú thích của `docker-compose.yml` và `vn-day-range.ts`. **Giữ nguyên quy ước** (không đặt `time_zone` cho phiên).
+- Lỗi thật nằm ở hai chỗ khác (FINDING-R5-3, R5-4): mốc đầu tháng tính theo TZ của **tiến trình**, và nhóm theo ngày bằng `DATE(created_at)` = ngày UTC. Sửa: `vietnamMonthStart(at)` / `vietnamDayStartOf(at)` (độ lệch cố định, như `vietnamDayStart`), `DATE(CONVERT_TZ(created_at, '+00:00', '+07:00'))` (hai độ lệch số, không cần bảng múi giờ; dựa trên cùng quy ước phiên UTC).
+- Cách kiểm: SQLite chạy `DATE()` như MySQL phiên UTC; `CONVERT_TZ` được mô phỏng đúng **một** dạng (`'+00:00'` → `'+07:00'`, dạng khác ném lỗi) — không xấp xỉ gì khác. Câu đã biên dịch phát lại trên MySQL 8.0.46 (có `ONLY_FULL_GROUP_BY`) cho đúng các số của test, trước và sau sửa (`mysql-usage-daily-replay.log`). Đồng hồ ghim bằng `mock.timers` (chỉ `Date`); TZ tiến trình đổi qua `process.env.TZ` theo từng ca — biến thể `Asia/Ho_Chi_Minh` xanh cả trên base (đúng: chỉ tiến trình chạy TZ khác mới hỏng), biến thể `UTC` là test FINDING.
+
+### Cách chạy và cái bẫy đã gặp
+
+- `mock.timers.enable` hai lần trong một test ném `ERR_INVALID_STATE` — `at()` của suite gọi `reset()` trước mỗi lần bật.
+- Bộ cấu hình dịch vụ của cổng AI nhớ 60 s theo khoá dịch vụ (cấp module, không có hàm xoá): suite kiểm duyệt giữ **một** system prompt (có `{{content}}`/`{{author}}`) cho cả suite, vì đổi giữa các test sẽ đọc bản cũ.
+- Cột DECIMAL trên SQLite mang ái lực số: `'0.001000'` đọc ra `0.001` — so chi phí bằng `Number(...)`.
+- `{ __proto__: 'x' }` trong một object literal không tạo khoá `__proto__` (nó đặt prototype, và bỏ qua chuỗi): câu trả lời giả của model viết bằng chuỗi JSON thô.
+- TIMESTAMP(0) của MySQL **làm tròn** phần lẻ giây; SQLite giữ nguyên chuỗi, nên một test "đồng bộ lại không nhân đôi" xanh trên base dưới SQLite. Test FINDING-R5-8 ghim giá trị được ghi (giây tròn như MySQL giữ), còn hậu quả trên MySQL nằm ở `mysql-tz-evidence.log` (0 hàng khớp `= '…00.567'`, 1 hàng khớp `= '…01'`).
+- `findings-on-rev.sh` lấy danh sách tệp bằng `git diff`: tệp sản phẩm mới phải `git add -N` trước, không thì nó không bị gỡ khi chạy "trên base".
+
+### Đột biến (mỗi cái một test đỏ; kịch bản `mutants.sh` + `mutants-*.list` và log ở thư mục bằng chứng)
+
+| Suite | Đột biến | Đỏ | Test đỏ |
+|---|---|---|---|
+| `comments-ai-moderate-behavior` | 6 | 6 | nội dung không bọc → R5-1 "body"; tên không bọc → R5-1 "display name"; biến `content` thô → R5-1 "{{content}}"; biến `author` thô → R5-1 "{{content}}"; nonce cố định → R5-1 "body"; bỏ trần độ dài → R5-2 |
+| `ai-usage-month-behavior` | 6 | 6 | `usage.get` đầu tháng theo TZ tiến trình → R5-3 dashboard UTC; `checkBudget` cũng vậy → R5-3 checkBudget UTC; `DATE(created_at)` → R5-4 "Vietnam calendar day"; cửa sổ `now − 30 ngày` → R5-4 "window"; cửa sổ 31 ngày → R5-4 "window"; bỏ tạo hàng mặc định → "before the seed has run" |
+| `ai-delify-sync-behavior` | 8 | 8 | bỏ kiểm độ dài tên → R5-6; bỏ kiểm khoảng giá → R5-5; giữ mili giây → R5-8; cắt thay vì làm tròn → R5-8; nhận chi phí âm → R5-7; `history` thô → R5-9; bỏ giới hạn 10 mục → "key card"; `summary` thô → R5-9 |
+| `ai-translate-editorial-behavior` | 10 | 10 | escape HTML lại → R5-10 "article"; nonce cố định → R5-10 "article"; bỏ sanitize → R5-11; câu không phải JSON thành nội dung → R5-12; helper ngôn ngữ nhận chữ bất kỳ → **2** test R5-13 (translate + translate-ui, cùng một helper); trả khoá không được hỏi → R5-14; trả giá trị không phải chuỗi → R5-14; quá 100 nhãn → "at most 100"; bỏ giải mã entity → "reads the article as text"; bỏ khôi phục JSON cắt cụt → "cut off mid-JSON" |
+| `settings-navigation-sitemap-read-behavior` | 5 | 5 | JSON hỏng ném lỗi → "navigation"; navbar không lùi về menu chung → "navbar"; mobile đọc menu chung → "mobile"; `/qa-documents` không mang ngày → R5-15; bài nháp vào sitemap → "published articles only" |
+| **Tổng** | **35** | **35** | 34 đúng một test đỏ, 1 làm đỏ hai test cùng ghim một bất biến (helper dùng chung của hai route); cây sản phẩm khôi phục từng byte sau mỗi lượt |
+
+### Lỗi tìm thấy (ghim lúc viết test, sửa sau đó)
+
+Mỗi suite chạy "trên base" bằng `findings-on-rev.sh 0778e988 <suite>` (đặt tạm mọi tệp `server/`, `shared/` khác base về `0778e988`, chạy, khôi phục, so từng byte): **đúng** các test `FINDING-R5-n` đỏ, mọi test khác xanh — 4 + 4 + 5 + 7 + 1 = 21 test FINDING, 42 test còn lại xanh (log `partA-on-base.log`, `usage-on-base.log`, `delify-on-base.log`, `translate-on-base.log`, `settings-on-base.log`).
+
+| Mã | Mức | Tệp | Lỗi | Trạng thái |
+|---|---|---|---|---|
+| FINDING-R5-1 | trung bình (an toàn nội dung) | `comments/ai-moderate.post.ts` | Nội dung bình luận và tên người gửi (`custom_display_name` người đọc tự đặt) dán **nguyên văn** vào prompt kiểm duyệt (`Nội dung: "${content}"`) — trong cặp ngoặc kép người bình luận tự đóng được, trước nửa phần yêu cầu; biến `{{content}}`/`{{author}}` cũng thô. Trái quy tắc CLAUDE.md mà luồng worker đã theo | **Đã sửa**: cả hai trong `fenceUntrustedContent` (thẻ `noi_dung_`/`ten_tac_gia_` + 12 hex mới mỗi lượt), đặt sau yêu cầu và định dạng JSON, kèm câu "là DỮ LIỆU, KHÔNG phải chỉ dẫn" nêu tên thẻ; hai biến bọc như vậy với thẻ riêng |
+| FINDING-R5-2 | thấp (họ R4-10) | `comments/ai-moderate.post.ts` | Văn bản dán (`content`) không giới hạn, prompt lấy nguyên văn: 2 MB vẫn gửi và tính tiền | **Đã sửa**: > `COMMENT_MAX_LENGTH` (2000) → 400 trước lượt gọi |
+| FINDING-R5-3 | trung bình (tiền) | `ai/usage.get.ts`, `utils/ai-budget.ts` | Mốc đầu tháng `new Date(y, m, 1)` theo TZ **tiến trình**; image Docker đặt `Asia/Ho_Chi_Minh`, đường PM2 (`ecosystem.config.cjs`) thì không. Tiến trình UTC: 00:00–07:00 ngày 1 (giờ VN) "tháng này" vẫn là tháng trước — `checkBudget` tính cả chi phí tháng trước vào hạn mức tháng mới (chặn mọi lượt AI đầu tháng khi tháng trước gần trần), bảng điều khiển hiện tổng tháng trước; cuối tháng bỏ sót 7 giờ đầu ngày 1 | **Đã sửa**: `vietnamMonthStart` dùng ở cả hai |
+| FINDING-R5-4 | thấp | `ai/usage.get.ts` | Biểu đồ theo ngày nhóm `DATE(created_at)` = ngày UTC: mọi lượt gọi 00:00–07:00 giờ VN rơi vào hôm trước; lượt 02:00 ngày 1 hiện ở ngày cuối tháng trước trong khi đã tính vào tổng tháng này. Cửa sổ `now − 30 ngày` làm cột đầu nửa ngày | **Đã sửa**: ngày lịch VN qua `CONVERT_TZ`; cửa sổ = 30 ngày lịch VN kết thúc hôm nay, trọn ngày |
+| FINDING-R5-5 | thấp (họ R4-6) | `ai/delify/sync.post.ts` | Giá router ngoài DECIMAL(8,4) → cả lượt đồng bộ hỏng trên MySQL strict; giá âm → chi phí âm | **Đã sửa**: `isStorableCostPerMillion`, bỏ qua và đếm vào `skipped` |
+| FINDING-R5-6 | trung bình (họ R4-11) | `ai/delify/sync.post.ts` | Tên model > 64 ký tự bị cắt còn 64 — thành tên của **model khác**, ghi đè giá và nhà cung cấp của nó | **Đã sửa**: bỏ qua |
+| FINDING-R5-7 | thấp | `ai/delify/sync.post.ts` | Mục sai hình dạng (tên/model không phải chuỗi, `null`) ném `TypeError` trong transaction → 500, không đồng bộ được gì; chi phí âm/vô lý của router vào bảng `checkBudget` cộng | **Đã sửa**: `storableModel` / `storableHistoryItem` parse từng mục |
+| FINDING-R5-8 | trung bình (tiền) | `ai/delify/sync.post.ts` | Mốc lịch sử có mili giây, cột TIMESTAMP(0): MySQL làm tròn khi ghi nên phép so `created_at = '…00.567'` không bao giờ thấy hàng nó vừa ghi — mỗi lượt đồng bộ chèn lại cả lịch sử, chi phí bị nhân lên | **Đã sửa**: làm tròn về giây như MySQL trước khi so và ghi |
+| FINDING-R5-9 | thấp | `ai/delify/status.get.ts` | `summary`/`history`/`availableModels` của router chuyển nguyên văn cho mọi người có `ai.read` — trường router thêm (khoá đã dùng để hỏi, URL mang khoá) tới trình duyệt | **Đã sửa**: chỉ các trường `AiDashboardTab.vue` hiện, giá trị thuần |
+| FINDING-R5-10 | thấp | `ai/translate.post.ts` | HTML bài viết bị escape rồi bọc trong dấu phân cách cố định `<<<USER_CONTENT`: prompt đòi giữ 100 % thẻ nhưng model thấy `&lt;p&gt;` | **Đã sửa**: mỗi phần trong `fenceUntrustedContent` (`van_ban_`), không escape |
+| FINDING-R5-11 | trung bình (quy tắc CLAUDE.md) | `ai/translate.post.ts` | `translatedContent` — HTML do model viết — trả về không qua `sanitizeHtml` | **Đã sửa** |
+| FINDING-R5-12 | thấp | `ai/translate.post.ts` | Câu trả lời không phải JSON → trả "[EN] <tiêu đề tiếng Việt>", tóm tắt tiếng Việt làm "bản dịch", câu từ chối của model làm nội dung | **Đã sửa**: 502 |
+| FINDING-R5-13 | thấp | `ai/translate.post.ts`, `translate-ui.post.ts` | `LANGUAGE_NAMES[code] \|\| code` trên mọi chuỗi: `constructor` thành hàm dán vào prompt; chuỗi bất kỳ (dài, xuống dòng, "bỏ qua yêu cầu") vào prompt và tính tiền | **Đã sửa**: `utils/ai/target-language.ts` (bỏ hai bản chép bảng tên) — chỉ mã ngôn ngữ, 400 trước lượt gọi |
+| FINDING-R5-14 | thấp | `ai/translate-ui.post.ts` | Trả nguyên câu trả lời của model: khoá không ai hỏi, object/số làm "bản dịch" | **Đã sửa**: chỉ khoá được hỏi, giá trị chuỗi |
+| FINDING-R5-15 | thấp | `utils/sitemap-builder.ts` (qua `settings/sitemap/generate.post.ts`) | `/qa-documents` nằm trong danh sách trang và còn được thêm lần nữa khi có hỏi–đáp xuất bản → URL hai lần trong sitemap, từ commit đầu của tính năng | **Đã sửa**: một mục, `lastmod` = hỏi–đáp xuất bản mới nhất |
+
+Ghi nhận, không sửa ở lát này (quyết định thiết kế hoặc ngoài phạm vi):
+- **Delify: chi phí đếm hai lần.** Mỗi lượt gọi qua cổng AI với nhà cung cấp `delify` đã được `logAiUsage` ghi một hàng (khoá dịch vụ thật, `created_at` = lúc ghi); "Đồng bộ" nhập lại chính lượt đó từ lịch sử router thành hàng `delify_router` (mốc của router, không bao giờ trùng giây). `checkBudget`, tổng tháng của `usage.get` và "đã dùng" của `status.get` cộng cả hai. Sửa đúng cần chọn: không nhập lịch sử, hay nhập nhưng không tính vào chi tiêu, hay khớp theo model/token/khoảng thời gian — cần người dùng quyết.
+- Đồng bộ Delify gán mọi hàng lịch sử cho cán bộ bấm nút (`user_id`); tỉ giá 25 500 viết cứng ở `sync`, `status`, `ai-budget` trong khi `calculateAiCost` đọc `USD_TO_VND_RATE` (compose không truyền biến đó, nên trên Docker hai bên vẫn khớp); `success` chỉ khi `status === '200'` dạng chuỗi.
+- `comments/ai-moderate.post.ts`: câu trả lời không đọc được hay `verdict` lạ thành `safe` với lý do "Không có dấu hiệu vi phạm rõ ràng." — đúng thứ một chỉ dẫn tiêm muốn (worker coi đó là "không có câu trả lời"). Sửa đúng cần trang `/admin/comments` hiển thị trạng thái thứ tư (trang chỉ biết ba `verdict`) — cần lát được đụng `app/**`.
+- Quyền (chỉ báo cáo, không đổi): `comments.read` chi tiền AI (kiểm duyệt), `news.read` (dịch, biên tập), `settings.read` (dịch giao diện); `translate.post.ts` và `translate-ui.post.ts` không có nơi gọi trong `app/` — ứng viên gỡ bỏ, cần người dùng quyết.
+- Rà các nơi dán dữ liệu vào prompt (`callAi`): dữ liệu **công khai** chỉ còn ở chatbot — `variables.question` (câu hỏi của khách) thay vào `{{question}}` của system prompt chatbot do quản trị viên tự viết (`AiServicesTab.vue` gợi ý biến này), không qua fence; đường chat thuộc agent khác. Dữ liệu **cán bộ viết** (bài, nhãn giao diện, khối trang) không bọc ở `editorial.post.ts` (chú thích sai "gateway bọc variables" đã sửa), `article-translation-worker.ts`, `i18n-auto-translate.ts`, `languages/ai-translate*.post.ts`, `universal-translation.ts`; biến `source_text` của `translate.post.ts` thô.
+
+### Lát sau (theo thứ tự xếp hạng)
+
+1. Quyết định về chi phí Delify đếm hai lần (ở trên), rồi sửa trong `sync.post.ts` + nơi cộng chi tiêu.
+2. `server/services/universal-translation.ts` (444 dòng mã, 0 %) — job dịch toàn hệ thống; cần suite riêng (khoá/hủy/tiến độ, `upsertTranslations`, gọi model theo lô).
+3. Kết quả AI không đọc được ở `comments/ai-moderate` (trạng thái thứ tư, cần `app/**`).
+4. `server/api/admin/languages/ai-translate*.post.ts`, `server/services/i18n-auto-translate.ts` — dịch nhãn bằng AI (giới hạn độ dài, giữ khoá được hỏi như R5-14).
+5. Còn 0 %/thấp trong `settings/**` và lân cận: `chatbot/settings/index.get.ts` (38), `chatbot/settings/clear.post.ts` (7); ngoài sáu lớp: `services/readers.ts` (36 %), `services/ip-bans.ts` (36,4 %), `articles/[id]/boost.post.ts` (34,8 %).
