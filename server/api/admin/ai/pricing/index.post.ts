@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { aiModelPricing, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { COST_OUT_OF_RANGE_MESSAGE, isStorableCostPerMillion } from '../../../../utils/ai/pricing-cost'
 
 /**
  * Create a new AI model pricing row (spec R7.3).
@@ -31,11 +32,11 @@ export default defineEventHandler(async (event) => {
 
   const promptCost = typeof body.promptCostPerMillion === 'number' ? body.promptCostPerMillion : NaN
   const completionCost = typeof body.completionCostPerMillion === 'number' ? body.completionCostPerMillion : NaN
-  if (!Number.isFinite(promptCost) || promptCost < 0) {
-    throw createError({ statusCode: 400, statusMessage: 'Giá input không hợp lệ.' })
+  if (!isStorableCostPerMillion(promptCost)) {
+    throw createError({ statusCode: 400, statusMessage: `Giá input không hợp lệ. ${COST_OUT_OF_RANGE_MESSAGE}` })
   }
-  if (!Number.isFinite(completionCost) || completionCost < 0) {
-    throw createError({ statusCode: 400, statusMessage: 'Giá output không hợp lệ.' })
+  if (!isStorableCostPerMillion(completionCost)) {
+    throw createError({ statusCode: 400, statusMessage: `Giá output không hợp lệ. ${COST_OUT_OF_RANGE_MESSAGE}` })
   }
 
   const db = getDb()
