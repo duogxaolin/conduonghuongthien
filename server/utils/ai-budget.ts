@@ -15,6 +15,7 @@ import { aiUsageLogs, aiBudgetSettings, aiProviders, type AiBudgetSettings } fro
 import { decryptAiSecret } from './ai/crypto'
 import { fetchDelifyUsage } from './ai/delify-usage'
 import { logWarn } from './logger'
+import { vietnamMonthStart } from './vn-day-range'
 
 /** Services blocked at 100% budget. Chatbot falls back to knowledge-only in its
  *  own call path (it's never blocked — it just doesn't call the AI provider).
@@ -47,10 +48,9 @@ export interface BudgetCheckResult {
   remainingVnd?: number
 }
 
-/** Start of the current month in the server's timezone (UTC+7). */
+/** 00:00 on the 1st of the current Vietnam calendar month, whatever the process TZ (`vietnamMonthStart`). */
 function monthStart(): Date {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1)
+  return vietnamMonthStart(new Date())
 }
 
 /** Module-level timestamp for the last 80% warning — emitted once per day. */

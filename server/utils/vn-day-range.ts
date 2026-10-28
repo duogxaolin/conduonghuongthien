@@ -47,3 +47,25 @@ export function vietnamDayEndExclusive(value: unknown): Date | null {
   const start = vietnamDayStart(value)
   return start ? new Date(start.getTime() + DAY_MS) : null
 }
+
+/**
+ * 00:00 giờ Việt Nam của ngày (theo lịch VN) chứa thời điểm `at` — không phụ thuộc
+ * `TZ` của tiến trình (cùng lý do như trên).
+ */
+export function vietnamDayStartOf(at: Date): Date {
+  return new Date(Math.floor((at.getTime() + VIETNAM_OFFSET_MS) / DAY_MS) * DAY_MS - VIETNAM_OFFSET_MS)
+}
+
+/**
+ * 00:00 giờ Việt Nam ngày 1 của tháng (theo lịch VN) chứa thời điểm `at`.
+ *
+ * `new Date(now.getFullYear(), now.getMonth(), 1)` từng được dùng cho "tháng này" của
+ * hạn mức AI: nó theo `TZ` của tiến trình. Image Docker đặt `Asia/Ho_Chi_Minh`, đường
+ * PM2 (`ecosystem.config.cjs`) thì không — với tiến trình chạy UTC, từ 00:00 tới 07:00
+ * ngày 1 (giờ VN) "tháng này" vẫn là tháng trước, và cả tháng trước bị tính vào hạn
+ * mức tháng mới.
+ */
+export function vietnamMonthStart(at: Date): Date {
+  const local = new Date(at.getTime() + VIETNAM_OFFSET_MS)
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - VIETNAM_OFFSET_MS)
+}
