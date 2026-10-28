@@ -395,4 +395,4 @@ export async function saveRetentionPolicy(
 }
 
 // `data_retention_state` (the purge's bookkeeping: loadRetentionState,
-// lastRetentionRunAt, clearRetentionScopeState) lives in `retention-state.ts`.
+// lastRetentionRunAt) lives in `retention-state.ts`.

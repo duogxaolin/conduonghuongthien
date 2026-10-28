@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import test, { after, beforeEach, mock } from 'node:test'
 import sharp from 'sharp'
 
@@ -24,7 +24,11 @@ import sharp from 'sharp'
  *   - 20 MB is the hard cap;
  *   - with R2 selected, an incomplete R2 configuration sends nothing; a complete
  *     one gets exactly one `PutObject` of the processed bytes;
- *   - the `media` row and its audit line commit together.
+ *   - the `media` row and its audit line commit together — and when they do not,
+ *     the file already written (disk or R2) is removed: no orphan nobody can list;
+ *   - each upload gets its own file: `Date.now()_name` alone collided within one
+ *     millisecond (two rows, one file — deleting either lost both); a random
+ *     suffix separates them, and the local write is exclusive (`wx`).
  *
  * Real h3 app with the real `admin-auth` middleware, a real multipart body built
  * by `fetch`, real sharp, real `uploadLocalFile` writing under a temporary
@@ -42,11 +46,12 @@ const uploadsRoot = join(workdir, 'public', 'uploads')
 
 // ─── Fake S3 SDK (the only network edge) ──────────────────────────────────────
 type Sent = { name: string, input: Record<string, unknown> }
-const s3 = { sent: [] as Sent[], endpoints: [] as string[] }
+const s3 = { sent: [] as Sent[], endpoints: [] as string[], failDelete: false }
 class FakeS3Client {
   constructor(config: { endpoint: string }) { s3.endpoints.push(config.endpoint) }
   async send(command: { input: Record<string, unknown>, constructor: { name: string } }) {
     s3.sent.push({ name: command.constructor.name, input: command.input })
+    if (s3.failDelete && command.constructor.name === 'DeleteObjectCommand') throw new Error('R2 DeleteObject: 503 Service Unavailable')
     return {}
   }
 }
@@ -70,11 +75,13 @@ const { createSqliteMysqlDb } = await import('./_sqlite-mysql-db')
 const { roles, permissions, users, settings, userMfaFactors, activityLogs, media } = await import('../server/db/schema')
 const harness = createSqliteMysqlDb([roles, permissions, users, settings, userMfaFactors, activityLogs, media])
 
+/** Every `logWarn` entry, in order. */
+const warnings: Array<Record<string, unknown>> = []
 mock.module('../server/utils/logger', {
   namedExports: {
     log: () => {},
     logInfo: () => {},
-    logWarn: () => {},
+    logWarn: (entry: Record<string, unknown>) => { warnings.push(entry) },
     logError: () => {},
     SECURITY_EVENTS: new Proxy({}, { get: (_target, key) => `event.${String(key)}` }),
   },
@@ -162,6 +169,8 @@ beforeEach(async () => {
   harness.reset()
   s3.sent.length = 0
   s3.endpoints.length = 0
+  s3.failDelete = false
+  warnings.length = 0
   policy.clearMfaPolicyCache()
   policy.clearMfaFactorCache()
   rmSync(join(workdir, 'public'), { recursive: true, force: true })
@@ -196,7 +205,8 @@ test('a PNG is stored as WebP in the month folder, with its row and an audit lin
   assert.equal(row.mimeType, 'image/webp')
   assert.equal(row.provider, 'local')
   assert.equal(row.originalName, 'Logo Cục C11.png')
-  assert.match(String(row.filename), /^\d+_Logo_C_c_C11\.webp$/)
+  // `<ms>_<8 hex>_<name>`: the random part keeps two uploads of one name in one millisecond apart.
+  assert.match(String(row.filename), /^\d+_[0-9a-f]{8}_Logo_C_c_C11\.webp$/)
   const monthDir = monthDirOf(row)
   assert.equal(row.storagePath, join(workdir, monthDir, String(row.filename)))
   assert.equal(row.width, 40)
@@ -234,7 +244,7 @@ test('the bytes decide the type: a GIF declared as image/png is stored as .gif, 
   assert.equal((await upload({ bytes: GIF, type: 'image/png', name: 'dong.png' })).status, 200)
   const [row] = harness.rows(media)
   assert.equal(row!.mimeType, 'image/gif')
-  assert.match(String(row!.filename), /^\d+_dong\.gif$/)
+  assert.match(String(row!.filename), /^\d+_[0-9a-f]{8}_dong\.gif$/)
   assert.deepEqual(readFileSync(String(row!.storagePath)), GIF)
 })
 
@@ -274,7 +284,7 @@ test('the extension never comes from the client filename: x.svg as PDF → .pdf,
   assert.equal((await upload({ bytes: MP4, type: 'video/mp4', name: 'clip.html' })).status, 200)
   assert.equal((await upload({ bytes: MP4, type: 'video/webm', name: 'clip.webm' })).status, 200)
   const rows = harness.rows(media).sort((a, b) => Number(a.id) - Number(b.id))
-  assert.deepEqual(rows.map(row => [row.mimeType, String(row.filename).replace(/^\d+_/, '')]), [
+  assert.deepEqual(rows.map(row => [row.mimeType, String(row.filename).replace(/^\d+_[0-9a-f]{8}_/, '')]), [
     ['application/pdf', 'x.pdf'],
     ['video/mp4', 'clip.mp4'],
     ['video/webm', 'clip.webm'],
@@ -286,7 +296,7 @@ test('a hostile filename stays a filename: written inside the month folder, noth
   const response = await upload({ bytes: PNG, type: 'image/png', name: '../../../../.env.png' })
   assert.equal(response.status, 200)
   const [row] = harness.rows(media)
-  assert.match(String(row!.filename), /^\d+_[A-Za-z0-9_-]+\.webp$/)
+  assert.match(String(row!.filename), /^\d+_[0-9a-f]{8}_[A-Za-z0-9_-]+\.webp$/)
   const monthDir = monthDirOf(row!)
   assert.deepEqual(filesUnder(workdir), [`${monthDir}/${row!.filename}`])
   assert.ok(String(row!.storagePath).startsWith(join(workdir, monthDir) + sep))
@@ -347,6 +357,126 @@ test('the row and its audit line commit together: audit insert fails → 500 and
   assert.equal((await upload({ bytes: PNG, type: 'image/png', name: 'logo.png' })).status, 500)
   assert.equal(harness.rows(media).length, 0)
   assert.equal(harness.rows(activityLogs).length, 0)
+  assert.deepEqual(filesUnder(workdir), [], 'the file written before the failed transaction is an orphan no row points at')
+})
+
+/**
+ * The file is written BEFORE the row (the row stores its URL), so a failed transaction left a
+ * file in the public folder or the bucket that no `media` row lists: invisible in the library,
+ * never deleted, served forever. It is removed on the way out; the caller still gets the
+ * original failure.
+ */
+test('the media row cannot be written → 500, and the local file just written is removed', async () => {
+  harness.failNext(/^insert into `media`/)
+  assert.equal((await upload({ bytes: PNG, type: 'image/png', name: 'logo.png' })).status, 500)
+  assert.equal(harness.rows(media).length, 0)
+  assert.deepEqual(filesUnder(workdir), [])
+  assert.deepEqual(warnings, [], 'a cleanup that worked is not a warning')
+})
+
+const R2_SETTINGS = [
+  { key: 'media_provider', value: 'r2' },
+  { key: 'r2_account_id', value: '0123456789abcdef0123456789abcdef' },
+  { key: 'r2_access_key', value: 'AKIDEXAMPLE' },
+  { key: 'r2_secret_key', value: 'legacy-plaintext-secret' },
+  { key: 'r2_bucket', value: 'cdkt-media' },
+  { key: 'r2_public_url', value: 'cdn.example.vn/' },
+]
+
+test('R2: the row cannot be written → 500, and the object just put is deleted (same bucket, same key)', async () => {
+  await harness.db.insert(settings).values(R2_SETTINGS)
+  harness.failNext(/^insert into `activity_logs`/)
+  assert.equal((await upload({ bytes: PNG, type: 'image/png', name: 'logo.png' })).status, 500)
+  assert.deepEqual(s3.sent.map(sent => sent.name), ['PutObjectCommand', 'DeleteObjectCommand'])
+  const [put, del] = s3.sent
+  assert.equal(del!.input.Bucket, put!.input.Bucket)
+  assert.equal(del!.input.Key, put!.input.Key)
+  assert.equal(harness.rows(media).length, 0)
+})
+
+test('R2: a cleanup that fails is logged with the orphan\'s key, never replaces the original failure', async () => {
+  await harness.db.insert(settings).values(R2_SETTINGS)
+  s3.failDelete = true
+  harness.failNext(/^insert into `media`/)
+  const response = await upload({ bytes: PNG, type: 'image/png', name: 'logo.png' })
+  assert.equal(response.status, 500)
+  // `_h3-handler-server` answers `injected: true` only when the error that reached h3 is the
+  // database failure this test injected (anywhere in its cause chain).
+  assert.equal(response.body.injected, true, 'the caller got something other than the original database failure')
+  const [put] = s3.sent
+  assert.equal(warnings.length, 1)
+  assert.equal(warnings[0]!.event, 'media.upload_orphan_cleanup_failed')
+  assert.equal(warnings[0]!.storagePath, put!.input.Key)
+  assert.equal(warnings[0]!.provider, 'r2')
+})
+
+/**
+ * The cleanup can also THROW (`deleteLocalFile` refuses a folder that resolves outside uploads;
+ * `deleteR2File` throws `R2ConfigInvalidError`) — not just answer `false`. That error is logged
+ * with the orphan's path and swallowed: the caller still gets the ORIGINAL database failure,
+ * never the cleanup's (independent verify of the hardening follow-ups, mutant M7d survived).
+ * Driven for real: once the upload is written, its folder "resolves" elsewhere, so the real
+ * `deleteLocalFile` guard throws during the cleanup.
+ */
+test('a cleanup that THROWS is logged with its error, and the caller still gets the ORIGINAL database failure', async () => {
+  const fsPromises = (await import('node:fs')).promises
+  const realRealpath = fsPromises.realpath.bind(fsPromises)
+  const realWriteFile = fsPromises.writeFile.bind(fsPromises)
+  let written: string | null = null
+  const writes = mock.method(fsPromises, 'writeFile', async (...args: Parameters<typeof fsPromises.writeFile>) => {
+    await realWriteFile(...args)
+    written = String(args[0])
+  })
+  const realpaths = mock.method(fsPromises, 'realpath', async (target: string) =>
+    (written !== null && target === dirname(written) ? join(workdir, 'elsewhere') : realRealpath(target)))
+  harness.failNext(/^insert into `media`/)
+  let response: Awaited<ReturnType<typeof upload>>
+  try {
+    response = await upload({ bytes: PNG, type: 'image/png', name: 'logo.png' })
+  } finally {
+    writes.mock.restore()
+    realpaths.mock.restore()
+  }
+  assert.equal(response.status, 500)
+  assert.equal(response.body.injected, true, 'the cleanup error replaced the original database failure')
+  assert.ok(written, 'the upload wrote its file before the transaction')
+  assert.equal(harness.rows(media).length, 0)
+  assert.equal(warnings.length, 1, 'a cleanup that threw left no trace')
+  assert.equal(warnings[0]!.event, 'media.upload_orphan_cleanup_failed')
+  assert.equal(warnings[0]!.provider, 'local')
+  assert.equal(warnings[0]!.storagePath, written)
+  assert.match(String(warnings[0]!.error), /Path traversal attempt blocked/)
+})
+
+test('two uploads of one name in the SAME millisecond get two files — neither overwrites the other', async () => {
+  const now = mock.method(Date, 'now', () => 1_793_000_000_000)
+  try {
+    assert.equal((await upload({ bytes: PNG, type: 'image/png', name: 'logo.png' })).status, 200)
+    assert.equal((await upload({ bytes: JPEG, type: 'image/jpeg', name: 'logo.jpg' })).status, 200)
+  } finally {
+    now.mock.restore()
+  }
+  const rows = harness.rows(media)
+  assert.equal(rows.length, 2)
+  assert.notEqual(rows[0]!.filename, rows[1]!.filename, 'two rows, one filename')
+  assert.notEqual(rows[0]!.storagePath, rows[1]!.storagePath, 'two rows share one file: deleting either loses both')
+  assert.equal(filesUnder(workdir).length, 2)
+  for (const row of rows) assert.equal(readFileSync(String(row.storagePath)).length, row.sizeBytes, `${String(row.filename)} holds its own bytes`)
+})
+
+test('the local file is written exclusively (`wx`): an existing file is never overwritten', async () => {
+  const fsPromises = (await import('node:fs')).promises
+  const writes = mock.method(fsPromises, 'writeFile')
+  try {
+    assert.equal((await upload({ bytes: PNG, type: 'image/png', name: 'logo.png' })).status, 200)
+  } finally {
+    writes.mock.restore()
+  }
+  const [row] = harness.rows(media)
+  const write = writes.mock.calls.find(call => call.arguments[0] === row!.storagePath)
+  assert.ok(write, 'the upload went through fs.promises.writeFile')
+  const options = write.arguments[2] as { flag?: string } | string | undefined
+  assert.equal(typeof options === 'string' ? options : options?.flag, 'wx')
 })
 
 test('an uploads folder the server cannot write → 500 that names the permission problem, no row', { skip: process.getuid?.() === 0 ? 'root ignores directory permissions' : false }, async () => {

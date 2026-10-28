@@ -19,11 +19,16 @@ import bcrypt from 'bcryptjs'
  *
  * Real h3 app: the real `admin-auth` middleware, then the real handler, with the
  * real `reauth`, `mfa/factors` and `mfa/session` helpers behind it. Drizzle's SQL
- * runs on SQLite (`_sqlite-mysql-db.ts`); the limiter is `rate-limit-store` on its
- * memory backend, fresh per test.
+ * runs on SQLite (`_sqlite-mysql-db.ts`, real transaction — a pool write while it
+ * is open throws); the limiter is `rate-limit-store` on its memory backend, fresh
+ * per test.
  *
- * Not pinned: audit-and-delete atomicity — the handler re-issues the session cookie
- * between its writes (named in `tests/reader-audit-atomicity.test.ts`).
+ * Audit-and-delete atomicity IS pinned: the factor, the recovery codes, the session
+ * generation and the audit row commit in ONE transaction, and the cookie and the
+ * security log follow the commit. Before, the handler deleted the factor, revoked
+ * the sessions and set the cookie on the pool, then wrote the audit row — a failed
+ * audit left the factor gone with no row saying who removed it, and the
+ * `mfa.factor_disabled` log line (written after the audit) lost too.
  */
 
 process.env.JWT_SECRET = 'admin-mfa-disable-behavior-test-secret-0123456789'
@@ -33,10 +38,12 @@ const { createSqliteMysqlDb } = await import('./_sqlite-mysql-db')
 const { roles, permissions, users, settings, userMfaFactors, userRecoveryCodes, activityLogs } = await import('../server/db/schema')
 const harness = createSqliteMysqlDb([roles, permissions, users, settings, userMfaFactors, userRecoveryCodes, activityLogs])
 
+/** Every `logInfo` event, in order. */
+const infoEvents: string[] = []
 mock.module('../server/utils/logger', {
   namedExports: {
     log: () => {},
-    logInfo: () => {},
+    logInfo: (entry: { event?: unknown }) => { infoEvents.push(String(entry.event)) },
     logWarn: () => {},
     logError: () => {},
     SECURITY_EVENTS: new Proxy({}, { get: (_target, key) => `event.${String(key)}` }),
@@ -81,6 +88,7 @@ const snapshot = () => ({
 beforeEach(async () => {
   harness.reset()
   memory = new Map()
+  infoEvents.length = 0
   policy.clearMfaPolicyCache()
   policy.clearMfaFactorCache()
   await harness.db.insert(roles).values({ id: 3, name: EDITOR.roleName, isSystem: false })
@@ -168,6 +176,26 @@ test('the change is audited against the account, factor named, enabled false', a
   const meta = rows[0]!.meta as Record<string, unknown>
   assert.equal(meta.factorType, 'totp')
   assert.equal(meta.enabled, false)
+})
+
+test('a failed audit row changes nothing: factor, secret, codes and sessions stay, no cookie, no "disabled" log line', async () => {
+  // `activity_logs` has its own ways to fail (a FK to `users`, a JSON column). Disabling a
+  // factor with no record of who did it is the worst outcome here, so the removal is
+  // undone with it — and the security log does not announce a change that did not happen.
+  const before = snapshot()
+  harness.failNext(/^insert into `activity_logs`/)
+  const response = await disableFactor({ factorType: 'totp', currentPassword: PASSWORD })
+  assert.equal(response.status, 500)
+  assert.deepEqual(snapshot(), before, 'a factor removal (or its codes, or the session bump) outlived its failed audit row')
+  assert.equal(response.cookies.has('cdkt_admin'), false, 'a session cookie for a change that was rolled back')
+  assert.ok(!infoEvents.includes('event.mfaFactorDisabled'), infoEvents.join(', '))
+
+  // The same request, once the audit can be written, goes through whole — and is logged.
+  const retry = await disableFactor({ factorType: 'totp', currentPassword: PASSWORD })
+  assert.equal(retry.status, 200)
+  assert.equal(harness.rows(activityLogs).length, 1)
+  assert.deepEqual(factorRows(), [{ userId: OTHER.id, factorType: 'totp', secret: 'sealed-other-totp' }])
+  assert.deepEqual(infoEvents.filter(event => event === 'event.mfaFactorDisabled'), ['event.mfaFactorDisabled'])
 })
 
 test('an unknown factor type is a 400 and a factor that is not enabled is a 404 — neither writes', async () => {

@@ -23,6 +23,8 @@ const seen = {
   screened: [] as string[], matched: [] as string[], answered: 0, persisted: [] as string[], answeredWith: [] as unknown[],
   /** The `regexBudget` each moderation call was handed: the newest turn's check, the history batch. */
   budgets: { newest: [] as unknown[], history: [] as unknown[] },
+  /** Make the history check throw (a database or regex failure), as a real one can. */
+  historyThrows: false,
 }
 
 mock.module('h3', {
@@ -62,6 +64,7 @@ mock.module('../server/services/moderation-worker', {
     earlierTurnsToWithhold: async (texts: string[], options?: { regexBudget?: unknown }) => {
       seen.budgets.history.push(options?.regexBudget)
       seen.matched.push(...texts)
+      if (seen.historyThrows) throw new Error('ai_moderation_rules: connection lost')
       return new Set(texts.filter(text => text.includes(PROHIBITED)))
     },
     checkAndModerateContent: async () => ({ blocked: false }),
@@ -85,6 +88,7 @@ const kindOf = (reply: string) => {
 function reset() {
   seen.screened.length = 0; seen.matched.length = 0; seen.answered = 0; seen.persisted.length = 0; seen.answeredWith = []
   seen.budgets.newest.length = 0; seen.budgets.history.length = 0
+  seen.historyThrows = false
 }
 
 for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/chat', legacyHandler]] as const) {
@@ -118,6 +122,32 @@ for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/ch
     const sent = JSON.stringify(seen.answeredWith)
     assert.ok(!sent.includes(PROHIBITED), 'the flagged turn never reaches the model')
     assert.ok(sent.includes('tiếp tục đi') && sent.includes('Trả lời.'), 'the rest of the history does')
+  })
+
+  /**
+   * The history check failing (rules unreadable, a regex pass that throws) must fail CLOSED for
+   * the history: every earlier user turn is withheld — the flagged one and the harmless one alike,
+   * since none of them was screened — while the new question, which passed its own check, is
+   * still answered. Failing open sent unscreened turns to the model (verify of the wave3 4.3c
+   * follow-ups, mutant V9 `.catch(() => new Set<string>())`, survived every suite).
+   */
+  test(`${name}: a history check that throws withholds EVERY earlier user turn and still answers the new question`, async () => {
+    reset()
+    seen.historyThrows = true
+    const reply = await send(handler, [
+      { role: 'user', content: `câu đầu ${PROHIBITED}` },
+      { role: 'assistant', content: 'Trả lời một.' },
+      { role: 'user', content: 'câu hai vô hại' },
+      { role: 'assistant', content: 'Trả lời hai.' },
+      { role: 'user', content: 'câu mới' },
+    ])
+    assert.notEqual(kindOf(reply), 'moderation_blocked', 'the new question passed its own check')
+    assert.equal(seen.answered, 1)
+    assert.deepEqual([...seen.matched].sort(), ['câu hai vô hại', `câu đầu ${PROHIBITED}`].sort(), 'the history check did run, and threw')
+    const sent = JSON.stringify(seen.answeredWith)
+    assert.ok(!sent.includes(PROHIBITED), 'the flagged earlier turn reached the model')
+    assert.ok(!sent.includes('câu hai vô hại'), 'an unscreened earlier turn reached the model')
+    assert.ok(sent.includes('câu mới'), 'the new question is what the model answers')
   })
 
   test(`${name}: the bot's own earlier answer is not screened, so a keyword in it never refuses the visitor`, async () => {

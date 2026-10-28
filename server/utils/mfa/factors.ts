@@ -31,8 +31,16 @@ export const FACTOR_LABELS: Record<FactorType, string> = {
 
 export type FactorRow = typeof userMfaFactors.$inferSelect
 
-export async function listFactors(userId: number): Promise<FactorRow[]> {
-  const db = getDb()
+/**
+ * `executor` (đọc/ghi dưới đây): chạy bên trong một transaction đang mở — `disable.post.ts`
+ * gỡ yếu tố, mã dự phòng, thế hệ phiên và dòng audit trong MỘT transaction. Một lượt đọc qua
+ * `getDb()` ở đó chạy trên kết nối khác của pool và, trên MySQL, không thấy lượt xoá chưa commit
+ * (yếu tố vừa gỡ vẫn "đang bật" → mã dự phòng không bị dọn). Mặc định là pool.
+ */
+type FactorReadExecutor = Pick<ReturnType<typeof getDb>, 'select'>
+
+export async function listFactors(userId: number, executor?: FactorReadExecutor): Promise<FactorRow[]> {
+  const db = executor ?? getDb()
   return db.select().from(userMfaFactors).where(eq(userMfaFactors.userId, userId))
 }
 
@@ -89,8 +97,8 @@ export async function usableFactorTypes(userId: number): Promise<FactorType[]> {
   return (await factorAvailability(userId)).usable
 }
 
-export async function hasAnyActiveFactor(userId: number): Promise<boolean> {
-  const rows = await listFactors(userId)
+export async function hasAnyActiveFactor(userId: number, executor?: FactorReadExecutor): Promise<boolean> {
+  const rows = await listFactors(userId, executor)
   return rows.some(row => row.state === 'active')
 }
 
@@ -109,8 +117,8 @@ export async function countUnusedRecoveryCodes(userId: number, executor?: Pick<R
  * session generation. Callers that must keep the acting session alive re-issue
  * its cookie afterwards.
  */
-export async function revokeSessions(userId: number): Promise<number> {
-  const db = getDb()
+export async function revokeSessions(userId: number, executor?: Pick<ReturnType<typeof getDb>, 'update' | 'select'>): Promise<number> {
+  const db = executor ?? getDb()
   await db
     .update(users)
     .set({ tokenVersion: sql`${users.tokenVersion} + 1` })
@@ -119,11 +127,16 @@ export async function revokeSessions(userId: number): Promise<number> {
   return row?.tokenVersion ?? 0
 }
 
-export async function deleteFactor(userId: number, factorType: FactorType): Promise<void> {
-  const db = getDb()
-  await db
+/**
+ * Số hàng đã xoá — 0 khi yếu tố đã không còn (một lượt tắt đồng thời đã gỡ trước), `null` khi
+ * driver không báo (`readAffectedRows`).
+ */
+export async function deleteFactor(userId: number, factorType: FactorType, executor?: Pick<ReturnType<typeof getDb>, 'delete'>): Promise<number | null> {
+  const db = executor ?? getDb()
+  const result = await db
     .delete(userMfaFactors)
     .where(and(eq(userMfaFactors.userId, userId), eq(userMfaFactors.factorType, factorType)))
+  return readAffectedRows(result)
 }
 
 /**
@@ -143,9 +156,9 @@ export async function deleteAllRecoveryCodes(
 }
 
 /** Disabling the last factor must not leave recovery codes behind. */
-export async function pruneRecoveryCodesIfNoFactors(userId: number): Promise<void> {
-  if (await hasAnyActiveFactor(userId)) return
-  await deleteAllRecoveryCodes(userId)
+export async function pruneRecoveryCodesIfNoFactors(userId: number, executor?: FactorReadExecutor & RecoveryCodeDeleteExecutor): Promise<void> {
+  if (await hasAnyActiveFactor(userId, executor)) return
+  await deleteAllRecoveryCodes(userId, executor)
 }
 
 export type FactorAttempt =

@@ -18,6 +18,8 @@ type LogItem = {
   ip: string | null
   userAgent: string | null
   mfaMethod: string | null
+  /** `meta.phase` — the start and finish rows of a manual retention run; null on every other row. */
+  phase: string | null
 }
 
 /**
@@ -103,6 +105,8 @@ const MFA_METHOD_LABELS: Record<string, string> = {
   totp: 'ứng dụng xác thực', email_otp: 'mã qua email',
   second_password: 'mật khẩu cấp 2', recovery_code: 'mã dự phòng',
 }
+/** `meta.phase` of a manual retention run's two rows. Only these get a label; any other value is not printed raw. */
+const PHASE_LABELS: Record<string, string> = { started: 'bắt đầu', finished: 'kết thúc' }
 
 const items = ref<LogItem[]>([])
 const loading = ref(true)
@@ -176,7 +180,9 @@ function goPage(next: number) {
 function actionLabel(item: LogItem) {
   const action = ACTION_LABELS[item.action] ?? item.action
   const resource = item.resource ? (RESOURCE_LABELS[item.resource] ?? item.resource) : ''
-  return resource ? `${action} · ${resource}` : action
+  const label = resource ? `${action} · ${resource}` : action
+  const phase = item.phase ? PHASE_LABELS[item.phase] : undefined
+  return phase ? `${label} (${phase})` : label
 }
 function formatWhen(value: string) {
   const d = new Date(value)

@@ -200,6 +200,42 @@ describe('W7: the request budget reaches livestream chat and the rescan job', ()
   })
 })
 
+/**
+ * The per-item budget bounds ONE item (≤ 250 ms); it does not let anything else run between items.
+ * Every await of a rescan item resolves as a microtask when the AI answers from memory or is not
+ * configured (rules only) — the verify of the wave3 4.3c follow-ups measured a 40 + 40-item run
+ * with a sub-threshold cubic rule (`₫*₫*$`) blocking the event loop 1.09–1.12 s in ONE stretch
+ * (`rescan-lag-node24-cpus2.log`): no request, timer or lock heartbeat ran until the run ended.
+ * Pinned on the event loop itself, not on a clock: between two scanned items at least one
+ * `setImmediate` turn must have run.
+ */
+describe('the rescan yields to the event loop between items', () => {
+  for (const ai of [{ ok: true, text: '{"verdict":"safe"}' }, { ok: false, error: 'service_not_found' }]) {
+    it(`an event-loop turn runs between every two scanned items (comments then livestream messages; AI ${ai.ok ? 'answering' : 'not configured'})`, async () => {
+      reset([rule('lô\\s*đề')])
+      state.ai = ai
+      state.comments = Array.from({ length: 12 }, (_, i) => ({ id: 100 + i, body: `bình luận cũ ${i}` }))
+      state.messages = Array.from({ length: 12 }, (_, i) => ({ id: 200 + i, content: `tin chat cũ ${i}` }))
+      let turns = 0
+      let beating = true
+      const beat = () => { if (beating) { turns += 1; setImmediate(beat) } }
+      setImmediate(beat)
+      /** `turnsAt[n]`: event-loop turns seen when the n-th item was reported scanned. */
+      const turnsAt: number[] = []
+      try {
+        const summary = await worker.rescanExistingContent({ onProgress: (p) => { turnsAt[p.scannedComments + p.scannedMessages] ??= turns } })
+        assert.equal(summary.scannedComments, 12)
+        assert.equal(summary.scannedMessages, 12)
+        assert.equal(summary.aiUnavailable, !ai.ok)
+      } finally {
+        beating = false
+      }
+      const stalls = turnsAt.slice(1).flatMap((at, n) => (n > 0 && at <= turnsAt[n]! ? [`item ${n} → ${n + 1}`] : []))
+      assert.deepEqual(stalls, [], `no event-loop turn between: ${stalls.join(', ')} (turns at each item: ${turnsAt.join(' ')})`)
+    })
+  }
+})
+
 describe('W8(a): a blocked reader is never told which rule matched', () => {
   const PATTERN = 'mẫu-bí-mật-\\d+'
   for (const [label, rules, text] of [

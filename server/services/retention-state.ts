@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { dataRetentionState } from '../db/schema'
 import { RETENTION_SCOPES, type RetentionScope } from './retention-policy'
@@ -49,9 +48,4 @@ export async function lastRetentionRunAt(): Promise<Date | null> {
     if (row.lastRunAt && (!latest || row.lastRunAt > latest)) latest = row.lastRunAt
   }
   return latest
-}
-
-export async function clearRetentionScopeState(scope: RetentionScope): Promise<void> {
-  const db = getDb()
-  await db.delete(dataRetentionState).where(eq(dataRetentionState.scope, scope))
 }

@@ -171,6 +171,32 @@ test('the change is audited against the actor with the values before and after',
 })
 
 /**
+ * The audit `after` is the policy as it now STANDS — the keys this request sent over the
+ * keys already stored — not the keys sent over the defaults. Saving one field must not make
+ * the record claim that every other stored value reverted to its default. The test above
+ * could not tell: the one key stored there (365 days) equals its default (verify of the
+ * wave3 test slices, S1 — mutant `rput-v-after-from-pending-only` survived).
+ */
+test('a save of one field keeps the other STORED values in the audit\'s after (not the defaults)', async () => {
+  await harness.db.insert(settings).values([
+    { key: 'retention_submission_days', value: '730', type: 'string', group: 'retention' },
+    { key: 'retention_chat_session_max_rows', value: '20000', type: 'string', group: 'retention' },
+  ])
+  assert.notEqual(DATA_RETENTION_DEFAULTS.submissionDays, 730, 'the stored value must differ from its default, or this proves nothing')
+  assert.equal((await save({ runHour: 5 })).status, 200)
+  const meta = harness.rows(activityLogs)[0]!.meta as { keysUpdated: string[], before: { runHour: number, scopes: Array<{ scope: string, days: number, maxRows: number }> }, after: { runHour: number, scopes: Array<{ scope: string, days: number, maxRows: number }> } }
+  assert.deepEqual(meta.keysUpdated, ['retention_run_hour'])
+  const scope = (side: 'before' | 'after', name: string) => meta[side].scopes.find(entry => entry.scope === name)!
+  for (const side of ['before', 'after'] as const) {
+    assert.equal(scope(side, 'submissions').days, 730, `${side}: the stored submission window`)
+    assert.equal(scope(side, 'chat_sessions').maxRows, 20_000, `${side}: the stored chat-session cap`)
+    assert.equal(scope(side, 'activity_logs').days, 365, `${side}: the stored activity-log window`)
+  }
+  assert.equal(meta.before.runHour, 3)
+  assert.equal(meta.after.runHour, 5)
+})
+
+/**
  * FINDING-R3-1 — severity medium, FIXED. It was pinned here as it behaved:
  * `saveRetentionPolicy` wrote each key on the pool and the handler then wrote the
  * audit line on the pool, so a failed audit answered 500 while the shortened

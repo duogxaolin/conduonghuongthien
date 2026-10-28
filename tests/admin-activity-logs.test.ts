@@ -75,7 +75,7 @@ test('pagination is deterministic when rows share a timestamp', () => {
 
 test('only allowlisted meta keys are surfaced from free-form JSON', () => {
   assert.match(listSource, /function readMeta/)
-  for (const key of ["'ip'", "'userAgent'", "'mfaMethod'"]) {
+  for (const key of ["'ip'", "'userAgent'", "'mfaMethod'", "'phase'"]) {
     assert.match(listSource, new RegExp(`readMeta\\(row\\.meta, ${key}\\)`))
   }
   // The raw meta column must not be handed to the client wholesale.
