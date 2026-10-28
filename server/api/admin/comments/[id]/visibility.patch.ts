@@ -54,7 +54,7 @@ export default defineEventHandler(async (event) => {
       action: 'update',
       resource: 'comments',
       resourceId: Math.floor(id),
-      meta: JSON.stringify({ visibility: hidden ? 'hidden' : 'visible', reason: hidden ? reason : null }),
+      meta: { visibility: hidden ? 'hidden' : 'visible', reason: hidden ? reason : null },
     })
   })
 

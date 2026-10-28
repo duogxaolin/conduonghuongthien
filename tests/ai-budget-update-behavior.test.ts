@@ -16,10 +16,10 @@ import test, { after, beforeEach, mock } from 'node:test'
  *   - the update and its audit line commit together — if the audit fails, the cap
  *     is what it was.
  *
- * FINDING-R3-3 (pinned, low): the audit `meta` is written as a JSON *string*
- * inside the JSON column (`JSON.stringify` before Drizzle's own encoding) — the
- * same in 16 handlers under `server/api/admin/ai/**` and one comment handler — so
- * `JSON_EXTRACT(meta, '$.type')` finds nothing on these rows.
+ *   - the audit `meta` is an object in the JSON column, not a JSON string inside
+ *     it (FINDING-R3-3, fixed: 16 handlers under `server/api/admin/ai/**` and one
+ *     comment handler `JSON.stringify`-ed it before Drizzle encoded it again, so
+ *     `JSON_EXTRACT(meta, '$.type')` found nothing on those rows).
  *
  * Real h3 app with the real `admin-auth` middleware; Drizzle's SQL on SQLite
  * (`_sqlite-mysql-db.ts`, real transaction).
@@ -137,16 +137,20 @@ test('the update and its audit line commit together: audit fails → 500, the ca
 })
 
 /**
- * FINDING-R3-3 — severity low, NOT fixed (pinned as it behaves today). The meta
- * is `JSON.stringify`-ed before Drizzle encodes the JSON column again, so the
- * stored value is a JSON string, not an object. The fix is to pass the object
- * (as `retention.put.ts` and the media handlers do) — in all 17 files at once,
- * plus whatever reads these rows; when it is fixed this test turns red: expect an
- * object.
+ * FINDING-R3-3 — severity low, FIXED. It was pinned here as it behaved: the meta
+ * was `JSON.stringify`-ed before Drizzle encoded the JSON column again, so the
+ * stored value was a JSON string, not an object — in 17 files. They now pass the
+ * object, like every other audit writer; `tests/activity-log-meta-shape.test.ts`
+ * scans `server/**` so a new `meta: JSON.stringify(` into `activityLogs` is red.
+ * Stringify it again and this test is red.
  */
-test('FINDING-R3-3 (low, pinned): the audit meta is a JSON string inside the JSON column, not an object', async () => {
+test('FINDING-R3-3 (low, fixed): the audit meta is an object in the JSON column, not a JSON string', async () => {
   assert.equal((await put({ warningThresholdPct: 90 })).status, 200)
   const meta = harness.rows(activityLogs)[0]!.meta
-  assert.equal(typeof meta, 'string') // fixed: 'object'
-  assert.deepEqual(JSON.parse(String(meta)), { type: 'budget_update', changedFields: ['warningThresholdPct', 'updatedBy'] })
+  assert.equal(typeof meta, 'object')
+  assert.deepEqual(meta, { type: 'budget_update', changedFields: ['warningThresholdPct', 'updatedBy'] })
+  // The column holds ONE JSON encoding of the object (`{"type":…}`), not an encoded
+  // string (`"{\"type\":…}"`) — so `JSON_EXTRACT(meta, '$.type')` finds it.
+  const raw = (harness.sqlite.prepare('SELECT meta FROM activity_logs').get() as { meta: string }).meta
+  assert.equal(JSON.parse(raw).type, 'budget_update')
 })

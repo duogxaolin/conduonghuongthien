@@ -55,11 +55,11 @@ export default defineEventHandler(async (event) => {
       action: 'update',
       resource: 'ai',
       resourceId: null,
-      meta: JSON.stringify({
+      meta: {
         type: 'pricing_update',
         model: modelParam,
         changedFields: Object.keys(patch),
-      }),
+      },
     })
   })
 

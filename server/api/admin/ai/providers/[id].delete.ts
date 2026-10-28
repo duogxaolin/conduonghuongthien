@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
       action: 'delete',
       resource: 'ai',
       resourceId: id,
-      meta: JSON.stringify({ provider: existing.provider }),
+      meta: { provider: existing.provider },
     })
   })
 
