@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import test, { after, beforeEach, mock } from 'node:test'
 import sharp from 'sharp'
 
@@ -400,11 +400,52 @@ test('R2: a cleanup that fails is logged with the orphan\'s key, never replaces 
   harness.failNext(/^insert into `media`/)
   const response = await upload({ bytes: PNG, type: 'image/png', name: 'logo.png' })
   assert.equal(response.status, 500)
+  // `_h3-handler-server` answers `injected: true` only when the error that reached h3 is the
+  // database failure this test injected (anywhere in its cause chain).
+  assert.equal(response.body.injected, true, 'the caller got something other than the original database failure')
   const [put] = s3.sent
   assert.equal(warnings.length, 1)
   assert.equal(warnings[0]!.event, 'media.upload_orphan_cleanup_failed')
   assert.equal(warnings[0]!.storagePath, put!.input.Key)
   assert.equal(warnings[0]!.provider, 'r2')
+})
+
+/**
+ * The cleanup can also THROW (`deleteLocalFile` refuses a folder that resolves outside uploads;
+ * `deleteR2File` throws `R2ConfigInvalidError`) — not just answer `false`. That error is logged
+ * with the orphan's path and swallowed: the caller still gets the ORIGINAL database failure,
+ * never the cleanup's (independent verify of the hardening follow-ups, mutant M7d survived).
+ * Driven for real: once the upload is written, its folder "resolves" elsewhere, so the real
+ * `deleteLocalFile` guard throws during the cleanup.
+ */
+test('a cleanup that THROWS is logged with its error, and the caller still gets the ORIGINAL database failure', async () => {
+  const fsPromises = (await import('node:fs')).promises
+  const realRealpath = fsPromises.realpath.bind(fsPromises)
+  const realWriteFile = fsPromises.writeFile.bind(fsPromises)
+  let written: string | null = null
+  const writes = mock.method(fsPromises, 'writeFile', async (...args: Parameters<typeof fsPromises.writeFile>) => {
+    await realWriteFile(...args)
+    written = String(args[0])
+  })
+  const realpaths = mock.method(fsPromises, 'realpath', async (target: string) =>
+    (written !== null && target === dirname(written) ? join(workdir, 'elsewhere') : realRealpath(target)))
+  harness.failNext(/^insert into `media`/)
+  let response: Awaited<ReturnType<typeof upload>>
+  try {
+    response = await upload({ bytes: PNG, type: 'image/png', name: 'logo.png' })
+  } finally {
+    writes.mock.restore()
+    realpaths.mock.restore()
+  }
+  assert.equal(response.status, 500)
+  assert.equal(response.body.injected, true, 'the cleanup error replaced the original database failure')
+  assert.ok(written, 'the upload wrote its file before the transaction')
+  assert.equal(harness.rows(media).length, 0)
+  assert.equal(warnings.length, 1, 'a cleanup that threw left no trace')
+  assert.equal(warnings[0]!.event, 'media.upload_orphan_cleanup_failed')
+  assert.equal(warnings[0]!.provider, 'local')
+  assert.equal(warnings[0]!.storagePath, written)
+  assert.match(String(warnings[0]!.error), /Path traversal attempt blocked/)
 })
 
 test('two uploads of one name in the SAME millisecond get two files — neither overwrites the other', async () => {

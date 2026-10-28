@@ -22,11 +22,44 @@ function uploadDirFor(now: Date): { relativeDir: string; fullDir: string } {
   return { relativeDir, fullDir: path.resolve(process.cwd(), 'public', relativeDir) }
 }
 
+/** `inner` là `root` hay nằm dưới nó (so theo ranh giới thư mục, không theo tiền tố chuỗi). */
+const isWithin = (inner: string, root: string) => inner === root || inner.startsWith(root + path.sep)
+
+/**
+ * Thư mục THẬT của `public/uploads/<YYYY>/<MM>` để ghi vào, tạo từng cấp còn thiếu — mỗi cấp
+ * đã có phải giải (`realpath`) về dưới thư mục uploads THẬT, nếu không thì ném TRƯỚC khi tạo
+ * hay ghi bất cứ thứ gì ở đó. `mkdir -p` và `writeFile` đi theo symlink thư mục như `unlink`
+ * (cùng lỗ với `deleteLocalFile`): `uploads/<năm>` → một thư mục khác từng cho lượt tải lên
+ * tạo tệp ngoài uploads. Symlink trỏ VÀO trong uploads, và `public/uploads` tự là symlink
+ * (volume gắn vào — gốc tin cậy), vẫn ghi được.
+ */
+async function confinedUploadDir(now: Date): Promise<string> {
+  const uploadsRoot = path.resolve(process.cwd(), 'public', 'uploads')
+  await fs.mkdir(uploadsRoot, { recursive: true })
+  const realRoot = await fs.realpath(uploadsRoot)
+  const { relativeDir, fullDir } = uploadDirFor(now)
+  let dir = realRoot
+  for (const part of path.relative(uploadsRoot, fullDir).split(path.sep)) {
+    const next = path.join(dir, part)
+    try {
+      await fs.mkdir(next)
+    } catch (err: unknown) {
+      if ((err as { code?: unknown } | null)?.code !== 'EEXIST') throw err
+    }
+    dir = await fs.realpath(next)
+    if (!isWithin(dir, realRoot)) throw new Error(`Path traversal attempt blocked: ${relativeDir}`)
+  }
+  return dir
+}
+
 /**
  * `exclusive`: ghi với cờ `wx` — tệp đã có ở đường dẫn đó thì NÉM (`EEXIST`) thay vì ghi đè
  * tệp của một hàng `media` khác (đường tải lên mới: tên tệp phải là của riêng nó). Mặc định
  * ghi đè: lượt đồng bộ R2 → local ghi lại đúng tên đó khi thử lại một lượt bị cắt ngang, sau
  * khi đã kiểm không hàng nào khác sở hữu đường dẫn (`media-sync-files.ts`).
+ *
+ * `filename` phải là MỘT tên (không `/`, `\`, `.`, `..`), và tệp được ghi vào thư mục thật mà
+ * `confinedUploadDir` đã kiểm; đường dẫn trả về vẫn là đường dẫn theo chữ (thứ hàng lưu).
  */
 export async function uploadLocalFile(
   fileBuffer: Buffer,
@@ -34,14 +67,14 @@ export async function uploadLocalFile(
   now: Date = new Date(),
   options: { exclusive?: boolean } = {},
 ): Promise<{ url: string; storagePath: string }> {
-  await fs.mkdir(uploadDirFor(now).fullDir, { recursive: true })
+  if (!filename || filename === '.' || filename === '..' || /[/\\]/.test(filename)) {
+    throw new Error(`Path traversal attempt blocked: ${filename}`)
+  }
+  const realDir = await confinedUploadDir(now)
   const target = localUploadTargetFor(filename, now)
-  await fs.writeFile(target.storagePath, fileBuffer, { flag: options.exclusive ? 'wx' : 'w' })
+  await fs.writeFile(path.join(realDir, filename), fileBuffer, { flag: options.exclusive ? 'wx' : 'w' })
   return target
 }
-
-/** `inner` là `root` hay nằm dưới nó (so theo ranh giới thư mục, không theo tiền tố chuỗi). */
-const isWithin = (inner: string, root: string) => inner === root || inner.startsWith(root + path.sep)
 
 /**
  * Xoá tệp theo `storage_path` của một hàng `media` — giá trị không tin được, nên không gì

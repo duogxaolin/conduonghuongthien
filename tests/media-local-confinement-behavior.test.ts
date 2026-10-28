@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { after, beforeEach } from 'node:test'
@@ -146,4 +146,69 @@ test('uploadLocalFile `exclusive`: a second write to the same name is refused an
   // Without it (the R2 → local sync re-writes the same name on a retry) the write replaces.
   await uploadLocalFile(Buffer.from('again'), '1_dup.webp', at)
   assert.equal(readFileSync(first.storagePath, 'utf8'), 'again')
+})
+
+/**
+ * The WRITE side of the same hole: `mkdir -p` and `writeFile` follow a directory symlink
+ * inside uploads like `unlink` did (independent verify of the hardening follow-ups: a probe
+ * created a new file outside `public/uploads` through `uploads/<year>` → elsewhere). Every
+ * folder a write goes through must resolve, for real, under the real uploads folder; a write
+ * that would land elsewhere throws BEFORE anything is created there — no file, no folder.
+ */
+function entriesUnder(dir: string): string[] {
+  const out: string[] = []
+  const walk = (current: string, prefix: string) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      out.push(`${prefix}${entry.name}`)
+      if (entry.isDirectory()) walk(join(current, entry.name), `${prefix}${entry.name}/`)
+    }
+  }
+  walk(dir, '')
+  return out
+}
+
+test('uploadLocalFile: a directory symlink inside public/uploads cannot carry a write outside it (year or month level)', async () => {
+  const outside = join(workdir, 'outside-write')
+  mkdirSync(outside, { recursive: true })
+  try {
+    symlinkSync(outside, join(uploads, '2027'))
+    await assert.rejects(uploadLocalFile(Buffer.from('payload'), '1_x.webp', new Date(2027, 0, 15)), /Path traversal attempt blocked/)
+    assert.deepEqual(entriesUnder(outside), [], 'something was created outside public/uploads (year link)')
+
+    rmSync(join(uploads, '2027'))
+    mkdirSync(join(uploads, '2027'))
+    symlinkSync(outside, join(uploads, '2027', '02'))
+    await assert.rejects(uploadLocalFile(Buffer.from('payload'), '1_y.webp', new Date(2027, 1, 15)), /Path traversal attempt blocked/)
+    assert.deepEqual(entriesUnder(outside), [], 'something was created outside public/uploads (month link)')
+  } finally {
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('uploadLocalFile: a filename that is not a single name is refused — nothing written outside the month folder', async () => {
+  for (const name of ['../../../evil.webp', '../escape.webp', 'sub/dir.webp', '..', '.']) {
+    await assert.rejects(uploadLocalFile(Buffer.from('payload'), name, new Date(2027, 0, 15)), /Path traversal attempt blocked/, name)
+  }
+  assert.equal(existsSync(join(workdir, 'public', 'evil.webp')), false)
+  assert.equal(existsSync(join(uploads, '2027', 'escape.webp')), false)
+})
+
+test('uploadLocalFile: a directory symlink that stays inside uploads, and uploads itself as a symlink (a volume), still take writes', async () => {
+  symlinkSync(join(uploads, '2026'), join(uploads, '2028'))
+  const viaAlias = await uploadLocalFile(Buffer.from('alias'), '1_alias.webp', new Date(2028, 9, 1))
+  assert.equal(viaAlias.storagePath, join(uploads, '2028', '10', '1_alias.webp'), 'the reported path is the one the row stores')
+  assert.equal(readFileSync(join(uploads, '2026', '10', '1_alias.webp'), 'utf8'), 'alias', 'written into the real folder the link points at')
+
+  const volume = join(workdir, 'volume-write')
+  rmSync(join(workdir, 'public'), { recursive: true, force: true })
+  mkdirSync(volume, { recursive: true })
+  mkdirSync(join(workdir, 'public'), { recursive: true })
+  symlinkSync(volume, uploads)
+  try {
+    const written = await uploadLocalFile(Buffer.from('on the volume'), '1_vol.webp', new Date(2029, 2, 3))
+    assert.equal(written.storagePath, join(uploads, '2029', '03', '1_vol.webp'))
+    assert.equal(readFileSync(join(volume, '2029', '03', '1_vol.webp'), 'utf8'), 'on the volume')
+  } finally {
+    rmSync(volume, { recursive: true, force: true })
+  }
 })
