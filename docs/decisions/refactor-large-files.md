@@ -337,8 +337,8 @@ Wave 3, task 4.2. Bản tách giữ lại. Khác kế hoạch 2026-10 ở trên 
   - Bản gốc 32/32, bản tách 32/32. `AI_PROVIDERS_TAB_FILE=<tệp>` chạy cùng bộ test trên bản khác.
   - `tests/_sfc-mount.ts`: `mountSfc` trả thêm `instance` (đọc được `defineExpose`).
 - **Chứng minh DOM không đổi** (`AI_PROVIDERS_TAB_DOM_LOG`, chạy một lần, không commit):
-  - bản gốc vs bản tách thuần (commit `965aaa8`): 118/118 ảnh chụp giống hệt — DOM + request + toast + confirm + số lần `invalidate`;
-  - sau sửa lỗi: 114/122 giống hệt. 8 ảnh khác đúng ở bước lỗi lộ ra: 7 test FINDING, và băng "Thất bại: …" nay hiện trên thẻ ở test khoá nút (P1);
+  - bản gốc vs bản tách thuần (commit `965aaa8`), chạy bộ test cuối cùng (32 + 7): 152/152 ảnh chụp giống hệt — DOM + request + toast + confirm + số lần `invalidate`;
+  - sau sửa lỗi: 144/152 giống hệt. 8 ảnh khác đúng ở bước lỗi lộ ra: 7 test FINDING, và băng "Thất bại: …" nay hiện trên thẻ ở test khoá nút (P1);
   - build: CSS Tailwind `entry.*.css` của build `d7593b2` và bản tách giống từng byte (cùng tập lớp);
   - ảnh chụp trình duyệt (hai build, CSDL e2e, API của tab trả lời ở trình duyệt nên không gọi ra ngoài, không khoá thật): 12 trạng thái × desktop 1440 + phone 390.
     - 19/24 trùng từng điểm ảnh: danh sách, rỗng, lỗi (desktop), thêm/sửa nhà cung cấp, xác nhận xoá, thêm/sửa model, kết quả Test Call, hai thanh đã chọn.
