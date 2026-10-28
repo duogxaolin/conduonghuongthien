@@ -377,7 +377,13 @@ const MIGRATED_TO_ADMIN_MODAL: Record<string, number> = {
   'components/admin/SubmissionDetailModal.vue': 1,
   'components/admin/ContentTypePicker.vue': 1,
   'components/admin/ai/AiServicesTab.vue': 1,
-  'components/admin/ai/AiProvidersTab.vue': 5,
+  // Tab "Nhà cung cấp & Models": 5 hộp thoại, mỗi hộp một phần tách (wave3 4.2) — tệp tab
+  // không còn hộp thoại nào.
+  'components/admin/ai/providers/ProviderCreateModal.vue': 1,
+  'components/admin/ai/providers/ProviderEditModal.vue': 1,
+  'components/admin/ai/providers/ModelAddModal.vue': 1,
+  'components/admin/ai/providers/ModelEditModal.vue': 1,
+  'components/admin/ai/providers/ModelTestCallModal.vue': 1,
   'pages/admin/languages/index.vue': 2,
   'pages/admin/content/articles/[id].vue': 1,
   'components/admin/articles/ArticleQuickViewModal.vue': 1,

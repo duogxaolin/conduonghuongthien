@@ -1,10 +1,11 @@
 /**
- * A public component after its split (wave3 4.2): the parent `.vue`, every `.vue` in its
+ * A component after its split (wave3 4.2): the parent `.vue`, every `.vue` in its
  * parts directory, and the composables/utils the split pulled out of it — read as ONE
  * source, so a guard that used to grep the 730-line file keeps reading everything the file
  * used to contain.
  *
- * Two families today (`ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`). The parts are
+ * Three families today (`ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, and the admin
+ * `AI_PROVIDERS_TAB_FAMILY`). The parts are
  * DERIVED from the directory, not listed (the design of tests/_moderation-page-parts.ts):
  * a part added later joins every "must appear nowhere" scan without anyone editing this
  * file. The named parts are a subset check, so a renamed/moved part turns the scan red
@@ -46,6 +47,17 @@ export const ARTICLE_COMMENTS_FAMILY: ComponentFamily = {
   partsDir: 'components/comments',
   expectedParts: ['CommentComposer.vue', 'CommentPendingList.vue', 'CommentThreadItem.vue'],
   modules: ['composables/useCommentAnchor.ts', 'composables/useCommentWrites.ts', 'utils/comment-thread.ts'],
+}
+
+/** The "Nhà cung cấp & Models" tab of `/admin/ai` (1018 lines before its split). */
+export const AI_PROVIDERS_TAB_FAMILY: ComponentFamily = {
+  parent: 'components/admin/ai/AiProvidersTab.vue',
+  partsDir: 'components/admin/ai/providers',
+  expectedParts: [
+    'ModelAddModal.vue', 'ModelEditModal.vue', 'ModelTestCallModal.vue', 'ProviderCardHeader.vue',
+    'ProviderCreateModal.vue', 'ProviderEditModal.vue', 'ProviderModelsPanel.vue',
+  ],
+  modules: ['composables/useAiModelWrites.ts', 'composables/useAiProviderWrites.ts'],
 }
 
 export const readAppFile = (file: string): string => readFileSync(new URL(file, APP), 'utf8').replace(/\r\n/g, '\n')

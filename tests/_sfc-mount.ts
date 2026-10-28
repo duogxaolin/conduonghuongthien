@@ -219,6 +219,12 @@ export interface MountedSfc {
   errors: unknown[]
   html: () => string
   unmount: () => void
+  /**
+   * What `app.mount()` returns: the mounted component's public instance — for a
+   * component with `defineExpose`, exactly what a parent's template ref holds (refs
+   * unwrapped). With `suspense`, the wrapper's.
+   */
+  instance: Vue.ComponentPublicInstance
 }
 
 export async function mountSfc(file: string, env: SfcEnv, props?: Record<string, unknown>): Promise<MountedSfc> {
@@ -238,8 +244,8 @@ export async function mountSfc(file: string, env: SfcEnv, props?: Record<string,
   app.config.warnHandler = () => {}
   app.config.errorHandler = (err) => { errors.push(err) }
   MOUNT_ERRORS.set(root, errors)
-  app.mount(root)
-  return { root, errors, html: () => serialize(root.children), unmount: () => app.unmount() }
+  const instance = app.mount(root)
+  return { root, errors, html: () => serialize(root.children), unmount: () => app.unmount(), instance }
 }
 
 const isListener = (key: string, value: unknown) =>
