@@ -206,7 +206,8 @@ type ProvidersTab = {
   toggleSelectProvider: (id: number) => void
   bulkDeleteProviders: () => Promise<void>
   toggleSelectModel: (model: string) => void
-  bulkDeleteModels: () => Promise<void>
+  /** Deletes the ticked models of ONE provider — the bar it sits in (FINDING-P3, wave3 4.2). */
+  bulkDeleteModels: (provider: string) => Promise<void>
   openProviderEdit: (p: ProviderRow) => void
   saveProvider: () => Promise<void>
   testProvider: (id: number) => Promise<void>
@@ -356,7 +357,7 @@ describe(`${PROVIDERS_TAB} — actions`, () => {
     assert.equal(lastToast(toasts, 'success'), 'Đã xoá 2 nhà cung cấp.')
 
     page.toggleSelectModel('org/flash')
-    assert.deepEqual(await sent(page.bulkDeleteModels), [{ wire: 'POST /api/admin/ai/pricing/bulk-delete', body: { models: ['org/flash'] } }, ...reload])
+    assert.deepEqual(await sent(() => page.bulkDeleteModels('delify')), [{ wire: 'POST /api/admin/ai/pricing/bulk-delete', body: { models: ['org/flash'] } }, ...reload])
 
     page.openProviderEdit(delify)
     page.providerForm.apiKey = 'sk-new-key'

@@ -39,8 +39,13 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
   const editingProvider = ref<ProviderRow | null>(null)
   const providerForm = ref<ProviderForm>({ label: '', baseUrl: '', isActive: false, apiKey: '' })
   const savingProvider = ref(false)
+  // "Test kết nối" — one probe at a time is shown: the latest one. `testingProvider` is the
+  // provider whose probe is in flight, `testResultFor` the provider `testResult` belongs to;
+  // the card and the settings dialog show a result only for their own provider.
   const testingProvider = ref<number | null>(null)
   const testResult = ref<string | null>(null)
+  const testResultFor = ref<number | null>(null)
+  let latestProbe = 0
 
   // Create provider modal
   const showCreateForm = ref(false)
@@ -124,21 +129,34 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
   }
 
   async function testProvider(id: number) {
+    const probe = ++latestProbe
     testingProvider.value = id
+    testResultFor.value = id
     testResult.value = null
+    let outcome: string
     try {
       const result = await adminFetch<{ ok: true; model?: string } | { ok: false; error: string }>(`/api/admin/ai/providers/${id}/test`, {
         method: 'POST',
       })
       if (result.ok) {
-        testResult.value = result.model ? `Kết nối thành công (model: ${result.model})` : 'Kết nối thành công.'
+        outcome = result.model ? `Kết nối thành công (model: ${result.model})` : 'Kết nối thành công.'
       } else {
-        testResult.value = `Thất bại: ${result.error ?? 'lỗi không rõ'}`
+        outcome = `Thất bại: ${result.error ?? 'lỗi không rõ'}`
       }
     } catch (err: unknown) {
-      testResult.value = `Thất bại: ${errorMessage(err, 'lỗi kết nối')}`
-    } finally {
-      testingProvider.value = null
+      outcome = `Thất bại: ${errorMessage(err, 'lỗi kết nối')}`
+    }
+    // Overtaken by a newer probe (another card): that one owns the result and the
+    // "Đang test..." mark — this answer must not end it, nor show under its provider.
+    if (probe !== latestProbe) return
+    testResult.value = outcome
+    testingProvider.value = null
+  }
+
+  /** The reload brought the list back: forget ticks on providers that are gone. */
+  function forgetMissingProviders() {
+    for (const id of [...selectedProviderIds.value]) {
+      if (!providers.value.some(p => p.id === id)) selectedProviderIds.value.delete(id)
     }
   }
 
@@ -199,10 +217,10 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
   }
 
   return {
-    editingProvider, providerForm, savingProvider, testingProvider, testResult,
+    editingProvider, providerForm, savingProvider, testingProvider, testResult, testResultFor,
     showCreateForm, newProviderForm, newProviderError, savingNewProvider,
     deletingProviderId, selectedProviderIds, deletingBulkProviders,
-    toggleSelectProvider, selectAllProviders, bulkDeleteProviders,
+    toggleSelectProvider, selectAllProviders, bulkDeleteProviders, forgetMissingProviders,
     openProviderEdit, saveProvider, testProvider,
     openCreateProvider, onNewProviderPresetChange, createProvider, deleteProvider,
   }

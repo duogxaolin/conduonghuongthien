@@ -37,11 +37,11 @@ const providersLoading = ref(false)
 const providers = ref<ProviderRow[]>([])
 const pricingRows = ref<PricingRow[]>([])
 
-// Accordion open/close per provider (all open by default)
+// Accordion open/close per provider (all open by default: no entry = open)
 const openProviderPanels = ref<Record<string, boolean>>({})
 
 function toggleProviderPanel(providerName: string) {
-  openProviderPanels.value[providerName] = !openProviderPanels.value[providerName]
+  openProviderPanels.value[providerName] = !isProviderPanelOpen(providerName)
 }
 
 function isProviderPanelOpen(providerName: string): boolean {
@@ -49,10 +49,10 @@ function isProviderPanelOpen(providerName: string): boolean {
 }
 
 const {
-  editingProvider, providerForm, savingProvider, testingProvider, testResult,
+  editingProvider, providerForm, savingProvider, testingProvider, testResult, testResultFor,
   showCreateForm, newProviderForm, newProviderError, savingNewProvider,
   deletingProviderId, selectedProviderIds, deletingBulkProviders,
-  toggleSelectProvider, selectAllProviders, bulkDeleteProviders,
+  toggleSelectProvider, selectAllProviders, bulkDeleteProviders, forgetMissingProviders,
   openProviderEdit, saveProvider, testProvider,
   openCreateProvider, onNewProviderPresetChange, createProvider, deleteProvider,
 } = useAiProviderWrites({ toast, confirm, providers, reload: () => loadProviders() })
@@ -61,6 +61,7 @@ const {
   modelsForProvider,
   selectedModelKeys, deletingBulkModels,
   isModelSelected, toggleSelectModel, isAllModelsSelectedForProvider, toggleSelectAllModelsForProvider, bulkDeleteModels,
+  forgetMissingModels,
   toggleModelActive,
   showAddModelModal, targetProviderForModel, newModelForm, newModelError, savingNewModel, openAddModel, addModelToProvider,
   editingModel, editModelForm, savingModelEdit, openEditModel, saveEditModel, deleteModel,
@@ -78,6 +79,9 @@ async function loadProviders() {
     ])
     providers.value = pData.providers
     pricingRows.value = prData.pricing
+    // A row deleted (one by one, by a bulk delete, by the Delify sync) must not stay ticked.
+    forgetMissingProviders()
+    forgetMissingModels()
   } catch (err: unknown) {
     providersError.value = errorMessage(err, 'Không thể tải danh sách nhà cung cấp.')
   } finally {
@@ -167,7 +171,7 @@ defineExpose<{
             :provider="p"
             :selected="selectedProviderIds.has(p.id)"
             :testing="testingProvider === p.id"
-            :test-result="editingProvider?.id === p.id ? testResult : null"
+            :test-result="testResultFor === p.id ? testResult : null"
             :deleting="deletingProviderId === p.id"
             :open="isProviderPanelOpen(p.provider)"
             @toggle-select="toggleSelectProvider(p.id)"
@@ -189,7 +193,7 @@ defineExpose<{
             @sync-delify="syncDelifyPricing()"
             @add-model="openAddModel(p.provider)"
             @clear-selection="modelsForProvider(p.provider).forEach(m => selectedModelKeys.delete(m.model))"
-            @bulk-delete="bulkDeleteModels()"
+            @bulk-delete="bulkDeleteModels(p.provider)"
             @toggle-all="toggleSelectAllModelsForProvider(p.provider)"
             @toggle-model="toggleSelectModel"
             @toggle-active="toggleModelActive"
@@ -215,7 +219,7 @@ defineExpose<{
         :provider="editingProvider"
         :busy="savingProvider"
         :testing="!!testingProvider"
-        :test-result="testResult"
+        :test-result="editingProvider && testResultFor === editingProvider.id ? testResult : null"
         @close="editingProvider = null"
         @test="testProvider"
         @save="saveProvider()"

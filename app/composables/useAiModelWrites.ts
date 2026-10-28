@@ -93,8 +93,13 @@ export function useAiModelWrites({ toast, confirm, pricingRows, reload, onInvali
     }
   }
 
-  async function bulkDeleteModels() {
-    const models = Array.from(selectedModelKeys.value)
+  /**
+   * The bar sits in ONE provider's panel and counts that provider's ticks, so it deletes
+   * those — the ticks under other providers stay for their own bar.
+   */
+  async function bulkDeleteModels(providerName: string) {
+    const own = new Set(modelsForProvider(providerName).map(m => m.model))
+    const models = Array.from(selectedModelKeys.value).filter(model => own.has(model))
     if (models.length === 0) return
     if (!await confirm({
       title: 'Xoá nhiều Model',
@@ -110,12 +115,19 @@ export function useAiModelWrites({ toast, confirm, pricingRows, reload, onInvali
         body: { models },
       })
       toast.success(`Đã xoá ${res.deleted} model.`)
-      selectedModelKeys.value.clear()
+      for (const model of models) selectedModelKeys.value.delete(model)
       await reload()
     } catch (err: unknown) {
       toast.error(errorMessage(err, 'Không thể xoá models.'))
     } finally {
       deletingBulkModels.value = false
+    }
+  }
+
+  /** The reload brought the list back: forget ticks on models that are gone (a re-added one starts unticked). */
+  function forgetMissingModels() {
+    for (const model of [...selectedModelKeys.value]) {
+      if (!pricingRows.value.some(m => m.model === model)) selectedModelKeys.value.delete(model)
     }
   }
 
@@ -301,6 +313,7 @@ export function useAiModelWrites({ toast, confirm, pricingRows, reload, onInvali
     modelsForProvider,
     selectedModelKeys, deletingBulkModels,
     isModelSelected, toggleSelectModel, isAllModelsSelectedForProvider, toggleSelectAllModelsForProvider, bulkDeleteModels,
+    forgetMissingModels,
     toggleModelActive,
     showAddModelModal, targetProviderForModel, newModelForm, newModelError, savingNewModel, openAddModel, addModelToProvider,
     editingModel, editModelForm, savingModelEdit, openEditModel, saveEditModel, deleteModel,
