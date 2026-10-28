@@ -307,6 +307,59 @@ describe('provider settings', () => {
     assert.deepEqual(sent(calls, 2), ['POST /api/admin/ai/providers/2/test'])
     assert.deepEqual(statusLines(dialog(page)), ['Thất bại: Chưa cấu hình base URL.'])
   })
+
+  it('a result shown in the settings dialog does not outlive it: after ✕ or "Huỷ" the card shows nothing', async (t) => {
+    const server = aiServer()
+    server.state.probe = { ok: false, error: 'Khoá API không hợp lệ (401).' }
+    const { page, settle } = await openTab(t, server)
+    for (const close of [(d: MiniElement) => closeX(d), (d: MiniElement) => button(d, 'Huỷ')]) {
+      await click(button(card(page, 'Delify Router'), 'Cài đặt'))
+      await settle()
+      await click(button(dialog(page), 'Kiểm tra kết nối'))
+      await settle()
+      assert.deepEqual(statusLines(dialog(page)), ['Thất bại: Khoá API không hợp lệ (401).'])
+      await click(close(dialog(page)))
+      await settle()
+      assert.equal(dialogs(page).length, 0)
+      assert.deepEqual(statusLines(card(page, 'Delify Router')), [], 'the dialog\'s result stays behind on the card')
+    }
+  })
+
+  it('saving new settings drops the result of the old ones: a failed probe of the stored key does not stay on the card', async (t) => {
+    const server = aiServer()
+    server.state.probe = { ok: false, error: 'Khoá API không hợp lệ (401).' }
+    const { page, toasts, settle } = await openTab(t, server)
+    await click(button(card(page, 'Delify Router'), 'Cài đặt'))
+    await settle()
+    await click(button(dialog(page), 'Kiểm tra kết nối'))
+    await settle()
+    await input(field(dialog(page), 'API Key mới'), 'sk-fake-new-0000-9999')
+    await click(button(dialog(page), 'Lưu'))
+    await settle()
+    assert.equal(lastToast(toasts, 'success'), 'Đã lưu cấu hình nhà cung cấp.')
+    assert.equal(dialogs(page).length, 0)
+    assert.deepEqual(statusLines(card(page, 'Delify Router')), [], 'a "Thất bại" about the key just replaced')
+  })
+
+  it('a probe still running when the settings are saved does not land afterwards, and leaves no button stuck', async (t) => {
+    const server = aiServer()
+    server.state.override = call => (call.url.pathname.endsWith('/test') ? HOLD : undefined)
+    const { page, calls, settle } = await openTab(t, server)
+    await click(button(card(page, 'Delify Router'), 'Cài đặt'))
+    await settle()
+    const pending = click(button(dialog(page), 'Kiểm tra kết nối'))
+    await settle()
+    const probe = calls.at(-1)!
+    await input(field(dialog(page), 'API Key mới'), 'sk-fake-new-0000-9999')
+    await click(button(dialog(page), 'Lưu'))
+    await settle()
+    assert.equal(dialogs(page).length, 0)
+    server.answer(probe)
+    await pending
+    await settle()
+    assert.deepEqual(statusLines(card(page, 'Delify Router')), [], 'the answer is about the configuration before the save')
+    assert.equal(button(card(page, 'Delify Router'), 'Test kết nối').props.disabled, false)
+  })
 })
 
 describe('"Test kết nối" on a card', () => {
@@ -578,6 +631,56 @@ describe('models of a provider', () => {
     assert.deepEqual(sent(calls, 2), [{ wire: 'POST /api/admin/ai/pricing/bulk-delete', body: { models: ['org/flash', 'glm-5.3'] } }, ...RELOAD])
     assert.equal(lastToast(toasts, 'success'), 'Đã xoá 2 model.')
     assert.match(spaced(card(page, 'Delify Router')), /Bấm nút "⚡ Tải model & giá từ Delify API" ở trên để nạp tự động toàn bộ model của Delify!/)
+  })
+
+  it('"Bỏ chọn" in one provider\'s model bar unticks that provider\'s models only', async (t) => {
+    const server = aiServer()
+    server.state.models.push({ model: 'gpt-4o', provider: 'openai', label: null, isActive: true, promptCostPerMillion: 2.5, completionCostPerMillion: 10 })
+    const { page, calls, settle } = await openTab(t, server)
+    await tick(checkboxes(row(page, 'org/flash'))[0]!)
+    await tick(checkboxes(row(page, 'gpt-4o'))[0]!)
+    await settle()
+    await click(button(card(page, 'Delify Router'), 'Bỏ chọn'))
+    await settle()
+    assert.doesNotMatch(spaced(card(page, 'Delify Router')), /Đã chọn/)
+    assert.equal(checkboxes(row(page, 'org/flash'))[0]!.props.checked, false)
+    assert.equal(checkboxes(row(page, 'gpt-4o'))[0]!.props.checked, true)
+    assert.match(spaced(card(page, 'OpenAI')), /Đã chọn 1 model của OpenAI/)
+    assert.equal(calls.length, 2, 'unticking sends nothing')
+  })
+
+  it('the model bulk delete is locked while it runs: a second click cannot send it twice', async (t) => {
+    const server = aiServer()
+    const { page, calls, settle } = await openTab(t, server)
+    await tick(checkboxes(card(page, 'Delify Router')).find(el => el.props.title === 'Chọn tất cả model của nhà cung cấp này')!)
+    await settle()
+    server.state.override = call => (call.url.pathname.endsWith('/bulk-delete') ? HOLD : undefined)
+    const pending = click(button(card(page, 'Delify Router'), 'Xoá 2 model đã chọn'))
+    await settle()
+    const locked = button(card(page, 'Delify Router'), 'Đang xoá...')
+    assert.equal(locked.props.disabled, true)
+    assert.throws(() => click(locked), /disabled/)
+    server.state.override = () => undefined
+    server.answer(calls.at(-1)!)
+    await pending
+    await settle()
+    assert.equal(calls.filter(c => c.url.pathname.endsWith('/bulk-delete')).length, 1)
+  })
+
+  it('reopening "Thêm Model" starts from a clean form, without the previous error', async (t) => {
+    const { page, settle } = await openTab(t)
+    await click(button(card(page, 'OpenAI'), 'Thêm Model'))
+    await settle()
+    await input(field(dialog(page), 'Tên hiển thị (Label)'), 'Dở dang')
+    await click(button(dialog(page), 'Thêm Model'))
+    await settle()
+    assert.deepEqual(alerts(dialog(page)), ['Mã model là bắt buộc (ví dụ: glm-5.3, flash).'])
+    await click(button(dialog(page), 'Huỷ'))
+    await settle()
+    await click(button(card(page, 'OpenAI'), 'Thêm Model'))
+    await settle()
+    assert.deepEqual(alerts(dialog(page)), [])
+    assert.equal(modelOf(field(dialog(page), 'Tên hiển thị (Label)')), '')
   })
 })
 

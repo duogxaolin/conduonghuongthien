@@ -41,11 +41,22 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
   const savingProvider = ref(false)
   // "Test kết nối" — one probe at a time is shown: the latest one. `testingProvider` is the
   // provider whose probe is in flight, `testResultFor` the provider `testResult` belongs to;
-  // the card and the settings dialog show a result only for their own provider.
+  // the card and the settings dialog show a result only for their own provider. A result
+  // is about the configuration it probed: saving new settings, closing the settings dialog
+  // or deleting the provider drops it (`forgetProbe`), a probe still in flight included.
   const testingProvider = ref<number | null>(null)
   const testResult = ref<string | null>(null)
   const testResultFor = ref<number | null>(null)
   let latestProbe = 0
+
+  /** Drop the "Test kết nối" result of provider `id` — shown or still in flight. */
+  function forgetProbe(id: number) {
+    if (testResultFor.value !== id) return
+    latestProbe += 1 // the answer of a probe still in flight no longer lands
+    testResultFor.value = null
+    testResult.value = null
+    if (testingProvider.value === id) testingProvider.value = null
+  }
 
   // Create provider modal
   const showCreateForm = ref(false)
@@ -105,11 +116,18 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
     testResult.value = null
   }
 
+  /** The settings dialog closes (✕, "Huỷ"): a result shown there goes with it. */
+  function closeProviderEdit() {
+    if (editingProvider.value) forgetProbe(editingProvider.value.id)
+    editingProvider.value = null
+  }
+
   async function saveProvider() {
     if (!editingProvider.value) return
+    const id = editingProvider.value.id
     savingProvider.value = true
     try {
-      await adminFetch<{ ok: true; message?: string }>(`/api/admin/ai/providers/${editingProvider.value.id}`, {
+      await adminFetch<{ ok: true; message?: string }>(`/api/admin/ai/providers/${id}`, {
         method: 'PUT',
         body: {
           label: providerForm.value.label,
@@ -119,6 +137,8 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
         },
       })
       toast.success('Đã lưu cấu hình nhà cung cấp.')
+      // A probe before this save tested the configuration just replaced.
+      forgetProbe(id)
       editingProvider.value = null
       await reload()
     } catch (err: unknown) {
@@ -153,11 +173,13 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
     testingProvider.value = null
   }
 
-  /** The reload brought the list back: forget ticks on providers that are gone. */
+  /** The reload brought the list back: forget ticks — and a probe result — on providers that are gone. */
   function forgetMissingProviders() {
     for (const id of [...selectedProviderIds.value]) {
       if (!providers.value.some(p => p.id === id)) selectedProviderIds.value.delete(id)
     }
+    const probed = testResultFor.value
+    if (probed !== null && !providers.value.some(p => p.id === probed)) forgetProbe(probed)
   }
 
   function openCreateProvider() {
@@ -208,6 +230,7 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
     try {
       await adminFetch<{ ok: true }>(`/api/admin/ai/providers/${p.id}`, { method: 'DELETE' })
       toast.success('Đã xoá nhà cung cấp.')
+      forgetProbe(p.id)
       await reload()
     } catch (err: unknown) {
       toast.error(errorMessage(err, 'Không thể xoá nhà cung cấp.'))
@@ -221,7 +244,7 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
     showCreateForm, newProviderForm, newProviderError, savingNewProvider,
     deletingProviderId, selectedProviderIds, deletingBulkProviders,
     toggleSelectProvider, selectAllProviders, bulkDeleteProviders, forgetMissingProviders,
-    openProviderEdit, saveProvider, testProvider,
+    openProviderEdit, closeProviderEdit, saveProvider, testProvider,
     openCreateProvider, onNewProviderPresetChange, createProvider, deleteProvider,
   }
 }

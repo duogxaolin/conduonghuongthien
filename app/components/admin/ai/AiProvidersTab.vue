@@ -53,7 +53,7 @@ const {
   showCreateForm, newProviderForm, newProviderError, savingNewProvider,
   deletingProviderId, selectedProviderIds, deletingBulkProviders,
   toggleSelectProvider, selectAllProviders, bulkDeleteProviders, forgetMissingProviders,
-  openProviderEdit, saveProvider, testProvider,
+  openProviderEdit, closeProviderEdit, saveProvider, testProvider,
   openCreateProvider, onNewProviderPresetChange, createProvider, deleteProvider,
 } = useAiProviderWrites({ toast, confirm, providers, reload: () => loadProviders() })
 
@@ -220,7 +220,7 @@ defineExpose<{
         :busy="savingProvider"
         :testing="!!testingProvider"
         :test-result="editingProvider && testResultFor === editingProvider.id ? testResult : null"
-        @close="editingProvider = null"
+        @close="closeProviderEdit()"
         @test="testProvider"
         @save="saveProvider()"
       />
