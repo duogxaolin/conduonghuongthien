@@ -41,13 +41,27 @@ export const MODERATION_REQUEST_BUDGET_MS = 250
  * lọt. Dưới 1 ms (luật lành mạnh: ≤ 69 µs mỗi cửa sổ trên văn bản thường) là nhiễu, không tính.
  * Mức 1 (ngắt cứng mỗi cửa sổ) và mức 3 (hạn mức request) vẫn đo GIỜ THẬT — chúng giới hạn độ
  * trễ, và mức 3 tính trọn lời gọi nên nhiều cửa sổ dưới 1 ms vẫn bị chặn ở 250 ms mỗi request.
- * Runtime không có đồng hồ CPU của luồng (Node < 22.19 / 23.9) thì lùi về giờ thật.
+ * Runtime không có đồng hồ CPU của luồng (Node < 22.19 / 23.9), hay có mà lần đọc NÉM lỗi, thì
+ * lùi về giờ thật.
  */
 export const MODERATION_RULE_MIN_CHARGED_WINDOW_MS = 1
 
-/** Thời gian CPU (ms) của luồng đang chạy, hay `undefined` khi runtime không có. */
+/**
+ * Thời gian CPU (ms) của luồng đang chạy, hay `undefined` khi runtime không có. Lần đọc ném lỗi
+ * (libuv `uv_getrusage_thread` hỏng — luồng bị sandbox/seccomp chặn) → `NaN` = giờ thật cho cửa
+ * sổ đó (`chargeableWindowMs`). Nuốt TẠI ĐÂY, không log: lần đọc chạy cả TRONG lượt `vm`, nơi chỉ
+ * có phép khớp và phép gán; để lỗi lọt ra thì mọi lượt quét bị huỷ và MỌI nơi gọi mở khi lỗi —
+ * mỗi luật regex bị bỏ qua ở mọi request (kiểm chứng 4.3c tiếp, `cpuclock-throw`).
+ */
 const threadCpuMs: (() => number) | undefined = typeof process.threadCpuUsage === 'function'
-  ? () => { const { user, system } = process.threadCpuUsage(); return (user + system) / 1000 }
+  ? () => {
+      try {
+        const { user, system } = process.threadCpuUsage()
+        return (user + system) / 1000
+      } catch {
+        return Number.NaN
+      }
+    }
   : undefined
 
 /**

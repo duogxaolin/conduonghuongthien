@@ -99,6 +99,17 @@ export interface RescanOptions {
   beforeBatch?: () => Promise<void>
 }
 
+/**
+ * Nhường vòng sự kiện một lượt (`setImmediate`) — gọi sau MỖI mục. Hạn mức regex mỗi mục chặn
+ * MỘT mục (≤ 250 ms), không cho gì khác chạy GIỮA các mục: khi AI trả lời từ bộ nhớ hay chưa cấu
+ * hình (chỉ luật), mọi `await` của một mục là microtask, và một lượt 40 + 40 mục với một luật bậc
+ * ba dưới ngưỡng (`₫*₫*$`) từng chặn vòng sự kiện 1,1 s liền một mạch (kiểm chứng các việc tiếp
+ * theo của 4.3c, `rescan-lag-node24-cpus2.log`). Nay khoảng chặn dài nhất là một mục.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve))
+}
+
 /** Một lô đọc hỏng được thử lại đúng một lần trước khi lượt quét dừng. */
 async function readBatchWithRetry<T>(read: () => Promise<T>, what: 'comments' | 'messages'): Promise<T> {
   try {
@@ -198,6 +209,7 @@ export async function rescanExistingContent(options: RescanOptions = {}): Promis
         logError({ event: 'ai_moderation.rescan_item_failed', targetType: 'comment', targetId: c.id, error: describeError(err) })
       }
       report()
+      await yieldToEventLoop()
     }
     checkpoint()
   }
@@ -235,6 +247,7 @@ export async function rescanExistingContent(options: RescanOptions = {}): Promis
         logError({ event: 'ai_moderation.rescan_item_failed', targetType: 'livestream_chat', targetId: m.id, error: describeError(err) })
       }
       report()
+      await yieldToEventLoop()
     }
     checkpoint()
   }
