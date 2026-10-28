@@ -74,6 +74,16 @@ describe('adminFetch: the JSON error body of a non-JSON request', () => {
     assert.equal(errorStatus(err), 502)
   })
 
+  // Batch D: the content-type check, not the parse, decides. A proxy page that happens to be
+  // JSON-shaped but is not declared JSON is not the server's sentence.
+  it('a JSON-shaped body NOT declared as JSON is left as it was: the fallback, not the body', async () => {
+    serve(() => new Response(JSON.stringify({ statusCode: 403, statusMessage: 'Câu của proxy, không phải của máy chủ.' }), { status: 403, headers: { 'content-type': 'text/plain' } }))
+    const err = await failure({ responseType: 'blob' })
+    assert.ok((err as FetchError).data instanceof Blob, 'a text/plain body is not parsed')
+    assert.equal(errorMessage(err, FALLBACK), FALLBACK)
+    assert.equal(errorStatus(err), 403)
+  })
+
   it('a JSON content type with a body that is not JSON is left as it was', async () => {
     serve(() => new Response('{"statusMessage": "cụt', { status: 500, headers: { 'content-type': 'application/json' } }))
     const err = await failure({ responseType: 'text' })

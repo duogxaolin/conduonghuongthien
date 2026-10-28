@@ -401,6 +401,17 @@ describe('pages/admin/content/articles/index.vue', () => {
     opened.page.unmount()
   })
 
+  // Batch D: the blob refusal at PAGE level (tests/admin-fetch-error-body.test.ts pins adminFetch).
+  it('HTML zip refused: the server\'s sentence, not "Lỗi tải ZIP bài viết"; nothing is downloaded', async () => {
+    const opened = await openList(listServer({ 'GET /api/admin/articles/export-batch': () => h3Error(403, 'Bạn không có quyền xuất bài viết.') }))
+    await tick(rowOf(opened, 'Bài 3'))
+    await click(byText(bulkBar(opened), 'button', 'Tải HTML zip'))
+    await settle()
+    assert.equal(opened.lastToast('error'), 'Bạn không có quyền xuất bài viết.')
+    assert.equal(opened.downloads.length, 0)
+    opened.page.unmount()
+  })
+
   it('Google Sheets: POST { ids } and open the sheet the server answered', async () => {
     const opened = await openList()
     await tick(rowOf(opened, 'Bài 3'))
