@@ -9,7 +9,7 @@
   },
   "app/components/admin/ai/AiProvidersTab.vue": 1018,
   "app/components/admin/articles/ArticleTranslationPanel.vue": 588,
-  "app/components/admin/languages/UniversalTab.vue": 545,
+  "app/components/admin/languages/UniversalTab.vue": 532,
   "app/composables/i18n-default-dictionary.ts": {
     "exempt": true,
     "reason": "Content, not logic: the hardcoded Vietnamese fallback dictionary used when the translations API is unreachable. It grows by one line per i18n key, so growth is not a regression."
@@ -24,7 +24,7 @@
     "value": 1256,
     "reason": "Unsplittable: tests/admin-bulk-selection-ui.test.ts pins selection.* in this file's template, desktop table and mobile card both (docs/decisions/refactor-large-files.md). Allowed above the 400-line default, but capped: it may only shrink."
   },
-  "app/pages/admin/content/categories/index.vue": 551,
+  "app/pages/admin/content/categories/index.vue": 550,
   "app/pages/admin/content/content-types.vue": 594,
   "app/pages/admin/content/navigation/navbar.vue": 425,
   "app/pages/admin/content/pages/[id].vue": 795,
