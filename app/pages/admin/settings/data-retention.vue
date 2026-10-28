@@ -64,6 +64,8 @@ const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
 const running = ref(false)
+/** The last manual run deleted rows but its result row is not in the activity log (`auditFailed`) — shown outside the loading/error chain, which the reload after the run replaces. */
+const runAuditFailed = ref(false)
 const scopes = ref<Scope[]>([])
 const command = ref('npm run analytics:maintenance')
 
@@ -123,20 +125,15 @@ const SCOPE_FORM_FIELDS: Record<Scope['scope'], { days: ScopeValueField; maxRows
 const autoEnabledSource = ref('default')
 const runHourSource = ref('default')
 
-const activity = computed(() => scopes.value.find(s => s.scope === 'activity_logs') ?? null)
-const submission = computed(() => scopes.value.find(s => s.scope === 'submissions') ?? null)
-const chatSession = computed(() => scopes.value.find(s => s.scope === 'chat_sessions') ?? null)
-const readerAccount = computed(() => scopes.value.find(s => s.scope === 'reader_accounts') ?? null)
-const livestreamSession = computed(() => scopes.value.find(s => s.scope === 'livestream_sessions') ?? null)
+/** Each scope's status by name, for the "Hiện …" source notes under the inputs. */
+const scopeNamed = computed(() => Object.fromEntries(scopes.value.map(s => [s.scope, s])) as Partial<Record<Scope['scope'], Scope>>)
 
 /** Nothing configured to delete anything — the switch being on changes nothing. */
 const nothingWillBeDeleted = computed(() =>
   scopes.value.length > 0 && scopes.value.every(s => s.days === 0 && s.maxRows === 0))
 const anyOverdue = computed(() => scopes.value.some(s => s.overdue > 0 || s.overRowCap > 0))
 
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('vi-VN').format(value || 0)
-}
+const formatNumber = (value: number) => new Intl.NumberFormat('vi-VN').format(value || 0)
 function formatMoment(value: string | null) {
   if (!value) return '—'
   const date = new Date(value)
@@ -211,8 +208,10 @@ async function runNow() {
   })) return
 
   running.value = true
+  runAuditFailed.value = false
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; status: string; tables: Array<{ deleted?: number }> }>)(`/api/admin/settings/retention-run`, { method: 'POST', body: { confirm: true } })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; status: string; tables: Array<{ deleted?: number }>; auditFailed?: boolean }>)(`/api/admin/settings/retention-run`, { method: 'POST', body: { confirm: true } })
+    runAuditFailed.value = res?.auditFailed === true
     const deleted = (res?.tables || []).reduce((sum: number, t: { deleted?: number }) => sum + Number(t.deleted || 0), 0)
     if (res?.status === 'warning') toast.info(`Đã xoá ${formatNumber(deleted)} bản ghi. Còn bản ghi chờ lượt sau.`)
     else toast.success(deleted > 0 ? `Đã xoá ${formatNumber(deleted)} bản ghi.` : 'Không có bản ghi nào cần xoá.')
@@ -258,6 +257,7 @@ onMounted(load)
       </div>
     </div>
 
+    <p v-if="runAuditFailed" role="alert" class="m-0 rounded-xl border border-warn-ink/30 bg-warn-ink/5 px-5 py-4 text-[0.85rem] text-warn-ink"><i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i><strong>Đã dọn xong nhưng chưa ghi được nhật ký kết quả.</strong> Lịch sử hoạt động chỉ có dòng ghi ai đã bắt đầu lượt dọn; số bản ghi đã xoá vẫn hiện ở "Lượt dọn gần nhất" của từng bảng bên dưới.</p>
     <!-- Loading -->
     <div v-if="loading" role="status" aria-busy="true" class="bg-white rounded-xl border border-line p-6">
       <span class="sr-only">Đang tải cấu hình dọn dữ liệu</span>
@@ -423,7 +423,7 @@ onMounted(load)
                 <label class="text-[0.8rem] font-bold text-ink-admin">Số ngày lưu</label>
                 <input type="number" min="0" max="3650" v-model.number="form.activityLogDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
                 <p class="text-[0.72rem] text-ink-faint m-0">
-                  0 hoặc từ 30 đến 3650. <span v-if="activity">Hiện {{ SOURCE_LABELS[activity.daysSource] }}.</span>
+                  0 hoặc từ 30 đến 3650. <span v-if="scopeNamed.activity_logs">Hiện {{ SOURCE_LABELS[scopeNamed.activity_logs.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
@@ -442,7 +442,7 @@ onMounted(load)
                 <input type="number" min="0" max="3650" v-model.number="form.submissionDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
                 <p class="text-[0.72rem] text-ink-faint m-0">
                   Mặc định 0 (giữ vô thời hạn) vì thời hạn lưu hồ sơ công dân do quy định của cơ quan quyết định.
-                  <span v-if="submission">Hiện {{ SOURCE_LABELS[submission.daysSource] }}.</span>
+                  <span v-if="scopeNamed.submissions">Hiện {{ SOURCE_LABELS[scopeNamed.submissions.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
@@ -461,7 +461,7 @@ onMounted(load)
                 <input type="number" min="0" max="3650" v-model.number="form.chatSessionDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
                 <p class="text-[0.72rem] text-ink-faint m-0">
                   0 hoặc từ 30 đến 3650. Tin nhắn trong phiên tự xoá theo (ON DELETE CASCADE) — chỉ cần đặt điều kiện dọn cho bảng phiên.
-                  <span v-if="chatSession">Hiện {{ SOURCE_LABELS[chatSession.daysSource] }}.</span>
+                  <span v-if="scopeNamed.chat_sessions">Hiện {{ SOURCE_LABELS[scopeNamed.chat_sessions.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
@@ -479,7 +479,7 @@ onMounted(load)
                 <input type="number" min="0" max="3650" v-model.number="form.readerAccountDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
                 <p class="text-[0.72rem] text-ink-faint m-0">
                   0 hoặc từ 30 đến 3650. Tính theo lần truy cập gần nhất, không theo ngày tạo — một tài khoản mở từ lâu nhưng vừa bình luận hôm qua vẫn là người đọc đang hoạt động.
-                  <span v-if="readerAccount">Hiện {{ SOURCE_LABELS[readerAccount.daysSource] }}.</span>
+                  <span v-if="scopeNamed.reader_accounts">Hiện {{ SOURCE_LABELS[scopeNamed.reader_accounts.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
@@ -497,7 +497,7 @@ onMounted(load)
                 <input type="number" min="0" max="3650" v-model.number="form.livestreamSessionDays" class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border" />
                 <p class="text-[0.72rem] text-ink-faint m-0">
                   0 hoặc từ 30 đến 3650. Tính theo thời điểm kết thúc buổi phát, không theo lúc bắt đầu. Buổi đang phát không bao giờ bị xoá.
-                  <span v-if="livestreamSession">Hiện {{ SOURCE_LABELS[livestreamSession.daysSource] }}.</span>
+                  <span v-if="scopeNamed.livestream_sessions">Hiện {{ SOURCE_LABELS[scopeNamed.livestream_sessions.daysSource] }}.</span>
                 </p>
               </div>
               <div class="flex flex-col gap-1.5">
