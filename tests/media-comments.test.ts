@@ -34,6 +34,7 @@ import {
   COMMENT_THREAD_PER_PAGE,
 } from '../server/services/notifications.ts'
 import { commentServiceFiles, fileDeclaring, readServiceFile } from './_comments-service-source'
+import { ARTICLE_COMMENTS_FAMILY, familySource } from './_component-family.ts'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
 
@@ -607,10 +608,18 @@ describe('10.9 — one thread component, parameterized on the item axis', () => 
     )
   })
 
+  // Since wave3 4.2 the thread is a family (ArticleComments.vue + components/comments/ +
+  // useCommentWrites/useCommentAnchor + utils/comment-thread.ts — tests/_component-family.ts).
+  // The two "must never appear" checks below read all of it; the item axis above stays on
+  // ArticleComments.vue, where the thread target is declared.
+  const thread = (overrides?: Record<string, string>) => stripComments(familySource(ARTICLE_COMMENTS_FAMILY, overrides))
+  const vHtmlIn = (source: string) => /v-html/.test(source)
+  const setupFetchIn = (source: string) => /useFetch|useAsyncData/.test(source)
+
   it('still renders comment bodies as text, never as markup', () => {
     // The body is stored verbatim, so this template is the only thing standing
     // between a citizen's text and being interpreted.
-    assert.ok(!/v-html/.test(stripComments(component)), 'v-html is back in the comment thread')
+    assert.ok(!vHtmlIn(thread()), 'v-html is back in the comment thread')
   })
 
   it('still loads the thread after mount only', () => {
@@ -619,8 +628,18 @@ describe('10.9 — one thread component, parameterized on the item axis', () => 
     // comments are the current reader's to delete.
     assert.match(component, /onMounted\(async \(\) => \{/, 'the component no longer defers its load to mount')
     assert.ok(
-      !/useFetch|useAsyncData/.test(stripComments(component)),
+      !setupFetchIn(thread()),
       'the thread is fetched during setup, so it can enter server-rendered HTML',
     )
+  })
+
+  it('both checks bite on a part of the thread, not only on ArticleComments.vue (injection proof)', () => {
+    const item = 'components/comments/CommentThreadItem.vue'
+    const itemSource = readFileSync(new URL(`../app/${item}`, import.meta.url), 'utf8')
+    assert.ok(vHtmlIn(thread({ [item]: itemSource.replace('</article>', '<div v-html="comment.body"></div></article>') })))
+    assert.ok(vHtmlIn(thread({ 'components/comments/Planted.vue': '<template><div v-html="x"></div></template>' })))
+    const writes = 'composables/useCommentWrites.ts'
+    const writesSource = readFileSync(new URL(`../app/${writes}`, import.meta.url), 'utf8')
+    assert.ok(setupFetchIn(thread({ [writes]: `${writesSource}\nconst early = useAsyncData('x', () => 1)\n` })))
   })
 })

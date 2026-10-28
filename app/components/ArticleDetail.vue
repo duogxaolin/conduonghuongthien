@@ -54,126 +54,18 @@
         <!-- Cột đọc. `min-w-0` để một khối `v-html` rộng (bảng, ảnh, code) co lại
              theo cột thay vì nong cột ra và đẩy cột phải tràn khỏi container. -->
         <div class="min-w-0">
-        <span class="text-[0.85rem] font-bold text-brand-600 bg-surface px-3 py-1.5 rounded inline-flex flex-wrap items-center gap-x-2 mb-4">
-          <span><i v-if="metaIconIsFa" :class="metaIcon" aria-hidden="true"></i><span v-else aria-hidden="true">{{ metaIcon }}</span> {{ categoryLabel }}</span>
-          <span aria-hidden="true">•</span>
-          <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> {{ t('a_published_on') }} {{ formattedDate }}</span>
-          <span aria-hidden="true">•</span>
-          <span><i class="fa-regular fa-user" aria-hidden="true"></i> {{ authorDisplay }}</span>
-          <span aria-hidden="true">•</span>
-          <span><i class="fa-regular fa-eye" aria-hidden="true"></i> {{ formattedViews }} {{ t('a_views_suffix') }}</span>
-        </span>
-        <h1 class="text-[1.35rem] sm:text-[1.75rem] lg:text-[2.2rem] font-extrabold leading-[1.3] text-ink mb-4 sm:mb-5">{{ article.title }}</h1>
+        <ArticleMetaHeader :article="article" :category-label="categoryLabel" :meta-icon="metaIcon" />
 
-        <div
-          v-if="article.excerpt"
-          class="text-[0.95rem] sm:text-[1.12rem] font-semibold text-ink-secondary leading-[1.6] border-l-4 border-accent pl-4 sm:pl-5 mb-6 sm:mb-8"
-        >
-          <p>{{ article.excerpt }}</p>
-        </div>
+        <!-- Mục lục tự động: chỉ hiện khi bài đủ dài để cần điều hướng. Đứng cạnh thân
+             bài, không nằm trong nó: luật tiêu đề `.article-body :deep(h2)` của ArticleBody
+             sẽ giành cả <h2> của khung này và thắng class utility của nó. -->
+        <ArticleToc v-if="toc.headings.length >= TOC_MIN_HEADINGS" v-model:open="tocOpen" :headings="toc.headings" />
 
-        <div v-if="article.thumbnailUrl" class="my-8 text-center">
-          <SafeImg
-            :src="article.thumbnailUrl"
-            :alt="article.title" img-class="w-full max-h-[450px] object-cover rounded-lg shadow-sm"
-            loading="lazy"
-            decoding="async"
-            sizes="512px sm:768px lg:1024px"
-          />
-        </div>
+        <!-- Thân bài: `toc.html` (nội dung đã lọc + id tiêu đề). ArticleBody chỉ được dùng ở đây. -->
+        <ArticleBody :html="toc.html" />
 
-        <!--
-          Mục lục tự động: chỉ hiện khi bài đủ dài để cần điều hướng.
-
-          Deliberately a sibling of .article-body, not a child: the heading rules
-          below are `.article-body :deep(h2)`, which would also claim this card's
-          own <h2> and beat its utility classes on specificity.
-        -->
-        <nav
-          v-if="toc.headings.length >= TOC_MIN_HEADINGS"
-          class="my-8 rounded-lg border border-line bg-white px-6 py-5 shadow-sm"
-          aria-labelledby="muc-luc-heading"
-        >
-          <div class="flex items-center justify-between gap-3">
-            <h2 id="muc-luc-heading" class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-brand-800">
-              <i class="fa-solid fa-list-ul mr-2 text-accent" aria-hidden="true"></i>Mục lục
-            </h2>
-            <button
-              type="button"
-              class="rounded px-2 py-1 text-[0.8rem] font-bold text-brand-600 transition hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
-              :aria-expanded="tocOpen"
-              aria-controls="muc-luc-list"
-              @click="tocOpen = !tocOpen"
-            >
-              {{ tocOpen ? 'Thu gọn' : 'Mở rộng' }}
-              <i :class="tocOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" class="ml-1" aria-hidden="true"></i>
-            </button>
-          </div>
-          <ol v-show="tocOpen" id="muc-luc-list" class="mt-4 mb-0 list-none space-y-1.5 pl-0">
-            <li
-              v-for="heading in toc.headings"
-              :key="heading.id"
-              :style="{ paddingLeft: `${(heading.level - 2) * 16}px` }"
-            >
-              <a
-                :href="`#${heading.id}`"
-                class="text-[0.95rem] font-semibold text-brand-600 no-underline transition hover:text-brand-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
-                :class="heading.level > 2 ? 'font-medium text-[0.9rem] text-ink-soft' : ''"
-              >{{ heading.text }}</a>
-            </li>
-          </ol>
-        </nav>
-
-        <div ref="articleBodyEl" class="article-body text-[1.05rem] leading-[1.7] text-ink-secondary">
-          <!-- eslint-disable-next-line vue/no-v-html -- content authored by C11 editors, sanitized on write -->
-          <div v-html="toc.html"></div>
-        </div>
-
-        <!-- Thanh chia sẻ bài viết & in ấn -->
-        <div class="my-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-white p-4 shadow-sm print:hidden">
-          <div class="flex items-center gap-2 text-[0.88rem] font-bold text-brand-800">
-            <i class="fa-solid fa-share-nodes text-accent" aria-hidden="true"></i>
-            <span>{{ t('a_share_label') }}</span>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-[#1877F2] transition hover:bg-[#1877F2]/10 hover:border-[#1877F2]"
-              @click="shareFacebook"
-              :title="t('a_share_facebook')"
-            >
-              <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-              </svg>
-              {{ t('a_share_facebook') }}
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-[#0068FF] transition hover:bg-[#0068FF]/10 hover:border-[#0068FF]"
-              @click="shareZalo"
-              :title="t('a_share_zalo')"
-            >
-              <i class="fa-solid fa-comment-dots" aria-hidden="true"></i> {{ t('a_share_zalo') }}
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-brand-600 transition hover:bg-brand-600/10 hover:border-brand-600"
-              @click="copyArticleLink"
-              :title="copiedArticleLink ? t('a_copied') : t('a_copy_link_btn')"
-            >
-              <i :class="copiedArticleLink ? 'fa-solid fa-check text-accent' : 'fa-solid fa-link'" aria-hidden="true"></i>
-              {{ copiedArticleLink ? t('a_copied') : t('a_copy_link_btn') }}
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-[0.82rem] font-semibold text-ink-muted transition hover:bg-ink-muted/10 hover:border-ink-muted"
-              @click="printArticle"
-              :title="t('a_print_title')"
-            >
-              <i class="fa-solid fa-print" aria-hidden="true"></i> {{ t('a_print') }}
-            </button>
-          </div>
-        </div>
+        <!-- Thanh chia sẻ bài viết & in ấn (in: mở `/in-bai/<slug>` trong cửa sổ mới) -->
+        <ArticleShareBar :slug="slug" :back-to="backTo" />
         <!-- Bình luận công khai. Ở trong cột đọc, không ở cột phải: một luồng hội
              thoại dài không đoán được độ dài sẽ phá bố cục của một cột hẹp, và
              bình luận là phần *nội dung* của bài này chứ không phải điều hướng đi
@@ -196,13 +88,8 @@
           này trả lời hai câu hỏi khác nhau — "đọc gì tiếp" (bài viết) và "còn gì
           trong nhóm này" (chủ đề) — và chỉ hiện khi thật sự có nội dung, vì một
           tiêu đề "Bài viết khác" bên trên khoảng trắng còn trống trải hơn chỗ
-          trống ban đầu.
-
-          Đây là điều hướng phụ, nên nó được trình bày như một DANH SÁCH chứ không
-          phải một lưới thẻ: mỗi mục một hàng ngang, ảnh 72×54, không đoạn tóm tắt.
-          Bản thẻ trước đó cao gần bằng phần đầu của chính bài đang đọc, và một
-          danh sách "đọc gì tiếp" to hơn nội dung nó đứng cạnh sẽ tự nhận lấy sự
-          chú ý mà bài viết đáng được nhận.
+          trống ban đầu. (Vì sao là một DANH SÁCH chứ không phải lưới thẻ: đầu
+          components/article/ArticleRelatedList.vue.)
 
           `sticky top-[100px]` là cùng giá trị mà sidebar của `/news` dùng — nó
           phải chừa được cái header `fixed` (xem layouts/default.vue), y như
@@ -248,58 +135,14 @@
             <button type="button" class="text-brand-600 font-bold underline" @click="refreshRelated()">{{ t('a_retry') }}</button>.
           </div>
 
-          <template v-else>
-            <!-- Hàng ngang, ảnh nhỏ bên trái, không thẻ và không đoạn tóm tắt.
-                 Trước đây mỗi mục là một thẻ cao ~250px với ảnh 140px và hai dòng
-                 mô tả, nên năm bài liên quan chiếm nhiều chiều cao hơn cả phần đầu
-                 bài đang đọc — một danh sách điều hướng phụ không được phép to hơn
-                 nội dung nó đứng cạnh. Ảnh giữ lại ở kích thước nhỏ vì nó giúp
-                 nhận ra bài đã đọc trong nháy mắt; `object-cover` trên khung cố
-                 định nên ảnh dọc hay ngang đều không phá hàng. -->
-            <ul v-if="relatedArticles.length" class="list-none m-0 p-0 flex flex-col divide-y divide-line">
-              <li v-for="item in relatedArticles" :key="item.id" class="py-3 first:pt-0">
-                <nuxt-link
-                  :to="`${backTo}/${item.slug}`"
-                  class="group flex items-start gap-3 no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded"
-                >
-                  <img
-                    :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    class="w-[72px] h-[54px] shrink-0 object-cover rounded bg-surface-tint"
-                  />
-                  <span class="min-w-0 flex-grow">
-                    <span class="block text-[0.9rem] font-bold leading-[1.4] text-ink transition-colors duration-200 group-hover:text-brand-600 line-clamp-3">{{ item.title }}</span>
-                    <span class="block mt-1 text-[0.75rem] text-ink-soft font-semibold">
-                      {{ formatDateVN(item.publishedAt || item.createdAt) }}
-                    </span>
-                  </span>
-                </nuxt-link>
-              </li>
-            </ul>
-
-            <!-- Chủ đề liên quan. Chỉ hiện cho /news vì đó là danh sách duy nhất
-                 có category filter (path segment `/news/<cat>`); các list hệ thống
-                 khác (/role-models, /documents, /legal-qa) không có category
-                 filter nên chip ở đó sẽ mở ra danh sách chưa lọc — trông như bấm hụt. -->
-            <div v-if="showTopics" class="mt-7">
-              <h3 class="m-0 mb-3 text-[0.95rem] font-extrabold uppercase tracking-wide text-brand-800">
-                <i class="fa-solid fa-tags mr-2 text-accent" aria-hidden="true"></i>{{ t('a_topics') }}
-              </h3>
-              <div class="flex flex-wrap gap-2">
-                <nuxt-link
-                  v-for="topic in relatedTopics"
-                  :key="topic.slug"
-                  :to="`${backTo}/${topic.slug}`"
-                  class="px-3 py-1.5 rounded-full text-[0.85rem] font-semibold border no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
-                  :class="topic.isCurrent
-                    ? 'bg-brand-600 border-brand-600 text-white'
-                    : 'bg-white border-line text-ink-secondary hover:border-accent'"
-                >{{ topic.name }} <span class="opacity-70">({{ topic.total }})</span></nuxt-link>
-              </div>
-            </div>
-          </template>
+          <!-- Đã tải: danh sách hàng ngang + chip chủ đề (ArticleRelatedList.vue, chỉ hiển thị). -->
+          <ArticleRelatedList
+            v-else
+            :related-articles="relatedArticles"
+            :related-topics="relatedTopics"
+            :show-topics="showTopics"
+            :back-to="backTo"
+          />
         </aside>
       </article>
 
@@ -321,21 +164,35 @@
  * They had already drifted (rounded-md vs rounded-lg, 1.15rem vs 1.12rem
  * excerpts, leading-[1.6] vs leading-relaxed) and each carried a private
  * local-time date formatter that can render a different day on the server than
- * in the browser. Everything lives here now, on the UTC-safe formatDateVN.
+ * in the browser. Everything lives here now (and, since wave3 4.2, in its parts under
+ * `components/article/`), on the UTC-safe formatDateVN.
  *
  * The category breadcrumb that only /news/[category]/[slug] needs is supplied
  * through the `crumb` slot, which receives the resolved category label so the
  * crumb and the badge can never disagree.
+ *
+ * Split in wave3 4.2 (730 lines → this file + `components/article/*` + three composables).
+ * Kept here: every request (article, related list, settings, view ping — the `$fetch` casts
+ * stay here: there is no public typed fetch helper; the composables get them as functions),
+ * the SSR status decision, the loading / error + retry / not-found branches of the page AND
+ * of the related column, SEO, the TOC's open state. The parts render only: header, outline,
+ * body (`ArticleBody` — the `v-html` and its `:deep()` rules; used nowhere else), share/print
+ * bar (window.open/clipboard, no fetch), loaded related list.
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { formatDateVN } from '~/utils/formatDate'
-import { classifySource } from '~/utils/analytics-collector'
 import { buildToc, TOC_MIN_HEADINGS } from '~/utils/toc'
 import { useReadingHistory } from '~/composables/useReadingHistory'
-import { useBrokenImageFallback } from '~/composables/useBrokenImageFallback'
+import { useArticleDetailLabels } from '~/composables/useArticleDetailLabels'
+import { useArticleRelated, type ArticleRelatedResponse } from '~/composables/useArticleRelated'
+import { useArticleReadTracking } from '~/composables/useArticleReadTracking'
 import { useSiteSettings, type PublicSettingsResponse } from '~/composables/useSiteSettings'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
 import { resolveDetailFetch } from '~/utils/ssr-failure-response'
+import ArticleMetaHeader from '~/components/article/ArticleMetaHeader.vue'
+import ArticleToc from '~/components/article/ArticleToc.vue'
+import ArticleBody from '~/components/article/ArticleBody.vue'
+import ArticleShareBar from '~/components/article/ArticleShareBar.vue'
+import ArticleRelatedList from '~/components/article/ArticleRelatedList.vue'
 
 const { record: recordRead } = useReadingHistory()
 
@@ -363,40 +220,17 @@ const props = defineProps({
   seoFallbackDescription: { type: String, default: null },
 })
 
-// Ảnh trong thân bài bị 404 (ảnh từ trang cũ không còn tệp) thì ẩn thay vì hiện khung vỡ.
-const articleBodyEl = ref<HTMLElement | null>(null)
-useBrokenImageFallback(articleBodyEl)
-
-// Variant → i18n key map. Props win when set; otherwise the variant picks the key.
-const VARIANT_KEYS = {
-  news: { back: 'a_back_news', crumb: 'a_news_crumb', notFound: 'a_news_not_found', cat: 'a_category_news', seoTitle: 'a_news_seo_title', seoDesc: 'a_news_seo_desc' },
-  role: { back: 'a_back_role', crumb: 'a_role_crumb', notFound: 'a_role_not_found', cat: 'a_category_role', seoTitle: 'a_role_seo_title', seoDesc: 'a_role_seo_desc' },
-  reintegration: { back: 'a_back_reintegration', crumb: 'a_reintegration_crumb', notFound: 'a_reintegration_not_found', cat: 'a_category_reintegration', seoTitle: 'a_reintegration_seo_title', seoDesc: 'a_reintegration_seo_desc' },
-} as const
-
-const vkeys = computed(() => VARIANT_KEYS[props.variant as keyof typeof VARIANT_KEYS] ?? VARIANT_KEYS.news)
-
-/**
- * `metaIcon` có 2 dạng: emoji (huyến "📰" / "📍" — varian news/role/reintegration)
- * hoặc class FontAwesome ("fa-solid fa-folder" — custom type từ content-types DB).
- * Phân biệt để render đúng: class FA → `<i :class>`, emoji → text. Sai số cũ:
- * custom type hiện literal "fa-solid fa-folder" thay vì icon.
- */
-const metaIconIsFa = computed(() => /^fa-(solid|regular|brands|duotone)(\s|$)/.test(String(props.metaIcon).trim()))
-
-const backLabelText = computed(() => props.backLabel ?? t(vkeys.value.back))
-const backCtaText = computed(() => props.backCtaLabel ?? t('a_back_cta'))
-const currentCrumbText = computed(() => props.currentCrumb ?? t(vkeys.value.crumb))
-const notFoundTextValue = computed(() => props.notFoundText ?? t(vkeys.value.notFound))
-const categoryFallbackValue = computed(() => props.categoryFallback ?? t(vkeys.value.cat))
-const seoFallbackTitleValue = computed(() => props.seoFallbackTitle ?? t(vkeys.value.seoTitle))
-const seoFallbackDescriptionValue = computed(() => props.seoFallbackDescription ?? t(vkeys.value.seoDesc))
-
 // `lazy` chỉ bỏ chặn điều hướng phía client — lượt dựng phía máy chủ vẫn chờ dữ
 // liệu, nên HTML đầu tiên, thẻ SEO và mục lục không đổi. Đi từ danh sách sang
 // chi tiết là lúc thấy rõ nhất: không có nó thì bấm vào một bài trông như bấm
 // hụt cho tới khi bài về.
 const { currentLang, t } = useI18n()
+
+// Nhãn: prop của trang bọc nếu có, không thì khoá i18n theo `variant`.
+const {
+  backLabelText, backCtaText, currentCrumbText, notFoundTextValue, categoryFallbackValue,
+  seoFallbackTitleValue, seoFallbackDescriptionValue,
+} = useArticleDetailLabels(props, t)
 
 type ArticleDetailResponse = {
   ok: boolean
@@ -470,81 +304,23 @@ const categoryLabel = computed(() => {
   return a.categoryName || (a.type ? props.typeLabels[a.type] : '') || props.categoryFallback || categoryFallbackValue.value
 })
 
-const formattedDate = computed(() => {
-  const d = article.value?.publishedAt || article.value?.createdAt
-  if (!d) return ''
-  const date = new Date(d)
-  if (Number.isNaN(date.getTime())) return ''
-  const locale = currentLang.value === 'vi' ? 'vi-VN' : currentLang.value === 'en' ? 'en-US' : currentLang.value
-  return date.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' })
-})
-
-// Bài viết cũ có thể không còn tác giả (`author_id` nullable, tài khoản đã xoá).
-// "Ban biên tập" là chủ thể phát ngôn thật của cổng trong trường hợp đó.
-const authorDisplay = computed(() => article.value?.authorName || t('a_author_default'))
-const formattedViews = computed(() => {
-  const locale = currentLang.value === 'vi' ? 'vi-VN' : currentLang.value === 'en' ? 'en-US' : currentLang.value
-  return Number(article.value?.viewTotal || 0).toLocaleString(locale)
-})
-
 /**
  * Outline + anchored body in one pass, so a list entry and its heading can never
  * point at different ids. Recomputed with the article, which also covers the
- * client-side navigation between two detail pages.
+ * client-side navigation between two detail pages. The open/folded state lives here, not
+ * in `ArticleToc`: the outline is unmounted whenever the article reloads (a language
+ * switch shows the skeleton), and a reader who folded it keeps it folded.
  */
 const toc = computed(() => buildToc(article.value?.content))
 const tocOpen = ref(true)
 
-/**
- * Nội dung liên quan — lượt fetch thứ hai, ref đặt tên riêng.
- *
- * Không gộp vào endpoint chi tiết: bài viết là thứ trang này tồn tại để hiện, và
- * một truy vấn phụ hỏng hoặc chậm không được phép giữ nó lại. Tách ra thì phần
- * thân bài về ngay còn khối này tự lo khung chờ và nhánh lỗi của mình.
- *
- * `error.value` của lượt này KHÔNG được gộp vào `loadError` ở trên: gộp là biến
- * một khối phụ hỏng thành một trang lỗi, ném đi đúng nội dung đã tải xong.
- */
-const {
-  data: relatedData,
-  pending: relatedPending,
-  error: relatedFetchError,
-  refresh: refreshRelated,
-} = useAsyncData(
-  () => `article-related-${props.slug}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null }>; topics: Array<{ slug: string; name: string; isCurrent?: boolean; total?: number }> }>)(`/api/public/articles/${props.slug}/related?lang=${currentLang.value}`),
-  {
-    lazy: true,
-    default: () => ({ ok: true, articles: [], topics: [] }),
-    watch: [() => props.slug, currentLang],
-    getCachedData: (key, nuxtApp) => {
-      const cached = nuxtApp.payload.data[key] || nuxtApp.static.data[key]
-      if (cached && (cached as { ok: boolean }).ok) {
-        return cached as { ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null }>; topics: Array<{ slug: string; name: string; isCurrent?: boolean; total?: number }> }
-      }
-      return undefined
-    },
-  },
-)
-const relatedArticles = computed(() => relatedData.value?.articles || [])
-const relatedTopics = computed(() => relatedData.value?.topics || [])
-// `ok: false` là lượt truy vấn hỏng phía máy chủ — phải đọc ra như một lỗi, chứ
-// không phải như "không có gì liên quan".
-const relatedError = computed(() => !!relatedFetchError.value || relatedData.value?.ok === false)
-
-/**
- * Chip chủ đề trỏ vào `${backTo}/${slug}` (path segment `/news/<cat>`). Hai điều
- * kiện phải đúng **cả hai**:
- *
- * 1. `/news` là danh sách **duy nhất** có category filter (path segment) —
- *    `/role-models`, `/reintegration-models`, `/documents`, `/legal-qa` không
- *    có category filter nên chip ở đó mở ra danh sách chưa lọc (bấm hụt).
- * 2. `/news` **ghim cứng** `type: 'news'` trong truy vấn, nên chủ đề của một bài
- *    `document`/`faq` (cả hai cũng render tại `/news/<slug>`) sẽ mở ra danh sách
- *    rỗng — chip vẫn bấm được, chỉ không có gì phía sau.
- */
-const showTopics = computed(
-  () => props.backTo === '/news' && article.value?.type === 'news' && relatedTopics.value.length > 0,
+// Nội dung liên quan — lượt fetch thứ hai (luồng ở `useArticleRelated`, request ở đây).
+// Lỗi của nó KHÔNG gộp vào `loadError`; khung chờ, nhánh lỗi + "thử lại" ở template trên.
+const { relatedPending, relatedError, relatedArticles, relatedTopics, showTopics, refreshRelated } = useArticleRelated(
+  props,
+  article,
+  currentLang,
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleRelatedResponse>)(`/api/public/articles/${props.slug}/related?lang=${currentLang.value}`),
 )
 
 // Ảnh chia sẻ: thumbnail bài viết > ảnh OG mặc định từ settings > hero_banner cứng.
@@ -574,157 +350,18 @@ useSeoMeta({
   ogType: 'article',
 })
 
-const toast = useToast()
-const copiedArticleLink = ref(false)
-
-const getArticleUrl = () => {
-  if (typeof window !== 'undefined') return window.location.href
-  return ''
-}
-
-const shareFacebook = () => {
-  const url = encodeURIComponent(getArticleUrl())
-  if (typeof window !== 'undefined') {
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, '_blank', 'noopener,noreferrer,width=600,height=400')
-  }
-}
-
-const shareZalo = () => {
-  const url = encodeURIComponent(getArticleUrl())
-  if (typeof window !== 'undefined') {
-    window.open(`https://sp.zalo.me/share_inline?link=${url}`, '_blank', 'noopener,noreferrer,width=600,height=400')
-  }
-}
-
-const copyArticleLink = async () => {
-  const url = getArticleUrl()
-  if (!url) return
-  try {
-    await navigator.clipboard.writeText(url)
-    copiedArticleLink.value = true
-    toast.success('Đã sao chép liên kết bài viết vào bộ nhớ tạm!')
-    setTimeout(() => { copiedArticleLink.value = false }, 2500)
-  } catch {
-    toast.error('Không thể sao chép liên kết.')
-  }
-}
-
-/**
- * In bài — mở trang in riêng (layout báo giấy, không nav/sidebar/chat) tại
- * `/in-bai/<slug>?back=<backTo>` trong tab mới, tự kích hoạt window.print()
- * sau khi tải xong. Trả về trải nghiệm in báo giấy thay vì in trang web apa
- * adanya (xấu, đầy menu/quảng cáo/bình luận).
- *
- * `noopener` không dùng ở đây — cửa sổ in cần truy cập window.opener để quay
- * lại bài gốc; nhưng route `/in-bai` không đọc opener nên an toàn.
- */
-const printArticle = () => {
-  if (typeof window === 'undefined') return
-  const url = `/in-bai/${props.slug}?back=${encodeURIComponent(props.backTo)}`
-  window.open(url, '_blank', 'noopener,noreferrer,width=900,height=700')
-}
-
-/**
- * Ghi nhận lượt xem từ trình duyệt, không phải từ lượt dựng phía máy chủ.
- *
- * Trang chi tiết bài viết được phục vụ từ bộ nhớ đệm SWR 60 giây
- * (`nuxt.config.ts`), nên người đọc thứ hai trở đi trong một cửa sổ 60 giây
- * không chạm vào mã máy chủ nào cả. Đếm ở phía máy chủ sẽ thiếu đúng bằng phần
- * mà bộ nhớ đệm đang phát huy tác dụng — và con số thiếu đó trông vẫn hợp lý.
- *
- * Mọi lỗi đều nuốt: một bộ đếm lượt xem không có tư cách làm hỏng trang của
- * khách. Việc chống bấm F5 liên tục do máy chủ lo (cửa sổ 30 phút), không phải
- * do phía client — client-side thì xoá cache trình duyệt là thoát.
- */
-const sentSlug = ref('')
-
-function pingView(slug: string | null | undefined) {
-  if (!slug || sentSlug.value === slug) return
-  sentSlug.value = slug
-  void ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/public/articles/${encodeURIComponent(slug)}/view`, {
+// Lượt xem — đếm từ trình duyệt sau mount, mọi lỗi nuốt — và lịch sử đọc trên thiết bị
+// (`useArticleReadTracking`; request lượt xem ở đây).
+useArticleReadTracking({
+  slug: () => props.slug,
+  article,
+  record: recordRead,
+  sendView: (slug, body) => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/public/articles/${encodeURIComponent(slug)}/view`, {
     method: 'POST',
-    body: { sourceCategory: classifySource(document.referrer, window.location.hostname) },
+    body,
     keepalive: true,
     retry: 0,
     timeout: 1500,
-  }).catch(() => {})
-}
-
-onMounted(() => pingView(props.slug))
-// Điều hướng phía client giữa hai bài viết dùng lại chính component này, nên
-// `onMounted` chỉ chạy một lần cho cả chuỗi bài đọc liên tiếp.
-watch(() => props.slug, slug => pingView(slug))
-
-/**
- * Ghi bài vừa đọc vào lịch sử đọc của **thiết bị này** (`localStorage`).
- *
- * Cố ý không có bảng nào trên máy chủ: xem `app/composables/useReadingHistory.ts`
- * để biết vì sao — một bảng "công dân nào đã đọc bài nào, lúc nào" là dữ liệu nhạy
- * cảm nhất mà dự án này chưa từng có, và nó sẽ sống lâu hơn mọi ai còn quan tâm
- * tới danh sách "bài đã đọc".
- *
- * Theo `article.value` chứ không theo `props.slug`: `lazy: true` nghĩa là bài về
- * **sau** mount, nên ghi lúc mount sẽ lưu một hàng không có tiêu đề — và trang cá
- * nhân sẽ liệt kê một danh sách slug thay vì một danh sách bài viết. `watch` với
- * `immediate` phủ cả hai trường hợp: lượt tải đầu (dữ liệu về sau) và điều hướng
- * phía client sang bài kế tiếp (component được dùng lại).
- *
- * Không nuốt lỗi ở đây vì không có gì để nuốt — `record` tự lo phần đó.
- */
-watch(article, value => {
-  if (value?.slug) recordRead(value.slug, value.title || '')
-}, { immediate: true })
+  }),
+})
 </script>
-
-<style scoped>
-/* Retained for v-html deep content — not expressible with Tailwind utility classes */
-
-/* Anchor landing offset. The public header becomes `fixed` once the visitor
-   scrolls (see layouts/default.vue), so a bare #fragment jump puts the target
-   heading underneath it — the reader clicks a table-of-contents entry and lands
-   on the paragraph above the one they asked for. 130px clears the desktop
-   header, which is the taller of the two. */
-.article-body :deep(h2),
-.article-body :deep(h3),
-.article-body :deep(h4) { scroll-margin-top: 130px; }
-
-/* Article bodies had no heading rules at all, so an h2 written in the editor
-   rendered at the browser default inside otherwise styled prose. The outline
-   only exists once authors write headings, so they need to look deliberate.
-   Sizes match the richtext block (components/blocks/RichTextBlock.vue) — the
-   two render the same admin-authored HTML and should not disagree. */
-.article-body :deep(h2) { font-size: 1.5rem; font-weight: 800; color: #1E251C; margin: 2rem 0 0.8rem; }
-.article-body :deep(h3) { font-size: 1.2rem; font-weight: 800; color: #1E251C; margin: 1.6rem 0 0.6rem; }
-.article-body :deep(h4) { font-size: 1.05rem; font-weight: 700; color: #2b352a; margin: 1.3rem 0 0.5rem; }
-
-.article-body :deep(p) { font-size: 1.05rem; line-height: 1.7; color: #4A5545; margin-bottom: 20px; }
-.article-body :deep(blockquote) { background-color: #F8FAF7; border-left: 4px solid #4A6741; padding: 20px 24px; margin: 30px 0; font-style: italic; font-size: 1.1rem; color: #385130; }
-.article-body :deep(blockquote span) { display: block; font-size: 0.85rem; color: #7A8675; margin-top: 8px; font-weight: 700; font-style: normal; }
-
-/* Ảnh và video chèn trong nội dung bài viết — không tràn vùng đọc. Admin editor
-   cho phép chèn ảnh/video kích thước nguyên bản; nếu không có max-width chúng
-   sẽ tràn mép container (1240px) trên desktop. `max-width: 100%` ép co về khít
-   vùng chữ, `height: auto` giữ tỷ lệ khung. Đây là phần render công khai (không
-   phải admin editor — editor giữ full section để thao tác). */
-.article-body :deep(img),
-.article-body :deep(video) {
-  max-width: 100%;
-  height: auto;
-  border-radius: 8px;
-  margin: 1.5rem 0;
-}
-
-/* iframe YouTube nhúng trong bài viết — responsive 16:9. `src` đã được sanitizer
-   rewrite sang youtube-nocookie.com và chỉ cho phép YouTube embed, nên an toàn
-   cho `v-html`. `max-width: 100%` + `aspect-ratio` giữ video không tràn khung
-   đọc trên mobile. */
-.article-body :deep(iframe) {
-  max-width: 100%;
-  aspect-ratio: 16 / 9;
-  width: 100%;
-  height: auto;
-  border: 0;
-  border-radius: 12px;
-  margin: 1.5rem 0;
-}
-</style>

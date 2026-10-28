@@ -16,6 +16,8 @@
  * What it is not: a browser. No CSS, no layout, no focus. `v-model` directives are
  * replaced by recorders — the bound value shows as `v-model=` in `html()`, and a test
  * "types" with `input(el, value)`, which calls the element's `onUpdate:modelValue`.
+ * `v-show` is a recorder too (the real one writes `el.style.display`): the element stays in
+ * the tree and shows as `v-show=true|false` in `html()`; `isShown(el)` reads it.
  * Components it cannot resolve (Nuxt's `<nuxt-link>`, auto-imported `<AdminPagination>`)
  * render as plain elements carrying their props, so a test can read and fire them.
  * Static hoisting is off, so no subtree is pre-stringified past the renderer; template
@@ -40,6 +42,8 @@ export interface MiniElement {
   parent: MiniElement | null
   /** The value bound with `v-model`, recorded by the directive stand-ins below. */
   model?: { value: unknown }
+  /** What `v-show` says, recorded by its stand-in below (absent: no `v-show` on it). */
+  shown?: boolean
 }
 export interface MiniText { kind: 'text', text: string, parent: MiniElement | null }
 export interface MiniComment { kind: 'comment', text: string, parent: MiniElement | null }
@@ -92,7 +96,13 @@ const recordModel: Vue.ObjectDirective<MiniElement> = {
   beforeUpdate(el, { value }) { el.model = { value } },
 }
 
-/** The `vue` module as compiled SFCs see it: real, except for the DOM-only `v-model` directives. */
+/** Records what `v-show` says; the real directive writes `el.style.display`. */
+const recordShow: Vue.ObjectDirective<MiniElement> = {
+  created(el, { value }) { el.shown = Boolean(value) },
+  beforeUpdate(el, { value }) { el.shown = Boolean(value) },
+}
+
+/** The `vue` module as compiled SFCs see it: real, except for the DOM-only `v-model`/`v-show` directives. */
 const VUE_FOR_SFC: Record<string, unknown> = {
   ...Vue,
   vModelText: recordModel,
@@ -100,7 +110,11 @@ const VUE_FOR_SFC: Record<string, unknown> = {
   vModelRadio: recordModel,
   vModelSelect: recordModel,
   vModelDynamic: recordModel,
+  vShow: recordShow,
 }
+
+/** Is this element shown — false only when a `v-show` on it says so. */
+export const isShown = (el: MiniElement): boolean => el.shown !== false
 
 // ─── Loading an SFC ──────────────────────────────────────────────────────────
 
@@ -241,7 +255,8 @@ export function serialize(nodes: readonly MiniNode[]): string {
       .map(([key, value]) => (isListener(key, value) ? ` ${key}` : ` ${key}=${attribute(value)}`))
       .join('')
     const model = node.model ? ` v-model=${attribute(node.model.value)}` : ''
-    return `<${node.tag}${attrs}${model}>${serialize(node.children)}</${node.tag}>`
+    const shown = node.shown === undefined ? '' : ` v-show=${node.shown}`
+    return `<${node.tag}${attrs}${model}${shown}>${serialize(node.children)}</${node.tag}>`
   }).join('')
 }
 

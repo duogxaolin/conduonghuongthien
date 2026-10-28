@@ -100,7 +100,9 @@ test('the AI panel renders only the sanitized field, never the raw reply', () =>
 // được lọc ở đâu — đúng lỗ hổng `ArticleAIPanel` từng có.
 const V_HTML_INVENTORY: Record<string, string> = {
   'app/components/ChatMessageContent.vue :: block': 'app/utils/markdown.ts — escape toàn bộ trước khi dựng thẻ',
-  'app/components/ArticleDetail.vue :: toc.html': 'nội dung bài, sanitizeHtml lúc ghi và ở endpoint công khai',
+  // Tách khỏi ArticleDetail.vue ở wave3 4.2: `html` là `toc.html` của ArticleDetail.vue
+  // (buildToc trên articles.content) — người gọi duy nhất, ghim ở test ngay dưới.
+  'app/components/article/ArticleBody.vue :: html': 'nội dung bài, sanitizeHtml lúc ghi và ở endpoint công khai (toc.html của ArticleDetail.vue)',
   'app/components/admin/docs/MermaidDiagram.client.vue :: svg': 'mermaid.render (securityLevel mặc định "strict" — mermaid tự lọc SVG đầu ra)',
   'app/components/admin/articles/ArticleQuickViewModal.vue :: quickViewData.content || \'(Chưa có nội dung)\'': 'articles.content, sanitizeHtml lúc ghi',
   'app/components/blocks/ContentAsideBlock.vue :: bodyHtml': 'sanitizeBlockData lúc ghi và lúc đọc',
@@ -128,4 +130,60 @@ test('every v-html in app/ is inventoried with its sanitized source', () => {
   assert.deepEqual(unknown, [], 'a new v-html: sanitize its source (sanitizeHtml on write AND read) and add it to V_HTML_INVENTORY')
   const stale = Object.keys(V_HTML_INVENTORY).filter(key => !found.includes(key))
   assert.deepEqual(stale, [], 'an inventoried v-html was removed or renamed — update the inventory')
+})
+
+// ─── `ArticleBody` (wave3 4.2): a `v-html` behind a prop, so its callers are the source ──
+//
+// `components/article/ArticleBody.vue` renders its `html` prop with `v-html`. The inventory
+// entry above is true only while its ONE caller hands it the sanitized, id-stamped body. A
+// prop is a door into `v-html` for whoever uses the component — and Nuxt auto-imports it
+// everywhere as `<ArticleBody>` / `<article-body>` / `<LazyArticleBody>` — so every use is
+// pinned: exactly one, in ArticleDetail.vue, binding exactly `:html="toc.html"`.
+const ARTICLE_BODY_USE = /<(?:Lazy)?ArticleBody\b[^>]*>|<(?:lazy-)?article-body\b[^>]*>|from\s+['"][^'"]*article\/ArticleBody(?:\.vue)?['"]/g
+
+function articleBodyCallerProblems(files: Array<{ file: string, source: string }>): string[] {
+  const problems: string[] = []
+  let tags = 0
+  for (const { file, source } of files) {
+    for (const use of source.match(ARTICLE_BODY_USE) ?? []) {
+      if (use.startsWith('from')) {
+        if (file !== 'app/components/ArticleDetail.vue') problems.push(`${file} imports ArticleBody`)
+        continue
+      }
+      tags += 1
+      if (file !== 'app/components/ArticleDetail.vue') problems.push(`${file}: ${use}`)
+      else if (!/^<ArticleBody\s+:html="toc\.html"\s*\/>$/.test(use)) problems.push(`${file}: ${use}`)
+    }
+  }
+  if (tags !== 1) problems.push(`expected exactly one <ArticleBody>, found ${tags}`)
+  return problems
+}
+
+function appSources(): Array<{ file: string, source: string }> {
+  const root = new URL('..', import.meta.url).pathname
+  const out: Array<{ file: string, source: string }> = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) { walk(path); continue }
+      if (/\.(vue|ts)$/.test(entry.name)) out.push({ file: relative(root, path), source: readFileSync(path, 'utf8') })
+    }
+  }
+  walk(join(root, 'app'))
+  return out
+}
+
+test('ArticleBody is fed only by ArticleDetail, with the sanitized id-stamped body', () => {
+  assert.deepEqual(articleBodyCallerProblems(appSources()), [])
+})
+
+test('the ArticleBody caller guard bites (injection proof)', () => {
+  const files = appSources()
+  const parentAt = files.findIndex(f => f.file === 'app/components/ArticleDetail.vue')
+  const swapped = files.map((f, i) => (i === parentAt ? { ...f, source: f.source.replace('<ArticleBody :html="toc.html" />', '<ArticleBody :html="article.content" />') } : f))
+  assert.equal(articleBodyCallerProblems(swapped).length, 1)
+  for (const tag of ['<ArticleBody :html="raw" />', '<article-body :html="toc.html" />', '<LazyArticleBody :html="x" />']) {
+    assert.equal(articleBodyCallerProblems([...files, { file: 'app/pages/planted.vue', source: `<template>${tag}</template>` }]).length, 2, tag)
+  }
+  assert.equal(articleBodyCallerProblems([...files, { file: 'app/components/Planted.vue', source: "import ArticleBody from '~/components/article/ArticleBody.vue'" }]).length, 1)
 })
