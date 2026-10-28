@@ -9,7 +9,7 @@
   },
   "app/components/admin/ai/AiProvidersTab.vue": 1018,
   "app/components/admin/articles/ArticleTranslationPanel.vue": 588,
-  "app/components/admin/languages/UniversalTab.vue": 532,
+  "app/components/admin/languages/UniversalTab.vue": 530,
   "app/composables/i18n-default-dictionary.ts": {
     "exempt": true,
     "reason": "Content, not logic: the hardcoded Vietnamese fallback dictionary used when the translations API is unreachable. It grows by one line per i18n key, so growth is not a regression."

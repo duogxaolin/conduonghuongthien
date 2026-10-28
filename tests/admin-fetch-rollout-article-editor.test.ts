@@ -32,7 +32,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import * as Vue from 'vue'
 
-import { byText, click, findAll, input, textOf } from './_sfc-mount.ts'
+import { byText, click, findAll, fire, input, textOf } from './_sfc-mount.ts'
 import {
   alertText, alerts, dropped, h3Error, json, mountAdminPage, OFETCH_LINE, OpenModal, routes, sent, settle, Stub, unmountAll, wire,
   type MountedAdminPage, type NetCall, type Responder,
@@ -135,6 +135,8 @@ const selectOf = (opened: Opened, label: string) => {
     && findAll(el, s => s.tag === 'select').length === 1)
   return findAll(field.at(-1)!, el => el.tag === 'select')[0]!
 }
+/** The PUT lines sent since `from`. */
+const puts = (opened: Opened, from: number) => opened.calls.slice(from).map(wire).filter(line => line.startsWith('PUT'))
 const categoryOptions = (opened: Opened) => findAll(selectOf(opened, 'Danh mục'), el => el.tag === 'option').map(textOf)
 
 describe(PAGE, () => {
@@ -247,6 +249,83 @@ describe(PAGE, () => {
     if (!save.props.disabled) await click(save)
     await settle()
     assert.deepEqual(opened.calls.slice(before).map(wire).filter(line => line.startsWith('PUT')), [], 'a PUT of the empty form')
+  })
+
+  // Independent verification of batch D (PROBE-A): the first fix keyed both guards on `errorMsg`,
+  // which `fetchArticle` clears BEFORE its await — so while "Thử lại" was in flight the button was
+  // enabled again and the same PUT of the empty form went out (and published it). The guards now
+  // key on a POSITIVE `loaded`: false from the start of every load until the form is filled.
+  it('FINDING: failed load, title typed, "Thử lại" in flight — no PUT of the empty form', async () => {
+    let reads = 0
+    const opened = await openEditor('42', server({ 'GET /api/admin/articles/42': () => (++reads === 1 ? h3Error(403, 'Bạn không có quyền xem bài viết này.') : undefined) }))
+    await input(titleInput(opened)!, 'Tiêu đề gõ vào biểu mẫu trống')
+    void click(byText(opened.page.root, 'button', 'Thử lại'))
+    await settle()
+    assert.equal(reads, 2, 'the retry is in flight')
+    const before = opened.calls.length
+    const save = saveButton(opened, 'Cập Nhật Bài Viết')
+    if (save.props.disabled !== true) await click(save)
+    await settle()
+    assert.deepEqual(puts(opened, before), [], 'a PUT of the empty form while the retry was pending')
+  })
+
+  it('guard 1, the button: disabled until the article is loaded — first load, failed load, retry in flight', async () => {
+    const pending: NetCall[] = []
+    const opened = await openEditor('42', server({ 'GET /api/admin/articles/42': (call) => { pending.push(call); return undefined } }))
+    const disabled = () => saveButton(opened, 'Cập Nhật Bài Viết').props.disabled
+    assert.equal(disabled(), true, 'first load in flight')
+    pending[0]!.respond(h3Error(403, 'Bạn không có quyền xem bài viết này.'))
+    await settle()
+    assert.equal(disabled(), true, 'the load failed')
+    void click(byText(opened.page.root, 'button', 'Thử lại'))
+    await settle()
+    assert.equal(disabled(), true, 'the retry is in flight')
+    pending[1]!.respond(json({ ok: true, article: ARTICLE }))
+    await settle()
+    assert.equal(disabled(), false, 'loaded: saving is allowed')
+  })
+
+  it('guard 2, handleSave itself: a click that reaches it past the disabled button sends no PUT', async () => {
+    let reads = 0
+    const opened = await openEditor('42', server({ 'GET /api/admin/articles/42': () => (++reads === 1 ? h3Error(403, 'Bạn không có quyền xem bài viết này.') : undefined) }))
+    await input(titleInput(opened)!, 'Tiêu đề gõ vào biểu mẫu trống')
+    const before = opened.calls.length
+    await fire(saveButton(opened, 'Cập Nhật Bài Viết'), 'click')
+    await settle()
+    assert.deepEqual(puts(opened, before), [], 'after the failed load')
+    void click(byText(opened.page.root, 'button', 'Thử lại'))
+    await settle()
+    await fire(saveButton(opened, 'Cập Nhật Bài Viết'), 'click')
+    await settle()
+    assert.deepEqual(puts(opened, before), [], 'while the retry is in flight')
+  })
+
+  it('a refused save leaves the article loaded: the second click PUTs again and clears the banner', async () => {
+    let answer: () => Response | Error = () => h3Error(400, 'Tiêu đề bài viết quá ngắn.')
+    const opened = await openEditor('42', server({ 'PUT /api/admin/articles/42': () => answer() }))
+    await click(saveButton(opened, 'Cập Nhật Bài Viết'))
+    await settle()
+    answer = () => json({ ok: true })
+    const before = opened.calls.length
+    await click(saveButton(opened, 'Cập Nhật Bài Viết'))
+    await settle()
+    assert.deepEqual(opened.calls.slice(before).map(wire), ['PUT /api/admin/articles/42'])
+    assert.equal(alertText(opened.page), '')
+  })
+
+  it('a NEW article has nothing to load: it saves even when the content types and categories cannot be read', async () => {
+    navigations.length = 0
+    const opened = await openEditor('new', server({
+      'GET /api/admin/categories': () => h3Error(403, 'Không có quyền.'),
+      'GET /api/admin/content-types': () => h3Error(403, 'Không có quyền.'),
+    }))
+    assert.notEqual(saveButton(opened, 'Đăng Bài Mới').props.disabled, true)
+    await input(titleInput(opened)!, 'Bài mới tinh')
+    const before = opened.calls.length
+    await click(saveButton(opened, 'Đăng Bài Mới'))
+    await settle()
+    assert.equal(opened.calls.slice(before).map(wire)[0], 'POST /api/admin/articles')
+    assert.deepEqual(navigations, ['/admin/content/articles/99'])
   })
 
   it('FINDING: two type switches in flight — the first type\'s categories landing last do not fill the second', async () => {

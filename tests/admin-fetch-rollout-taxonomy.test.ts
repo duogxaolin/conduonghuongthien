@@ -410,6 +410,60 @@ describe(CONTENT_TYPES, () => {
     assert.equal(bulkBar(opened), undefined)
   })
 
+  // Independent verification of batch D: the ticket in catch/finally (M05) and the categories
+  // ticket (M06) had no test of their own.
+  it('a superseded types reload\'s failure neither shows an error nor ends the newer load', async () => {
+    const pending: NetCall[] = []
+    let mounted = false
+    const opened = await openTypes(server({
+      [`GET ${CT_URL}`]: (call) => { if (!mounted) return list(TYPES); pending.push(call); return undefined },
+    }))
+    mounted = true
+    void click(byText(card(opened, 'Tư liệu'), 'button', 'Xóa'))
+    await settle()
+    await click(byText(opened.page.root, 'button', 'Tạo Thể Loại Mới'))
+    await input(field(dialog(opened)!, 'Vd: Video tuyên truyền'), 'Văn bản')
+    void click(button(dialog(opened)!, 'Tạo Thể Loại'))
+    await settle()
+    assert.equal(pending.length, 2)
+    pending[0]!.respond(h3Error(403, 'Phiên cũ đã hết quyền.'))
+    await settle()
+    assert.equal(alertText(opened.page), '')
+    assert.equal(skeleton(opened), true, 'the newer load is still running')
+    pending[1]!.respond(list(TYPES))
+    await settle()
+    assert.equal(alertText(opened.page), '')
+    assert.equal(skeleton(opened), false)
+  })
+
+  for (const older of ['lands last', 'fails'] as const) {
+    it(`two category loads in flight ("thử lại", then a save) — the older one ${older}: the newer tree stays, no alert`, async () => {
+      const pending: NetCall[] = []
+      let first = true
+      const opened = await openTypes(server({
+        [`GET ${CAT_URL}`]: (call) => {
+          if (first) { first = false; return h3Error(403, 'Tạm thời không đọc được danh mục.') }
+          pending.push(call)
+          return undefined
+        },
+      }))
+      void click(byText(opened.page.root, 'button', 'thử lại'))
+      await settle()
+      await click(byText(card(opened, 'Tư liệu'), 'button', 'Sửa'))
+      void click(button(dialog(opened)!, 'Cập Nhật'))
+      await settle()
+      assert.equal(pending.length, 2, '"thử lại" and the save both reload the categories')
+      pending[1]!.respond(list([...CATS, catRow(40, 'Mục mới', 'news')]))
+      await settle()
+      pending[0]!.respond(older === 'fails' ? h3Error(403, 'Phiên cũ đã hết quyền.') : list([catRow(41, 'Mục cũ', 'news')]))
+      await settle()
+      const news = textOf(card(opened, 'Tin tức'))
+      assert.match(news, /Mục mới/)
+      assert.doesNotMatch(news, /Mục cũ/)
+      assert.equal(alertText(opened.page), '')
+    })
+  }
+
   it('FINDING: a create during the reload of a delete — the older reload landing last does not hide the new type', async () => {
     const pending: NetCall[] = []
     let mounted = false

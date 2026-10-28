@@ -170,6 +170,23 @@ describe(TAB, () => {
     })
   }
 
+  // Independent verification of batch D (PROBE-UNI): the poll's own tick, not the mount's read.
+  it('FINDING: leaving the tab while a POLL tick\'s read is in flight — its "completed" answer says nothing and asks nothing', async () => {
+    const pending: NetCall[] = []
+    let hold = false
+    const opened = await open(server({ [`GET ${STATUS}`]: (call) => { if (hold) { pending.push(call); return undefined } return json({ ok: true, task: RUNNING }) } }))
+    hold = true
+    await poll()
+    assert.equal(pending.length, 1, 'the tick asked the status')
+    opened.page.unmount()
+    const before = opened.calls.length
+    pending[0]!.respond(json({ ok: true, task: task({ phase: 'Hoàn tất', percent: 100, completedAt: '2026-10-28T03:00:00.000Z' }) }))
+    await settle()
+    await poll()
+    assert.deepEqual(opened.toasts, [], 'a toast from a tab that is gone')
+    assert.deepEqual(opened.calls.slice(before).map(wire), [], 'a rescan from a tab that is gone')
+  })
+
   it('FINDING: leaving the tab while a status read is in flight does not leave a poll running', async () => {
     const pending: NetCall[] = []
     const opened = await open(server({ [`GET ${STATUS}`]: (call) => { pending.push(call); return undefined } }))

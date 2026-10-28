@@ -153,13 +153,25 @@ hành vi mount được layout (767 dòng), và chuyển trước khi có test t
   Lượt huỷ (`…-cancel`) vẫn trả `{ ok: false }` khi không có gì chạy — tab hiện nó là thông tin.
 - Trình soạn bài: "Thử lại" thành công nhưng dải lỗi còn; lỗi LƯU dùng chung dải với "Thử lại" (tải
   lại bài, mất chữ đang gõ) — nay `saveError` riêng, không nút tải lại; tải bài hỏng vẫn cho lưu
-  biểu mẫu trống (PUT ghi đè bài thật) — nay không lưu được tới khi bài tải xong; đổi thể loại hai
-  lần — danh mục của thể loại trước lấp ô "Danh mục". Nay một mã mỗi lượt.
+  biểu mẫu trống (PUT ghi đè bài thật, và xuất bản bài rỗng); đổi thể loại hai lần — danh mục của
+  thể loại trước lấp ô "Danh mục". Nay một mã mỗi lượt.
+- **Chặn ghi đè bài (sửa lại sau kiểm chứng độc lập, PROBE-A):** bản sửa đầu khoá lưu theo `errorMsg`,
+  mà `fetchArticle` xoá `errorMsg` TRƯỚC khi chờ — nên khi "Thử lại" còn đang bay nút lưu bật lại và
+  đúng PUT biểu mẫu trống đó vẫn đi (lượt tải ĐẦU cũng vậy: lúc chờ, nút đã bật). Nay khoá theo cờ
+  dương `loaded`: bài mới luôn `true`; bài có id `false` từ đầu mỗi lượt tải (trước `await`) và chỉ
+  `true` sau khi biểu mẫu đã điền xong từ câu trả lời. Hai lớp độc lập, mỗi lớp một test: nút
+  "Cập Nhật Bài Viết" `:disabled="saving || !loaded"`, và `handleSave` tự trả về khi `!loaded` (một
+  lượt bấm lọt qua nút vẫn không gửi PUT). Tóm lại: chỉ lưu được khi biểu mẫu đang giữ bài thật.
+- "Dịch toàn cục" (cũng từ kiểm chứng độc lập): rời tab khi lượt hỏi của VÒNG HỎI (không chỉ lượt đọc
+  lúc mở tab) còn bay mà trả "xong" — vẫn báo "hoàn tất" và gửi thêm hai GET. Nay callback kiểm
+  `disposed` sau `await`.
 
 **Hai lỗ test của lô C đã đóng:** `keepOnly` chạy thật ở kho kiến thức và kho trả lời thường nhật
 (chọn hàng trang 1, sang trang 2 → thanh hàng loạt biến mất); `adminFetch` không đọc thân "giống JSON"
 khai `text/plain` (đột biến bỏ phép kiểm content-type nay bị bắt); "Tải HTML zip" bị từ chối hiện câu
-máy chủ ở mức trang.
+máy chủ ở mức trang. Sau kiểm chứng độc lập, mã lượt ở nhánh lỗi (`catch`/`finally`) của danh sách
+thể loại, mã lượt danh mục của cây xem trước ("thử lại" rồi lưu: lượt cũ về sau, hoặc hỏng về sau)
+và nhánh lỗi của chi tiết đơn (#12 hỏng về sau khi #13 đang tải) có test riêng.
 
 Test: `tests/admin-fetch-rollout-{taxonomy,submission-detail,universal-translate,article-editor}.test.ts`,
 `tests/universal-translate-refusal-behavior.test.ts`, thêm vào `admin-login-page-behavior`,

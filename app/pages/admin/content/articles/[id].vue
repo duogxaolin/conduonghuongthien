@@ -35,9 +35,11 @@ const form = reactive({
 // has nothing to fetch, so it starts false.
 const loading = ref(!isNew.value)
 const saving = ref(false)
-/** Tải bài hỏng ("Thử lại" tải lại). Lưu hỏng là `saveError`: không tải lại đè lên chữ đang gõ. */
+// Tải hỏng → `errorMsg` ("Thử lại"); lưu hỏng → `saveError` (không tải lại đè chữ đang gõ);
+// `loaded`: biểu mẫu đang giữ bài thật (bài mới: luôn) — chưa thì lưu là ghi đè bài bằng ô trống.
 const errorMsg = ref('')
 const saveError = ref('')
+const loaded = ref(isNew.value)
 const tinymceReady = ref(false)
 
 function setEditorContent(html: string): void {
@@ -133,6 +135,7 @@ const fetchArticle = async () => {
   if (isNew.value || !articleId.value) return
   suppressTypeReset = true  // block watcher resets during form population
   loading.value = true
+  loaded.value = false // trước await: "Thử lại" đang bay không được mở lại nút lưu
   errorMsg.value = ''
   try {
     const res = await adminFetch<ArticleReadResponse>(`/api/admin/articles/${articleId.value}`)
@@ -145,14 +148,11 @@ const fetchArticle = async () => {
       form.content = res.article.content || ''
       form.thumbnailUrl = res.article.thumbnailUrl || ''
       form.status = res.article.status || 'published'
-      // Explicitly load categories for the article's type so the dropdown
-      // renders the saved selection. The watcher is suppressed and won't do this.
+      // The (suppressed) type watcher won't: load this type's categories so the saved one shows.
       await fetchCategories(form.type)
-      if (tinymceReady.value && (window as WindowWithTinyMce).tinymce) {
-        const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
-        if (ed) ed.setContent(form.content)
-      }
+      if (tinymceReady.value) (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)?.setContent(form.content)
       recordInitialSnapshot()
+      loaded.value = true
     }
   } catch (err: unknown) {
     errorMsg.value = errorMessage(err, 'Lỗi tải bài viết')
@@ -234,7 +234,7 @@ async function translateAllForThisArticle(targetStatus: 'ai_draft' | 'published'
 }
 
 const handleSave = async () => {
-  if (errorMsg.value) return // bài chưa tải được: lưu biểu mẫu trống là ghi đè bài thật
+  if (!loaded.value) return // bài chưa tải xong (hỏng / đang tải / đang thử lại): không ghi đè
   if (!form.title.trim()) {
     toast.warning('Tiêu đề bài viết không được để trống'); return
   }
@@ -530,7 +530,7 @@ onUnmounted(() => {
         >Hủy & Quay lại</nuxt-link>
         <button
           class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed"
-          :disabled="saving || !!errorMsg"
+          :disabled="saving || !loaded"
           @click="handleSave"
         >
           <i class="fa-solid fa-floppy-disk"></i>

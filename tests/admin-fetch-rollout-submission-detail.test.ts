@@ -140,6 +140,26 @@ describe('components/admin/SubmissionDetailModal.vue (through pages/admin/submis
     assert.match(modalText(opened), /Trần Thị B/)
   })
 
+  // Independent verification of batch D (M12): the ticket in catch/finally had no test of its own.
+  it('close #12 while it loads, open #13 — #12\'s late FAILURE neither shows an error nor ends #13\'s loading', async () => {
+    const pending: NetCall[] = []
+    const hold: Route = (call) => { pending.push(call); return undefined }
+    const opened = await openPage(server({ [`GET ${LIST}/12`]: hold, [`GET ${LIST}/13`]: hold }))
+    await view(opened, 'Nguyễn Văn A', false)
+    await click(findAll(dialog(opened)!, el => el.props['aria-label'] === 'Đóng hộp thoại')[0]!)
+    await settle()
+    await view(opened, 'Trần Thị B', false)
+    assert.equal(pending.length, 2)
+    pending[0]!.respond(h3Error(403, 'Hồ sơ #12 đã bị khoá.'))
+    await settle()
+    assert.equal(alertText(opened.page), '', '#12\'s failure shown under #13')
+    assert.equal(findAll(dialog(opened)!, el => el.props.role === 'status').length, 1, '#13 is still loading')
+    pending[1]!.respond(detail(13, 'Trần Thị B'))
+    await settle()
+    assert.match(modalText(opened), /Trần Thị B/)
+    assert.equal(alertText(opened.page), '')
+  })
+
   it('load failure: the server\'s sentence + "thử lại"; a dropped connection says the fallback', async () => {
     let answer: () => Response | Error = () => h3Error(403, 'Bạn không có quyền xem đơn đăng ký.')
     const opened = await openPage(server({ [`GET ${LIST}/12`]: () => answer() }))

@@ -76,6 +76,7 @@ function startUniversalPolling() {
   if (universalPollTimer || disposed) return
   universalPollTimer = window.setInterval(async () => {
     await checkUniversalTaskStatus()
+    if (disposed) return // rời tab khi lượt hỏi còn bay: không báo, không quét lại
     const ended: UniversalTask | null = universalTask.value
     if (!ended?.active) {
       stopUniversalPolling()
@@ -145,10 +146,7 @@ onMounted(() => {
   loadCoverage()
 })
 
-onUnmounted(() => {
-  disposed = true
-  stopUniversalPolling()
-})
+onUnmounted(() => { disposed = true; stopUniversalPolling() })
 </script>
 
 <template>
