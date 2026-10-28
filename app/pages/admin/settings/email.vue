@@ -9,6 +9,7 @@ import {
   sameSmtpTarget,
   smtpTargetOf,
 } from '~~/shared/settings-credential-rules'
+import type { SiteSettingsResponse, SiteSettingsSaveResponse, SmtpTestResponse } from '~/types/admin-settings-api'
 
 definePageMeta({
   layout: 'admin',
@@ -65,7 +66,7 @@ const fetchSettings = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null>; needsReentry?: string[] }>)(`/api/admin/settings`)
+    const res = await adminFetch<SiteSettingsResponse>(`/api/admin/settings`)
     if (res.ok && res.settings) {
       for (const k of Object.keys(settings) as Array<keyof typeof settings>) {
         if (res.settings[k] != null) settings[k] = String(res.settings[k])
@@ -90,7 +91,7 @@ const handleSave = async () => {
   }
   saving.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings } })
+    const res = await adminFetch<SiteSettingsSaveResponse>(`/api/admin/settings`, { method: 'PUT', body: { settings } })
     if (res.ok) {
       toast.success('Đã lưu cấu hình email SMTP!')
       // Re-fetch so the password field shows the mask again after saving.
@@ -110,7 +111,7 @@ const handleTest = async () => {
   }
   testing.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message?: string }>)(`/api/admin/settings/test-email`, {
+    const res = await adminFetch<SmtpTestResponse>(`/api/admin/settings/test-email`, {
       method: 'POST',
       body: { ...settings, to: testEmail.value.trim() },
     })

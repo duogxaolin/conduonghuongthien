@@ -37,7 +37,7 @@
   "app/pages/admin/media-portal/[id].vue": 414,
   "app/pages/admin/media/index.vue": 456,
   "app/pages/admin/settings/backup.vue": 528,
-  "app/pages/admin/settings/data-retention.vue": 514,
+  "app/pages/admin/settings/data-retention.vue": 500,
   "app/pages/admin/settings/general.vue": 539,
   "app/pages/admin/settings/media-portal.vue": 612,
   "app/pages/admin/settings/social-links.vue": 524,

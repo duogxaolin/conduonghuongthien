@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AdminIpBan, IpBanCreateResponse, IpBanDeleteResponse, IpBansResponse } from '~/types/admin-settings-api'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -14,22 +16,13 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  * they retype the address.
  */
 
-type Ban = {
-  id: number
-  value: string
-  reason: string | null
-  createdAt: string | null
-  createdBy: number | null
-  createdByName: string | null
-}
-
 const toast = useToast()
 const { confirm } = useConfirm()
 
 const loading = ref(true)
 const error = ref('')
 const busy = ref(false)
-const bans = ref<Ban[]>([])
+const bans = ref<AdminIpBan[]>([])
 
 const newValue = ref('')
 const newReason = ref('')
@@ -46,7 +39,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; bans: Ban[] }>)(`/api/admin/ip-bans`)
+    const res = await adminFetch<IpBansResponse>(`/api/admin/ip-bans`)
     if (!res?.ok) {
       error.value = 'Không tải được danh sách chặn.'
       return
@@ -64,7 +57,7 @@ async function addBan() {
   busy.value = true
   formError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ip-bans`, {
+    await adminFetch<IpBanCreateResponse>(`/api/admin/ip-bans`, {
       method: 'POST',
       body: { value: newValue.value, reason: newReason.value },
     })
@@ -79,7 +72,7 @@ async function addBan() {
   }
 }
 
-async function liftBan(ban: Ban) {
+async function liftBan(ban: AdminIpBan) {
   if (!await confirm({
     message: `Bỏ chặn ${ban.value}? Địa chỉ này sẽ đăng nhập và bình luận được ngay.`,
     confirmLabel: 'Bỏ chặn',
@@ -87,7 +80,7 @@ async function liftBan(ban: Ban) {
   })) return
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ip-bans/${ban.id}`, { method: 'DELETE' })
+    await adminFetch<IpBanDeleteResponse>(`/api/admin/ip-bans/${ban.id}`, { method: 'DELETE' })
     toast.success('Đã bỏ chặn địa chỉ.')
     await load()
   } catch (err: unknown) {

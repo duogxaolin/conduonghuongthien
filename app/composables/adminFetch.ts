@@ -14,12 +14,19 @@
  * inferred from the Nitro route (the readers list did). Moving it here trades that
  * for a declared type the compiler cannot verify.
  *
- * Errors are rethrown UNCHANGED. Call sites (and `useAdminList`) read them with
- * `errorMessage()` / `errorStatus()` from `app/utils/errorMessage.ts`: a wrapped
- * error would hide the status the 401-vs-403 decision needs, and would stop
+ * Errors are rethrown as the SAME object, never wrapped. Call sites (and `useAdminList`)
+ * read them with `errorMessage()` / `errorStatus()` from `app/utils/errorMessage.ts`: a
+ * wrapped error would hide the status the 401-vs-403 decision needs, and would stop
  * `errorMessage` from recognising a failed `$fetch` — after which ofetch's own
  * `[GET] "/api/…": <no response>` line could reach the screen
  * (tests/error-message.test.ts, tests/admin-list.test.ts).
+ *
+ * One thing is done to it first, for a request with a non-JSON `responseType` (a
+ * download): ofetch reads the error body with that type too, so a refusal written as
+ * `createError({ statusMessage })` arrived as a Blob/string/ArrayBuffer of JSON and
+ * `errorMessage` found no `data.statusMessage` — the officer read the page's fallback
+ * instead of the server's sentence. A JSON error body is parsed into `data`; anything
+ * else (an nginx HTML page) is left as it was (tests/admin-fetch-error-body.test.ts).
  *
  * Note on aborts: a request cancelled through `signal` rejects as a `FetchError`
  * whose `cause` is the `AbortError`. `isAbortError()` follows `.cause` and does
@@ -49,6 +56,33 @@ export interface AdminFetchOptions {
 
 type TypedFetch = <T>(url: string, options?: AdminFetchOptions) => Promise<T>
 
-export function adminFetch<T>(url: string, options?: AdminFetchOptions): Promise<T> {
-  return ($fetch as TypedFetch)<T>(url, options)
+export async function adminFetch<T>(url: string, options?: AdminFetchOptions): Promise<T> {
+  try {
+    return await ($fetch as TypedFetch)<T>(url, options)
+  } catch (err: unknown) {
+    if (options?.responseType && options.responseType !== 'json') await parseJsonErrorBody(err)
+    throw err
+  }
+}
+
+/**
+ * A failed `$fetch` exposes its body as `data`, a getter over `response._data` (ofetch
+ * `createFetchError`), so the parsed body is written there. Not JSON after all → left
+ * untouched, and `errorMessage` falls back as it did.
+ */
+async function parseJsonErrorBody(err: unknown): Promise<void> {
+  const response = err && typeof err === 'object'
+    ? (err as { response?: { headers?: Headers, _data?: unknown } }).response
+    : undefined
+  if (!response || !/\bjson\b/i.test(response.headers?.get('content-type') ?? '')) return
+  const body = response._data
+  try {
+    const text = typeof body === 'string' ? body
+      : body instanceof Blob ? await body.text()
+        : body instanceof ArrayBuffer ? new TextDecoder().decode(body)
+          : undefined
+    if (text !== undefined) response._data = JSON.parse(text)
+  } catch {
+    // Unreadable or not JSON: keep what ofetch read.
+  }
 }

@@ -53,7 +53,12 @@ function detach(node: MiniNode): void {
   node.parent = null
 }
 
-const createElement = (tag: string): MiniElement => ({ kind: 'element', tag, props: {}, children: [], parent: null })
+/**
+ * `focus()` exists and does nothing — a page calls it on a template ref (login.vue moves
+ * focus to the code field). Non-enumerable, so it is not part of the element's data.
+ */
+const createElement = (tag: string): MiniElement =>
+  Object.defineProperty({ kind: 'element', tag, props: {}, children: [], parent: null } as MiniElement, 'focus', { value: () => {} })
 
 const renderer = Vue.createRenderer<MiniNode, MiniElement>({
   insert(child, parent, anchor) {
@@ -115,6 +120,12 @@ export interface SfcEnv {
    * element — and a template `ref` on it then holds that element, not the component.
    */
   components?: Record<string, Vue.Component>
+  /**
+   * Mount inside `<Suspense>`: a `<script setup>` with a top-level `await` (login.vue's
+   * `await useAsyncData`) compiles to an async `setup`, which renders nothing without one.
+   * Settle (or await) after mounting for the setup to resolve.
+   */
+  suspense?: boolean
 }
 
 const IMPORT_FROM = /^import\s+([^'"]*?)\s*from\s*['"]([^'"]+)['"];?/gm
@@ -200,7 +211,9 @@ export async function mountSfc(file: string, env: SfcEnv, props?: Record<string,
   const component = await loadSfc(file, env)
   const root = createElement('#root')
   const errors: unknown[] = []
-  const app = renderer.createApp(component, props)
+  const app = env.suspense
+    ? renderer.createApp(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component, props) }) }))
+    : renderer.createApp(component, props)
   // `<nuxt-link>` and auto-imported components are left unresolved on purpose, unless
   // the test registers one (`env.components`).
   for (const [name, registered] of Object.entries(env.components ?? {})) app.component(name, registered)

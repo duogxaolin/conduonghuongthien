@@ -1,5 +1,8 @@
 # D-FETCH: vì sao lô B (wave3 7.1) không dùng `useAdminList`
 
+> Lô C (cuối tệp): 39 ép kiểu nữa, hai danh sách nữa dùng mã lượt thay `useAdminList`,
+> `adminFetch` đọc thân lỗi JSON của yêu cầu tải tệp, và số còn lại cho lô D.
+
 Lô B bỏ 56 ép kiểu `$fetch` ở 7 tệp bằng `adminFetch<T>()` (kiểu suy từ handler qua
 `Payload<…>`, `app/types/handler-payload.ts`), nhưng **không tệp nào** chuyển sang
 `useAdminList` dù design D-FETCH ghi "content/articles/index.vue (… list state only)". Đây là
@@ -50,3 +53,57 @@ thầm không thu hẹp lựa chọn) — đã đóng ở commit sau.
 3. một móc "sau khi ghi" để trang gọi `selection.keepOnly(...)`.
 
 Khi có ba thứ đó, `fetchArticles`/`fetchArticlesSilent`/`listRequest` trong trang là phần bỏ đi.
+
+## Lô C (nhánh `wave3/7-1-fetch-casts-c`, base `9b4821a`)
+
+Bỏ **39** ép kiểu (187 → 148 trong baseline), kiểu phản hồi suy từ handler qua `Payload<…>`:
+
+| Nhóm | Tệp | Ép kiểu | Kiểu |
+|---|---|---|---|
+| Cài đặt | `settings/{email,tracking,media-storage,google-oauth,ip-bans,security,sitemap,data-retention}.vue` | 22 | `admin-settings-api.ts` (thêm) |
+| Kho nội dung Chatbot | `chatbot/knowledge/index.vue`, `components/admin/ChatbotSmallTalkPanel.vue` | 11 | `admin-chatbot-api.ts` (mới) |
+| Đăng nhập | `composables/useAdminAuth.ts`, `login.vue` ("Gửi mã") | 6 | `admin-auth-api.ts` (mới) |
+
+**Hai danh sách thêm vào bảng "không dùng `useAdminList`"** — cùng lý do với danh sách bài viết:
+
+| Tệp | Vì sao không dùng |
+|---|---|
+| `chatbot/knowledge/index.vue` | Công tắc "câu hỏi nhanh" **sửa hàng tại chỗ** (lạc quan, hoàn lại khi lỗi) — trái với `items` chỉ đọc; bộ chọn hàng loạt thu hẹp (`keepOnly`) sau mỗi lần ghi; `watch([topic, status, quick])` tải lại theo bộ lọc bị `tests/chatbot-knowledge-quick-question.test.ts` ghim (composable cố ý không có watcher). |
+| `ChatbotSmallTalkPanel.vue` | Cùng bộ chọn hàng loạt + `keepOnly`; thao tác tải lại đúng trang hiện tại; nằm trong trang cha theo thẻ. |
+
+Cả hai sửa đua tại chỗ đúng mẫu `listRequest`: mọi lượt tải lấy một mã, chỉ lượt mới nhất ghi
+hàng/phân trang/lỗi/đang tải. Tám trang cài đặt không có danh sách phân trang (`ip-bans` tải cả
+danh sách) nên không có gì để chuyển.
+
+**`adminFetch` đọc thân lỗi JSON của yêu cầu không-JSON.** ofetch đọc thân phản hồi theo
+`responseType` cả khi lỗi, nên một lượt tải tệp (`responseType: 'blob'`) bị từ chối bằng
+`createError({ statusMessage })` có `data` là Blob chứa JSON — `errorMessage()` không đọc được, cán
+bộ thấy câu dự phòng thay câu máy chủ ("Không thể tải tệp mẫu.", "Lỗi tải ZIP bài viết"). Nay
+`adminFetch` đọc thân JSON đó vào `data` trước khi ném lại — cùng đối tượng `FetchError`, giữ
+status/`cause`; thân không phải JSON (trang HTML của proxy) để nguyên
+(`tests/admin-fetch-error-body.test.ts`).
+
+**Ngoại lệ có tên: `GET /api/admin/auth/me`.** Handler dựng `user` từ `event.context.adminUser`,
+mà h3 khai `any` (`H3EventContext extends Record<string, any>`); `Serialize` của Nitro **bỏ** mọi
+khoá kiểu `any`, nên `Payload<typeof me>['user']` chỉ còn hai trường MFA — không `id`, `username`,
+`permissions` (probe typecheck xác nhận). `AdminMeResponse` lấy kiểu từ `completeLogin` (cùng một đối
+tượng, câu trả lời của đăng nhập); `tests/admin-auth-me-shape-behavior.test.ts` chốt hai câu trả
+lời giống hệt từng trường. Gốc rễ là khai kiểu cho `event.context.adminUser` toàn máy chủ — ngoài
+phạm vi D-FETCH.
+
+**Lỗi tìm thấy (test FINDING đỏ trên `9b4821a`):** `GET /api/admin/settings/sitemap` không bao giờ
+trả `updatedAt` (lọc `sitemap_xml` rồi tìm `sitemap_updated_at` trong chính kết quả) — "Lần lưu
+cuối" mất mỗi lần tải lại; hai danh sách Chatbot không có lượt mới nhất; tải hỏng hiện cả lỗi lẫn
+"Chưa có mục …"; "Xuất bản"/"Lưu trữ" mất mạng báo "Đã xảy ra lỗi." (nhánh `||` chết); "Tải file
+mẫu" bị từ chối không hiện câu máy chủ (Blob, ở trên); sửa một mục trả lời thường nhật nhảy về
+trang 1 (`closeEditor()` xoá `editing` trước khi đọc).
+
+### Còn lại cho lô D
+
+148 ép kiểu trong 76 tệp: 2 có tên trong `adminFetch.ts`; **90 phía quản trị trong 39 tệp**; 56
+phía công khai trong 36 tệp (đợt khác — `ChatWidget`/`useChatbot`, `ArticleDetail`/`ArticleComments`
+đang được tách). Phía quản trị nên làm trước: `content/categories/index.vue` (5) và
+`content/content-types.vue` (5) — cùng miền, `tests/admin-slug-input.test.ts` đã nhận `adminFetch`;
+`content/articles/[id].vue` (6), `SubmissionDetailModal.vue` (4), `languages/UniversalTab.vue` (4);
+lượt đọc `/api/public/settings` ở `login.vue` (1, công khai — chọn cùng cách với phía công khai).
+Số theo tệp: `tests/ratchets/fetch-casts.baseline.json`.

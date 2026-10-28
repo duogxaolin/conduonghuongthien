@@ -8,6 +8,7 @@ import {
   isCloudflareAccountId,
   isR2BucketName,
 } from '~~/shared/settings-credential-rules'
+import type { R2TestResponse, SiteSettingsResponse, SiteSettingsSaveResponse } from '~/types/admin-settings-api'
 
 definePageMeta({
   layout: 'admin',
@@ -66,7 +67,7 @@ const fetchSettings = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null>; needsReentry?: string[] }>)(`/api/admin/settings`)
+    const res = await adminFetch<SiteSettingsResponse>(`/api/admin/settings`)
     if (res.ok && res.settings) {
       secretNeedsReentry.value = (res.needsReentry ?? []).includes('r2_secret_key')
       // Chỉ nhận các khóa thuộc trang này; endpoint trả về toàn bộ settings (gồm
@@ -104,7 +105,7 @@ const handleSave = async () => {
     // nguyên object `settings` sẽ kéo theo các khóa không thuộc trang này
     // (nav_menu_*, smtp_*, tracking_*...) và bị server từ chối với "Khóa cài đặt
     // không hợp lệ".
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings: mediaSettings() } })
+    const res = await adminFetch<SiteSettingsSaveResponse>(`/api/admin/settings`, { method: 'PUT', body: { settings: mediaSettings() } })
     if (res.ok) {
       toast.success('Đã lưu cấu hình lưu trữ Media thành công!')
       // Re-fetch: the secret shows the mask again and the guard compares against what is now stored.
@@ -122,7 +123,7 @@ const handleTestR2 = async () => {
   testMessage.value = ''
   testError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message?: string }>)(`/api/admin/settings/test-r2`, {
+    const res = await adminFetch<R2TestResponse>(`/api/admin/settings/test-r2`, {
       method: 'POST',
       body: { accountId: settings.r2_account_id, accessKeyId: settings.r2_access_key, secretAccessKey: settings.r2_secret_key, bucket: settings.r2_bucket }
     })

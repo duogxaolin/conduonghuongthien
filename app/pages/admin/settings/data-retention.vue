@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { RetentionResponse, RetentionRunResponse, RetentionSaveResponse, RetentionScopeStatus } from '~/types/admin-settings-api'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -14,24 +16,8 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  * that counter plus the live count.
  */
 
-type Scope = {
-  scope: 'activity_logs' | 'submissions' | 'chat_sessions' | 'reader_accounts' | 'livestream_sessions'
-  days: number
-  daysSource: string
-  maxRows: number
-  maxRowsSource: string
-  total: number
-  oldest: string | null
-  overdue: number
-  overRowCap: number
-  purgedTotal: number
-  lifetimeTotal: number
-  lastRunAt: string | null
-  lastDeleted: number
-  lastTrigger: string | null
-  lastStatus: string | null
-  lastMessage: string | null
-}
+/** One scope's policy and bookkeeping, as `GET /api/admin/settings/retention` sends it. */
+type Scope = RetentionScopeStatus
 
 const SCOPE_LABELS: Record<string, string> = {
   activity_logs: 'Lịch sử hoạt động',
@@ -145,7 +131,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; scopes: Scope[]; command: string | null; autoEnabled: boolean; runHour: number; autoEnabledSource: string; runHourSource: string }>)(`/api/admin/settings/retention`)
+    const res = await adminFetch<RetentionResponse>(`/api/admin/settings/retention`)
     if (!res?.ok) {
       error.value = 'Không tải được cấu hình dọn dữ liệu.'
       return
@@ -182,7 +168,7 @@ async function save() {
       body[fields.days] = Number(form[fields.days])
       body[fields.maxRows] = Number(form[fields.maxRows])
     }
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/retention`, { method: 'PUT', body })
+    await adminFetch<RetentionSaveResponse>(`/api/admin/settings/retention`, { method: 'PUT', body })
     toast.success('Đã lưu cấu hình dọn dữ liệu.')
     await load()
   } catch (err: unknown) {
@@ -210,9 +196,9 @@ async function runNow() {
   running.value = true
   runAuditFailed.value = false
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; status: string; tables: Array<{ deleted?: number }>; auditFailed?: boolean }>)(`/api/admin/settings/retention-run`, { method: 'POST', body: { confirm: true } })
+    const res = await adminFetch<RetentionRunResponse>(`/api/admin/settings/retention-run`, { method: 'POST', body: { confirm: true } })
     runAuditFailed.value = res?.auditFailed === true
-    const deleted = (res?.tables || []).reduce((sum: number, t: { deleted?: number }) => sum + Number(t.deleted || 0), 0)
+    const deleted = (res?.tables || []).reduce((sum, t) => sum + Number(t.deleted || 0), 0)
     if (res?.status === 'warning') toast.info(`Đã xoá ${formatNumber(deleted)} bản ghi. Còn bản ghi chờ lượt sau.`)
     else toast.success(deleted > 0 ? `Đã xoá ${formatNumber(deleted)} bản ghi.` : 'Không có bản ghi nào cần xoá.')
     await load()

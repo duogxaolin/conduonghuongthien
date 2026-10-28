@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { MfaMethod } from '~/composables/useAdminAuth'
-
+import type { AdminMfaSendCodeResponse } from '~/types/admin-auth-api'
 definePageMeta({ layout: false, middleware: 'admin-auth' })
 
 const { login, fetchCaptcha, verifyMfa, user, fetchUser } = useAdminAuth()
@@ -137,7 +137,7 @@ const handleLogin = async () => {
       ? { captchaId: captchaId.value, captchaCode: captchaCode.value }
       : undefined
     const res = await login(username.value, password.value, captcha)
-    if (res.ok && res.mfaRequired) {
+    if (res.ok && 'mfaRequired' in res && res.mfaRequired) {
       methods.value = res.methods ?? []
       recoveryAvailable.value = res.recoveryCodesAvailable === true
       selectedMethod.value = methods.value[0] ?? 'recovery_code'
@@ -216,8 +216,8 @@ const handleSendCode = async () => {
   errorMsg.value = ''
   infoMsg.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sentTo?: string }>)(`/api/admin/auth/mfa/send-code`, { method: 'POST' })
-    if (res.ok) infoMsg.value = `Đã gửi mã tới ${res.sentTo || 'email của bạn'}. Mã có hiệu lực 10 phút.`
+    const res = await adminFetch<AdminMfaSendCodeResponse>(`/api/admin/auth/mfa/send-code`, { method: 'POST' })
+    if (res.ok) infoMsg.value = 'Đã gửi mã tới email của bạn. Mã có hiệu lực 10 phút.'
     nextTick(() => codeInput.value?.focus())
   } catch (err: unknown) {
     errorMsg.value = errorMessage(err, 'Không gửi được mã. Vui lòng thử cách khác.')

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { errorMessage } from '~/utils/errorMessage'
+import type { SitemapGenerateResponse, SitemapResponse, SitemapSaveResponse } from '~/types/admin-settings-api'
 
 definePageMeta({
   layout: 'admin',
@@ -20,12 +21,7 @@ const fetchSitemap = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      xml: string | null
-      updatedAt: string | null
-      generated: string
-    }>)(`/api/admin/settings/sitemap`)
+    const res = await adminFetch<SitemapResponse>(`/api/admin/settings/sitemap`)
     if (res.ok) {
       xml.value = res.xml ?? res.generated
       hasSaved.value = res.xml !== null
@@ -51,7 +47,7 @@ const handleGenerate = async () => {
   }
   generating.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; xml: string }>)(`/api/admin/settings/sitemap/generate`, { method: 'POST' })
+    const res = await adminFetch<SitemapGenerateResponse>(`/api/admin/settings/sitemap/generate`, { method: 'POST' })
     if (res.ok) xml.value = res.xml
     toast.success('Đã sinh sitemap từ dữ liệu hiện tại. Bấm "Lưu" để áp dụng.')
   } catch (err: unknown) {
@@ -64,7 +60,7 @@ const handleGenerate = async () => {
 const handleSave = async () => {
   saving.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; updatedAt: string }>)(`/api/admin/settings/sitemap`, {
+    const res = await adminFetch<SitemapSaveResponse>(`/api/admin/settings/sitemap`, {
       method: 'PUT',
       body: { xml: xml.value },
     })
