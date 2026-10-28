@@ -19,10 +19,15 @@ export default defineEventHandler(async (event) => {
 
   const requested: string[] = [...new Set<string>(body.models
     .filter((m: unknown): m is string => typeof m === 'string' && m.trim().length > 0)
-    .map((m: string) => m.trim().slice(0, 64)))]
+    .map((m: string) => m.trim()))]
 
   if (requested.length === 0) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn ít nhất 1 model để xoá.' })
+  }
+  // Refused, not cut: `model` is VARCHAR(64), so a longer name names no row — cut to 64
+  // it would name ANOTHER model whose name is exactly its first 64 characters.
+  if (requested.some(name => name.length > 64)) {
+    throw createError({ statusCode: 400, statusMessage: 'Tên model dài quá 64 ký tự.' })
   }
 
   const db = getDb()

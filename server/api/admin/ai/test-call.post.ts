@@ -14,21 +14,42 @@ import { checkBudget } from '../../../utils/ai-budget'
  * call that was sent and paid for never reaches the table `checkBudget` sums.
  */
 const USAGE_LOG_FIELD_MAX = 64
+// The chatbot's own ceilings — one visitor message (`CHAT_LIMITS.maxMessageChars`) and
+// a system prompt (`validateChatbotSettingsUpdate`). Every character is a billed token;
+// a test call is no reason for a bigger one.
+const MAX_MESSAGE_CHARS = 10_000
+const MAX_SYSTEM_PROMPT_CHARS = 20_000
 const DEFAULT_SERVICE_KEY = 'test_call'
 const REDACTED_KEY = '[đã ẩn khoá API]'
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 /**
- * The provider's own text with the API key taken out. Providers and proxies echo
- * the credential they rejected ("Incorrect API key provided: sk-…"); the answer and
- * `ai_usage_logs.error_message` (shown in the AI Logs tab) must not carry it. The
- * key is also matched as it appears inside a JSON string.
+ * The key as it can appear in a provider's text: literally, or with any of its
+ * characters written as a JSON escape — `\uXXXX` (either case), `\"`, `\\`, `\/` — and
+ * a body may escape some characters and not others.
+ */
+function secretPattern(secret: string): RegExp {
+  let source = ''
+  for (let index = 0; index < secret.length; index += 1) {
+    const char = secret[index]!
+    const hex = secret.charCodeAt(index).toString(16).padStart(4, '0').replace(/[a-f]/g, digit => `[${digit}${digit.toUpperCase()}]`)
+    const forms = [`\\\\u${hex}`]
+    if (char === '"' || char === '\\' || char === '/') forms.push(`\\\\${escapeRegExp(char)}`)
+    forms.push(escapeRegExp(char))
+    source += `(?:${forms.join('|')})`
+  }
+  return new RegExp(source, 'g')
+}
+
+/**
+ * The provider's text with the API key taken out. Providers and proxies echo the
+ * credential they rejected ("Incorrect API key provided: sk-…"), raw or JSON-escaped;
+ * neither the answer nor `ai_usage_logs.error_message` (shown in the AI Logs tab) may
+ * carry it. Applied to the raw body before it is cut, and to the reply after parsing.
  */
 function withoutSecret(text: string, secret: string): string {
-  let out = text
-  for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1), secret.replace(/\//g, '\\/')])) {
-    if (form) out = out.split(form).join(REDACTED_KEY)
-  }
-  return out
+  return secret ? text.replace(secretPattern(secret), REDACTED_KEY) : text
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -86,6 +107,12 @@ export default defineEventHandler(async (event) => {
   }
   if (model.length > USAGE_LOG_FIELD_MAX) {
     throw createError({ statusCode: 400, statusMessage: `Mã model dài quá ${USAGE_LOG_FIELD_MAX} ký tự.` })
+  }
+  if (message.length > MAX_MESSAGE_CHARS) {
+    throw createError({ statusCode: 400, statusMessage: `Tin nhắn thử dài quá ${MAX_MESSAGE_CHARS} ký tự.` })
+  }
+  if (systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) {
+    throw createError({ statusCode: 400, statusMessage: `Prompt hệ thống dài quá ${MAX_SYSTEM_PROMPT_CHARS} ký tự.` })
   }
 
   const db = getDb()
@@ -245,17 +272,18 @@ export default defineEventHandler(async (event) => {
   }
 
   const durationMs = Date.now() - startTime
-  // Redact BEFORE cutting: a key that straddles the cut would leave its start behind.
-  const text = withoutSecret(Buffer.from(response.body).toString('utf8'), secret)
+  const text = Buffer.from(response.body).toString('utf8')
 
   if (response.status < 200 || response.status >= 300) {
-    const errorMsg = `HTTP ${response.status}: ${text.slice(0, 300) || 'Lỗi từ máy chủ AI'}`
+    // Redact BEFORE cutting: a key that straddles the cut would leave its start behind.
+    const errorMsg = `HTTP ${response.status}: ${withoutSecret(text, secret).slice(0, 300) || 'Lỗi từ máy chủ AI'}`
     await recordFailure(durationMs, errorMsg)
     return { ok: false, model, durationMs, error: errorMsg }
   }
 
   // 7. Parse — a body that is not a JSON object is a failed call, reported in our words
-  // (V8's SyntaxError quotes the start of the text).
+  // (V8's SyntaxError quotes the start of the text). Nothing of the body leaves this
+  // handler but the reply, which is redacted once decoded (step 8).
   const json = parseProviderJson(text)
   if (!json) {
     const errorMsg = 'Phản hồi của nhà cung cấp không phải JSON hợp lệ.'
@@ -282,6 +310,9 @@ export default defineEventHandler(async (event) => {
       }
     }
   }
+
+  // After JSON decoding: a key the body wrote as `\uXXXX` escapes is plain text here.
+  reply = withoutSecret(reply, secret)
 
   if (!reply) {
     reply = '(Model đã phản hồi thành công nhưng không có nội dung chữ)'

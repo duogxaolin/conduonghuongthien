@@ -263,6 +263,21 @@ test('FINDING-R4-5: bulk delete reports and audits what it deleted, not what was
 })
 
 /**
+ * FINDING-R4-11 — severity low (found by the independent check of this slice). Bulk
+ * delete cut every name to 64 characters. The column is VARCHAR(64), so a longer name
+ * names no row — but cut, it named the model whose name is exactly its first 64
+ * characters, and deleted it. A name too long for the column is now a 400.
+ */
+test('FINDING-R4-11: a name longer than the column is refused, not cut into the name of another model', async () => {
+  const exact = 'x'.repeat(64)
+  await harness.db.insert(aiModelPricing).values({ model: exact, provider: 'delify', isActive: true, promptCostPerMillion: '1', completionCostPerMillion: '1' })
+  const before = snapshot()
+  const response = await send('POST', '/api/admin/ai/pricing/bulk-delete', { models: [`${exact}-variant`, 'delify-old'] })
+  assert.equal(response.status, 400)
+  assert.deepEqual(snapshot(), before, 'nothing deleted, nothing audited — not even the valid name beside it')
+})
+
+/**
  * FINDING-R4-6 — severity low. The cost columns are DECIMAL(8,4). A price above
  * 9 999.9999 passed the handler's check (finite, non-negative) and reached MySQL,
  * which under strict sql_mode refuses it (ERROR 1264 "Out of range value", shown

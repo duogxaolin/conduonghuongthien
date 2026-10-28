@@ -21,10 +21,13 @@ import { inspect } from 'node:util'
  *     redirect) — an unsafe stored base URL sends nothing; a provider with no key,
  *     no base URL or a key that no longer decrypts sends nothing;
  *   - the key goes in the provider's own header to the provider's own endpoint
- *     (`…/chat/completions` Bearer, Anthropic `…/v1/messages` + `x-api-key`), and
- *     appears NOWHERE else: not in the answer, not in `ai_usage_logs` (shown in the
- *     AI Logs tab), not in a log line — even when the provider echoes it back
- *     (FINDING-R4-1);
+ *     (`…/chat/completions` Bearer, Anthropic `…/v1/messages` + `x-api-key`); when the
+ *     provider echoes it back — verbatim, or JSON-escaped in any mix of `\uXXXX`, `\"`,
+ *     `\\`, `\/` — it is taken out of the answer, `ai_usage_logs` (shown in the AI Logs
+ *     tab) and the log lines (FINDING-R4-1). What cannot be recognised as the key (a
+ *     re-encoded or partly masked copy) is not claimed;
+ *   - the message and system prompt stay within the chatbot's own ceilings
+ *     (10 000 / 20 000 characters) — every character is billed (FINDING-R4-10);
  *   - every call that went out is recorded once, with the tokens the provider
  *     reported and the cost from `ai_model_pricing`; a call that failed is recorded
  *     as failed with a classified reason; a database failure is not reported as a
@@ -192,17 +195,29 @@ beforeEach(async () => {
   await addProvider('openai', 'https://api.openai.example/v1/')
 })
 
-/** Every 8-character window of the key: a partial echo counts as a leak too. */
-function containsSecret(text: string): boolean {
-  for (let start = 0; start + 8 <= SECRET.length; start += 1) {
-    if (text.includes(SECRET.slice(start, start + 8))) return true
+/** `\uXXXX`, `\"`, `\\`, `\/` decoded — a key written in escapes is still a leak. */
+const decodeJsonEscapes = (text: string) => text
+  .replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+  .replace(/\\(["\\/])/g, '$1')
+/** Every 8-character window of the key, in the text as written or with its escapes decoded: a partial echo counts too. */
+function containsSecret(text: string, secret = SECRET): boolean {
+  const forms = [text, decodeJsonEscapes(text)]
+  for (let start = 0; start + 8 <= secret.length; start += 1) {
+    if (forms.some(form => form.includes(secret.slice(start, start + 8)))) return true
   }
   return false
 }
-function assertKeyNowhere(responseBody: unknown, label = '') {
-  assert.ok(!containsSecret(JSON.stringify(responseBody)), `response ${label}`)
-  for (const row of harness.rows(aiUsageLogs)) assert.ok(!containsSecret(JSON.stringify(row)), `ai_usage_logs ${label}`)
-  for (const line of logged) assert.ok(!containsSecret(line), `log line ${label}: ${line.slice(0, 200)}`)
+/** Every string inside a value (a JSON-encoded copy would hide a `"` behind `\"`). */
+function stringsIn(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (Array.isArray(value)) return value.flatMap(stringsIn)
+  if (value && typeof value === 'object') return Object.values(value).flatMap(stringsIn)
+  return []
+}
+function assertKeyNowhere(responseBody: unknown, label = '', secret = SECRET) {
+  for (const text of stringsIn(responseBody)) assert.ok(!containsSecret(text, secret), `response ${label}: ${text.slice(0, 200)}`)
+  for (const row of harness.rows(aiUsageLogs)) for (const text of stringsIn(row)) assert.ok(!containsSecret(text, secret), `ai_usage_logs ${label}: ${text.slice(0, 200)}`)
+  for (const line of logged) assert.ok(!containsSecret(line, secret), `log line ${label}: ${line.slice(0, 200)}`)
 }
 const usage = () => harness.rows(aiUsageLogs).map(row => ({
   serviceKey: row.serviceKey, provider: row.provider, model: row.model, promptTokens: row.promptTokens, completionTokens: row.completionTokens,
@@ -457,4 +472,67 @@ test('FINDING-R4-3: a service key or model the usage log cannot hold is refused 
   assert.equal((await call({ provider: 'openai', model: 'gpt-4o-mini', serviceKey: 'test_call' })).body.ok, true)
   assert.equal((await call({ provider: 'openai', model: 'gpt-4o-mini', serviceKey: ' translation_article ' })).body.ok, true)
   assert.deepEqual(usage().map(row => row.serviceKey), ['test_call', 'translation_article'])
+})
+
+/** A key with the three characters JSON escapes short (`"`, `\`, `/`), and a long plain run. */
+const SPECIAL = 'sk-"q\\x/y-SPECIAL-KEY-0123456789'
+/** Every character as `\uXXXX` (hex in the given case). */
+const unicodeEscaped = (text: string, upper = false) => [...text].map((char) => {
+  const hex = char.charCodeAt(0).toString(16).padStart(4, '0')
+  return `\\u${upper ? hex.toUpperCase() : hex}`
+}).join('')
+
+/**
+ * FINDING-R4-1, second half (found by the independent check of this slice). The first
+ * fix redacted three spellings of the key in the raw body before `JSON.parse`, so a key
+ * the body wrote as `\uXXXX` escapes was decoded into `reply` whole; a PHP-style body
+ * (`\"` AND `\/` in the same string) or one mixing literal and escaped characters went
+ * into the error text and `ai_usage_logs` unrecognised. Now one pattern matches every
+ * mix of literal and escaped characters, applied to the raw body before the cut, and
+ * the reply is redacted again after decoding.
+ */
+test('FINDING-R4-1: a key echoed in JSON escapes — \\u, \\", \\\\, \\/, in any mix — is taken out too', async () => {
+  await addProvider('special', 'https://api.openai.example/v1', storedKey(SPECIAL))
+  const call2 = () => call({ provider: 'special', model: 'gpt-4o-mini' })
+
+  // 2xx: the reply is decoded from `\uXXXX`.
+  network.reply = { status: 200, headers: {}, body: `{"choices":[{"message":{"content":"Khoá: ${unicodeEscaped(SPECIAL)}"}}]}` }
+  const decoded = await call2()
+  assert.equal(decoded.body.ok, true)
+  assert.equal(decoded.body.reply, 'Khoá: [đã ẩn khoá API]')
+  assertKeyNowhere(decoded.body, 'reply from \\u escapes', SPECIAL)
+
+  // Error bodies are relayed as text: PHP-style escapes, then a mix with upper-case hex.
+  const phpStyle = JSON.stringify(SPECIAL).slice(1, -1).replace(/\//g, '\\/')
+  const mixed = `${SPECIAL.slice(0, 4)}${unicodeEscaped(SPECIAL.slice(4, 9), true)}${JSON.stringify(SPECIAL.slice(9)).slice(1, -1)}`
+  for (const [label, echoed] of [['php-style', phpStyle], ['mixed', mixed]] as const) {
+    network.reply = { status: 401, headers: {}, body: `{"error":{"message":"Incorrect API key provided: ${echoed}"}}` }
+    const rejected = await call2()
+    assert.equal(rejected.body.ok, false, label)
+    assert.match(String(rejected.body.error), /Incorrect API key provided: \[đã ẩn khoá API\]"/, label)
+    assertKeyNowhere(rejected.body, label, SPECIAL)
+  }
+  assert.equal(network.sent.length, 3)
+})
+
+/**
+ * FINDING-R4-10 — severity low (found by the independent check of this slice). The
+ * message and the system prompt had no length limit: a 2 MB message was sent and
+ * billed. They now stop at the chatbot's own ceilings — 10 000 characters for one
+ * message (`CHAT_LIMITS.maxMessageChars`), 20 000 for a system prompt
+ * (`validateChatbotSettingsUpdate`) — with a 400 before the paid call.
+ */
+test('FINDING-R4-10: a message over 10 000 or a system prompt over 20 000 characters is refused before the paid call', async () => {
+  for (const body of [
+    { provider: 'openai', model: 'gpt-4o-mini', message: 'a'.repeat(10_001) },
+    { provider: 'openai', model: 'gpt-4o-mini', systemPrompt: 's'.repeat(20_001) },
+  ]) {
+    assert.equal((await call(body)).status, 400, Object.keys(body).join(','))
+  }
+  assert.deepEqual(network.sent, [])
+  assert.deepEqual(usage(), [])
+
+  // At the ceiling (after trimming) it goes out.
+  assert.equal((await call({ provider: 'openai', model: 'gpt-4o-mini', message: ` ${'a'.repeat(10_000)} `, systemPrompt: 's'.repeat(20_000) })).body.ok, true)
+  assert.equal(network.sent.length, 1)
 })
