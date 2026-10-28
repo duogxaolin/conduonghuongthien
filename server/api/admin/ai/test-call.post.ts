@@ -1,12 +1,52 @@
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
-import { aiProviders, aiModelPricing } from '../../../db/schema'
+import { aiProviders, aiModelPricing, aiServiceConfigs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { decryptAiSecret } from '../../../utils/ai/crypto'
-import { safeProviderRequest } from '../../../utils/chatbot/outbound'
+import { ChatbotOutboundError, safeProviderRequest, type SafeProviderResponse } from '../../../utils/chatbot/outbound'
 import { calculateAiCost } from '../../../utils/ai-cost'
 import { logAiUsage } from '../../../utils/ai-usage'
 import { checkBudget } from '../../../utils/ai-budget'
+
+/**
+ * `ai_usage_logs.model` and `.service_key` are VARCHAR(64). A longer value fails the
+ * insert under MySQL's strict sql_mode, `logAiUsage` swallows that by design, and a
+ * call that was sent and paid for never reaches the table `checkBudget` sums.
+ */
+const USAGE_LOG_FIELD_MAX = 64
+const DEFAULT_SERVICE_KEY = 'test_call'
+const REDACTED_KEY = '[đã ẩn khoá API]'
+
+/**
+ * The provider's own text with the API key taken out. Providers and proxies echo
+ * the credential they rejected ("Incorrect API key provided: sk-…"); the answer and
+ * `ai_usage_logs.error_message` (shown in the AI Logs tab) must not carry it. The
+ * key is also matched as it appears inside a JSON string.
+ */
+function withoutSecret(text: string, secret: string): string {
+  let out = text
+  for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1), secret.replace(/\//g, '\\/')])) {
+    if (form) out = out.split(form).join(REDACTED_KEY)
+  }
+  return out
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The answer as a JSON object (a trailing SSE `data: [DONE]` cut off), or null. */
+function parseProviderJson(text: string): Record<string, unknown> | null {
+  let raw = text.trim()
+  const lastBrace = raw.lastIndexOf('}')
+  if (lastBrace !== -1) raw = raw.slice(0, lastBrace + 1)
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return isRecord(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * Test call a specific AI model with a real prompt/message.
@@ -16,6 +56,10 @@ import { checkBudget } from '../../../utils/ai-budget'
  *
  * Sends an actual chat completion request to the provider's API.
  * Returns the model's text response, duration (ms), token usage, and estimated cost.
+ *
+ * Every database read happens BEFORE the paid call: after it only `logAiUsage` runs
+ * (which never throws), so a database failure cannot be reported as a provider
+ * failure or leave a paid call recorded as failed at zero cost.
  */
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -32,6 +76,7 @@ export default defineEventHandler(async (event) => {
   const message = typeof body.message === 'string' && body.message.trim() ? body.message.trim() : 'Xin chào! Bạn là ai?'
   const temperature = typeof body.temperature === 'number' && Number.isFinite(body.temperature) ? Math.max(0, Math.min(body.temperature, 2)) : 0.3
   const maxTokens = typeof body.maxTokens === 'number' && Number.isFinite(body.maxTokens) ? Math.max(1, Math.min(body.maxTokens, 1024)) : 150
+  const requestedServiceKey = typeof body.serviceKey === 'string' && body.serviceKey.trim() ? body.serviceKey.trim() : DEFAULT_SERVICE_KEY
 
   if (!providerName) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn nhà cung cấp.' })
@@ -39,8 +84,24 @@ export default defineEventHandler(async (event) => {
   if (!model) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn hoặc nhập mã model cần kiểm tra.' })
   }
+  if (model.length > USAGE_LOG_FIELD_MAX) {
+    throw createError({ statusCode: 400, statusMessage: `Mã model dài quá ${USAGE_LOG_FIELD_MAX} ký tự.` })
+  }
 
   const db = getDb()
+
+  // The call is billed to `test_call` or to a configured service (the "Prompt dịch
+  // vụ" tab) — never to a label the client made up. The stored spelling is kept.
+  let serviceKey = DEFAULT_SERVICE_KEY
+  if (requestedServiceKey !== DEFAULT_SERVICE_KEY) {
+    const [service] = await db.select({ serviceKey: aiServiceConfigs.serviceKey }).from(aiServiceConfigs)
+      .where(eq(aiServiceConfigs.serviceKey, requestedServiceKey))
+      .limit(1)
+    if (!service) {
+      throw createError({ statusCode: 400, statusMessage: 'Dịch vụ AI không tồn tại.' })
+    }
+    serviceKey = service.serviceKey
+  }
 
   // 0. Check quota/budget before making test call
   const budgetResult = await checkBudget(db, 'test_call')
@@ -82,7 +143,12 @@ export default defineEventHandler(async (event) => {
     return { ok: false, error: 'Không thể giải mã API key của nhà cung cấp. Vui lòng cập nhật lại key.' }
   }
 
-  // 3. Build outbound request
+  // 3. Pricing, read now so nothing touches the database between the call and its record.
+  const [pricing] = await db.select().from(aiModelPricing)
+    .where(eq(aiModelPricing.model, model))
+    .limit(1)
+
+  // 4. Build outbound request
   const isAnthropic = providerName === 'anthropic'
   let urlStr: string
   let headers: Record<string, string>
@@ -135,7 +201,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 4. Resolve allowed host for SSRF protection
+  // 5. Resolve allowed host for SSRF protection
   let allowedHost: string
   try {
     allowedHost = new URL(urlStr).hostname
@@ -143,11 +209,24 @@ export default defineEventHandler(async (event) => {
     return { ok: false, error: `Base URL không hợp lệ: ${urlStr}` }
   }
 
-  // 5. Measure call time and execute
-  const startTime = Date.now()
+  const usageBase = { serviceKey, provider: providerName, model, userId: adminUser.id ?? null }
+  const recordFailure = (executionMs: number, errorMessage: string) => logAiUsage(db, {
+    ...usageBase,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    costUsd: 0,
+    costVnd: 0,
+    executionMs,
+    success: false,
+    errorMessage,
+  })
 
+  // 6. Measure call time and execute
+  const startTime = Date.now()
+  let response: SafeProviderResponse
   try {
-    const response = await safeProviderRequest({
+    response = await safeProviderRequest({
       url: urlStr,
       allowedHosts: [allowedHost],
       method: 'POST',
@@ -156,174 +235,116 @@ export default defineEventHandler(async (event) => {
       timeoutMs: 20_000,
       maxResponseBytes: 131_072,
     })
-
+  } catch (error) {
     const durationMs = Date.now() - startTime
+    // `safeProviderRequest` throws classified errors whose message is written for
+    // the client; anything else is reported without its text.
+    const msg = error instanceof ChatbotOutboundError ? error.message : 'Lỗi kết nối'
+    await recordFailure(durationMs, msg)
+    return { ok: false, model, durationMs, error: `Thất bại khi gọi API: ${msg}` }
+  }
 
-    if (response.status < 200 || response.status >= 300) {
-      const errBody = Buffer.from(response.body).toString('utf8').slice(0, 300)
-      const serviceKey = typeof body.serviceKey === 'string' && body.serviceKey.trim()
-        ? body.serviceKey.trim()
-        : 'test_call'
-      const errorMsg = `HTTP ${response.status}: ${errBody || 'Lỗi từ máy chủ AI'}`
+  const durationMs = Date.now() - startTime
+  // Redact BEFORE cutting: a key that straddles the cut would leave its start behind.
+  const text = withoutSecret(Buffer.from(response.body).toString('utf8'), secret)
 
-      await logAiUsage(db, {
-        serviceKey,
-        provider: providerName,
-        model,
-        promptTokens: 0,
-        completionTokens: 0,
-        totalTokens: 0,
-        costUsd: 0,
-        costVnd: 0,
-        executionMs: durationMs,
-        userId: adminUser.id ?? null,
-        success: false,
-        errorMessage: errorMsg,
-      })
+  if (response.status < 200 || response.status >= 300) {
+    const errorMsg = `HTTP ${response.status}: ${text.slice(0, 300) || 'Lỗi từ máy chủ AI'}`
+    await recordFailure(durationMs, errorMsg)
+    return { ok: false, model, durationMs, error: errorMsg }
+  }
 
-      return {
-        ok: false,
-        model,
-        durationMs,
-        error: errorMsg,
+  // 7. Parse — a body that is not a JSON object is a failed call, reported in our words
+  // (V8's SyntaxError quotes the start of the text).
+  const json = parseProviderJson(text)
+  if (!json) {
+    const errorMsg = 'Phản hồi của nhà cung cấp không phải JSON hợp lệ.'
+    await recordFailure(durationMs, errorMsg)
+    return { ok: false, model, durationMs, error: `Thất bại khi gọi API: ${errorMsg}` }
+  }
+
+  // 8. Extract reply text
+  let reply = ''
+  if (isAnthropic) {
+    const content = json.content
+    if (Array.isArray(content) && content.length > 0 && isRecord(content[0])) {
+      const firstBlock = content[0]
+      if (typeof firstBlock.text === 'string') {
+        reply = firstBlock.text
       }
     }
-
-    // 6. Clean response body (strip trailing SSE data: [DONE] if present)
-    let rawBody = Buffer.from(response.body).toString('utf8').trim()
-    const lastBrace = rawBody.lastIndexOf('}')
-    if (lastBrace !== -1) {
-      rawBody = rawBody.slice(0, lastBrace + 1)
-    }
-
-    const json = JSON.parse(rawBody) as Record<string, unknown>
-
-    // 7. Extract reply text
-    let reply = ''
-    if (isAnthropic) {
-      const content = json.content
-      if (Array.isArray(content) && content.length > 0 && typeof content[0] === 'object' && content[0] !== null) {
-        const firstBlock = content[0]
-        if ('text' in firstBlock && typeof firstBlock.text === 'string') {
-          reply = firstBlock.text
-        }
-      }
-    } else {
-      const choices = json.choices
-      if (Array.isArray(choices) && choices.length > 0 && typeof choices[0] === 'object' && choices[0] !== null) {
-        const firstChoice = choices[0]
-        if ('message' in firstChoice && typeof firstChoice.message === 'object' && firstChoice.message !== null) {
-          const msg = firstChoice.message
-          if ('content' in msg && typeof msg.content === 'string') {
-            reply = msg.content
-          }
-        }
+  } else {
+    const choices = json.choices
+    if (Array.isArray(choices) && choices.length > 0 && isRecord(choices[0])) {
+      const msg = choices[0].message
+      if (isRecord(msg) && typeof msg.content === 'string') {
+        reply = msg.content
       }
     }
+  }
 
-    if (!reply) {
-      reply = '(Model đã phản hồi thành công nhưng không có nội dung chữ)'
-    }
+  if (!reply) {
+    reply = '(Model đã phản hồi thành công nhưng không có nội dung chữ)'
+  }
 
-    // 8. Extract token usage directly from provider response (matches Delify receipts 100%)
-    let promptTokens = 0
-    let completionTokens = 0
-    if ('usage' in json && typeof json.usage === 'object' && json.usage !== null) {
-      const u = json.usage
-      if ('prompt_tokens' in u && typeof u.prompt_tokens === 'number') promptTokens = u.prompt_tokens
-      else if ('input_tokens' in u && typeof u.input_tokens === 'number') promptTokens = u.input_tokens
+  // 9. Extract token usage directly from provider response (matches Delify receipts 100%)
+  let promptTokens = 0
+  let completionTokens = 0
+  if (isRecord(json.usage)) {
+    const u = json.usage
+    if (typeof u.prompt_tokens === 'number') promptTokens = u.prompt_tokens
+    else if (typeof u.input_tokens === 'number') promptTokens = u.input_tokens
 
-      if ('completion_tokens' in u && typeof u.completion_tokens === 'number') completionTokens = u.completion_tokens
-      else if ('output_tokens' in u && typeof u.output_tokens === 'number') completionTokens = u.output_tokens
-    }
-    // Delify Router completions API offset of 2000 tokens vs official receipt API
-    if (providerName === 'delify' && promptTokens >= 2000) {
-      promptTokens -= 2000
-    }
-    // Fallback only if provider returned 0 tokens:
-    if (!promptTokens) {
-      promptTokens = Math.max(1, Math.ceil(message.length / 3.5))
-    }
-    if (!completionTokens) {
-      completionTokens = Math.max(1, Math.ceil(reply.length / 3.5))
-    }
-    // 9. Estimate cost if pricing exists
-    let costUsd = 0
-    let costVnd = 0
-    const [pricing] = await db.select().from(aiModelPricing)
-      .where(eq(aiModelPricing.model, model))
-      .limit(1)
-
-    if (pricing) {
-      const costResult = calculateAiCost(model, promptTokens, completionTokens, {
-        model,
-        promptCostPerMillion: Number(pricing.promptCostPerMillion),
-        completionCostPerMillion: Number(pricing.completionCostPerMillion),
-      })
-      costUsd = costResult.costUsd
-      costVnd = costResult.costVnd
-    }
-
-    const serviceKey = typeof body.serviceKey === 'string' && body.serviceKey.trim()
-      ? body.serviceKey.trim()
-      : 'test_call'
-
-    // 10. Record usage in ai_usage_logs (tracked in call logs and billing!)
-    await logAiUsage(db, {
-      serviceKey,
-      provider: providerName,
+    if (typeof u.completion_tokens === 'number') completionTokens = u.completion_tokens
+    else if (typeof u.output_tokens === 'number') completionTokens = u.output_tokens
+  }
+  // Delify Router completions API offset of 2000 tokens vs official receipt API
+  if (providerName === 'delify' && promptTokens >= 2000) {
+    promptTokens -= 2000
+  }
+  // Fallback only if provider returned 0 tokens:
+  if (!promptTokens) {
+    promptTokens = Math.max(1, Math.ceil(message.length / 3.5))
+  }
+  if (!completionTokens) {
+    completionTokens = Math.max(1, Math.ceil(reply.length / 3.5))
+  }
+  // 10. Estimate cost if pricing exists
+  let costUsd = 0
+  let costVnd = 0
+  if (pricing) {
+    const costResult = calculateAiCost(model, promptTokens, completionTokens, {
       model,
+      promptCostPerMillion: Number(pricing.promptCostPerMillion),
+      completionCostPerMillion: Number(pricing.completionCostPerMillion),
+    })
+    costUsd = costResult.costUsd
+    costVnd = costResult.costVnd
+  }
+
+  // 11. Record usage in ai_usage_logs (tracked in call logs and billing!)
+  await logAiUsage(db, {
+    ...usageBase,
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+    costUsd,
+    costVnd,
+    executionMs: durationMs,
+    success: true,
+  })
+
+  return {
+    ok: true,
+    model,
+    provider: providerName,
+    reply,
+    durationMs,
+    usage: {
       promptTokens,
       completionTokens,
       totalTokens: promptTokens + completionTokens,
-      costUsd,
-      costVnd,
-      executionMs: durationMs,
-      userId: adminUser.id ?? null,
-      success: true,
-    })
-
-    return {
-      ok: true,
-      model,
-      provider: providerName,
-      reply,
-      durationMs,
-      usage: {
-        promptTokens,
-        completionTokens,
-        totalTokens: promptTokens + completionTokens,
-      },
-      costVnd,
-    }
-  } catch (error) {
-    const durationMs = Date.now() - startTime
-    const msg = error instanceof Error ? error.message : 'Lỗi kết nối'
-
-    const serviceKey = typeof body.serviceKey === 'string' && body.serviceKey.trim()
-      ? body.serviceKey.trim()
-      : 'test_call'
-
-    await logAiUsage(db, {
-      serviceKey,
-      provider: providerName,
-      model,
-      promptTokens: 0,
-      completionTokens: 0,
-      totalTokens: 0,
-      costUsd: 0,
-      costVnd: 0,
-      executionMs: durationMs,
-      userId: adminUser.id ?? null,
-      success: false,
-      errorMessage: msg,
-    })
-
-    return {
-      ok: false,
-      model,
-      durationMs,
-      error: `Thất bại khi gọi API: ${msg}`,
-    }
+    },
+    costVnd,
   }
 })
