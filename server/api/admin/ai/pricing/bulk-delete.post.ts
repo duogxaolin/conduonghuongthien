@@ -17,17 +17,30 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Danh sách models không hợp lệ.' })
   }
 
-  const models = body.models
+  const requested: string[] = [...new Set<string>(body.models
     .filter((m: unknown): m is string => typeof m === 'string' && m.trim().length > 0)
-    .map((m: string) => m.trim().slice(0, 64))
+    .map((m: string) => m.trim()))]
 
-  if (models.length === 0) {
+  if (requested.length === 0) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn ít nhất 1 model để xoá.' })
+  }
+  // Refused, not cut: `model` is VARCHAR(64), so a longer name names no row — cut to 64
+  // it would name ANOTHER model whose name is exactly its first 64 characters.
+  if (requested.some(name => name.length > 64)) {
+    throw createError({ statusCode: 400, statusMessage: 'Tên model dài quá 64 ký tự.' })
   }
 
   const db = getDb()
 
-  await db.transaction(async (tx) => {
+  // The count and the audit line are what was deleted, not what was asked: the rows
+  // found are locked until the delete commits, and a name never in the list (or sent
+  // twice) is not reported as deleted.
+  const deleted = await db.transaction(async (tx) => {
+    const found = await tx.select({ model: aiModelPricing.model }).from(aiModelPricing)
+      .where(inArray(aiModelPricing.model, requested))
+      .for('update')
+    const models = found.map(row => row.model)
+    if (models.length === 0) return models
     await tx.delete(aiModelPricing).where(inArray(aiModelPricing.model, models))
     await tx.insert(activityLogs).values({
       userId: adminUser.id ?? null,
@@ -40,7 +53,8 @@ export default defineEventHandler(async (event) => {
         models,
       },
     })
+    return models
   })
 
-  return { ok: true, deleted: models.length }
+  return { ok: true, deleted: deleted.length }
 })

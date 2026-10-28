@@ -58,11 +58,17 @@ export default defineEventHandler(async (event) => {
   if (typeof body.provider === 'string' && body.provider.trim()) {
     patch.provider = body.provider.trim().slice(0, 32)
   }
+  // `null` clears, like an empty string: the edit form sends `value || null` for an
+  // emptied box (AiServicesTab.vue).
   if (typeof body.systemPrompt === 'string') {
     patch.systemPrompt = body.systemPrompt || null
+  } else if (body.systemPrompt === null) {
+    patch.systemPrompt = null
   }
   if (typeof body.model === 'string') {
     patch.model = body.model.trim().slice(0, 64) || null
+  } else if (body.model === null) {
+    patch.model = null
   }
   const temp = clampTemp(body.temperature)
   if (temp !== null) patch.temperature = temp

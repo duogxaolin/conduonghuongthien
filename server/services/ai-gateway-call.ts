@@ -44,7 +44,7 @@ import {
   buildProviderChatCall, resolveProviderPolicy, type ProviderCall,
 } from '../utils/chatbot/providers'
 import type { AiCallInput, AiCallResult } from './ai-gateway-types'
-import { loadPricing, loadProvider, loadServiceConfig, policyForProvider, substituteVariables } from './ai-gateway-config'
+import { effectiveSystemPrompt, loadPricing, loadProvider, loadServiceConfig, policyForProvider, substituteVariables } from './ai-gateway-config'
 
 // Giới hạn đường ra của vòng gọi công cụ. Bước không stream của vòng công cụ
 // trước đây dùng `fetch` trần — không hạn giờ, không trần dung lượng. Hạn giờ bằng
@@ -116,7 +116,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
   }
 
   // 4. Substitute template variables (spec R10.1 step 4, R5.5).
-  const rawSystemPrompt = input.systemPrompt ?? config.systemPrompt ?? ''
+  const rawSystemPrompt = input.systemPrompt ?? effectiveSystemPrompt(serviceKey, config.systemPrompt)
   const systemPrompt = substituteVariables(
     rawSystemPrompt,
     input.variables ?? {},
