@@ -57,7 +57,37 @@ export function useLanguageBatchTranslate({ toast, confirm, languages, viTransla
     progressStats.value.stopped = true
   }
 
+  /**
+   * The language being translated while a run is on — a single language, or the whole of
+   * "Dịch tất cả còn thiếu" (held between its languages too); `null` when nothing runs.
+   * The dialog, its progress, its log and the stop flag exist once: a second batch started
+   * while one ran (the dialog closed with "Đóng cửa sổ" leaves the other languages' buttons
+   * enabled) used to reset them under the first — mixed progress, "Hoàn tất" while one still
+   * ran, and a "Dừng lại" the first never saw (FINDING-L2, wave3 4.2). One run at a time: a
+   * second start shows the running batch's dialog and says which language it is on.
+   */
+  let runningLangName: string | null = null
+
+  /** True (and the officer told) when a run is already on. */
+  function refuseWhileRunning(): boolean {
+    if (runningLangName === null) return false
+    showTranslateProgressModal.value = true
+    toast.info(`Đang dịch AI cho ${runningLangName} — chờ xong hoặc bấm "Dừng lại" rồi chạy tiếp.`)
+    return true
+  }
+
+  /** One language: a card's "Dịch AI (n)" or the table's "Dịch AI". */
   async function startBatchTranslateWithProgress(langCode: string, langName: string) {
+    if (refuseWhileRunning()) return
+    try {
+      await translateLanguage(langCode, langName)
+    } finally {
+      runningLangName = null
+    }
+  }
+
+  async function translateLanguage(langCode: string, langName: string) {
+    runningLangName = langName
     stopTranslateSignal = false
     progressModalTitle.value = `Tiến trình Dịch AI: ${getFlagEmoji(langCode)} ${langName} (${langCode})`
     progressLog.value = []
@@ -138,6 +168,7 @@ export function useLanguageBatchTranslate({ toast, confirm, languages, viTransla
   }
 
   async function translateAllLanguagesMissing() {
+    if (refuseWhileRunning()) return
     const targets = languages.value.filter((l) => l.isActive && !l.isDefault && (l.stats?.missingKeys || 0) > 0)
     if (targets.length === 0) {
       toast.info('Tất cả ngôn ngữ đang hoạt động đã được dịch đầy đủ 100%!')
@@ -150,9 +181,13 @@ export function useLanguageBatchTranslate({ toast, confirm, languages, viTransla
     })) return
 
     translatingAll.value = true
-    for (const lang of targets) {
-      await startBatchTranslateWithProgress(lang.code, lang.name)
-      if (stopTranslateSignal) break
+    try {
+      for (const lang of targets) {
+        await translateLanguage(lang.code, lang.name)
+        if (stopTranslateSignal) break
+      }
+    } finally {
+      runningLangName = null
     }
     translatingAll.value = false
     await reload()

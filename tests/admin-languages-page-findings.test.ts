@@ -162,6 +162,40 @@ describe('FINDING-L2 — one AI batch at a time', () => {
     assert.equal(dialog(ctx.page).props['aria-label'], 'Tiến trình Dịch AI: 🇬🇧 English (en)')
   })
 
+  it('between two languages of "Dịch tất cả còn thiếu" (its reload still out), a card\'s "Dịch AI" starts nothing; French is translated once (RED before: twice)', async (t) => {
+    const server = languagesServer()
+    server.state.rows.fr![1]!.value = null
+    const held: NetCall[] = []
+    const ctx = await openPage(t, server)
+    server.state.override = call => (wire(call) === 'GET /api/admin/languages' && !held.length ? (held.push(call), HOLD) : undefined)
+    const from = ctx.calls.length
+    tap(header(ctx.page, 'Dịch tất cả còn thiếu'))
+    await ctx.settle()
+    assert.equal(held.length, 1, 'English is done; the reload after it is out')
+    tap(button(card(ctx.page, 'fr'), 'Dịch AI ('))
+    await ctx.settle()
+    assert.equal(lastToast(ctx.toasts, 'info'), 'Đang dịch AI cho English — chờ xong hoặc bấm "Dừng lại" rồi chạy tiếp.')
+    server.answer(held[0]!)
+    await ctx.settle()
+    const frChunks = ctx.calls.slice(from).filter(c => wire(c) === 'POST /api/admin/languages/ai-translate-chunk' && (c.body as { langCode: string }).langCode === 'fr')
+    assert.equal(frChunks.length, 1)
+    assert.equal(ctx.toasts.filter(x => x.type === 'success').map(x => x.message).join(' | '), 'Đã hoàn tất dịch 1/1 key cho English! | Đã hoàn tất dịch 1/1 key cho French!')
+  })
+
+  it('once a run is over, the next one starts', async (t) => {
+    const ctx = await openPage(t)
+    await click(button(card(ctx.page, 'en'), 'Dịch AI ('))
+    await ctx.settle()
+    assert.equal(lastToast(ctx.toasts, 'success'), 'Đã hoàn tất dịch 1/1 key cho English!')
+    ctx.server.state.rows.fr![1]!.value = null
+    await click(button(dialog(ctx.page), 'Hoàn tất & Đóng'))
+    await click(button(ctx.page, 'Làm mới CSDL'))
+    await ctx.settle()
+    await click(button(card(ctx.page, 'fr'), 'Dịch AI ('))
+    await ctx.settle()
+    assert.equal(lastToast(ctx.toasts, 'success'), 'Đã hoàn tất dịch 1/1 key cho French!')
+  })
+
   it('"Dừng lại" still stops the batch that runs (RED before: a second start had cleared the stop)', async (t) => {
     const server = languagesServer()
     for (let i = 1; i <= 12; i++) server.state.rows.vi!.push({ group: 'bulk', key: `k${i}`, value: `Giá trị ${i}`, isAiTranslated: false })
