@@ -189,4 +189,15 @@ describe('pages/admin/login.vue', () => {
     assert.match(alertText(wrong.page), /Tài khoản hoặc mật khẩu không đúng\./)
     assert.doesNotMatch(alertText(wrong.page), OFETCH_LINE)
   })
+
+  // Batch D: the public settings read lost its `$fetch` cast (typed by the Nitro route).
+  it('the public settings choose the logos: both, the main one only (""), or the default small one', async () => {
+    const logos = (opened: MountedAdminPage) => findAll(opened.page.root, el => el.tag === 'img').map(el => [el.props.alt, el.props.src])
+    const both = await openLogin({ 'GET /api/public/settings': () => json({ ok: true, settings: { logo_url: '/uploads/con.png', main_logo_url: ' /uploads/chinh.png ' } }) })
+    assert.deepEqual(logos(both), [['Logo cơ quan chủ quản', '/uploads/chinh.png'], ['Logo Con Đường Hướng Thiện', '/uploads/con.png']])
+    const mainOnly = await openLogin({ 'GET /api/public/settings': () => json({ ok: true, settings: { logo_url: '', main_logo_url: '/uploads/chinh.png' } }) })
+    assert.deepEqual(logos(mainOnly), [['Logo cơ quan chủ quản', '/uploads/chinh.png']])
+    const unset = await openLogin({ 'GET /api/public/settings': () => json({ ok: true, settings: {} }) })
+    assert.deepEqual(logos(unset), [['Logo Con Đường Hướng Thiện', '/Logo.png']])
+  })
 })

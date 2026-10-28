@@ -23,5 +23,9 @@ export default defineEventHandler(async (event) => {
     publishImmediately: Boolean(body?.publishImmediately),
   })
 
+  // "Một lượt khác đang chạy" là một lời TỪ CHỐI: 409 + câu của dịch vụ. Trước đây là 200
+  // `{ ok: false }`, và tab "Dịch toàn cục" báo nó bằng toast xanh "thành công"
+  // (tests/universal-translate-refusal-behavior.test.ts).
+  if (!result.ok) throw createError({ statusCode: 409, statusMessage: result.message })
   return result
 })

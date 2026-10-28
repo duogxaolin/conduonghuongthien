@@ -9,42 +9,19 @@
  * progress banner). Loading là spinner trong card "Trạng thái quét", không
  * có skeleton placeholder.
  */
-import { errorMessage } from '~/utils/errorMessage'
+import type {
+  UniversalCancelResponse, UniversalCoverageResponse, UniversalStartResponse, UniversalStats, UniversalTask, UniversalTaskResponse,
+} from '~/types/admin-languages-api'
+import { errorMessage, errorStatus } from '~/utils/errorMessage'
 import { getFlagEmoji } from '~/utils/language-flags'
-
-type UniversalStats = {
-  totalArticles: number
-  totalBlocks: number
-  totalUiKeys: number
-  languages: Array<{
-    code: string
-    name: string
-    nativeName: string
-    uiMissing: number
-    blocksMissing: number
-    articlesMissing: number
-    totalMissing: number
-    percent: number
-  }>
-}
-
-type UniversalTask = {
-  active: boolean
-  phase: string
-  currentItem: string
-  totalItems: number
-  processedItems: number
-  percent: number
-  targetLangs: string[]
-  startedAt: string | null
-  completedAt: string | null
-  error: string | null
-}
 
 const toast = useToast()
 
 const universalStats = ref<UniversalStats | null>(null)
-const universalLoading = ref(false)
+// Tab quét ngay khi mở: "Đang quét..." từ khung hình đầu, không phải "—".
+const universalLoading = ref(true)
+/** Một con số của lượt quét — chưa quét xong "Đang quét...", quét hỏng "—", không bao giờ một số tự đặt. */
+const stat = (n: number | undefined) => (universalStats.value ? n : universalLoading.value ? 'Đang quét...' : '—')
 const universalTask = ref<UniversalTask | null>(null)
 const universalSelectedLangs = ref<string[]>([])
 const universalOptions = reactive({
@@ -57,11 +34,14 @@ const universalOptions = reactive({
 const universalRunning = ref(false)
 const universalCancelling = ref(false)
 let universalPollTimer: number | undefined
+// Rời tab khi một lượt đọc trạng thái còn bay: câu trả lời "đang chạy" về sau không được mở
+// lại một vòng hỏi 2 s mà không gì dừng được nữa.
+let disposed = false
 
 async function loadCoverage() {
   universalLoading.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; stats: UniversalStats }>)(`/api/admin/system/translation-coverage`)
+    const res = await adminFetch<UniversalCoverageResponse>(`/api/admin/system/translation-coverage`)
     if (res.ok && res.stats) {
       universalStats.value = res.stats
       if (universalSelectedLangs.value.length === 0) {
@@ -78,7 +58,7 @@ async function loadCoverage() {
 
 async function checkUniversalTaskStatus() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; task: UniversalTask }>)(`/api/admin/system/universal-translate-status`)
+    const res = await adminFetch<UniversalTaskResponse>(`/api/admin/system/universal-translate-status`)
     if (res.ok && res.task) {
       universalTask.value = res.task
       if (res.task.active) {
@@ -93,12 +73,17 @@ async function checkUniversalTaskStatus() {
 }
 
 function startUniversalPolling() {
-  if (universalPollTimer) return
+  if (universalPollTimer || disposed) return
   universalPollTimer = window.setInterval(async () => {
     await checkUniversalTaskStatus()
-    if (!universalTask.value?.active) {
+    if (disposed) return // rời tab khi lượt hỏi còn bay: không báo, không quét lại
+    const ended: UniversalTask | null = universalTask.value
+    if (!ended?.active) {
       stopUniversalPolling()
-      toast.success('Quá trình dịch toàn cục đã hoàn tất!')
+      // Dừng không có nghĩa là xong: `completedAt` chỉ có khi xong, `error` khi hỏng giữa chừng.
+      if (ended?.error) toast.error('Tác vụ dịch toàn cục gặp lỗi và đã dừng giữa chừng.')
+      else if (ended?.completedAt) toast.success('Quá trình dịch toàn cục đã hoàn tất!')
+      else toast.info('Đã dừng tác vụ dịch toàn cục.')
       await loadCoverage()
     }
   }, 2000)
@@ -114,7 +99,7 @@ function stopUniversalPolling() {
 async function cancelUniversalTranslate() {
   universalCancelling.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/system/universal-translate-cancel`, {
+    const res = await adminFetch<UniversalCancelResponse>(`/api/admin/system/universal-translate-cancel`, {
       method: 'POST',
     })
     toast.info(res.message || 'Đã gửi yêu cầu dừng tác vụ.')
@@ -134,7 +119,7 @@ async function runUniversalTranslate() {
 
   universalRunning.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/system/universal-translate`, {
+    const res = await adminFetch<UniversalStartResponse>(`/api/admin/system/universal-translate`, {
       method: 'POST',
       body: {
         targetLangs: universalSelectedLangs.value,
@@ -150,6 +135,8 @@ async function runUniversalTranslate() {
     startUniversalPolling()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi khi bắt đầu dịch toàn cục.'))
+    // 409: một lượt khác đang chạy — đọc lại trạng thái để cán bộ thấy lượt đó và tiến độ của nó.
+    if (errorStatus(err) === 409) await checkUniversalTaskStatus()
   } finally {
     universalRunning.value = false
   }
@@ -159,9 +146,7 @@ onMounted(() => {
   loadCoverage()
 })
 
-onUnmounted(() => {
-  stopUniversalPolling()
-})
+onUnmounted(() => { disposed = true; stopUniversalPolling() })
 </script>
 
 <template>
@@ -177,7 +162,7 @@ onUnmounted(() => {
           </span>
         </div>
         <div>
-          <div class="text-2xl font-black text-brand-950">{{ universalStats?.totalUiKeys || 108 }}</div>
+          <div class="text-2xl font-black text-brand-950">{{ stat(universalStats?.totalUiKeys) }}</div>
           <p class="m-0 text-xs text-ink-muted mt-1">Chuỗi văn bản nút bấm, nhãn, chân trang</p>
         </div>
       </div>
@@ -191,7 +176,7 @@ onUnmounted(() => {
           </span>
         </div>
         <div>
-          <div class="text-2xl font-black text-brand-950">{{ universalStats?.totalBlocks || 'Đang quét...' }}</div>
+          <div class="text-2xl font-black text-brand-950">{{ stat(universalStats?.totalBlocks) }}</div>
           <p class="m-0 text-xs text-ink-muted mt-1">Trang chủ, Giới thiệu, Liên hệ & trang tùy biến</p>
         </div>
       </div>
@@ -205,7 +190,7 @@ onUnmounted(() => {
           </span>
         </div>
         <div>
-          <div class="text-2xl font-black text-brand-950">{{ universalStats?.totalArticles || 'Đang quét...' }}</div>
+          <div class="text-2xl font-black text-brand-950">{{ stat(universalStats?.totalArticles) }}</div>
           <p class="m-0 text-xs text-ink-muted mt-1">Tin tức, tấm gương, mô hình, văn bản</p>
         </div>
       </div>
@@ -320,7 +305,7 @@ onUnmounted(() => {
         <div v-if="universalOptions.includeArticles" class="pt-2.5 border-t border-line flex flex-col gap-1.5 animate-fade-slide-up">
           <div class="flex items-center justify-between">
             <label class="text-[0.75rem] font-bold text-brand-950">Phạm vi số lượng bài viết dịch:</label>
-            <span class="text-[0.68rem] text-ink-muted">Kho CSDL có {{ universalStats?.totalArticles || 1121 }} bài viết</span>
+            <span v-if="universalStats" class="text-[0.68rem] text-ink-muted">Kho CSDL có {{ universalStats.totalArticles }} bài viết</span>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button

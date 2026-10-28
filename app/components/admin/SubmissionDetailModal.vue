@@ -9,6 +9,9 @@
  * nhánh tải / lỗi / rỗng của chính nó.
  */
 import type { AdminSubmissionDetail, AdminSubmissionEvent } from '~/types/admin-api'
+import type {
+  AdminSubmissionContactResponse, AdminSubmissionDetailResponse, AdminSubmissionNoteResponse, AdminSubmissionStatusResponse,
+} from '~/types/admin-submissions-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
 import {
   CONTACT_CHANNELS,
@@ -38,18 +41,26 @@ const noteDraft = ref('')
 const contactChannel = ref<ContactChannel>('phone')
 const contactNote = ref('')
 
+/**
+ * Mỗi lượt tải một mã; đổi hồ sơ (kể cả đóng) cũng cấp mã mới. Mở #12 trên mạng chậm, đóng,
+ * mở #13: câu trả lời của #12 về sau không được ghi — nếu ghi, tên và nhật ký của người dân A
+ * hiện dưới tiêu đề "#13" và các nút ghi chú/trạng thái bên dưới ghi vào #13.
+ */
+let loadRequest = 0
 const load = async () => {
   if (!props.id) return
+  const ticket = ++loadRequest
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ submission: typeof submission.value; events: AdminSubmissionEvent[] }>)(`/api/admin/submissions/${props.id}`)
+    const res = await adminFetch<AdminSubmissionDetailResponse>(`/api/admin/submissions/${props.id}`)
+    if (ticket !== loadRequest) return
     submission.value = res.submission
     events.value = res.events
   } catch (err: unknown) {
-    error.value = errorMessage(err, 'Không tải được chi tiết đơn đăng ký.')
+    if (ticket === loadRequest) error.value = errorMessage(err, 'Không tải được chi tiết đơn đăng ký.')
   } finally {
-    loading.value = false
+    if (ticket === loadRequest) loading.value = false
   }
 }
 
@@ -57,6 +68,8 @@ const load = async () => {
 // #12 mà còn nằm đó khi mở đơn #13 là cách ghi chú về một người dân bị gắn vào
 // hồ sơ của người khác.
 watch(() => props.id, (id) => {
+  loadRequest++
+  loading.value = false
   submission.value = null
   events.value = []
   noteDraft.value = ''
@@ -122,7 +135,7 @@ const changeStatus = async (next: SubmissionStatus) => {
   if (!props.id || busy.value) return
   busy.value = 'status'
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/submissions/${props.id}/status`, { method: 'PUT', body: { status: next } })
+    await adminFetch<AdminSubmissionStatusResponse>(`/api/admin/submissions/${props.id}/status`, { method: 'PUT', body: { status: next } })
     toast.success(`Đã chuyển sang "${SUBMISSION_STATUS_META[next].label}".`)
     await afterAction()
   } catch (err: unknown) {
@@ -141,7 +154,7 @@ const saveNote = async () => {
   }
   busy.value = 'note'
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/submissions/${props.id}/notes`, { method: 'POST', body: { note } })
+    await adminFetch<AdminSubmissionNoteResponse>(`/api/admin/submissions/${props.id}/notes`, { method: 'POST', body: { note } })
     noteDraft.value = ''
     toast.success('Đã lưu ghi chú.')
     await afterAction()
@@ -156,7 +169,7 @@ const logContact = async () => {
   if (!props.id || busy.value) return
   busy.value = 'contact'
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/submissions/${props.id}/contact`, {
+    await adminFetch<AdminSubmissionContactResponse>(`/api/admin/submissions/${props.id}/contact`, {
       method: 'POST',
       body: { channel: contactChannel.value, note: contactNote.value.trim() || undefined },
     })

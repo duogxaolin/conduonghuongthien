@@ -20,6 +20,8 @@ import type { Payload } from './handler-payload'
 type ListHandler = typeof import('~~/server/api/admin/articles/index.get').default
 type AuthorsHandler = typeof import('~~/server/api/admin/articles/authors.get').default
 type ContentTypesHandler = typeof import('~~/server/api/admin/content-types/index.get').default
+type ArticleReadHandler = typeof import('~~/server/api/admin/articles/[id].get').default
+type ArticleCreateHandler = typeof import('~~/server/api/admin/articles/index.post').default
 type ArticleUpdateHandler = typeof import('~~/server/api/admin/articles/[id].put').default
 type ArticleDeleteHandler = typeof import('~~/server/api/admin/articles/[id].delete').default
 type BulkTranslateHandler = typeof import('~~/server/api/admin/articles/bulk-translate.post').default
@@ -54,6 +56,16 @@ export type BulkPublishTranslationsResponse = Payload<BulkPublishHandler>
 /** `GET /api/admin/articles/translation-stats` — the list reads `aiPendingTranslations` only. */
 export type TranslationStatsResponse = Payload<TranslationStatsHandler>
 export type ArticleExportGoogleResponse = Payload<ExportGoogleHandler>
+
+// ─── The editor (`pages/admin/content/articles/[id].vue`, batch D) ───────────
+/**
+ * `GET /api/admin/articles/:id` — the whole row (plain-text fields decoded), where the editor
+ * declared eight fields; it reads those eight. `POST /api/admin/articles` also answers `slug`.
+ * The editor's PUT is `ArticleUpdateResponse` above; its image upload `AdminMediaUploadResult`
+ * (app/types/admin-api.ts); its auto-translation `ArticleTranslateResponse` below.
+ */
+export type ArticleReadResponse = Payload<ArticleReadHandler>
+export type ArticleCreateResponse = Payload<ArticleCreateHandler>
 
 // ─── Translations of one article ─────────────────────────────────────────────
 /** `POST /api/admin/articles/:id/translations/translate` — one language, from the list or the panel. */

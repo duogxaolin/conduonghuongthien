@@ -40,6 +40,13 @@ export type AdminCaptchaResponse = Payload<CaptchaHandler>
 /** `POST /api/admin/auth/logout`. */
 export type AdminLogoutResponse = Payload<LogoutHandler>
 
+type PublicSettingsHandler = typeof import('~~/server/api/public/settings.get').default
+/**
+ * `GET /api/public/settings` — the login page reads the two logos (batch D). The hand-written
+ * shape it replaces also declared a `faviconUrl` the handler never sends.
+ */
+export type LoginPublicSettingsResponse = Payload<PublicSettingsHandler>
+
 /** The signed-in account, as a completed login sends it. */
 export type AdminSessionUser = Payload<CompleteLogin>['user']
 /** `GET /api/admin/auth/me` — see the header for why it is typed by `completeLogin`. */

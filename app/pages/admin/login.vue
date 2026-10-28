@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { MfaMethod } from '~/composables/useAdminAuth'
-import type { AdminMfaSendCodeResponse } from '~/types/admin-auth-api'
+import type { AdminMfaSendCodeResponse, LoginPublicSettingsResponse } from '~/types/admin-auth-api'
 definePageMeta({ layout: false, middleware: 'admin-auth' })
 
 const { login, fetchCaptcha, verifyMfa, user, fetchUser } = useAdminAuth()
@@ -23,10 +23,9 @@ onMounted(async () => {
   }
 })
 
-type PublicSettingsResponse = { settings?: Record<string, string | null>; faviconUrl?: string | null }
-const { data: publicSettingsData } = await useAsyncData<PublicSettingsResponse | null>(
+const { data: publicSettingsData } = await useAsyncData<LoginPublicSettingsResponse | null>(
   'public-settings-login',
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  () => adminFetch<LoginPublicSettingsResponse>('/api/public/settings'),
   { default: () => null },
 )
 const siteLogo = computed(() => {

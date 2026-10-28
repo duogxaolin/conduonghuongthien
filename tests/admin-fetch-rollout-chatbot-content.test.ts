@@ -106,6 +106,21 @@ describe('pages/admin/chatbot/knowledge/index.vue', () => {
     assert.doesNotMatch(screen(opened), /Invalid Date|null|undefined/)
   })
 
+  // Batch D: what `selection.keepOnly(visibleIds)` does, run — the regex in
+  // tests/admin-bulk-selection-ui.test.ts only proves the call is written.
+  it('a reload narrows the bulk selection to the rows on screen: a ticked row on page 1 is not deletable from page 2', async () => {
+    const opened = await mountAdminPage(KNOWLEDGE, kbServer({
+      [`GET ${KB_URL}`]: call => (call.url.searchParams.get('page') === '2' ? kbList([kbRow(31)], 2, 3) : kbList(KB_ROWS, 1, 3)),
+    }))
+    const tickBox = findAll(rowOf(opened, 'Câu hỏi số 11'), el => el.tag === 'input' && String(el.props['aria-label']).startsWith('Chọn mục'))[0]!
+    await fire(tickBox, 'change')
+    await settle()
+    assert.equal(findAll(opened.page.root, el => el.tag === 'AdminBulkActionBar')[0]?.props.count, 1)
+    await fire(pager(opened), 'update:page', 2)
+    await settle()
+    assert.equal(findAll(opened.page.root, el => el.tag === 'AdminBulkActionBar').length, 0, 'row 11 is still selected on page 2')
+  })
+
   it('filters and pages: a select reloads page 1 with it; the pager and "Lọc" ask for their page', async () => {
     const opened = await mountAdminPage(KNOWLEDGE, kbServer())
     const before = opened.calls.length
@@ -352,6 +367,18 @@ describe('components/admin/ChatbotSmallTalkPanel.vue', () => {
     assert.deepEqual(findAll(system, el => el.tag === 'td').map(textOf).slice(1, 6), ['Xã giao', 'Xin chào 2Hệ thống', 'Chào bạn 2', '0', '○Đã tắt'])
     assert.equal(checkboxes(system), 0)
     assert.equal(buttons(system, 'Xóa').length, 0)
+  })
+
+  it('a reload narrows the bulk selection to the rows on screen (keepOnly, run)', async () => {
+    const opened = await mountAdminPage(PANEL, stServer({
+      [`GET ${ST_URL}`]: call => (call.url.searchParams.get('page') === '2' ? stList([stRow(7)], 2, 4) : stList(ST_ROWS, 1, 4)),
+    }))
+    await fire(findAll(rowOf(opened, 'Xin chào 1'), el => el.tag === 'input' && el.props.type === 'checkbox')[0]!, 'change')
+    await settle()
+    assert.equal(findAll(opened.page.root, el => el.tag === 'AdminBulkActionBar')[0]?.props.count, 1)
+    await fire(pager(opened), 'update:page', 2)
+    await settle()
+    assert.equal(findAll(opened.page.root, el => el.tag === 'AdminBulkActionBar').length, 0, 'row 1 is still selected on page 2')
   })
 
   it('filters and pages: each select reloads page 1; the pager and "Lọc" ask for their page', async () => {
