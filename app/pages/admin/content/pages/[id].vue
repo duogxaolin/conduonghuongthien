@@ -118,6 +118,7 @@
       :open="showVersions"
       :versions="versions"
       :loading="versionsLoading"
+      :failed="!!versionsError"
       :saving="savingBackup"
       :manual-count="manualCount"
       :has-origin="hasOrigin"
@@ -126,7 +127,15 @@
       @set-origin="setOrigin"
       @restore="restoreVersion"
       @delete="deleteVersion"
-    />
+    >
+      <!-- Danh sách đọc hỏng: lỗi + "Thử lại" (chỉ lượt đọc danh sách) thay chỗ danh sách (FINDING-B1) -->
+      <template #error>
+        <div v-if="versionsError" role="alert" class="bg-danger-bg text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+          <span>{{ versionsError }}</span>
+          <button type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="loadVersions">Thử lại</button>
+        </div>
+      </template>
+    </PageVersionsDrawer>
   </div>
 </template>
 
@@ -347,6 +356,8 @@ const { showMeta, savingMeta, metaForm, openMeta, saveMeta } = usePageMeta({ toa
 // ── Versions: the list + its load here; the drawer's writes in usePageVersions ──
 const versions = ref<PageVersionRow[]>([])
 const versionsLoading = ref(false)
+// Lượt đọc danh sách hỏng: ngăn kéo hiện lỗi thay danh sách — không phải "chưa có phiên bản nào".
+const versionsError = ref('')
 
 // Chỉ lượt tải MỚI NHẤT được ghi danh sách: lưu bản sao lưu ngay sau khi mở ngăn kéo
 // làm hai lượt tải chồng nhau, và phản hồi của lượt đầu (chưa có bản vừa lưu) về sau
@@ -355,11 +366,12 @@ let versionsLoadSeq = 0
 const loadVersions = async () => {
   const seq = ++versionsLoadSeq
   versionsLoading.value = true
+  versionsError.value = ''
   try {
     const res = await adminFetch<PageVersionsResponse>(`/api/admin/pages/${pageId.value}/versions`)
     if (seq === versionsLoadSeq && res.ok) versions.value = res.versions || []
   } catch (err: unknown) {
-    if (seq === versionsLoadSeq) toast.error(errorMessage(err, 'Không tải được danh sách phiên bản.'))
+    if (seq === versionsLoadSeq) versionsError.value = errorMessage(err, 'Không tải được danh sách phiên bản.')
   } finally {
     if (seq === versionsLoadSeq) versionsLoading.value = false
   }

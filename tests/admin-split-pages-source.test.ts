@@ -34,7 +34,8 @@ const templateOf = (source: string) => source.slice(source.indexOf('<template>')
 
 for (const [family, part, alertCount] of [
   [LANGUAGES_PAGE_FAMILY, 'components/admin/languages/page/LanguagesPageHeader.vue', 2],
-  [PAGE_BUILDER_FAMILY, 'components/admin/page-builder/PageMetaModal.vue', 1],
+  // The page load, and the versions list (shown in the drawer's `#error` slot, FINDING-B1).
+  [PAGE_BUILDER_FAMILY, 'components/admin/page-builder/PageMetaModal.vue', 2],
 ] as const) {
   describe(`${family.parent} — the wave3 4.2 parts`, () => {
     it('the display parts call no API and raise no toast or confirm', () => {

@@ -4,6 +4,11 @@
  * danh sách phiên bản với "Khôi phục"/xoá. Tách khỏi `pages/admin/content/pages/[id].vue`
  * (wave3 4.2): chỉ hiển thị — danh sách và trạng thái vào qua props, tên bản sao lưu là
  * `v-model:label`, mỗi nút phát sự kiện, trang (`usePageVersions`) làm việc.
+ *
+ * Danh sách đọc hỏng (`failed`): ô lỗi `role="alert"` + "Thử lại" do TRANG vẽ qua slot
+ * `#error` (trang giữ lượt tải và nhánh lỗi), thay chỗ danh sách; "Lưu (n/4)" và nút bản
+ * gốc chờ tới khi biết danh sách — trước đây lỗi trông như "chưa có phiên bản nào" và nút
+ * bản gốc hỏi "Đặt … làm bản gốc" trong khi lượt đó ghi đè bản gốc đang có (FINDING-B1).
  */
 import AdminModal from '~/components/admin/AdminModal.vue'
 import { isDeliberateEnter } from '~/utils/admin-modal'
@@ -14,6 +19,8 @@ const props = defineProps<{
   open: boolean
   versions: PageVersionRow[]
   loading: boolean
+  /** The last list load failed: the page's `#error` slot stands in for the list. */
+  failed: boolean
   saving: boolean
   manualCount: number
   hasOrigin: boolean
@@ -39,7 +46,7 @@ const onBackupLabelEnter = (event: KeyboardEvent) => {
   // Phím lặp (giữ Enter) mỗi lần một bản sao lưu — chỉ nhận lần nhấn có chủ đích.
   if (!isDeliberateEnter(event)) return
   event.preventDefault()
-  if (props.manualCount < 4 && !props.saving) emit('save')
+  if (props.manualCount < 4 && !props.saving && !props.failed) emit('save')
 }
 </script>
 
@@ -59,14 +66,14 @@ const onBackupLabelEnter = (event: KeyboardEvent) => {
           />
           <button
             class="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"
-            :disabled="saving || manualCount >= 4"
+            :disabled="saving || manualCount >= 4 || failed"
             :title="manualCount >= 4 ? 'Đã đạt tối đa 4 bản sao lưu' : 'Lưu nội dung đang dựng thành bản sao lưu'"
             @click="emit('save')"
           >
             <i :class="saving ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-bookmark'"></i> Lưu ({{ manualCount }}/4)
           </button>
         </div>
-        <button class="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100" @click="emit('set-origin')">
+        <button class="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50" :disabled="failed" @click="emit('set-origin')">
           <i class="fa-solid fa-anchor"></i> {{ hasOrigin ? 'Cập nhật bản gốc' : 'Chỉ định làm bản gốc' }}
         </button>
       </div>
@@ -74,7 +81,9 @@ const onBackupLabelEnter = (event: KeyboardEvent) => {
       <!-- List -->
       <div>
         <div v-if="loading" class="flex justify-center py-10 text-gray-400"><i class="fa-solid fa-spinner fa-spin text-xl"></i></div>
+        <slot v-else-if="failed" name="error" />
         <p v-else-if="!versions.length" class="py-10 text-center text-sm text-gray-400">Chưa có phiên bản nào. Bấm Xuất bản để tạo bản tự động đầu tiên.</p>
+        <template v-if="!failed">
         <div
           v-for="v in versions"
           :key="v.id"
@@ -104,6 +113,7 @@ const onBackupLabelEnter = (event: KeyboardEvent) => {
             </button>
           </div>
         </div>
+        </template>
       </div>
   </AdminModal>
 </template>
