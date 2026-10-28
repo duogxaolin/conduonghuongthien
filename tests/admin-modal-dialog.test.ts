@@ -371,7 +371,11 @@ const MIGRATED_TO_ADMIN_MODAL: Record<string, number> = {
   'pages/admin/content/content-types.vue': 1,
   'pages/admin/content/categories/index.vue': 1,
   'pages/admin/content/pages/index.vue': 1,
-  'pages/admin/content/pages/[id].vue': 3,
+  // Trình dựng trang: ngăn "Thêm khối", hộp "Cấu hình trang", ngăn "Phiên bản" — mỗi hộp
+  // một phần tách (wave3 4.2); tệp trang không còn hộp thoại nào.
+  'components/admin/page-builder/BlockPaletteDrawer.vue': 1,
+  'components/admin/page-builder/PageMetaModal.vue': 1,
+  'components/admin/page-builder/PageVersionsDrawer.vue': 1,
   'pages/admin/users/index.vue': 2,
   'pages/admin/media-portal/categories.vue': 1,
   'components/admin/SubmissionDetailModal.vue': 1,
@@ -752,9 +756,18 @@ test('hộp thoại nuốt phím giữ từ trước khi mở; ô Enter trong h�
     'components/admin/profile/ProfileDisableDialog.vue',
     'components/admin/profile/ProfileRecoveryDialog.vue',
   ]
-  for (const file of ['pages/admin/content/pages/[id].vue', 'components/admin/MediaLibraryModal.vue', ...PROFILE_DIALOGS]) {
+  // Trình dựng trang (wave3 4.2): ô tên bản sao lưu nay ở ngăn "Phiên bản" tách riêng.
+  const VERSIONS_DRAWER = 'components/admin/page-builder/PageVersionsDrawer.vue'
+  for (const file of [VERSIONS_DRAWER, 'components/admin/MediaLibraryModal.vue', ...PROFILE_DIALOGS]) {
     assert.match(read(file), /isDeliberateEnter\(/, `${file}: Enter lặp/đang gõ dấu không được gửi`)
   }
+  // …và chặt hơn trước: MỌI ô bắt Enter của ngăn đi qua `onBackupLabelEnter` (hàm gọi
+  // `isDeliberateEnter` rồi mới gửi), ở `keydown`; tệp trang không còn ô nào bắt Enter.
+  const drawerEnter = read(VERSIONS_DRAWER).match(/@key(?:down|up)\.enter="[^"]*"/g) ?? []
+  assert.ok(drawerEnter.length > 0, `${VERSIONS_DRAWER}: không còn ô nào bắt Enter để kiểm`)
+  for (const binding of drawerEnter) assert.equal(binding, '@keydown.enter="onBackupLabelEnter"', `${VERSIONS_DRAWER}: ${binding}`)
+  assert.match(read(VERSIONS_DRAWER), /const onBackupLabelEnter = \(event: KeyboardEvent\) => \{\n(?:\s*\/\/.*\n)*\s*if \(!isDeliberateEnter\(event\)\) return/)
+  assert.doesNotMatch(read('pages/admin/content/pages/[id].vue'), /@key(?:down|up)\.enter=/, '[id].vue: Enter của ngăn Phiên bản thuộc về phần tách')
   // Có `isDeliberateEnter(` ở đâu đó trong tệp chưa đủ: MỌI ô nhập bắt Enter của hộp thoại
   // hồ sơ phải đi qua `submitOnEnter` (hàm gọi nó), và ở `keydown` — `keyup` từng gửi biểu
   // mẫu trống khi hộp mở bằng Enter.

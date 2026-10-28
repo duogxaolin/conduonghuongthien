@@ -26,7 +26,6 @@
   "app/pages/admin/content/categories/index.vue": 550,
   "app/pages/admin/content/content-types.vue": 594,
   "app/pages/admin/content/navigation/navbar.vue": 425,
-  "app/pages/admin/content/pages/[id].vue": 795,
   "app/pages/admin/index.vue": 565,
   "app/pages/admin/livestream/index.vue": 552,
   "app/pages/admin/login.vue": 428,
