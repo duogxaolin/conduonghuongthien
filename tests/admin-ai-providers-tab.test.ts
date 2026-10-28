@@ -472,6 +472,30 @@ describe('models of a provider', () => {
     assert.deepEqual(cellsOf(row(page, 'org/flash')).slice(2, 7), ['org/flash', 'Flash nhanh', '$1.5', '$4', '89 ₫'])
   })
 
+  it('every dialog closes from its ✕ (the dialog frame\'s close event) and from "Huỷ"/"Đóng", sending nothing', async (t) => {
+    const server = aiServer()
+    server.state.override = call => (call.url.pathname.endsWith('/test-call') ? json({ ok: false, error: 'Hết hạn mức.' }) : undefined)
+    const { page, calls, settle } = await openTab(t, server)
+    const openers: Array<[string, () => MiniElement, string]> = [
+      ['Thêm nhà cung cấp mới', () => button(page, 'Thêm nhà cung cấp'), 'Huỷ'],
+      ['Cài đặt kết nối: Delify Router', () => button(card(page, 'Delify Router'), 'Cài đặt'), 'Huỷ'],
+      ['Thêm Model cho delify', () => button(card(page, 'Delify Router'), 'Thêm Model'), 'Huỷ'],
+      ['Sửa Model: org/flash', () => button(row(page, 'org/flash'), 'Sửa giá'), 'Huỷ'],
+      ['Test Call: org/flash', () => button(row(page, 'org/flash'), 'Test'), 'Đóng'],
+    ]
+    for (const [title, opener, cancel] of openers) {
+      for (const close of [(d: MiniElement) => closeX(d), (d: MiniElement) => button(d, cancel)]) {
+        await click(opener())
+        await settle()
+        const from = calls.length
+        await click(close(dialog(page, title)))
+        await settle()
+        assert.equal(dialogs(page).length, 0, `${title} stays open`)
+        assert.equal(calls.length, from, `${title}: closing sends nothing`)
+      }
+    }
+  })
+
   it('the dialogs live inside the loaded list: none is drawn while the list reloads, an open one is back after', async (t) => {
     const server = aiServer()
     const { page, calls, exposed, settle } = await openTab(t, server)
