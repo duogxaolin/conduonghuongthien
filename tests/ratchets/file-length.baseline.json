@@ -7,7 +7,6 @@
     "value": 1060,
     "reason": "Unsplittable: tests/analytics-live-dashboard-ui.test.ts greps ~30 patterns in this file's template and runs its script through Function() (docs/decisions/refactor-large-files.md). Allowed above the 400-line default, but capped: it may only shrink."
   },
-  "app/components/admin/ai/AiProvidersTab.vue": 1018,
   "app/components/admin/articles/ArticleTranslationPanel.vue": 588,
   "app/components/admin/languages/UniversalTab.vue": 545,
   "app/composables/i18n-default-dictionary.ts": {

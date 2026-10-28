@@ -45,6 +45,7 @@ import * as Vue from 'vue'
 
 import { adminFetch } from '../app/composables/adminFetch.ts'
 import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+import { AI_PROVIDERS_TAB_FAMILY, familyFiles, readAppFile } from './_component-family.ts'
 
 const PROVIDERS_TAB = 'components/admin/ai/AiProvidersTab.vue'
 const LANGUAGES_PAGE = 'pages/admin/languages/index.vue'
@@ -764,14 +765,39 @@ describe(`${LANGUAGES_PAGE} — more than 500 keys`, () => {
 
 // ─── Source ──────────────────────────────────────────────────────────────────
 
+/**
+ * Files of the providers tab that still call or cast `$fetch`. Since the wave3 4.2 split the
+ * tab is a family — the parent, its display parts (`components/admin/ai/providers/*.vue`)
+ * and the two write composables — and every one of them must go through `adminFetch<T>()`.
+ */
+const bareFetchIn = (files: Array<{ file: string, source: string }>) =>
+  files.filter(f => /\$fetch\b/.test(f.source)).map(f => f.file)
+
 describe('source', () => {
   it('neither file calls or casts $fetch (RED before), and both still count as fetching for the coverage gates', () => {
     for (const file of [PROVIDERS_TAB, LANGUAGES_PAGE]) {
       const source = readFileSync(new URL(`../app/${file}`, import.meta.url), 'utf8')
       assert.doesNotMatch(source, /\$fetch\b/, `${file} still uses $fetch — go through adminFetch<T>()`)
       // tests/admin-error-retry-ui.test.ts and skeleton-loading-ui.test.ts find the views
-      // to check with this pattern; a file it misses silently leaves both gates.
+      // to check with this pattern; a file it misses silently leaves both gates. The tab's
+      // list load stays in the parent after the split, so the parent still matches.
       assert.match(source, ADMIN_FETCH_CALL, `${file} would drop out of the error/skeleton coverage gates`)
     }
+  })
+
+  it('no file of the split providers tab — parent, parts, composables — calls or casts $fetch', () => {
+    assert.deepEqual(bareFetchIn(familyFiles(AI_PROVIDERS_TAB_FAMILY)), [])
+  })
+
+  it('proof: $fetch planted in a part or in a composable of the tab is caught', () => {
+    const part = 'components/admin/ai/providers/ProviderEditModal.vue'
+    const composable = 'composables/useAiModelWrites.ts'
+    const plant = (file: string) => readAppFile(file).replace('</script>', "const x = await ($fetch as (u: string) => Promise<unknown>)('/api/x')\n</script>")
+    const plantTs = (file: string) => `${readAppFile(file)}\nexport const leak = () => $fetch('/api/admin/ai/providers')\n`
+    assert.deepEqual(bareFetchIn(familyFiles(AI_PROVIDERS_TAB_FAMILY, { [part]: plant(part) })), [part])
+    assert.deepEqual(bareFetchIn(familyFiles(AI_PROVIDERS_TAB_FAMILY, { [composable]: plantTs(composable) })), [composable])
+    // A NEW part dropped into the parts directory joins the scan too.
+    const added = 'components/admin/ai/providers/ProviderExtra.vue'
+    assert.deepEqual(bareFetchIn(familyFiles(AI_PROVIDERS_TAB_FAMILY, { [added]: '<script setup lang="ts">\n$fetch(\'/x\')\n</script>' })), [added])
   })
 })
