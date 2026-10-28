@@ -8,10 +8,12 @@ import test, { mock } from 'node:test'
  * - Widget mới (`parseSseLine` thật) cuối cùng chỉ còn đúng lập trường chính thức.
  * - Widget cũ chỉ biết nối `content`: vẫn nhận lập trường, đúng một lần.
  * - Máy chủ không phát lại `result.answer` sau khi đã thay (không nhân đôi), và bản lưu là lập trường.
+ * - Model vẫn viết tiếp sau khi thay (không dừng được), đường truyền im: nhịp tim `: ping` vẫn đi, để proxy
+ *   không cắt kết nối và widget không xoá câu trả lời đang hiện.
  */
 
 const OFFICIAL = 'Quần đảo Hoàng Sa và quần đảo Trường Sa là lãnh thổ của Việt Nam.'
-const script = { before: [] as string[] }
+const script = { before: [] as string[], writingAfterMs: 0 }
 const persisted: string[] = []
 
 mock.module('h3', {
@@ -28,6 +30,8 @@ mock.module('../server/utils/chatbot/chat', {
       onChunk?: (chunk: string) => Promise<void> | void, _onTool?: unknown, onReplace?: (answer: string) => Promise<void> | void) => {
       for (const chunk of script.before) await onChunk?.(chunk)
       await onReplace?.(OFFICIAL)
+      // Model viết nốt phần bị nuốt.
+      if (script.writingAfterMs) await new Promise(resolve => setTimeout(resolve, script.writingAfterMs))
       return { answer: OFFICIAL, kind: 'curated', sources: [] }
     },
   },
@@ -61,17 +65,22 @@ globals.readBody = async (event: { body: unknown }) => event.body
 const handler = (await import('../server/api/public/chatbot/index.post')).default as unknown as (event: unknown) => Promise<unknown>
 const { parseSseLine } = await import('../app/composables/useChatbot')
 
-async function framesFor(before: string[]): Promise<string[]> {
-  script.before = before
-  persisted.length = 0
-  let wire = ''
-  await handler({
+function send(wire: { text: string }) {
+  return handler({
     body: { messages: [{ role: 'user', content: 'Đảo Ba Bình hiện do ai quản lý?' }] },
     reqHeaders: { 'x-chat-session': 'token' },
     context: {},
-    node: { res: { write: (frame: string) => { wire += frame }, end: () => {} } },
+    node: { res: { write: (frame: string) => { wire.text += frame }, end: () => {} } },
   })
-  return wire.split('\n').filter(line => line.startsWith('data: '))
+}
+
+async function framesFor(before: string[]): Promise<string[]> {
+  script.before = before
+  script.writingAfterMs = 0
+  persisted.length = 0
+  const wire = { text: '' }
+  await send(wire)
+  return wire.text.split('\n').filter(line => line.startsWith('data: '))
 }
 
 for (const [name, before] of [['after part of the reply was shown', ['Đảo Ba Bình thuộc ']], ['before anything was shown', []]] as const) {
@@ -90,3 +99,24 @@ for (const [name, before] of [['after part of the reply was shown', ['Đảo Ba 
     assert.deepEqual(persisted, [OFFICIAL])
   })
 }
+
+test('while the model keeps writing after the replace, the line still carries a heartbeat', async () => {
+  mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+  try {
+    script.before = ['Đảo Ba Bình thuộc ']
+    script.writingAfterMs = 40_000
+    const wire = { text: '' }
+    const done = send(wire)
+    for (let turn = 0; turn < 5; turn++) await new Promise(resolve => setImmediate(resolve))
+    mock.timers.tick(15_000)
+    mock.timers.tick(15_000)
+    mock.timers.tick(10_000)
+    await done
+    const afterReplace = wire.text.slice(wire.text.indexOf('"replace"'))
+    assert.ok(wire.text.includes('"replace"'), wire.text)
+    assert.equal(afterReplace.split(': ping').length - 1, 2, `two pings over 40 s of silence after the replace: ${wire.text}`)
+  } finally {
+    mock.timers.reset()
+    script.writingAfterMs = 0
+  }
+})

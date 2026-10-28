@@ -701,12 +701,13 @@ Khách hỏi bằng tiếng Trung "哪个国家拥有西沙群岛和南沙群岛
   - `createSovereigntyOutputGuard` bọc `onChunk` trong `answerGroundedChat`: câu trả lời của model nhắc chủ đề (kể cả "Tây Sa/Nam Sa/Tam Sa") hoặc nêu yêu sách ("lãnh thổ … của Trung Quốc", "中国…主权", "part of China"… — chỉ khi cùng đoạn có đảo/biển) → không chữ nào tới khách nữa, giữ đuôi 48 ký tự để cụm cắt giữa hai chunk không lọt. Ứng viên tìm trên đoạn cuối (tuyến tính), xác nhận trên cả luồng.
   - Thay ngay qua `onReplace` → khung SSE `chatbot.replace` (+ `content` cho widget cũ); `parseSseLine` thay chữ đang hiện. `/api/chat` (không stream) thay ở bước kiểm cuối. Câu trả về/lưu là lập trường, `kind: 'curated'`; log `chatbot.sovereignty_output_replaced` (warn).
   - Lượt trợ lý cũ nêu yêu sách cũng bị bỏ khỏi lịch sử; đề xuất gợi ý và câu truy vấn công cụ nhắc chủ đề bị bỏ.
+  - Nhịp tim SSE đếm lại sau mỗi lần ghi (trước: tắt hẳn ở chữ đầu tiên): sau khi thay hoặc khi đang giữ chữ, model vẫn viết mà đường truyền im — proxy có thể cắt kết nối và widget xoá câu trả lời đang hiện.
   - Commit thứ ba (sau lần kiểm thứ ba, không chặn nhưng nên sửa trước merge): yêu sách chưa có chữ đảo/biển thì giữ chữ lại thay vì để hiện rồi rút; ngữ cảnh đảo/biển tính cả câu hỏi và tên đảo/bãi lẻ (Ba Bình, Chữ Thập, Itu Aba, 太平…); "đảo lộn/đảo nợ/khuynh đảo" không tính; "Tây/Nam/Tam Sa" không bắt "Tây Sa Đéc", "Việt Nam Sa Pa", "Nam Sa thải".
   - Đợt kiểm độc lập lần hai chặn commit vì cách nói yêu sách quen dùng ("Tây Sa", "lãnh thổ không thể tách rời của Trung Quốc") lọt cả hai lớp, và cụm yêu sách bắt oan câu trả lời cho người từng thụ án ở Trung Quốc — đã sửa (điều kiện đảo/biển) trước commit.
 - **Kiểm chứng** (2026-10-28):
   - `tests/chatbot-sovereignty-guard.test.ts` 8/8, giả cả `callAi` lẫn `providerRequest`. Bỏ theo từng lượt thay vì theo cặp thì hai test lịch sử đỏ (đã trả lại).
-  - `tests/chatbot-sovereignty-output.test.ts` 16/16 + `tests/chatbot-sovereignty-stream-endpoint.test.ts` 2/2 (handler thật, `parseSseLine` thật). 18 đột biến của lớp đầu ra, mỗi cái làm ít nhất một test đỏ (đã trả lại).
-  - `npm test` 3952 / 3930 pass / 0 fail / 22 skip (nhánh `fix/chatbot-sovereignty` từ `main`). Typecheck 0 lỗi. eslint sạch trên các tệp đổi.
+  - `tests/chatbot-sovereignty-output.test.ts` 16/16 + `tests/chatbot-sovereignty-stream-endpoint.test.ts` 3/3 (handler thật, `parseSseLine` thật). 18 đột biến của lớp đầu ra, mỗi cái làm ít nhất một test đỏ (đã trả lại).
+  - `npm test` 3953 / 3931 pass / 0 fail / 22 skip (nhánh `fix/chatbot-sovereignty` từ `main`). Typecheck 0 lỗi. eslint sạch trên các tệp đổi.
   - CSDL dev: 0 hàng `chat_messages` / `article_translations` chứa 西沙|南沙|中国领土|三沙.
 - **Việc của người vận hành:**
   - Cho tới khi bản vá lên production, đặt "ngoài phạm vi" = `knowledge_only` ở `/admin/chatbot/settings`.

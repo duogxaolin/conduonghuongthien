@@ -165,8 +165,9 @@ export default defineEventHandler(async (event) => {
   if (res && typeof res.write === 'function') {
     let streamed = false
     let result
-    // Một dòng `: ping` mỗi 15 giây cho tới chữ đầu tiên, để proxy không cắt kết nối
-    // trong lúc provider AI còn đang nghĩ (xem sse-heartbeat.ts).
+    // Một dòng `: ping` sau mỗi 15 giây không có gì trên đường truyền, để proxy không cắt kết nối:
+    // lúc provider AI còn đang nghĩ, và lúc lớp chặn chủ quyền giữ chữ hoặc đã thay câu trả lời mà
+    // model vẫn đang viết (xem sse-heartbeat.ts). Mỗi lần ghi đếm lại từ đầu.
     const heartbeat = createSseHeartbeat(frame => { res.write(frame) })
     heartbeat.start()
     try {
@@ -183,6 +184,7 @@ export default defineEventHandler(async (event) => {
           // nhiều write thành 1 segment. X-Accel-Buffering:no (ở header) bảo
           // nginx không buffer; đây là phần đối ứng phía Node.
           if (typeof res.uncork === 'function') { res.cork(); res.uncork() }
+          heartbeat.start()
         },
         (toolEvt: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => {
           res.write(`data: ${JSON.stringify({ chatbot: { toolEvent: toolEvt } })}\n\n`)
@@ -194,6 +196,8 @@ export default defineEventHandler(async (event) => {
           streamed = true
           res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: `\n\n${answer}` } }], chatbot: { replace: answer } })}\n\n`)
           if (typeof res.uncork === 'function') { res.cork(); res.uncork() }
+          // Model vẫn viết tiếp (không dừng được) và không chữ nào của nó được gửi nữa: giữ nhịp tim tới hết.
+          heartbeat.start()
         },
       )
     } catch (error) {
