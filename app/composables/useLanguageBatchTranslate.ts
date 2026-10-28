@@ -76,7 +76,12 @@ export function useLanguageBatchTranslate({ toast, confirm, languages, viTransla
     return true
   }
 
-  /** One language: a card's "Dịch AI (n)" or the table's "Dịch AI". */
+  /**
+   * One language: a card's "Dịch AI (n)" or the table's "Dịch AI". The run ends with its last
+   * chunk: the lock (and the card's "Đang dịch...") end there, BEFORE the reload that follows —
+   * held through it, the dialog said "Hoàn tất" while the next language was refused (verification
+   * V2 of the split).
+   */
   async function startBatchTranslateWithProgress(langCode: string, langName: string) {
     if (refuseWhileRunning()) return
     try {
@@ -84,8 +89,10 @@ export function useLanguageBatchTranslate({ toast, confirm, languages, viTransla
     } finally {
       runningLangName = null
     }
+    await reload()
   }
 
+  /** The run itself, without the reload after it (each caller reloads). */
   async function translateLanguage(langCode: string, langName: string) {
     runningLangName = langName
     stopTranslateSignal = false
@@ -163,7 +170,6 @@ export function useLanguageBatchTranslate({ toast, confirm, languages, viTransla
       toast.error(errorMessage(err, 'Lỗi trong quá trình dịch AI.'))
     } finally {
       translatingCards[langCode] = false
-      await reload()
     }
   }
 
@@ -184,6 +190,8 @@ export function useLanguageBatchTranslate({ toast, confirm, languages, viTransla
     try {
       for (const lang of targets) {
         await translateLanguage(lang.code, lang.name)
+        // The lock stays through the reload BETWEEN two languages: the run is not over.
+        await reload()
         if (stopTranslateSignal) break
       }
     } finally {
