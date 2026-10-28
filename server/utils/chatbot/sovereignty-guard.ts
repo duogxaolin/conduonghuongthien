@@ -13,7 +13,9 @@ import { chatTurnText, isUserTurn, type ChatTurn } from './chat-turns'
  *  - lượt CŨ nhắc tới chủ đề (người dùng hoặc trợ lý — lượt trợ lý do trình duyệt gửi lên, ai cũng giả
  *    được, và câu trả lời sai trước bản vá vẫn nằm trong lịch sử của khách) → bỏ khỏi lịch sử gửi model
  *    (`withoutSovereigntyTurns`), không từ chối cả cuộc trò chuyện;
- *  - `SOVEREIGNTY_PROMPT_RULES` nối vào system prompt là lớp dự phòng cho câu lách được bộ khớp.
+ *  - câu hỏi lách được bộ khớp mà model trả lời vào chủ đề → câu trả lời bị chặn ngay trên luồng và thay
+ *    bằng lập trường chính thức (`createSovereigntyOutputGuard`);
+ *  - `SOVEREIGNTY_PROMPT_RULES` nối vào system prompt là lớp dự phòng.
  *
  * Khớp nhầm có chủ đích: "đường Hoàng Sa" (tên phố) cũng nhận câu trả lời này — vô hại, còn bỏ sót thì không.
  */
@@ -60,11 +62,15 @@ const HAN_PATTERNS = [
   /永兴岛|南威岛|赤瓜礁|永暑礁|华阳礁|东门礁|南薰礁|渚碧礁|美济礁/,
 ]
 
+// "… sa thải / sa ngã / sa đà…": động từ, không phải tên quần đảo ("nhà trường sa thải", "lãnh đạo nam sa thải").
+const NOT_SA_VERB = '(?!(?:thai|nga|doa|sut|lay|mac|sam|luoi|vao|da|co|chan|ban) )'
+
 const LATIN_PATTERNS = [
   / hoang ?sa /,
   / dao truong ?sa /, // quần đảo / huyện đảo Trường Sa
-  // "trường sa" thường (không viết hoa), trừ "(môi/nhà) trường sa thải / sa ngã / sa đà…".
-  / truong ?sa (?!(?:thai|nga|doa|sut|lay|mac|sam|luoi|vao|da|co|chan|ban) )/,
+  new RegExp(` truong ?sa ${NOT_SA_VERB}`), // "trường sa" thường (không viết hoa)
+  // Tên Hán-Việt của tên gọi Trung Quốc: 西沙 = Tây Sa, 南沙 = Nam Sa, 三沙 = Tam Sa.
+  new RegExp(` dao (?:tay|nam|tam) sa ${NOT_SA_VERB}`),
   / gac ma (?!tuy )/, // không phải "gác ma túy"
   / paracels? /,
   / spratle?ys? /,
@@ -89,24 +95,143 @@ const LATIN_PATTERNS = [
 // Bỏ dấu thì "biển đông" trùng "biến động"/"biển động", "trường sa lấy" trùng "trường sa lầy": hai cụm này xét
 // trên chữ CÒN dấu, trừ "(bãi) biển đông người" và "trường sa thải/ngã/đà…".
 const MARKED_PATTERNS = [
-  /(?<![\p{L}])(?<!bãi\s+)biển[\s-]+đông(?![\p{L}])(?!\s+(?:người|khách|nghịt|vui|bắc|nam)(?![\p{L}]))/u,
+  /(?<![\p{L}])(?<!bãi\s+)biển[\s-]+đông(?![\p{L}])(?!\s+(?:người|khách|nghịt|vui|đúc|kín|bắc|nam)(?![\p{L}]))/u,
   /(?<![\p{L}])trường\s*sa(?![\p{L}])(?!\s+(?:thải|ngã|đọa|đoạ|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\p{L}]))/u,
 ]
-// Viết hoa là tên riêng: khớp bất kể từ đứng sau ("Trường Sa vào tay…", "Biển Đông người Trung Quốc gọi…"),
-// trừ hướng "(vùng) biển Đông Bắc / Đông Nam".
-const PROPER_NAMES = /(?<![\p{L}])(?:(?:Trường|Truong|TRƯỜNG|TRUONG)\s*(?:Sa|SA)|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)[\s-]+(?:Đông|Dong|ĐÔNG|DONG)(?!\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\p{L}])))(?![\p{L}])/u
+// Viết hoa là tên riêng: khớp bất kể từ đứng sau ("Trường Sa vào tay…", "Biển Đông người Trung Quốc gọi…",
+// "Tây Sa"/"Nam Sa"/"Tam Sa"), trừ hướng "(vùng) biển Đông Bắc / Đông Nam".
+const PROPER_NAMES = /(?<![\p{L}])(?:(?:Trường|Truong|TRƯỜNG|TRUONG|Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)\s*(?:Sa|SA)|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)[\s-]+(?:Đông|Dong|ĐÔNG|DONG)(?!\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\p{L}])))(?![\p{L}])/u
 const OTHER_SCRIPTS = /パラセル|スプラトリー|파라셀|스프래틀리|남중국해/
 
-export function mentionsSovereignty(text: string): boolean {
-  const folded = fold(text)
-  if (!folded.trim()) return false
-  const han = hanKey(folded)
-  if (han && HAN_PATTERNS.some(pattern => pattern.test(han))) return true
+// Yêu sách không gọi tên quần đảo ("lãnh thổ không thể tách rời của Trung Quốc", "中国对这些岛屿拥有…主权").
+// Chỉ xét ở ĐẦU RA (câu trả lời của model, lượt trợ lý cũ), và chỉ khi cùng đoạn có nói tới đảo/biển: người
+// hoàn lương từng chấp hành án "trên lãnh thổ Trung Quốc" là đúng đối tượng của cổng, không phải yêu sách.
+const ISLAND_HAN = /岛|礁|海域|领海/
+const ISLAND_WORDS = /(?<![\p{L}])(?:đảo|vùng biển|lãnh hải|hải phận|bãi đá|đá ngầm|islands?|islets?|archipelagos?|reefs?|shoals?|atolls?)(?![\p{L}])/u
+const HAN_CLAIMS = /中国.{0,6}领土|领土.{0,6}中国|固有领土|属于中国|中国.{0,15}主权|主权.{0,4}中国|自古以来.{0,4}中国|中国.{0,4}管辖/
+const LATIN_CLAIMS = [
+  / lanh tho (?:\S+ ){0,5}trung quoc /,
+  / thuoc (?:\S+ ){0,4}trung quoc /,
+  / chu quyen (?:\S+ ){0,3}trung quoc /,
+  / trung quoc (?:\S+ ){0,4}(?:chu quyen|quan ly|kiem soat|chiem dong|chiem giu) /,
+  / (?:vung bien|lanh hai|hai phan) (?:\S+ ){0,3}trung quoc /,
+  / belongs? to china /,
+  / part of china /,
+  / china (?:\S+ ){0,4}(?:sovereignty|territory) /,
+  / chinese (?:territory|sovereignty|control|administration|jurisdiction) /,
+  / (?:indisputable|inherent) (?:sovereignty|part|territory) /,
+]
+
+/** Chữ do model viết có nói tới đảo/biển — điều kiện để tính yêu sách. */
+function islandContext(folded: string, han: string): boolean {
+  return ISLAND_HAN.test(han) || ISLAND_WORDS.test(folded.toLowerCase())
+}
+
+function hanMentions(han: string, claims: boolean): boolean {
+  return HAN_PATTERNS.some(pattern => pattern.test(han)) || (claims && HAN_CLAIMS.test(han))
+}
+
+/** Mọi thứ trừ chữ Hán: tên riêng, cụm còn dấu, chữ Latin/Kirin bỏ dấu, chữ Nhật/Hàn. */
+function scriptMentions(folded: string, claims: boolean): boolean {
   if (PROPER_NAMES.test(folded) || OTHER_SCRIPTS.test(folded)) return true
   const lower = folded.toLowerCase()
   if (MARKED_PATTERNS.some(pattern => pattern.test(lower))) return true
   const latin = latinKey(lower)
-  return LATIN_PATTERNS.some(pattern => pattern.test(latin))
+  return LATIN_PATTERNS.some(pattern => pattern.test(latin)) || (claims && LATIN_CLAIMS.some(pattern => pattern.test(latin)))
+}
+
+/** `output` = đang xét chữ do model viết: tính cả yêu sách không gọi tên quần đảo, khi có nói tới đảo/biển. */
+export function mentionsSovereignty(text: string, options: { output?: boolean } = {}): boolean {
+  const folded = fold(text)
+  if (!folded.trim()) return false
+  const han = hanKey(folded)
+  const claims = options.output === true && islandContext(folded, han)
+  return hanMentions(han, claims) || scriptMentions(folded, claims)
+}
+
+// Các mẫu loại trừ theo từ đứng sau ("trường sa thải", "biển Đông Bắc", "gác ma túy"): giữa luồng, từ đó có thể
+// chưa tới, nên một cụm ở cuối chỉ tính khi khớp với mọi từ có thể theo sau. Mỗi họ mẫu một từ thử là đủ
+// ("bắc" cũng nằm trong danh sách loại trừ của "biển đông" chữ thường). Thêm mẫu loại trừ mới → thêm từ thử.
+const NEXT_WORD_PROBES = ['thải', 'Bắc', 'túy']
+/** Dài hơn các cụm Latin thực tế ("thuộc quyền quản lý của Trung Quốc") cộng chữ đầu của từ theo sau. */
+const STREAM_HOLD_CHARS = 48
+const STREAM_LOOKBACK_CHARS = 96
+/** Dài hơn mẫu chữ Hán dài nhất (`中国.{0,15}主权`). */
+const HAN_LOOKBACK_CHARS = 24
+
+/** Phần ngoài chữ Hán, chỉ tới ranh giới từ cuối: từ cuối có thể chưa viết xong ("Hoàng Sa|ng"). */
+function settledScriptMentions(text: string, claims: boolean, cutAtStart = false): boolean {
+  let folded = fold(text)
+  // Cửa sổ cắt giữa một từ: bỏ mẩu đầu ("[l]east sea" không phải "east sea").
+  if (cutAtStart) folded = folded.replace(/^[\p{L}\p{M}\p{N}]+/u, '')
+  const settled = folded.replace(/[\p{L}\p{M}\p{N}]+$/u, '')
+  return NEXT_WORD_PROBES.every(next => scriptMentions(`${settled} ${next}`, claims))
+}
+
+/**
+ * Lớp chặn ở đầu ra, cho câu hỏi lách được bộ khớp: câu trả lời của model nhắc chủ đề hoặc nêu yêu sách
+ * thì không chữ nào của nó tới khách nữa, và `replace` được gọi ngay để luồng thay phần đã hiện bằng lập
+ * trường chính thức (khách không phải nhìn nửa câu trả lời đứng yên tới khi model viết xong).
+ *
+ * Provider không dừng được giữa chừng (`readChatSse` nuốt lỗi của `emit`), nên sau khi chặn bộ lọc chỉ
+ * im lặng tới hết. `STREAM_HOLD_CHARS` ký tự cuối luôn được giữ tới chunk sau, để một cụm bị cắt giữa hai
+ * chunk (`中国|领土`, `Hoàng| Sa`) không hiện ra nửa chừng — trừ khi từ theo sau một cụm cần biết từ đó
+ * ("biển Đông |…") dài bất thường; widget vẫn rút lại khi chặn. `finish` nhả nốt khi câu trả lời sạch.
+ *
+ * Mỗi chunk chỉ xét đoạn cuối (rẻ, tuyến tính) để tìm ứng viên, rồi xác nhận ứng viên trên cả luồng: đoạn cuối
+ * có thể mất chữ đứng trước ("bãi" trôi khỏi cửa sổ của "bãi biển đông đúc", "越" của "越南海防"), và yêu sách
+ * có thể đứng trước chữ "đảo/岛" xa hơn cửa sổ.
+ */
+export function createSovereigntyOutputGuard(hooks: {
+  /** `onChunk` của luồng; không có khi không stream (`/api/chat`). */
+  forward?: (chunk: string) => void | Promise<void>
+  replace: () => void | Promise<void>
+}) {
+  const forward = hooks.forward
+  let seen = ''
+  let han = ''
+  let released = 0
+  let tripped = false
+  let island = false
+
+  const trip = async () => {
+    tripped = true
+    await hooks.replace()
+  }
+
+  return {
+    get tripped() { return tripped },
+    push: forward && (async (chunk: string): Promise<void> => {
+      if (tripped || !chunk) return
+      seen += chunk
+      const addedHan = hanKey(fold(chunk))
+      han += addedHan
+      const hanWindow = han.slice(-(addedHan.length + HAN_LOOKBACK_CHARS))
+      const window = seen.slice(-(chunk.length + STREAM_LOOKBACK_CHARS))
+      const islandNow = !island && islandContext(fold(window), hanWindow)
+      if (islandNow) island = true
+      const candidate = islandNow
+        || hanMentions(hanWindow, island)
+        || settledScriptMentions(window, island, window.length < seen.length)
+      if (candidate && (hanMentions(han, island) || settledScriptMentions(seen, island))) return trip()
+      const upTo = seen.length - STREAM_HOLD_CHARS
+      if (upTo > released) {
+        const release = seen.slice(released, upTo)
+        released = upTo
+        await forward(release)
+      }
+    }),
+    /** Hết luồng: xét cả câu trả lời cuối; sạch thì nhả phần đuôi đang giữ. `true` = đã thay. */
+    async finish(answer: string): Promise<boolean> {
+      if (!tripped && (mentionsSovereignty(answer, { output: true }) || mentionsSovereignty(seen, { output: true }))) await trip()
+      if (!tripped && forward && released < seen.length) {
+        const rest = seen.slice(released)
+        released = seen.length
+        await forward(rest)
+      }
+      return tripped
+    },
+  }
 }
 
 const ANSWER_VI = `Quần đảo Hoàng Sa và quần đảo Trường Sa là một bộ phận lãnh thổ không thể tách rời của nước Cộng hòa xã hội chủ nghĩa Việt Nam. Việt Nam có đầy đủ bằng chứng lịch sử và cơ sở pháp lý để khẳng định chủ quyền đối với hai quần đảo này, phù hợp với luật pháp quốc tế, trong đó có Công ước của Liên hợp quốc về Luật Biển năm 1982.
@@ -143,8 +268,9 @@ export function withoutSovereigntyTurns(history: ChatTurn[]): ChatTurn[] {
   let afterDroppedQuestion = false
   return history.filter((turn, index) => {
     if (index === history.length - 1) return true
-    const mentions = mentionsSovereignty(chatTurnText(turn))
-    if (isUserTurn(turn)) {
+    const fromUser = isUserTurn(turn)
+    const mentions = mentionsSovereignty(chatTurnText(turn), { output: !fromUser })
+    if (fromUser) {
       afterDroppedQuestion = mentions
       return !mentions
     }

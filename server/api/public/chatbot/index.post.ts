@@ -186,7 +186,15 @@ export default defineEventHandler(async (event) => {
         },
         (toolEvt: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => {
           res.write(`data: ${JSON.stringify({ chatbot: { toolEvent: toolEvt } })}\n\n`)
-        }
+        },
+        // Lớp chặn chủ quyền rút lại câu trả lời đang stream (sovereignty-guard.ts): `replace` cho widget
+        // hiện tại (thay hẳn), `content` cho tab đang mở bản widget cũ (chỉ biết nối thêm).
+        (answer: string) => {
+          heartbeat.stop()
+          streamed = true
+          res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: `\n\n${answer}` } }], chatbot: { replace: answer } })}\n\n`)
+          if (typeof res.uncork === 'function') { res.cork(); res.uncork() }
+        },
       )
     } catch (error) {
       if ((error as Error).message === 'INVALID_MESSAGES') throw createError({ statusCode: 400, statusMessage: 'Invalid chat messages' })
