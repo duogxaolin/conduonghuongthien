@@ -130,6 +130,8 @@ export interface MountOptions {
    * `useAdminAuth` whose `fetchUser` the page calls (settings/security.vue).
    */
   auto?: Record<string, unknown>
+  /** A `<script setup>` with a top-level `await` (tests/_sfc-mount.ts `suspense`). */
+  suspense?: boolean
 }
 
 export interface MountedAdminPage {
@@ -210,6 +212,7 @@ export async function mountAdminPage(file: string, responder: Responder, options
     auto,
     modules: options.modules,
     components: { ClientOnly, ...options.components },
+    suspense: options.suspense,
   }, options.props)
   // Idempotent, and remembered: `unmountAll()` (an `afterEach`) stops a failed test's
   // polling intervals, which would otherwise keep the test process alive.

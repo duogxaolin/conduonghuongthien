@@ -34,7 +34,6 @@
     "value": 2,
     "reason": "The one sanctioned cast (design D-FETCH): every admin call site goes through adminFetch<T>(). The second match is the doc comment quoting the pattern it replaces."
   },
-  "app/composables/useAdminAuth.ts": 5,
   "app/composables/useBulkSelection.ts": 1,
   "app/composables/useChatbot.ts": 1,
   "app/composables/useI18n.ts": 2,
@@ -59,7 +58,7 @@
   "app/pages/admin/content/navigation/mobile.vue": 2,
   "app/pages/admin/content/navigation/navbar.vue": 2,
   "app/pages/admin/content/pages/index.vue": 3,
-  "app/pages/admin/login.vue": 2,
+  "app/pages/admin/login.vue": 1,
   "app/pages/admin/media-portal/external.vue": 2,
   "app/pages/admin/media-portal/index.vue": 3,
   "app/pages/admin/media-portal/upload.vue": 1,
