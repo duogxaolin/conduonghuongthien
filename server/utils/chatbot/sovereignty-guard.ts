@@ -1,4 +1,6 @@
 import { chatTurnText, isUserTurn, type ChatTurn } from './chat-turns'
+// Chuẩn hoá (NFKC, bỏ ký tự vô hình, gộp chữ Hán, khoá Latin bỏ dấu…) ở tệp thuần riêng.
+import { sovereigntyFold as fold, sovereigntyHanKey as hanKey, sovereigntyLatinKey as latinKey } from './sovereignty-normalize'
 
 /**
  * Chủ quyền biển, đảo — câu trả lời do máy chủ viết, không bao giờ do model.
@@ -19,33 +21,6 @@ import { chatTurnText, isUserTurn, type ChatTurn } from './chat-turns'
  *
  * Khớp nhầm có chủ đích: "đường Hoàng Sa" (tên phố) cũng nhận câu trả lời này — vô hại, còn bỏ sót thì không.
  */
-
-// Phồn thể cần dùng → giản thể; "⻄" (bộ thủ U+2EC4, NFKC không gộp) → "西".
-const HAN_FOLD: Record<string, string> = {
-  黃: '黄', 長: '长', 東: '东', 羣: '群', 島: '岛', 諸: '诸', 線: '线', 國: '国', 興: '兴', 濟: '济',
-  門: '门', 華: '华', 陽: '阳', 雲: '云', 廣: '广', 陝: '陕', 閩: '闽', 嶺: '岭', '⻄': '西',
-}
-const HAN_FOLD_CHARS = new RegExp(`[${Object.keys(HAN_FOLD).join('')}]`, 'g')
-
-/**
- * NFKC (chữ toàn độ → thường), bỏ ký tự định dạng vô hình (zero-width — NFKC không bỏ), gộp chữ Hán,
- * "Ð"/"ð" (hay lẫn vào chữ Việt thay cho "Đ"/"đ") → "Đ"/"đ". Giữ hoa/thường: "Trường Sa" viết hoa là tên riêng.
- */
-function fold(value: string): string {
-  return value.normalize('NFKC').replace(/\p{Cf}/gu, '')
-    .replace(HAN_FOLD_CHARS, char => HAN_FOLD[char]!)
-    .replace(/Ð/g, 'Đ').replace(/ð/g, 'đ')
-}
-
-/** Chữ thường bỏ dấu, đ → d, mọi thứ không phải chữ/số thành một khoảng trắng, có khoảng trắng hai đầu để khớp trọn từ. */
-function latinKey(lower: string): string {
-  return ` ${lower.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `
-}
-
-/** Chỉ giữ chữ Hán, để "西 沙" hay "西<zero-width>沙" vẫn là "西沙". */
-function hanKey(folded: string): string {
-  return folded.replace(/[^\p{Script=Han}]/gu, '')
-}
 
 // `hanKey` nối chữ qua dấu câu, nên "越南。沙坝" thành "越南沙坝": 南海/南沙/西沙 không tính khi chữ
 // đứng trước ghép thành từ khác — 越南海防, 越南沙坝, 河南沙县, 海南海口, 中南海, 东西沙发, 广西沙田.
