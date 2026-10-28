@@ -35,13 +35,13 @@ const { parseSseLine } = await import('../app/composables/useChatbot')
 // Dài hơn phần đuôi bộ lọc giữ lại, để có chữ thật sự được nhả ra trước cụm bị chặn.
 const LEAD = 'Anh/chị có thể liên hệ Công an xã nơi cư trú để được hướng dẫn chi tiết về thủ tục. '
 
-async function streamThrough(chunks: string[]) {
+async function streamThrough(chunks: string[], question?: string) {
   let shown = ''
   let replaced = 0
   // Chặn ở chunk thứ mấy (đếm từ 0), hay chỉ ở bước kiểm cuối.
   let at: number | 'finish' | null = null
   let current: number | 'finish' = 0
-  const guard = createSovereigntyOutputGuard({ forward: (chunk) => { shown += chunk }, replace: () => { replaced += 1; at = current } })
+  const guard = createSovereigntyOutputGuard({ forward: (chunk) => { shown += chunk }, replace: () => { replaced += 1; at = current }, question })
   for (const [index, chunk] of chunks.entries()) {
     current = index
     await guard.push!(chunk)
@@ -104,6 +104,12 @@ test('the usual wording of a claim is caught in output, but only when islands or
     'Trung Quốc có chủ quyền đối với quần đảo này.',
     'Đảo Ba Bình hiện do Đài Loan (Trung Quốc) kiểm soát.',
     'Nam Hải là vùng biển của Trung Quốc.',
+    'Đá Chữ Thập thuộc chủ quyền của Trung Quốc.',
+    'Ba Bình là lãnh thổ của Trung Quốc, hiện do Đài Loan quản lý.',
+    'Vành Khăn do Trung Quốc quản lý từ năm 1995.',
+    'Itu Aba belongs to China.',
+    'Scarborough is Chinese territory.',
+    '太平是中国领土。',
     'These islands are an inherent part of China.',
     'China has indisputable sovereignty over these islands.',
     'The islands are part of China\'s territory since ancient times.',
@@ -117,6 +123,10 @@ test('the usual wording of a claim is caught in output, but only when islands or
     'Nếu doanh nghiệp đó thuộc Trung Quốc, anh cần hợp đồng lao động hợp pháp.',
     'Hành vi phạm tội xảy ra trên lãnh thổ của Trung Quốc thì do pháp luật nước đó điều chỉnh.',
     'If you served a sentence in Chinese territory, contact the local police.',
+    // "đảo" động từ không phải đảo.
+    'Thời gian chấp hành án trên lãnh thổ Trung Quốc khiến cuộc sống của anh bị đảo lộn, nay anh cần hỗ trợ việc làm.',
+    'Ngân hàng chính sách không cho đảo nợ; khoản vay trước đây trên lãnh thổ Trung Quốc không được tính.',
+    'Khuynh đảo thị trường lao động là các doanh nghiệp FDI, phần lớn thuộc sở hữu Trung Quốc.',
   ]) assert.equal(mentionsSovereignty(answer, { output: true }), false, answer)
   for (const question of ['Quần đảo Tây Sa thuộc nước nào?', 'Tây Sa thuộc nước nào?']) assert.equal(mentionsSovereignty(question), true, question)
 })
@@ -133,10 +143,24 @@ test('context that scrolls out of the window does not trip a long benign answer'
 
 test('a claim made well before the word "island" is caught as soon as that word arrives', async () => {
   const chunks = [LEAD, 'Chúng thuộc chủ quyền của Trung Quốc từ lâu, ', 'theo nhiều tài liệu lịch sử được lưu giữ cẩn thận qua nhiều đời, ', 'về những hòn đảo này.', ' Anh/chị cần thêm thông tin gì?']
-  const { tripped, replaced, at } = await streamThrough(chunks)
+  const { tripped, replaced, at, shown } = await streamThrough(chunks)
   assert.equal(tripped, true)
   assert.equal(replaced, 1)
   assert.equal(at, 3, 'stopped on the chunk carrying "đảo", not at the end')
+  assert.ok(!shown.includes('chủ quyền'), `the claim waited for the verdict instead of streaming out: ${shown}`)
+})
+
+test('a claim-like phrase with no island in sight is held, then released whole when the answer ends', async () => {
+  const chunks = [LEAD, 'Thời gian anh chấp hành án trên lãnh thổ Trung Quốc ', 'vẫn được tính khi xét điều kiện xóa án tích, ', 'anh/chị mang theo bản án và giấy tờ liên quan.']
+  const { tripped, shown } = await streamThrough(chunks)
+  assert.equal(tripped, false)
+  assert.equal(shown, chunks.join(''))
+})
+
+test('a question about an island makes a bare claim in the answer count', async () => {
+  const chunks = [LEAD, 'Nó là lãnh thổ của Trung Quốc từ lâu.']
+  assert.equal((await streamThrough(chunks, 'Hòn đảo đó thuộc nước nào?')).tripped, true)
+  assert.equal((await streamThrough(chunks, 'Thủ tục xóa án tích thế nào?')).tripped, false)
 })
 
 // ─── Through the chat policy ─────────────────────────────────────────────────

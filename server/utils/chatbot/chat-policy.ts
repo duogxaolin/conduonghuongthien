@@ -721,6 +721,7 @@ export async function answerGroundedChat(
   const replaced: ChatResult & { streamed?: boolean } = { answer: officialAnswer, sources: [], kind: 'curated', streamed: Boolean(onChunk) }
   const outputGuard = createSovereigntyOutputGuard({
     forward: onChunk,
+    question: query,
     replace: async () => {
       logWarn({ event: 'chatbot.sovereignty_output_replaced', consequence: 'model answer withheld, fixed official answer sent instead' })
       await onReplace?.(officialAnswer)

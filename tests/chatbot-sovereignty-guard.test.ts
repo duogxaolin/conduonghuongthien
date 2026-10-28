@@ -124,6 +124,12 @@ test('everyday questions that share syllables or characters are not caught', () 
     'bãi biển đông người quá',
     'vùng biển Đông Bắc có việc làm không',
     'Tôi muốn gác ma túy lại để làm lại cuộc đời',
+    'Tôi quê miền Tây Sa Đéc, muốn vay vốn học nghề thì làm sao?',
+    'Tôi muốn đi du lịch Việt Nam Sa Pa sau khi mãn hạn tù',
+    'Tôi ở Quảng Nam Sa Huỳnh có được hỗ trợ không?',
+    'TÔI LÀ NGƯỜI TÂY SA PA',
+    'Anh Nam Sa thải tôi khỏi xưởng vì có tiền án, có đúng luật không?',
+    'Tôi làm ở công ty Tam Sa Việt Nam có được vay vốn không?',
     '长沙市的社区矫正怎么办理?', // Trường Sa (thành phố Changsha), không phải quần đảo
     '我在越南海防市，如何申请贷款?',
     '越南海关会查我的犯罪记录吗?',

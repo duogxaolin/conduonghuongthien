@@ -99,15 +99,23 @@ const MARKED_PATTERNS = [
   /(?<![\p{L}])trường\s*sa(?![\p{L}])(?!\s+(?:thải|ngã|đọa|đoạ|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\p{L}]))/u,
 ]
 // Viết hoa là tên riêng: khớp bất kể từ đứng sau ("Trường Sa vào tay…", "Biển Đông người Trung Quốc gọi…",
-// "Tây Sa"/"Nam Sa"/"Tam Sa"), trừ hướng "(vùng) biển Đông Bắc / Đông Nam".
-const PROPER_NAMES = /(?<![\p{L}])(?:(?:Trường|Truong|TRƯỜNG|TRUONG|Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)\s*(?:Sa|SA)|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)[\s-]+(?:Đông|Dong|ĐÔNG|DONG)(?!\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\p{L}])))(?![\p{L}])/u
+// "Tây Sa"/"Nam Sa"/"Tam Sa" — trừ khi "Sa" mở đầu một địa danh khác ("miền Tây Sa Đéc", "Việt Nam Sa Pa",
+// "Quảng Nam Sa Huỳnh") hoặc là động từ ("anh Nam sa thải tôi")), trừ hướng "(vùng) biển Đông Bắc / Đông Nam".
+const PROPER_NAMES = /(?<![\p{L}])(?:(?:Trường|Truong|TRƯỜNG|TRUONG)\s*(?:Sa|SA)|(?:Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)\s*(?:Sa|SA)(?!\s+(?:\p{Lu}|(?:thải|ngã|đọa|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\p{L}])))|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)[\s-]+(?:Đông|Dong|ĐÔNG|DONG)(?!\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\p{L}])))(?![\p{L}])/u
 const OTHER_SCRIPTS = /パラセル|スプラトリー|파라셀|스프래틀리|남중국해/
 
 // Yêu sách không gọi tên quần đảo ("lãnh thổ không thể tách rời của Trung Quốc", "中国对这些岛屿拥有…主权").
 // Chỉ xét ở ĐẦU RA (câu trả lời của model, lượt trợ lý cũ), và chỉ khi cùng đoạn có nói tới đảo/biển: người
 // hoàn lương từng chấp hành án "trên lãnh thổ Trung Quốc" là đúng đối tượng của cổng, không phải yêu sách.
-const ISLAND_HAN = /岛|礁|海域|领海/
-const ISLAND_WORDS = /(?<![\p{L}])(?:đảo|vùng biển|lãnh hải|hải phận|bãi đá|đá ngầm|islands?|islets?|archipelagos?|reefs?|shoals?|atolls?)(?![\p{L}])/u
+// Kể cả tên riêng của từng đảo/bãi hay được hỏi lẻ ("Đá Chữ Thập thuộc chủ quyền của Trung Quốc"). "đảo" động từ
+// ("đảo lộn", "đảo nợ", "khuynh đảo") không tính.
+const ISLAND_HAN = /岛|礁|海域|领海|太平|黄岩|中业/
+const ISLAND_WORDS = new RegExp([
+  '(?<![\\p{L}])(?:vùng biển|lãnh hải|hải phận|bãi đá|đá ngầm|ba bình|phú lâm|chữ thập|vành khăn|xu bi|hoàng nham',
+  '|islands?|islets?|archipelagos?|reefs?|shoals?|atolls?|itu aba|woody|fiery cross|mischief|subi|scarborough)(?![\\p{L}])',
+  '|(?<![\\p{L}])(?<!(?:khuynh|điên|lảo|chao)\\s+)đảo(?![\\p{L}])',
+  '(?!\\s+(?:lộn|ngược|nợ|chính|mắt|chiều|điên|ngũ|mạch|hướng|vòng|phách)(?![\\p{L}]))',
+].join(''), 'u')
 const HAN_CLAIMS = /中国.{0,6}领土|领土.{0,6}中国|固有领土|属于中国|中国.{0,15}主权|主权.{0,4}中国|自古以来.{0,4}中国|中国.{0,4}管辖/
 const LATIN_CLAIMS = [
   / lanh tho (?:\S+ ){0,5}trung quoc /,
@@ -127,6 +135,13 @@ function islandContext(folded: string, han: string): boolean {
   return ISLAND_HAN.test(han) || ISLAND_WORDS.test(folded.toLowerCase())
 }
 
+/** Chỉ cụm yêu sách, trên phần đã chốt (bỏ từ cuối chưa viết xong) — để biết khi nào phải giữ chữ lại. */
+function settledClaim(window: string, han: string): boolean {
+  if (HAN_CLAIMS.test(han)) return true
+  const latin = latinKey(fold(window).replace(/[\p{L}\p{M}\p{N}]+$/u, '').toLowerCase())
+  return LATIN_CLAIMS.some(pattern => pattern.test(latin))
+}
+
 function hanMentions(han: string, claims: boolean): boolean {
   return HAN_PATTERNS.some(pattern => pattern.test(han)) || (claims && HAN_CLAIMS.test(han))
 }
@@ -140,12 +155,15 @@ function scriptMentions(folded: string, claims: boolean): boolean {
   return LATIN_PATTERNS.some(pattern => pattern.test(latin)) || (claims && LATIN_CLAIMS.some(pattern => pattern.test(latin)))
 }
 
-/** `output` = đang xét chữ do model viết: tính cả yêu sách không gọi tên quần đảo, khi có nói tới đảo/biển. */
-export function mentionsSovereignty(text: string, options: { output?: boolean } = {}): boolean {
+/**
+ * `output` = đang xét chữ do model viết: tính cả yêu sách không gọi tên quần đảo, khi có nói tới đảo/biển
+ * (trong chính đoạn đó, hoặc `island` — đã biết từ câu hỏi/phần trước của luồng).
+ */
+export function mentionsSovereignty(text: string, options: { output?: boolean, island?: boolean } = {}): boolean {
   const folded = fold(text)
   if (!folded.trim()) return false
   const han = hanKey(folded)
-  const claims = options.output === true && islandContext(folded, han)
+  const claims = options.output === true && (options.island === true || islandContext(folded, han))
   return hanMentions(han, claims) || scriptMentions(folded, claims)
 }
 
@@ -186,13 +204,18 @@ export function createSovereigntyOutputGuard(hooks: {
   /** `onChunk` của luồng; không có khi không stream (`/api/chat`). */
   forward?: (chunk: string) => void | Promise<void>
   replace: () => void | Promise<void>
+  /** Câu hỏi đang được trả lời: hỏi về một hòn đảo thì "Nó là lãnh thổ của Trung Quốc" cũng là yêu sách. */
+  question?: string
 }) {
   const forward = hooks.forward
   let seen = ''
   let han = ''
   let released = 0
   let tripped = false
-  let island = false
+  const questionFolded = fold(hooks.question ?? '')
+  let island = islandContext(questionFolded, hanKey(questionFolded))
+  // Đã có cụm yêu sách mà chưa có chữ đảo/biển: chưa chặn, nhưng không nhả thêm chữ nào cho tới khi biết.
+  let claimHeld = false
 
   const trip = async () => {
     tripped = true
@@ -214,6 +237,8 @@ export function createSovereigntyOutputGuard(hooks: {
         || hanMentions(hanWindow, island)
         || settledScriptMentions(window, island, window.length < seen.length)
       if (candidate && (hanMentions(han, island) || settledScriptMentions(seen, island))) return trip()
+      if (!island && !claimHeld) claimHeld = settledClaim(window, hanWindow)
+      if (claimHeld) return
       const upTo = seen.length - STREAM_HOLD_CHARS
       if (upTo > released) {
         const release = seen.slice(released, upTo)
@@ -223,7 +248,7 @@ export function createSovereigntyOutputGuard(hooks: {
     }),
     /** Hết luồng: xét cả câu trả lời cuối; sạch thì nhả phần đuôi đang giữ. `true` = đã thay. */
     async finish(answer: string): Promise<boolean> {
-      if (!tripped && (mentionsSovereignty(answer, { output: true }) || mentionsSovereignty(seen, { output: true }))) await trip()
+      if (!tripped && (mentionsSovereignty(answer, { output: true, island }) || mentionsSovereignty(seen, { output: true, island }))) await trip()
       if (!tripped && forward && released < seen.length) {
         const rest = seen.slice(released)
         released = seen.length
