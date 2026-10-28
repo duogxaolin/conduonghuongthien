@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminContentTypeRow, AdminCategoryRow } from '~/types/admin-api'
+import type { AdminCategoriesResponse, AdminContentTypeDeleteResponse, AdminContentTypeSaveResponse, AdminContentTypesResponse } from '~/types/admin-taxonomy-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
 import { slugify, slugifyDraft } from '~~/shared/slugify'
 definePageMeta({
@@ -15,6 +16,7 @@ const types = ref<AdminContentTypeRow[]>([])
 const allCategories = ref<AdminCategoryRow[]>([])
 const loading = ref(true)
 const error = ref('')
+const categoriesError = ref('')
 const showTree = ref(true)
 
 // ─── Modal state ──────────────────────────────────────────────────────────────
@@ -69,30 +71,30 @@ const onSlugBlur = () => {
 }
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
+// Mỗi lượt tải một mã, chỉ lượt mới nhất được ghi: lượt cũ về sau xoá hàng vừa tạo (fetch-rollout-d-fetch.md).
+let typesRequest = 0, categoriesRequest = 0
 const fetchTypes = async () => {
+  const ticket = ++typesRequest
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)('/api/admin/content-types')
-    if (res.ok) {
-      types.value = res.items
-      selection.keepOnly(visibleIds.value)
-    } else {
-      error.value = 'Không tải được danh sách thể loại.'
-    }
+    const { items } = await adminFetch<AdminContentTypesResponse>('/api/admin/content-types')
+    if (ticket === typesRequest) { types.value = items; selection.keepOnly(visibleIds.value) }
   } catch (err: unknown) {
-    error.value = errorMessage(err, 'Không tải được danh sách thể loại.')
+    if (ticket === typesRequest) error.value = errorMessage(err, 'Không tải được danh sách thể loại.')
   } finally {
-    loading.value = false
+    if (ticket === typesRequest) loading.value = false
   }
 }
 
 const fetchCategories = async () => {
+  const ticket = ++categoriesRequest
+  categoriesError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminCategoryRow[] }>)('/api/admin/categories')
-    if (res.ok) allCategories.value = res.items
+    const { items } = await adminFetch<AdminCategoriesResponse>('/api/admin/categories')
+    if (ticket === categoriesRequest) allCategories.value = items
   } catch (err: unknown) {
-    // Non-blocking: tree preview just shows types without children
+    if (ticket === categoriesRequest) categoriesError.value = errorMessage(err, 'Không tải được danh mục của các thể loại.')
   }
 }
 
@@ -148,18 +150,17 @@ const handleSave = async () => {
       displayOrder: form.displayOrder,
     }
     // Only send slug when editable (create, or edit of a non-system type)
-    if (modalMode.value === 'create' || !editingIsSystem.value) {
-      payload.slug = slugify(form.slug)
-    }
+    if (modalMode.value === 'create' || !editingIsSystem.value) payload.slug = slugify(form.slug)
     if (modalMode.value === 'create') {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)("/api/admin/content-types", { method: "POST", body: payload })
+      await adminFetch<AdminContentTypeSaveResponse>("/api/admin/content-types", { method: "POST", body: payload })
       toast.success('Đã tạo thể loại thành công!')
     } else {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/content-types/${editingId.value}`, { method: "PUT", body: payload })
+      await adminFetch<AdminContentTypeSaveResponse>(`/api/admin/content-types/${editingId.value}`, { method: "PUT", body: payload })
       toast.success('Đã cập nhật thể loại thành công!')
     }
     showModal.value = false
-    await fetchTypes()
+    // Đổi slug thì máy chủ chuyển danh mục sang slug mới (content-types/[id].put.ts) — tải cả hai.
+    await Promise.all([fetchTypes(), fetchCategories()])
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu thể loại'))
   } finally {
@@ -194,7 +195,7 @@ const deleteType = async (ct: AdminContentTypeRow) => {
   const ok = await confirm({ title: 'Xóa thể loại', message: `Bạn có chắc muốn xóa thể loại "${ct.name}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/content-types/${ct.id}`, { method: "DELETE" })
+    await adminFetch<AdminContentTypeDeleteResponse>(`/api/admin/content-types/${ct.id}`, { method: "DELETE" })
     toast.success('Đã xóa thể loại thành công!')
     await fetchTypes()
   } catch (err: unknown) {
@@ -202,10 +203,7 @@ const deleteType = async (ct: AdminContentTypeRow) => {
   }
 }
 
-onMounted(() => {
-  fetchTypes()
-  fetchCategories()
-})
+onMounted(() => { fetchTypes(); fetchCategories() })
 </script>
 
 <template>
@@ -273,6 +271,8 @@ onMounted(() => {
 
     <!-- Tree preview: Thể loại → Danh mục → Danh mục con -->
     <div v-else-if="showTree" class="bg-white rounded-xl border border-line p-4 sm:p-6">
+      <!-- Tải danh mục hỏng: nói ra, đừng để mỗi thể loại ghi "Chưa có danh mục nào". -->
+      <p v-if="categoriesError" role="alert" class="m-0 mb-4 text-[0.85rem] text-danger-soft">{{ categoriesError }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchCategories()">thử lại</button>.</p>
       <div class="flex flex-col gap-4">
         <div v-for="ct in tree" :key="ct.id" class="rounded-xl border border-line overflow-hidden">
           <!-- Level 1: Thể loại -->
@@ -312,7 +312,7 @@ onMounted(() => {
 
           <!-- Levels 2 & 3: Danh mục → Danh mục con -->
           <div class="px-4 py-3">
-            <p v-if="ct.children.length === 0" class="text-[0.82rem] text-ink-faint italic m-0">
+            <p v-if="!categoriesError && ct.children.length === 0" class="text-[0.82rem] text-ink-faint italic m-0">
               Chưa có danh mục nào trong thể loại này.
             </p>
             <ul v-else class="flex flex-col gap-2 m-0 p-0 list-none">

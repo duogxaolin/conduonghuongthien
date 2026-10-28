@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
+import type { AdminCategoriesResponse, AdminCategoryDeleteResponse, AdminCategorySaveResponse, AdminContentTypesResponse } from '~/types/admin-taxonomy-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
 import { slugify, slugifyDraft } from '~~/shared/slugify'
 definePageMeta({
@@ -97,28 +98,26 @@ const parentOptions = computed(() => {
 })
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
+// Mỗi lượt tải một mã: "Tạo Danh Mục Mới" bấm được khi lượt tải lại đang chạy — chỉ lượt mới
+// nhất ghi hàng/lỗi/đang tải, lượt cũ về sau không xoá hàng vừa tạo (fetch-rollout-d-fetch.md).
+let listRequest = 0
 const fetchCategories = async () => {
+  const ticket = ++listRequest
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminCategoryRow[] }>)(`/api/admin/categories`)
-    if (res.ok) {
-      categories.value = res.items
-      selection.keepOnly(visibleIds.value)
-    } else {
-      error.value = 'Không tải được danh sách danh mục.'
-    }
+    const { items } = await adminFetch<AdminCategoriesResponse>(`/api/admin/categories`)
+    if (ticket === listRequest) { categories.value = items; selection.keepOnly(visibleIds.value) }
   } catch (err: unknown) {
-    error.value = errorMessage(err, 'Không tải được danh sách danh mục.')
+    if (ticket === listRequest) error.value = errorMessage(err, 'Không tải được danh sách danh mục.')
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
 const fetchContentTypes = async () => {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)(`/api/admin/content-types`)
-    if (res.ok) contentTypes.value = res.items
+    contentTypes.value = (await adminFetch<AdminContentTypesResponse>(`/api/admin/content-types`)).items
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi tải thể loại'))
   }
@@ -163,10 +162,10 @@ const handleSave = async () => {
       displayOrder: form.displayOrder,
     }
     if (modalMode.value === 'create') {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/categories`, { method: 'POST', body: payload })
+      await adminFetch<AdminCategorySaveResponse>(`/api/admin/categories`, { method: 'POST', body: payload })
       toast.success('Đã tạo danh mục thành công!')
     } else {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/categories/${editingId.value}`, { method: 'PUT', body: payload })
+      await adminFetch<AdminCategorySaveResponse>(`/api/admin/categories/${editingId.value}`, { method: 'PUT', body: payload })
       toast.success('Đã cập nhật danh mục thành công!')
     }
     showModal.value = false
@@ -211,7 +210,7 @@ const deleteCategory = async (cat: AdminCategoryRow) => {
   const ok = await confirm({ title: 'Xóa danh mục', message: `Bạn có chắc muốn xóa danh mục "${cat.name}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/categories/${cat.id}`, { method: 'DELETE' })
+    await adminFetch<AdminCategoryDeleteResponse>(`/api/admin/categories/${cat.id}`, { method: 'DELETE' })
     toast.success('Đã xóa danh mục thành công!')
     await fetchCategories()
   } catch (err: unknown) {

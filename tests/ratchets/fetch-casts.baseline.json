@@ -53,8 +53,6 @@
   "app/pages/admin/chatbot/knowledge/[id].vue": 3,
   "app/pages/admin/chatbot/sessions/[id].vue": 1,
   "app/pages/admin/content/articles/[id].vue": 6,
-  "app/pages/admin/content/categories/index.vue": 5,
-  "app/pages/admin/content/content-types.vue": 5,
   "app/pages/admin/content/navigation/mobile.vue": 2,
   "app/pages/admin/content/navigation/navbar.vue": 2,
   "app/pages/admin/content/pages/index.vue": 3,

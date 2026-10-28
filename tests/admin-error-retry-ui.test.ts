@@ -73,7 +73,9 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/content/articles/index.vue', refs: ['loadError'], retries: ['fetchArticles'] },
   { file: 'pages/admin/content/articles/[id].vue', refs: ['errorMsg'], retries: ['fetchArticle'] },
   { file: 'pages/admin/content/categories/index.vue', refs: ['error'], retries: ['fetchCategories'] },
-  { file: 'pages/admin/content/content-types.vue', refs: ['error'], retries: ['fetchTypes'] },
+  // The tree preview's categories fail on their own (wave3 7.1 batch D): a failed load used
+  // to leave every type reading "Chưa có danh mục nào trong thể loại này.".
+  { file: 'pages/admin/content/content-types.vue', refs: ['error', 'categoriesError'], retries: ['fetchTypes', 'fetchCategories'] },
   // Picker trong dialog navbar/mobile — chọn Thể loại để auto-fill URL. Failure
   // rendered trong `role="alert"` + nút "Thử lại" gọi lại `fetchTypes` (cùng file).
   { file: 'components/admin/ContentTypePicker.vue', refs: ['error'], retries: ['fetchTypes'] },
