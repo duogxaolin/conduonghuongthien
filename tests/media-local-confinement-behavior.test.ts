@@ -137,3 +137,13 @@ test('uploadLocalFile writes into the month folder of the given clock and report
   // What was written can be deleted through the same guard.
   assert.equal(await deleteLocalFile(written.storagePath), true)
 })
+
+test('uploadLocalFile `exclusive`: a second write to the same name is refused and the first file keeps its bytes', async () => {
+  const at = new Date(2027, 0, 15, 10, 0, 0)
+  const first = await uploadLocalFile(Buffer.from('first'), '1_dup.webp', at, { exclusive: true })
+  await assert.rejects(uploadLocalFile(Buffer.from('second'), '1_dup.webp', at, { exclusive: true }), { code: 'EEXIST' })
+  assert.equal(readFileSync(first.storagePath, 'utf8'), 'first')
+  // Without it (the R2 → local sync re-writes the same name on a retry) the write replaces.
+  await uploadLocalFile(Buffer.from('again'), '1_dup.webp', at)
+  assert.equal(readFileSync(first.storagePath, 'utf8'), 'again')
+})

@@ -22,10 +22,21 @@ function uploadDirFor(now: Date): { relativeDir: string; fullDir: string } {
   return { relativeDir, fullDir: path.resolve(process.cwd(), 'public', relativeDir) }
 }
 
-export async function uploadLocalFile(fileBuffer: Buffer, filename: string, now: Date = new Date()): Promise<{ url: string; storagePath: string }> {
+/**
+ * `exclusive`: ghi với cờ `wx` — tệp đã có ở đường dẫn đó thì NÉM (`EEXIST`) thay vì ghi đè
+ * tệp của một hàng `media` khác (đường tải lên mới: tên tệp phải là của riêng nó). Mặc định
+ * ghi đè: lượt đồng bộ R2 → local ghi lại đúng tên đó khi thử lại một lượt bị cắt ngang, sau
+ * khi đã kiểm không hàng nào khác sở hữu đường dẫn (`media-sync-files.ts`).
+ */
+export async function uploadLocalFile(
+  fileBuffer: Buffer,
+  filename: string,
+  now: Date = new Date(),
+  options: { exclusive?: boolean } = {},
+): Promise<{ url: string; storagePath: string }> {
   await fs.mkdir(uploadDirFor(now).fullDir, { recursive: true })
   const target = localUploadTargetFor(filename, now)
-  await fs.writeFile(target.storagePath, fileBuffer)
+  await fs.writeFile(target.storagePath, fileBuffer, { flag: options.exclusive ? 'wx' : 'w' })
   return target
 }
 
