@@ -733,18 +733,35 @@ describe('page builder — "Phiên bản"', () => {
     assertOnlyServerSentences(ctx)
   })
 
-  it('only the latest list is shown: an older answer landing last does not hide the backup just saved', async (t) => {
+  it('only the latest list is shown: an older answer landing last does not undo the delete just made', async (t) => {
+    // Two reads overlap: the one after a backup is still out when a version is deleted from the
+    // list still on screen (its buttons stay usable while the list reloads). "Lưu (n/4)" itself
+    // is off while a read is out (FINDING-B1), so the overlap comes from the delete.
     const server = builderServer()
     const held: NetCall[] = []
     const ctx = await openBuilder(t, server)
+    await click(button(ctx.page, 'Phiên bản'))
+    await ctx.settle()
     server.state.override = call => (wire(call) === `GET ${API}/versions` && !held.length ? (held.push(call), HOLD) : undefined)
-    tap(button(ctx.page, 'Phiên bản'))
+    tap(saveBackupButton(ctx))
     await ctx.settle()
-    await click(saveBackupButton(ctx))
+    assert.equal(held.length, 1, 'the read after the backup is out')
+    await click(findAll(card(ctx, 'Trước Tết'), el => el.props['aria-label'] === 'Xóa phiên bản Trước Tết')[0]!)
     await ctx.settle()
-    held[0]!.respond(new Response(JSON.stringify({ ok: true, versions: [] }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const newest = () => versionCards(ctx).map(c => textOf(c).split(' · ')[0])
+    assert.equal(newest().some(text => text.includes('Trước Tết')), false, 'the newest list: "Trước Tết" deleted')
+    assert.equal(versionCards(ctx).length, 3, 'origin, the new backup, the automatic version')
+    // The older read answers last, with the list from before the delete.
+    const beforeDelete = [
+      { id: 6, kind: 'manual', label: null, blockCount: 6, createdAt: null, createdBy: 1 },
+      { id: 3, kind: 'origin', label: null, blockCount: 3, createdAt: null, createdBy: 1 },
+      { id: 4, kind: 'manual', label: 'Trước Tết', blockCount: 1, createdAt: null, createdBy: 1 },
+      { id: 5, kind: 'auto', label: null, blockCount: 1, createdAt: null, createdBy: 1 },
+    ]
+    held[0]!.respond(new Response(JSON.stringify({ ok: true, versions: beforeDelete }), { status: 200, headers: { 'content-type': 'application/json' } }))
     await ctx.settle()
-    assert.equal(versionCards(ctx).length, 4, 'the newer list (with the new backup) stays')
+    assert.equal(newest().some(text => text.includes('Trước Tết')), false, 'the older answer does not bring "Trước Tết" back')
+    assert.equal(versionCards(ctx).length, 3)
     assert.equal(findAll(dialog(ctx.page, 'Phiên bản'), el => String(el.props.class ?? '').includes('fa-spinner fa-spin text-xl')).length, 0)
   })
 
