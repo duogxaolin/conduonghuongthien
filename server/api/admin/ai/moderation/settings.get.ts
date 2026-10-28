@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { aiServiceConfigs, aiProviders, aiModelPricing } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
-import { DEFAULT_MODERATION_SYSTEM_PROMPT } from '../../../../utils/ai/prompt-defaults'
+import { DEFAULT_MODERATION_SYSTEM_PROMPT, effectiveSystemPrompt } from '../../../../utils/ai/prompt-defaults'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -42,7 +42,8 @@ export default defineEventHandler(async (event) => {
       mode,
       provider: config?.provider ?? 'delify',
       model: config?.model ?? 'delify-5.5',
-      systemPrompt: config?.systemPrompt ?? DEFAULT_MODERATION_SYSTEM_PROMPT,
+      // What `callAi` will run: the stored prompt, or the default when it is null/blank.
+      systemPrompt: effectiveSystemPrompt('moderation', config?.systemPrompt),
       defaultSystemPrompt: DEFAULT_MODERATION_SYSTEM_PROMPT,
     },
     activeProviders,
