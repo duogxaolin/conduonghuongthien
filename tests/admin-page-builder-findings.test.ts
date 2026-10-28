@@ -30,7 +30,7 @@ import { afterEach, beforeEach, describe, it, mock } from 'node:test'
 
 import { click, fire, type MiniElement } from './_sfc-mount.ts'
 import {
-  alerts, builderServer, button, byTitle, dialog, dialogs, draftBodies, findAll, h3Error, HOLD, mountBuilder, openBuilder, panel, textOf, wire,
+  alerts, builderServer, button, byTitle, dialog, dialogs, draftBodies, findAll, h3Error, HOLD, mountBuilder, openBuilder, panel, serverRender, textOf, wire,
   type BuilderCtx, type NetCall,
 } from './_page-builder-harness.ts'
 
@@ -166,6 +166,17 @@ describe('FINDING-B2 — page actions wait for the page (verification V3)', () =
       for (const [name, el] of Object.entries(topBar(ctx))) assert.equal(el.props.disabled, true, `${name} is disabled while the page is ${state}`)
     })
   }
+
+  it('guard 1, the first frame: the server-rendered page (before the load runs, until hydration) has the four buttons off — the flag starts false (RED before)', async () => {
+    const html = await serverRender()
+    const buttonTag = (label: string) => {
+      const found = [...html.matchAll(/<button\b([^>]*)>((?:(?!<\/button>)[\s\S])*)<\/button>/g)].filter(m => m[2]!.replace(/<[^>]+>/g, '').includes(label))
+      assert.equal(found.length, 1, `one "${label}" button in the server HTML`)
+      return found[0]![1]!
+    }
+    assert.match(html, /Đang tải trình dựng trang/, 'the first frame is the loading placeholder')
+    for (const label of ['Hủy sửa', 'Phiên bản', 'Cấu hình', 'Xuất bản']) assert.match(buttonTag(label), /\sdisabled(?=[\s=>]|$)/, `"${label}" is disabled in the first frame`)
+  })
 
   it('guard 2, the handlers: a click that reaches them past the disabled buttons publishes nothing, clears no draft, opens nothing (RED before)', async (t) => {
     const { ctx, server } = await notLoaded(t, 'failed')

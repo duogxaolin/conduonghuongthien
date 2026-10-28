@@ -37,7 +37,7 @@ import * as Vue from 'vue'
 import { adminFetch } from '../app/composables/adminFetch.ts'
 import { errorMessage } from '../app/utils/errorMessage.ts'
 import { AdminModalStandIn } from './_ai-providers-tab-harness.ts'
-import { byText, findAll, mountSfc, textOf, type MiniElement, type MountedSfc } from './_sfc-mount.ts'
+import { byText, findAll, loadSfc, mountSfc, textOf, type MiniElement, type MountedSfc, type SfcEnv } from './_sfc-mount.ts'
 
 export const PAGE = process.env.PAGE_BUILDER_FILE
   ? path.resolve(process.env.PAGE_BUILDER_FILE)
@@ -207,6 +207,42 @@ async function settleOnly() {
   }
 }
 
+function builderEnv(toast: Record<string, (message: string) => void>, confirms: ConfirmRequest[], answers: { confirm: boolean }): SfcEnv {
+  return {
+    auto: {
+      ref: Vue.ref, reactive: Vue.reactive, computed: Vue.computed, watch: Vue.watch, nextTick: Vue.nextTick,
+      onMounted: Vue.onMounted, onUnmounted: Vue.onUnmounted, onBeforeUnmount: Vue.onBeforeUnmount,
+      provide: Vue.provide, inject: Vue.inject,
+      definePageMeta: () => {},
+      useRoute: () => ({ params: { id: '5' }, query: {} }),
+      useToast: () => toast,
+      useConfirm: () => ({ confirm: async (request: ConfirmRequest) => { confirms.push(request); return answers.confirm } }),
+      adminFetch,
+      errorMessage,
+    },
+    modules: {
+      '~/components/admin/AdminModal.vue': { default: AdminModalStandIn },
+      '~/components/admin/builder/BuilderCanvas.vue': { default: BuilderCanvasStandIn },
+      '~/components/admin/builder/PropertyPanel.vue': { default: PropertyPanelStandIn },
+    },
+  }
+}
+
+/**
+ * The page's FIRST frame as the server renders it — Nuxt renders admin pages on the server, and
+ * `onMounted` (the page load) does not run there: this HTML is what the officer sees until the
+ * page hydrates. Same stand-ins as `mountBuilder`; nothing is fetched.
+ */
+export async function serverRender(): Promise<string> {
+  const { renderToString } = await import('vue/server-renderer')
+  const noop = Object.fromEntries(['success', 'error', 'warning', 'info'].map(type => [type, () => {}]))
+  const env = builderEnv(noop, [], { confirm: false })
+  const app = Vue.createSSRApp(await loadSfc(PAGE, env))
+  Object.assign(app.config.globalProperties, env.auto)
+  app.config.warnHandler = () => {}
+  return renderToString(app)
+}
+
 export async function mountBuilder(t: TestContext, server = builderServer()) {
   const calls: NetCall[] = []
   const fetchImpl = (input: RequestInfo | URL, init: RequestInit = {}) => new Promise<Response>((resolve, reject) => {
@@ -233,24 +269,7 @@ export async function mountBuilder(t: TestContext, server = builderServer()) {
   const confirms: ConfirmRequest[] = []
   const answers = { confirm: true }
 
-  const page = await mountSfc(PAGE, {
-    auto: {
-      ref: Vue.ref, reactive: Vue.reactive, computed: Vue.computed, watch: Vue.watch, nextTick: Vue.nextTick,
-      onMounted: Vue.onMounted, onUnmounted: Vue.onUnmounted, onBeforeUnmount: Vue.onBeforeUnmount,
-      provide: Vue.provide, inject: Vue.inject,
-      definePageMeta: () => {},
-      useRoute: () => ({ params: { id: '5' }, query: {} }),
-      useToast: () => toast,
-      useConfirm: () => ({ confirm: async (request: ConfirmRequest) => { confirms.push(request); return answers.confirm } }),
-      adminFetch,
-      errorMessage,
-    },
-    modules: {
-      '~/components/admin/AdminModal.vue': { default: AdminModalStandIn },
-      '~/components/admin/builder/BuilderCanvas.vue': { default: BuilderCanvasStandIn },
-      '~/components/admin/builder/PropertyPanel.vue': { default: PropertyPanelStandIn },
-    },
-  })
+  const page = await mountSfc(PAGE, builderEnv(toast, confirms, answers))
 
   let open = true
   const close = () => {
