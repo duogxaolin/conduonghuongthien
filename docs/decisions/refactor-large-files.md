@@ -300,3 +300,59 @@ Wave 3, task 4.2 (component công khai > 600 dòng). Bản tách giữ lại.
   - Test: 33 (bản gốc 25/29 trên 29 test ban đầu).
   - Độ phủ đo lại trên Node 24.21 (image `cdkt-cov:node24`, `TZ=Asia/Ho_Chi_Minh`, lệnh của CI, toàn bộ xanh): `app/composables` 73,19 % (5198/7102), `app/utils` 96,02 % (5590/5822) → mốc 73.19 / 96.01, không cao hơn số đo (mốc 73.14 trước đó đo trên Node 26). Các thư mục khác cũng RISE nhưng không do lô này — không nâng.
 - **Khác biệt đã biết, chủ đích:** nháp video đang nằm dưới khoá cũ `cdkt:comment-draft:<slug>` lúc deploy không còn được phục hồi (chỉ sống trong tab, một lần).
+
+## 2026-10-28 — `components/admin/ai/AiProvidersTab.vue` (1018 → 246)
+
+Wave 3, task 4.2. Bản tách giữ lại. Khác kế hoạch 2026-10 ở trên (1026 → 824, cả 5 hộp thoại vào một `ProviderModals.vue` với 18 `defineModel`): mỗi hộp thoại một tệp, thẻ nhà cung cấp cũng tách.
+
+- **Đường tách:**
+  - 7 phần chỉ hiển thị trong `app/components/admin/ai/providers/` — props vào, sự kiện ra, `defineModel('form')` cho biểu mẫu, không phần nào gọi API, toast hay confirm:
+    - `ProviderCardHeader` (108 dòng) — ô chọn, nhãn, Base URL, `••••` + 4 ký tự cuối của khoá, bốn nút, kết quả "Test kết nối";
+    - `ProviderModelsPanel` (203) — bảng model, thanh model đã tích của nhà cung cấp đó, trạng thái rỗng, ước tính chi phí;
+    - `ProviderCreateModal` (55), `ProviderEditModal` (66), `ModelAddModal` (54), `ModelEditModal` (55), `ModelTestCallModal` (70) — mỗi tệp một `AdminModal`.
+  - Thao tác ghi + trạng thái của chúng → `useAiProviderWrites` (227) và `useAiModelWrites` (323), chuyển nguyên văn. `toast`/`confirm`/`reload`/`onInvalidate` do tab truyền vào; import tương đối (như `useModerationWorker`), nên test import thẳng được.
+- **Giữ ở cha:**
+  - hai danh sách, `loadProviders` + hai `adminFetch` — cha vẫn khớp `ADMIN_FETCH_CALL` nên vẫn nằm trong hai cổng phủ;
+  - nhánh lỗi `role="alert"` + "Thử lại", khung chờ `v-if="providersLoading"` (ghim bởi `admin-error-retry-ui`/`skeleton-loading-ui`, không đổi);
+  - thanh chọn nhiều nhà cung cấp, vỏ thẻ `v-for`;
+  - trạng thái gập của từng thẻ — thẻ bị vẽ lại mỗi lượt tải, nên trạng thái phải sống ở cha;
+  - 5 hộp thoại vẫn nằm trong `<template v-if="!providersLoading && !providersError">` (đang tải lại thì không vẽ hộp nào — có test ghim);
+  - `defineExpose` đúng 3 khoá.
+
+  Cha destructure mọi giá trị của hai composable ra hằng cấp cao nhất: `admin-fetch-rollout` chạy `<script setup>` của tab và đọc ~30 binding (kể cả `delifyUsage` không vẽ ở đâu).
+- **Ép kiểu:** tệp gốc đã không còn `$fetch as` (chuyển sang `adminFetch` ở 7.1); `T` viết tay đi theo vào composable, ratchet `fetch-casts` không đổi. Chưa suy `T` từ handler: `test-call.post.ts` và `providers/[id]/test.post.ts` trả `ok: boolean` (không phải literal), union không thu hẹp được nếu không sửa handler.
+- **Bốn lỗi sửa kèm** (`tests/admin-ai-providers-tab-findings.test.ts`, 7 test đỏ trên bản gốc VÀ trên bản tách thuần, xanh sau sửa):
+  - P1 "Test kết nối" trên thẻ:
+    - kết quả không bao giờ hiện trên thẻ — băng kết quả chờ `editingProvider?.id === p.id`, mà chỉ "Cài đặt" đặt `editingProvider`;
+    - câu trả lời của A rơi vào hộp Cài đặt của B mở trong lúc chờ;
+    - lượt thử đầu về trước tắt "Đang test..." của lượt thử sau.
+
+    Gốc: kết quả và dấu "đang chạy" không gắn với nhà cung cấp. Nay có `testResultFor`, và chỉ lượt thử mới nhất được ghi.
+  - P2 hàng xoá lẻ vẫn ở trong lựa chọn: "Đã chọn 1 nhà cung cấp" cho hàng đã mất (xoá hàng loạt khi đó trả 404), model thêm lại hiện sẵn dấu tích. Nay mỗi lượt tải thành công dọn lựa chọn theo danh sách mới.
+  - P3 thanh model của MỘT nhà cung cấp xoá model đã tích ở MỌI nhà cung cấp, trong khi nút chỉ đếm của mình. Nay `bulkDeleteModels(provider)` chỉ xoá — và chỉ bỏ tích — model của nhà cung cấp đó. Chữ ký đổi, nên `admin-fetch-rollout` gọi `bulkDeleteModels('delify')`; request không đổi.
+  - P4 lần bấm đầu "Thu gọn models" không làm gì: chưa có mục nghĩa là mở, nhưng nút lật "chưa có" thành MỞ.
+- **Hành vi:** `tests/admin-ai-providers-tab.test.ts` (32 test), viết TRƯỚC khi tách.
+  - Mount tab thật cùng các phần và composable trên DOM tối giản (`tests/_ai-providers-tab-harness.ts`), ofetch thật trên mạng giả trả lời như `server/api/admin/ai/**`. Luật "đổi Base URL phải nhập lại API key" chạy bằng `checkProviderBaseUrl` thật.
+  - `AdminModal` thay bằng khung giả vẽ đủ tiêu đề, `busy` (khoá ✕), `size`, `icon`, footer — cùng khung cho bản gốc và bản tách.
+  - Bản gốc 32/32, bản tách 32/32. `AI_PROVIDERS_TAB_FILE=<tệp>` chạy cùng bộ test trên bản khác.
+  - `tests/_sfc-mount.ts`: `mountSfc` trả thêm `instance` (đọc được `defineExpose`).
+- **Chứng minh DOM không đổi** (`AI_PROVIDERS_TAB_DOM_LOG`, chạy một lần, không commit):
+  - bản gốc vs bản tách thuần (commit `965aaa8`): 118/118 ảnh chụp giống hệt — DOM + request + toast + confirm + số lần `invalidate`;
+  - sau sửa lỗi: 114/122 giống hệt. 8 ảnh khác đúng ở bước lỗi lộ ra: 7 test FINDING, và băng "Thất bại: …" nay hiện trên thẻ ở test khoá nút (P1).
+- **Guard đọc cả họ tệp** (`AI_PROVIDERS_TAB_FAMILY` trong `tests/_component-family.ts`), mỗi guard có bằng chứng cấy lỗi:
+  - `admin-fetch-rollout`: không `$fetch` ở cả họ (cấy vào phần, vào composable, vào phần mới đều đỏ);
+  - `admin-modal-dialog`: 5 `AdminModal` ở 5 phần, tổng vẫn 23;
+  - guard mới `admin-ai-providers-tab-source`:
+    - API key chỉ là `v-model` của ô `type="password"` tĩnh — ô text, `:type` động, `{{ }}`, thuộc tính khác hay phần mới đều đỏ;
+    - phần tách không gọi API/toast/confirm.
+- **Đột biến:** 16 (M1–M16), sau cùng đều đỏ. M14 (tích theo nhãn thay vì mã model) và M15 (bỏ `:busy` ở hộp Thêm Model) sống ở lượt đầu — đã thêm test.
+- **Mã màu hex:** codemod 0 thay thế (như trên tệp gốc). 16 → cha 5 + `ProviderModelsPanel` 4 + `ProviderCreateModal` 3 + `ModelAddModal` 3 + `ProviderCardHeader` 1 (`--raise`).
+- **Độ phủ** (Node 24.21, `cdkt-cov:node24`, lệnh của CI, toàn bộ xanh): `app/composables` 76,38 % (5878/7696) → mốc 76.37. Các thư mục khác RISE không do lô này — không nâng.
+- **Việc sau** (ghim nguyên trạng hoặc chưa đụng):
+  - xoá trống Base URL (hoặc nhãn model) gửi `null`, máy chủ hiểu là "không đổi" mà trang vẫn báo "Đã lưu";
+  - tab không có trạng thái rỗng khi chưa có nhà cung cấp nào;
+  - `selectAllProviders` không nơi nào gọi; `delifyUsage` được lưu nhưng không vẽ;
+  - `loadProviders` không chặn lượt đọc cũ về sau lượt mới;
+  - `pricing/bulk-delete.post.ts` trả `deleted` = số model GỬI lên;
+  - "Test" model chỉ có một ô `testingModelKey`;
+  - "Kiểm tra kết nối" thử cấu hình ĐÃ LƯU, không phải giá trị đang gõ.
