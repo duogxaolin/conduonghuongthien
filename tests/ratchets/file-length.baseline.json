@@ -31,7 +31,7 @@
   "app/pages/admin/index.vue": 565,
   "app/pages/admin/languages/index.vue": 756,
   "app/pages/admin/livestream/index.vue": 552,
-  "app/pages/admin/login.vue": 429,
+  "app/pages/admin/login.vue": 428,
   "app/pages/admin/media-portal/[id].vue": 414,
   "app/pages/admin/media/index.vue": 456,
   "app/pages/admin/settings/backup.vue": 528,
