@@ -49,13 +49,15 @@ export function useAiProviderWrites({ toast, confirm, providers, reload }: AiPro
   const testResultFor = ref<number | null>(null)
   let latestProbe = 0
 
-  /** Drop the "Test kết nối" result of provider `id` — shown or still in flight. */
+  /**
+   * Drop the "Test kết nối" result of provider `id` — shown or still in flight. An answer still
+   * in flight then shows nowhere (`testResultFor` no longer names a provider; the next probe sets
+   * it again before its own answer); it only ends its "Đang test...", as before the split.
+   */
   function forgetProbe(id: number) {
     if (testResultFor.value !== id) return
-    latestProbe += 1 // the answer of a probe still in flight no longer lands
     testResultFor.value = null
     testResult.value = null
-    if (testingProvider.value === id) testingProvider.value = null
   }
 
   // Create provider modal
