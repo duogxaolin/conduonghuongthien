@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { MfaPolicyResponse, MfaPolicySaveResponse } from '~/types/admin-settings-api'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -10,16 +12,9 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  * bật — một chính sách khoá người vận hành ra ngoài là thứ phải thấy trước, không
  * phải phát hiện sau.
  */
-type Policy = 'off' | 'privileged' | 'all'
-type Account = { id: number; username: string; roleName: string | null }
-type Overview = {
-  ok: boolean
-  policy: Policy
-  enforceAfter: string | null
-  graceDays: number
-  killSwitch: boolean
-  withoutFactor: Record<'privileged' | 'all', Account[]>
-}
+type Overview = MfaPolicyResponse
+type Policy = Overview['policy']
+type Account = Overview['withoutFactor']['all'][number]
 
 const OPTIONS: Array<{ value: Policy; label: string; hint: string }> = [
   { value: 'off', label: 'Không bắt buộc', hint: 'Mỗi tài khoản tự quyết định có bật xác thực hai bước hay không.' },
@@ -50,7 +45,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string) => Promise<Overview>)('/api/admin/security/mfa-policy')
+    const res = await adminFetch<Overview>('/api/admin/security/mfa-policy')
     overview.value = res
     selected.value = res.policy
   } catch (err: unknown) {
@@ -70,7 +65,7 @@ async function save() {
   if (!await confirm({ message, confirmLabel: next === 'off' ? 'Tắt chính sách' : 'Bật chính sách', danger: next !== 'off' })) return
   saving.value = true
   try {
-    await ($fetch as (u: string, o: Record<string, unknown>) => Promise<unknown>)('/api/admin/security/mfa-policy', {
+    await adminFetch<MfaPolicySaveResponse>('/api/admin/security/mfa-policy', {
       method: 'PUT',
       body: { policy: next },
     })

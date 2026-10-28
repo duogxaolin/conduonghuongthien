@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import type {
+  GoogleOAuthClearSecretResponse, GoogleOAuthSettings, GoogleOAuthSettingsResponse, GoogleOAuthSettingsSaveResponse,
+} from '~/types/admin-settings-api'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -14,22 +18,10 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  *
  * The client secret is write-only from the browser's point of view: the form
  * shows `••••1234` and a replace box, exactly like the chatbot provider key.
+ *
+ * `publicBaseUrl` (in `GoogleOAuthSettings`, derived from the handler) is the configured
+ * PUBLIC_BASE_URL — reference only, it never overrides the request host.
  */
-
-type Settings = {
-  clientId: string
-  hasClientSecret: boolean
-  clientSecretMasked: string | null
-  clientSecretStatus: 'not_configured' | 'configured' | 'secret_unreadable'
-  isEnabled: boolean
-  defaultCommentsEnabled: boolean
-  redirectUri: string
-  redirectUriSource: 'config' | 'request'
-  /** Configured PUBLIC_BASE_URL — reference only, never overrides the request host. */
-  publicBaseUrl: string
-  missing: string[]
-  updatedAt: string | null
-}
 
 const toast = useToast()
 const { confirm } = useConfirm()
@@ -42,7 +34,7 @@ const copied = ref(false)
 const secretVisible = ref(false)
 const newSecret = ref('')
 
-const settings = ref<Settings | null>(null)
+const settings = ref<GoogleOAuthSettings | null>(null)
 const form = reactive({
   clientId: '',
   isEnabled: false,
@@ -65,7 +57,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Settings }>)(`/api/admin/settings/google-oauth`)
+    const res = await adminFetch<GoogleOAuthSettingsResponse>(`/api/admin/settings/google-oauth`)
     if (!res?.ok) {
       error.value = 'Không tải được cấu hình đăng nhập Google.'
       return
@@ -94,7 +86,7 @@ async function save() {
     const secret = newSecret.value.trim()
     if (secret) body.clientSecret = secret
 
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Settings }>)(`/api/admin/settings/google-oauth`, {
+    const res = await adminFetch<GoogleOAuthSettingsSaveResponse>(`/api/admin/settings/google-oauth`, {
       method: 'PATCH',
       body,
     })
@@ -117,7 +109,7 @@ async function clearSecret() {
   })) return
   clearing.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Settings }>)(`/api/admin/settings/google-oauth/clear-secret`, { method: 'POST' })
+    const res = await adminFetch<GoogleOAuthClearSecretResponse>(`/api/admin/settings/google-oauth/clear-secret`, { method: 'POST' })
     settings.value = res.settings
     form.isEnabled = res.settings.isEnabled
     toast.success('Đã xoá Client secret.')

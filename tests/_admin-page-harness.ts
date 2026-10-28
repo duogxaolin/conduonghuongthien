@@ -125,6 +125,11 @@ export interface MountOptions {
   /** Import specifiers replaced by stand-in modules (child components, the editor…). */
   modules?: Record<string, Record<string, unknown>>
   components?: Record<string, Vue.Component>
+  /**
+   * Auto-imports to add or replace, applied over the defaults below — e.g. a
+   * `useAdminAuth` whose `fetchUser` the page calls (settings/security.vue).
+   */
+  auto?: Record<string, unknown>
 }
 
 export interface MountedAdminPage {
@@ -180,7 +185,8 @@ export async function mountAdminPage(file: string, responder: Responder, options
     }),
     useAdminAuth: () => ({ user: Vue.ref({ id: 1, username: 'admin', isSuperAdmin: true, ...options.user }), hasPermission: can }),
     useRoute: () => ({ params: options.route?.params ?? {}, query: options.route?.query ?? {} }),
-    useRouter: () => ({ push: (to: unknown) => { pushes.push(to) } }),
+    // `replace` is recorded with `push`: both are "the page asked to navigate".
+    useRouter: () => ({ push: (to: unknown) => { pushes.push(to) }, replace: (to: unknown) => { pushes.push(to) } }),
     errorMessage,
     errorStatus,
     adminFetch,
@@ -193,9 +199,10 @@ export async function mountAdminPage(file: string, responder: Responder, options
       open: (...args: unknown[]) => { opened.push(args) },
     },
     document: {
-      createElement: () => ({ href: '', download: '', click() { downloads.push({ href: this.href, download: this.download }) } }),
+      createElement: () => ({ href: '', download: '', click() { downloads.push({ href: this.href, download: this.download }) }, remove() {} }),
       body: { appendChild: () => {}, removeChild: () => {} },
     },
+    ...options.auto,
   }
   Object.assign(auto, loadBulk(auto))
 
