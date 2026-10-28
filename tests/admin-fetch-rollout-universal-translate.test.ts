@@ -69,7 +69,8 @@ const cardNumbers = (opened: MountedAdminPage) =>
   findAll(opened.page.root, el => typeof el.props.class === 'string' && el.props.class.startsWith('text-2xl font-black')).map(textOf)
 const screen = (opened: MountedAdminPage) => textOf(opened.page.root)
 const startButton = (opened: MountedAdminPage) => byText(opened.page.root, 'button', 'Dịch Toàn Cục Tự Động')
-async function poll(opened: MountedAdminPage) {
+/** One 2 s tick of the tab's status poll. */
+async function poll() {
   mock.timers.tick(2000)
   await settle()
 }
@@ -156,15 +157,15 @@ describe(TAB, () => {
     it(`${outcome === 'completed' ? '' : 'FINDING: '}the poll sees the task ${outcome} — says so (${type}), stops polling, rescans`, async () => {
       let status = RUNNING
       const opened = await open(server({ [`GET ${STATUS}`]: () => json({ ok: true, task: status }) }))
-      await poll(opened)
+      await poll()
       assert.equal(opened.toasts.length, 0, 'still running: nothing said')
       status = task(ended)
       const before = opened.calls.length
-      await poll(opened)
+      await poll()
       assert.deepEqual(opened.calls.slice(before).map(wire), [`GET ${STATUS}`, `GET ${COVERAGE}`, `GET ${STATUS}`])
       assert.deepEqual(opened.toasts, [{ type, message: sentence }])
       const after = opened.calls.length
-      await poll(opened)
+      await poll()
       assert.equal(opened.calls.length, after, 'the poll stopped')
     })
   }
@@ -177,8 +178,8 @@ describe(TAB, () => {
     pending[0]!.respond(json({ ok: true, task: RUNNING }))
     await settle()
     const before = opened.calls.length
-    await poll(opened)
-    await poll(opened)
+    await poll()
+    await poll()
     assert.equal(opened.calls.length, before, 'the unmounted tab keeps polling the status endpoint')
   })
 })
