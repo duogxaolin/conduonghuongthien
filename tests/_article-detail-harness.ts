@@ -138,11 +138,25 @@ export type ArticleServer = ReturnType<typeof articleServer>
 
 // ─── Nuxt stand-ins ──────────────────────────────────────────────────────────
 
-type AsyncOptions = { default?: () => unknown, watch?: Vue.WatchSource[], lazy?: boolean }
+type AsyncOptions = { default?: () => unknown, watch?: Vue.WatchSource[], lazy?: boolean, server?: boolean, immediate?: boolean }
 
-function fakeUseAsyncData(keys: string[]) {
+/**
+ * One `useAsyncData` call as registered: its key, WHEN it was registered (`setup` — while the
+ * component's setup runs, which is when Nuxt starts it on the server too — or later), and the
+ * options that decide whether it runs during server rendering at all (`server`, `immediate`).
+ * As Nuxt, `immediate: false` does not run the handler at registration.
+ */
+export type AsyncRegistration = { key: string, phase: 'setup' | 'mounted' | 'outside', lazy?: boolean, server?: boolean, immediate?: boolean }
+
+function phaseNow(): AsyncRegistration['phase'] {
+  const instance = Vue.getCurrentInstance()
+  return !instance ? 'outside' : instance.isMounted ? 'mounted' : 'setup'
+}
+
+function fakeUseAsyncData(keys: string[], registrations: AsyncRegistration[]) {
   return (keyArg: string | (() => string), handler: () => Promise<unknown>, options: AsyncOptions = {}) => {
     const key = typeof keyArg === 'function' ? keyArg : () => keyArg
+    registrations.push({ key: key(), phase: phaseNow(), lazy: options.lazy, server: options.server, immediate: options.immediate })
     const data = Vue.ref<unknown>(options.default ? options.default() : undefined)
     const error = Vue.ref<unknown>(undefined)
     const status = Vue.ref<'idle' | 'pending' | 'success' | 'error'>('idle')
@@ -164,7 +178,7 @@ function fakeUseAsyncData(keys: string[]) {
         status.value = 'error'
       }
     }
-    void refresh()
+    if (options.immediate !== false) void refresh()
     Vue.watch([key, ...(options.watch ?? [])], () => { void refresh() })
     const result = { data, pending, error, status, refresh, execute: refresh }
     return Object.assign(Promise.resolve(result), result)
@@ -236,7 +250,8 @@ export async function mountDetail(t: TestContext, server = articleServer(), prop
   const toast = Object.fromEntries(['success', 'error', 'warning', 'info'].map(type => [type, (message: string) => { toasts.push({ type, message }) }]))
   let seoInput: Record<string, unknown> = {}
   const asyncKeys: string[] = []
-  const useAsyncData = fakeUseAsyncData(asyncKeys)
+  const registrations: AsyncRegistration[] = []
+  const useAsyncData = fakeUseAsyncData(asyncKeys, registrations)
   // Composables imported by the view (`useArticleRelated`) reach Nuxt's auto-imports as bare
   // globals — the same stand-in, on `globalThis` (the pattern of tests/public-article-list.test.ts).
   restore.push(replaceGlobal('useAsyncData', useAsyncData))
@@ -286,7 +301,7 @@ export async function mountDetail(t: TestContext, server = articleServer(), prop
     if (DOM_LOG) appendFileSync(DOM_LOG, `${JSON.stringify({ test: t.fullName, step: `${mount}.${step++}`, html: detail.html(), calls: sent(calls), toasts, opened, seo: seo() })}\n`)
   }
 
-  return { detail, server, calls, opened, location, clipboard, clipboardAnswer, currentLang, toasts, seo, asyncKeys, ssr, reads, brokenRoots, settle, close }
+  return { detail, server, calls, opened, location, clipboard, clipboardAnswer, currentLang, toasts, seo, asyncKeys, registrations, ssr, reads, brokenRoots, settle, close }
 }
 export type DetailCtx = Awaited<ReturnType<typeof mountDetail>>
 

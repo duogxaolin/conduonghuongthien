@@ -102,6 +102,11 @@ export function useCommentWrites(options: {
    * Hẹn giờ được huỷ khi rời trang, và một câu trả lời về sau đó không ghi gì: trước wave3
    * 4.2 bốn lượt hẹn giờ mỗi lần gửi không bao giờ bị huỷ, nên tới bốn request vẫn đi sau
    * khi người đọc đã đóng trang (FINDING-C2).
+   *
+   * `left` (đặt ở `onBeforeUnmount`) chặn MỌI tác dụng phụ của một câu trả lời về sau khi rời
+   * trang — gửi, xoá, đọc lại, hẹn kiểm duyệt, ghi state; chỉ còn dọn nháp của bình luận đã
+   * được nhận. Một lượt gửi hỏng (kể cả 401) về sau khi rời trang không lưu nháp: người đọc đã
+   * bỏ trang trong lúc nó đang gửi.
    */
   const checkpointTimers = new Set<number>()
   let left = false
@@ -191,6 +196,10 @@ export function useCommentWrites(options: {
     pendingComments.value.push({ tempId, parentId, body: text.trim(), status: 'sending', error: '' })
     try {
       const res = await api.post({ ...options.writeBody.value, parentId, body: text })
+      // Rời trang khi lượt gửi còn bay: bình luận ĐÃ được nhận, nên chỉ dọn nháp (để lần sau
+      // không điền lại thứ đã gửi). Không đọc lại luồng, không hẹn kiểm duyệt, không ghi state
+      // của một trang đã gỡ — trước đây lượt đọc lại vẫn đi cho một trang không ai xem.
+      if (left) { clearDraft(); return }
       pendingComments.value = pendingComments.value.filter(p => p.tempId !== tempId)
       if (parentId === null) body.value = ''
       else { replyBody.value = ''; replyTo.value = null }
@@ -199,11 +208,12 @@ export function useCommentWrites(options: {
       await loadThread()
       if (res?.id) startModerationCheckpoint(res.id)
     } catch (error) {
+      if (left) return
       const failed = pendingComments.value.find(p => p.tempId === tempId)
       if (failed) { failed.status = 'error'; failed.error = reportFailure(error, 'Không thể gửi bình luận.') }
       submitError.value = reportFailure(error, 'Không thể gửi bình luận. Vui lòng thử lại.')
     } finally {
-      submitting.value = false
+      if (!left) submitting.value = false
     }
   }
 
@@ -249,11 +259,14 @@ export function useCommentWrites(options: {
     deletingId.value = comment.id
     try {
       await api.remove(comment.id)
+      // Rời trang khi lượt xoá còn bay: không đọc lại luồng cho một trang đã gỡ.
+      if (left) return
       await loadThread()
     } catch (error) {
+      if (left) return
       submitError.value = reportFailure(error, t('c_delete_error'))
     } finally {
-      deletingId.value = null
+      if (!left) deletingId.value = null
     }
   }
 

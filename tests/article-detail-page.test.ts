@@ -346,6 +346,28 @@ describe('after mount', () => {
   })
 })
 
+describe('the related read runs alongside the article read (M17/M18)', () => {
+  it('registered in setup right after the article read, run at once, on the server too — not after the article', async (t) => {
+    // The related list is in the server-rendered HTML only because its useAsyncData starts in
+    // setup, next to the article's: Nuxt awaits both before writing the page. `server: false`,
+    // `immediate: false`, a call moved after mount or a fetch that waits for the article would
+    // all keep the page green in the browser (onMounted re-reads an empty list) and quietly
+    // ship cached HTML without "Bài viết khác".
+    const server = articleServer()
+    server.state.override = call => (call.method === 'GET' && call.url.pathname.startsWith('/api/public/articles/') ? HOLD : undefined)
+    const ctx = await mountDetail(t, server)
+    const setup = ctx.registrations.filter(r => r.phase === 'setup').map(r => r.key)
+    assert.deepEqual(setup.slice(0, 2), ['article-detail-hanh-trinh-vi', 'article-related-hanh-trinh'], 'related read registered in setup, right after the article read')
+    const related = ctx.registrations.find(r => r.key === 'article-related-hanh-trinh')!
+    assert.equal(related.server, undefined, 'server: false would leave it out of the server-rendered page')
+    assert.equal(related.immediate, undefined, 'immediate: false would not start it during setup')
+    assert.equal(related.lazy, true, 'lazy: client navigation is not blocked by the side block')
+    // Both requests are out while NEITHER has answered: it does not wait for the article.
+    const out = sent(ctx.calls).filter(c => typeof c === 'string')
+    assert.ok(out.includes(ARTICLE) && out.includes(RELATED), JSON.stringify(out))
+  })
+})
+
 describe('the mount sequence', () => {
   it('reads article and related on setup and once more on mount while still empty (the cached-payload rescue)', async (t) => {
     const ctx = await mountDetail(t)

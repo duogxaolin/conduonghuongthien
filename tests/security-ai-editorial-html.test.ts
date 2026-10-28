@@ -141,6 +141,34 @@ test('every v-html in app/ is inventoried with its sanitized source', () => {
 // pinned: exactly one, in ArticleDetail.vue, binding exactly `:html="toc.html"`.
 const ARTICLE_BODY_USE = /<(?:Lazy)?ArticleBody\b[^>]*>|<(?:lazy-)?article-body\b[^>]*>|from\s+['"][^'"]*article\/ArticleBody(?:\.vue)?['"]/g
 
+/**
+ * Ways to render ArticleBody WITHOUT writing its tag — none of them allowed anywhere, the one
+ * caller included: the tag check below only sees `<ArticleBody …>`, so `<component
+ * :is="ArticleBody" :html="article.excerpt">` would hand it unsanitized text unseen.
+ *   - a dynamic component bound to it (`:is` / `v-bind:is` / static `is=`, by identifier or name);
+ *   - `resolveComponent('ArticleBody')` / `'article-body'` / `'LazyArticleBody'`;
+ *   - a dynamic import of its file (what `defineAsyncComponent(() => import(…))` needs);
+ *   - Nuxt's `#components` virtual module;
+ *   - a render function on the imported component (`h(ArticleBody, …)`, `createVNode(…)`).
+ */
+const ARTICLE_BODY_INDIRECT = [
+  /\bis\s*=\s*(?:"[^"]*\b(?:Lazy)?ArticleBody\b[^"]*"|'[^']*\b(?:Lazy)?ArticleBody\b[^']*')/g,
+  /\bis\s*=\s*(?:"[^"]*\b(?:lazy-)?article-body\b[^"]*"|'[^']*\b(?:lazy-)?article-body\b[^']*')/g,
+  /resolveComponent\(\s*['"`](?:Lazy)?(?:ArticleBody|article-body|lazy-article-body)['"`]/g,
+  /import\(\s*['"`][^'"`]*article\/ArticleBody(?:\.vue)?['"`]\s*\)/g,
+  /import\s*\{[^}]*\b(?:Lazy)?ArticleBody\b[^}]*\}\s*from\s*['"]#components['"]/g,
+  // The component as a VALUE (handed to `h()`, a variable, an option…): `= ArticleBody`,
+  // `(ArticleBody`, `, ArticleBody`, `: ArticleBody`, `{ ArticleBody }` — never just its
+  // `import … from` line or its tag.
+  /(?:[=(,:?]|\breturn)\s*(?:Lazy)?ArticleBody\b(?!\s*from\b)|\{\s*(?:Lazy)?ArticleBody\s*[,}]/g,
+]
+
+/** Comments out (they name ArticleBody to explain it), before the indirect scan. */
+const withoutComments = (source: string) => source
+  .replace(/<!--[\s\S]*?-->/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+
 function articleBodyCallerProblems(files: Array<{ file: string, source: string }>): string[] {
   const problems: string[] = []
   let tags = 0
@@ -153,6 +181,10 @@ function articleBodyCallerProblems(files: Array<{ file: string, source: string }
       tags += 1
       if (file !== 'app/components/ArticleDetail.vue') problems.push(`${file}: ${use}`)
       else if (!/^<ArticleBody\s+:html="toc\.html"\s*\/>$/.test(use)) problems.push(`${file}: ${use}`)
+    }
+    const code = withoutComments(source)
+    for (const pattern of ARTICLE_BODY_INDIRECT) {
+      for (const use of code.match(pattern) ?? []) problems.push(`${file}: ArticleBody used indirectly — ${use}`)
     }
   }
   if (tags !== 1) problems.push(`expected exactly one <ArticleBody>, found ${tags}`)
@@ -186,4 +218,25 @@ test('the ArticleBody caller guard bites (injection proof)', () => {
     assert.equal(articleBodyCallerProblems([...files, { file: 'app/pages/planted.vue', source: `<template>${tag}</template>` }]).length, 2, tag)
   }
   assert.equal(articleBodyCallerProblems([...files, { file: 'app/components/Planted.vue', source: "import ArticleBody from '~/components/article/ArticleBody.vue'" }]).length, 1)
+
+  // Indirect renders: each one red, in another file AND in ArticleDetail.vue itself (the tag
+  // check alone let `<component :is="ArticleBody" :html="article.excerpt">` through).
+  const indirect = [
+    '<template><component :is="ArticleBody" :html="article.excerpt" /></template>',
+    '<template><component v-bind:is="ArticleBody" :html="x" /></template>',
+    '<template><component :is="\'LazyArticleBody\'" :html="x" /></template>',
+    '<template><component is="article-body" :html="x" /></template>',
+    "<script setup>const Body = resolveComponent('ArticleBody')</script>",
+    "<script setup>const Body = resolveComponent('article-body')</script>",
+    "<script setup>const Body = defineAsyncComponent(() => import('~/components/article/ArticleBody.vue'))</script>",
+    "<script setup>import { LazyArticleBody } from '#components'</script>",
+    '<script setup>const vnode = h(ArticleBody, { html: raw })</script>',
+    '<script setup>const Body = ArticleBody</script><template><component :is="Body" :html="x" /></template>',
+    '<script>export default { components: { ArticleBody } }</script>',
+  ]
+  for (const plant of indirect) {
+    assert.ok(articleBodyCallerProblems([...files, { file: 'app/pages/planted.vue', source: plant }]).length >= 1, `another file: ${plant}`)
+    const inParent = files.map((f, i) => (i === parentAt ? { ...f, source: `${f.source}\n${plant}` } : f))
+    assert.ok(articleBodyCallerProblems(inParent).length >= 1, `ArticleDetail.vue: ${plant}`)
+  }
 })

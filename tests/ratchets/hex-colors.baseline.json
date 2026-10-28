@@ -80,7 +80,7 @@
   "app/components/blocks/RoleModelsBlock.vue": 5,
   "app/components/blocks/StatsBlock.vue": 8,
   "app/components/blocks/SupportFormBlock.vue": 5,
-  "app/components/comments/CommentPendingList.vue": 6,
+  "app/components/comments/CommentPendingList.vue": 5,
   "app/components/comments/CommentThreadItem.vue": 6,
   "app/components/content-type/ContentTypeSidebar.vue": 18,
   "app/components/layout/DefaultBottomNav.vue": 10,

@@ -249,6 +249,63 @@ describe('posting', () => {
     assert.deepEqual(sent(ctx.calls, from), [], 'a checkpoint request left the page after unmount')
   })
 
+  it('leaving while the POST is in flight: once it lands nothing else is sent (no re-read, no checkpoint); the draft key is cleared', async (t) => {
+    // RED before the follow-up fix (M03): the answer that landed after unmount still re-read
+    // the thread for a page nobody was on and wrote into its dead state.
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const server = seeded()
+    let held: NetCall | null = null
+    server.state.override = call => { if (call.method === 'POST') { held = call; return HOLD } }
+    const ctx = await openThread(t, server, { signedIn: true })
+    await submitCompose(ctx, 'Gửi rồi rời trang')
+    const from = ctx.calls.length
+    ctx.leave()
+    // A draft from an earlier lapsed session, still in this tab's storage.
+    ctx.storage.set(DRAFT_KEY, 'Gửi rồi rời trang')
+    server.state.override = () => undefined
+    server.answer(held!)
+    for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve))
+    t.mock.timers.tick(30_000)
+    for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(sent(ctx.calls, from), [], 'a request left the page after unmount')
+    assert.equal(ctx.storage.has(DRAFT_KEY), false, 'the comment was accepted: no draft may bring it back')
+  })
+
+  it('leaving while the re-read after a post is in flight: no moderation checkpoint is scheduled', async (t) => {
+    // Kills the mutant that drops `if (left) return` at the top of startModerationCheckpoint:
+    // the POST landed while the page was alive, the re-read lands after it is gone.
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const server = seeded()
+    const ctx = await openThread(t, server, { signedIn: true })
+    let held: NetCall | null = null
+    server.state.override = call => { if (call.method === 'GET' && !held) { held = call; return HOLD } }
+    await submitCompose(ctx, 'Gửi, đọc lại, rời trang')
+    assert.ok(held, 'the re-read after the post is in flight')
+    const from = ctx.calls.length
+    ctx.leave()
+    server.state.override = () => undefined
+    server.answer(held!)
+    for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve))
+    t.mock.timers.tick(30_000)
+    for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(sent(ctx.calls, from), [], 'a checkpoint request left the page after unmount')
+  })
+
+  it('leaving while a DELETE is in flight: once it lands the thread is not re-read', async (t) => {
+    const server = seeded()
+    let held: NetCall | null = null
+    server.state.override = call => { if (call.method === 'DELETE') { held = call; return HOLD } }
+    const ctx = await openThread(t, server, { signedIn: true })
+    void fire(buttons(commentEl(ctx.thread, 3), 'Xóa')[0]!, 'click')
+    await ctx.settle()
+    const from = ctx.calls.length
+    ctx.leave()
+    server.state.override = () => undefined
+    server.answer(held!)
+    for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(sent(ctx.calls, from), [], 'the thread was re-read for a page nobody is on')
+  })
+
   it('a rate-limited post (429): the server sentence on the entry and under the box, text kept; Thử lại re-sends', async (t) => {
     const server = seeded()
     server.state.override = call => (call.method === 'POST' ? h3Error(429, RATE_LIMIT) : undefined)
@@ -346,13 +403,50 @@ describe('posting', () => {
     await submitCompose(ctx, 'Bình luận A')
     await submitCompose(ctx, 'Bình luận B')
     const failed = pendingItems(ctx.thread).find(li => textOf(li).includes('Bình luận A'))!
-    await click(button(failed, 'Thử lại'))
+    // `fire`, not `click`: the button is disabled while sending (test below) — this proves the
+    // flow itself also refuses, whatever reaches the handler.
+    await fire(button(failed, 'Thử lại'), 'click')
     await ctx.settle()
     server.answer(held!)
     await ctx.settle()
     const onScreen = textOf(ctx.thread.root)
     const postedA = ctx.calls.filter(c => c.method === 'POST' && (c.body as { body: string }).body === 'Bình luận A').length
     assert.ok(onScreen.includes('Bình luận A') || postedA === 2, 'comment A vanished: neither on screen nor sent again')
+  })
+
+  it('C3 has feedback: "Thử lại" is disabled while another comment is sending, and works once it landed', async (t) => {
+    // RED before the follow-up fix: the flow refused the retry (FINDING-C3) but the button
+    // still looked and acted pressable — a click that silently did nothing.
+    const server = seeded()
+    let held: NetCall | null = null
+    let posts = 0
+    server.state.override = call => {
+      if (call.method !== 'POST') return undefined
+      posts += 1
+      if (posts === 1) return h3Error(429, RATE_LIMIT)
+      if (posts === 2) { held = call; return HOLD }
+      return undefined
+    }
+    const ctx = await openThread(t, server, { signedIn: true })
+    await submitCompose(ctx, 'Bình luận A')
+    const retryA = () => button(pendingItems(ctx.thread).find(li => textOf(li).includes('Bình luận A'))!, 'Thử lại')
+    assert.notEqual(retryA().props.disabled, true, 'nothing in flight: retry is available')
+    await submitCompose(ctx, 'Bình luận B')
+    assert.equal(retryA().props.disabled, true, 'a write is in flight: retry is disabled')
+    assert.match(String(retryA().props.class), /disabled:opacity-50/, 'and looks it')
+    assert.notEqual(button(pendingItems(ctx.thread).find(li => textOf(li).includes('Bình luận A'))!, 'Bỏ qua').props.disabled, true, 'dismiss stays available')
+
+    server.state.override = () => undefined
+    server.answer(held!)
+    await ctx.settle()
+    assert.notEqual(retryA().props.disabled, true, 'B landed: retry is available again')
+    const from = ctx.calls.length
+    await click(retryA())
+    await ctx.settle()
+    assert.deepEqual(sent(ctx.calls, from), [
+      { wire: 'POST /api/public/comments', body: { articleSlug: 'bai-viet', parentId: null, body: 'Bình luận A' } },
+      GET_P1,
+    ])
   })
 })
 

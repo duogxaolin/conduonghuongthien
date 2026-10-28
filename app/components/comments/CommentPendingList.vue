@@ -13,7 +13,7 @@
         class="rounded-lg p-4 border"
         :class="p.status === 'error'
           ? 'border-[#f0c0c0] bg-[#fff5f4]'
-          : 'border-[#E2E8DF] bg-[#F8FAF7] opacity-60'"
+          : 'border-[#E2E8DF] bg-surface opacity-60'"
       >
         <div class="flex items-center gap-2 mb-1.5">
           <span v-if="p.status === 'sending'" class="inline-flex items-center gap-1.5 text-[0.78rem] text-ink-soft font-medium">
@@ -27,7 +27,14 @@
         </div>
         <p class="m-0 text-[0.95rem] leading-[1.6] text-[#2C3529] whitespace-pre-line break-words">{{ p.body }}</p>
         <div v-if="p.status === 'error'" class="mt-2 flex gap-3">
-          <button type="button" class="text-[0.82rem] font-semibold text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded" @click="emit('retry', p.tempId)">
+          <!-- Khoá khi một bình luận khác đang gửi: luồng ghi từ chối thử lại lúc đó (giữ mục
+               lại — FINDING-C3), nên nút phải trông và cư xử đúng như vậy thay vì im lặng. -->
+          <button
+            type="button"
+            class="text-[0.82rem] font-semibold text-brand-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 rounded disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
+            :disabled="submitting"
+            @click="emit('retry', p.tempId)"
+          >
             <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>{{ t('retry') || 'Thử lại' }}
           </button>
           <button type="button" class="text-[0.82rem] font-semibold text-ink-soft hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded" @click="emit('dismiss', p.tempId)">
@@ -43,7 +50,11 @@
 import { useI18n } from '~/composables/useI18n'
 import type { PendingComment } from '~/composables/useCommentWrites'
 
-defineProps<{ pendingComments: PendingComment[] }>()
+defineProps<{
+  pendingComments: PendingComment[]
+  /** Một lượt gửi đang bay — "Thử lại" khoá cho tới khi nó xong. */
+  submitting: boolean
+}>()
 const emit = defineEmits<{ retry: [tempId: number]; dismiss: [tempId: number] }>()
 
 const { t } = useI18n()

@@ -66,6 +66,32 @@ function relatedFetchShape(source: string): string[] {
   const relatedFetch = start === -1 ? '' : (source.slice(start).match(/^[\s\S]*?\n\s*\)\n/)?.[0] ?? '')
   if (!/lazy: true/.test(relatedFetch)) problems.push('lazy')
   if (!/default: \(\) => \(\{ ok: true, articles: \[\], topics: \[\] \}\)/.test(relatedFetch)) problems.push('default')
+  // Off the server or not started at once = not in the cached HTML (M17/M18).
+  if (/\bserver\s*:\s*false\b/.test(relatedFetch)) problems.push('server: false')
+  if (/\bimmediate\s*:\s*false\b/.test(relatedFetch)) problems.push('immediate: false')
+  return problems
+}
+
+/**
+ * ArticleDetail.vue starts the related read in its setup, at top level, between the article
+ * read and the settings read — the order the two reads had before the split, so they run in
+ * parallel (on the server Nuxt awaits both before writing the page) — and hands it a fetcher
+ * that requests at once, without waiting for the article.
+ */
+function relatedCallProblems(parent: string): string[] {
+  const problems: string[] = []
+  const script = parent.slice(parent.indexOf('<script'))
+  const articleAt = script.search(/const articleAsync = useAsyncData\(/)
+  const callAt = script.search(/^const \{[^}]*\} = useArticleRelated\(/m)
+  const settingsAt = script.indexOf("'public-settings-nav'")
+  // Top level = no brace open around the call (comments out first: they quote `{ … }`).
+  const depth = (text: string) => (text.match(/\{/g) ?? []).length - (text.match(/\}/g) ?? []).length
+  const atTopLevel = callAt !== -1 && depth(stripComments(script.slice(script.indexOf('>') + 1, callAt))) === 0
+  if (!atTopLevel) problems.push('useArticleRelated is not called at the top level of setup')
+  else if (!(articleAt !== -1 && articleAt < callAt && callAt < settingsAt)) problems.push('not between the article read and the settings read')
+  const call = callAt === -1 ? '' : script.slice(callAt, script.indexOf('\n)', callAt))
+  if (!/\n\s*\(\) => \(\$fetch as [^\n]*\)\(`\/api\/public\/articles\/\$\{props\.slug\}\/related/.test(call)) problems.push('the fetcher does not request at once')
+  if (/\bawait\b|\.then\(|article\.value/.test(call.slice(call.indexOf('() =>')))) problems.push('the fetcher waits for the article')
   return problems
 }
 const customCssProblems = (style: string) => [/lien-quan/, /line-clamp/].filter(re => re.test(style)).map(String)
@@ -524,7 +550,7 @@ test('lượt fetch liên quan có key riêng và lazy', () => {
   // ArticleDetail.vue — hai lượt fetch vẫn song song), URL ở ArticleDetail.vue (lượt
   // `$fetch` ép kiểu ở lại cha). Đọc cả họ tệp.
   assert.deepEqual(relatedFetchShape(familySource(ARTICLE_DETAIL_FAMILY)), [])
-  assert.match(read(COMPONENT), /= useArticleRelated\(/, 'cha gọi composable ngay trong setup')
+  assert.deepEqual(relatedCallProblems(read(COMPONENT)), [], 'cha gọi composable ngay trong setup, song song với lượt đọc bài')
 })
 
 test('component không thêm CSS tuỳ chỉnh cho phần mới', () => {
@@ -564,4 +590,19 @@ test('guard họ tệp: vi phạm cấy vào phần tách ra làm guard đỏ (w
   assert.doesNotMatch(stripComments(familySource(ARTICLE_DETAIL_FAMILY, { [RELATED]: merged })), RELATED_ERROR_SEPARATE)
   assert.deepEqual(relatedFetchShape(familySource(ARTICLE_DETAIL_FAMILY, { [RELATED]: swap(related, 'lazy: true,', '') })), ['lazy'])
   assert.deepEqual(relatedFetchShape(familySource(ARTICLE_DETAIL_FAMILY, { [RELATED]: swap(related, "default: () => ({ ok: true, articles: [], topics: [] }),", '') })), ['default'])
+  // M17/M18: chỉ chạy phía trình duyệt, hoặc không chạy ngay.
+  assert.deepEqual(relatedFetchShape(familySource(ARTICLE_DETAIL_FAMILY, { [RELATED]: swap(related, 'lazy: true,', 'lazy: true,\n      server: false,') })), ['server: false'])
+  assert.deepEqual(relatedFetchShape(familySource(ARTICLE_DETAIL_FAMILY, { [RELATED]: swap(related, 'lazy: true,', 'lazy: true,\n      immediate: false,') })), ['immediate: false'])
+  // Lời gọi ở cha: dời xuống sau settings, bọc trong onMounted, hoặc fetcher chờ bài.
+  const parent = read(COMPONENT)
+  const callStart = parent.indexOf('const { relatedPending')
+  const callEnd = parent.indexOf('\n)\n', callStart) + 3
+  const call = parent.slice(callStart, callEnd)
+  const settingsStart = parent.indexOf('const { data: settingsData }')
+  assert.ok(callStart > 0 && callEnd > callStart && settingsStart > callEnd)
+  const moved = parent.slice(0, callStart) + parent.slice(callEnd, settingsStart) + parent.slice(settingsStart).replace("useSiteSettings(settingsData)\n", `useSiteSettings(settingsData)\n${call}`)
+  assert.deepEqual(relatedCallProblems(moved), ['not between the article read and the settings read'])
+  assert.deepEqual(relatedCallProblems(swap(parent, call, `onMounted(() => {\n${call}})\n`)), ['useArticleRelated is not called at the top level of setup'])
+  const fetcher = '  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleRelatedResponse>)'
+  assert.deepEqual(relatedCallProblems(swap(parent, fetcher, fetcher.replace('  () => (', '  async () => { await until(article); return ('))), ['the fetcher does not request at once', 'the fetcher waits for the article'])
 })

@@ -116,6 +116,7 @@
       <CommentPendingList
         v-if="pendingComments.length"
         :pending-comments="pendingComments"
+        :submitting="submitting"
         @retry="retryPendingComment"
         @dismiss="dismissPendingComment"
       />
