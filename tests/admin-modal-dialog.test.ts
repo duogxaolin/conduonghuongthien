@@ -384,7 +384,10 @@ const MIGRATED_TO_ADMIN_MODAL: Record<string, number> = {
   'components/admin/ai/providers/ModelAddModal.vue': 1,
   'components/admin/ai/providers/ModelEditModal.vue': 1,
   'components/admin/ai/providers/ModelTestCallModal.vue': 1,
-  'pages/admin/languages/index.vue': 2,
+  // /admin/languages: hai hộp thoại (chuyển vị trí, tiến trình dịch AI), mỗi hộp một phần
+  // tách (wave3 4.2) — tệp trang không còn hộp thoại nào.
+  'components/admin/languages/page/LanguagesMoveModal.vue': 1,
+  'components/admin/languages/page/LanguagesTranslateProgressModal.vue': 1,
   'pages/admin/content/articles/[id].vue': 1,
   'components/admin/articles/ArticleQuickViewModal.vue': 1,
   'components/admin/articles/ArticleGlobalTranslateModal.vue': 1,
@@ -819,8 +822,11 @@ test('AdminModal nối dây: phím qua adminModalKeyAction, nền qua adminModal
   // Escape của hộp xác nhận đánh dấu đã xử lý (panel thuộc tính không thu nhỏ theo).
   assert.match(confirm, /if \(e\.key !== 'Escape'\) return\n[\s\S]*?e\.preventDefault\(\)\n\s*cancel\(\)/)
   // Hộp tiến trình dịch AI: biểu tượng quay khi đang dịch (như trước khi chuyển sang
-  // AdminModal), dừng khi người dùng chọn giảm chuyển động.
-  assert.match(read('pages/admin/languages/index.vue'), /:icon="!progressStats\.finished && !progressStats\.stopped \? 'fa-solid fa-wand-magic-sparkles animate-spin motion-reduce:animate-none' : 'fa-solid fa-wand-magic-sparkles'"/)
+  // AdminModal), dừng khi người dùng chọn giảm chuyển động. Hộp là phần tách của trang
+  // /admin/languages (wave3 4.2): chốt đi theo, và trang phải còn vẽ đúng phần đó.
+  assert.match(read('components/admin/languages/page/LanguagesTranslateProgressModal.vue'), /:icon="!progressStats\.finished && !progressStats\.stopped \? 'fa-solid fa-wand-magic-sparkles animate-spin motion-reduce:animate-none' : 'fa-solid fa-wand-magic-sparkles'"/)
+  assert.match(read('pages/admin/languages/index.vue'), /<LanguagesTranslateProgressModal\b/)
+  assert.doesNotMatch(read('pages/admin/languages/index.vue'), /<AdminModal\b/, 'hộp thoại của /admin/languages thuộc về phần tách')
   // Panel thuộc tính mở rộng (nghe Escape ở window) bỏ qua Escape mà một hộp thoại đã
   // xử lý — đóng thư viện ảnh mở từ panel không thu nhỏ luôn panel.
   assert.match(read('components/admin/builder/PropertyPanel.vue'), /e\.key === 'Escape' && expanded\.value && !e\.defaultPrevented/)
