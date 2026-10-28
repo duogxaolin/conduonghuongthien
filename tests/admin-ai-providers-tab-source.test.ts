@@ -7,6 +7,8 @@
  *      `<input type="password">` — never printed (`{{ }}`), never bound to another
  *      attribute, never on a text field. The server only ever sends the last four
  *      characters (`apiKeyLastFour`), which is what the card prints.
+ *      In the scripts (the composables above all), the key is only declared, reset to ''
+ *      and sent once in the request body — never in a toast, a log, an error or a copy.
  *   2. The parts are display only: no part calls the API or owns a toast/confirm. Requests
  *      stay in the tab (the list load, pinned by tests/admin-error-retry-ui.test.ts and
  *      skeleton-loading-ui.test.ts) and in the composables — a part that fetched would need
@@ -58,6 +60,30 @@ function apiKeyLeaks(files: Array<{ file: string, source: string }>): string[] {
   return out
 }
 
+/**
+ * Script lines (the tab, the parts' `<script>`, the composables) that touch a typed API key
+ * other than to declare the form, reset it to '' or send it once in the request body — so a
+ * key never reaches a toast, a log, an error, a template string or another variable.
+ */
+const KEY_LINE_ALLOWED = [
+  /^\s*export type \w+ = \{.*\bapiKey: string\b.*\}$/, // the form type
+  /\bapiKey: ''/, // the form, (re)set empty
+  /^\s*apiKey: (providerForm|newProviderForm)\.value\.apiKey \|\| null,$/, // the request body
+]
+function apiKeyScriptLeaks(files: Array<{ file: string, source: string }>): string[] {
+  const out: string[] = []
+  for (const { file, source } of files) {
+    const script = file.endsWith('.vue')
+      ? (() => { const d = parse(source, { filename: file }).descriptor; return d.scriptSetup?.content ?? d.script?.content ?? '' })()
+      : source
+    script.split('\n').forEach((line, i) => {
+      if (/\bconsole\.\w+\(/.test(line)) out.push(`${file}:${i + 1} console`)
+      if (API_KEY.test(line) && !KEY_LINE_ALLOWED.some(ok => ok.test(line))) out.push(`${file}:${i + 1} ${line.trim()}`)
+    })
+  }
+  return out
+}
+
 /** Parts (not the tab, not the composables) that reach the API or own a toast/confirm. */
 const PART_SIDE_EFFECT = /\$fetch\b|\badminFetch\b|\buseFetch\(|\buseAsyncData\(|\buseAdminList\b|\buseToast\(|\buseConfirm\(/
 const partsWithSideEffects = (files: Array<{ file: string, source: string }>) =>
@@ -88,6 +114,34 @@ describe('the split providers tab — source guards', () => {
     assert.deepEqual(leaks.map(l => l.split(':')[0]), [added])
     // The last four characters the server sends are not the key.
     assert.deepEqual(apiKeyLeaks([{ file: 'x.vue', source: '<template><code>{{ p.apiKeyLastFour }}</code></template>' }]), [])
+  })
+
+  it('in the scripts a typed API key is only declared, reset to \'\' and sent once in the body — never toasted, logged or thrown', () => {
+    assert.deepEqual(apiKeyScriptLeaks(familyFiles(AI_PROVIDERS_TAB_FAMILY)), [])
+    // The guard is not vacuous: both composables do hold the key (type, reset, body).
+    for (const file of AI_PROVIDERS_TAB_FAMILY.modules) {
+      if (file.endsWith('useAiProviderWrites.ts')) assert.ok(readAppFile(file).split('\n').filter(l => API_KEY.test(l)).length >= 5, file)
+    }
+  })
+
+  it('proof: a key in a toast, a log, an error, a template string or a copy is caught, in either composable', () => {
+    const providers = 'composables/useAiProviderWrites.ts'
+    const models = 'composables/useAiModelWrites.ts'
+    const src = readAppFile(providers)
+    const anchor = "      toast.success('Đã lưu cấu hình nhà cung cấp.')"
+    assert.ok(src.includes(anchor))
+    const plants = [
+      "      toast.success(`Đã lưu khoá ${providerForm.value.apiKey}`)",
+      '      console.info(\'saved\')',
+      '      throw new Error(newProviderForm.value.apiKey)',
+      '      const copy = providerForm.value.apiKey',
+    ]
+    for (const plant of plants) {
+      const leaks = apiKeyScriptLeaks(familyFiles(AI_PROVIDERS_TAB_FAMILY, { [providers]: src.replace(anchor, `${anchor}\n${plant}`) }))
+      assert.equal(leaks.length, 1, `not caught: ${plant}`)
+    }
+    const inModels = `${readAppFile(models)}\nexport const leak = (f: { apiKey: string }) => \`key=\${f.apiKey}\`\n`
+    assert.equal(apiKeyScriptLeaks(familyFiles(AI_PROVIDERS_TAB_FAMILY, { [models]: inModels })).length, 1)
   })
 
   it('the parts are display only: no request, no toast, no confirm', () => {

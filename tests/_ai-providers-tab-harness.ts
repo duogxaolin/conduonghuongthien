@@ -177,7 +177,9 @@ export function aiServer() {
       const models = (Array.isArray(b.models) ? b.models : []) as string[]
       if (!models.length) return h3Error(400, 'Vui lòng chọn ít nhất 1 model để xoá.')
       state.models = state.models.filter(m => !models.includes(m.model))
-      // The real handler answers the count it was SENT, not the rows it removed.
+      // As `pricing/bulk-delete.post.ts` answers at d7593b2: the count it was SENT, not the rows
+      // it removed. R4 on wave3/integration fixes that server-side — update this stand-in (and the
+      // null label below) when merging; no test here depends on the difference.
       return json({ ok: true, deleted: models.length })
     }
     const price = /^(PUT|DELETE) \/api\/admin\/ai\/pricing\/(.+)$/.exec(at)
@@ -189,6 +191,8 @@ export function aiServer() {
         return json({ ok: true })
       }
       if (!row) return h3Error(404, 'Model không tồn tại.')
+      // A `null` label is "unchanged" at d7593b2 (`pricing/[model].put.ts`); R4 on wave3/integration
+      // clears it instead — see the note on bulk-delete above.
       if (typeof b.label === 'string') row.label = b.label.trim() || null
       if (typeof b.isActive === 'boolean') row.isActive = b.isActive
       if (typeof b.promptCostPerMillion === 'number') row.promptCostPerMillion = b.promptCostPerMillion
