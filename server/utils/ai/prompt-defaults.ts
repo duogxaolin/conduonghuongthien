@@ -15,6 +15,7 @@
  */
 
 import { DEFAULT_CHATBOT_SYSTEM_PROMPT } from '../chatbot/prompt-defaults'
+import { SOVEREIGNTY_PROMPT_RULES } from '../chatbot/sovereignty-guard'
 
 export const DEFAULT_MODERATION_SYSTEM_PROMPT = `Bạn là sĩ quan an ninh mạng phụ trách kiểm duyệt an toàn và an ninh nội dung trên Cổng thông tin Cục C11 - Bộ Công an.
 
@@ -96,9 +97,13 @@ export const AI_SERVICE_DEFAULT_PROMPTS: Record<string, string> = {
  * that no keyword rule covers, and the moderation settings page shows the default
  * whenever nothing is stored. A service with no built-in default keeps what is stored.
  * Used by `callAi` and by that settings page, so what the page shows is what runs.
+ *
+ * The chatbot's prompt, stored or default, always ends with `SOVEREIGNTY_PROMPT_RULES` (sovereignty-guard.ts):
+ * the visitor path passes its own grounded prompt, which carries them already (chat-policy-prompt.ts) — this
+ * covers any other `callAi('chatbot', …)` without one. Not in the default text itself, so it is never twice.
  */
 export function effectiveSystemPrompt(serviceKey: string, stored: string | null | undefined): string {
-  if (typeof stored === 'string' && stored.trim()) return stored
   const fallback = Object.hasOwn(AI_SERVICE_DEFAULT_PROMPTS, serviceKey) ? AI_SERVICE_DEFAULT_PROMPTS[serviceKey] : undefined
-  return fallback ?? stored ?? ''
+  const prompt = typeof stored === 'string' && stored.trim() ? stored : fallback ?? stored ?? ''
+  return serviceKey === 'chatbot' ? `${prompt}\n\n${SOVEREIGNTY_PROMPT_RULES}` : prompt
 }

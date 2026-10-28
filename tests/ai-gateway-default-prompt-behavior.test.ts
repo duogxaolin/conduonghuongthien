@@ -115,6 +115,22 @@ test('a caller\'s own system prompt wins over the stored one and over the defaul
   assert.equal(systemOf(body).content, 'Prompt có căn cứ của lượt chat')
 })
 
+test('a chatbot call without its own prompt still carries the sovereignty stance rules — default or operator-written', async () => {
+  // The visitor path always passes its grounded prompt (rules included, chat-policy-prompt.ts). This is
+  // every OTHER way to reach the model as the chatbot: the gateway's own prompt for the service.
+  const { SOVEREIGNTY_PROMPT_RULES } = await import('../server/utils/chatbot/sovereignty-guard')
+  // Through the real gateway (the `chatbot` key has one 60 s cache entry in this file: stored prompt null).
+  const fromDefault = systemOf(await sentBody('chatbot', { provider: 'delify', systemPrompt: null })).content
+  assert.ok(fromDefault.startsWith(defaults.AI_SERVICE_DEFAULT_PROMPTS.chatbot!), 'the default still leads')
+  assert.ok(fromDefault.endsWith(SOVEREIGNTY_PROMPT_RULES), fromDefault.slice(-200))
+  assert.equal(fromDefault.split(SOVEREIGNTY_PROMPT_RULES).length - 1, 1, 'once, not twice')
+  // An operator-written prompt: the same rule the gateway runs (`effectiveSystemPrompt`, last test).
+  assert.equal(defaults.effectiveSystemPrompt('chatbot', 'Prompt quản trị tự viết.'), `Prompt quản trị tự viết.\n\n${SOVEREIGNTY_PROMPT_RULES}`)
+  // Other services are untouched.
+  assert.ok(!systemOf(await sentBody('editorial_assistant', { provider: 'delify', systemPrompt: null })).content.includes(SOVEREIGNTY_PROMPT_RULES))
+  assert.equal(defaults.effectiveSystemPrompt('moderation', 'x'), 'x')
+})
+
 test('FINDING-R4-9: effectiveSystemPrompt is the one rule the gateway and the moderation settings page share', () => {
   const { effectiveSystemPrompt, AI_SERVICE_DEFAULT_PROMPTS } = defaults
   for (const stored of [null, undefined, '', ' ', '\n\t']) {

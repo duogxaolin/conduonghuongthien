@@ -91,6 +91,7 @@ mock.module('../server/utils/db', {
 })
 
 const { answerGroundedChat, AI_QUOTA_RULE, HOTLINE } = await import('../server/utils/chatbot/chat-policy')
+const { SOVEREIGNTY_PROMPT_RULES } = await import('../server/utils/chatbot/sovereignty-guard')
 type ChatDependencies = Parameters<typeof answerGroundedChat>[3]
 type ChatEvent = Parameters<typeof answerGroundedChat>[0]
 
@@ -203,7 +204,8 @@ test('the grounded AI path hands the gateway the grounded prompt, the visitor tu
     { sender: 'bot', text: 'Xin chào anh/chị.' },
     { role: 'user', content: 'Thủ tục xóa án tích?' },
   ]
-  const onToolCall = () => {}
+  const toolEvents: unknown[] = []
+  const onToolCall = (toolEvent: unknown) => { toolEvents.push(toolEvent) }
   const result = await answerGroundedChat(eventOf('s-prompt'), settingsOf(), history, dependencies, undefined, onToolCall)
 
   assert.equal(gatewayCalls.length, 1)
@@ -211,7 +213,12 @@ test('the grounded AI path hands the gateway the grounded prompt, the visitor tu
   assert.equal(service, 'chatbot')
   assert.equal(input.prompt, 'Thủ tục xóa án tích?')
   assert.equal(input.userId, null)
-  assert.equal(input.onToolCall, onToolCall, 'tool events reach the caller untouched')
+  // The policy hands the gateway a wrapper (a model-written tool query about the sovereignty topic is
+  // dropped — sovereignty-guard.ts); any other tool event reaches the caller untouched, the same object.
+  const toolEvent = { name: 'search_c11_knowledge', query: 'xóa án tích', status: 'calling' }
+  await (input.onToolCall as (toolEvent: unknown) => unknown)(toolEvent)
+  assert.equal(toolEvents.length, 1)
+  assert.equal(toolEvents[0], toolEvent, 'tool events reach the caller untouched')
   assert.equal(input.onChunk, undefined, 'no stream filter without a stream')
   // A bot turn written as `{ sender: 'bot', text }` is still the assistant's turn.
   assert.deepEqual(input.history, [
@@ -430,6 +437,10 @@ for (const [label, next] of [['inactive', { result: { ok: false, error: 'service
     assert.equal(options.timeoutMs, 1_000)
     assert.equal(options.maxResponseBytes, 16_384)
     assert.match(String(options.body), /UNTRUSTED_KNOWLEDGE_REFERENCES/)
+    // The sovereignty stance rules ride on this path too (same grounded prompt, sovereignty-guard.ts).
+    const legacySystem = (JSON.parse(String(options.body)) as { messages: Array<{ role: string, content: string }> }).messages[0]!
+    assert.equal(legacySystem.role, 'system')
+    assert.ok(legacySystem.content.includes(SOVEREIGNTY_PROMPT_RULES), 'the stance rules, whole, in the legacy system prompt')
     assert.equal(result.kind, 'provider')
     assert.equal(result.answer, 'Câu trả lời từ đường gọi cũ.')
   })
