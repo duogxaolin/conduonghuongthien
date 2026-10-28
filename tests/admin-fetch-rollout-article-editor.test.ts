@@ -285,6 +285,17 @@ describe(PAGE, () => {
     assert.equal(disabled(), false, 'loaded: saving is allowed')
   })
 
+  it('guard 1, from the first frame: while the mount\'s categories read (before the article read) is slow, saving is off', async () => {
+    const pending: NetCall[] = []
+    const opened = await openEditor('42', server({ 'GET /api/admin/categories': (call) => { pending.push(call); return undefined } }))
+    assert.deepEqual(opened.calls.map(wire), ['GET /api/admin/categories?type=news'], 'the article is not even asked yet')
+    assert.equal(saveButton(opened, 'Cập Nhật Bài Viết').props.disabled, true)
+    const before = opened.calls.length
+    await fire(saveButton(opened, 'Cập Nhật Bài Viết'), 'click')
+    await settle()
+    assert.deepEqual(puts(opened, before), [])
+  })
+
   it('guard 2, handleSave itself: a click that reaches it past the disabled button sends no PUT', async () => {
     let reads = 0
     const opened = await openEditor('42', server({ 'GET /api/admin/articles/42': () => (++reads === 1 ? h3Error(403, 'Bạn không có quyền xem bài viết này.') : undefined) }))
