@@ -563,14 +563,14 @@ Kết quả: 13 tệp R1 có logic thật, rồi hai service R2 lớn nhất. Vi
 | 8 | `server/api/admin/settings/favicon.delete.ts` | 0 % (24) | 100 % | như trên | như trên |
 | 9 | `server/api/admin/ai/providers/[id]/test.post.ts` | 0 % (73) | 97,8 % | Gửi API key đã lưu tới địa chỉ cán bộ gõ (SSRF / lộ key) | `ai-provider-probe-behavior` |
 | 10 | `server/api/admin/settings/retention-run.post.ts` | 0 % (34) | 100 % | Xoá dữ liệu ngay | `retention-run-now-behavior` |
-| 11 | `server/api/admin/settings/retention.put.ts` | 0 % (41) | 97,1 % | Chính sách quyết định xoá gì | `retention-policy-save-behavior` |
+| 11 | `server/api/admin/settings/retention.put.ts` | 0 % (41) | 100 % | Chính sách quyết định xoá gì | `retention-policy-save-behavior` |
 | 12 | `server/api/admin/settings/retention.get.ts` | 0 % (72) | 100 % | Phải đếm "quá hạn" trên đúng cột mà lượt dọn xoá | `retention-status-behavior` |
 | 13 | `server/api/admin/activity-logs/retention.get.ts` | 0 % (52) | 100 % | như trên | như trên |
 | 14 | `server/api/admin/ai/budget/index.put.ts` | 0 % (45) | 96,7 % | Trần chi AI (tiền) | `ai-budget-update-behavior` |
 
-Số trong ngoặc ở cột "Trước" là dòng có mã của tệp chưa nạp; cột "Sau" đếm mọi dòng vật lý của tệp đã nạp (xem "Cách đọc cho đúng"). Kéo theo: `server/services/retention-policy.ts` 79,9 % → 97,2 %.
+Số trong ngoặc ở cột "Trước" là dòng có mã của tệp chưa nạp; cột "Sau" đếm mọi dòng vật lý của tệp đã nạp (xem "Cách đọc cho đúng"), đo SAU đợt sửa FINDING-R3-1..3 bên dưới (lúc vừa xong lát, trước đợt sửa: `retention.put.ts` 97,1 %). Kéo theo: `server/services/retention-policy.ts` 79,9 % → 100 % (97,2 % trước đợt sửa).
 
-**Sau lát:** 759 tệp, 236 chưa nạp, **81,23 %** (68 506 / 84 339). Theo thư mục: `server/api` 56,74 → 60,75, `server/routes` 40,12 → 77,43, `server/services` 85,28 → 86,00, `server/utils` 93,53 → 93,90. Mức nền ratchet nâng đúng bốn thư mục đó (`server/services` lấy số đo mới 85,99, gồm cả +0,15 có sẵn trên cây); `app/utils` và `shared` giữ 95,13 / 95,9 vì lát này không đụng tới (lần nâng của chúng thuộc nhánh khác).
+**Sau lát và đợt sửa R3-1..3** (`npm run test:coverage`, Node 24, cây cuối của nhánh lát): 760 tệp (thêm `retention-state.ts` tách ra ở R3-1), 236 chưa nạp, **81,32 %** (68 664 / 84 439). Theo thư mục: `server/api` 56,74 → 60,82, `server/routes` 40,12 → 77,43, `server/services` 85,28 → 86,22, `server/utils` 93,53 → 93,90. (Ngay sau lát, trước đợt sửa: 759 tệp, 81,23 % — 68 506 / 84 339; `server/api` 60,75, `server/services` 86,00.) Mức nền ratchet nâng đúng bốn thư mục đó (`server/services` lấy số đo mới 85,99, gồm cả +0,15 có sẵn trên cây); `app/utils` và `shared` giữ 95,13 / 95,9 vì lát này không đụng tới (lần nâng của chúng thuộc nhánh khác).
 
 ### Cách chạy và cái bẫy đã gặp
 
