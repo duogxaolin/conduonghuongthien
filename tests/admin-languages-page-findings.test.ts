@@ -182,6 +182,34 @@ describe('FINDING-L2 — one AI batch at a time', () => {
     assert.equal(ctx.toasts.filter(x => x.type === 'success').map(x => x.message).join(' | '), 'Đã hoàn tất dịch 1/1 key cho English! | Đã hoàn tất dịch 1/1 key cho French!')
   })
 
+  // Verification V2 of the split: the lock was held through the reload that follows a run.
+  it('a finished run lets go at once: during the reload after it the card is back and another language starts (RED before: refused)', async (t) => {
+    const server = languagesServer()
+    server.state.rows.fr![1]!.value = null
+    let chunkSent = false
+    const held: NetCall[] = []
+    server.state.override = (call) => {
+      if (wire(call) === 'POST /api/admin/languages/ai-translate-chunk' && !chunkSent) { chunkSent = true; return undefined }
+      if (chunkSent && call.method === 'GET' && held.length < 3) { held.push(call); return HOLD }
+      return undefined
+    }
+    const ctx = await openPage(t, server)
+    tap(button(card(ctx.page, 'en'), 'Dịch AI ('))
+    await ctx.settle()
+    assert.equal(held.length, 3, 'the run is over; its reload is out')
+    assert.match(textOf(dialog(ctx.page)), /✓ Hoàn tất bản dịch/)
+    const enButton = findAll(card(ctx.page, 'en'), el => el.tag === 'button' && el.props.title === 'Dịch AI một lần (One-time) tất cả các key còn thiếu của ngôn ngữ này')[0]!
+    assert.match(textOf(enButton), /^Dịch AI \(1\)$/, 'the card no longer reads "Đang dịch..."')
+    assert.notEqual(enButton.props.disabled, true)
+    await click(findAll(dialog(ctx.page), el => el.tag === 'button' && textOf(el) === 'Hoàn tất & Đóng')[0]!)
+    await ctx.settle()
+    const from = ctx.calls.length
+    tap(button(card(ctx.page, 'fr'), 'Dịch AI ('))
+    await ctx.settle()
+    assert.ok(ctx.calls.slice(from).map(wire).includes('GET /api/admin/languages/fr/translations'), `French refused: ${lastToast(ctx.toasts, 'info')}`)
+    assert.equal(dialog(ctx.page).props['aria-label'], 'Tiến trình Dịch AI: 🇫🇷 French (fr)')
+  })
+
   it('once a run is over, the next one starts', async (t) => {
     const ctx = await openPage(t)
     await click(button(card(ctx.page, 'en'), 'Dịch AI ('))

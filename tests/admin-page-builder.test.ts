@@ -142,6 +142,16 @@ describe('page builder — loading, empty, error', () => {
     assert.deepEqual(ctx.calls.map(wire), [`GET ${API}`])
   })
 
+  it('a column width outside 1–12 from the server is clamped in the working copy (the tree shows the clamped width)', async (t) => {
+    const server = builderServer()
+    const row = server.state.published[1]!.children!
+    row[0]!.colSpan = 30
+    row[1]!.colSpan = 0
+    const ctx = await openBuilder(t, server)
+    const widths = findAll(ctx.page.root, el => el.tag === 'span' && el.props.title === 'Số cột chiếm (1–12)').map(textOf)
+    assert.deepEqual(widths, ['12', '1'])
+  })
+
   it('the home page (system): "/" everywhere, the lock badge', async (t) => {
     const server = builderServer()
     server.state.page = { ...server.state.page, slug: 'home', isSystem: true }
