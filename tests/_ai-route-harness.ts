@@ -176,12 +176,14 @@ export async function startAiRouteHarness(options: {
    * A provider row with a stored key, a priced model, an active service using them and
    * a monthly budget > 0 (see the header). Each argument overrides the default.
    */
-  async function seedAiService(input: { serviceKey: string, systemPrompt?: string | null, provider?: string, baseUrl?: string, model?: string, budgetVnd?: number }) {
+  async function seedAiService(input: { serviceKey: string | string[], systemPrompt?: string | null, provider?: string, baseUrl?: string, model?: string, budgetVnd?: number }) {
     const provider = input.provider ?? 'openai'
     const model = input.model ?? 'gpt-4o-mini'
     await harness.db.insert(aiProviders).values({ provider, label: `Nhãn ${provider}`, baseUrl: input.baseUrl ?? 'https://api.openai.example/v1', isActive: true, ...storedKey() })
     await harness.db.insert(aiModelPricing).values({ model, provider, promptCostPerMillion: '0.15', completionCostPerMillion: '0.6' })
-    await harness.db.insert(aiServiceConfigs).values({ serviceKey: input.serviceKey, serviceName: input.serviceKey, provider, model, systemPrompt: input.systemPrompt ?? null, isActive: true })
+    for (const serviceKey of [input.serviceKey].flat()) {
+      await harness.db.insert(aiServiceConfigs).values({ serviceKey, serviceName: serviceKey, provider, model, systemPrompt: input.systemPrompt ?? null, isActive: true })
+    }
     await harness.db.insert(aiBudgetSettings).values({ id: 1, monthlyBudgetVnd: input.budgetVnd ?? 1_000_000, warningThresholdPct: 80 })
   }
 
