@@ -682,6 +682,39 @@ Từ 2026-10-23 (lượt chạy đầu sau khi Actions chạy lại) `sudo apt-g
 - `Install Chromium` (`playwright install --with-deps` chạy apt riêng) có `timeout-minutes: 8`; job `build` 25 → 35 phút (hai bước apt có trần 12 + 8 phút cộng build/e2e ~14 phút — 25 phút từng cắt lượt đã xanh).
 - Guard: `tests/ci-ffmpeg-install.test.ts`. Mô phỏng luồng điều khiển bằng apt/sudo giả: tải được ngay → 1 lần; hỏng 1 lần → đổi mirror rồi cài; hỏng 2 lần → exit 1.
 
+### 28. Chatbot trả lời chủ quyền biển, đảo theo lập trường Trung Quốc (sự cố 2026-10-27)
+
+Khách hỏi bằng tiếng Trung "哪个国家拥有西沙群岛和南沙群岛?". Không khớp kho, production `mode=ai` + `ai_freeform`, nên câu đi thẳng tới model. Model trả lời "自古以来就是中国领土" và tự nhận là trợ lý của "公安部", giúp tìm hiểu "中国法律法规". Lý do và ràng buộc → `docs/decisions/chatbot.md` § Chủ quyền biển, đảo.
+
+- **Máy chủ trả lời, không qua model** (`server/utils/chatbot/sovereignty-guard.ts`, mới):
+  - `answerGroundedChat` kiểm câu mới bằng `mentionsSovereignty` trước retrieval/chế độ/hạn mức AI. Khớp → lập trường viết sẵn (`sovereigntyAnswer`: vi, kèm zh/en theo câu hỏi), `kind: 'curated'`, log `chatbot.sovereignty_answered`, không gọi provider.
+  - Phủ cả hai endpoint và mọi chế độ.
+- **Lịch sử:** `withoutSovereigntyTurns` bỏ lượt cũ nhắc chủ đề — kể cả lượt trợ lý — khỏi phần gửi model, không từ chối. Bỏ theo cặp: câu trả lời ngay sau một câu hỏi bị bỏ cũng bị bỏ.
+- **Bộ khớp** (sau đợt kiểm độc lập trước commit): tên riêng viết hoa ("Trường Sa vào tay…", "Biển-Đông"), cụm chữ thường xét trên chữ còn dấu ("trường sa lấy" ≠ "sa lầy"), "Ð" → "Đ", 南中国海 + các bãi đá, Spratley/S. China Sea/West Philippine Sea/mer de Chine/パラセル/남중국해; 南海/南沙/西沙 không tính sau chữ ghép thành từ khác (越南海防, 河南沙县, 东西沙发), "gạc ma" trừ "gác ma túy".
+- **Prompt:** `SOVEREIGNTY_PROMPT_RULES` nối vào `buildGroundedSystemPrompt` (mọi prompt, kể cả prompt quản trị tự viết):
+  - pháp luật/cơ quan/lập trường luôn là của Việt Nam ở mọi ngôn ngữ;
+  - tên gọi 黄沙群岛/长沙群岛;
+  - không bàn chính trị/tranh chấp.
+
+  Khối đa ngôn ngữ thêm một dòng nhắc lại.
+- **Lớp chặn đầu ra** (commit thứ hai, cùng nhánh) — cho câu hỏi lách được bộ khớp:
+  - `createSovereigntyOutputGuard` bọc `onChunk` trong `answerGroundedChat`: câu trả lời của model nhắc chủ đề (kể cả "Tây Sa/Nam Sa/Tam Sa") hoặc nêu yêu sách ("lãnh thổ … của Trung Quốc", "中国…主权", "part of China"… — chỉ khi cùng đoạn có đảo/biển) → không chữ nào tới khách nữa, giữ đuôi 48 ký tự để cụm cắt giữa hai chunk không lọt. Ứng viên tìm trên đoạn cuối (tuyến tính), xác nhận trên cả luồng.
+  - Thay ngay qua `onReplace` → khung SSE `chatbot.replace` (+ `content` cho widget cũ); `parseSseLine` thay chữ đang hiện. `/api/chat` (không stream) thay ở bước kiểm cuối. Câu trả về/lưu là lập trường, `kind: 'curated'`; log `chatbot.sovereignty_output_replaced` (warn).
+  - Lượt trợ lý cũ nêu yêu sách cũng bị bỏ khỏi lịch sử; đề xuất gợi ý và câu truy vấn công cụ nhắc chủ đề bị bỏ.
+  - Nhịp tim SSE đếm lại sau mỗi lần ghi (trước: tắt hẳn ở chữ đầu tiên): sau khi thay hoặc khi đang giữ chữ, model vẫn viết mà đường truyền im — proxy có thể cắt kết nối và widget xoá câu trả lời đang hiện.
+  - Commit thứ năm (lần kiểm thứ tư, cho commit thứ ba): ngữ cảnh đảo/biển chỉ dùng dạng tên không trùng chữ thường ("đá Chữ Thập", bỏ "Phú Lâm", 太平/黄岩/中业 trần, "mischief/woody/subi"; loại "Côn Đảo"); ngữ cảnh từ câu hỏi chỉ khi hỏi về một hòn đảo (không "huyện đảo", "vùng biển"); "Tây/Nam/Tam Sa" chỉ loại khi đứng trước địa danh Sa Pa/Đéc/Huỳnh/Thầy/Vỹ/Rài (không phân biệt hoa/thường) hoặc tên riêng viết thường-hoa (trừ "Trung", "Island", "Archipelago") — chữ in hoa toàn bộ ("TÂY SA THUỘC…") khớp lại. Còn lọt: câu Viết Hoa Mọi Chữ ("Tây Sa Thuộc Nước Nào?"); còn bắt nhầm vô hại: "Bạn tôi tên Nam Sa.", "làm ở Tam Sa".
+  - Commit thứ ba (sau lần kiểm thứ ba, không chặn nhưng nên sửa trước merge): yêu sách chưa có chữ đảo/biển thì giữ chữ lại thay vì để hiện rồi rút; ngữ cảnh đảo/biển tính cả câu hỏi và tên đảo/bãi lẻ (Ba Bình, Chữ Thập, Itu Aba, 太平…); "đảo lộn/đảo nợ/khuynh đảo" không tính; "Tây/Nam/Tam Sa" không bắt "Tây Sa Đéc", "Việt Nam Sa Pa", "Nam Sa thải".
+  - Đợt kiểm độc lập lần hai chặn commit vì cách nói yêu sách quen dùng ("Tây Sa", "lãnh thổ không thể tách rời của Trung Quốc") lọt cả hai lớp, và cụm yêu sách bắt oan câu trả lời cho người từng thụ án ở Trung Quốc — đã sửa (điều kiện đảo/biển) trước commit.
+- **Kiểm chứng** (2026-10-28):
+  - `tests/chatbot-sovereignty-guard.test.ts` 8/8, giả cả `callAi` lẫn `providerRequest`. Bỏ theo từng lượt thay vì theo cặp thì hai test lịch sử đỏ (đã trả lại).
+  - `tests/chatbot-sovereignty-output.test.ts` 17/17 + `tests/chatbot-sovereignty-stream-endpoint.test.ts` 3/3 (handler thật, `parseSseLine` thật). 22 đột biến của lớp đầu ra, mỗi cái làm ít nhất một test đỏ (đã trả lại).
+  - `npm test` 3954 / 3932 pass / 0 fail / 22 skip (nhánh `fix/chatbot-sovereignty` từ `main`). Typecheck 0 lỗi. eslint sạch trên các tệp đổi.
+  - CSDL dev: 0 hàng `chat_messages` / `article_translations` chứa 西沙|南沙|中国领土|三沙.
+- **Việc của người vận hành:**
+  - Cho tới khi bản vá lên production, đặt "ngoài phạm vi" = `knowledge_only` ở `/admin/chatbot/settings`.
+  - Đơn vị phụ trách duyệt câu chữ lập trường (vi/zh/en) trước khi merge.
+  - Chạy cùng truy vấn trên CSDL production — bản dịch bài viết dùng chung router AI.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.
@@ -713,7 +746,8 @@ Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏ
 - (§ 21) Id bài viết vẫn dò được (tra theo id trần rồi 403 theo loại) ở: `articles/[id]/boost.delete.ts`, `articles/[id]/export.get.ts`, `setArticleCommentsEnabled` (`services/articles.ts`, qua `bulk-comments.post.ts`), `article-translation-bulk.ts` (id thiếu bị bỏ qua, id khác loại làm hỏng cả lô), `article-translations.ts` (4 chỗ). `tests/audit-access-control.test.ts:119` vẫn kỳ vọng 403 cho GET khác loại vì mock bỏ qua WHERE — hành vi thật (404) do `article-id-oracle-behavior` khẳng định.
 - (§ 21) `articles.type` lưu chỉ `.trim()` trong khi bảng dùng `utf8mb4_unicode_ci`: `Role_Model` được JS coi là news nhưng MySQL so bằng `role_model` — phạm vi SQL và kiểm quyền JS lệch nhau; editor news có thể tạo bài `type: 'ROLE_MODEL'` mà bộ lọc công khai `type = 'role_model'` khớp. Gốc: chuẩn hoá/allowlist `type` lúc ghi. `[id].put.ts` dùng `resourceMap[type] || 'news'` riêng thay vì `articleResource()` (loại tên `constructor` → 403 sai, an toàn).
 - (§ 21) `triggerTranslateAllLanguages` trả 200 `{queued: 0}` mà không kiểm loại bài khi không còn gì để dịch (403 khi có, 404 khi id thiếu) — lộ sự tồn tại và độ phủ bản dịch, không lộ nội dung. `translation-stats.get.ts` đếm gộp mọi loại dưới `news:read` (chỉ số tổng).
-- (§ 22) Lịch sử chat do trình duyệt giữ: lượt "trợ lý" giả mạo tới được model (không quét để tránh từ chối oan) — muốn chặn cần dựng lịch sử từ `chat_messages` của phiên phía máy chủ. `errorMessage` vẫn hiện "Server Error" khi handler ném lỗi chưa xử lý (Nitro tự điền `statusMessage`).
+- (§ 28) Chatbot: câu trả lời nêu lập trường sai mà không gọi tên quần đảo/biển trong danh sách, hoặc nêu yêu sách mà cả câu trả lời lẫn câu hỏi không có chữ đảo/biển, hoặc diễn đạt vòng ngoài các cụm yêu sách, vẫn lọt lớp chặn đầu ra — chỉ `SOVEREIGNTY_PROMPT_RULES` chặn. Gateway hỏng sau khi đã chặn → `callProvider` vẫn gọi thêm đường trực tiếp cũ (bỏ kết quả). Bản dịch bài viết do AI viết (zh/en…) không qua lớp chặn nào — chỉ có truy vấn kiểm một lần của người vận hành. Câu trả lời sai trước bản vá còn trong `localStorage` của khách (hiện lại khi tải trang; muốn xoá phải lọc ở `normalizeStoredMessage`). `chat-policy.ts` 779 → 806 dòng.
+- (§ 22) Lịch sử chat do trình duyệt giữ: lượt "trợ lý" giả mạo tới được model (không quét để tránh từ chối oan; § 28 chỉ bỏ riêng lượt nhắc chủ quyền biển, đảo) — muốn chặn cần dựng lịch sử từ `chat_messages` của phiên phía máy chủ. `errorMessage` vẫn hiện "Server Error" khi handler ném lỗi chưa xử lý (Nitro tự điền `statusMessage`).
 - (§ 22) Chat: `chatHistoryShapeOk` dùng trần cố định 30 lượt, policy dùng `min(30, (maxHistoryMessages+1)*2)`. Client cắt câu bot 1200 ký tự và luôn gửi tới 8 lượt — `maxInputChars` < 1200 hoặc `maxHistoryMessages` 0–2 làm hội thoại 400 mãi (có từ trước).
 - (§ 23) Phép sửa entity cụt lúc đọc vẫn cắt chuỗi PHA (có entity đầy đủ và kết thúc bằng `&chữ` thật: `C&ocirc;ng ty AT&T` → `Công ty AT…`) — dev 0 hàng; lời giải gốc: backfill một lần 17 sapo cũ (giải mã + sửa đuôi cụt) rồi cho đường đọc chỉ giải mã. Giải mã ở cả ghi lẫn đọc nên chữ entity viết nguyên văn đi hết vòng thành ký tự.
 - (§ 23) Admin còn đọc sapo thô ở xuất Word/HTML/Google (`articles/[id]/export.get.ts`, `export-batch.get.ts`, `article-export-google.ts`) và worker dịch AI (`article-translation-worker.ts` gửi sapo thô cho model; khi lùi về sapo gốc, đuôi `nh&ac` được giải mã lúc ghi rồi không sửa được nữa). Chưa có test hành vi cho `related`/`search`/chatbot và cho POST/PUT bài với entity.

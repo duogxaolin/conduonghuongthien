@@ -1,5 +1,5 @@
 /**
- * Nhịp tim cho luồng SSE của chatbot trong lúc chờ chữ đầu tiên.
+ * Nhịp tim cho luồng SSE của chatbot: một dòng `: ping` sau mỗi khoảng im lặng.
  *
  * Provider AI có thể mất 40–200 giây cho một câu trả lời (suy nghĩ rồi mới có chữ).
  * Suốt thời gian đó không có byte nào trên đường truyền, nên một proxy có
@@ -8,6 +8,9 @@
  * nối sống; client chỉ đọc các dòng `data:` nên bỏ qua nó.
  *
  * Chỉ giữ kết nối, KHÔNG huỷ cuộc gọi AI chậm (quyết định đã chốt: đợi, không bỏ).
+ *
+ * Endpoint `stop()` trước mỗi lần ghi và `start()` lại sau đó, nên ping chỉ đi khi đã 15 giây không ghi gì:
+ * trước chữ đầu tiên, và giữa luồng khi lớp chặn chủ quyền giữ chữ hoặc đã thay câu trả lời mà model vẫn viết.
  */
 
 /** Chú thích SSE: bắt đầu bằng `:`, không phải sự kiện. */

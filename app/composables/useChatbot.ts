@@ -349,6 +349,8 @@ export function parseSseLine(line: string, target: { text: string, message: Chat
 
   const chatbot = data?.chatbot as Record<string, unknown> | undefined
   if (chatbot && typeof chatbot === 'object') {
+    // Máy chủ rút lại phần đã stream (lớp chặn chủ quyền): thay, không nối — `content` cùng khung là cho widget cũ.
+    if (typeof chatbot.replace === 'string') target.text = chatbot.replace.slice(0, CHATBOT_CLIENT_LIMITS.maxOutputChars)
     if (chatbot.toolEvent && typeof chatbot.toolEvent === 'object') {
       const te = chatbot.toolEvent as { name: string; query?: string; status: 'calling' | 'done'; count?: number }
       if (!Array.isArray(target.message.toolCalls)) target.message.toolCalls = []
