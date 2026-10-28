@@ -20,7 +20,7 @@ import { buildArticleSearch } from '../utils/chatbot/article-search'
 import { photoSearchCondition, videoSearchCondition } from '../utils/chatbot/media-search'
 import { chatTurnText } from '../utils/chatbot/chat-turns'
 import { decodeHtmlEntities, plainTextField } from '../utils/decode-html-entities'
-import { buildChatHistory, buildGroundedSystemPrompt } from './chat-policy-prompt'
+import { buildChatHistory, buildGroundedSystemPrompt, questionVariable } from './chat-policy-prompt'
 import { CHAT_LIMITS, HOTLINE, type ChatDependencies, type ChatMessage, type ChatToolCall } from './chat-policy-contract'
 
 function text(value: unknown): string { return typeof value === 'string' ? value.normalize('NFKC').trim() : '' }
@@ -269,7 +269,8 @@ async function callProvider(
     const result = await callAi('chatbot', {
       prompt: queryText,
       systemPrompt: groundedPrompt,
-      variables: { question: queryText, references: references.map(r => r.question).join('; '), fallback_message: settings.fallbackMessage ?? '' },
+      // `{{question}}` đặt câu hỏi vào system prompt: đi trong khối thẻ, không thô (chat-policy-prompt.ts).
+      variables: { question: questionVariable(queryText), references: references.map(r => r.question).join('; '), fallback_message: settings.fallbackMessage ?? '' },
       userId: null,
       history: historyMessages,
       onChunk: followUpFilter ? chunk => followUpFilter.push(chunk) : undefined,

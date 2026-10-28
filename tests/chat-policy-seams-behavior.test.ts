@@ -229,7 +229,9 @@ test('the grounded AI path hands the gateway the grounded prompt, the visitor tu
   assert.match(input.systemPrompt!, /^Chỉ trả lời theo tài liệu đã duyệt\./)
   assert.match(input.systemPrompt!, /<UNTRUSTED_KNOWLEDGE_REFERENCES>\n\[REFERENCE 1\]\nQuestion: Thủ tục xóa án tích như thế nào\?\nApproved answer: Câu trả lời đã duyệt cho mục 1\./)
   assert.doesNotMatch(input.systemPrompt!, /GHI-CHU-NOI-BO/, 'internal notes never reach the model')
-  assert.equal(input.variables?.question, 'Thủ tục xóa án tích?')
+  // `{{question}}` lands inside the system prompt: fenced with a per-call tag, never raw
+  // (tests/chatbot-question-variable-fence.test.ts); the visitor turn above stays as written.
+  assert.match(input.variables?.question ?? '', /^<(cau_hoi_[0-9a-f]{12})>\nThủ tục xóa án tích\?\n<\/\1>$/)
   assert.deepEqual(input.tools?.map(tool => tool.name), TOOL_NAMES)
   assert.equal(calls.legacy, 0, 'a gateway answer never touches the legacy path')
 
