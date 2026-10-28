@@ -368,7 +368,7 @@ Wave 3, task 4.2. Bản tách giữ lại. Khác kế hoạch 2026-10 ở trên 
   - Bỏ `forgetProbe` khi lưu (R1) và khi đóng hộp (R2): đỏ.
   - R3 (không bỏ lượt đang bay) và R4 (không nhả "Đang test...") SỐNG — hai bước đó thừa, nên đã gỡ khỏi `forgetProbe` thay vì giữ logic không ai kiểm.
 - **Mã màu hex:** codemod 0 thay thế (như trên tệp gốc). 16 → cha 5 + `ProviderModelsPanel` 4 + `ProviderCreateModal` 3 + `ModelAddModal` 3 + `ProviderCardHeader` 1 (`--raise`).
-- **Độ phủ** (Node 24.21, `cdkt-cov:node24`, lệnh của CI, toàn bộ xanh): `app/composables` 76,38 % (5878/7696) → mốc 76.37. Các thư mục khác RISE không do lô này — không nâng.
+- **Độ phủ** (Node 24.21, `cdkt-cov:node24`, lệnh của CI, toàn bộ xanh): `app/composables` 76,38 % (5878/7696) → mốc 76.37; sau sửa hồi quy đo lại 76,45 % (5903/7721) → mốc 76.45. Các thư mục khác RISE không do lô này — không nâng.
 - **Việc sau** (ghim nguyên trạng hoặc chưa đụng):
   - xoá trống Base URL gửi `null`, máy chủ hiểu là "không đổi" mà trang vẫn báo "Đã lưu";
   - nhãn model `null` và `deleted` của `pricing/bulk-delete.post.ts` (trả số model GỬI lên): đã sửa phía máy chủ trên wave3/integration (R4). Khi gộp, cập nhật hai chỗ đóng vai máy chủ trong `tests/_ai-providers-tab-harness.ts` (đã ghi chú tại chỗ). Hiện không test nào phụ thuộc chỗ khác nhau đó;
