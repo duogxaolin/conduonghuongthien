@@ -391,6 +391,26 @@ describe('components/admin/ChatbotSmallTalkPanel.vue', () => {
     assert.doesNotMatch(screen(opened), /Tôi buồn quá/, 'the "support" answer is shown under the "navigation" filter')
   })
 
+  it('FINDING: a superseded request\'s failure does not replace the newer rows with an error; nor does its loading end', async () => {
+    const pending: NetCall[] = []
+    const opened = await mountAdminPage(PANEL, routes({
+      [`GET ${ST_URL}`]: call => { if (!call.url.searchParams.get('category')) return stList(ST_ROWS); pending.push(call); return undefined },
+    }))
+    await input(selects(opened)[0]!, 'support')
+    await settle()
+    await input(selects(opened)[0]!, 'navigation')
+    await settle()
+    // 403, not 5xx: ofetch retries a GET once on 5xx, which would keep this request in flight.
+    pending[0]!.respond(h3Error(403, 'Bạn không có quyền lọc nhóm này.'))
+    await settle()
+    assert.equal(findAll(opened.page.root, el => el.tag === 'SkeletonTable').length, 1, 'the newer request is still loading')
+    assert.equal(alertText(opened.page), '')
+    pending[1]!.respond(stList([stRow(7, { question: 'Đường tới trụ sở' })]))
+    await settle()
+    assert.equal(alertText(opened.page), '')
+    assert.match(screen(opened), /Đường tới trụ sở/)
+  })
+
   it('toggle / delete: the request, the toast, a reload of the current page', async () => {
     const opened = await mountAdminPage(PANEL, stServer())
     await fire(pager(opened), 'update:page', 3)
