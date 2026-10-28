@@ -209,6 +209,22 @@ test('FINDING-R5-8: a history row is stored at the whole second MySQL keeps (rou
   assert.equal(h.harness.rows(aiUsageLogs).length, 2)
 })
 
+test('FINDING-R5-8: an imported request is recognised by its second, model and tokens — two requests in one second stay two, a row the gateway logged is not taken for one', async () => {
+  // The gateway's own log of a call through delify, at the very second of a router item.
+  await h.harness.db.insert(aiUsageLogs).values({ serviceKey: 'chatbot', provider: 'delify', model: 'gpt-4o-mini', promptTokens: 1000, completionTokens: 500, totalTokens: 1500, costVnd: '25.50', success: true, createdAt: new Date('2026-10-28T03:00:01.000Z') })
+  answers.receipts.body = {
+    availableModels: [{ name: 'gpt-4o-mini', input: 0.15, output: 0.6 }],
+    history: [HISTORY_ITEM, { ...HISTORY_ITEM, timestamp: '2026-10-28T03:00:00.700Z', input: 10, output: 5, tok: 15 }],
+  }
+  assert.equal((await sync()).body.syncedLogs, 2)
+  assert.equal((await sync()).body.syncedLogs, 0)
+  assert.deepEqual(h.harness.rows(aiUsageLogs).map(row => [row.serviceKey, row.promptTokens, (row.createdAt as Date).toISOString()]), [
+    ['chatbot', 1000, '2026-10-28T03:00:01.000Z'],
+    ['delify_router', 1000, '2026-10-28T03:00:01.000Z'],
+    ['delify_router', 10, '2026-10-28T03:00:01.000Z'],
+  ])
+})
+
 // ─── status ──────────────────────────────────────────────────────────────────
 
 test('status needs ai.read: no session → 401, another resource → 403; nothing sent', async () => {
@@ -286,4 +302,15 @@ test('FINDING-R5-9: status passes on only the fields the dashboard shows — an 
   assert.deepEqual(response.body.periodSummary, { items: [{ model: 'gpt-4o-mini', input: 1, output: 1, requests: 1, cost: 0.1 }], totals: { input: 1, output: 1, requests: 1, cost: 0.1 }, peakTpm: 1 })
   assert.deepEqual(response.body.recentHistory, [HISTORY_ITEM])
   assert.deepEqual(response.body.availableModels, [{ name: 'gpt-4o-mini', input: 0.15, output: 0.6 }])
+})
+
+test('FINDING-R5-9: the key card and the sync answer keep only plain values of the router\'s fields', async () => {
+  answers.key.body = { name: { key: SECRET }, groupName: [SECRET], active: 'yes', budgetUsd: 10, allowedModels: ['gpt-4o-mini', { key: SECRET }, 7], rpm: { key: SECRET }, windowStartedAt: { key: SECRET }, windowCostUsd: { key: SECRET }, windowRequests: `${SECRET}` }
+  const card = await status()
+  assertKeyNowhere(card.body)
+  const keyInfo = card.body.keyInfo as Json
+  assert.deepEqual([keyInfo.name, keyInfo.groupName, keyInfo.active, keyInfo.allowedModels, keyInfo.rpm, keyInfo.windowStartedAt], ['Delify Key', 'Default', false, ['gpt-4o-mini'], null, null])
+  const synced = await sync()
+  assertKeyNowhere(synced.body)
+  assert.deepEqual(synced.body.delifyUsage, { windowCostUsd: null, windowRequests: null, allowedModels: ['gpt-4o-mini'] })
 })

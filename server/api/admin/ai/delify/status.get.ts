@@ -170,10 +170,11 @@ export default defineEventHandler(async (event) => {
     configured: true,
     // The host actually asked (the delify row's base URL) — the dashboard shows it.
     host: ((target) => (target.ok ? target.hostname : null))(checkProviderBaseUrl(delifyProvider.baseUrl)),
+    // The router's own fields, each only in the type the card shows (`plainFields` above, for the same reason).
     keyInfo: {
-      name: keyData.name ?? 'Delify Key',
-      groupName: keyData.groupName ?? 'Default',
-      active: keyData.active ?? false,
+      name: typeof keyData.name === 'string' ? keyData.name : 'Delify Key',
+      groupName: typeof keyData.groupName === 'string' ? keyData.groupName : 'Default',
+      active: keyData.active === true,
       budgetUsd,
       budgetVnd,
       usedCostUsd,
@@ -181,9 +182,9 @@ export default defineEventHandler(async (event) => {
       remainingBudgetUsd,
       remainingBudgetVnd,
       totalRequests,
-      allowedModels: keyData.allowedModels ?? [],
-      rpm: keyData.rpm ?? null,
-      windowStartedAt: keyData.windowStartedAt ?? null,
+      allowedModels: Array.isArray(keyData.allowedModels) ? keyData.allowedModels.filter((model): model is string => typeof model === 'string') : [],
+      rpm: typeof keyData.rpm === 'number' ? keyData.rpm : null,
+      windowStartedAt: typeof keyData.windowStartedAt === 'string' ? keyData.windowStartedAt : null,
     },
     period,
     periodSummary: periodSummary(receiptsData?.summary),

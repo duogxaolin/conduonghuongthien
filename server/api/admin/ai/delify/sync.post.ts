@@ -162,19 +162,27 @@ export default defineEventHandler(async (event) => {
         const item = storableHistoryItem(candidate)
         if (!item) continue
         const itemDate = item.createdAt
+        const model = item.model.slice(0, 64)
+        const promptTokens = Number(item.input) || 0
+        const completionTokens = Number(item.output) || 0
 
-        // Check if this log entry already exists by timestamp and provider
+        // Imported before? Matched on what identifies a router request among the rows a
+        // sync wrote: its second (as stored, see `storedSecond`), model and token counts —
+        // the second alone would merge two requests made in the same second, and would
+        // take a row the gateway logged itself (another service key) for an imported one.
         const [existingLog] = await tx.select({ id: aiUsageLogs.id })
           .from(aiUsageLogs)
           .where(and(
+            eq(aiUsageLogs.serviceKey, 'delify_router'),
             eq(aiUsageLogs.provider, 'delify'),
             eq(aiUsageLogs.createdAt, itemDate),
+            eq(aiUsageLogs.model, model),
+            eq(aiUsageLogs.promptTokens, promptTokens),
+            eq(aiUsageLogs.completionTokens, completionTokens),
           ))
           .limit(1)
 
         if (!existingLog) {
-          const promptTokens = Number(item.input) || 0
-          const completionTokens = Number(item.output) || 0
           const totalTokens = Number(item.tok) || (promptTokens + completionTokens)
           const costUsd = item.costUsd
           const costVnd = costUsd * 25500
@@ -184,7 +192,7 @@ export default defineEventHandler(async (event) => {
           await tx.insert(aiUsageLogs).values({
             serviceKey: 'delify_router',
             provider: 'delify',
-            model: item.model.slice(0, 64),
+            model,
             promptTokens,
             completionTokens,
             totalTokens,
@@ -245,10 +253,11 @@ export default defineEventHandler(async (event) => {
     skipped,
     syncedLogs,
     totalFromApi: models.length,
+    // Only plain values of the router's answer reach the browser (as in `status.get.ts`).
     delifyUsage: delifyUsage ? {
-      windowCostUsd: delifyUsage.windowCostUsd ?? null,
-      windowRequests: delifyUsage.windowRequests ?? null,
-      allowedModels: delifyUsage.allowedModels ?? null,
+      windowCostUsd: typeof delifyUsage.windowCostUsd === 'number' ? delifyUsage.windowCostUsd : null,
+      windowRequests: typeof delifyUsage.windowRequests === 'number' ? delifyUsage.windowRequests : null,
+      allowedModels: Array.isArray(delifyUsage.allowedModels) ? delifyUsage.allowedModels.filter((model): model is string => typeof model === 'string') : null,
     } : null,
   }
 })
