@@ -617,3 +617,91 @@ Ghi nhận, không ghim: `deleteLocalFile` chỉ kiểm đường dẫn theo ch�
 6. Ngoài sáu lớp của task: `server/services/readers.ts` (36 %, 550), `ip-bans.ts` (36,4 %, 118) — quyết định kiểm duyệt (lớp R5/R6 ở bảng trên).
 
 Test văn bản mã nguồn mà các suite trên nay thay được (không xoá trong lát này): khối `upload.post.ts` của `cms-core-auth-media`, khối "kiểm hết trước khi ghi" của `retention-policy` (đột biến `rput-write-as-you-go` bị giết).
+
+## Lát R4 của task 5.2 — đo lại 2026-10-28 (Node 24, `b315635`)
+
+"R4" là **lát thứ tư** của task 5.2, không phải lớp rủi ro R4 ở bảng xếp hạng (dù lát này phần lớn nằm trong lớp đó: cổng AI).
+
+**Đo ở đâu.** `npm run test:coverage` trong image `cdkt-cov:node24` (Node 24.21, `TZ=Asia/Ho_Chi_Minh`, lệnh của CI) trên `wave3/integration` = `b315635`, trước khi đụng gì: 767 tệp, 230 chưa nạp, **81,93 %** (70 203 / 85 682). Trên cây chưa đụng, ratchet đã báo RISE ở `app/utils` (+0,59), `server/utils` (+0,30) và `shared` (+3,58) — do các nhánh gộp trước.
+
+### Cách chọn
+
+Ba mục đầu của "Lát sau" ở lát R3 (test-call, storage-size, cấu hình giá/nhà cung cấp AI kèm audit), cộng các handler cùng nhóm vẫn 0 % mà suite đó dựng sẵn harness (`providers/index.get.ts`, `pricing/index.get.ts`, `services/index.get.ts`), rồi một cặp `settings/**`: `layout.{get,put}.ts` — handler mỏng trên `server/services/layout-settings.ts`, service chưa từng nạp. Bỏ: `ai/usage.get.ts` (truy vấn theo mốc tháng phụ thuộc `timezone: '+07:00'` của pool — cần suite riêng, xem "Lát sau"), `ai/budget/index.get.ts` (17 dòng, không quyết định riêng ngoài upsert).
+
+### Đã làm trong lát này (15 tệp)
+
+| # | Tệp | Trước | Sau | Vì sao ở đây | Suite |
+|---|---|---|---|---|---|
+| 1 | `server/api/admin/ai/test-call.post.ts` | 0 % (270) | 98,9 % (346/350) | Khoá API đã lưu + lượt gọi tốn tiền + gọi ra ngoài | `ai-test-call-behavior` |
+| 2 | `server/api/admin/media/storage-size.get.ts` | 0 % (88) | 96,6 % (114/118) | Duyệt đĩa (symlink), liệt kê bucket R2 bằng bí mật đã lưu | `media-storage-size-behavior` |
+| 3 | `server/api/admin/ai/services/[id].put.ts` | 0 % (89) | 98,3 % (117/119) | Prompt/model/nhà cung cấp mỗi dịch vụ, phản chiếu sang chatbot | `ai-service-config-behavior` |
+| 4 | `server/api/admin/ai/services/index.get.ts` | 0 % (15) | 100 % | như trên | như trên |
+| 5 | `server/api/admin/ai/pricing/index.post.ts` | 0 % (63) | 97,5 % (78/80) | Giá → chi phí mà `checkBudget` cộng | `ai-pricing-config-behavior` |
+| 6 | `server/api/admin/ai/pricing/[model].put.ts` | 0 % (52) | 94,8 % (73/77) | như trên | như trên |
+| 7 | `server/api/admin/ai/pricing/bulk-delete.post.ts` | 0 % (34) | 100 % | như trên | như trên |
+| 8 | `server/api/admin/ai/pricing/[model].delete.ts` | 0 % (32) | 95,3 % (41/43) | như trên | như trên |
+| 9 | `server/api/admin/ai/pricing/index.get.ts` | 0 % (30) | 100 % | như trên | như trên |
+| 10 | `server/api/admin/ai/providers/bulk-delete.post.ts` | 0 % (53) | 100 % | Xoá nhà cung cấp (khoá mã hoá) + bảng giá của nó | `ai-provider-delete-behavior` |
+| 11 | `server/api/admin/ai/providers/[id].delete.ts` | 0 % (36) | 100 % | như trên | như trên |
+| 12 | `server/api/admin/ai/providers/index.get.ts` | 0 % (33) | 100 % | Danh sách không được lộ phong bì khoá | như trên |
+| 13 | `server/api/admin/settings/layout.put.ts` | 0 % (11) | 100 % | Cấu hình bố cục mọi trang công khai đọc | `settings-layout-behavior` |
+| 14 | `server/api/admin/settings/layout.get.ts` | 0 % (9) | 100 % | như trên | như trên |
+| 15 | `server/services/layout-settings.ts` | 0 % (93) | 100 % | như trên | như trên |
+
+Cộng một tệp mới: `server/utils/ai/pricing-cost.ts` (100 % — giới hạn giá dùng chung, xem FINDING-R4-6). Số trong ngoặc ở cột "Trước" là dòng có mã của tệp chưa nạp; cột "Sau" đếm mọi dòng vật lý của tệp đã nạp, đo sau đợt sửa. Dòng còn trống ở các tệp dưới 100 % (đọc từ lcov): nhánh 400 "thân không phải object" (`readBody(...).catch(() => ({}))` chỉ trả non-object khi thân là một JSON vô hướng), 400 "Model không hợp lệ" (tham số tuyến rỗng — router không bao giờ khớp), `Base URL không hợp lệ` của test-call, và hai `catch` của storage-size: tệp bị xoá giữa lượt quét, và `catch` ngoài quanh `diskUsage` (hàm tự nuốt lỗi bên trong, không bao giờ ném).
+
+**Sau lát** (`npm run test:coverage`, Node 24, cây cuối của nhánh lát, log `coverage-after.log`): 768 tệp (thêm `pricing-cost.ts`), 215 chưa nạp, **83,10 %** (71 482 / 86 017). Theo thư mục: `server/api` 61,91 → 66,76, `server/services` 86,67 → 86,99, `server/utils` 94,23 → 94,56; các thư mục khác không đổi. Mức nền ratchet nâng đúng ba thư mục lát này đụng, bằng số đo làm tròn xuống: `server/api` 61,9 → 66,76, `server/services` 86,67 → 86,98, `server/utils` 93,93 → 94,56 (gồm cả +0,30 có sẵn trên cây — cùng cách lát R3 làm với `server/services`); `app/utils` và `shared` giữ 95,13 / 95,9 vì lát này không đụng tới. Toàn bộ unit + ratchet (lệnh của CI, Node 26 cục bộ): 6 564 test, 0 đỏ, 54 bỏ qua (suite integration không có MySQL).
+
+### Cách chạy và cái bẫy đã gặp
+
+- Cùng kiểu R1–R3: app h3 thật + middleware `admin-auth` thật (`_h3-handler-server.ts`), SQL MySQL của Drizzle trên SQLite (`_sqlite-mysql-db.ts`), tệp và symlink thật dưới thư mục làm việc tạm, phong bì AES-GCM thật (khoá AI, bí mật R2). test-call chạy `checkBudget`/`logAiUsage`/`calculateAiCost` thật và `safeProviderRequest` thật, chỉ thay DNS và socket HTTPS như suite probe của R3. Biên giả còn lại: SDK S3.
+- **`checkBudget` với ngân sách 0 gọi mạng.** Hạn mức tháng 0 = "không giới hạn" → nó hỏi Delify hạn mức của khoá (`loadDelifyQuota`), qua đúng `safeProviderRequest` đã thay — một yêu cầu thừa (khoá trong query) lọt vào danh sách đã gửi, và kết quả được nhớ 60 s ở cấp module, dò sang test sau. Suite đặt sẵn hạn mức > 0; "hết ngân sách" dựng bằng hàng `ai_usage_logs` có chi phí ≥ hạn mức.
+- **Logger giả phải GHI LẠI** (suite R3 dùng no-op, nên "khoá không vào log" chưa từng được kiểm). Mỗi lời gọi được `util.inspect` (`JSON.stringify(new Error())` ra `{}`), và mọi khẳng định "không lộ khoá" quét phản hồi + mọi hàng `ai_usage_logs` + mọi dòng log theo **mọi cửa sổ 8 ký tự** của khoá — lộ một phần (SyntaxError của V8 trích 10 ký tự đầu thân) cũng đỏ.
+- **Hạn giờ không chờ 20 s.** Socket giả phát `'timeout'`; `executeRequest` thật đổi nó thành `UPSTREAM_TIMEOUT`. Bộ hẹn giờ của chính nó có suite riêng (`outbound-deadline`); suite này kiểm handler xin đúng `timeoutMs: 20000`, `maxResponseBytes: 131072`.
+- **Lỗi bơm vào mà thoát khỏi handler** được harness trả `{ injected: true }` (500) — với các ca đó chỉ khẳng định mã; khẳng định "không lộ nội dung" chỉ có nghĩa ở nơi handler tự bắt lỗi và trả về.
+- **SQLite không kiểm độ dài VARCHAR, khoảng DECIMAL, NOT NULL, hay collation không phân biệt hoa thường của khoá chính MySQL.** Hai FINDING dựa trên giới hạn cột (R4-3, R4-6) có bằng chứng MySQL riêng: trên container dev (MySQL 8.0.46, `sql_mode` = `ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,…`, mặc định của image — `docker-compose.yml` không đổi) một CSDL nháp cho `ERROR 1406 Data too long for column 'service_key'` với 65 ký tự và `ERROR 1264 Out of range value` với `10000` vào DECIMAL(8,4) (log `mysql-strict-evidence.log` ở thư mục bằng chứng). Test ghim mã 400 handler nay trả **trước** CSDL.
+- **Tên model có `/`.** `fetch` gửi `org%2Fflash` nguyên văn; h3 giải mã đường dẫn trước khi định tuyến nhưng giữ `%2F` (và xử lý `%25` để giải mã tham số một lần là đúng) — nên phép thử qua app h3 thật là đủ, không cần `node:http` như ca `..` của R3.
+- **Thư mục không đọc được** (`chmod 000`) dọn bằng `t.after` đặt lại quyền — không thì `beforeEach` sau không xoá được cây. Chạy bằng root thì 000 vẫn đọc được: test đổi kỳ vọng theo `process.getuid()`.
+
+### Đột biến (mỗi cái đúng một test đỏ; kịch bản `mutants.sh` + `mutants.list` và log ở thư mục bằng chứng)
+
+| Suite | Đột biến | Đỏ | Test đỏ (đúng 1 mỗi đột biến) |
+|---|---|---|---|
+| `ai-test-call-behavior` | 10 | 10 | bỏ che khoá → R4-1; che **sau** khi cắt 300 ký tự → R4-1; câu trả lời `null` coi là thành công → R4-2; nuốt lỗi tra giá (tính 0 đồng) → R4-2; chỉ kiểm độ dài nhãn dịch vụ, nhận nhãn tự đặt → R4-3; bỏ giới hạn độ dài model → R4-3; bỏ chặn ngân sách → "past the monthly budget"; hạn giờ 120 s → "20 s deadline"; khoá Anthropic thành Bearer → "Anthropic"; bỏ trừ 2000 token Delify → "token accounting" |
+| `ai-pricing-config-behavior` | 5 | 5 | PUT đọc tham số thô → R4-4; DELETE đọc tham số thô → R4-4; bulk trả số tên gửi lên → R4-5; bỏ trần 9 999,9999 → R4-6; `label: null` bị bỏ qua → R4-7 |
+| `ai-provider-delete-behavior` | 3 | 3 | audit đếm id gửi lên → R4-5; bỏ chặn nhà cung cấp đang dùng → "delete one … 409"; `activeModels` = tổng → "the list" |
+| `ai-service-config-behavior` | 2 | 2 | `systemPrompt: null` bị bỏ qua → R4-8; đảo bật/tắt → `mode` → "mirrored into chatbot_settings" |
+| `media-storage-size-behavior` | 2 | 2 | theo symlink tới tệp → "symbolic link … not followed"; bí mật R2 không giải mã được vẫn tính là đã cấu hình → "R2 counts as not configured" |
+| `settings-layout-behavior` | 2 | 2 | audit thiếu `after` → "a valid save"; bỏ trần 1920 px → "every field is checked" |
+| **Tổng** | **24** | **24** | không đột biến nào sống sót; cây sản phẩm được kiểm khôi phục từng byte sau mỗi lượt |
+
+### Lỗi tìm thấy (ghim lúc viết test, sửa sau đó)
+
+Chín test `FINDING-R4-n` đỏ trên `b315635` và **chỉ** chúng — 46 test còn lại của sáu suite xanh trên mã base (kịch bản `findings-on-base.sh` đặt tạm 7 tệp sản phẩm về `b315635`, chạy, khôi phục và so từng byte; log `findings-on-base.log`).
+
+| Mã | Mức | Tệp | Lỗi | Trạng thái |
+|---|---|---|---|---|
+| FINDING-R4-1 | trung bình | `ai/test-call.post.ts` | Thân lỗi của nhà cung cấp (300 ký tự đầu) trả nguyên văn **và** lưu vào `ai_usage_logs.error_message` (tab Nhật ký AI, mọi người có `ai.read`). Nhà cung cấp/proxy nhắc lại khoá bị từ chối ("Incorrect API key provided: sk-…") → khoá đã lưu lộ ra, điều `ai.read` không bao giờ được thấy. Thân 2xx không phải JSON lộ một đoạn qua `SyntaxError` của V8. Probe kết nối (`providers/[id]/test.post.ts`) đã không chuyển tiếp thân vì đúng lý do này. | **Đã sửa**: bỏ khoá (nguyên văn, dạng thoát chuỗi JSON, dạng `\/`) khỏi chữ của nhà cung cấp **trước** khi cắt 300 ký tự, và khỏi câu trả lời; thân không phải object JSON → câu viết sẵn. Lời nhắn của nhà cung cấp vẫn còn (chỉ khoá thành `[đã ẩn khoá API]`) để cán bộ chẩn đoán "model không tồn tại" |
+| FINDING-R4-2 | thấp | `ai/test-call.post.ts` | Tra giá chạy **sau** lượt gọi đã trả tiền, trong `try` đổi mọi lỗi thành "Thất bại khi gọi API: <message>": lỗi CSDL gửi chữ "Failed query: select … from ai_model_pricing …" cho trình duyệt, và lượt gọi thành công bị ghi là thất bại, 0 đồng — khoản chi `checkBudget` không thấy. Câu trả lời `null` thành chữ lỗi JavaScript. | **Đã sửa**: mọi lần đọc CSDL (dịch vụ, ngân sách, nhà cung cấp, giá) trước lượt gọi; sau lượt gọi chỉ còn `logAiUsage` (không ném). Chỉ `ChatbotOutboundError` mang câu của nó; JSON không phải object là lỗi viết sẵn |
+| FINDING-R4-3 | trung bình | `ai/test-call.post.ts` | `serviceKey` và `model` lấy nguyên văn, dài bao nhiêu cũng được, trong khi `ai_usage_logs.service_key`/`model` là VARCHAR(64). MySQL strict từ chối hàng, `logAiUsage` nuốt lỗi (cố ý) — lượt gọi đã gửi và đã trả tiền không vào bảng `checkBudget` cộng: ai có `ai.read` chi không giới hạn. Nhãn dịch vụ cũng là thứ trình duyệt tự đặt. | **Đã sửa**: model > 64 ký tự → 400; `serviceKey` chỉ là `test_call` hoặc khoá của một dịch vụ đã cấu hình (ghi theo cách viết đã lưu), còn lại 400 — đều trước lượt gọi |
+| FINDING-R4-4 | trung bình | `ai/pricing/[model].put.ts`, `[model].delete.ts` | Đọc tham số tuyến thô. h3 giữ `%2F` để không tách đoạn; trang quản trị gửi `encodeURIComponent(model)` (`admin-fetch-rollout` ghim `PUT …/pricing/org%2Fflash`) → model dạng `vendor/model` (kiểu tên của router) hoặc có `%` tạo được, liệt kê được, nhưng không sửa/tắt/xoá từng cái được (404) | **Đã sửa**: `getRouterParam(event, 'model', { decode: true })`. Các tham số chuỗi khác dưới `server/api` (slug, mã ngôn ngữ, tên tệp backup, shortId) không chứa `/` hay `%` theo khuôn của chúng |
+| FINDING-R4-5 | thấp | `ai/pricing/bulk-delete.post.ts`, `ai/providers/bulk-delete.post.ts` | Bulk xoá giá trả `deleted` = số tên gửi lên và audit tên gửi lên (trùng, tên không có cũng tính); bulk xoá nhà cung cấp audit `count` = số id gửi lên. CLAUDE.md: con số báo cho người dùng phải đo, không khẳng định | **Đã sửa**: bỏ trùng; bảng giá đọc hàng có thật trong transaction (`FOR UPDATE`), xoá + đếm + audit đúng chúng (không khớp gì → `deleted: 0`, không audit); nhà cung cấp xoá + đếm theo hàng tìm thấy |
+| FINDING-R4-6 | thấp | `ai/pricing/index.post.ts`, `[model].put.ts` | Cột giá DECIMAL(8,4); giá > 9 999,9999 qua kiểm tra (hữu hạn, không âm) rồi MySQL strict từ chối → 500 thay vì một câu cho cán bộ | **Đã sửa**: helper `server/utils/ai/pricing-cost.ts` (một giới hạn cho cả hai); POST và PUT trả 400 trước CSDL. PUT vẫn bỏ qua rác (âm, chuỗi) như trước — quy ước "bỏ qua, không ép" của R3 |
+| FINDING-R4-7 | thấp | `ai/pricing/[model].put.ts` | Form sửa gửi `label: null` khi xoá ô nhãn (`AiProvidersTab.vue` `saveEditModel`); handler chỉ nhận chuỗi → nhãn giữ nguyên trong khi trang báo đã lưu | **Đã sửa**: `null` xoá nhãn |
+| FINDING-R4-8 | thấp | `ai/services/[id].put.ts` | Form dịch vụ gửi `systemPrompt: … \|\| null`, `model: … \|\| null` cho ô trống (`AiServicesTab.vue`); handler chỉ nhận chuỗi — dù `'' → null` của chính nó cho thấy ý định xoá — nên xoá ô không đổi gì, kể cả bản phản chiếu chatbot, trong khi trang báo "Đã lưu cấu hình dịch vụ." | **Đã sửa**: `null` xoá, cả hai bên phản chiếu |
+
+Ghi nhận, không ghim (không sửa ở lát này):
+- `test-call` chi tiền thật mà chỉ đòi `ai.read` — cùng mức với probe kết nối (R3 ghim `ai.read`); ngân sách vẫn chặn. `services/[id].put.ts` đổi nhà cung cấp/prompt/model của dịch vụ chatbot chỉ với `ai.update`, không cần `chatbot_settings.update`, và **không** qua `validateChatbotSettingsUpdate` (prompt ≤ 20 000 ký tự, model `[A-Za-z0-9._:-]`) — đích gọi (baseUrl/allowedHosts, thứ mang khoá chatbot do siêu quản trị giữ) không đổi qua đường này. Hai điều là quyết định thiết kế cần chốt, không phải lỗi đã chứng minh.
+- Phản chiếu hai chiều lệch: dịch vụ → chatbot ánh xạ nhà cung cấp khác `anthropic` thành `openai-compatible`, chatbot → dịch vụ ánh xạ mọi policy khác `anthropic` thành `delify`.
+- `providers/[id].delete.ts` giữ hàng giá của nhà cung cấp, `bulk-delete` xoá chúng (ghim cả hai như đang chạy). Kiểm "đang được dịch vụ dùng" của cả hai nằm ngoài transaction.
+- `storage-size`: thư mục gốc `public/uploads` không đọc được (sai chủ sở hữu — sự cố đã gặp) trả `0 B, 0 tệp` như cây rỗng; lỗi R2 thành `null` nhưng không ghi log. Sửa đúng cần trang `/admin/media` phân biệt "lỗi" với "0" (ngoài phạm vi `app/**` của lát này).
+- `layout-settings.ts` `getLayoutConfig` nuốt cả lỗi CSDL → trả mặc định; trang `general.vue` cũng nuốt lỗi tải và giữ mặc định — một lần tải hỏng rồi bấm Lưu sẽ ghi đè cấu hình thật bằng mặc định. Gốc nằm ở cả trang lẫn service.
+- Tạo giá trùng (`pricing/index.post.ts`) kiểm tồn tại ngoài transaction: hai lượt cùng lúc → lỗi khoá chính MySQL → 500. `delify/sync.post.ts` ghi giá Delify vào cùng cột DECIMAL(8,4) mà không kiểm trần.
+
+### Lát sau (theo thứ tự xếp hạng)
+
+1. `server/api/admin/ai/delify/sync.post.ts` (191) + `delify/status.get.ts` (154) — gọi Delify bằng khoá đã lưu, ghi bảng giá + lịch sử gọi; dùng lại harness mạng của `ai-test-call-behavior`.
+2. `server/api/admin/ai/usage.get.ts` (79) + `budget/index.get.ts` (17) — mốc "đầu tháng" so với `created_at` qua pool `timezone: '+07:00'` (cùng câu hỏi với `checkBudget.loadMonthlySpend`): cần suite trên MySQL thật hoặc kiểm SQL đã biên dịch như lát R3 làm với `NOW() - INTERVAL`.
+3. `server/api/admin/ai/translate.post.ts` (116), `translate-ui.post.ts` (72), `editorial.post.ts` — dịch/biên tập AI qua hạn mức; rào nội dung không tin cậy.
+4. `server/services/universal-translation.ts` (452, 0 %) — job dịch toàn hệ thống.
+5. Hai việc giao diện ở "Ghi nhận" trên (`/admin/media` phân biệt lỗi đĩa/R2; trang cấu hình chung không lưu đè sau lần tải hỏng) — cần lát được đụng `app/**`.
