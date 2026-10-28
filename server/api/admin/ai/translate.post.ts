@@ -75,7 +75,8 @@ export default defineEventHandler(async (event) => {
       ok: true,
       targetLanguage: targetLangCode,
       targetLanguageName: targetLangName,
-      translatedText: aiResult.text.trim(),
+      // Model-written, and the text sent may be HTML: sanitised like `translatedContent` below.
+      translatedText: sanitizeHtml(aiResult.text.trim()),
     }
   }
 

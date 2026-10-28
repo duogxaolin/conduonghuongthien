@@ -38,7 +38,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng cung cấp nội dung hoặc danh sách ID bình luận cần kiểm duyệt.' })
   }
   // Mọi ký tự đều bị tính tiền ở lượt gọi model; không bình luận nào dài hơn mức này.
-  if (rawContent.length > COMMENT_MAX_LENGTH) {
+  // Chỉ kiểm khi văn bản dán thật sự được dùng: có danh sách ID thì nó bị bỏ qua.
+  if (commentIds.length === 0 && rawContent.length > COMMENT_MAX_LENGTH) {
     throw createError({ statusCode: 400, statusMessage: `Nội dung cần kiểm duyệt dài quá ${COMMENT_MAX_LENGTH} ký tự (giới hạn của một bình luận).` })
   }
 

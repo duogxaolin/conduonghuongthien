@@ -143,6 +143,15 @@ test('FINDING-R5-11: the HTML the model writes is sanitised before it is returne
   assert.doesNotMatch(content, /<script|onerror|javascript:/i)
 })
 
+test('FINDING-R5-11: the single-text answer is model-written too — sanitised the same way', async () => {
+  answer('<p>Hi</p><img src=x onerror="alert(1)"><script>x()</script><a href="javascript:alert(2)">y</a>')
+  const response = await translate({ text: '<p>Xin chào</p>', targetLanguage: 'en' })
+  assert.equal(response.status, 200)
+  const text = String(response.body.translatedText)
+  assert.match(text, /^<p>Hi<\/p>/)
+  assert.doesNotMatch(text, /<script|onerror|javascript:/i)
+})
+
 test('FINDING-R5-12: an answer that is not the JSON asked for is a 502 — never the source text labelled as a translation', async () => {
   answer('Xin lỗi, tôi không thể dịch nội dung này.')
   const response = await translate({ ...ARTICLE, targetLanguage: 'en' })

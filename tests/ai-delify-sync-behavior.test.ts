@@ -93,7 +93,7 @@ test('sync: prices upserted, history merged, one audit row with an object meta �
   const response = await sync()
   assert.equal(response.status, 200, JSON.stringify(response.body))
   assert.deepEqual(response.body, {
-    ok: true, upserted: 2, skipped: 0, syncedLogs: 2, totalFromApi: 2,
+    ok: true, upserted: 2, skipped: 0, syncedLogs: 2, skippedLogs: 0, totalFromApi: 2,
     delifyUsage: { windowCostUsd: 1.5, windowRequests: 12, allowedModels: ['gpt-4o-mini'] },
   })
   assert.deepEqual(prices(), [['claude-haiku', 'delify', 0.8, 4], ['gpt-4o-mini', 'delify', 0.15, 0.6]])
@@ -103,7 +103,7 @@ test('sync: prices upserted, history merged, one audit row with an object meta �
     ['delify_router', 'delify', 'gpt-4o-mini', 1000, 500, 1500, 0, 0, 30000, updater.id, false, 'HTTP 429'],
   ])
   assert.deepEqual(audits().map(row => [row.userId, row.action, row.resource, row.resourceId, row.meta]), [
-    [updater.id, 'update', 'ai', 7, { action: 'delify-pricing-and-logs-sync', upserted: 2, skipped: 0, syncedLogs: 2, totalFromApi: 2 }],
+    [updater.id, 'update', 'ai', 7, { action: 'delify-pricing-and-logs-sync', upserted: 2, skipped: 0, syncedLogs: 2, skippedLogs: 0, totalFromApi: 2 }],
   ])
   // The key goes to the router as the `key` query value only, on the configured host.
   assert.deepEqual(h.network.sent.map(sent => [sent.hostname, sent.path.split('?')[0], new URLSearchParams(sent.path.split('?')[1]).get('key')]), [
@@ -191,9 +191,60 @@ test('FINDING-R5-7: items of the wrong shape and absurd costs are skipped — no
   }
   const response = await sync()
   assert.equal(response.status, 200, JSON.stringify(response.body))
-  assert.deepEqual([response.body.upserted, response.body.skipped, response.body.syncedLogs], [1, 3, 1])
+  assert.deepEqual([response.body.upserted, response.body.skipped, response.body.syncedLogs, response.body.skippedLogs], [1, 3, 1, 5])
   assert.deepEqual(prices(), [['gpt-4o-mini', 'delify', 0.15, 0.6]])
   assert.deepEqual(h.harness.rows(aiUsageLogs).map(row => [Number(row.costVnd), (row.createdAt as Date).toISOString()]), [[25.5, '2026-10-28T07:00:00.000Z']])
+})
+
+test('FINDING-R5-7: a token count or speed the INT columns cannot hold is skipped and counted — not a MySQL error that fails the whole sync', async () => {
+  answers.receipts.body = {
+    availableModels: [{ name: 'gpt-4o-mini', input: 0.15, output: 0.6 }],
+    history: [
+      { ...HISTORY_ITEM, timestamp: '2026-10-28T01:00:00Z', tok: 1500, tokS: 0.0005 }, // 3e9 ms: past INT
+      { ...HISTORY_ITEM, timestamp: '2026-10-28T02:00:00Z', input: -1 },
+      { ...HISTORY_ITEM, timestamp: '2026-10-28T03:00:00Z', output: 3e9 },
+      { ...HISTORY_ITEM, timestamp: '2026-10-28T04:00:00Z', tok: 'nhiều' },
+      { ...HISTORY_ITEM, timestamp: '2026-10-28T05:00:00Z', tokS: -5 },
+      { ...HISTORY_ITEM, timestamp: '2026-10-28T06:00:00Z', input: 2e9, output: 2e9, tok: 0 }, // each fits, the total does not
+      { ...HISTORY_ITEM, timestamp: '2026-10-28T07:00:00Z', tokS: 0 },
+    ],
+  }
+  const response = await sync()
+  assert.equal(response.status, 200, JSON.stringify(response.body))
+  assert.deepEqual([response.body.syncedLogs, response.body.skippedLogs], [1, 6])
+  assert.deepEqual(h.harness.rows(aiUsageLogs).map(row => [(row.createdAt as Date).toISOString(), row.promptTokens, row.completionTokens, row.totalTokens, row.executionMs]), [
+    ['2026-10-28T07:00:00.000Z', 1000, 500, 1500, 0],
+  ])
+  assert.deepEqual(audits().map(row => (row.meta as Json).skippedLogs), [6])
+})
+
+test('FINDING-R5-8: a fractional token count is stored as MySQL rounds it into the INT column, so the next sync recognises the row', async () => {
+  answers.receipts.body = {
+    availableModels: [{ name: 'gpt-4o-mini', input: 0.15, output: 0.6 }],
+    history: [{ ...HISTORY_ITEM, input: 1.5, output: 0.4, tok: 1.9, tokS: 1 }],
+  }
+  assert.equal((await sync()).body.syncedLogs, 1)
+  // INT: 1.5 → 2, 0.4 → 0, 1.9 → 2 (mysql-timestamp-rounding.log of the verifier: `= 1.5` finds no row on MySQL).
+  assert.deepEqual(h.harness.rows(aiUsageLogs).map(row => [row.promptTokens, row.completionTokens, row.totalTokens, row.executionMs]), [[2, 0, 2, 2000]])
+  assert.equal((await sync()).body.syncedLogs, 0)
+  assert.equal(h.harness.rows(aiUsageLogs).length, 1)
+})
+
+/** Two router requests in the same second that differ in exactly one part of the dedupe key are two rows, once. */
+async function assertKeyPartCounts(other: Json) {
+  answers.receipts.body = { availableModels: [{ name: 'gpt-4o-mini', input: 0.15, output: 0.6 }], history: [HISTORY_ITEM, { ...HISTORY_ITEM, ...other }] }
+  assert.equal((await sync()).body.syncedLogs, 2)
+  assert.equal((await sync()).body.syncedLogs, 0)
+  assert.equal(h.harness.rows(aiUsageLogs).length, 2)
+}
+test('the dedupe key holds the model: same second and tokens, another model → another request', async () => {
+  await assertKeyPartCounts({ model: 'gpt-4o' })
+})
+test('the dedupe key holds the prompt tokens: same second, model and output → another request', async () => {
+  await assertKeyPartCounts({ input: 999 })
+})
+test('the dedupe key holds the completion tokens: same second, model and input → another request', async () => {
+  await assertKeyPartCounts({ output: 499 })
 })
 
 test('FINDING-R5-8: a history row is stored at the whole second MySQL keeps (rounded), so the next sync finds it instead of inserting it again', async () => {

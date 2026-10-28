@@ -42,7 +42,23 @@ function storedSecond(timestamp: unknown): Date | null {
   return Number.isFinite(ms) ? new Date(Math.round(ms / 1000) * 1000) : null
 }
 
-/** One request of the router's history, or null when it cannot be recorded as it is (wrong shape, a cost that is not a cost). */
+/** `prompt_tokens`, `completion_tokens`, `total_tokens`, `execution_ms` are signed INT. */
+const INT_MAX = 2_147_483_647
+
+/**
+ * A count for an INT column as MySQL would store it: rounded (1.5 → 2), the way
+ * `storedSecond` rounds the timestamp — the dedupe below compares these values, and
+ * `= 1.5` never finds the `2` MySQL kept. Absent → 0; negative, not a number or past
+ * INT → null (the item is skipped: MySQL strict refuses the row, ERROR 1264, and the
+ * whole sync with it).
+ */
+function storedCount(value: unknown): number | null {
+  if (value === undefined || value === null) return 0
+  const count = Math.round(Number(value))
+  return Number.isFinite(count) && count >= 0 && count <= INT_MAX ? count : null
+}
+
+/** One request of the router's history, or null when it cannot be recorded as it is (wrong shape, a cost that is not a cost, a count no INT holds). */
 function storableHistoryItem(value: unknown) {
   if (!value || typeof value !== 'object') return null
   const { timestamp, model, status, cost, input, output, tok, tokS } = value as Record<string, unknown>
@@ -50,7 +66,17 @@ function storableHistoryItem(value: unknown) {
   if (!createdAt || typeof model !== 'string' || !model) return null
   const costUsd = Number(cost) || 0
   if (costUsd < 0 || costUsd > MAX_COST_USD) return null
-  return { createdAt, model, status, costUsd, input, output, tok, tokS }
+  const promptTokens = storedCount(input)
+  const completionTokens = storedCount(output)
+  const reportedTotal = storedCount(tok)
+  if (promptTokens === null || completionTokens === null || reportedTotal === null) return null
+  const totalTokens = reportedTotal || promptTokens + completionTokens
+  // Tokens per second → how long the call took; 0 or absent = unknown (0 ms).
+  const speed = tokS === undefined || tokS === null ? 0 : Number(tokS)
+  if (!Number.isFinite(speed) || speed < 0) return null
+  const executionMs = speed ? Math.round((totalTokens / speed) * 1000) : 0
+  if (totalTokens > INT_MAX || !Number.isFinite(executionMs) || executionMs > INT_MAX) return null
+  return { createdAt, model, status, costUsd, promptTokens, completionTokens, totalTokens, executionMs }
 }
 
 /**
@@ -119,8 +145,11 @@ export default defineEventHandler(async (event) => {
   }
 
   let upserted = 0
+  /** Models not written (`upserted + skipped` = the router's model count). */
   let skipped = 0
   let syncedLogs = 0
+  /** History items not written because they cannot be recorded as they are (`storableHistoryItem`). */
+  let skippedLogs = 0
 
   await db.transaction(async (tx) => {
     // 3.1. Upsert each model into ai_model_pricing
@@ -160,11 +189,13 @@ export default defineEventHandler(async (event) => {
     if (Array.isArray(data.history) && data.history.length > 0) {
       for (const candidate of data.history) {
         const item = storableHistoryItem(candidate)
-        if (!item) continue
+        if (!item) {
+          skippedLogs++
+          continue
+        }
         const itemDate = item.createdAt
         const model = item.model.slice(0, 64)
-        const promptTokens = Number(item.input) || 0
-        const completionTokens = Number(item.output) || 0
+        const { promptTokens, completionTokens, totalTokens, executionMs } = item
 
         // Imported before? Matched on what identifies a router request among the rows a
         // sync wrote: its second (as stored, see `storedSecond`), model and token counts —
@@ -183,11 +214,8 @@ export default defineEventHandler(async (event) => {
           .limit(1)
 
         if (!existingLog) {
-          const totalTokens = Number(item.tok) || (promptTokens + completionTokens)
           const costUsd = item.costUsd
           const costVnd = costUsd * 25500
-          const tokS = Number(item.tokS) || 0
-          const executionMs = Math.round(tokS ? (totalTokens / tokS) * 1000 : 0)
 
           await tx.insert(aiUsageLogs).values({
             serviceKey: 'delify_router',
@@ -220,6 +248,7 @@ export default defineEventHandler(async (event) => {
         upserted,
         skipped,
         syncedLogs,
+        skippedLogs,
         totalFromApi: models.length,
       },
     })
@@ -244,6 +273,7 @@ export default defineEventHandler(async (event) => {
     upserted,
     skipped,
     syncedLogs,
+    skippedLogs,
     totalFromApi: models.length,
   })
 
@@ -252,6 +282,7 @@ export default defineEventHandler(async (event) => {
     upserted,
     skipped,
     syncedLogs,
+    skippedLogs,
     totalFromApi: models.length,
     // Only plain values of the router's answer reach the browser (as in `status.get.ts`).
     delifyUsage: delifyUsage ? {

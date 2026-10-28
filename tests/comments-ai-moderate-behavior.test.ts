@@ -190,6 +190,14 @@ test('FINDING-R5-2: a pasted text longer than any comment can be is refused befo
   assert.equal(h.network.sent.length, 1)
 })
 
+test('FINDING-R5-2: the length of a pasted text is checked only when it is used — with comment ids it is ignored, not a 400', async () => {
+  await seedComment(1, 'Bình luận', { displayName: 'Bạn đọc', customDisplayName: null })
+  const response = await moderate({ commentIds: [1], content: 'a'.repeat(2001) })
+  assert.equal(response.status, 200)
+  assert.deepEqual((response.body.results as Array<Record<string, unknown>>).map(result => [result.id, result.content]), [[1, 'Bình luận']])
+  assert.equal(h.network.sent.length, 1)
+})
+
 test('past the monthly AI budget → 429, nothing sent', async () => {
   h.harness.sqlite.prepare('UPDATE ai_budget_settings SET monthly_budget_vnd = 1000').run()
   await h.harness.db.insert(aiUsageLogs).values({ serviceKey: 'moderation', provider: 'openai', model: 'gpt-4o-mini', costVnd: '1000.00', success: true })
