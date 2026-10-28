@@ -110,6 +110,47 @@ Trợ lý AI cần khả năng tiếp nhận câu hỏi nối tiếp của ngư�
 - **Server policy (`chat-policy.ts`):** Cho phép role `assistant` song song với `user` trong `validateChatMessages` và `buildChatHistory` để AI giữ được ngữ cảnh đàm thoại, không cắt bỏ câu trả lời trước đó.
 - **System prompt (`prompt-defaults.ts`):** Hướng dẫn model nhận biết đại từ thay thế ("nó", "đó", "ở đâu") trong câu hỏi tiếp nối và tự động gọi các công cụ tra cứu cơ sở dữ liệu C11 (`search_c11_knowledge`, `search_c11_articles`, `search_c11_photos`, `search_c11_videos`) với từ khóa đầy đủ từ ngữ cảnh.
 
+### Chủ quyền biển, đảo — máy chủ trả lời, không qua model (2026-10-27)
+
+**Sự cố.** Khách hỏi bằng tiếng Trung "哪个国家拥有西沙群岛和南沙群岛?". Câu không khớp kho, production đặt `mode=ai` + `ai_freeform`, nên câu đi thẳng tới model (`router.delify.vn`). Model trả lời "西沙群岛和南沙群岛自古以来就是中国领土" và tự giới thiệu là trợ lý của "公安部" (không có "越南"), giúp tìm hiểu "中国法律法规" — tức là đổi ngôn ngữ thì đổi luôn quốc gia. Câu hỏi tiếp theo bằng tiếng Việt thì model lại xin lỗi. Khách đọc được hai lập trường ngược nhau trên cổng của Bộ Công an.
+
+**Vì sao không chỉ sửa prompt.** Có ba lý do:
+- Model nằm sau router bên thứ ba: không biết model thật là gì và nó bị huấn luyện theo lập trường nào.
+- Quy tắc đa ngôn ngữ ("如果用户用中文提问，请务必用中文回答") kéo câu hỏi tiếng Trung về câu trả lời tiếng Trung, và ngôn ngữ kéo theo khung tham chiếu.
+- Câu trả lời stream tới khách trước khi máy chủ đọc được nó.
+
+Prompt là lớp dự phòng, không phải lớp chặn. Prompt mặc định (`DEFAULT_CHATBOT_SYSTEM_PROMPT`) cũng không tới được model khi CSDL đã lưu prompt riêng (dev lưu 3535 ký tự). Vì vậy điều khoản `SOVEREIGNTY_PROMPT_RULES` nằm ở phần `buildGroundedSystemPrompt` luôn nối thêm.
+
+**Lớp chặn là tất định và nằm trước mọi nhánh.** `mentionsSovereignty` chạy trong `answerGroundedChat`, sau `validateChatMessages` + `chargeChatRateLimit`, trước retrieval/chế độ/`enforceAiQuota`. Một chỗ đó phủ cả `/api/public/chatbot` lẫn `/api/chat`, cả `knowledge` lẫn `ai`, cả nhánh có tham chiếu lẫn `ai_freeform`.
+- Trả **lập trường chính thức viết sẵn**, không từ chối: một trợ lý của Bộ Công an Việt Nam né câu hỏi chủ quyền cũng là câu trả lời sai.
+- Có bản tiếng Trung (黄沙群岛/长沙群岛) và tiếng Anh theo câu hỏi, bản tiếng Việt luôn đi kèm vì đó là bản gốc.
+- `kind: 'curated'` dùng lại loại có sẵn — loại mới phải sửa union `ChatResult` và `CHATBOT_RESPONSE_KINDS` của client. Dấu vết vận hành là log `chatbot.sovereignty_answered` (mức info, production mặc định ghi).
+
+**Không làm bằng một hàng kho tri thức.** Ở chế độ AI, hàng khớp vẫn đi qua `callProvider`, nên model vẫn là bên viết câu trả lời. Retrieval cũng không tách token chữ Hán liền nhau.
+
+**Chuẩn hoá trước khi khớp.** NFKC không bỏ ký tự định dạng vô hình (`\p{Cf}`, zero-width), không gộp phồn thể về giản thể (黃/黄, 羣/群, 國/国) và không gộp bộ thủ "⻄" (U+2EC4) về "西", nên bước gộp tự làm. "Ð" (U+00D0, hay lẫn vào chữ Việt) thành "Đ". Hoa/thường được **giữ** tới bước khớp tên riêng.
+
+- **Chữ Hán** chỉ giữ chữ Hán, để "西 沙" vẫn là "西沙". Cái giá: chữ nối qua dấu câu và qua từ ("越南。沙坝" → "越南沙坝"), nên 南海/南沙 không tính khi chữ đứng trước ghép thành từ khác (越南海防, 越南海关, 越南沙坝, 河南沙县, 海南海口, 中南海), 西沙 không tính sau 东/广/江/山/陕 (东西沙发). "越南南沙群岛" vẫn khớp qua chữ 南 thứ hai. "长沙"/"黄沙" trần là thành phố / từ thường: chỉ khớp kèm 群岛/岛 hoặc đi cùng nhau ("黄沙和长沙"). Có thêm 南中国海 và các bãi đá (永兴岛, 赤瓜礁…).
+- **Tên riêng viết hoa** ("Trường Sa", "Biển Đông", "Bien Dong", kể cả "Biển-Đông", "Biển  Đông") khớp bất kể từ đứng sau, trừ hướng "biển Đông Bắc/Đông Nam".
+- **Chữ thường còn dấu**: "biển đông" (trùng "biến động"/"biển động" khi bỏ dấu) chỉ khớp khi có dấu, trừ "(bãi) biển đông người/khách"; "trường sa" trừ "sa thải/ngã/đọa/sút/lầy/mạc/sầm/lưới/vào/đà/cơ/chân/bàn" — xét trên chữ còn dấu nên "trường sa lấy lại" khớp mà "sa lầy" thì không.
+- **Chữ Latin/Kirin bỏ dấu**, có khoảng trắng hai đầu để khớp trọn từ: Hoàng Sa, đảo Trường Sa, Paracel, Spratly/Spratley, Xisha/Nansha, South/S. China Sea, West Philippine Sea, mer de Chine, East Sea, đường lưỡi bò… "й" thành "и", nên mẫu tiếng Nga viết `китаиск`. "gạc ma" trừ "gác ma túy".
+
+**Khớp nhầm có chủ đích:** "đường Hoàng Sa", "đường Trường Sa" (tên phố) cũng nhận câu trả lời này — vô hại, còn bỏ sót thì không. **Lách được có chủ đích** (để lớp đầu ra lo): chữ giãn cách ("H o a n g S a"), chữ Kirin giả Latin ("Hoаng"), "Nam Hải", một từ khoá tách qua hai lượt giả.
+
+**Lịch sử: bỏ khỏi model, không từ chối — kể cả lượt trợ lý.** Đây là ngoại lệ có tên của quy tắc "không quét lượt trợ lý" ở `CLAUDE.md`. Quy tắc đó chống *từ chối oan*; ở đây lượt trợ lý chỉ bị **bỏ khỏi phần gửi model**, không ai bị từ chối. Có hai lý do phải bỏ:
+- Câu trả lời sai trước bản vá vẫn nằm trong lịch sử trình duyệt của khách và được gửi lại mỗi lượt.
+- Lượt trợ lý do trình duyệt gửi lên, ai cũng giả được.
+
+Bỏ **theo lượt hỏi–đáp**, không theo từng lượt: câu hỏi bị bỏ thì các câu trả lời ngay sau nó (tới câu hỏi kế) cũng bị bỏ. Câu trả lời sai có thể không lặp lại tên quần đảo ("这两个群岛自古以来就是中国领土。我是公安部的助手…") — chính kiểu câu này mang phần "đổi quốc gia" của sự cố. Lượt cuối (câu đang được trả lời) luôn giữ — câu mới khớp thì đã nhận câu trả lời viết sẵn ở trên.
+
+**Còn hở.** Câu hỏi lách hết từ khoá (vd. "越中海上争端") vẫn tới model, và câu trả lời đầu tiên vẫn stream ra chưa kiểm — lúc đó chỉ prompt chặn. Đóng hẳn cần bộ lọc trên luồng stream + sự kiện "thay nội dung" ở client (`parseSseLine` hiện chỉ nối thêm).
+
+`tests/chatbot-sovereignty-guard.test.ts`:
+- Cả hai đường tới model đều giả (`callAi` qua `mock.module`, `providerRequest`), trả đúng câu của sự cố; khẳng định provider **không được gọi** ở ba chế độ, và một câu hỏi thường thì có gọi (để số đếm có nghĩa trên mọi máy).
+- Cặp hỏi–đáp bị đầu độc — kể cả câu trả lời không lặp tên quần đảo — không tới model. Đã kiểm: bỏ theo từng lượt thay vì theo cặp thì hai test đỏ.
+- Bộ khớp nhận các biến thể (kể cả các câu đợt kiểm độc lập 2026-10-28 tìm ra) và không nhận câu đời thường cùng âm tiết/chữ (越南海防, 河南沙县, "gác ma túy", "sa đà").
+- Điều khoản prompt đi kèm cả prompt quản trị tự viết.
+
 ---
 
 ## Trợ lý AI Biên tập & Soát lỗi bài viết (`editorial_assistant`)
