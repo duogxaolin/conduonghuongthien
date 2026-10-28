@@ -17,13 +17,16 @@ export interface PageMetaDeps {
   pageId: Ref<number>
   /** The page as the builder loaded it; the header reads it, so a save updates it in place. */
   page: Ref<AdminPageDetail['page'] | null>
+  /** The page is loaded (the builder's positive flag): before that the form would open empty (FINDING-B2). */
+  loaded: Ref<boolean>
 }
 
-export function usePageMeta({ toast, pageId, page }: PageMetaDeps) {
+export function usePageMeta({ toast, pageId, page, loaded }: PageMetaDeps) {
   const showMeta = ref(false)
   const savingMeta = ref(false)
   const metaForm = reactive({ title: '', slug: '', seoTitle: '', seoDescription: '' })
   const openMeta = () => {
+    if (!loaded.value) return // "Lưu" of an empty form would write blank SEO fields over the page's
     metaForm.title = page.value?.title || ''
     metaForm.slug = page.value?.slug || ''
     metaForm.seoTitle = page.value?.seoTitle || ''

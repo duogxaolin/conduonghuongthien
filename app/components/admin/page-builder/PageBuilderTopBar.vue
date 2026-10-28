@@ -10,6 +10,11 @@ import type { AdminPageDetail } from '~/types/admin-api'
 
 const props = defineProps<{
   page: AdminPageDetail['page'] | null
+  /**
+   * Trang đã tải xong (cờ dương của trang). Chưa thì "Hủy sửa", "Phiên bản", "Cấu hình",
+   * "Xuất bản" tắt — trước đây "Xuất bản" bật và xuất bản cây RỖNG (FINDING-B2).
+   */
+  loaded: boolean
   /** Trạng thái mạng của lượt lưu nháp (độc lập với trạng thái xuất bản). */
   draftStatus: 'idle' | 'saving' | 'saved' | 'error'
   hasUnpublished: boolean
@@ -46,21 +51,21 @@ const saveState = computed(() => {
       <span class="mr-1 flex items-center gap-1.5 text-xs font-semibold" :class="saveState.color">
         <i :class="saveState.icon"></i> {{ saveState.text }}
       </span>
-      <button v-if="hasUnpublished" class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-50" title="Bỏ thay đổi chưa xuất bản" @click="emit('discard')">
+      <button v-if="hasUnpublished" class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-50 disabled:opacity-50" title="Bỏ thay đổi chưa xuất bản" :disabled="!loaded" @click="emit('discard')">
         <i class="fa-solid fa-rotate-left mr-1"></i> Hủy sửa
       </button>
-      <button class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" @click="emit('open-versions')">
+      <button class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50" :disabled="!loaded" @click="emit('open-versions')">
         <i class="fa-solid fa-clock-rotate-left mr-1"></i> Phiên bản
       </button>
       <nuxt-link v-if="page" :to="page.slug === 'home' ? '/' : `/${page.slug}`" target="_blank" class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
         <i class="fa-solid fa-up-right-from-square mr-1"></i> Xem trang
       </nuxt-link>
-      <button class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" @click="emit('open-meta')">
+      <button class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50" :disabled="!loaded" @click="emit('open-meta')">
         <i class="fa-solid fa-gear mr-1"></i> Cấu hình
       </button>
       <button
         class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-800 disabled:opacity-50"
-        :disabled="publishing || !hasUnpublished"
+        :disabled="publishing || !loaded || !hasUnpublished"
         @click="emit('publish')"
       >
         <i :class="publishing ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-cloud-arrow-up'"></i>

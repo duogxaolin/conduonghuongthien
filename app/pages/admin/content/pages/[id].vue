@@ -3,6 +3,7 @@
     <!-- Top bar -->
     <PageBuilderTopBar
       :page="page"
+      :loaded="loaded"
       :draft-status="draftStatus"
       :has-unpublished="hasUnpublished"
       :publishing="publishing"
@@ -188,6 +189,10 @@ const page = ref<AdminPageDetail['page'] | null>(null)
 const blocks = ref<BuilderNode[]>([])
 const loading = ref(true)
 const loadError = ref('')
+// Cờ DƯƠNG: cây đang dựng là trang thật chỉ sau một lượt tải thành công. Chưa có (đang tải,
+// tải hỏng, "Thử lại" đang bay) thì mọi thao tác trên trang — xuất bản, huỷ sửa, lưu nháp,
+// "Phiên bản", "Cấu hình" — không chạy: cây rỗng từng được xuất bản đè trang thật (FINDING-B2).
+const loaded = ref(false)
 
 const selectedId = ref<number | string | null>(null)
 const viewport = ref<'desktop' | 'tablet' | 'mobile'>('desktop')
@@ -216,6 +221,7 @@ const previewPath = computed(() => (!page.value ? '/' : page.value.slug === 'hom
 const fetchPage = async () => {
   loading.value = true
   loadError.value = ''
+  loaded.value = false // trước await: lượt tải lại đang bay không giữ quyền thao tác của lượt trước
   hydrating = true
   try {
     /**
@@ -239,6 +245,7 @@ const fetchPage = async () => {
         draftStatus.value = 'idle'
       }
       selectedId.value = blocks.value[0]?.id ?? null
+      loaded.value = true
     }
   } catch (err: unknown) {
     loadError.value = errorMessage(err, 'Không tải được trang.')
@@ -263,7 +270,7 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null
 let hydrating = true // suppress draft saves during the initial load
 
 const scheduleDraftSave = () => {
-  if (hydrating) return
+  if (hydrating || !loaded.value) return
   draftStatus.value = 'saving'
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(saveDraft, 800)
@@ -296,7 +303,7 @@ const loadWorkingCopy = (list: unknown) => {
 
 // ── Publish: push draft → live, create an auto version, clear draft ──
 const publish = async () => {
-  if (publishing.value) return
+  if (publishing.value || !loaded.value) return
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
   publishing.value = true
   try {
@@ -322,6 +329,7 @@ const publish = async () => {
 
 // ── Discard draft → revert working copy back to what's live ──
 const discardDraft = async () => {
+  if (!loaded.value) return
   const ok = await confirm({ title: 'Hủy thay đổi', message: 'Bỏ toàn bộ chỉnh sửa chưa xuất bản và quay lại bản đang chạy trên site?', danger: true, confirmLabel: 'Hủy thay đổi' })
   if (!ok) return
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
@@ -351,7 +359,7 @@ provide<BuilderTreeApi>('builderTree', {
 })
 
 // ── Meta ──
-const { showMeta, savingMeta, metaForm, openMeta, saveMeta } = usePageMeta({ toast, pageId, page })
+const { showMeta, savingMeta, metaForm, openMeta, saveMeta } = usePageMeta({ toast, pageId, page, loaded })
 
 // ── Versions: the list + its load here; the drawer's writes in usePageVersions ──
 const versions = ref<PageVersionRow[]>([])
@@ -380,7 +388,7 @@ const loadVersions = async () => {
 const {
   showVersions, savingBackup, backupLabel, manualCount, hasOrigin,
   openVersions, restoreVersion, deleteVersion, saveBackup, setOrigin,
-} = usePageVersions({ toast, confirm, pageId, versions, loadVersions, draftPayload, loadWorkingCopy })
+} = usePageVersions({ toast, confirm, pageId, loaded, versions, loadVersions, draftPayload, loadWorkingCopy })
 
 onMounted(fetchPage)
 </script>

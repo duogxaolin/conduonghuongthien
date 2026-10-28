@@ -26,6 +26,8 @@ export interface PageVersionsDeps {
   toast: Pick<ReturnType<typeof useToast>, 'success' | 'error'>
   confirm: ReturnType<typeof useConfirm>['confirm']
   pageId: Ref<number>
+  /** The page is loaded (the builder's positive flag): before that the working copy is empty (FINDING-B2). */
+  loaded: Ref<boolean>
   /** The list the page loaded. */
   versions: Ref<PageVersionRow[]>
   /** Read the list again (the page's `loadVersions`). */
@@ -36,7 +38,7 @@ export interface PageVersionsDeps {
   loadWorkingCopy: (blocks: unknown) => void
 }
 
-export function usePageVersions({ toast, confirm, pageId, versions, loadVersions, draftPayload, loadWorkingCopy }: PageVersionsDeps) {
+export function usePageVersions({ toast, confirm, pageId, loaded, versions, loadVersions, draftPayload, loadWorkingCopy }: PageVersionsDeps) {
   const showVersions = ref(false)
   const savingBackup = ref(false)
   const backupLabel = ref('')
@@ -46,6 +48,9 @@ export function usePageVersions({ toast, confirm, pageId, versions, loadVersions
   const hasOrigin = computed(() => versions.value.some(v => v.kind === 'origin'))
 
   const openVersions = async () => {
+    // Before the page is loaded the working copy is empty: a backup/origin made from it would
+    // save — or overwrite the origin with — an empty page.
+    if (!loaded.value) return
     showVersions.value = true
     await loadVersions()
   }
