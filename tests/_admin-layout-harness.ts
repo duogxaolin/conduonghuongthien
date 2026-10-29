@@ -249,7 +249,7 @@ export async function mountLayout(t: TestContext, server = adminLayoutServer(), 
     route.name = name
     await settle()
   }
-  return { layout, server, calls, toasts, navigations, route, user, asyncKeys, lock, settle, go, close }
+  return { layout, server, calls, toasts, navigations, route, user, asyncKeys, lock, doc: lockTarget, settle, go, close }
 }
 export type LayoutCtx = Awaited<ReturnType<typeof mountLayout>>
 

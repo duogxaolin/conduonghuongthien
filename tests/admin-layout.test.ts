@@ -292,12 +292,27 @@ describe('the mobile drawer and the collapsed sidebar', () => {
     assert.equal(opened(ctx), false)
   })
 
-  it('pinned as is: leaving the layout with the drawer open (no navigation first) leaves the page scroll locked', async (t) => {
+  it('FINDING-AL1: signing out from the open drawer leaves for the login page without its scroll lock', async (t) => {
+    // Measured in Chromium (base build): "Thoát" in the open drawer → `/admin/login`
+    // (`layout: false`) with body `overflow: hidden` + `touch-action: none` — the layout
+    // unmounts before the route watcher closes the drawer. `close()` is that unmount.
     const ctx = await openLayout(t)
     await click(hamburger(ctx))
     await ctx.settle()
+    await click(buttonByTitle(sidebar(ctx), 'Đăng xuất khỏi hệ thống'))
+    await ctx.settle()
+    assert.deepEqual(ctx.navigations, ['/admin/login'])
+    assert.deepEqual(ctx.lock(), { body: 'hidden', html: 'hidden', touch: 'none' }, 'still open until the layout goes')
     ctx.close()
-    assert.deepEqual(ctx.lock(), { body: 'hidden', html: 'hidden', touch: 'none' })
+    assert.deepEqual(ctx.lock(), { body: '', html: '', touch: '' })
+  })
+
+  it('leaving the layout with the drawer closed leaves the page styles alone', async (t) => {
+    const ctx = await openLayout(t)
+    ctx.doc.body.style.overflow = 'clip'
+    ctx.doc.body.style.touchAction = 'pan-y'
+    ctx.close()
+    assert.deepEqual(ctx.lock(), { body: 'clip', html: '', touch: 'pan-y' })
   })
 
   it('collapsing narrows the sidebar to icons; the brand and the search button expand it again', async (t) => {

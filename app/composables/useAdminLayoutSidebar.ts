@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { onScopeDispose, ref, watch } from 'vue'
 
 /**
  * The admin sidebar's two states (`app/layouts/admin.vue`, split in wave3 D-SPLIT): collapsed
@@ -8,10 +8,12 @@ import { ref, watch } from 'vue'
  * - Any navigation closes the drawer — `fullPath`, so a change of query alone (a list's
  *   `?page=2`) closes it too.
  * - While the drawer is open the page behind it does not scroll (body + html `overflow`,
- *   body `touch-action`), the same lock `useMobileMenu` holds for the public drawer. Nothing
- *   releases it when the layout unmounts with the drawer still open (pinned as is in
- *   tests/admin-layout.test.ts): every way out of the layout is a navigation, which closes
- *   the drawer first.
+ *   body `touch-action`), the same lock `useMobileMenu` holds for the public drawer.
+ * - FINDING-AL1 (2026-10-29, measured in Chromium on the base build): "Thoát" in the open
+ *   drawer signs out and goes to `/admin/login` (`layout: false`). The layout unmounts before
+ *   the route watcher above closes the drawer, so the login page kept `overflow: hidden` and
+ *   `touch-action: none` — no scrolling, no pinch-zoom on a phone until a full reload. The
+ *   lock is now released when the layout goes away with the drawer still open.
  */
 export function useAdminLayoutSidebar(route: { readonly fullPath: string }) {
   const isSidebarCollapsed = ref(false)
@@ -24,12 +26,17 @@ export function useAdminLayoutSidebar(route: { readonly fullPath: string }) {
 
   watch(() => route.fullPath, () => { isMobileMenuOpen.value = false })
 
-  watch(isMobileMenuOpen, (isMenuOpen) => {
+  const applyScrollLock = (isMenuOpen: boolean) => {
     if (typeof document !== 'undefined') {
       document.body.style.overflow = isMenuOpen ? 'hidden' : ''
       document.documentElement.style.overflow = isMenuOpen ? 'hidden' : ''
       document.body.style.touchAction = isMenuOpen ? 'none' : ''
     }
+  }
+  watch(isMobileMenuOpen, applyScrollLock)
+  // FINDING-AL1: the layout unmounting with the drawer open must not leave the next page locked.
+  onScopeDispose(() => {
+    if (isMobileMenuOpen.value) applyScrollLock(false)
   })
 
   return { isSidebarCollapsed, isMobileMenuOpen, toggleSidebar, expandSidebar, toggleMobileMenu, closeMobileMenu }
