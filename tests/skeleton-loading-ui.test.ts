@@ -19,7 +19,7 @@ import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
 import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
-import { ARTICLE_COMMENTS_FAMILY, ARTICLE_DETAIL_FAMILY, familyVueFiles } from './_component-family.ts'
+import { ARTICLE_COMMENTS_FAMILY, ARTICLE_DETAIL_FAMILY, NEWS_PAGE_FAMILY, familyVueFiles, readAppFile } from './_component-family.ts'
 import { COLOR_TOKENS, type ColorToken } from '../shared/color-tokens.ts'
 
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
@@ -303,7 +303,9 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
     'pages/reintegration-models/index.vue',
     // Hai trang trên nay chỉ bọc component này — khung chờ của chúng nằm ở đây.
     'components/ModelArticlesListPage.vue',
-    'pages/news/index.vue',
+    // `/news`: the page (list skeleton, filter-bar chips, "Đọc nhiều" skeleton) AND every part
+    // of its wave3 4.2 split — the hero's live badge dot moved into components/news/.
+    ...familyVueFiles(NEWS_PAGE_FAMILY).map(f => f.file),
     'pages/documents/index.vue',
     // NOTE: `pages/admin/index.vue` used to be appended here by hand. It is now in
     // VIEWS_WITH_LOADING_BRANCH above, so it arrives through the spread and must
@@ -341,6 +343,21 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
   // Exactly the one dot: 0 means the pattern no longer finds it (the exemption guards
   // nothing), 2+ means it is now waving real placeholders through.
   assert.equal(exemptLiveDots, 1, 'pages/admin/index.vue: the "Live" badge dot exemption must match exactly one element')
+})
+
+test('the reduced-motion rule reaches every part of a split public page (injection proof)', () => {
+  // The family is read from the parts directory, so a pulse planted in a part — or in a part
+  // added later — is caught by the per-tag rule above, not only one left in the page.
+  const unguarded = (overrides?: Record<string, string>) => familyVueFiles(NEWS_PAGE_FAMILY, overrides)
+    .flatMap(f => tagsWithPulse(parse(f.source, { filename: f.file }).descriptor.template?.content ?? '')
+      .filter(tag => !tag.includes('motion-reduce:animate-none'))
+      .map(() => f.file))
+  assert.deepEqual(unguarded(), [])
+  const hero = 'components/news/NewsListHero.vue'
+  assert.match(readAppFile(hero), /animate-pulse motion-reduce:animate-none/, 'the hero badge dot is where this proof plants')
+  assert.deepEqual(unguarded({ [hero]: readAppFile(hero).replace('animate-pulse motion-reduce:animate-none', 'animate-pulse') }), [hero])
+  const added = 'components/news/NewsLater.vue'
+  assert.deepEqual(unguarded({ [added]: '<template><div class="h-4 animate-pulse" aria-hidden="true"></div></template>' }), [added])
 })
 
 test('the decorative pulses stay exempt and stay documented', async () => {

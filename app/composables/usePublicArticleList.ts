@@ -227,10 +227,16 @@ export function usePublicArticleList(options: PublicArticleListOptions) {
   }
 }
 
-/** Khối "Đọc nhiều" (sort=views) — khoá theo loại + ngôn ngữ, nạp lại khi đổi ngôn ngữ. */
+/**
+ * Khối "Đọc nhiều" (sort=views) — khoá theo loại + ngôn ngữ, nạp lại khi đổi ngôn ngữ.
+ *
+ * `mostReadFailed` + `retryMostRead`: lượt đọc hỏng thì Nuxt đặt `data` về `default()`
+ * (danh sách rỗng), nên chỉ nhìn `mostRead` thì hỏng trông y như "chưa có dữ liệu lượt
+ * xem" (FINDING-N3, /news). Nơi vẽ khối này đọc cờ để nói là hỏng và cho thử lại.
+ */
 export function usePublicMostRead(type: MaybeRefOrGetter<string>, lang: Ref<string>) {
   const query = computed(() => buildMostReadQuery(toValue(type), lang.value))
-  const { data, pending } = useAsyncData(
+  const { data, pending, error, refresh } = useAsyncData(
     () => listDataKey('public-articles-most-read', query.value),
     () => fetchArticles('/api/public/articles', { query: query.value }),
     {
@@ -240,5 +246,6 @@ export function usePublicMostRead(type: MaybeRefOrGetter<string>, lang: Ref<stri
     },
   )
   const mostRead = computed(() => data.value?.articles || [])
-  return { mostRead, mostReadPending: pending }
+  const mostReadFailed = computed(() => !!error.value || data.value?.ok === false)
+  return { mostRead, mostReadPending: pending, mostReadFailed, retryMostRead: refresh }
 }
