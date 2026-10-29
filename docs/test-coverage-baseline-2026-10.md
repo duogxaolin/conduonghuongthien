@@ -888,10 +888,10 @@ Ba nơi chạm ngày, mỗi nơi test ở `TZ=UTC` và `TZ=Asia/Ho_Chi_Minh` (đ
 | `universal-translation-behavior` (`mutants-a`) | 13 | 13 | bỏ sanitize → R6-3; `String(value)` → R6-4; nhận JSON thiếu trường → R6-4 + R6-5; JSON hỏng vẫn đi tiếp → R6-4 + R6-5; dịch lại khối đã dịch, hỏi cả email → test "blocks"; vị từ quét cũ → R6-2; đếm bản dịch bài nháp, đếm khoá mồ côi → R6-1; nhận mọi mã ngôn ngữ → R6-6; khúc 20 khoá → test UI + huỷ; bỏ qua huỷ → test huỷ; nhận giới hạn âm → R6-7 |
 | `reader-moderation-behavior` (`mutants-b`) | 10 | 10 | bỏ thoát LIKE → R6-8; bỏ khoá phụ `id` → R6-9; audit "unban" ma → R6-10; sắp IP tăng dần → R6-11; audit trang được hỏi → R6-12; không tăng `tokenVersion`, bỏ lọc "banned", audit chi tiết không id, purge theo `readers.delete` (2 test), nhận địa chỉ trùng → mỗi cái test của nó |
 | `article-boost-behavior` (`mutants-c`) | 7 | 7 | huỷ không phạm vi → R6-13; không đếm `affectedRows` → R6-15; bỏ khoá hàng bài → R6-14; bỏ 409, cửa sổ tính giây → test "gradual"; ghi vào nửa thật → hai test TZ; `viewDay` theo giờ địa phương → test `TZ=Asia/Ho_Chi_Minh` |
-| `chatbot-settings-read-clear-behavior` (`mutants-d`, `-d2`) | 6 + 1 | 6 + 1 | phủ khoá/host/enabled, xoá không xoá khoá, không tạo hàng mặc định; bỏ `forbidden()` của cổng siêu quản trị. Thêm 1 tương đương (ở trên) |
+| `chatbot-settings-read-clear-behavior` (`mutants-d`, `-d2`) | 6 + 1 | 5 + 1 | phủ khoá/host/enabled, xoá không xoá khoá, không tạo hàng mặc định; bỏ `forbidden()` của cổng siêu quản trị (`-d2`). Cái thứ sáu của `mutants-d` sống và là **tương đương** (ở trên) |
 | `article-export-behavior` (`mutants-e`) | 9 | 9 | không phạm vi → R6-16; ngày UTC ở HTML/ZIP/CSV, `vietnamDateString` = UTC → hai test R6-17 (cùng bất biến, hai TZ); ngày UTC ở dịch vụ Google → test của `…-ssrf-behavior`; `body.ids` → R6-18; bỏ escape `<`, bỏ lọc quyền ZIP → test của nó |
 | `media-portal-admin-list-behavior` (`mutants-f`) | 4 | 4 | nhận trạng thái lạ, bỏ trần `limit`, bỏ khoá phụ `id`, bỏ thoát LIKE |
-| **Tổng** | **50** | **50** | + 1 tương đương ghi lại; nhiều test đỏ cùng lúc chỉ khi chúng ghim cùng một bất biến (hai TZ, hai route dùng chung) |
+| **Tổng** | **50** | **49** | + 1 tương đương ghi lại (sống, không làm đổi hành vi); nhiều test đỏ cùng lúc chỉ khi chúng ghim cùng một bất biến (hai TZ, hai route dùng chung) |
 
 ### Lỗi tìm thấy (ghim lúc viết test, sửa sau đó)
 
@@ -917,6 +917,21 @@ Mỗi suite chạy "trên base" bằng `findings-on-rev.sh <commit trước> <su
 | FINDING-R6-16 | thấp (an ninh — oracle id) | `articles/[id]/export.get.ts` | 404 vs 403 như R6-13 | **Đã sửa**: `articleActionScope(adminUser, 'read')` |
 | FINDING-R6-17 | thấp (múi giờ — họ R5-3) | xuất HTML/ZIP/CSV/Google Docs | "Ngày" theo TZ tiến trình, tên tệp theo ngày UTC: tiến trình UTC (đường PM2) in bài đăng 03:00 ngày 29 (giờ VN) thành ngày 28; tệp tải 01:30 ngày 1/12 giờ VN mang ngày 30/11 ở mọi TZ | **Đã sửa**: `vietnamDateString` ở sáu chỗ |
 | FINDING-R6-18 | thấp | `articles/export-google.post.ts` | POST không body → `body.ids` TypeError → 500 | **Đã sửa**: 400 "Thiếu danh sách bài viết." |
+
+### Thay đổi đã làm mà người dùng/chi phí thấy được — chủ dự án xác nhận
+
+Không hoàn nguyên; liệt kê để không thành đổi ngầm:
+- R6-7: `articlesLimit` không phải số nguyên ≥ 0: 200 (chạy cả kho) → **400**.
+- R6-13, R6-16: id bài thuộc loại không được sửa/đọc: **403 → 404** (huỷ tăng lượt xem, xuất một bài).
+- R6-15: huỷ thua cuộc đua với bộ lập lịch: 200 "đã huỷ" → **409**, không audit.
+- R6-14: yêu cầu tăng dần thứ hai cho cùng bài (bấm đúp): 200 + lượt chạy trùng → chờ khoá rồi **409**.
+- R6-18: POST xuất Google không body: 500 → **400**.
+- R6-5: khối mà model cứ bỏ sót một trường được hỏi lại — và tính tiền — **mỗi lượt**, không bao giờ "xong"; trước đây nó ghi nửa bản dịch một lần rồi thôi.
+- R6-8: ô tìm người đọc trả **ít hàng hơn** khi chữ gõ có `_`/`%`.
+- R6-10: bỏ chặn khi không bị chặn: vẫn 200, nhưng không còn dòng audit.
+- R6-17: trên Docker (TZ VN), tên tệp xuất từ 00:00 tới 07:00 giờ VN nay mang ngày VN (trước là ngày hôm trước); trên đường PM2 (TZ UTC) cả "Ngày" in trong tệp cũng đổi.
+
+**Dữ liệu ghi trước bản sửa.** R6-3: bản dịch khối đã lưu chưa lọc — `stored-html-sanitize.ts` duyệt `page_blocks` qua `sanitizeBlockData` (phủ `translations[lang]`), nên người vận hành chạy `npm run db:sanitize-html` (xem trước) rồi `npm run db:sanitize-html -- --apply` (sao lưu CSDL trước). R6-4/R6-5: bản dịch khối đã lưu có `badge` tự thêm hay chỉ có `bodyHtml` vẫn được coi là "đã dịch" và không gì sửa lại — xoá chúng (để lượt sau dịch lại) là quyết định của chủ dự án.
 
 ### Cần chủ dự án quyết (lát này không đổi)
 
