@@ -211,6 +211,64 @@ describe(PAGE, () => {
     assert.equal(field(opened, 'Câu hỏi chính').model?.value, 'Câu hỏi đang gõ')
   })
 
+  it('verify E: saved, then the re-read fails — the form stays with the saved text, and "thử lại" keeps what is typed since', async () => {
+    let gets = 0
+    let failReads = false
+    const opened = await open(server({ [`GET ${URL7}`]: () => (++gets > 1 && failReads ? h3Error(503, 'Máy chủ bận.') : answer()) }))
+    failReads = true
+    await input(field(opened, 'Câu hỏi chính'), 'Câu hỏi đã sửa')
+    await submit(opened)
+    assert.equal(opened.lastToast('success'), 'Đã cập nhật nội dung kiến thức.')
+    assert.ok(form(opened), 'the form vanished after a successful save whose re-read failed')
+    assert.equal(field(opened, 'Câu hỏi chính').model?.value, 'Câu hỏi đã sửa')
+    assert.match(alertText(opened.page), /Máy chủ bận\. Vui lòng thử lại\./)
+    await input(field(opened, 'Câu trả lời đã duyệt'), 'Đang gõ tiếp, chưa lưu.')
+    failReads = false
+    await click(byText(opened.page.root, 'button', 'thử lại'))
+    await settle()
+    assert.equal(alertText(opened.page), '')
+    assert.equal(field(opened, 'Câu trả lời đã duyệt').model?.value, 'Đang gõ tiếp, chưa lưu.', '"thử lại" replaced the text being typed')
+    assert.equal(field(opened, 'Câu hỏi chính').model?.value, 'Câu hỏi đã sửa')
+  })
+
+  it('verify E: published, then the re-read fails — the form stays and the badge says what the publish answered', async () => {
+    let gets = 0
+    const opened = await open(server({
+      [`GET ${URL7}`]: () => (++gets === 1 ? answer({ status: 'draft' }) : h3Error(503, 'Máy chủ bận.')),
+    }))
+    await click(button(opened, 'Xuất bản')!)
+    await settle()
+    assert.equal(opened.lastToast('success'), 'Đã xuất bản mục kiến thức.')
+    assert.ok(form(opened), 'the form vanished after a successful publish whose re-read failed')
+    assert.match(screen(opened), /Đã xuất bản/)
+    assert.ok(!button(opened, 'Xuất bản'), '"Xuất bản" is still offered for an entry the server just published')
+  })
+
+  it('verify E: a failed save\'s sentence goes away when the next save succeeds', async () => {
+    let refuse = true
+    const opened = await open(server({ [`PUT ${URL7}`]: call => (refuse ? h3Error(400, 'URL nguồn phải bắt đầu bằng https://') : json({ ok: true, item: entry(call.body as Record<string, unknown>) })) }))
+    await submit(opened)
+    assert.match(alertText(opened.page), /URL nguồn/)
+    refuse = false
+    await submit(opened)
+    assert.equal(alertText(opened.page), '', 'the earlier failure is still shown over a successful save')
+  })
+
+  it('verify E: a failed publish\'s sentence goes away when the next publish succeeds', async () => {
+    let refuse = true
+    const opened = await open(server({
+      [`GET ${URL7}`]: () => answer({ status: refuse ? 'draft' : 'published' }),
+      [`POST ${URL7}/publish`]: () => (refuse ? h3Error(400, 'Thiếu nguồn tham khảo.') : answer({ status: 'published' })),
+    }))
+    await click(button(opened, 'Xuất bản')!)
+    await settle()
+    assert.match(alertText(opened.page), /Thiếu nguồn tham khảo\./)
+    refuse = false
+    await click(button(opened, 'Xuất bản')!)
+    await settle()
+    assert.equal(alertText(opened.page), '', 'the earlier failure is still shown over a successful publish')
+  })
+
   it('FINDING: a failed load renders no empty form to save over the real entry (RED on base)', async () => {
     const opened = await open(server({ [`GET ${URL7}`]: () => h3Error(503, 'Cơ sở dữ liệu đang bảo trì.') }))
     assert.match(alertText(opened.page), /Cơ sở dữ liệu đang bảo trì\./)

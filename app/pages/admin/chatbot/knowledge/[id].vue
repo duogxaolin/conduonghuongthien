@@ -77,15 +77,22 @@ function contentPayload() {
   }
 }
 
+/**
+ * The FIRST read fills the form (skeleton meanwhile; a failure shows no form — `loaded`). Once the form
+ * holds the entry (a re-read after a save/publish, or its "thử lại"), a read only refreshes the status:
+ * the content is the write's own answer, and a failing re-read must neither hide the form nor, retried,
+ * replace what the officer typed since (tests/admin-fetch-rollout-knowledge-editor.test.ts).
+ */
 async function load() {
   if (isNew.value) return
-  loading.value = true
-  loaded.value = false
+  const refresh = loaded.value
+  if (!refresh) loading.value = true
   error.value = ''
   try {
     const response = await adminFetch<AdminKnowledgeDetail>(`/api/admin/chatbot/knowledge/${route.params.id}`)
     if (!response?.item) throw createError({ statusCode: 404, statusMessage: 'Mục kiến thức không tồn tại.' })
-    applyItem(response.item)
+    if (refresh) lifecycleStatus.value = response.item.status || 'draft'
+    else applyItem(response.item)
     loaded.value = true
   } catch (err: unknown) {
     error.value = errorMessage(err, 'Không thể tải mục kiến thức.')
@@ -138,7 +145,9 @@ async function transition(action: 'publish' | 'archive') {
   actionError.value = ''
   transitioning.value = action
   try {
-    await adminFetch<AdminKnowledgeTransitionResponse>(`/api/admin/chatbot/knowledge/${route.params.id}/${action}`, { method: 'POST' })
+    const response = await adminFetch<AdminKnowledgeTransitionResponse>(`/api/admin/chatbot/knowledge/${route.params.id}/${action}`, { method: 'POST' })
+    // The status the server just wrote, even if the re-read below fails.
+    if (response?.item?.status) lifecycleStatus.value = response.item.status
     toast.success(publishing ? 'Đã xuất bản mục kiến thức.' : 'Đã lưu trữ mục kiến thức.')
     await load()
   } catch (err: unknown) {
