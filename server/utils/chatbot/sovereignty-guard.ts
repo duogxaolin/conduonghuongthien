@@ -82,7 +82,8 @@ const JOIN = '(?:[\\s\\-\\u2010-\\u2015]+|[_./·•∙])?'
 
 // Bỏ dấu thì "biển đông" trùng "biến động"/"biển động", "trường sa lấy" trùng "trường sa lầy": hai cụm này xét
 // trên chữ CÒN dấu, trừ "(bãi) biển đông người" và "trường sa thải/ngã/đà…". "Hoàng Xa" (gõ sai) bỏ dấu trùng
-// làng Hoàng Xá; "Biển Hoa Nam"/"Biển Nam Trung Hoa" bỏ dấu trùng "Biên Hòa, Nam…": cũng xét trên chữ còn dấu.
+// làng Hoàng Xá; "Biển Hoa Nam" bỏ dấu trùng "Biên Hòa, Nam…": cũng xét trên chữ còn dấu ("Biển Nam Trung Hoa"
+// xét cả hai — bỏ dấu không trùng gì, có ở LATIN_PATTERNS).
 const MARKED_PATTERNS = [
   new RegExp(`(?<![\\p{L}])(?<!bãi\\s+)biển${JOIN}đông(?![\\p{L}])(?!\\s+(?:người|khách|nghịt|vui|đúc|kín|bắc|nam)(?![\\p{L}]))`, 'u'),
   new RegExp(`(?<![\\p{L}])trường${JOIN}sa(?![\\p{L}])(?!\\s+(?:thải|ngã|đọa|đoạ|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\\p{L}]))`, 'u'),
