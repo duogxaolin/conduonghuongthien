@@ -433,7 +433,7 @@ const listQuery = computed(() => {
 
 const { data, pending, error, refresh } = useAsyncData(
   () => `qa-documents-${JSON.stringify(listQuery.value)}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: Array<{ id: number; question: string; answer: string; topic?: string | null }>; topics: Array<{ slug: string; name: string; count?: number }>; pagination: { page: number; perPage: number; total: number; totalPages: number } }>)('/api/public/chatbot/knowledge', { query: listQuery.value }),
+  () => publicFetch<import('~/types/public-content-api').PublicKnowledgeResponse>('/api/public/chatbot/knowledge', { query: listQuery.value }),
   {
     lazy: true,
     default: () => ({ ok: true, items: [], topics: [], pagination: { page: 1, perPage: 20, total: 0, totalPages: 0 } }),

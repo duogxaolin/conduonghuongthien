@@ -28,6 +28,8 @@ import { computed, onMounted, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
 import { blocksRenderOwnH1 } from '~/utils/blocks/page-heading'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicPageResponse } from '~/types/public-content-api'
 
 const { currentLang, t } = useI18n()
 
@@ -35,7 +37,7 @@ const { currentLang, t } = useI18n()
 // liệu nên HTML đầu tiên và thẻ SEO không đổi (design.md D2).
 const contactAsync = useAsyncData(
   `page-contact-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; page: { title?: string; slug?: string; seoTitle?: string | null; seoDescription?: string | null } | null; blocks: import('~/utils/blocks/types').RenderableNode[] }>)(`/api/public/pages/contact?lang=${currentLang.value}`),
+  () => publicFetch<PublicPageResponse>(`/api/public/pages/contact?lang=${currentLang.value}`),
   { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
 const { data, pending, error, refresh } = contactAsync

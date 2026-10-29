@@ -44,6 +44,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from '~/composables/useI18n'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicCategoriesResponse } from '~/types/public-content-api'
 import { resolveCategoryRoute } from '~/utils/category-route-decision'
 // Import tường minh (như các khối trang chủ): tên tự động của Nuxt là
 // `BlocksBlockLoadError` — `<BlockLoadError>` không import sẽ dựng ra thẻ rỗng.
@@ -69,10 +71,10 @@ const route = useRoute()
 const categoryParam = computed(() => String(route.params.category || ''))
 
 // Fetch categories type=news để check [category] có phải category slug không.
-interface PublicCategory { id: number; name: string; slug: string; parentId: number | null }
+type PublicCategory = PublicCategoriesResponse['items'][number]
 const catAsync = useAsyncData(
   () => `news-cat-check-${categoryParam.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicCategory[] }>)('/api/public/categories', { query: { type: 'news' } }),
+  () => publicFetch<PublicCategoriesResponse>('/api/public/categories', { query: { type: 'news' } }),
   { lazy: true, default: () => ({ ok: true, items: [] as PublicCategory[] }) },
 )
 const { data: catData, status: catStatus } = catAsync

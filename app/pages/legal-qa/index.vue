@@ -339,7 +339,7 @@ const activeIndex = ref<number | null>(null)
 // Khoá là hàm của ngôn ngữ: chuỗi `public-faq-articles-${currentLang.value}` chỉ
 // được tính một lần lúc setup, nên đổi ngôn ngữ trên trang này không nạp lại.
 const faqAsync = useAsyncData(() => `public-faq-articles-${currentLang.value}`, () =>
-  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: { type: 'faq', limit: 50, lang: currentLang.value } }),
+  publicFetch<import('~/types/public-content-api').PublicArticlesResponse>(`/api/public/articles`, { query: { type: 'faq', limit: 50, lang: currentLang.value } }),
   {
     lazy: true,
     default: () => ({ ok: true, articles: [], pagination: {} }),

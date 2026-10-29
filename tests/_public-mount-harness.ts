@@ -55,6 +55,8 @@ export type NetCall = {
    * of the same request keeps it.
    */
   via: 'asyncData' | 'direct'
+  /** `keepalive` as ofetch handed it to `fetch` (a beacon that may outlive the page). */
+  keepalive?: boolean
   respond: (response: Response) => void
   fail: (error: Error) => void
 }
@@ -221,6 +223,7 @@ export async function mountPublic(t: TestContext, options: PublicMountOptions) {
       url: new URL(raw, 'http://portal.test'),
       body: typeof init.body === 'string' ? JSON.parse(init.body) : init.body,
       via: new Headers(init.headers).get(VIA) === 'asyncData' ? 'asyncData' : 'direct',
+      keepalive: init.keepalive,
       respond: resolve,
       fail: reject,
     }
