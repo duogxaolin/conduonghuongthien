@@ -57,7 +57,7 @@ const toast = useToast()
 const { confirm } = useConfirm()
 
 const {
-  editorId, setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent,
+  editorId, setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent, onBodyShown,
   insertMediaIntoEditor, initTinyMCE, loadTinyMCEScript,
 } = useArticleEditorTinymce({ form })
 
@@ -89,10 +89,12 @@ async function translateAllForThisArticle(targetStatus: ArticleRetranslateStatus
 
 const {
   saving, saveError, autoTranslateLangs, handleSave,
-  showReTranslateModal, reTranslatePublishImmediately, reTranslateRunning, recordInitialSnapshot, confirmReTranslation,
+  showReTranslateModal, reTranslatePublishImmediately, reTranslateRunning, recordInitialSnapshot, rebaseSnapshotOnEditor, confirmReTranslation,
 } = useArticleEditorSave({
   form, isNew, articleId, loaded, toast, getEditorContent, markSaved, navigate: navigateTo, translateAll: translateAllForThisArticle,
 })
+// The re-translate prompt compares the body as TinyMCE serialises it (FINDING-AE1).
+onBodyShown(rebaseSnapshotOnEditor)
 
 // Guard: true while fetchArticle is populating the form on initial load.
 // Prevents the type watcher from resetting categoryId during article load.
@@ -126,8 +128,9 @@ const fetchArticle = async () => {
       form.status = res.article.status || 'published'
       // The (suppressed) type watcher won't: load this type's categories so the saved one shows.
       await fetchCategories(form.type)
-      showLoadedContent()
+      // Snapshot first: a live editor rebases its body as soon as it shows it (FINDING-AE1).
       recordInitialSnapshot()
+      showLoadedContent()
       loaded.value = true
     }
   } catch (err: unknown) {

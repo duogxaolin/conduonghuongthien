@@ -13,7 +13,8 @@ import type { useToast } from './useToast'
  *     a time, then goes to the new article; "Cập Nhật Bài Viết" PUTs. The form goes as it is,
  *     with the body read from the editor at that moment;
  *   - the re-translate prompt: after a PUT that changed the Vietnamese title, excerpt or body,
- *     ask whether to re-translate every language (as AI drafts, or published at once).
+ *     ask whether to re-translate every language (as AI drafts, or published at once). The body
+ *     is compared as TinyMCE serialises it (`rebaseSnapshotOnEditor`, FINDING-AE1).
  *
  * Two guards against overwriting a stored article with an empty form (FINDING of 7.1 batch D):
  * the page's save button is disabled until `loaded`, AND `handleSave` itself refuses until then
@@ -55,6 +56,18 @@ export function useArticleEditorSave(deps: ArticleEditorSaveDeps) {
       excerpt: form.excerpt.trim(),
       content: form.content.trim(),
     }
+  }
+
+  /**
+   * The editor has just taken the body (FINDING-AE1, tests/admin-article-editor-findings.test.ts):
+   * a save compares the body as TinyMCE serialises it, so the snapshot's body must be in that
+   * form too — the stored HTML rarely is, and every plain save used to ask to re-translate. Only
+   * while the body is still the one snapshotted: an edit made before the editor was ready (the AI
+   * panel writes the form) must still count as a change.
+   */
+  function rebaseSnapshotOnEditor() {
+    const snapshot = initialContentSnapshot.value
+    if (snapshot && snapshot.content === form.content.trim()) snapshot.content = getEditorContent().trim()
   }
 
   function checkAndPromptReTranslation() {
@@ -128,6 +141,7 @@ export function useArticleEditorSave(deps: ArticleEditorSaveDeps) {
 
   return {
     saving, saveError, autoTranslateLangs, handleSave,
-    showReTranslateModal, reTranslatePublishImmediately, reTranslateRunning, recordInitialSnapshot, confirmReTranslation,
+    showReTranslateModal, reTranslatePublishImmediately, reTranslateRunning, recordInitialSnapshot, rebaseSnapshotOnEditor,
+    confirmReTranslation,
   }
 }

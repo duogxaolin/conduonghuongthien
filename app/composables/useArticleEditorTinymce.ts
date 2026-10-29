@@ -82,9 +82,19 @@ export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
     return savedContent.value !== null && html !== null && html !== savedContent.value
   }
 
+  // Run each time THIS page's editor has just been handed the form's body (its `init`, or a
+  // reload with the editor up): the body as it now reads back is TinyMCE's serialisation.
+  const bodyShownHandlers: Array<() => void> = []
+  function onBodyShown(handler: () => void): void {
+    bodyShownHandlers.push(handler)
+  }
+
   /** A (re)loaded article into a live editor; on the first load there is none yet and `init` does it. */
   function showLoadedContent(): void {
-    if (tinymceReady.value) (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)?.setContent(form.content)
+    if (tinymceReady.value) {
+      (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)?.setContent(form.content)
+      for (const handler of bodyShownHandlers) handler()
+    }
   }
 
   const insertMediaIntoEditor = (media: MediaItem) => {
@@ -156,6 +166,7 @@ export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
           if (form.content) editor.setContent(form.content)
           // Body baseline as the editor serialises the loaded content.
           if (savedContent.value === null) savedContent.value = editor.getContent()
+          for (const handler of bodyShownHandlers) handler()
         })
         editor.on('change', () => { form.content = editor.getContent() })
       },
@@ -187,7 +198,7 @@ export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
 
   return {
     editorId: TINYMCE_EDITOR_ID,
-    setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent,
+    setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent, onBodyShown,
     insertMediaIntoEditor, initTinyMCE, loadTinyMCEScript,
   }
 }
