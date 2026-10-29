@@ -48,7 +48,6 @@
   "app/pages/about.vue": 1,
   "app/pages/admin/ai/index.vue": 2,
   "app/pages/admin/analytics.vue": 2,
-  "app/pages/admin/chatbot/knowledge/[id].vue": 3,
   "app/pages/admin/chatbot/sessions/[id].vue": 1,
   "app/pages/admin/content/navigation/mobile.vue": 2,
   "app/pages/admin/content/navigation/navbar.vue": 2,

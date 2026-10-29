@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminKnowledgeDetail } from '~/types/admin-api'
+import type { AdminKnowledgeCreateResponse, AdminKnowledgeTransitionResponse, AdminKnowledgeUpdateResponse } from '~/types/admin-chatbot-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const route = useRoute()
@@ -9,7 +10,19 @@ const isNew = computed(() => route.params.id === 'new')
 const loading = ref(!isNew.value)
 const saving = ref(false)
 const transitioning = ref<'publish' | 'archive' | null>(null)
+/** A failed LOAD only — the one failure "thử lại" (re-read the entry) answers. */
 const error = ref('')
+/**
+ * A failed save/publish/archive (or the "required" check): its sentence, no reload — a
+ * reload replaces what the officer typed with the stored row (tests/admin-fetch-rollout-knowledge-editor.test.ts).
+ */
+const actionError = ref('')
+/**
+ * The form holds the entry. A new entry always; an existing one only after a load filled it —
+ * a failed load used to leave an empty, saveable form (with "Xuất bản" from the default
+ * status) that PUT over the real entry.
+ */
+const loaded = ref(isNew.value)
 const lifecycleStatus = ref<'draft' | 'published' | 'archived'>('draft')
 const statusLabel = computed(() => ({ draft: 'Bản nháp', published: 'Đã xuất bản', archived: 'Đã lưu trữ' })[lifecycleStatus.value])
 const statusTone = computed(() => ({
@@ -67,11 +80,13 @@ function contentPayload() {
 async function load() {
   if (isNew.value) return
   loading.value = true
+  loaded.value = false
   error.value = ''
   try {
-    const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminKnowledgeDetail>)(`/api/admin/chatbot/knowledge/${route.params.id}`)
+    const response = await adminFetch<AdminKnowledgeDetail>(`/api/admin/chatbot/knowledge/${route.params.id}`)
     if (!response?.item) throw createError({ statusCode: 404, statusMessage: 'Mục kiến thức không tồn tại.' })
     applyItem(response.item)
+    loaded.value = true
   } catch (err: unknown) {
     error.value = errorMessage(err, 'Không thể tải mục kiến thức.')
   } finally {
@@ -80,14 +95,14 @@ async function load() {
 }
 
 async function save() {
-  error.value = ''
+  actionError.value = ''
   if (!form.canonicalQuestion.trim() || !form.approvedAnswer.trim()) {
-    error.value = 'Câu hỏi và câu trả lời là bắt buộc.'
+    actionError.value = 'Câu hỏi và câu trả lời là bắt buộc.'
     return
   }
   saving.value = true
   try {
-    const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminKnowledgeDetail>)(isNew.value ? '/api/admin/chatbot/knowledge' : `/api/admin/chatbot/knowledge/${route.params.id}`, {
+    const response = await adminFetch<AdminKnowledgeCreateResponse | AdminKnowledgeUpdateResponse>(isNew.value ? '/api/admin/chatbot/knowledge' : `/api/admin/chatbot/knowledge/${route.params.id}`, {
       method: isNew.value ? 'POST' : 'PUT',
       body: contentPayload(),
     })
@@ -104,7 +119,7 @@ async function save() {
     if (isNew.value) await navigateTo(`/admin/chatbot/knowledge/${response.item.id}`)
     else await load()
   } catch (err: unknown) {
-    error.value = errorMessage(err, 'Không thể lưu mục kiến thức.')
+    actionError.value = errorMessage(err, 'Không thể lưu mục kiến thức.')
   } finally {
     saving.value = false
   }
@@ -120,14 +135,16 @@ async function transition(action: 'publish' | 'archive') {
   const ok = await confirm({ message: confirmation, confirmLabel })
   if (!ok) return
 
-  error.value = ''
+  actionError.value = ''
   transitioning.value = action
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/knowledge/${route.params.id}/${action}`, { method: 'POST' })
+    await adminFetch<AdminKnowledgeTransitionResponse>(`/api/admin/chatbot/knowledge/${route.params.id}/${action}`, { method: 'POST' })
     toast.success(publishing ? 'Đã xuất bản mục kiến thức.' : 'Đã lưu trữ mục kiến thức.')
     await load()
   } catch (err: unknown) {
-    error.value = errorMessage(err, 'Đã xảy ra lỗi.') || (publishing ? 'Không thể xuất bản mục kiến thức.' : 'Không thể lưu trữ mục kiến thức.')
+    // The action's own sentence IS the fallback: `errorMessage` never returns '', so an
+    // `errorMessage(err, 'Đã xảy ra lỗi.') || …` branch was dead.
+    actionError.value = errorMessage(err, publishing ? 'Không thể xuất bản mục kiến thức.' : 'Không thể lưu trữ mục kiến thức.')
   } finally {
     transitioning.value = null
   }
@@ -146,13 +163,14 @@ onMounted(load)
       <nuxt-link to="/admin/chatbot/knowledge" class="font-bold text-brand-700">Quay lại danh sách</nuxt-link>
     </header>
 
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }}<template v-if="!isNew && !saving"> Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load()">thử lại</button>.</template></div>
+    <!-- "thử lại" only for a failed load: after a failed action it would replace the typed text with the stored row. -->
+    <div v-if="error || actionError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error || actionError }}<template v-if="error"> Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load()">thử lại</button>.</template></div>
     <div v-if="loading" class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]">
       <SkeletonForm label="Đang tải mục kiến thức" :fields="4" />
       <SkeletonForm label="Đang tải mục kiến thức" :fields="3" :has-action="false" />
     </div>
 
-    <form v-else class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]" @submit.prevent="save">
+    <form v-else-if="loaded" class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]" @submit.prevent="save">
       <section class="flex flex-col gap-4 rounded-xl border border-line bg-white p-5">
         <h2 class="m-0 text-base font-extrabold text-brand-950">Nội dung công khai</h2>
         <label class="flex flex-col gap-1.5 text-sm font-bold">Câu hỏi chính<input v-model="form.canonicalQuestion" required class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20" /></label>
