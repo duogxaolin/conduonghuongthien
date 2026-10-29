@@ -23,19 +23,12 @@
  */
 
 /**
- * Phản hồi **sau khi đi qua JSON**, không phải giá trị handler trả về.
- *
- * Khác biệt này là thật và cổng typecheck đã bắt được ngay: handler trả `Date`
- * cho các cột thời gian, nhưng `$fetch` nhận về **chuỗi** — JSON không có kiểu
- * ngày. Suy thẳng `Awaited<ReturnType<...>>` sẽ khai `createdAt: Date`, nên mã
- * gọi `.getTime()` trên một chuỗi vẫn biên dịch trót lọt rồi hỏng lúc chạy.
- * `Serialize` của Nitro mô phỏng đúng phép biến đổi đó (`Date → string`,
- * `Map`/`Set → {}`, `undefined` biến mất), nên kiểu ở đây khớp với **thứ trình
- * duyệt thật sự cầm trên tay**.
+ * Phản hồi **sau khi đi qua JSON**, không phải giá trị handler trả về: handler trả
+ * `Date` cho cột thời gian, `$fetch` nhận **chuỗi**. `Payload<…>` (một định nghĩa dùng
+ * chung, `app/types/handler-payload.ts`) mô phỏng phép biến đổi đó bằng `Serialize`
+ * của Nitro, nên kiểu ở đây khớp với **thứ trình duyệt thật sự cầm trên tay**.
  */
-import type { Serialize } from 'nitropack/types'
-
-type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
+import type { Payload } from './handler-payload'
 
 /** Lấy phần tử của một mảng nằm trong phản hồi, ví dụ `{ ok, users: [...] }`. */
 type ItemOf<T> = T extends readonly (infer U)[] ? U : never

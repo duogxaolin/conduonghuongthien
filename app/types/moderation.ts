@@ -14,10 +14,9 @@
  *     they arrive as strings ("1.0000"), not numbers — the page only prints them;
  *   - queue rows and rules carry their `createdAt` as `string | null` (nullable column).
  */
-import type { Serialize } from 'nitropack/types'
+/** What the browser holds after JSON, not what the handler returned (one definition: handler-payload.ts). */
+import type { Payload } from './handler-payload'
 
-/** As in app/types/admin-api.ts: what the browser holds after JSON, not what the handler returned. */
-type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
 type ItemOf<T> = T extends readonly (infer U)[] ? U : never
 
 type SettingsGetHandler = typeof import('~~/server/api/admin/ai/moderation/settings.get').default
