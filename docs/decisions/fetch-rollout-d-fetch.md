@@ -253,8 +253,21 @@ bỏ chặn `null` của `formatWhen` (1); bỏ `trim()` tiêu đề trang mới
 trang (1). Nhật ký từng vòng: `mutations/r1…r6.*` trong thư mục proof.
 
 Không thuộc họ component nào của `tests/_component-family.ts` (không tệp nào đã tách). DOM trạng thái
-bình thường của cả 7 tệp giống hệt trước/sau (mount thật, `html()`); khác biệt duy nhất là trang lỗi
-của nhật ký (bỏ trạng thái rỗng dưới cảnh báo — chính là bản sửa).
+BÌNH THƯỜNG của cả 7 tệp giống hệt trước/sau (mount thật, `html()`; panel/modal so ở trạng thái đang
+mở), trừ một placeholder `<!--v-if-->` của nhật ký (khối lỗi rời nay nằm trong chuỗi). Mọi bản sửa
+FINDING ở trên CỐ Ý đổi trạng thái lỗi/đua của nó: nhật ký lỗi không còn trạng thái rỗng (đã chụp
+DOM); trình soạn kiến thức tải hỏng không còn biểu mẫu, lỗi thao tác không còn "thử lại"; modal mở
+lại sau lỗi không còn số cũ; thư viện video giữ danh sách khi cấu hình hỏng; hai thư viện hiện trang
+cuối thay vì trạng thái rỗng — mỗi thay đổi có test FINDING của nó, không chụp DOM riêng.
+E2E: `tests/e2e/media-portal.spec.ts` (spec duy nhất đi qua một trang của lô này) 5/5 trên bản build
+lô E; các trang còn lại không có spec E2E.
+
+**Cần quyết định — chi phí "Dịch toàn bộ".** Trước một lượt bấm xếp tối đa 100 bài mỗi ngôn ngữ; nay
+xếp MỌI bài còn thiếu, mỗi bài là các lượt gọi AI có trả tiền. Chi tiêu bị chặn bởi ngân sách AI hằng
+tháng (`checkBudget` trước mỗi bài trong `article-translation-worker.ts` và trong mỗi `callAi`) — **chỉ
+khi ngân sách được đặt** (hoặc nhà cung cấp có hạn mức); ngân sách 0 = không giới hạn (spec R9.4). Bản
+sửa giữ đúng lời của giao diện ("Thiếu 120 bài", "Dịch toàn bộ"). Phương án thay thế một dòng nếu muốn
+giữ trần: đọc một trang 100 bài như cũ nhưng thông báo "đã xếp 100/120 — bấm lại để xếp tiếp".
 
 ### Chưa sửa ở lô E (ngoài phạm vi phía khách quản trị — cần quyết định hoặc đợt máy chủ)
 
