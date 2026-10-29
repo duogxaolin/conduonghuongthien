@@ -154,6 +154,14 @@ export interface SfcEnv {
    * Settle (or await) after mounting for the setup to resolve.
    */
   suspense?: boolean
+  /**
+   * What `import.meta.server` / `import.meta.client` / `import.meta.dev` read, as Vite
+   * replaces them at build time — in every compiled file of the tree. Without it a file
+   * that reads `import.meta` cannot compile here (a `new Function` body is not a module);
+   * `{ server: false, client: true }` mounts the browser build, `{ server: true, client:
+   * false }` runs the server branches (D-FETCH lot G: the SSR-only `await` of a lookup).
+   */
+  importMeta?: { server: boolean, client: boolean, dev?: boolean }
 }
 
 const IMPORT_FROM = /^import\s+([^'"]*?)\s*from\s*['"]([^'"]+)['"];?/gm
@@ -199,7 +207,11 @@ async function compileSfc(file: string, env: SfcEnv, loaded: Map<string, Promise
     inlineTemplate: true,
     templateOptions: { compilerOptions: { hoistStatic: false, comments: false } },
   })
-  const code = stripTypeScriptTypes(compiled.content)
+  const stripped = stripTypeScriptTypes(compiled.content)
+  const meta = env.importMeta
+  const code = meta
+    ? stripped.replace(/\bimport\.meta\.(server|client|dev)\b/g, (_m, flag: 'server' | 'client' | 'dev') => String(meta[flag] ?? false))
+    : stripped
 
   const modules: Record<string, unknown> = {}
   const imported = new Set<string>()

@@ -1,20 +1,16 @@
 import { computed, type Ref } from 'vue'
+import type { PublicArticleRelatedResponse } from '../types/public-content-api'
 
 // Đường dẫn tương đối / auto-import trần: tệp này cũng chạy trong test Node
 // (tests/article-detail-page.test.ts), nơi `useAsyncData` là bản giả trên `globalThis`.
 
-export type RelatedArticleItem = {
-  id: number
-  title: string
-  slug: string
-  excerpt: string | null
-  featuredImage: string | null
-  thumbnailUrl?: string | null
-  publishedAt: string | null
-  createdAt?: string | null
-}
-export type RelatedTopic = { slug: string; name: string; isCurrent?: boolean; total?: number }
-export type ArticleRelatedResponse = { ok: boolean; articles: RelatedArticleItem[]; topics: RelatedTopic[] }
+/**
+ * Suy từ handler `articles/[slug]/related.get.ts` (D-FETCH lô G). Bản viết tay trước đó
+ * khai một `featuredImage` máy chủ không bao giờ gửi (không nơi nào đọc).
+ */
+export type ArticleRelatedResponse = PublicArticleRelatedResponse
+export type RelatedArticleItem = ArticleRelatedResponse['articles'][number]
+export type RelatedTopic = ArticleRelatedResponse['topics'][number]
 
 /**
  * Nội dung liên quan — lượt fetch thứ hai, ref đặt tên riêng (khối "Bài viết khác" của
@@ -29,8 +25,8 @@ export type ArticleRelatedResponse = { ok: boolean; articles: RelatedArticleItem
  *
  * Gọi trong `setup` của ArticleDetail.vue, NGAY SAU lượt đọc bài — cùng chỗ lượt gọi
  * `useAsyncData` này đứng trước khi tách, nên hai lượt fetch vẫn chạy song song (trên máy
- * chủ cả hai cùng được chờ trước khi ghi HTML). Request (`fetchRelated`, một `$fetch` ép
- * kiểu) do ArticleDetail.vue truyền vào; khung chờ, nhánh lỗi + "thử lại" vẽ ở đó.
+ * chủ cả hai cùng được chờ trước khi ghi HTML). Request (`fetchRelated`, một lượt
+ * `publicFetch<T>()`) do ArticleDetail.vue truyền vào; khung chờ, nhánh lỗi + "thử lại" vẽ ở đó.
  */
 export function useArticleRelated(
   props: { slug: string; backTo: string },

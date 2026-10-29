@@ -1,5 +1,8 @@
 import { computed, type Ref } from 'vue'
-import { parseLayoutSetting, useLayoutConfig } from '~/composables/useLayoutConfig'
+// Đường dẫn tương đối: test Node nạp thẳng tệp này (layout công khai mount thật —
+// tests/public-fetch-rollout-article-print.test.ts); `~/` chỉ Nuxt hiểu.
+import { parseLayoutSetting, useLayoutConfig } from './useLayoutConfig'
+import type { PublicSettingsPayload } from '../types/public-site-api'
 
 /**
  * Site-wide settings tải qua `/api/public/settings` bằng `useAsyncData` để
@@ -26,7 +29,7 @@ import { parseLayoutSetting, useLayoutConfig } from '~/composables/useLayoutConf
  * lên `default.vue` với `await` ở top-level setup ép Nuxt Suspense chờ resolve
  * xong mới commit render → SSR dựng đúng DB config → không mismatch.
  */
-export type PublicSettingsResponse = { settings?: Record<string, string | null>; faviconUrl?: string | null }
+export type PublicSettingsResponse = PublicSettingsPayload
 
 export function useSiteSettings(settingsData: Ref<PublicSettingsResponse | null>) {
   // Site-wide contact details come from Cài đặt chung so an editor's change takes

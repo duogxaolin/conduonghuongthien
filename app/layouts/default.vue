@@ -150,7 +150,7 @@ import { useSiteSettings, type PublicSettingsResponse } from '~/composables/useS
 // `useLayoutNav.ts`.
 const { data: settingsData } = await useAsyncData<PublicSettingsResponse | null>(
   'public-settings-nav',
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  () => publicFetch<PublicSettingsResponse>('/api/public/settings'),
   { default: () => null },
 )
 const { containerPx, applySettings, sitePublicSettings } = useSiteSettings(settingsData)

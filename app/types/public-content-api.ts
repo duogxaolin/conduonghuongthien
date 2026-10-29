@@ -17,3 +17,17 @@ import type { Payload } from './handler-payload'
  * never carries), then Vietnamese.
  */
 export type PublicCategoriesResponse = Payload<typeof import('~~/server/api/public/categories.get').default>
+
+/**
+ * `GET /api/public/articles/<slug>?lang=` — one published article (404 otherwise, thrown).
+ * The hand-written shape it replaces declared a `featuredImage` the handler never sends,
+ * an `article: … | null` the handler never answers (a missing article is a 404), and an
+ * index signature that let any field name compile.
+ */
+export type PublicArticleDetailResponse = Payload<typeof import('~~/server/api/public/articles/[slug].get').default>
+
+/** `GET /api/public/articles/<slug>/related?lang=` — up to four articles of the same type, and the topic chips. */
+export type PublicArticleRelatedResponse = Payload<typeof import('~~/server/api/public/articles/[slug]/related.get').default>
+
+/** `POST /api/public/articles/<slug>/view` — always 202; `accepted` says whether it counted. */
+export type PublicArticleViewResponse = Payload<typeof import('~~/server/api/public/articles/[slug]/view.post').default>
