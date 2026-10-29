@@ -72,7 +72,7 @@ test('words that only look like the topic stream through untouched', async () =>
   // Chunk dừng ngay sau cụm, trước từ quyết định nó ("trường sa |thải"): giữa luồng chưa biết từ đó.
   for (const chunks of [
     [LEAD, 'Anh Hoàng Sa', 'ng đã hoàn lương và mở xưởng mộc.'],
-    [LEAD, 'Hãy tránh xa môi trường sa ', 'ngã và bạn bè xấu.'],
+    // ("môi trường sa | ngã": vòng 5 bỏ ngoại lệ "sa ngã" — chặn oan có chủ đích, ghim ở chatbot-sovereignty-recall.test.ts.)
     [LEAD, 'Nhà trường sa ', 'thải giáo viên vì có tiền án là trái luật.'],
     [LEAD, 'Bãi biển đông ', 'người vào cuối tuần.'],
     [LEAD, 'Lãnh đạo nam sa ', 'thải nhân viên phải có lý do.'],

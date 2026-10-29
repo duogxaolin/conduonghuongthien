@@ -3,41 +3,74 @@
  * `sovereignty-guard.ts` (guard giữ chính sách: câu trả lời viết sẵn, lớp chặn đầu ra, lịch sử, điều khoản prompt).
  * Tên xuất có tiền tố `sovereignty`: Nitro tự import mọi export của `server/utils/**`.
  *
- * Nguyên tắc (sau ba vòng kiểm chứng độc lập, docs/decisions/chatbot.md): đây là cổng an ninh nên THIÊN VỀ BẮT.
- * Chữ thường, không dấu, nửa viết hoa mặc định bắt ("hoàng sa có phải…", "hoang sa co phai…"). Loại trừ CHỈ bằng
- * cụm CÓ DẤU rất cụ thể trên chữ còn dấu (`maskBenign`: "sa thải", "sà vào", "sa vào tù", "Sa Pa"…) — một danh sách
- * từ trên chữ bỏ dấu ("co", "da", "vao"…) từng loại luôn "hoàng sa có/đã/vào…". Tên trùng từ thường ("bien dong"
- * không dấu = "biến động", "đảo sinh tồn", "đá chữ thập") cần chữ hỏi chủ quyền đi kèm.
+ * Nguyên tắc (bốn vòng kiểm chứng độc lập, docs/decisions/chatbot.md): đây là cổng an ninh của cổng thông tin Bộ Công an
+ * — bỏ sót nặng hơn chặn oan, nên RECALL là cổng cứng (tests/chatbot-sovereignty-corpora.test.ts: câu nào một phiên bản
+ * từng bắt thì phải bắt). Chữ thường, không dấu, nửa viết hoa mặc định bắt. Ngoại lệ chặn oan chỉ VÔ HIỆU một đoạn khớp
+ * cụ thể trên chữ CÓ DẤU gốc, SAU khi đã dò (`sovereigntyScriptMentions`), không bao giờ cho tên đầy đủ, và tắt hết khi câu
+ * có tín hiệu quyền sở hữu. Tên trùng từ thường ("bien dong" không dấu = "biến động", "đảo sinh tồn") cần chữ hỏi chủ quyền.
  */
 import { sovereigntyFold as fold, sovereigntyHanKey as hanKey, sovereigntyLatinKey as latinKey } from './sovereignty-normalize'
 
 // ─── Chữ Hán ──────────────────────────────────────────────────────────────────────────────────────────────────────
-// Tên đầy đủ (…沙群岛, 南海诸岛) bắt vô điều kiện. 南海/南沙/西沙 TRẦN: không tính khi chữ đứng trước trong cùng mệnh
-// đề ghép thành từ khác (越南海防, 河南沙县, 海南海口, 中南海, 东西沙发, 广西沙田, 佛山南海, 广州南沙, tên người 张南海…)
-// — `hanKey` ngắt mệnh đề ở dấu câu nên "广州，南沙" không bị loại — hoặc khi theo sau là tên đơn vị hành chính/cơ sở
-// (佛山市南海区, 广州市南沙区人民法院, 南沙新区, 南海观音, 南海電鉄). "三沙市南沙区" khớp qua 三沙.
-const HAN_PATTERNS = [
+// Tên khớp trên khoá NỐI LIỀN (bỏ mọi dấu câu giữa chữ Hán): "南，海", "西.沙", "西，沙群岛" là tên. Khoá có ngắt "|"
+// (`hanKey`) chỉ dùng cho NGOẠI LỆ của tên trần: chữ đứng trước / hậu tố chỉ loại khi cùng mệnh đề.
+// Tên đầy đủ, 三沙, đường chín đoạn, bãi đá: không bao giờ có ngoại lệ.
+const HAN_FULL_NAMES = [
   /[南西中东黄长]沙群岛|南海诸岛|(?<!越)南中国海/,
-  /(?<![越河云湖济海江华西东中岭闽安州山张王李刘陈杨赵周吴])南[海沙](?![区县镇市港]|新区|街道|法院|观音|[电電][铁鉄])/,
-  /(?<![东广江山陕])西沙(?![区县镇市])/,
   /黄沙.{0,2}长沙|长沙.{0,2}黄沙|[黄长]沙岛/,
   /三沙/,
   /[九十]段线/,
   // 永兴岛 = Phú Lâm, 南威岛 = Trường Sa Lớn, 赤瓜礁 = Gạc Ma, 黄岩岛 = Scarborough, 太平岛 = Ba Bình, 仁爱礁 = Second Thomas.
   /永兴岛|南威岛|赤瓜礁|永暑礁|华阳礁|东门礁|南薰礁|渚碧礁|美济礁|黄岩岛|仁爱礁|太平岛/,
 ]
+// 南海/南沙/西沙 TRẦN: không tính khi chữ đứng trước TRONG CÙNG MỆNH ĐỀ ghép thành từ khác (越南海防, 河南沙县, 海南海口,
+// 中南海, 东西沙发, 佛山南海, 广州南沙, tên người 张南海…; "越南。沙坝" — chữ 南 vẫn cùng mệnh đề với 越) hoặc khi liền sau là
+// đơn vị hành chính/cơ sở (佛山市南海区, 广州市南沙区人民法院, 南沙新区, 南海观音, 南海電鉄). "广州，南沙" thì bắt.
+const HAN_BARE_NAMES = [
+  { name: /南[海沙]/g, before: new Set('越河云湖济海江华西东中岭闽安州山张王李刘陈杨赵周吴'), after: /^(?:[区县镇市港]|新区|街道|法院|观音|[电電][铁鉄])/ },
+  { name: /西沙/g, before: new Set('东广江山陕'), after: /^[区县镇市]/ },
+]
+// Tín hiệu quyền sở hữu: tắt mọi ngoại lệ ("佛山南海是中国的吗" bắt).
+const HAN_OWNERSHIP = /中国|主权|属于|哪个国家|哪国|领土|归属|归谁|谁的/
 
-// ─── Mặt nạ loại trừ: cụm CÓ DẤU, trước mọi phép khớp ─────────────────────────────────────────────────────────────
-// "sa" thành "sah" nên không còn là "Sa" của tên quần đảo. Chỉ "sa" VIẾT THƯỜNG + cụm động từ đủ chữ: "Giám đốc Hoàng
-// sa thải tôi", "Trường sa sút điểm thi", "trường sa đà vào game"; "Sa" viết hoa là tên riêng ("Hoàng Sa cơ quan nào quản
-// lý?", "Hoàng Sa vào tù"). Âm tiết cũng là đầu từ ghép thì cần từ sau ("sa cơ lỡ vận", "sa chân vào", "sa lưới pháp
-// luật") hoặc loại từ ghép ("ngã ba", "sút giảm", "lầy lội", "sầm uất"). Không dấu ("hoang sa thai") thì không loại.
-const SA_VERB_FOLLOWERS = [
-  'ngã(?!\\s+(?:ba|tư|năm|sáu|bảy|rẽ)(?![\\p{L}]))', 'sút(?!\\s+(?:giảm|kém)(?![\\p{L}]))', '(?:đọa|đoạ)(?!\\s+đày)',
-  'lầy(?!\\s+lội)', 'sầm(?!\\s+uất)', 'đà\\s+vào', 'cơ\\s+(?:lỡ|thất)', 'chân\\s+(?:vào|lỡ|xuống)', 'lưới\\s+(?:pháp|công|cảnh)',
-  'vào\\s+(?:lưới|tù|vòng|cạm|con|nghiện|tệ|ma|cờ|rượu|lô)',
-].join('|')
-const SA_VERB = new RegExp(`(?<![\\p{L}])(s)(a)(?=\\s+(?:${SA_VERB_FOLLOWERS})(?![\\p{L}]))`, 'gu')
+const HAN_BARE_ANY = /南[海沙]|西沙/
+const NO_BREAKS = new Uint8Array(0)
+
+/** Cho từng đơn vị UTF-16 của khoá nối liền: có dấu câu ("|") ngay trước nó không. */
+function breaksOf(han: string): Uint8Array {
+  const marks = new Uint8Array(han.length)
+  let joinedIndex = 0
+  let pending = 0
+  for (let index = 0; index < han.length; index += 1) {
+    if (han[index] === '|') { pending = 1; continue }
+    marks[joinedIndex] = pending
+    joinedIndex += 1
+    pending = 0
+  }
+  return marks
+}
+
+function bareHanName(han: string, joined: string): boolean {
+  if (!HAN_BARE_ANY.test(joined)) return false
+  if (HAN_OWNERSHIP.test(joined)) return true
+  // Không có dấu câu thì không có chỗ ngắt nào (đọc ngoài mảng rỗng là undefined — "không ngắt").
+  const breakBefore = han === joined ? NO_BREAKS : breaksOf(han)
+  for (const { name, before, after } of HAN_BARE_NAMES) {
+    for (const match of joined.matchAll(name)) {
+      const start = match.index
+      const end = start + match[0].length
+      const vetoBefore = start > 0 && !breakBefore[start] && before.has(joined[start - 1]!)
+      const vetoAfter = !breakBefore[end] && after.test(joined.slice(end, end + 2))
+      if (!vetoBefore && !vetoAfter) return true
+    }
+  }
+  return false
+}
+
+// ─── Ngoại lệ chặn oan: cụm CÓ DẤU, vô hiệu một đoạn khớp cụ thể SAU khi dò ──────────────────────────────────────────
+// Đổi "sa" của đúng cụm đó thành "sah" rồi dò lại: còn khớp nơi khác thì vẫn là nhắc chủ đề. Vòng 5 chỉ còn "sa thải"
+// trong họ động từ — mặt nạ "sa viết thường + ngã/sút/đà/vào…" (09eef836) che cả "hoàng sa ngã về tay trung quốc…",
+// "quần đảo hoàng sa vào vòng kiểm soát…". Người tên Hoàng/Trường + "sa ngã/sa đà/sa vào…" là chặn oan có chủ đích.
 // "sa thải" là động từ cố định, cả khi gõ hoa "Sa" ("Nam Sa thải tôi rồi", "Ông Hoàng. Sa thải tôi…") — mọi hoa/thường.
 const SA_FIRE = /(?<![\p{L}])([Ss])([aA])(?=\s+(?:thải|THẢI)(?![\p{L}]))/gu
 // Địa danh "Sa Pa/Đéc/Huỳnh/Thầy/Rài/Vĩ": "trường Sa Pa", "Trường Sa Đéc tuyển giáo viên", "TÂY SA PA". "Pa"/"Đéc" không
@@ -50,8 +83,20 @@ const TONED_SA = /(?<![\p{L}])(s[àáảãạ])(?![\p{L}])/gu
 // (trợ từ miền Nam) vẫn bắt.
 const DONG_PLACE = /(?<=[Bb]iển\s+)Đông(?=\s+(?:Á|Hồ|Hưng)(?![\p{L}]))/gu
 
-function maskBenign(folded: string): string {
-  return folded.replace(SA_VERB, '$1$2h').replace(SA_FIRE, '$1$2h').replace(SA_PLACE, '$1$2h').replace(TONED_SA, '$1h').replace(DONG_PLACE, 'Đôngh')
+function exceptBenign(folded: string): string {
+  return folded.replace(SA_FIRE, '$1$2h').replace(SA_PLACE, '$1$2h').replace(TONED_SA, '$1h').replace(DONG_PLACE, 'Đôngh')
+}
+
+// Ngoại lệ không bao giờ áp cho tên đầy đủ ("quần đảo Hoàng Sa/Trường Sa", "Biển Đông" viết hoa) và tắt hết khi câu có tín
+// hiệu quyền sở hữu: "hoàng sà của ai", "Hoàng Sa Vĩ độ bao nhiêu thuộc nước nào" bắt.
+const FULL_NAME = /(?<![\p{L}])(?:quần\s+đảo\s+(?:hoàng|trường)\s*sa|quan\s+dao\s+(?:hoang|truong)\s*sa)(?![\p{L}])/iu
+const FULL_NAME_DONG = /(?<![\p{L}])(?:Biển|BIỂN)\s+(?:Đông|ĐÔNG)(?![\p{L}])/u
+const OWNERSHIP = /(?<![\p{L}])(?:về\s+tay|vào\s+tay|của\s+ai|của\s+nước|thuộc|nước\s+nào|kiểm\s+soát|tranh\s+chấp|chủ\s+quyền|lãnh\s+thổ|trung\s+quốc|tq|china|chinese|bắc\s+kinh|chiếm)(?![\p{L}])|中国|主权|属于|哪个国家|哪国|领土|归属|谁的/u
+const OWNERSHIP_LATIN = / (?:ve tay|vao tay|cua ai|cua nuoc|nuoc nao|kiem soat|tranh chap|chu quyen|lanh tho|trung quoc|tq|china|bac kinh) /
+
+function exceptionsOff(folded: string): boolean {
+  const lower = folded.toLowerCase()
+  return FULL_NAME.test(folded) || FULL_NAME_DONG.test(folded) || OWNERSHIP.test(lower) || OWNERSHIP_LATIN.test(latinKey(lower))
 }
 
 // ─── Khoá Latin bỏ dấu: mặc định bắt ──────────────────────────────────────────────────────────────────────────────
@@ -189,16 +234,28 @@ function withoutLastWord(text: string): string {
 }
 const VIETNAMESE_MARK = /[\p{M}đĐ]/u
 
-/** Câu có nói tới chủ đề, theo chữ Hán (`claims`: tính cả yêu sách — đầu ra có đảo/biển). */
+/**
+ * Câu có nói tới chủ đề, theo chữ Hán. `han` là khoá có ngắt (`sovereigntyHanKey`): tên khớp trên khoá nối liền, ngắt chỉ
+ * dùng cho ngoại lệ của tên trần. `claims`: tính cả yêu sách — đầu ra có đảo/biển (trên khoá có ngắt, như trước).
+ */
 export function sovereigntyHanMentions(han: string, claims: boolean): boolean {
-  return HAN_PATTERNS.some(pattern => pattern.test(han)) || (claims && HAN_CLAIMS.test(han))
+  const joined = han.includes('|') ? han.replace(/\|/g, '') : han
+  return HAN_FULL_NAMES.some(pattern => pattern.test(joined)) || bareHanName(han, joined) || (claims && HAN_CLAIMS.test(han))
 }
 
-/** Mọi thứ trừ chữ Hán: tên riêng, tên đảo/bãi, cụm còn dấu, khoá Latin/Kirin bỏ dấu, chữ Nhật/Hàn. */
+/**
+ * Mọi thứ trừ chữ Hán: tên riêng, tên đảo/bãi, cụm còn dấu, khoá Latin/Kirin bỏ dấu, chữ Nhật/Hàn. Dò trên chữ gốc trước;
+ * ngoại lệ (`exceptBenign`) chỉ vô hiệu đúng đoạn khớp của nó, rồi dò lại — trừ khi có tên đầy đủ hay tín hiệu quyền sở hữu.
+ */
 export function sovereigntyScriptMentions(folded: string, claims: boolean): boolean {
-  const masked = maskBenign(folded)
-  if (PROPER_NAMES.test(masked) || FEATURE_TITLE.test(masked) || OTHER_SCRIPTS.test(masked)) return true
-  const lower = masked.toLowerCase()
+  if (!scriptMatch(folded, claims)) return false
+  const excepted = exceptBenign(folded)
+  return excepted === folded || exceptionsOff(folded) || scriptMatch(excepted, claims)
+}
+
+function scriptMatch(folded: string, claims: boolean): boolean {
+  if (PROPER_NAMES.test(folded) || FEATURE_TITLE.test(folded) || OTHER_SCRIPTS.test(folded)) return true
+  const lower = folded.toLowerCase()
   if (MARKED_PATTERNS.some(pattern => pattern.test(lower))) return true
   if ((FEATURE_COMMON.test(lower) && FEATURE_QUESTION.test(lower)) || (MARKED_AMBIGUOUS.test(lower) && MARKED_QUESTION.test(lower))) return true
   const latin = latinKey(lower)
@@ -240,18 +297,21 @@ export function sovereigntySettledClaim(folded: string, han: string): boolean {
   return LATIN_CLAIMS.some(pattern => pattern.test(latin))
 }
 
-// Các loại trừ theo từ đứng sau ("sa thải", "biển Đông Bắc", "gác ma túy", "hoàng xa nhà", "ba bình là đảo nợ"), kể cả
-// cụm hai từ ("sa đà | vào", "sa cơ | lỡ", "sa lưới | pháp", "sa vào | tù"): giữa luồng, từ đó có thể chưa tới, nên một
-// cụm ở cuối chỉ tính khi khớp với MỌI từ thử. Mỗi họ loại trừ một từ thử ("thải" che "sa/Sa |" ở mọi hoa/thường nên đủ
-// cho "Sa | Pa"; "biển Đông Á/Hồ/Hưng" cùng họ với "biển Đông Bắc"). Từ thử không được tự tạo ra một khớp. Thêm loại trừ
-// theo từ đứng sau → thêm từ thử.
-const NEXT_WORD_PROBES = ['thải', 'vào', 'lỡ', 'pháp', 'tù', 'Bắc', 'túy', 'nhà', 'nợ']
+// Các loại trừ theo từ đứng sau ("sa thải", "biển Đông Bắc", "gác ma túy", "hoàng xa nhà", "ba bình là đảo nợ"): giữa
+// luồng, từ đó có thể chưa tới, nên một cụm ở cuối chỉ tính khi khớp với MỌI từ thử. Mỗi họ loại trừ một từ thử ("thải"
+// che "sa/Sa |" ở mọi hoa/thường nên đủ cho "Sa | Pa"; "biển Đông Á/Hồ/Hưng" cùng họ với "biển Đông Bắc"). Từ thử không
+// được tự tạo ra một khớp. Thêm loại trừ theo từ đứng sau → thêm từ thử.
+const NEXT_WORD_PROBES = ['thải', 'Bắc', 'túy', 'nhà', 'nợ']
 
 /** Phần ngoài chữ Hán, chỉ tới ranh giới từ cuối: từ cuối có thể chưa viết xong ("Hoàng Sa|ng"). */
 export function sovereigntySettledScriptMentions(folded: string, claims: boolean, cutAtStart: boolean): boolean {
   // Đoạn bắt đầu giữa một từ: bỏ mẩu đầu ("[l]east sea" không phải "east sea"). Chỉ khi thật sự cắt giữa từ — bỏ một
   // từ trọn vẹn ở đầu đoạn từng làm mất "bãi" của "bãi … biển đông".
   const start = cutAtStart ? folded.replace(FIRST_WORD, '') : folded
+  // Đường tắt (mỗi chunk): đoạn không có chữ cái nào ngoài chữ Hán thì không mẫu nào ở đây khớp được (chữ Hán ở
+  // `sovereigntyHanMentions`) — câu trả lời tiếng Trung dài không dựng khoá Latin mỗi chunk.
+  if (!NON_HAN_LETTER.test(start)) return false
   const settled = withoutLastWord(start)
   return NEXT_WORD_PROBES.every(next => sovereigntyScriptMentions(`${settled} ${next}`, claims))
 }
+const NON_HAN_LETTER = /[^\p{Script=Han}\P{L}]/u

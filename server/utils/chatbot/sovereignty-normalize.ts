@@ -118,13 +118,14 @@ export function sovereigntyLatinKey(lower: string): string {
   return ` ${out.join(' ')} `
 }
 
-// Dấu câu ngắt mệnh đề (sau NFKC: 、 。 , . ! ? ; : …) thành "|": chữ trước dấu câu không phải "chữ đứng trước" của
-// chữ sau nó — "我来自广州，南沙群岛…", "我刚爬完山。南海是谁的？" (州/山 là chữ loại trừ của 南海/南沙).
+// Dấu câu ngắt mệnh đề (sau NFKC: 、 。 , . ! ? ; : …) thành "|". Tên được khớp trên khoá NỐI LIỀN (bỏ "|":
+// "南，海", "西.沙" là tên — `sovereigntyHanMentions`); "|" chỉ báo cho NGOẠI LỆ của tên trần rằng chữ trước dấu câu không
+// phải "chữ đứng trước" của chữ sau nó — "我来自广州，南沙…" (州 không loại 南沙). Cụm yêu sách (中国…领土) khớp trên khoá này.
 const HAN_CLAUSE_BREAK = /[、。,.!?;:…]+/gu
 
 /**
- * Chỉ giữ chữ Hán, để "西 沙", "西-沙" hay "西<zero-width>沙" vẫn là "西沙" — nhưng dấu câu ngắt mệnh đề thành "|"
- * ("越南。沙坝" là "越南|沙坝", không phải "越南沙坝").
+ * Chỉ giữ chữ Hán và "|" thay dấu câu ngắt mệnh đề ("西 沙", "西-沙", "西<zero-width>沙" là "西沙"; "西，沙" là "西|沙").
+ * Dãy "|" gộp thành một: "中国，1，2，3，…领土" vẫn là "中国|领土" cho cụm yêu sách.
  */
 export function sovereigntyHanKey(folded: string): string {
   return folded.replace(HAN_CLAUSE_BREAK, '|').replace(/[^\p{Script=Han}|]/gu, '').replace(/\|{2,}/g, '|')
