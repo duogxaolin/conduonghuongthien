@@ -37,6 +37,10 @@
  *     nào … đang hoạt động tốt" empty state;
  *   - the skeleton's grey blocks carry `aria-hidden="true"` (the skeleton guard matched
  *     icons in other tabs, never these blocks).
+ *
+ * Changed in slice R7 (RED on 551651c7): a resolve answered 409 (another officer resolved the row
+ * first — server FINDING-R7-1) or 404 re-reads the queue and the worker count, keeping the error
+ * toast; it used to re-read nothing, leaving the stale row's buttons on screen.
  */
 import assert from 'node:assert/strict'
 import { describe, it, type TestContext } from 'node:test'

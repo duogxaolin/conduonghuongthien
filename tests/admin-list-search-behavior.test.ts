@@ -179,7 +179,11 @@ test('translatedLangs still lists each language once with its status (the expres
 
 // ─── Guard ───────────────────────────────────────────────────────────────────
 
-test('FINDING-R7-7 guard: no LIKE pattern under server/ is built from a raw template — every one goes through likeContains / containsPattern', () => {
+// One shape only: a "contains" pattern built as `%${…}%` inside `like(`. Prefix templates of
+// normalised slugs (`utils/slug.ts`) and the media module's constant / `sql` patterns are other
+// shapes this does not see — the census of every `like(` is in the R7 section of
+// docs/test-coverage-baseline-2026-10.md.
+test('FINDING-R7-7 guard: no like(column, `%${…}%`) — a "contains" pattern from a raw template — remains under server/', () => {
   const offenders: string[] = []
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
