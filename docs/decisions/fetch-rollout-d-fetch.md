@@ -442,6 +442,10 @@ lỗi tải lại) — bỏ, không tính là đột biến.
 - `backup.vue`: nhịp hỏi 4 s gọi `loadBackups()` mỗi nhịp; một lượt tải lâu hơn 4 s bị lượt của nhịp sau
   bỏ (mã lượt) — danh sách đứng yên tới khi một lượt kịp về hoặc nhịp dừng (sao lưu/khôi phục xong rồi tải
   lại). Tự hồi phục, chỉ chậm hiển thị; chặn gốc cần nhịp hỏi không tải danh sách khi lượt trước còn bay.
+- Đột biến của verifier, chạy lại sau các test này: V05 (`finally` không điều kiện ở kiểm tra AI), V06 (bỏ
+  xoá kết quả khi mở dịch vụ), V12 (`page.value = pg` trước `await` ở bộ chọn ảnh), V20 (uploader thôi tải,
+  chú thích còn trích `adminFetch(…)`), V20b (thôi tải, không chú thích) — **5/5 bị bắt**; V20/V20b làm đỏ
+  chính gate skeleton ("exempt but no longer fetches"), không chỉ test của guard.
 - Prompt dịch vụ AI: test thêm cho mã lượt ở `finally` (lượt A về muộn khi B đang kiểm tra — nút B vẫn
   "Đang test...", không mở đường cho lượt gọi AI thứ hai) và cho việc xoá kết quả ĐÃ XONG của A khi mở B.
 

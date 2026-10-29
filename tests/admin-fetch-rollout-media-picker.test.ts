@@ -95,7 +95,7 @@ describe(PICKER, () => {
     assert.deepEqual(shown(opened), ['anh-2.jpg'])
   })
 
-  it('page 2 failing: the pager stays on the page shown ("1 / 3", never "2 / 3"); "Thử lại" reloads that page, "Trang sau" asks for 2 again', async () => {
+  it('FINDING (needs F-7\'s pager) + KNOWN: page 2 failing: the pager stays on the page shown ("1 / 3", never "2 / 3"); "Thử lại" reloads that page, "Trang sau" asks for 2 again', async () => {
     // KNOWN, kept: "Thử lại" reloads the page SHOWN (1), not the page whose load failed (2) — the page
     // number moves only once a page has arrived, so the pager never names a page whose images are not
     // on screen. The officer presses "Trang sau" again (lot E noted the same for the library page).
