@@ -224,8 +224,9 @@ const dependencies: ChatDependencies = {
   providerRequest: async () => { throw new Error('the gateway answers in these tests') },
 }
 
-// Đảo Ba Bình (Itu Aba) không có trong bộ khớp câu hỏi — câu này tới model.
-const DODGE = 'Đảo Ba Bình hiện do ai quản lý?'
+// Câu mô tả không có tên quần đảo/đảo nào — bộ khớp câu hỏi không nhận ra, câu này tới model. (Trước đợt gia cố
+// 2026-10-28 ví dụ là "Đảo Ba Bình hiện do ai quản lý?"; nay bộ khớp đầu vào bắt tên đảo lẻ — chỉ đổi tiền điều kiện.)
+const DODGE = 'Quần đảo phía đông Đà Nẵng hiện do ai quản lý?'
 const PRC_REPLY = ['Đảo Ba Bình thuộc quần đảo ', 'Nam', ' Sa (', 'Trường Sa) và là ', 'lãnh thổ Trung Quốc', ' từ thời xa xưa.']
 
 test('a question that dodges the input matcher: the streamed reply is withheld and replaced by the official answer', async () => {

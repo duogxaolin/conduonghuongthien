@@ -65,14 +65,40 @@ const LATIN_PATTERNS = [
   / duong luoi bo /,
   / duong chin doan /,
   / chu quyen bien dao /,
+  / bien nam trung hoa /,
+  // Tên đảo/bãi lẻ tiếng Anh (dạng không trùng chữ thường: "Scarborough" trần là thị trấn Anh).
+  / woody island /,
+  / itu aba /,
+  / fiery cross /,
+  / (?:mischief|subi|johnson(?: south)?|gaven|hughes|cuarteron) reefs? /,
+  / scarborough (?:shoal|reef|island)s? /,
+  / taiping island /,
 ]
 
+// Hai từ của một tên nối bằng khoảng trắng/gạch (như trước), hoặc MỘT ký tự nối ("Biển_Đông", "Biển.Đông",
+// "Biển/Đông"), hoặc không gì ("BiểnĐông" — kể cả sau khi bỏ ký tự vô hình "Biển<U+200B>Đông"). Không phải dấu câu +
+// khoảng trắng: "biển. Đông Anh là quê tôi", "miền Tây. Sa Pa" là hai câu.
+const JOIN = '(?:[\\s\\-\\u2010-\\u2015]+|[_./·•∙])?'
+
 // Bỏ dấu thì "biển đông" trùng "biến động"/"biển động", "trường sa lấy" trùng "trường sa lầy": hai cụm này xét
-// trên chữ CÒN dấu, trừ "(bãi) biển đông người" và "trường sa thải/ngã/đà…".
+// trên chữ CÒN dấu, trừ "(bãi) biển đông người" và "trường sa thải/ngã/đà…". "Hoàng Xa" (gõ sai) bỏ dấu trùng
+// làng Hoàng Xá; "Biển Hoa Nam"/"Biển Nam Trung Hoa" bỏ dấu trùng "Biên Hòa, Nam…": cũng xét trên chữ còn dấu.
 const MARKED_PATTERNS = [
-  /(?<![\p{L}])(?<!bãi\s+)biển[\s-]+đông(?![\p{L}])(?!\s+(?:người|khách|nghịt|vui|đúc|kín|bắc|nam)(?![\p{L}]))/u,
-  /(?<![\p{L}])trường\s*sa(?![\p{L}])(?!\s+(?:thải|ngã|đọa|đoạ|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\p{L}]))/u,
+  new RegExp(`(?<![\\p{L}])(?<!bãi\\s+)biển${JOIN}đông(?![\\p{L}])(?!\\s+(?:người|khách|nghịt|vui|đúc|kín|bắc|nam)(?![\\p{L}]))`, 'u'),
+  new RegExp(`(?<![\\p{L}])trường${JOIN}sa(?![\\p{L}])(?!\\s+(?:thải|ngã|đọa|đoạ|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\\p{L}]))`, 'u'),
+  new RegExp(`(?<![\\p{L}])hoàng${JOIN}xa(?![\\p{L}])`, 'u'),
+  new RegExp(`(?<![\\p{L}])biển${JOIN}(?:nam${JOIN}trung${JOIN}hoa|hoa${JOIN}nam)(?![\\p{L}])`, 'u'),
+  // Tên đảo/bãi lẻ hay được hỏi riêng. Tên trùng chữ thường hay địa danh (Tư Nghĩa, Song Tử, Phú Lâm, Vành Khăn)
+  // chỉ tính sau "đá"/"bãi"/"đảo"; chỉ nối bằng khoảng trắng ("Tôi đá. Chữ thập đỏ…" không phải Đá Chữ Thập).
+  new RegExp([
+    '(?<![\\p{L}])(?:đá\\s+chữ\\s+thập',
+    '|(?:đá|bãi)\\s+(?:vành\\s+khăn|xu\\s+bi|gạc\\s+ma|ga\\s+ven|tư\\s+nghĩa|châu\\s+viên|ba\\s+đầu|tốc\\s+tan|thuyền\\s+chài|hoàng\\s+nham|cỏ\\s+mây)',
+    '|đảo\\s+(?:ba\\s+bình|phú\\s+lâm|song\\s+tử|sinh\\s+tồn|nam\\s+yết|thị\\s+tứ|sơn\\s+ca|tri\\s+tôn|quang\\s+hòa|hữu\\s+nhật|linh\\s+côn|duy\\s+mộng|bạch\\s+quy|loại\\s+ta|bến\\s+lạc|an\\s+bang))(?![\\p{L}])',
+  ].join(''), 'u'),
 ]
+// "Ba Bình là đảo của ai": "Ba Bình" trần cũng là tên người ("anh Ba Bình", "chú Ba Bình thuộc diện…") — chỉ tính
+// khi văn bản còn chữ đảo/biển ngoài chính tên đó.
+const BA_BINH = /(?<![\p{L}])ba\s+bình(?![\p{L}])/gu
 // Viết hoa là tên riêng: khớp bất kể từ đứng sau ("Trường Sa vào tay…", "Biển Đông người Trung Quốc gọi…",
 // "Tây Sa"/"Nam Sa"/"Tam Sa" — trừ khi "Sa" mở đầu một địa danh khác ("miền Tây Sa Đéc", "Việt Nam Sa Pa",
 // "TÂY SA PA"), đứng trước một tên riêng khác ("công ty Tam Sa Việt Nam" — trừ "Tây Sa Trung Quốc gọi…",
@@ -81,7 +107,7 @@ const MARKED_PATTERNS = [
 const SA_PLACES = ['pa', 'đéc', 'huỳnh', 'thầy', 'vỹ', 'vĩ', 'rài']
   .map(word => [...word].map(char => `[${char}${char.toUpperCase()}]`).join('')).join('|')
 const NOT_SA_PLACE = `(?!\\s+(?:(?:${SA_PLACES})(?![\\p{L}])|(?!Trung|Island|Archipelago)\\p{Lu}\\p{Ll}|(?:thải|ngã|đọa|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\\p{L}])))`
-const PROPER_NAMES = new RegExp(`(?<![\\p{L}])(?:(?:Trường|Truong|TRƯỜNG|TRUONG)\\s*(?:Sa|SA)|(?:Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)\\s*(?:Sa|SA)${NOT_SA_PLACE}|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)[\\s-]+(?:Đông|Dong|ĐÔNG|DONG)(?!\\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\\p{L}])))(?![\\p{L}])`, 'u')
+const PROPER_NAMES = new RegExp(`(?<![\\p{L}])(?:(?:Trường|Truong|TRƯỜNG|TRUONG)${JOIN}(?:Sa|SA)|(?:Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)${JOIN}(?:Sa|SA)${NOT_SA_PLACE}|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)${JOIN}(?:Đông|Dong|ĐÔNG|DONG)(?!\\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\\p{L}])))(?![\\p{L}])`, 'u')
 const OTHER_SCRIPTS = /パラセル|スプラトリー|파라셀|스프래틀리|남중국해/
 
 // Yêu sách không gọi tên quần đảo ("lãnh thổ không thể tách rời của Trung Quốc", "中国对这些岛屿拥有…主权").
@@ -142,6 +168,7 @@ function scriptMentions(folded: string, claims: boolean): boolean {
   if (PROPER_NAMES.test(folded) || OTHER_SCRIPTS.test(folded)) return true
   const lower = folded.toLowerCase()
   if (MARKED_PATTERNS.some(pattern => pattern.test(lower))) return true
+  if (lower.match(BA_BINH) && ISLAND_WORDS.test(lower.replace(BA_BINH, ' '))) return true
   const latin = latinKey(lower)
   return LATIN_PATTERNS.some(pattern => pattern.test(latin)) || (claims && LATIN_CLAIMS.some(pattern => pattern.test(latin)))
 }
