@@ -57,6 +57,16 @@ export function vietnamDayStartOf(at: Date): Date {
 }
 
 /**
+ * `YYYY-MM-DD` của ngày theo lịch VN chứa thời điểm `at` — không phụ thuộc `TZ` của
+ * tiến trình. Bốn đường xuất bài (HTML, ZIP, CSV, Google Docs) từng in "Ngày" bằng
+ * `getFullYear/getMonth/getDate` theo `TZ` tiến trình: tiến trình UTC (đường PM2) in bài
+ * đăng 03:00 ngày 29 (giờ VN) thành ngày 28 (FINDING-R6-17).
+ */
+export function vietnamDateString(at: Date): string {
+  return new Date(at.getTime() + VIETNAM_OFFSET_MS).toISOString().slice(0, 10)
+}
+
+/**
  * 00:00 giờ Việt Nam ngày 1 của tháng (theo lịch VN) chứa thời điểm `at`.
  *
  * `new Date(now.getFullYear(), now.getMonth(), 1)` từng được dùng cho "tháng này" của

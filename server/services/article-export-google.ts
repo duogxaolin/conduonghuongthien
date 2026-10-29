@@ -20,6 +20,7 @@ import { sheets as createSheetsClient } from '@googleapis/sheets'
 import { docs as createDocsClient } from '@googleapis/docs'
 import { htmlToDocs } from '../utils/html-to-docs'
 import { neutralizeSpreadsheetText } from '../utils/spreadsheet-cell'
+import { vietnamDateString } from '../utils/vn-day-range'
 import { loadOwnThumbnail } from './article-export-thumbnail'
 import { loadR2Config } from './media'
 
@@ -211,8 +212,7 @@ async function createArticleDoc(
   }
 
   // Build content requests: title (heading) + meta + thumbnail + content.
-  const date = article.publishedAt ?? article.createdAt ?? new Date()
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const dateStr = vietnamDateString(article.publishedAt ?? article.createdAt ?? new Date())
   const meta = [
     article.categoryName ? `Danh mục: ${article.categoryName}` : '',
     article.authorName ? `Tác giả: ${article.authorName}` : '',

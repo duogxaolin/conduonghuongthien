@@ -236,3 +236,18 @@ test('pure helpers', () => {
   assert.equal(classifyThumbnailSource('https://cdn.example-r2.dev/a.png', ''), null, 'no R2 configured → no remote source at all')
   assert.equal(classifyThumbnailSource('/uploads/a.svg', R2_PUBLIC, siteRoot), null, 'only raster image extensions')
 })
+
+test('the Doc\'s meta line carries the Vietnamese calendar day, in any process time zone (FINDING-R6-17)', async () => {
+  const before = process.env.TZ
+  try {
+    for (const zone of ['UTC', 'Asia/Ho_Chi_Minh']) {
+      process.env.TZ = zone
+      reset()
+      // 03:00 on 29 October in Hà Nội; a process on UTC used to print the 28th.
+      await exportArticlesToGoogle('rt', 'cid', 'cs', [{ ...article(9, null), publishedAt: new Date(Date.UTC(2026, 9, 28, 20)) }], '20261029')
+      assert.match(JSON.stringify(docRequests), /Ngày: 2026-10-29/, zone)
+    }
+  } finally {
+    process.env.TZ = before
+  }
+})

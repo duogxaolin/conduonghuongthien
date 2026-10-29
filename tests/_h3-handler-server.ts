@@ -19,7 +19,7 @@ import * as h3 from 'h3'
 const AUTO_IMPORTS = [
   'defineEventHandler', 'createError', 'readBody', 'getQuery', 'getRouterParam', 'getCookie', 'setCookie',
   'deleteCookie', 'setResponseHeader', 'getRequestHeader', 'getRequestURL', 'getRequestIP', 'getHeader',
-  'readMultipartFormData', 'setResponseHeaders', 'sendStream', 'setResponseStatus',
+  'readMultipartFormData', 'setResponseHeaders', 'sendStream', 'setResponseStatus', 'setHeader',
 ] as const
 
 /**
