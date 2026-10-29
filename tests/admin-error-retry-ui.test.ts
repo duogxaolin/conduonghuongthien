@@ -39,7 +39,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
-import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+import { fetchesData } from './_admin-fetch-call.ts'
 
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
@@ -390,8 +390,9 @@ test('no admin view reaches for a full page reload as its retry', async () => {
  * and tests/client-ip.test.ts, and for the same reason.
  */
 // Shared with tests/skeleton-loading-ui.test.ts — includes adminFetch/useAdminList,
-// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan.
-const FETCH_CALL = ADMIN_FETCH_CALL
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan;
+// decided on code with comments dropped (`fetchesData`, tests/_admin-fetch-call.ts).
+const FETCH_CALL = { test: fetchesData }
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const roots = ['pages/admin', 'components/admin']

@@ -11,20 +11,7 @@
 import { errorMessage } from '~/utils/errorMessage'
 import { formatTime, formatVnd, type ProviderOption, type PricingRow } from '~/utils/ai-service-labels'
 import AdminModal from '~/components/admin/AdminModal.vue'
-
-interface ServiceRow {
-  id: number
-  serviceKey: string
-  serviceName: string
-  provider: string
-  model: string | null
-  systemPrompt: string | null
-  defaultSystemPrompt: string
-  temperature: string
-  maxTokens: number
-  isActive: boolean
-  updatedAt: string | null
-}
+import type { AdminAiServiceRow as ServiceRow, AdminAiServicesResponse, AdminAiServiceUpdateResponse, AdminAiTestCallResponse } from '~/types/admin-ai-api'
 
 const props = defineProps<{
   providers: ProviderOption[]
@@ -66,7 +53,7 @@ async function loadServices() {
     // Chỉ fetch services — pricingRows do cha truyền qua prop (cha lấy từ
     // Providers tab), Services không tự fetch pricing để không gọi hai lần khi
     // hai tab cùng mở.
-    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ services: ServiceRow[] }>)('/api/admin/ai/services')
+    const data = await adminFetch<AdminAiServicesResponse>('/api/admin/ai/services')
     services.value = data.services
   } catch (err: unknown) {
     servicesError.value = errorMessage(err, 'Không thể tải danh sách dịch vụ.')
@@ -75,7 +62,16 @@ async function loadServices() {
   }
 }
 
+/**
+ * One ticket per "Kiểm tra kết nối" (a real AI call, seconds long): opening a service — after
+ * closing the one under test — retires it, so its late answer (or failure) is not shown under
+ * the next service, and that service's button is not left "Đang test..." meanwhile.
+ */
+let testRequest = 0
+
 function openServiceEdit(s: ServiceRow) {
+  testRequest++
+  testingService.value = false
   editingService.value = s
   serviceForm.value = {
     model: s.model ?? '',
@@ -98,7 +94,7 @@ async function saveService() {
   if (!editingService.value) return
   savingService.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/services/${editingService.value.id}`, {
+    await adminFetch<AdminAiServiceUpdateResponse>(`/api/admin/ai/services/${editingService.value.id}`, {
       method: 'PUT',
       body: {
         model: serviceForm.value.model || null,
@@ -125,18 +121,11 @@ async function testService() {
     serviceTestResult.value = 'Thất bại: Vui lòng chọn hoặc nhập mã model cần kiểm tra.'
     return
   }
+  const ticket = ++testRequest
   testingService.value = true
   serviceTestResult.value = null
   try {
-    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      model?: string
-      reply?: string
-      durationMs?: number
-      usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
-      costVnd?: number
-      error?: string
-    }>)(`/api/admin/ai/test-call`, {
+    const result = await adminFetch<AdminAiTestCallResponse>(`/api/admin/ai/test-call`, {
       method: 'POST',
       body: {
         provider: serviceForm.value.provider,
@@ -148,16 +137,19 @@ async function testService() {
         maxTokens: 150,
       },
     })
+    // Usage changed whichever dialog is open now: the parent refreshes it even for a retired call.
     emit('invalidate')
+    if (ticket !== testRequest) return
     if (result.ok) {
       serviceTestResult.value = `Thành công (${result.model} — ${result.durationMs}ms):\n"${result.reply}"\n[${result.usage?.totalTokens ?? 0} tokens ~ ${formatVnd(result.costVnd ?? 0)}]`
     } else {
       serviceTestResult.value = `Thất bại: ${result.error ?? 'Lỗi không rõ từ model'}`
     }
   } catch (err: unknown) {
+    if (ticket !== testRequest) return
     serviceTestResult.value = `Thất bại: ${errorMessage(err, 'Lỗi kết nối tới API')}`
   } finally {
-    testingService.value = false
+    if (ticket === testRequest) testingService.value = false
   }
 }
 

@@ -7,6 +7,9 @@
 > Lô E (cuối tệp): 21 ép kiểu nữa (123 → 102) ở 7 tệp, ba danh sách nữa dùng mã lượt, 16 lỗi
 > tìm thấy (24 test FINDING đỏ trên `88073004`), 25 đột biến, và số còn lại cho lô F; sau kiểm chứng
 > độc lập: "Dịch toàn bộ" GIỮ trần 100 bài/ngôn ngữ + hỏi xác nhận, 3 hồi quy sửa, 17 đột biến mới.
+> Lô F (cuối tệp): 28 ép kiểu nữa (102 → 74; phía quản trị 43 → 15), 9 lỗi (F-1…F-9: menu lưu đè khi
+> tải hỏng, `roleId || 2`, đua bộ lọc đơn đăng ký/backup/nhật ký AI, bộ chọn ảnh không có trang 2…),
+> hai danh sách nữa dùng mã lượt (backup không sang `useAdminList`), 24 đột biến, số còn lại cho lô G.
 
 Lô B bỏ 56 ép kiểu `$fetch` ở 7 tệp bằng `adminFetch<T>()` (kiểu suy từ handler qua
 `Payload<…>`, `app/types/handler-payload.ts`), nhưng **không tệp nào** chuyển sang
@@ -330,3 +333,135 @@ công khai trong 36 tệp. Phía quản trị: `ai/AiServicesTab.vue` (3) + `ai/
 Vẫn cần cẩn thận như lô D ghi: `AnalyticsLiveDashboard.client.vue` (3, `Function()`), `useBulkSelection.ts`
 (harness tên cố định), `layouts/admin.vue` (2, cần test mount layout trước). Danh sách đơn đăng ký
 (đua nghi ngờ) và `settings/backup.vue` vẫn chưa đụng.
+
+## Lô F (nhánh `wave3/fetch-casts-f`, base `551651c7`)
+
+Bỏ **28** ép kiểu (baseline 102 → 74, 63 → 46 tệp); **phía quản trị 43 → 15** (25 → 8 tệp — đếm
+`app/pages/admin/**`, `app/components/admin/**`, `layouts/admin.vue`, `useUpload.ts`, `useBulkSelection.ts`;
+cách đếm "44/26" của lô E khác một tệp, số ở đây đo bằng chính baseline). Kiểu suy từ handler qua `Payload<…>`:
+
+| Nhóm | Tệp | Ép kiểu | Kiểu |
+|---|---|---|---|
+| Menu | `content/navigation/{navbar,mobile}.vue` | 4 | `admin-navigation-api.ts` (mới) |
+| Vai trò | `users/roles.vue` | 2 | `admin-users-api.ts` (thêm `AdminRoleUpdateResponse`) |
+| AI | `ai/{AiServicesTab,AiModerationTab,AiDashboardTab,AiLogsTab}.vue`, `ai/index.vue` | 10 | `admin-ai-api.ts` (mới), `moderation.ts` (sẵn có) |
+| Thư viện video | `media-portal/{external,upload}.vue`, `MediaPortalForm.vue`, `ChunkedUploader.vue` | 5 | `admin-media-portal-api.ts` (thêm), `AdminMediaConfig` |
+| Ảnh | `MediaLibraryModal.vue`, `useUpload.ts`, `TinyMceEditor.vue` | 4 | `AdminMediaListResponse`, `AdminMediaUploadResult` (sẵn có) |
+| Khác | `chatbot/sessions/[id].vue`, `ContentTypePicker.vue` | 3 | `admin-chatbot-api.ts`, `admin-taxonomy-api.ts` (thêm) |
+
+Ba tồn đọng của D-FETCH: `roleId || 2` (lỗi thật, F-3), đua bộ lọc của danh sách đơn đăng ký (thật,
+F-4), `backup.vue` → `useAdminList` (**không chuyển**, mã lượt — bảng dưới; F-9).
+
+**Ba ngoại lệ kiểu có tên** (không suy được trọn từ handler):
+- `GET /api/admin/settings/navigation/{navbar,mobile}` trả `menu` = `JSON.parse(raw)` — `any`, mà
+  `Serialize` bỏ khoá `any`; `menu` lấy kiểu của chính câu trả lời PUT (cái PUT lưu là cái GET đọc lại).
+- `POST /api/admin/ai/test-call`: ba object literal với `ok: boolean` (không phân biệt được) và
+  `model`/`provider` vọng lại từ `readBody` (`any`) — kiểu là hợp các biến thể của handler, mọi trường
+  tuỳ chọn, cộng `model?: string`. Gốc: handler đọc body không kiểu (đợt máy chủ).
+- `GET /api/admin/ai/delify/status` giữ `DelifyStatusResponse` khai trong tab (bỏ ép kiểu, không suy
+  kiểu): các trường của router bị `plainFields` nhặt là "giá trị phẳng bất kỳ", kiểu thật là của router.
+
+Kiểu viết tay bị thay **lộ hai sai lệch không ai đọc** (không phải lỗi hiển thị): `MediaItem.provider`
+(`'local'|'r2'`, cột là `varchar`) và `uploadedBy` (`number`, danh sách trả USERNAME) — `app/types/media.ts`
+nới theo handler; hàng nhật ký gọi AI nói `costUsd/costVnd: string`, handler gửi số (template bọc
+`Number()` nên không lệch). `AdminFetchOptions.body` nhận `ArrayBuffer` (phần tệp của bộ tải từng phần).
+
+**Hai danh sách thêm vào bảng "không dùng `useAdminList`"** — mẫu mã lượt (`listRequest`):
+
+| Tệp | Vì sao không dùng |
+|---|---|
+| `settings/backup.vue` | `admin-fetch-rollout-settings.test.ts` lái `filterType`/`loadBackups`/`totalPages` qua setup và `admin-error-retry-ui` ghim `loadBackups` làm "thử lại"; danh sách còn được nhịp hỏi 4 s (khi sao lưu/khôi phục chạy) và mọi thao tác tải lại; tệp ở trần 528 dòng. |
+| `submissions/index.vue` | Không phân trang; `watch([statusFilter, viewedFilter])` tải lại; `$fetch` TRẦN kiểu suy từ route — giữ nguyên (`adminFetch` sẽ đổi kiểu suy được lấy kiểu không kiểm). |
+
+**Lỗi tìm thấy (test FINDING đỏ trên `551651c7`; bằng chứng `cdht-wave3-fetch-f-proof/base-red/`, chạy test
+mới trên tệp nguồn của base):**
+
+- **F-1 Menu chính + thanh mobile** (ghi đè cấu hình trang công khai): "Lưu cấu hình" nằm ở đầu trang,
+  ngoài chuỗi tải/lỗi, chỉ khoá khi đang lưu — tải hỏng thì trạng thái giữ menu MẶC ĐỊNH sau dải lỗi, bấm
+  Lưu PUT đè menu thật; lượt tải đầu còn bay thì trạng thái là `[]`, bấm Lưu PUT menu RỖNG. Nay cờ dương
+  `loaded` (false tới khi một lượt tải điền xong — không đặt lại về false ở đầu lượt tải: chỉ "thử lại"
+  của nhánh LỖI tải lại, lúc đó cờ đã false, dòng đặt lại không quan sát được nên bỏ; true kể cả `menu: null` = chưa lưu gì,
+  sửa mặc định là hợp lệ), hai lớp: nút `:disabled="saving || !loaded"` và `saveMenu` tự trả về. 8 test.
+- **F-2 Prompt dịch vụ AI**: "Kiểm tra kết nối" (lượt gọi AI thật, vài giây) của dịch vụ A, đóng hộp, mở B —
+  câu trả lời (hoặc lỗi) của A hiện dưới tên B, nút của B kẹt "Đang test...". Mã lượt; mở dịch vụ cấp mã mới.
+  `invalidate` vẫn phát (chi phí đã đổi dù lượt đã bỏ).
+- **F-3 Người dùng — `roleId || 2`** (lỗi thật, không cố ý): `users.role_id` nullable (`ON DELETE SET NULL`;
+  xoá vai trò kiểm "không còn ai" rồi xoá, ngoài một transaction), hộp sửa luôn gửi lại `roleId` — sửa
+  email của tài khoản KHÔNG có vai trò gán thầm vai trò 2 (`editor` trong seed; `assertUserManageable(null)`
+  qua vì tài khoản không vai trò không có quyền nào), hoặc 400 "Vai trò không tồn tại." nếu không có vai
+  trò 2. Nay hộp không chọn vai trò nào và PUT không gửi `roleId` tới khi cán bộ chọn (select `required`
+  của trình duyệt buộc chọn trước khi gửi form). Biểu mẫu TẠO vẫn mặc định `roleId: 2` — thấy được trên
+  select, máy chủ từ chối nếu không tồn tại; chưa đổi.
+- **F-4 Danh sách đơn đăng ký**: đổi ô trạng thái rồi "Chưa ai xem" trước khi lượt đầu về — câu trả lời cũ
+  hiện hàng của bộ lọc cũ; lỗi cũ đè hàng mới; lượt cũ xong trước tắt skeleton. Mã lượt try/catch/finally.
+- **F-5 Biểu mẫu video YouTube**: ô liên kết sửa được trong lúc YouTube trả lời; câu trả lời cho liên kết
+  đã bị thay GHI mã video cũ vào ô (và tiêu đề cũ vào ô tiêu đề trống) — bản nháp lưu nhầm video. Nay bỏ
+  câu trả lời/lỗi khi ô không còn giữ liên kết đã hỏi (bấm "Lấy thông tin" để hỏi liên kết mới).
+- **F-6 Đăng video YouTube** (`media-portal/external.vue` — KHÔNG phải `upload.vue`): đọc cấu hình hỏng luôn
+  hiện câu cố định (`catch {}`) — nay `errorMessage`. `upload.vue` chỉ đổi cách đọc 403 (`errorStatus()`);
+  nhánh lỗi KHÁC 403 của nó vẫn câu cố định "Không kiểm tra được khả năng tải video…" (có từ trước — KNOWN).
+- **F-7 Bộ chọn ảnh** (lộ ra nhờ kiểu suy từ handler): đọc `res.totalPages` mà `GET /api/admin/media` trả
+  `pagination.totalPages` — luôn 1, không bao giờ hiện nút trang; ảnh ngoài 20 ảnh mới nhất chỉ chọn được
+  bằng cách tìm tên tệp. Thêm mã lượt (tìm rồi tìm lại / bấm trang).
+- **F-8 Nhật ký gọi AI**: "Lọc" hai lần trước khi lượt đầu về — câu trả lời cũ đè (nút Lọc không khoá).
+  Mã lượt. (Tổng quan AI KHÔNG thêm: nút kỳ lọc đã `:disabled` khi đang tải — đua không với tới được.)
+- **F-9 Danh sách backup**: lọc "CSDL" rồi "File" — dump CSDL hiện dưới "File", lỗi cũ đè, skeleton tắt sớm.
+- Không lỗi: `users/roles.vue` (nút lưu nằm TRONG nhánh đã tải — đã khoá đúng), `AiModerationTab`,
+  `ai/index.vue`, `chatbot/sessions/[id].vue`, `upload.vue` (403 đọc qua `errorStatus()` thay ép kiểu lỗi).
+- **KNOWN, chưa sửa**: `ContentTypePicker` — đọc danh mục con hỏng hiện "Thể loại này chưa có danh mục
+  con." và được nhớ tới khi mở lại hộp (sửa cần một câu lỗi mới — quyết định văn bản); ghim bằng test KNOWN.
+
+`ChunkedUploader` trao thẳng `request: adminFetch` cho phiên tải. Hai gate quét thư mục (lỗi/thử lại và
+skeleton) nay quyết "view có tải" trên MÃ, không trên chữ: `fetchesData()` (`tests/_admin-fetch-call.ts`)
+bỏ chú thích (`<!-- -->`, khối, dòng — `//` sau `:` hay trong URL được giữ) rồi nhận `adminFetch` ở mọi vị trí
+mã (gọi hoặc trao giá trị). Trước đó một chú thích trích `adminFetch(…)` giữ view trong danh sách sau khi mã
+thôi tải (verifier V20), còn trao giá trị thì bị coi "không tải" — bản đầu lô F đã phải bọc một hàm chỉ để
+khớp regex (`tests/admin-fetch-call-guard.test.ts`). `ADMIN_FETCH_CALL` cũ giữ nguyên cho các test khác dùng
+nó. `admin-moderation-summary.test.ts` (harness tự biên dịch tab) cấp thêm `adminFetch` và
+đọc `query` thay `params` (cùng wire — test mới ghim `?status=pending&perPage=1`).
+
+Test: `tests/admin-fetch-rollout-{navigation,roles,ai-tabs,submissions-list,media-portal-forms,media-picker,backup-list,session-picker}.test.ts`.
+Mọi test không mang nhãn FINDING xanh trên tệp nguồn của base (chạy lại trên `git show 551651c7:…`).
+
+**Đột biến: 24 đột biến, 23 bị bắt ngay + 1 bị bắt sau khi bổ sung test (M19 → M19b)** (mỗi cái làm ≥ 1 test đỏ, hoàn nguyên bằng `git checkout HEAD --`; nhật ký
+`mutations/M*.{diff,txt}` trong thư mục proof): hai lớp khoá `loaded` × hai trang menu (4); `roleId || 2` và
+luôn gửi `roleId` (2); mã lượt try/catch/finally của đơn đăng ký (3), nhật ký AI (3), bộ chọn ảnh (finally) và
+backup (try) (2); `testRequest++` khi mở dịch vụ, mã lượt ở thành công/lỗi của kiểm tra kết nối, `invalidate`
+xuống dưới phép kiểm mã (4); hai phép kiểm liên kết cũ của "Lấy thông tin" (2); `pagination.totalPages` →
+1 (1); bỏ `errorMessage` ở `external.vue` và ở lưu dịch vụ AI (2); 403 → 401 ở `upload.vue` (1). Một đột biến
+SỐNG lần đầu (M19 — mã lượt nhánh thành công của nhật ký AI: test chỉ cho lượt cũ về TRƯỚC) → test thêm
+"lượt cũ thành công về sau", chạy lại M19b bị bắt. Trước vòng đột biến, theo rà soát: hai test đua (nhật ký
+AI, bộ chọn ảnh) có lượt tải đầu trả rỗng nên không phân biệt được "đang tải" với "tắt tải sớm" — đổi lượt
+đầu trả một hàng; dòng `loaded.value = false` đầu `loadMenu` không quan sát được (chỉ "thử lại" của nhánh
+lỗi tải lại) — bỏ, không tính là đột biến.
+
+**Tồn đọng ghi nhận sau kiểm chứng độc lập (không đổi hành vi):**
+- Bộ chọn ảnh: tải trang 2 hỏng thì trang vẫn "1 / N" (số trang chỉ đổi khi trang đã về, không bao giờ ghi
+  "2 / N" với ảnh trang 1) và "Thử lại" tải lại trang ĐANG HIỆN (1), không phải trang vừa hỏng — bấm "Trang
+  sau" lại; ghim bằng test (KNOWN, như thư viện ảnh lô E).
+- `backup.vue`: nhịp hỏi 4 s gọi `loadBackups()` mỗi nhịp; một lượt tải lâu hơn 4 s bị lượt của nhịp sau
+  bỏ (mã lượt) — danh sách đứng yên tới khi một lượt kịp về hoặc nhịp dừng (sao lưu/khôi phục xong rồi tải
+  lại). Tự hồi phục, chỉ chậm hiển thị; chặn gốc cần nhịp hỏi không tải danh sách khi lượt trước còn bay.
+- Đột biến của verifier, chạy lại sau các test này: V05 (`finally` không điều kiện ở kiểm tra AI), V06 (bỏ
+  xoá kết quả khi mở dịch vụ), V12 (`page.value = pg` trước `await` ở bộ chọn ảnh), V20 (uploader thôi tải,
+  chú thích còn trích `adminFetch(…)`), V20b (thôi tải, không chú thích) — **5/5 bị bắt**; V20/V20b làm đỏ
+  chính gate skeleton ("exempt but no longer fetches"), không chỉ test của guard.
+- Prompt dịch vụ AI: test thêm cho mã lượt ở `finally` (lượt A về muộn khi B đang kiểm tra — nút B vẫn
+  "Đang test...", không mở đường cho lượt gọi AI thứ hai) và cho việc xoá kết quả ĐÃ XONG của A khi mở B.
+
+**Chưa đo ở lô F:** E2E không chạy — `tests/e2e/admin-retry.spec.ts` (đi qua `submissions/index.vue`) và
+`tests/e2e/media-portal.spec.ts` (thư viện video) là hai spec chạm trang của lô này; coverage không đo (máy
+có Node 26, baseline đo trên Node 24 `cdkt-cov:node24`; baseline không nâng). Đổi cấu hình test có sẵn:
+`admin-moderation-summary.test.ts` (cấp `adminFetch`, đọc `query`). Còn nhỏ, chưa sửa: tải menu hỏng rồi
+bấm "Khôi phục mặc định" vẫn báo "nhớ bấm Lưu" trong khi Lưu đang khoá; mở lại CÙNG dịch vụ AI khi lượt
+kiểm tra còn bay thì nút bật lại — có thể gửi lượt gọi AI (tính phí) thứ hai song song (đổi lấy F-2).
+
+### Còn lại cho lô G
+
+74 ép kiểu trong 46 tệp: 2 có tên trong `adminFetch.ts`; **phía quản trị 15 trong 8 tệp**; còn lại phía
+công khai. Phía quản trị CHƯA làm ở lô F: `analytics.vue` (2), `ProfileActivityHistory.vue` (2),
+`articles/ArticleQuickViewModal.vue` (2), `articles/ScanThumbnailsModal.vue` (2) — làm được ngay; cần cẩn
+thận: `AnalyticsLiveDashboard.client.vue` (3, 1060 dòng, `Function()`), `useBulkSelection.ts` (1 — harness
+của `_admin-page-harness.ts` + 3 test biên dịch nó với danh sách tên cố định, phải thêm `adminFetch` vào cả
+bốn); ngoài phạm vi lô F theo phân công: `layouts/admin.vue` (2), `articles/ArticleAIPanel.vue` (1, phần
+tách của trình soạn bài).

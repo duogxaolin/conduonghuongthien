@@ -1,34 +1,11 @@
 <script setup lang="ts">
+import type { AdminChatSessionResponse } from '~/types/admin-chatbot-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
-interface TranscriptMessage {
-  id: number
-  role: 'user' | 'assistant'
-  content: string
-  kind: string | null
-  createdAt: string
-}
-
-interface RelatedSubmission {
-  id: number
-  fullName: string
-  phone: string
-  email: string | null
-  formTitle: string | null
-  createdAt: string | null
-}
-
-interface SessionDetail {
-  id: string
-  ip: string | null
-  userAgent: string | null
-  browser: string
-  detectedPhone: string | null
-  detectedName: string | null
-  messageCount: number
-  startedAt: string
-  lastMessageAt: string
-}
+// Derived from the handler (wave3 7.1 batch F) — they replace three hand-written interfaces.
+type TranscriptMessage = AdminChatSessionResponse['messages'][number]
+type RelatedSubmission = AdminChatSessionResponse['relatedSubmissions'][number]
+type SessionDetail = AdminChatSessionResponse['session']
 
 const route = useRoute()
 const sessionId = computed(() => String(route.params.id ?? ''))
@@ -44,13 +21,7 @@ const fetchSession = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      session: SessionDetail
-      messages: TranscriptMessage[]
-      relatedSubmissions: RelatedSubmission[]
-      truncated: boolean
-    }>)(`/api/admin/chatbot/sessions/${sessionId.value}`)
+    const res = await adminFetch<AdminChatSessionResponse>(`/api/admin/chatbot/sessions/${sessionId.value}`)
     if (res.ok) {
       session.value = res.session
       messages.value = res.messages

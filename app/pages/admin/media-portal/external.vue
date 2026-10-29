@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminMediaConfig } from '~/types/admin-api'
+import type { MediaExternalCreateResponse } from '~/types/admin-media-portal-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 const { hasPermission } = useAdminAuth()
 const canCreate = computed(() => hasPermission('media_portal', 'create'))
@@ -15,9 +16,9 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    if (canCreate.value) config.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaConfig>)('/api/admin/media-portal/config')
-  } catch {
-    loadError.value = 'Không tải được thông tin biểu mẫu.'
+    if (canCreate.value) config.value = await adminFetch<AdminMediaConfig>('/api/admin/media-portal/config')
+  } catch (err: unknown) {
+    loadError.value = errorMessage(err, 'Không tải được thông tin biểu mẫu.')
   } finally { loading.value = false }
 }
 async function save(fields: { title: string, description: string, categoryId: number | null, youtubeVideoId?: string }) {
@@ -25,11 +26,11 @@ async function save(fields: { title: string, description: string, categoryId: nu
   saving.value = true
   saveError.value = ''
   try {
-    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ id: number }>)(`/api/admin/media-portal/external`, { method: 'POST', body: fields, retry: 0 })
+    const result = await adminFetch<MediaExternalCreateResponse>(`/api/admin/media-portal/external`, { method: 'POST', body: fields, retry: 0 })
     created.value = true
     toast.success('Đã tạo bản nháp video.')
     if (hasPermission('media_portal', 'read')) await navigateTo(`/admin/media-portal/${result.id}`)
-  } catch (error) { saveError.value = errorMessage(error, 'Không tạo được video. Kiểm tra thông tin rồi thử lại.') }
+  } catch (err: unknown) { saveError.value = errorMessage(err, 'Không tạo được video. Kiểm tra thông tin rồi thử lại.') }
   finally { saving.value = false }
 }
 onMounted(load)
