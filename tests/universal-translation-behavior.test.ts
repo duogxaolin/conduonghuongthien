@@ -351,6 +351,54 @@ test('FINDING-R6-5: a block is translated only when every part came back — a f
   assert.deepEqual((blockData(two).translations as Json).en, { title: 'English: Một', subtitle: 'English: Hai' })
 })
 
+// ─── Blocks: the paths the verifier found untested (M2, L4) ──────────────────
+
+test('FINDING-R6-5 (M2): the HTML part failing twice leaves the block untranslated — its text fields are not stored alone', async () => {
+  const id = await block({ title: 'Tiêu đề', bodyHtml: '<p>Thân</p>' })
+  model({ html: () => '```html\n```' }) // an empty answer once the fence is stripped
+  await run({ targetLangs: ['en'], ...ONLY, includeBlocks: true })
+  assert.deepEqual([asked('fields').length, asked('html').length], [1, 2])
+  assert.equal(blockData(id).translations, undefined, 'no override holding the title alone')
+  assert.ok(h.logged.some(line => line.includes('universal_translate.block_html_failed')))
+})
+
+test('FINDING-R6-3 (M2): the HTML of a second attempt is sanitised like the first', async () => {
+  const id = await block({ bodyHtml: '<p>Nội dung</p>' })
+  let attempt = 0
+  model({ html: () => (attempt++ === 0 ? '' : '<p>Body</p><script>alert(1)</script><img src=x onerror="alert(2)">') })
+  await run({ targetLangs: ['en'], ...ONLY, includeBlocks: true })
+  assert.equal(attempt, 2)
+  assert.equal(((blockData(id).translations as Json).en as Json).bodyHtml, '<p>Body</p><img src="x">')
+})
+
+test('blocks: the override joins the block as it is when written — a change saved during the model call is kept', async () => {
+  const id = await block({ title: 'Giới thiệu' })
+  // Another officer saves a Chinese override and edits the subtitle while the model answers.
+  model({
+    fields: (prompt) => {
+      h.harness.sqlite.prepare('UPDATE page_blocks SET data = ? WHERE id = ?')
+        .run(JSON.stringify({ title: 'Giới thiệu', subtitle: 'Mới sửa', translations: { zh: { title: '介绍' } } }), id)
+      return goodAnswer(prompt)
+    },
+  })
+  await run({ targetLangs: ['en'], ...ONLY, includeBlocks: true })
+  assert.deepEqual(blockData(id), { title: 'Giới thiệu', subtitle: 'Mới sửa', translations: { zh: { title: '介绍' }, en: { title: 'English: Giới thiệu' } } })
+})
+
+test('blocks: a JSON answer with a trailing comma inside prose is still read', async () => {
+  const id = await block({ title: 'Tin tức' })
+  model({ fields: () => 'Kết quả: {"title": "News",}' })
+  await run({ targetLangs: ['en'], ...ONLY, includeBlocks: true })
+  assert.deepEqual((blockData(id).translations as Json).en, { title: 'News' })
+})
+
+test('blocks: an empty override (`translations.en = {}`) is not a translation — counted missing, then translated', async () => {
+  const id = await block({ title: 'Liên hệ', translations: { en: {} } })
+  assert.deepEqual((await coverage()).languages.map(lang => [lang.code, lang.blocksMissing]), [['en', 1], ['zh', 1]])
+  await run({ targetLangs: ['en'], ...ONLY, includeBlocks: true })
+  assert.deepEqual((blockData(id).translations as Json).en, { title: 'English: Liên hệ' })
+})
+
 // ─── The job: articles ───────────────────────────────────────────────────────
 
 test('articles: each published article without a translation in the language, newest first, up to the limit, to the worker', async () => {
@@ -376,6 +424,13 @@ test('articles: each published article without a translation in the language, ne
   // 0 is "every published article"; publishImmediately publishes the translation.
   assert.deepEqual(workerCalls.map(call => [call[0], call[3]]), [[a4, 'published'], [a3, 'published'], [a2, 'published'], [a1, 'published']])
   assert.deepEqual([state.processedItems, state.totalItems, state.percent], [4, 4, 100])
+})
+
+test('articles: a request without articlesLimit takes the 20 newest published articles, not the whole archive', async () => {
+  const ids: number[] = []
+  for (let n = 0; n < 22; n += 1) ids.push(await article('published'))
+  await run({ targetLangs: ['en'], ...ONLY, includeArticles: true })
+  assert.deepEqual(workerCalls.map(call => call[0]), ids.slice(2).reverse())
 })
 
 test('FINDING-R6-6: only active languages other than vi are translated into, whatever the request names', async () => {
