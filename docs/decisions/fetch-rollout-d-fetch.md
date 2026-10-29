@@ -620,9 +620,8 @@ tương đương (ở trên), test đổi tên cho nói đúng điều nó ghim;
 
 ### Cổng cuối
 
-- Unit đầy đủ (`TZ=Asia/Ho_Chi_Minh npm test`, Node 26, ở `37143e80`): 7710 test, 7656 pass, **0 fail**, 54 skip
-  (integration không có MySQL); sau đó chỉ đổi `[slug].vue` + test → các bộ liên quan chạy lại xanh (xem lần chạy
-  cuối trong báo cáo lô). Typecheck sạch (`f4677181`). `npm run docs:facts`: khối CLAUDE.md khớp. ESLint các tệp đổi:
+- Unit đầy đủ (`TZ=Asia/Ho_Chi_Minh npm test`, Node 26, ở `af338018`): 7711 test, 7657 pass, **0 fail**, 54 skip
+  (integration không có MySQL). Typecheck sạch (`f4677181`, mã ứng dụng không đổi sau đó). `npm run docs:facts`: khối CLAUDE.md khớp. ESLint các tệp đổi:
   0 lỗi, 0 cảnh báo. Ratchet 42/42.
 - **Bản build production** (`npm run build`, `f4677181`) và **E2E công khai 55/55** trên Chromium (`public-detail-status`,
   `public-language-cache`, `public-list-pagination`, `public-single-h1`, `public-ssr-status`; cổng 3123, CSDL `cdkt_e2e_*`
