@@ -38,7 +38,26 @@ import {
   type MountedAdminPage, type NetCall, type Responder,
 } from './_admin-page-harness.ts'
 
-afterEach(unmountAll)
+/**
+ * `window`/`document` are handed to the page as auto-imports AND installed as globals (the same
+ * objects): after the wave3 split the TinyMCE bridge and the unsaved-changes guard live in
+ * `app/composables/useArticleEditor*.ts`, imported for real, which see the global. Set-up only —
+ * no assertion below changed.
+ */
+const restoreGlobals: Array<() => void> = []
+function replaceGlobal(name: string, value: unknown): void {
+  const target = globalThis as Record<string, unknown>
+  const before = Object.getOwnPropertyDescriptor(target, name)
+  Object.defineProperty(target, name, { value, configurable: true, writable: true })
+  restoreGlobals.push(() => {
+    if (before) Object.defineProperty(target, name, before)
+    else delete target[name]
+  })
+}
+afterEach(() => {
+  unmountAll()
+  for (const restore of restoreGlobals.splice(0).reverse()) restore()
+})
 
 type Route = (call: NetCall) => Response | Error | undefined
 
@@ -108,6 +127,10 @@ const navigations: unknown[] = []
 
 async function openEditor(id: string, responder = server()): Promise<Opened> {
   const tiny = fakeTinymce()
+  const win = { tinymce: tiny.tinymce, addEventListener: () => {}, removeEventListener: () => {} }
+  const doc = { createElement: () => ({}), head: { appendChild: () => {} }, getElementById: () => null }
+  replaceGlobal('window', win)
+  replaceGlobal('document', doc)
   const opened = await mountAdminPage(PAGE, responder, {
     route: { params: { id } },
     modules: {
@@ -117,8 +140,8 @@ async function openEditor(id: string, responder = server()): Promise<Opened> {
       '~/components/admin/articles/ArticleAIPanel.vue': { default: Stub },
     },
     auto: {
-      window: { tinymce: tiny.tinymce, addEventListener: () => {}, removeEventListener: () => {} },
-      document: { createElement: () => ({}), head: { appendChild: () => {} }, getElementById: () => null },
+      window: win,
+      document: doc,
       onBeforeRouteLeave: () => {},
       navigateTo: (to: unknown) => { navigations.push(to) },
       useImagePicker: () => ({ openPicker: () => {} }),
