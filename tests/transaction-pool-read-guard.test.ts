@@ -32,16 +32,38 @@ function walk(dir: string): string[] {
   })
 }
 
-/** Body of the callback that follows `.transaction(async (` at `start`, by brace counting. */
-function callbackBody(source: string, start: number): { body: string, offset: number } {
-  const open = source.indexOf('{', start)
+/** Index of the `)` closing the `(` at `open`, by parenthesis counting. */
+function closingParen(source: string, open: number): number {
   let depth = 0
   for (let i = open; i < source.length; i += 1) {
-    if (source[i] === '{') depth += 1
-    else if (source[i] === '}' && --depth === 0) return { body: source.slice(open + 1, i), offset: open + 1 }
+    if (source[i] === '(') depth += 1
+    else if (source[i] === ')' && --depth === 0) return i
   }
-  return { body: '', offset: open }
+  return source.length
 }
+
+/** The arguments between the `(` at `open` and its `)`, split at top-level commas. */
+function callArguments(source: string, open: number): string[] {
+  const inner = source.slice(open + 1, closingParen(source, open))
+  const args: string[] = []
+  let depth = 0
+  let current = ''
+  for (const char of inner) {
+    if ('([{'.includes(char)) depth += 1
+    if (')]}'.includes(char)) depth -= 1
+    if (char === ',' && depth === 0) { args.push(current); current = '' } else current += char
+  }
+  if (current.trim()) args.push(current)
+  return args
+}
+
+/**
+ * Where a transaction callback starts: `.transaction(` with any arrow form — `async (tx) =>`,
+ * `async tx =>` (verifier V3-23: the parenthesised form alone let the other through), a block or
+ * an expression body. The whole call argument is scanned, by parenthesis counting.
+ */
+const TRANSACTION_ENTRY = /\.transaction\((?=\s*async\s*(?:\(|\w+\s*=>))/
+const transactionEntries = (source: string) => source.matchAll(new RegExp(TRANSACTION_ENTRY.source, 'g'))
 
 /** Helpers whose last parameter is an executor and whose default is the pool. */
 const POOL_FALLBACK_HELPERS = ['countReaderCommentImpact', 'deleteReaderComments']
@@ -49,15 +71,20 @@ const POOL_FALLBACK_HELPERS = ['countReaderCommentImpact', 'deleteReaderComments
 function violations(files: Array<{ path: string, source: string }>): string[] {
   const out: string[] = []
   for (const { path, source } of files) {
-    for (const match of source.matchAll(/\.transaction\(\s*async\s*\(/g)) {
-      const { body, offset } = callbackBody(source, match.index!)
+    for (const match of transactionEntries(source)) {
+      const open = match.index! + match[0].length - 1
+      const offset = open + 1
+      const body = source.slice(offset, closingParen(source, open))
       const lineOf = (index: number) => source.slice(0, offset + index).split('\n').length
       for (const hit of body.matchAll(/\bgetDb\(\)|\bgetPool\(\)|\bpool\.(?:query|execute)\(/g)) {
         out.push(`${path}:${lineOf(hit.index!)} ${hit[0]} inside a transaction`)
       }
       for (const name of POOL_FALLBACK_HELPERS) {
-        for (const call of body.matchAll(new RegExp(`\\b${name}\\(([^()]*)\\)`, 'g'))) {
-          if (call[1]!.split(',').length < 2) out.push(`${path}:${lineOf(call.index!)} ${name}(${call[1]}) without the transaction — it reads on the pool`)
+        // Arguments by parenthesis counting: `countReaderCommentImpact(Number(id))` has one
+        // (verifier V3-24 — a `[^()]*` pattern skipped every call with a nested parenthesis).
+        for (const call of body.matchAll(new RegExp(`\\b${name}\\(`, 'g'))) {
+          const args = callArguments(body, call.index! + call[0].length - 1)
+          if (args.length < 2) out.push(`${path}:${lineOf(call.index!)} ${name}(${args.join(',')}) without the transaction — it reads on the pool`)
         }
       }
     }
@@ -68,12 +95,14 @@ function violations(files: Array<{ path: string, source: string }>): string[] {
 const SERVER = walk('server').map(path => ({ path, source: readFileSync(path, 'utf8') }))
 
 test('no transaction callback under server/ reaches for the pool, directly or through a pool-default helper', () => {
-  assert.ok(SERVER.some(({ source }) => /\.transaction\(\s*async\s*\(/.test(source)), 'the scan found no transaction at all')
+  assert.ok(SERVER.some(({ source }) => TRANSACTION_ENTRY.test(source)), 'the scan found no transaction at all')
+  // The reader moderation transactions, under their deadlock retry, are among those scanned.
+  assert.ok(SERVER.some(({ path, source }) => path.endsWith('services/readers.ts') && /withDeadlockRetry\(\(\) => db\.transaction\(async/.test(source)))
   assert.deepEqual(violations(SERVER), [])
 })
 
 test('the scan bites: each injected shape is reported', () => {
-  const inject = (body: string) => violations([{ path: 'x.ts', source: `await db.transaction(async (tx) => {\n  ${body}\n})` }])
+  const inject = (body: string, opening = 'await db.transaction(async (tx) => {') => violations([{ path: 'x.ts', source: `${opening}\n  ${body}\n})` }])
   assert.equal(inject('const [row] = await getDb().select().from(t)').length, 1)
   assert.equal(inject('await getPool().query("select 1")').length, 1)
   assert.equal(inject('await pool.execute(sql)').length, 1)
@@ -81,4 +110,12 @@ test('the scan bites: each injected shape is reported', () => {
   assert.equal(inject('const impact = await deleteReaderComments(id)').length, 1)
   assert.deepEqual(inject('const impact = await countReaderCommentImpact(params.readerId, tx)'), [])
   assert.deepEqual(inject('const [row] = await tx.select().from(t)'), [])
+  // V3-23: an arrow without parentheses; a transaction under the deadlock retry.
+  assert.equal(inject('const [row] = await getDb().select().from(t)', 'await db.transaction(async tx => {').length, 1)
+  assert.equal(inject('await countReaderCommentImpact(id)', 'await withDeadlockRetry(() => db.transaction(async (tx) => {').length, 1)
+  // V3-24: a nested parenthesis in the arguments, with and without the transaction.
+  assert.equal(inject('const impact = await countReaderCommentImpact(Number(id))').length, 1)
+  assert.deepEqual(inject('const impact = await countReaderCommentImpact(Number(id), tx)'), [])
+  // An expression-bodied callback.
+  assert.equal(violations([{ path: 'x.ts', source: 'await db.transaction(async tx => countReaderCommentImpact(Number(id)))' }]).length, 1)
 })

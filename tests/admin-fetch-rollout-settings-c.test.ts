@@ -408,6 +408,14 @@ describe('pages/admin/settings/ip-bans.vue', () => {
     await settle()
     assert.deepEqual(opened.calls.slice(before).map(wire), ['POST /api/admin/ip-bans', 'GET /api/admin/ip-bans'])
     assert.match(alertText(opened.page), new RegExp(sentence))
+
+    // Any other refusal leaves the list as it is (verifier V3-18).
+    const invalid = await mountAdminPage(PAGE, server({ 'POST /api/admin/ip-bans': () => h3Error(400, 'Địa chỉ IP không hợp lệ.') }))
+    await input(byPlaceholder(invalid, '203.0.113.45 hoặc 203.0.113.0/24'), '999.1.1.1')
+    const from = invalid.calls.length
+    await fire(findAll(invalid.page.root, el => el.tag === 'form')[0]!, 'submit')
+    await settle()
+    assert.deepEqual(invalid.calls.slice(from).map(wire), ['POST /api/admin/ip-bans'])
   })
 
   it('empty list / load failure / retry / dropped connection / `ok: false`', async () => {
