@@ -8,9 +8,11 @@ import type { AdminUser } from './useAdminAuth'
 /**
  * The admin sidebar menu (`app/layouts/admin.vue`, split in wave3 D-SPLIT): which entries the
  * signed-in account sees, the quick search over them, and the "Hệ thống & Cài đặt" accordion
- * that opens itself when the route enters one of its pages. Moved verbatim from the layout;
- * the account (`user`, `hasPermission` of `useAdminAuth`) and the route are the layout's own,
- * handed in.
+ * that opens itself when the route enters one of its pages. The menu definition is moved
+ * verbatim from the layout; the filter and "route inside the group" now live in
+ * `utils/admin-layout-menu.ts`. The account (`user`, `hasPermission` of `useAdminAuth`) and the
+ * route are the layout's own, handed in — `user` as the live ref, not its value (the MFA
+ * policy entry follows a change of account).
  *
  * Hiding an entry is navigation, not security: every page and endpoint behind it checks the
  * same permission on the server (`requireResourcePermission`).

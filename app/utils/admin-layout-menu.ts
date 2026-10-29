@@ -4,7 +4,9 @@
  * count and the top-bar page title. No state, no Nuxt runtime — which entries an account
  * sees is `useAdminLayoutMenu` (app/composables/useAdminLayoutMenu.ts).
  *
- * Moved verbatim from the layout; tests/admin-layout.test.ts mounts the layout over them.
+ * Moved from the layout with the same bodies; what reached for the route or the menu ref now
+ * takes it as a parameter (`routePath`, `menuGroups`, `searchQuery`, `routeName`).
+ * tests/admin-layout.test.ts mounts the layout over them.
  */
 
 /** Một mục menu admin — label + icon + path. */
@@ -26,7 +28,7 @@ export function normalizeVi(str: string): string {
   return str
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd')
     .replace(/Đ/g, 'd')
     .trim()
