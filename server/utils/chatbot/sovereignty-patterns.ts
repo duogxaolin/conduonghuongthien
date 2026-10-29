@@ -28,20 +28,30 @@ const HAN_PATTERNS = [
 ]
 
 // ─── Mặt nạ loại trừ: cụm CÓ DẤU, trước mọi phép khớp ─────────────────────────────────────────────────────────────
-// "sa" + động từ/địa danh có dấu: "sa thải/ngã/sút/cơ/đọa/lầy/sầm/lưới/chân/bàn/mạc", "sa đà" (trừ "Đà Nẵng"),
-// "sa vào lưới/tù/vòng…", "Sa Pa/Đéc/Huỳnh/Thầy/Rài/Vĩ". "sa" thành "sah" nên không còn là "Sa" của tên quần đảo.
-// Không dấu ("hoang sa thai") thì không loại: chữ không dấu không phân biệt được, cổng thiên về bắt.
-const SA_FOLLOWERS = 'thải|ngã|sút|cơ|đọa|đoạ|lầy|sầm|lưới|chân|bàn|mạc|pa|đéc|huỳnh|thầy|rài|vĩ|vỹ|đà(?!\\s+nẵng)'
-  + '|vào\\s+(?:lưới|tù|vòng|cạm|con\\s+đường|nghiện|tệ\\s+nạn|ma\\s+túy|ma\\s+tuý|cờ\\s+bạc|rượu|lô\\s+đề)'
-const SA_MASK = new RegExp(`(?<![\\p{L}])(s)(a)(?=\\s+(?:${SA_FOLLOWERS})(?![\\p{L}]))`, 'giu')
-// "sà/sá/sả/sã/sạ" (có thanh) không phải "Sa": "Bé Hoàng sà vào lòng mẹ".
-const TONED_SA = /(?<![\p{L}])(s[àáảãạ])(?![\p{L}])/giu
+// "sa" thành "sah" nên không còn là "Sa" của tên quần đảo. Chỉ "sa" VIẾT THƯỜNG + cụm động từ đủ chữ: "Giám đốc Hoàng
+// sa thải tôi", "Trường sa sút điểm thi", "trường sa đà vào game"; "Sa" viết hoa là tên riêng ("Hoàng Sa cơ quan nào quản
+// lý?", "Hoàng Sa vào tù"). Âm tiết cũng là đầu từ ghép thì cần từ sau ("sa cơ lỡ vận", "sa chân vào", "sa lưới pháp
+// luật") hoặc loại từ ghép ("ngã ba", "sút giảm", "lầy lội", "sầm uất"). Không dấu ("hoang sa thai") thì không loại.
+const SA_VERB_FOLLOWERS = [
+  'ngã(?!\\s+(?:ba|tư|năm|sáu|bảy|rẽ)(?![\\p{L}]))', 'sút(?!\\s+(?:giảm|kém)(?![\\p{L}]))', '(?:đọa|đoạ)(?!\\s+đày)',
+  'lầy(?!\\s+lội)', 'sầm(?!\\s+uất)', 'đà\\s+vào', 'cơ\\s+(?:lỡ|thất)', 'chân\\s+(?:vào|lỡ|xuống)', 'lưới\\s+(?:pháp|công|cảnh)',
+  'vào\\s+(?:lưới|tù|vòng|cạm|con|nghiện|tệ|ma|cờ|rượu|lô)',
+].join('|')
+const SA_VERB = new RegExp(`(?<![\\p{L}])(s)(a)(?=\\s+(?:${SA_VERB_FOLLOWERS})(?![\\p{L}]))`, 'gu')
+// "sa thải" là động từ cố định, cả khi gõ hoa "Sa" ("Nam Sa thải tôi rồi", "Ông Hoàng. Sa thải tôi…") — mọi hoa/thường.
+const SA_FIRE = /(?<![\p{L}])([Ss])([aA])(?=\s+(?:thải|THẢI)(?![\p{L}]))/gu
+// Địa danh "Sa Pa/Đéc/Huỳnh/Thầy/Rài/Vĩ": "trường Sa Pa", "Trường Sa Đéc tuyển giáo viên", "TÂY SA PA". "Pa"/"Đéc" không
+// có nghĩa thường nên mọi hoa/thường ("Việt Nam Sa pa"); "Huỳnh/Thầy/Rài/Vĩ" có ("Trường Sa thầy giáo nào dạy", "Hoàng Sa
+// vĩ độ") nên chỉ khi viết hoa.
+const SA_PLACE = /(?<![\p{L}])([Ss])([aA])(?=\s+(?:[Pp][Aa]|[Đđ][ÉéEe][Cc]|Huỳnh|HUỲNH|Thầy|THẦY|Rài|RÀI|Vĩ|VĨ|Vỹ|VỸ)(?![\p{L}])(?!-\p{L}))/gu
+// "sà/sá/sả/sã/sạ" viết thường (có thanh) không phải "Sa": "Bé Hoàng sà vào lòng mẹ". "Hoàng Sá" viết hoa vẫn là tên.
+const TONED_SA = /(?<![\p{L}])(s[àáảãạ])(?![\p{L}])/gu
 // "biển Đông Á/Hồ/Hưng" VIẾT HOA là tấm biển, địa danh: "Đông Á Bank", "Bãi biển Đông Hồ". Viết thường "biển đông á,"
 // (trợ từ miền Nam) vẫn bắt.
 const DONG_PLACE = /(?<=[Bb]iển\s+)Đông(?=\s+(?:Á|Hồ|Hưng)(?![\p{L}]))/gu
 
 function maskBenign(folded: string): string {
-  return folded.replace(SA_MASK, '$1$2h').replace(TONED_SA, '$1h').replace(DONG_PLACE, 'Đôngh')
+  return folded.replace(SA_VERB, '$1$2h').replace(SA_FIRE, '$1$2h').replace(SA_PLACE, '$1$2h').replace(TONED_SA, '$1h').replace(DONG_PLACE, 'Đôngh')
 }
 
 // ─── Khoá Latin bỏ dấu: mặc định bắt ──────────────────────────────────────────────────────────────────────────────
@@ -230,10 +240,12 @@ export function sovereigntySettledClaim(folded: string, han: string): boolean {
   return LATIN_CLAIMS.some(pattern => pattern.test(latin))
 }
 
-// Các loại trừ theo từ đứng sau ("sa thải", "biển Đông Bắc", "gác ma túy", "hoàng xa nhà", "ba bình là đảo nợ"):
-// giữa luồng, từ đó có thể chưa tới, nên một cụm ở cuối chỉ tính khi khớp với MỌI từ thử. Mỗi họ loại trừ một từ thử
-// ("biển Đông Á/Hồ/Hưng" cùng họ với "biển Đông Bắc": "Bắc" đủ). Thêm loại trừ theo từ đứng sau → thêm từ thử.
-const NEXT_WORD_PROBES = ['thải', 'Bắc', 'túy', 'nhà', 'nợ']
+// Các loại trừ theo từ đứng sau ("sa thải", "biển Đông Bắc", "gác ma túy", "hoàng xa nhà", "ba bình là đảo nợ"), kể cả
+// cụm hai từ ("sa đà | vào", "sa cơ | lỡ", "sa lưới | pháp", "sa vào | tù"): giữa luồng, từ đó có thể chưa tới, nên một
+// cụm ở cuối chỉ tính khi khớp với MỌI từ thử. Mỗi họ loại trừ một từ thử ("thải" che "sa/Sa |" ở mọi hoa/thường nên đủ
+// cho "Sa | Pa"; "biển Đông Á/Hồ/Hưng" cùng họ với "biển Đông Bắc"). Từ thử không được tự tạo ra một khớp. Thêm loại trừ
+// theo từ đứng sau → thêm từ thử.
+const NEXT_WORD_PROBES = ['thải', 'vào', 'lỡ', 'pháp', 'tù', 'Bắc', 'túy', 'nhà', 'nợ']
 
 /** Phần ngoài chữ Hán, chỉ tới ranh giới từ cuối: từ cuối có thể chưa viết xong ("Hoàng Sa|ng"). */
 export function sovereigntySettledScriptMentions(folded: string, claims: boolean, cutAtStart: boolean): boolean {

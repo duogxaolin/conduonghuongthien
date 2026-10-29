@@ -103,8 +103,24 @@ test('accented everyday phrases still exclude a name + verb: "Giám đốc Hoàn
   for (const text of ['Giám đốc Hoàng sa thải tôi vì tôi có tiền án', 'Anh Hoàng sa ngã vào ma túy lần nữa', 'Bé Hoàng sà vào lòng mẹ khi tôi ra trại',
     'Em Hoàng, sa cơ lỡ vận nên mới vướng vòng lao lý', 'Thằng Hoàng sa đà vào cờ bạc, giờ muốn làm lại', 'Nhà trường sa thải tôi vì có tiền án',
     'Anh Trường, Sa Pa có việc làm hướng dẫn viên không?', 'Bé nhà tôi học lớp 3 Trường Sa Pa', 'Trường Sa Đéc tuyển giáo viên hợp đồng',
-    'Anh ấy sa vào tù vì cờ bạc']) {
+    'Anh ấy sa vào tù vì cờ bạc', 'Anh Hoàng sa chân vào con đường nghiện ngập', 'Hoàng sa lưới pháp luật năm 2019',
+    'Hoàng sa đọa vì rượu chè', 'Nam Sa thải tôi rồi', 'Ông Hoàng. Sa thải tôi là trái luật']) {
     assert.equal(mentionsSovereignty(text), false, text)
+  }
+})
+
+test('the accented mask is exact: a capitalised "Sa", or a verb syllable that starts another word, is still the archipelago', () => {
+  // Mặt nạ từng che "sa" + một âm tiết ở mọi hoa/thường: "Hoàng Sa cơ quan…", "Hoàng Sa bàn giao…" lọt cả ba lớp.
+  for (const text of ['Hoàng Sa cơ quan nào quản lý?', 'Trường Sa cơ sở hạ tầng ra sao', 'Hoàng Sa bàn giao cho Trung Quốc năm nào?',
+    'Hoàng Sa vĩ độ bao nhiêu?', 'hoàng sa chân lý thuộc về ai', 'Trường Sa thầy giáo nào dạy', 'hoàng sa mạc định của ai',
+    'Hoàng Sa lưới điện ra sao', 'Hoàng Sa đà điểu', 'Hoàng Sa sút giảm dân số?', 'Trường Sa ngã ba đường biển', 'hoàng sa đọa đày',
+    'Trường Sa lầy lội không', 'Hoàng Sa sầm uất không', 'Hoàng Sá của ai', 'Hoàng Sa vào tù', 'Hoàng Sa vào lưới ai',
+    'Hoàng Sa pa-ra-xen là gì', 'Hoàng Sa ngã về tay ai',
+    // Viết thường: mặt nạ có áp, nhưng âm tiết là đầu từ ghép, không phải cụm động từ.
+    'hoàng sa cơ quan nào quản lý', 'trường sa ngã ba đường biển', 'hoàng sa sút giảm dân số', 'hoàng sa lưới điện ra sao',
+    'hoàng sa đà điểu', 'trường sa lầy lội không', 'hoàng sa sầm uất không', 'hoàng sa bàn giao năm nào', 'trường sa thầy giáo nào dạy',
+    'hoàng sa vĩ độ bao nhiêu', 'hoàng sa chân thật thuộc về ai']) {
+    assert.equal(mentionsSovereignty(text), true, text)
   }
 })
 
@@ -137,6 +153,18 @@ test('"biển đông á" (southern particle) is caught; the capitalised sign "bi
   // Đầu ra: "biển Đông |Á" cắt giữa hai chunk — từ thử "Bắc" giữ chữ lại tới khi biết từ sau (không cần từ thử riêng).
   for (const reply of ['Anh có thể tới chi nhánh có tấm biển Đông Á Bank ở đầu ngõ để hỏi về khoản vay ưu đãi.',
     'Tấm biển Đông Hưng Mart ở cổng chợ là nơi nhận hồ sơ học nghề.']) {
+    const chunkings = [...[1, 2, 3, 4, 5].map(size => split(reply, size))]
+    for (let cut = 1; cut < reply.length; cut += 1) chunkings.push([reply.slice(0, cut), reply.slice(cut)])
+    for (const chunks of chunkings) assert.deepEqual(await stream(chunks, 'Tôi muốn vay vốn'), { tripped: false, shown: reply }, chunks.map(chunk => chunk.length).join('+'))
+  }
+})
+
+test('output: a two-word exclusion split between chunks ("sa đà | vào", "sa cơ | lỡ", "sa lưới | pháp", "sa vào | tù", "Sa | Pa") waits for the next word', async () => {
+  for (const reply of [
+    'Anh Hoàng sa đà vào cờ bạc một thời gian, nay anh có thể đăng ký học nghề miễn phí tại trung tâm dịch vụ việc làm.',
+    'Em Hoàng sa cơ lỡ vận rồi sa lưới pháp luật, sau khi chấp hành xong án anh vẫn được vay vốn ưu đãi.',
+    'Anh Hoàng sa vào tù vì rượu chè, nay đã chấp hành xong án; con anh học trường Sa Pa vẫn được miễn học phí.',
+  ]) {
     const chunkings = [...[1, 2, 3, 4, 5].map(size => split(reply, size))]
     for (let cut = 1; cut < reply.length; cut += 1) chunkings.push([reply.slice(0, cut), reply.slice(cut)])
     for (const chunks of chunkings) assert.deepEqual(await stream(chunks, 'Tôi muốn vay vốn'), { tripped: false, shown: reply }, chunks.map(chunk => chunk.length).join('+'))
