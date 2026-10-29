@@ -17,8 +17,11 @@ const { uploading, uploadBatch, tasks, uploadingBatch } = useUpload()
 
 // Only the latest load writes (ticket, docs/decisions/fetch-rollout-d-fetch.md); a page past the end
 // (last tile deleted) asks ONCE for the last page, not "Chưa có file nào" (tests/admin-fetch-rollout-media-library.test.ts).
-let listRequest = 0
+// Leaving the page retires the load in flight and refuses new ones (a late answer asks for nothing more).
+let listRequest = 0, disposed = false
+onBeforeUnmount(() => { disposed = true; listRequest++ })
 const fetchMedia = async (page = 1, mayAskForLastPage = true): Promise<void> => {
+  if (disposed) return
   const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
@@ -153,10 +156,7 @@ async function fetchStorageSize() {
   }
 }
 
-onMounted(() => {
-  fetchMedia()
-  void fetchStorageSize()
-})
+onMounted(() => { void fetchMedia(); void fetchStorageSize() })
 </script>
 
 <template>

@@ -28,10 +28,7 @@
 import type { AdminMediaItem, AdminMediaPage, AdminMediaConfig } from '~/types/admin-api'
 import type { MediaDeleteResponse } from '~/types/admin-media-portal-api'
 
-definePageMeta({
-  layout: 'admin',
-  middleware: 'admin-auth'
-})
+definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const route = useRoute()
 const router = useRouter()
@@ -43,16 +40,11 @@ type MediaStatus = 'draft' | 'published' | 'archived'
 type MediaSource = 'upload' | 'youtube'
 
 const STATUS_OPTIONS: { value: '' | MediaStatus; label: string }[] = [
-  { value: '',          label: 'Tất cả trạng thái' },
-  { value: 'draft',     label: 'Bản nháp' },
-  { value: 'published', label: 'Đã xuất bản' },
-  { value: 'archived',   label: 'Đã lưu trữ' },
+  { value: '', label: 'Tất cả trạng thái' }, { value: 'draft', label: 'Bản nháp' }, { value: 'published', label: 'Đã xuất bản' }, { value: 'archived', label: 'Đã lưu trữ' },
 ]
 
 const SOURCE_OPTIONS: { value: '' | MediaSource; label: string }[] = [
-  { value: '',       label: 'Tất cả nguồn' },
-  { value: 'upload', label: 'Tải lên' },
-  { value: 'youtube',label: 'YouTube' },
+  { value: '', label: 'Tất cả nguồn' }, { value: 'upload', label: 'Tải lên' }, { value: 'youtube', label: 'YouTube' },
 ]
 
 const items = ref<AdminMediaItem[]>([])
@@ -81,15 +73,22 @@ const canDelete = hasPermission('media_portal', 'delete')
 
 // Only the latest load writes (ticket, docs/decisions/fetch-rollout-d-fetch.md); a page past the end (the service does
 // not clamp) asks ONCE for the last page — the pager lives in the data branch (tests/admin-fetch-rollout-media-portal-list.test.ts).
+// Leaving the page retires every load in flight and refuses new ones: a late answer neither rewrites the URL
+// (of whatever page the officer went to) nor asks again.
 let listRequest = 0
+let disposed = false
+onBeforeUnmount(() => { disposed = true; listRequest++ })
 async function fetchMedia(mayAskForLastPage = true) {
+  if (disposed) return
   const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
   try {
-    const res = await adminFetch<AdminMediaPage>(`/api/admin/media-portal`, { query: {
+    const listing = adminFetch<AdminMediaPage>(`/api/admin/media-portal`, { query: {
       page: currentPage.value, limit: PER_PAGE, search: search.value || undefined, status: statusFilter.value || undefined, source: sourceFilter.value || undefined,
     } })
+    if (!mediaConfig.value && !configReading) void fetchConfig()
+    const res = await listing
     if (ticket !== listRequest) return
     const last = Math.max(1, Math.ceil(res.total / PER_PAGE))
     if (mayAskForLastPage && res.page > last && res.total > 0) {
@@ -108,9 +107,12 @@ async function fetchMedia(mayAskForLastPage = true) {
   }
 }
 
-/** The upload button's capabilities: read once, on its own — failing hides the button, never the list. */
+// The upload button's capabilities, on their own (failing hides the button, never the list); read again
+// with the next load while missing, so a passing failure is not kept until F5.
+let configReading = false
 async function fetchConfig() {
-  try { mediaConfig.value = await adminFetch<AdminMediaConfig>(`/api/admin/media-portal/config`) } catch { mediaConfig.value = null }
+  configReading = true
+  try { mediaConfig.value = await adminFetch<AdminMediaConfig>(`/api/admin/media-portal/config`) } catch { mediaConfig.value = null } finally { configReading = false }
 }
 
 /** Filters AND page live in the URL (shareable, survive F5) — the pager used to skip this. */
@@ -173,7 +175,7 @@ function fmtDuration(secs: number | null): string {
 
 const fmtDate = (v: string | null): string => (v ? new Date(v).toLocaleDateString('vi-VN') : '—')
 
-onMounted(() => { void fetchMedia(); void fetchConfig() })
+onMounted(() => { void fetchMedia() })
 </script>
 
 <template>

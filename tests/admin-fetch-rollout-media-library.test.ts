@@ -145,6 +145,7 @@ describe(PAGE, () => {
     const opened = await open(server({ [`GET ${URL}`]: () => (fail ? h3Error(403, 'Bạn không có quyền xem thư viện.') : page(TILES)) }))
     assert.match(alertText(opened.page), /Bạn không có quyền xem thư viện\.\s*Thử lại/)
     assert.doesNotMatch(alertText(opened.page), OFETCH_LINE)
+    assert.equal(opened.lastToast('error'), 'Bạn không có quyền xem thư viện.')
     assert.ok(!screen(opened).includes(EMPTY))
     fail = false
     await click(button(opened, 'Thử lại'))
@@ -203,6 +204,40 @@ describe(PAGE, () => {
     await settle()
     assert.equal(alertText(opened.page), '', 'a superseded request\'s failure replaced the tiles')
     assert.deepEqual(names(opened), ['anh-hoi-nghi.jpg', 'bao-cao.pdf'])
+  })
+
+  it('the page past the end asks for the LAST page that exists (page 3 of 3), not page 1', async () => {
+    let total = 73
+    const opened = await open(server({
+      [`GET ${URL}`]: (call) => {
+        const asked = Number(call.url.searchParams.get('page'))
+        const last = Math.ceil(total / 24)
+        const items = asked > last ? [] : asked === last ? [tile(5, 'anh-hoi-nghi.jpg')] : TILES
+        return page(items, asked, total)
+      },
+      [`DELETE ${URL}/5`]: () => { total = 72; return json({ ok: true }) },
+    }))
+    await fire(pager(opened)!, 'update:page', 4)
+    await settle()
+    const before = opened.calls.length
+    await click(findAll(tileOf(opened, 'anh-hoi-nghi.jpg'), el => el.tag === 'button' && textOf(el) === 'Xóa')[0]!)
+    await settle()
+    assert.deepEqual(listCalls(opened, before), [`GET ${URL}?page=4&search&type&perPage=24`, `GET ${URL}?page=3&search&type&perPage=24`])
+    assert.equal(pager(opened)!.props.page, 3)
+  })
+
+  it('verify E: a page answering past the end after the page was left asks for nothing more', async () => {
+    const held: NetCall[] = []
+    let holding = false
+    const opened = await open(server({ [`GET ${URL}`]: call => (holding ? (held.push(call), undefined) : page(TILES, Number(call.url.searchParams.get('page')), 80)) }))
+    holding = true
+    void fire(pager(opened)!, 'update:page', 4)
+    await settle()
+    const before = opened.calls.length
+    opened.page.unmount()
+    held[0]!.respond(page([], 4, 50))
+    await settle()
+    assert.deepEqual(opened.calls.slice(before).map(wire), [], 'a request was sent after the page was left')
   })
 
   it('FINDING: deleting the last tile of the last page shows the page before it, not "Chưa có file nào" (RED on base)', async () => {

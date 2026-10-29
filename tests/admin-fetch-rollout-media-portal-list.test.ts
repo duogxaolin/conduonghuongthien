@@ -183,6 +183,40 @@ describe(PAGE, () => {
     assert.deepEqual(titles(opened), ['Phóng sự hoàn lương'])
   })
 
+  it('a filter picked on page 2 asks for page 1 and drops the page from the URL', async () => {
+    const opened = await open(server({ [`GET ${URL}`]: call => listAnswer(VIDEOS, Number(call.url.searchParams.get('page')), 45) }))
+    await click(nextPage(opened))
+    await settle()
+    const before = opened.calls.length
+    await pick(opened, 'Lọc nguồn video', 'upload')
+    assert.deepEqual(listCalls(opened, before), [`GET ${URL}?page=1&limit=20&source=upload`])
+    assert.deepEqual(opened.pushes.at(-1), { query: { source: 'upload' } })
+  })
+
+  it('verify E: a list answer landing after the page was left neither rewrites the URL nor asks again', async () => {
+    const held: NetCall[] = []
+    const opened = await open(server({ [`GET ${URL}`]: call => { held.push(call); return undefined } }), { page: '9' })
+    const pushes = opened.pushes.length
+    const before = opened.calls.length
+    opened.page.unmount()
+    // Page 9 of 2: the "last page that exists" path — which used to call router.replace and fetch again.
+    held[0]!.respond(listAnswer([], 9, 25))
+    await settle()
+    assert.deepEqual(opened.pushes.slice(pushes), [], 'router.replace ran after the page was left (the URL of the NEXT page)')
+    assert.deepEqual(opened.calls.slice(before).map(wire), [], 'a request was sent after the page was left')
+  })
+
+  it('verify E: the upload config failing at mount is read again with the next load, so "Tải video lên" comes back', async () => {
+    let configCalls = 0
+    const opened = await open(server({ [`GET ${URL}/config`]: () => (++configCalls === 1 ? h3Error(400, 'Tạm thời lỗi.') : json(CONFIG)) }))
+    assert.doesNotMatch(screen(opened), /Tải video lên/)
+    await pick(opened, 'Lọc trạng thái xuất bản', 'draft')
+    assert.equal(configCalls, 2, 'the config is not read again while it is missing')
+    assert.match(screen(opened), /Tải video lên/)
+    await pick(opened, 'Lọc trạng thái xuất bản', 'published')
+    assert.equal(configCalls, 2, 'a config already read is read again on every load')
+  })
+
   it('FINDING: deleting the last video of the last page shows the page before it, not "Chưa có video nào" (RED on base)', async () => {
     let total = 21
     const opened = await open(server({
