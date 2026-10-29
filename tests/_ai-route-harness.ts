@@ -52,8 +52,8 @@ export async function startAiRouteHarness(options: {
   const network = {
     dns: new Map<string, Array<{ address: string, family: 4 | 6 }>>(),
     sent: [] as Sent[],
-    /** The answer for the next request; a function picks it per request. */
-    reply: ((): Reply => ({ status: 200, headers: { 'content-type': 'application/json' }, body: openAiReply('ok') })) as (sent: Sent) => Reply,
+    /** The answer for the next request; a function picks it per request (a promise: answered when it settles). */
+    reply: ((): Reply => ({ status: 200, headers: { 'content-type': 'application/json' }, body: openAiReply('ok') })) as (sent: Sent) => Reply | Promise<Reply>,
   }
   async function fakeResolve(hostname: string) {
     return network.dns.get(hostname) ?? []
@@ -76,12 +76,15 @@ export async function startAiRouteHarness(options: {
           body: written.join(''),
         }
         network.sent.push(sent)
-        const reply = network.reply(sent)
-        const response = Object.assign(new PassThrough(), { statusCode: reply.status, headers: reply.headers })
-        queueMicrotask(() => {
+        const answer = network.reply(sent)
+        const respond = (reply: Reply) => {
+          const response = Object.assign(new PassThrough(), { statusCode: reply.status, headers: reply.headers })
           onResponse(response as never)
           response.end(Buffer.from(reply.body))
-        })
+        }
+        // A promise holds the provider until the suite resolves it (a job caught mid-run).
+        if (answer instanceof Promise) void answer.then(respond)
+        else queueMicrotask(() => respond(answer))
       },
     })
     return req
