@@ -5,6 +5,7 @@ import { articleReadScope } from '../../../services/articles'
 import { eq, like, desc, sql, inArray, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'
 import { csvCell } from '../../../utils/spreadsheet-cell'
+import { vietnamDateString } from '../../../utils/vn-day-range'
 
 /**
  * Xuất danh sách bài viết về file CSV (có BOM UTF-8 để Excel mở đúng tiếng Việt).
@@ -114,11 +115,8 @@ export default defineEventHandler(async (event) => {
   const rows: string[] = [header.map(csvCell).join(',')]
 
   for (const a of items) {
-    const fmtDate = (d: Date | null | string) => {
-      if (!d) return ''
-      const dt = d instanceof Date ? d : new Date(d)
-      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
-    }
+    // Ngày theo lịch VN, không theo TZ tiến trình (FINDING-R6-17); ngày hỏng → '' (trong vietnamDateString).
+    const fmtDate = (d: Date | null | string) => (d ? vietnamDateString(d instanceof Date ? d : new Date(d)) : '')
     rows.push([
       a.id,
       a.title ?? '',
@@ -135,7 +133,7 @@ export default defineEventHandler(async (event) => {
 
   // BOM UTF-8 ở đầu file để Excel nhận mã hoá, không hỏi charset.
   const csv = '﻿' + rows.join('\r\n')
-  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const stamp = vietnamDateString(new Date()).replace(/-/g, '')
 
   setHeader(event, 'Content-Type', 'text/csv; charset=utf-8')
   setHeader(event, 'Content-Disposition', `attachment; filename="bai-viet-${stamp}.csv"`)

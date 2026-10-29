@@ -1,9 +1,10 @@
 import { getDb } from '../../../../utils/db'
 import { articles, users, categories } from '../../../../db/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../utils/permissions'
-import { articleResource } from '../../../../services/articles'
+import { articleActionScope, articleResource } from '../../../../services/articles'
 import { htmlToMarkdown } from '../../../../utils/html-to-markdown'
+import { vietnamDateString } from '../../../../utils/vn-day-range'
 
 /**
  * Xuất 1 bài viết về file HTML (standalone) hoặc Markdown.
@@ -26,6 +27,8 @@ export default defineEventHandler(async (event) => {
   const format = String(getQuery(event).format || 'html').toLowerCase() === 'md' ? 'md' : 'html'
 
   const db = getDb()
+  // Scoped to the types the caller may read: an id of another type is the same 404 as
+  // a missing one. Looked up by id alone it was 404 vs 403 — which ids exist (FINDING-R6-16).
   const [row] = await db
     .select({
       id: articles.id,
@@ -44,7 +47,7 @@ export default defineEventHandler(async (event) => {
     .from(articles)
     .leftJoin(users, eq(articles.authorId, users.id))
     .leftJoin(categories, eq(articles.categoryId, categories.id))
-    .where(eq(articles.id, id))
+    .where(and(eq(articles.id, id), articleActionScope(adminUser, 'read')))
     .limit(1)
 
   if (!row) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
@@ -52,8 +55,7 @@ export default defineEventHandler(async (event) => {
   requireResourcePermission(adminUser, articleResource(row.type), 'read')
 
   const safeSlug = row.slug.replace(/[^\w-]/g, '_') || `bai-viet-${row.id}`
-  const date = (row.publishedAt ?? row.createdAt ?? new Date())
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const dateStr = vietnamDateString(row.publishedAt ?? row.createdAt ?? new Date())
 
   const authorLine = row.authorName ? `Tác giả: ${row.authorName}` : ''
   const meta = [

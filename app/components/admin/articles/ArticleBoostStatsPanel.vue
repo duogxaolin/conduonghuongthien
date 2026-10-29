@@ -13,7 +13,7 @@
  */
 import type { AdminArticleRow, AdminArticleStats, AdminArticleBoost, AdminArticleStatsResult } from '~/types/admin-api'
 import type { ArticleBoostCancelResponse, ArticleBoostResponse } from '~/types/admin-articles-api'
-import { errorMessage } from '~/utils/errorMessage'
+import { errorMessage, errorStatus } from '~/utils/errorMessage'
 
 const props = defineProps<{
   article: AdminArticleRow | null
@@ -167,6 +167,10 @@ const cancelBoost = async () => {
     await loadStats()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không huỷ được lượt tăng dần.'))
+    // 409: lượt vừa chạy xong trước khi kịp huỷ; 404: không còn lượt nào chạy. Cả hai nghĩa
+    // là "đang chạy" + nút huỷ trên màn hình đã cũ — đọc lại số liệu (verifier L3).
+    const status = errorStatus(err)
+    if (status === 409 || status === 404) await loadStats()
   }
 }
 </script>

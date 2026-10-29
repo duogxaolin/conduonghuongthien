@@ -188,6 +188,38 @@ describe('components/admin/articles/ArticleBoostStatsPanel.vue (through the arti
     assert.equal(opened.lastToast('success'), 'Đã huỷ lượt tăng dần.')
   })
 
+  for (const [status, sentence] of [
+    [409, 'Lượt tăng dần vừa kết thúc trước khi kịp huỷ. Vui lòng tải lại để xem số đã giao.'],
+    [404, 'Bài viết không có lượt tăng dần nào đang chạy.'],
+  ] as const) {
+    it(`a cancel refused with ${status} keeps the server's sentence and re-reads the stats — the finished job no longer shows as running`, async () => {
+      // The scheduler finished the job before the cancel landed: the next read has no running boost.
+      let finished = false
+      const opened = await open(server({
+        'GET /api/admin/articles/3/stats': () => STATS(3, 900, finished ? 600 : 300, finished ? null : RUNNING),
+        'DELETE /api/admin/articles/3/boost': () => { finished = true; return h3Error(status, sentence) },
+      }))
+      await openStats(opened, 3)
+      const before = opened.calls.length
+      await click(panelButton(opened, 'Huỷ lượt tăng'))
+      await settle()
+      // Before (verifier L3): no re-read — "Đang cộng dần" and its cancel button stayed on screen.
+      assert.deepEqual(statsCalls(opened, before), ['DELETE /api/admin/articles/3/boost', 'GET /api/admin/articles/3/stats'])
+      assert.equal(opened.lastToast('error'), sentence)
+      assert.doesNotMatch(panelText(opened), /Đang cộng dần/)
+    })
+  }
+
+  it('a cancel that fails for another reason keeps the panel as it was (no re-read)', async () => {
+    const opened = await open(server({ 'DELETE /api/admin/articles/3/boost': () => h3Error(500, 'Lỗi máy chủ.') }))
+    await openStats(opened, 3)
+    const before = opened.calls.length
+    await click(panelButton(opened, 'Huỷ lượt tăng'))
+    await settle()
+    assert.deepEqual(statsCalls(opened, before), ['DELETE /api/admin/articles/3/boost'])
+    assert.match(panelText(opened), /Đang cộng dần/)
+  })
+
   it('a failed stats load is an alert with the server\'s sentence and "Thử lại", which reads them again', async () => {
     let fail = true
     const opened = await open(server({ 'GET /api/admin/articles/4/stats': () => (fail ? h3Error(404, 'Bài viết không tồn tại.') : STATS(4, 40, 0)) }))

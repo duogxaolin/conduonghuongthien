@@ -8,11 +8,12 @@
  * home rather than one copy per endpoint.
  */
 
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 
 import { getDb } from '../utils/db'
 import { activityLogs, readerIpBans, users } from '../db/schema'
 import { validateBanValue } from '../utils/ip-ban'
+import { readAffectedRows } from '../utils/affected-rows'
 
 /** Every ban value, for the two enforcement points (sign-in start, comment write). */
 export async function loadIpBanValues(): Promise<string[]> {
@@ -29,7 +30,8 @@ export type IpBanRow = {
   createdByName: string | null
 }
 
-/** Newest first — the officer reviewing bans cares about recent decisions. The
+/** Newest first — the officer reviewing bans cares about recent decisions (the page
+ *  does not re-sort; this used to order by id ascending — FINDING-R6-11). The
  *  leftJoin keeps a row readable after the account that made it is deleted. */
 export async function listIpBans(): Promise<IpBanRow[]> {
   return getDb()
@@ -43,7 +45,7 @@ export async function listIpBans(): Promise<IpBanRow[]> {
     })
     .from(readerIpBans)
     .leftJoin(users, eq(readerIpBans.createdBy, users.id))
-    .orderBy(readerIpBans.id)
+    .orderBy(desc(readerIpBans.id))
 }
 
 export type CreateIpBanResult =
@@ -64,12 +66,16 @@ export async function createIpBan(params: { value: string, reason: string | null
   // Ban and audit row commit together. A ban in force that no log accounts for is
   // a restriction nobody can explain or lift with confidence later.
   let id = 0
-  await db.transaction(async (tx) => {
-    const inserted = await tx.insert(readerIpBans).values({
+  const created = await db.transaction(async (tx) => {
+    // IGNORE: when another request inserted the same value since the check above, the
+    // unique key skips this row — a 409 like the check's, not ER_DUP_ENTRY's 500
+    // (FINDING-R6-10 family, verifier M1).
+    const inserted = await tx.insert(readerIpBans).ignore().values({
       value:     verdict.value,
       reason:    params.reason?.trim() || null,
       createdBy: params.actorId,
     })
+    if (readAffectedRows(inserted) !== 1) return false
     // Array-with-header, not the header itself — see the note in
     // server/api/auth/google/callback.get.ts. Reading it the other way yielded 0,
     // and the audit row below carried `resourceId: 0`: a ban in force whose log
@@ -85,7 +91,15 @@ export async function createIpBan(params: { value: string, reason: string | null
       resourceId: id,
       meta:       { value: verdict.value, reason: params.reason?.trim() || null },
     })
+    return true
   })
+  if (!created) {
+    // IGNORE also turns other errors (a foreign key on created_by) into 0 rows: only a row
+    // holding this value now makes it a duplicate — anything else is not "already listed".
+    const [listed] = await db.select({ id: readerIpBans.id }).from(readerIpBans).where(eq(readerIpBans.value, verdict.value)).limit(1)
+    if (!listed) throw new Error('createIpBan: the insert was ignored, and not for a duplicate value')
+    return { ok: false, statusCode: 409, message: 'Địa chỉ này đã có trong danh sách chặn.' }
+  }
 
   return { ok: true, id }
 }
@@ -102,9 +116,14 @@ export async function deleteIpBan(params: { id: number, actorId: number }): Prom
 
   // One transaction: the value is the only remaining evidence of what was lifted
   // once the row is gone, so losing the log to a failed second statement would
-  // leave an address silently un-banned with nothing saying so.
-  await db.transaction(async (tx) => {
-    await tx.delete(readerIpBans).where(eq(readerIpBans.id, params.id))
+  // leave an address silently un-banned with nothing saying so. The DELETE is counted:
+  // when another request lifted the ban since the read above, this one removed nothing
+  // and records nothing — the same 404 as a ban that was never there (FINDING-R6-10
+  // family, verifier M1: two lifts at once wrote two "delete" rows for one lift).
+  const lifted = await db.transaction(async (tx) => {
+    const removed = readAffectedRows(await tx.delete(readerIpBans).where(eq(readerIpBans.id, params.id)))
+    if (removed === 0) return false
+    if (removed !== 1) throw new Error('deleteIpBan: the driver did not report the affected rows')
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
       action:     'delete',
@@ -112,7 +131,9 @@ export async function deleteIpBan(params: { id: number, actorId: number }): Prom
       resourceId: params.id,
       meta:       { value: row.value },
     })
+    return true
   })
+  if (!lifted) return { ok: false, statusCode: 404, message: 'Không tìm thấy mục chặn này.' }
 
   return { ok: true }
 }

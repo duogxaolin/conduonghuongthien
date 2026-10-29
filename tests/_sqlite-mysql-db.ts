@@ -19,9 +19,19 @@
  *    rolls every write in it back. While it is open, a write issued on the POOL
  *    object (`db.insert` instead of `tx.insert`) throws — on MySQL that write would
  *    run on another connection and commit on its own, which is the bug the
- *    "audit in the same transaction" rule exists to stop.
+ *    "audit in the same transaction" rule exists to stop. A pool READ while it is open
+ *    throws too: on MySQL it takes a second connection, and with every connection of
+ *    the pool held by an open transaction each waits for one more forever (verifier H2).
+ *    What SQLite cannot show — one connection, no row locks, no pool — is lock ORDER and
+ *    contention; `txStatements` pins the order, MySQL replays show the rest.
  *  - `failNext(pattern)` makes the next statement whose SQL matches throw, so a
- *    suite can break the audit insert and watch what survives.
+ *    suite can break the audit insert and watch what survives. `beforeNext(pattern,
+ *    fn)` runs `fn` just before the next matching statement — another writer landing
+ *    between a read and the write that relies on it. `txStatements` lists what ran
+ *    while a transaction was open; `transactionsBegun` counts BEGINs (a deadlock retry
+ *    must begin a new transaction per attempt).
+ *  - `like ?` gets `escape '\'`, MySQL's default escape character (SQLite has none),
+ *    so a pattern escaped for MySQL matches the same rows here.
  *  - JSON columns are decoded on read, as mysql2 does. Statements outside the
  *    dialect subset SQLite shares with MySQL (`now()`, `IF()`) throw rather than
  *    being approximated.
@@ -29,7 +39,8 @@
  *    SQLite twin: a single-row insert whose update list is only `` `col` = ? ``
  *    becomes `ON CONFLICT DO UPDATE SET` with the same assignments. With no unique
  *    index besides the primary key (see above), both fire on the same conflict.
- *    Anything else in the update list (`values(col)`, `col + 1`, `IF(...)`) throws.
+ *    `` `col` = `table`.`col` + ? `` is accepted too: in both dialects the column names
+ *    the row already stored. Anything else (`values(col)`, `IF(...)`) throws.
  */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { getTableColumns, getTableName, SQL } from 'drizzle-orm'
@@ -42,7 +53,9 @@ type ProxyResult = { rows: unknown[] }
 function sqliteLiteral(value: unknown): string {
   if (typeof value === 'boolean') return value ? '1' : '0'
   if (typeof value === 'number') return String(value)
-  return `'${String(value).replace(/'/g, "''")}'`
+  // A JSON column's default (`.default([])`) is stored as its JSON text, as Drizzle sends it.
+  const text = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
+  return `'${text.replace(/'/g, "''")}'`
 }
 
 function toSqliteParam(value: unknown): SQLInputValue {
@@ -91,14 +104,19 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     sqlite.exec(`CREATE TABLE \`${getTableName(table)}\` (${definitions.join(', ')})`)
   }
 
-  const failures: RegExp[] = []
+  const failures: Array<{ pattern: RegExp, fields?: Record<string, unknown> }> = []
+  const hooks: Array<{ pattern: RegExp, run: () => void }> = []
   const statements: string[] = []
+  const txStatements: string[] = []
+  const txParams: unknown[][] = []
 
   function maybeFail(sql: string) {
-    const index = failures.findIndex(pattern => pattern.test(sql))
+    const hook = hooks.findIndex(each => each.pattern.test(sql))
+    if (hook >= 0) hooks.splice(hook, 1)[0]!.run()
+    const index = failures.findIndex(each => each.pattern.test(sql))
     if (index >= 0) {
-      failures.splice(index, 1)
-      throw new Error(`injected failure: ${sql}`)
+      const [{ fields }] = failures.splice(index, 1) as [{ fields?: Record<string, unknown> }]
+      throw Object.assign(new Error(`injected failure: ${sql}`), fields)
     }
   }
 
@@ -111,7 +129,7 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     const at = sql.indexOf(marker)
     if (at === -1) return null
     const assignments = splitTopLevel(sql.slice(at + marker.length))
-    if (!assignments.length || !assignments.every(assignment => /^`[^`]+` = \?$/.test(assignment))) {
+    if (!assignments.length || !assignments.every(assignment => /^`([^`]+)` = (?:\?|`[^`]+`\.`\1` \+ \?)$/.test(assignment))) {
       throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
     }
     return { insert: sql.slice(0, at), conflictClause: ` ON CONFLICT DO UPDATE SET ${assignments.join(', ')}` }
@@ -144,25 +162,32 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
         cursor += 1
       })
       if (upsert && !names.length) throw new Error(`unsupported upsert of default values: ${fullSql}`)
+      // `insert ignore` skips a row that breaks a unique key, as MySQL's does (a suite that
+      // needs the key creates it: this harness leaves unique constraints out).
+      const insert = /^insert ignore /.test(sql) ? 'INSERT OR IGNORE' : 'INSERT'
       const statement = names.length
-        ? `INSERT INTO ${tableName} (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})${upsert?.conflictClause ?? ''}`
-        : `INSERT INTO ${tableName} DEFAULT VALUES`
+        ? `${insert} INTO ${tableName} (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})${upsert?.conflictClause ?? ''}`
+        : `${insert} INTO ${tableName} DEFAULT VALUES`
       // The update list's parameters follow the values' in MySQL's order too.
       if (upsert) values.push(...params.slice(cursor).map(toSqliteParam))
       const result = sqlite.prepare(statement).run(...values)
       affectedRows += Number(result.changes)
-      insertId = insertId || Number(result.lastInsertRowid)
+      // An ignored row has no id (MySQL answers insertId 0); SQLite would repeat the last one.
+      if (Number(result.changes) > 0) insertId = insertId || Number(result.lastInsertRowid)
     }
     return { rows: [{ insertId, affectedRows }] }
   }
 
   async function execute(sql: string, params: unknown[], method: Method): Promise<ProxyResult> {
     statements.push(sql)
+    if (transactionOpen) { txStatements.push(sql); txParams.push(params) }
     maybeFail(sql)
     if (/^insert/i.test(sql)) return runInsert(sql, params)
     if (/on duplicate key/i.test(sql)) throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
 
-    const statement = sqlite.prepare(sql.replace(/ for update$/, ''))
+    // MySQL's LIKE escapes with `\` by default; SQLite's has no escape character unless
+    // told. Without this an escaped `\_` would mean "a backslash, then any character".
+    const statement = sqlite.prepare(sql.replace(/ for (?:update|share)$/, '').replace(/ like \?/g, " like ? escape '\\'"))
     const bound = params.map(toSqliteParam)
     if (method === 'all') {
       const columns = statement.columns()
@@ -180,8 +205,10 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
   const tx = drizzle(execute)
   let transactionOpen = false
 
+  let transactionsBegun = 0
   async function transaction<T>(callback: (handle: typeof tx) => Promise<T>): Promise<T> {
     if (transactionOpen) throw new Error('nested transaction in the SQLite harness')
+    transactionsBegun += 1
     sqlite.exec('BEGIN')
     transactionOpen = true
     try {
@@ -202,6 +229,14 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
       if (transactionOpen && (property === 'insert' || property === 'update' || property === 'delete')) {
         return () => {
           throw new Error(`db.${String(property)}() on the pool while a transaction is open — on MySQL it would commit on its own connection`)
+        }
+      }
+      // A read on the pool while a transaction is open takes a SECOND connection: with the pool's
+      // 10 all held by open transactions, each waits for an eleventh forever (verifier H2 — ten
+      // bans at once hung the whole app). Reads inside a transaction go through `tx`.
+      if (transactionOpen && (property === 'select' || property === 'execute')) {
+        return () => {
+          throw new Error(`db.${String(property)}() on the pool while a transaction is open — on MySQL a second connection per transaction exhausts the pool`)
         }
       }
       const value = Reflect.get(target, property, target)
@@ -228,11 +263,26 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     rows,
     /** The raw SQL of every statement run so far. */
     statements,
-    /** The next statement whose SQL matches `pattern` throws. */
-    failNext(pattern: RegExp) { failures.push(pattern) },
+    /** The raw SQL of every statement run while a transaction was open, and (same index) its parameters. */
+    txStatements,
+    txParams,
+    /** The next statement whose SQL matches `pattern` throws — with `fields` (e.g. `{ errno: 1213 }`) on the error. */
+    failNext(pattern: RegExp, fields?: Record<string, unknown>) { failures.push({ pattern, fields }) },
+    /** `run` executes (on the same database) just before the next statement whose SQL matches `pattern`. */
+    beforeNext(pattern: RegExp, run: () => void) { hooks.push({ pattern, run }) },
+    /**
+     * How many transactions were begun so far. A deadlock retry has to begin a NEW one per attempt:
+     * InnoDB has rolled the victim's back whole, so running the statements again inside the same
+     * callback would run them outside any transaction (verifier V4-10).
+     */
+    get transactionsBegun() { return transactionsBegun },
     reset() {
+      transactionsBegun = 0
       failures.length = 0
+      hooks.length = 0
       statements.length = 0
+      txStatements.length = 0
+      txParams.length = 0
       for (const table of tables) sqlite.exec(`DELETE FROM \`${getTableName(table)}\``)
     },
   }

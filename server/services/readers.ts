@@ -25,6 +25,10 @@ import { getDb } from '../utils/db'
 import { activityLogs, articleComments, articles, mediaItems, readerAccounts, users } from '../db/schema'
 import { countReaderCommentImpact, deleteReaderComments, type ReaderCommentImpact } from './comments'
 import { effectiveDisplayName } from '../utils/display-name'
+import { likeContains } from '../utils/like-pattern'
+import { readAffectedRows } from '../utils/affected-rows'
+import { withDeadlockRetry } from '../utils/deadlock-retry'
+import { readerStillExists } from './reader-moderation-tx'
 
 /** Server-enforced ceiling. A client-supplied page size is a request. */
 export const READER_MAX_PER_PAGE = 100
@@ -32,12 +36,9 @@ export const READER_MAX_PER_PAGE = 100
 // ─── Display name ────────────────────────────────────────────────────────────
 
 /**
- * Re-exported from utils/display-name.ts, which is where the name logic actually
- * lives — this module cannot host it, because services/comments.ts needs the same
- * functions to render names on the public thread and already imports this file.
- *
- * Re-exported rather than moved silently so the existing call sites and
- * tests/reader-profile.test.ts keep one obvious import path.
+ * Re-exported from utils/display-name.ts, where the name logic lives (services/comments.ts
+ * needs it for the public thread and already imports this file), so the existing call sites
+ * and tests/reader-profile.test.ts keep one obvious import path.
  */
 export {
   DISPLAY_NAME_FALLBACK,
@@ -89,9 +90,9 @@ export async function listReaders(params: {
 
   const conditions = []
   if (params.search) {
-    const needle = `%${params.search}%`
-    // Email is searched but never used as a key (design.md D6) — it is mutable
-    // and reassignable, so matching a reader on it would merge two people.
+    // The text as typed: `_`/`%` escaped, not wildcards (FINDING-R6-8). Email is searched
+    // but never a key (design.md D6) — mutable and reassignable, it would merge two people.
+    const needle = likeContains(params.search)
     conditions.push(or(like(readerAccounts.displayName, needle), like(readerAccounts.email, needle)))
   }
   if (params.banned === 'banned') conditions.push(eq(readerAccounts.isBanned, true))
@@ -124,7 +125,7 @@ export async function listReaders(params: {
     })
     .from(readerAccounts)
     .where(where)
-    .orderBy(desc(readerAccounts.lastSeenAt))
+    .orderBy(desc(readerAccounts.lastSeenAt), desc(readerAccounts.id)) // id breaks ties: stable pages (FINDING-R6-9)
     .limit(perPage)
     .offset((page - 1) * perPage)
 
@@ -233,28 +234,27 @@ export async function banReader(params: { readerId: number, reason: string | nul
   const db = getDb()
 
   const [existing] = await db
-    .select({ id: readerAccounts.id, isBanned: readerAccounts.isBanned, tokenVersion: readerAccounts.tokenVersion, displayName: readerAccounts.displayName })
+    .select({ id: readerAccounts.id, displayName: readerAccounts.displayName })
     .from(readerAccounts)
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
-
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-
-  // Measured before the delete: afterwards there is nothing left to count, and a
-  // successful ban would be indistinguishable from one that removed nothing.
-  const impact = await countReaderCommentImpact(params.readerId)
-
-  await db.transaction(async (tx) => {
-    await tx
+  // The base's statements (reader-moderation-tx.ts): counted first with plain reads on this transaction,
+  // then the reader row, then the comments. 0 rows: the account went meanwhile (404, no audit — D1).
+  const impact = await withDeadlockRetry(() => db.transaction(async (tx) => {
+    const counted = await countReaderCommentImpact(params.readerId, tx)
+    const flagged = readAffectedRows(await tx
       .update(readerAccounts)
       .set({
         isBanned:     true,
         banReason:    params.reason?.trim() || null,
         bannedAt:     new Date(),
         bannedBy:     params.actorId,
-        tokenVersion: existing.tokenVersion + 1,
+        tokenVersion: sql`${readerAccounts.tokenVersion} + 1`,
       })
-      .where(eq(readerAccounts.id, params.readerId))
+      .where(eq(readerAccounts.id, params.readerId)))
+    if (flagged === 0) return null
+    if (flagged !== 1) throw new Error('banReader: the driver did not report the affected rows')
 
     // The FK cascade on parent_id takes the administrator replies with the
     // top-level comments they sit under (design.md D8). The confirmation dialog
@@ -270,13 +270,14 @@ export async function banReader(params: { readerId: number, reason: string | nul
         operation:      'ban',
         reason:         params.reason?.trim() || null,
         displayName:    existing.displayName,
-        deletedComments: impact.comments,
-        deletedAdminReplies: impact.adminReplies,
-        deletedOtherReaderReplies: impact.otherReaderReplies,
+        deletedComments: counted.comments,
+        deletedAdminReplies: counted.adminReplies,
+        deletedOtherReaderReplies: counted.otherReaderReplies,
       },
     })
-  })
-
+    return counted
+  }))
+  if (!impact) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
   return { ok: true, impact }
 }
 
@@ -293,22 +294,22 @@ export async function unbanReader(params: { readerId: number, actorId: number })
   const db = getDb()
 
   const [existing] = await db
-    .select({ id: readerAccounts.id, displayName: readerAccounts.displayName })
+    .select({ id: readerAccounts.id, displayName: readerAccounts.displayName, isBanned: readerAccounts.isBanned })
     .from(readerAccounts)
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
-
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-
-  // Update and audit row in one transaction, same reasoning as banReader: a
-  // second statement that fails must not leave the account unbanned with
-  // nothing recording who did it or when.
+  // Bỏ chặn không xoá gì (mọi số 0). Chỉ đổi hàng ĐANG bị chặn, đếm trong transaction: chưa bị
+  // chặn — hay một lượt bỏ chặn khác vừa thắng — thì không ghi audit (FINDING-R6-10, M1).
+  const impact = { comments: 0, adminReplies: 0, otherReaderReplies: 0 }
+  if (!existing.isBanned) return { ok: true, impact } // as the base: no transaction, no row touched
   await db.transaction(async (tx) => {
-    await tx
+    const lifted = readAffectedRows(await tx
       .update(readerAccounts)
       .set({ isBanned: false, banReason: null, bannedAt: null, bannedBy: null })
-      .where(eq(readerAccounts.id, params.readerId))
-
+      .where(and(eq(readerAccounts.id, params.readerId), eq(readerAccounts.isBanned, true))))
+    if (lifted === 0) return
+    if (lifted !== 1) throw new Error('unbanReader: the driver did not report the affected rows')
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
       action:     'update',
@@ -317,9 +318,7 @@ export async function unbanReader(params: { readerId: number, actorId: number })
       meta:       { operation: 'unban', displayName: existing.displayName },
     })
   })
-
-  // Bỏ chặn không xoá gì, nên mọi số đều là 0.
-  return { ok: true, impact: { comments: 0, adminReplies: 0, otherReaderReplies: 0 } }
+  return { ok: true, impact }
 }
 
 /** Delete the account row; comments follow by FK cascade. */
@@ -331,13 +330,14 @@ export async function deleteReader(params: { readerId: number, actorId: number }
     .from(readerAccounts)
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
-
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-
-  const impact = await countReaderCommentImpact(params.readerId)
-
-  await db.transaction(async (tx) => {
-    await tx.delete(readerAccounts).where(eq(readerAccounts.id, params.readerId))
+  // The base's statements (reader-moderation-tx.ts): plain-read counts on this transaction, then the
+  // DELETE, counted — 0 rows is the 404 of a missing account, no second "delete" row (M1 family).
+  const impact = await withDeadlockRetry(() => db.transaction(async (tx) => {
+    const counted = await countReaderCommentImpact(params.readerId, tx)
+    const removed = readAffectedRows(await tx.delete(readerAccounts).where(eq(readerAccounts.id, params.readerId)))
+    if (removed === 0) return null
+    if (removed !== 1) throw new Error('deleteReader: the driver did not report the affected rows')
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
       action:     'delete',
@@ -347,13 +347,14 @@ export async function deleteReader(params: { readerId: number, actorId: number }
         // Kept because after the row is gone this is the only remaining record
         // of whose account was removed.
         displayName:              existing.displayName,
-        deletedComments:          impact.comments,
-        deletedAdminReplies:      impact.adminReplies,
-        deletedOtherReaderReplies: impact.otherReaderReplies,
+        deletedComments:          counted.comments,
+        deletedAdminReplies:      counted.adminReplies,
+        deletedOtherReaderReplies: counted.otherReaderReplies,
       },
     })
-  })
-
+    return counted
+  }))
+  if (!impact) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
   return { ok: true, impact }
 }
 
@@ -366,17 +367,13 @@ export async function purgeReaderComments(params: { readerId: number, actorId: n
     .from(readerAccounts)
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
-
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-
-  // The shared deletion path, not a local DELETE (design.md D8) — and inside one
-  // transaction with its audit row, for the same reason ban and account deletion
-  // are: rows gone with no record of who removed them is precisely the loss the
-  // audit log exists to prevent.
-  let impact = { comments: 0, adminReplies: 0, otherReaderReplies: 0 }
-  await db.transaction(async (tx) => {
-    impact = await deleteReaderComments(params.readerId, tx)
-
+  // The shared deletion path (design.md D8), with its audit row — the base's statements, counted with plain
+  // reads on this transaction, never the reader row locked (reader-moderation-tx.ts). Removed nothing: the
+  // account may have gone with its comments — a plain read says so (404, no audit — D2).
+  const impact = await withDeadlockRetry(() => db.transaction(async (tx) => {
+    const removed = await deleteReaderComments(params.readerId, tx)
+    if (removed.comments === 0 && !await readerStillExists(tx, params.readerId)) return null
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
       action:     'delete',
@@ -385,13 +382,14 @@ export async function purgeReaderComments(params: { readerId: number, actorId: n
       meta: {
         operation:                'purge_reader_comments',
         displayName:              existing.displayName,
-        deletedComments:          impact.comments,
-        deletedAdminReplies:      impact.adminReplies,
-        deletedOtherReaderReplies: impact.otherReaderReplies,
+        deletedComments:          removed.comments,
+        deletedAdminReplies:      removed.adminReplies,
+        deletedOtherReaderReplies: removed.otherReaderReplies,
       },
     })
-  })
-
+    return removed
+  }))
+  if (!impact) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
   return { ok: true, impact }
 }
 

@@ -121,6 +121,8 @@ async function banReader() {
     await load()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không chặn được tài khoản này.'))
+    // 404: the account was deleted meanwhile (another officer, retention) — as for its deletion.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   } finally {
     busy.value = false
   }
@@ -139,6 +141,8 @@ async function unbanReader() {
     await load()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không bỏ chặn được tài khoản này.'))
+    // 404: the account was deleted meanwhile (another officer, retention) — as for the other actions.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   } finally {
     busy.value = false
   }
@@ -164,6 +168,8 @@ async function purgeComments() {
     await load()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không xoá được bình luận.'))
+    // 404: the account was deleted meanwhile — nothing left to show here.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   } finally {
     busy.value = false
   }
@@ -186,6 +192,8 @@ async function deleteAccount() {
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không xoá được tài khoản này.'))
     busy.value = false
+    // 404: the account is already gone (another officer, retention): nothing left to show here.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   }
 }
 

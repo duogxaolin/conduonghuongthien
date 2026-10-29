@@ -507,7 +507,9 @@ describe('10.8 — email for a media reply, and never inside the transaction', (
     for (const fn of ['createComment', 'createAdminReply']) {
       const body = functionBody(declaringSource(fn), fn)
       const sendAt = body.indexOf('await sendReplyEmail(')
-      const txAt = body.indexOf('await db.transaction(')
+      // The transaction may sit under its deadlock retry (R6 round 5: a reply chosen as a deadlock
+      // victim is written again in a new transaction) — the e-mail still goes after both.
+      const txAt = body.search(/await (?:withDeadlockRetry\(\(\) => )?db\.transaction\(/)
       assert.ok(sendAt !== -1, `${fn} no longer sends the reply email`)
       assert.ok(txAt !== -1, `${fn} no longer wraps its writes in a transaction`)
       assert.ok(sendAt > txAt, `${fn} sends the email before its transaction`)
