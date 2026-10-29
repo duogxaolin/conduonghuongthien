@@ -397,6 +397,17 @@ describe('the quick search over the menu', () => {
     assert.equal(findAll(sidebar(ctx), el => el.tag === 'button' && el.props.title === 'Xoá tìm kiếm').length, 0, '✕ only while there is a query')
   })
 
+  it('pinned as is: collapsing during a search keeps the icon rail filtered, with no search box left to clear it', async (t) => {
+    const ctx = await openLayout(t, { user: superAdmin() })
+    await input(searchInput(ctx), 'zzz')
+    await ctx.settle()
+    await click(buttonByTitle(sidebar(ctx), 'Thu gọn sidebar'))
+    await ctx.settle()
+    assert.equal(findAll(sidebar(ctx), el => el.tag === 'input').length, 0)
+    assert.deepEqual(menuLabels(ctx), [])
+    assert.equal(words(nav(ctx)), 'Không tìm thấy chức năng "zzz" Xoá bộ lọc', 'the empty state squeezed into the 70 px rail')
+  })
+
   it('a blank query is no search', async (t) => {
     const ctx = await openLayout(t, { user: superAdmin() })
     await click(accordionButton(ctx))
