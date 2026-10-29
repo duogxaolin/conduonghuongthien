@@ -826,3 +826,126 @@ Ghi nhận, không sửa ở lát này (quyết định thiết kế hoặc ngo�
 3. Kết quả AI không đọc được ở `comments/ai-moderate` (trạng thái thứ tư, cần `app/**`).
 4. `server/api/admin/languages/ai-translate*.post.ts`, `server/services/i18n-auto-translate.ts` — dịch nhãn bằng AI (giới hạn độ dài, giữ khoá được hỏi như R5-14).
 5. Còn 0 %/thấp trong `settings/**` và lân cận: `chatbot/settings/index.get.ts` (38), `chatbot/settings/clear.post.ts` (7); ngoài sáu lớp: `services/readers.ts` (36 %), `services/ip-bans.ts` (36,4 %), `articles/[id]/boost.post.ts` (34,8 %).
+
+## Lát R6 của task 5.2 — đo lại 2026-10-29 (Node 24, `0a2707e8`)
+
+Lát thứ sáu: mục 2, 4, 5 của "Lát sau" ở lát R5 (mục 1 — chi phí Delify đếm hai lần — và mục 3 — cần `app/**` — vẫn chờ), cộng các handler admin còn 0 % trong `server/api`. Không đụng Delify, chatbot sovereignty/chat-policy, `app/`.
+
+**Đo ở đâu.** `npm run test:coverage` trong `cdkt-cov:node24` (Node 24, `TZ=Asia/Ho_Chi_Minh`) trên `wave3/integration` = `0a2707e8`, trước khi đụng gì (log `coverage-before.log` ở thư mục bằng chứng `/home/ray/orca/cdht-wave3-tests-r6-proof/`): 788 tệp, 200 chưa nạp, **84,72 %** (75 375 / 88 973); `server/api` 70,38, `server/services` 86,99, `server/utils` 95,14. Ratchet đã báo RISE ở `shared` (+3,58) trên cây chưa đụng — của các nhánh gộp trước, lát này không nâng.
+
+`languages/ai-translate*.post.ts` (97–100 %) và `i18n-auto-translate.ts` (91,3 %) đã có test hành vi từ trước (`language-translations-write-behavior`, `model-translations`) — lát này không thêm, chỉ ghi nhận (xem dưới).
+
+### Đã làm trong lát này
+
+| # | Tệp | Trước | Sau | Suite |
+|---|---|---|---|---|
+| 1 | `server/services/universal-translation.ts` | 0 % (444) | 98,9 % (355/359) | `universal-translation-behavior` |
+| 2 | `server/services/universal-translation-blocks.ts` (mới, tách từ #1) | — | 97,9 % (190/194) | như trên |
+| 3 | `system/translation-coverage.get.ts`, `universal-translate-status.get.ts`, `universal-translate-cancel.post.ts` | 0 % (11 + 10 + 7) | 100 % | như trên |
+| 4 | `server/services/readers.ts` | 36,0 % (198/550) | 83,1 % (457/550) | `reader-moderation-behavior` |
+| 5 | `server/services/ip-bans.ts` | 36,4 % (43/118) | 97,5 % (116/119) | như trên |
+| 6 | `readers/index.get.ts`, `[id].get.ts`, `[id].delete.ts`, `[id]/ban.post.ts`, `[id]/unban.post.ts`, `[id]/comments.delete.ts`, `[id]/impact.get.ts` | 0 % (21 + 18 + 13 + 16 + 13 + 13 + 10) | 91,7–100 % | như trên |
+| 7 | `ip-bans/index.get.ts`, `index.post.ts`, `[id].delete.ts` | 0 % (6 + 22 + 13) | 100 % | như trên |
+| 8 | `articles/[id]/boost.post.ts` | 34,8 % (40/115) | 100 % (119/119) | `article-boost-behavior` |
+| 9 | `articles/[id]/boost.delete.ts` | 0 % (55) | 97,8 % (87/89) | như trên |
+| 10 | `chatbot/settings/index.get.ts`, `clear.post.ts` | 0 % (38 + 7) | 100 % | `chatbot-settings-read-clear-behavior` |
+| 11 | `articles/export-batch.get.ts` (lớn nhất trong 0 %) | 0 % (115) | 100 % (137/137) | `article-export-behavior` |
+| 12 | `articles/[id]/export.get.ts` | 0 % (98) | 100 % (125/125) | như trên |
+| 13 | `articles/export-google.post.ts` | 0 % (83) | 100 % (111/111) | như trên |
+| 14 | `media-portal/index.get.ts` (+ `services/media-portal-admin-read.ts` 67,0 → 96,3 %) | 0 % (81) | 100 % (121/121) | `media-portal-admin-list-behavior` |
+
+`server/services/chatbot-settings.ts` 77,0 → 89,7 %; `articles/export-csv.get.ts`, `article-export-google.ts`, `vn-day-range.ts` (thêm `vietnamDateString`) giữ mức cũ, mỗi chỗ đổi có test riêng. `article-views.ts` giữ 80,3 % (phần còn thiếu là `getArticleViewStats`, không thuộc đường boost). Trong sáu handler 0 % lớn nhất, lát này làm bốn (#11–#14); hai còn lại ở "Lát sau". Cột "Sau" đếm mọi dòng vật lý của tệp đã nạp.
+
+**Sau lát** (log `coverage-after.log`, Node 24, cây cuối `55b11413`): 789 tệp, 179 chưa nạp, **86,57 %** (77 406 / 89 411). `server/api` 70,38 → 74,55, `server/services` 86,99 → 89,87, `server/utils` 95,14 → 95,18. Mức nền ratchet nâng đúng ba thư mục lát này đụng, bằng số đo (sửa tay, không `--update` vì `--update` nâng cả `shared`): `server/api` 70,37 → 74,55, `server/services` 86,98 → 89,87, `server/utils` 95,13 → 95,18 (`coverage-ratchet-final.log`). Toàn bộ unit + ratchet (lệnh CI `npm test`, Node 26 cục bộ, `TZ=Asia/Ho_Chi_Minh`, `unit-full.log`): 7 227 test, 0 đỏ, 54 bỏ qua (integration không có MySQL). Sáu suite mới + test ngày của Google chạy lại ở `TZ=UTC`: 65/65 xanh (`new-suites-tz-utc.log`). `file-length.baseline.json`: bỏ mục `universal-translation.ts` (540 → 359, dưới 400); `readers.ts` giữ đúng 550.
+
+### Harness (thêm, không đổi hành vi cũ — 45 suite dùng chung: 410/410 xanh, `harness-users-f.log`)
+
+- `_ai-route-harness.ts`: câu trả lời nhà cung cấp có thể là promise — giữ job nền giữa lượt (test 409, huỷ).
+- `_sqlite-mysql-db.ts`: `like ?` mang `escape '\'` (ký tự thoát mặc định của MySQL; SQLite không có — trước đó một mẫu đã thoát nghĩa khác trên hai bên); `beforeNext(pattern, fn)` (một người ghi khác chen giữa đọc và ghi); `txStatements` (câu nào chạy trong transaction); upsert nhận `` `col` = `bảng`.`col` + ? ``; mặc định của cột JSON (`.default([])`) lưu dạng văn bản JSON — trước đó là chuỗi rỗng và mọi lần đọc `media_items` ném "Unexpected end of JSON input".
+- `_h3-handler-server.ts`: thêm `setResponseStatus`, `setHeader` vào các hàm tự import.
+
+### Múi giờ
+
+Ba nơi chạm ngày, mỗi nơi test ở `TZ=UTC` và `TZ=Asia/Ho_Chi_Minh` (đổi `process.env.TZ` trong test, `mock.timers` chỉ `Date`):
+- Xuất bài (FINDING-R6-17): "Ngày" theo TZ tiến trình, tên tệp theo ngày UTC → nay ngày lịch VN qua `vietnamDateString` (độ lệch cố định, cùng cách các hàm khác của `vn-day-range.ts`). Bản `TZ=Asia/Ho_Chi_Minh` vẫn đỏ trên base — vì tên tệp lúc 01:30 ngày 1/12 giờ VN mang ngày 30/11.
+- Tăng lượt xem tức thì: hàng `boost` của `article_view_daily` mang ngày **UTC** (`viewDay`) ở cả hai TZ — có chủ đích (cùng ngày mà token người xem của lượt xem thật được suy ra); test ghim, không đổi (xem "cần chủ dự án quyết").
+- Lượt tăng dần: `started_at`/`ends_at` (DATETIME) ghi qua Drizzle, so ISO — không phụ thuộc TZ.
+
+### Cách chạy và cái bẫy đã gặp
+
+- zsh không tách từ `$files` không ngoặc: chạy danh sách suite qua `cap80 bash -c '…'`.
+- Một hook ghi bằng `sqlite.exec` trong transaction đang mở bị chính ROLLBACK của handler xoá theo. Test "bộ lập lịch thắng cuộc đua" (R6-15) commit lượt của bộ lập lịch rồi mở lại (`COMMIT; UPDATE …; BEGIN`) — lúc đó transaction của handler chưa ghi gì, đúng như MySQL đọc hàng đã commit mới nhất cho UPDATE có điều kiện.
+- SQLite không có khoá hàng: TOCTOU của boost.post (R6-14) không dựng được bằng hai yêu cầu song song (harness cấm transaction lồng). Test đơn vị ghim thứ tự câu lệnh trong transaction (`txStatements`); hành vi khoá phát lại trên MySQL 8.0.46 bằng hai phiên (`mysql-boost-lock.sh`/`.log`, CSDL tạm `cdkt_r6_<rand>`, đã xoá, `SHOW DATABASES LIKE 'cdkt_r6_%'` rỗng).
+- `readBody` của h3 trả `undefined` cho yêu cầu không có body — `.catch(() => …)` không chạy (R6-18).
+- Drizzle bọc lỗi truy vấn: `err.message` là "Failed query: <SQL> params: …", lỗi gốc ở `cause`.
+- `checkPermission` trả `false` cho hành động lạ, nên bỏ `action === 'clear'` khỏi cổng siêu quản trị là đột biến **tương đương** — thay bằng đột biến bỏ dòng `forbidden()`.
+- Mã có backtick/`$`/`&` trong biểu thức sed của đột biến: dùng chuỗi con không chứa chúng, hoặc lệnh địa chỉ (`/…/d`, `/…/{n;d}`).
+
+### Đột biến (mỗi cái ≥ 1 test đỏ; `mutants.sh` + `mutants-*.list`, log ở thư mục bằng chứng; cây sản phẩm khôi phục từng byte sau mỗi lượt)
+
+| Suite | Chạy | Đỏ | Ghi chú |
+|---|---|---|---|
+| `universal-translation-behavior` (`mutants-a`) | 13 | 13 | bỏ sanitize → R6-3; `String(value)` → R6-4; nhận JSON thiếu trường → R6-4 + R6-5; JSON hỏng vẫn đi tiếp → R6-4 + R6-5; dịch lại khối đã dịch, hỏi cả email → test "blocks"; vị từ quét cũ → R6-2; đếm bản dịch bài nháp, đếm khoá mồ côi → R6-1; nhận mọi mã ngôn ngữ → R6-6; khúc 20 khoá → test UI + huỷ; bỏ qua huỷ → test huỷ; nhận giới hạn âm → R6-7 |
+| `reader-moderation-behavior` (`mutants-b`) | 10 | 10 | bỏ thoát LIKE → R6-8; bỏ khoá phụ `id` → R6-9; audit "unban" ma → R6-10; sắp IP tăng dần → R6-11; audit trang được hỏi → R6-12; không tăng `tokenVersion`, bỏ lọc "banned", audit chi tiết không id, purge theo `readers.delete` (2 test), nhận địa chỉ trùng → mỗi cái test của nó |
+| `article-boost-behavior` (`mutants-c`) | 7 | 7 | huỷ không phạm vi → R6-13; không đếm `affectedRows` → R6-15; bỏ khoá hàng bài → R6-14; bỏ 409, cửa sổ tính giây → test "gradual"; ghi vào nửa thật → hai test TZ; `viewDay` theo giờ địa phương → test `TZ=Asia/Ho_Chi_Minh` |
+| `chatbot-settings-read-clear-behavior` (`mutants-d`, `-d2`) | 6 + 1 | 6 + 1 | phủ khoá/host/enabled, xoá không xoá khoá, không tạo hàng mặc định; bỏ `forbidden()` của cổng siêu quản trị. Thêm 1 tương đương (ở trên) |
+| `article-export-behavior` (`mutants-e`) | 9 | 9 | không phạm vi → R6-16; ngày UTC ở HTML/ZIP/CSV, `vietnamDateString` = UTC → hai test R6-17 (cùng bất biến, hai TZ); ngày UTC ở dịch vụ Google → test của `…-ssrf-behavior`; `body.ids` → R6-18; bỏ escape `<`, bỏ lọc quyền ZIP → test của nó |
+| `media-portal-admin-list-behavior` (`mutants-f`) | 4 | 4 | nhận trạng thái lạ, bỏ trần `limit`, bỏ khoá phụ `id`, bỏ thoát LIKE |
+| **Tổng** | **50** | **50** | + 1 tương đương ghi lại; nhiều test đỏ cùng lúc chỉ khi chúng ghim cùng một bất biến (hai TZ, hai route dùng chung) |
+
+### Lỗi tìm thấy (ghim lúc viết test, sửa sau đó)
+
+Mỗi suite chạy "trên base" bằng `findings-on-rev.sh <commit trước> <suite>`: **đúng** các test `FINDING-R6-n` đỏ, mọi test khác xanh — 7 + 5 + 3 + 4 test FINDING (`universal-on-base.log`, `readers-on-base.log`, `boost-on-base.log`, `export-on-base.log`); thêm test ngày của dịch vụ Google và test cấu trúc `article-export-google` (cập nhật `body?.ids`) đỏ trên base (`export-google-on-base.log`). Hai suite không có lỗi mới: `chatbot-settings-read-clear-behavior`, `media-portal-admin-list-behavior`.
+
+| Mã | Mức | Tệp | Lỗi | Trạng thái |
+|---|---|---|---|---|
+| FINDING-R6-1 | trung bình (số liệu) | `universal-translation.ts` (quét) | `articlesMissing` trừ mọi bản dịch không lỗi — kể cả của bài nháp/lưu trữ; `uiMissing` trừ mọi khoá có chữ của ngôn ngữ đích — kể cả khoá vi không có (danh mục đã xoá): báo 0 thiếu, 100 % khi chưa bài xuất bản nào được dịch | **Đã sửa**: JOIN bài đã xuất bản, `COUNT(DISTINCT)`; chỉ khoá của vi |
+| FINDING-R6-2 | thấp | như trên | Quét và job đọc "khối có chữ" khác nhau: khối chỉ có nhãn nút được dịch mà không được đếm; khối chỉ có số (hay `title` không phải chữ) bị đếm thiếu mãi, tab không bao giờ tới 100 % | **Đã sửa**: một hàm `blockTranslationParts` cho quét, đếm việc, job |
+| FINDING-R6-3 | trung bình (quy tắc CLAUDE.md) | `universal-translation-blocks.ts` | `bodyHtml` model viết vào `data.translations[lang]` không qua `sanitizeHtml` lúc ghi (endpoint công khai lọc lúc đọc; guard `security-translation-html` chỉ quét đường ghi bản dịch bài viết) | **Đã sửa** |
+| FINDING-R6-4 | thấp | như trên | Mọi khoá trong `BLOCK_STRING_KEYS` model trả về vào bản dịch (thêm `badge` "HOT" mà khối tiếng Việt không có); nhãn dạng object thành "[object Object]" | **Đã sửa**: chỉ trường được hỏi, qua `modelTranslationText` |
+| FINDING-R6-5 | thấp (hệ quả chi phí) | như trên | Phần JSON hỏng mà phần HTML được → bản dịch chỉ có thân, cả quét lẫn lượt sau coi là đã dịch; tiêu đề tiếng Việt nằm mãi trên trang tiếng Anh | **Đã sửa**: chỉ ghi khi đủ mọi phần (JSON thiếu trường = chưa xong; JSON hỏng thì không gọi phần HTML). Khối hỏng được hỏi lại ở lượt sau (tốn thêm một lượt gọi cho khối đó) |
+| FINDING-R6-6 | thấp (chi phí) | `universal-translation.ts` (job) | Dịch sang mọi mã có trong bảng: `vi` (tiếng Việt sang tiếng Việt, ghi bản dịch `vi` cho khối và bài) và ngôn ngữ đã tắt | **Đã sửa**: chỉ ngôn ngữ đang bật khác vi |
+| FINDING-R6-7 | thấp (chi phí) | `system/universal-translate.post.ts` | `articlesLimit` "abc"/-1 → "không giới hạn": cả kho × mọi ngôn ngữ | **Đã sửa**: 400 nếu không phải số nguyên ≥ 0; 0 vẫn là "tất cả" (xem "cần chủ dự án quyết") |
+| FINDING-R6-8 | thấp (quy ước CLAUDE.md) | `readers.ts` | Ô tìm người đọc dán chữ vào LIKE không thoát: `nguyen_van` khớp `nguyenxvan`, `%` khớp mọi người | **Đã sửa**: `likeContains` |
+| FINDING-R6-9 | thấp | như trên | Sắp `last_seen_at DESC` không khoá phụ — MySQL trả hàng hoà theo thứ tự bất kỳ, hai trang có thể trùng/thiếu một người | **Đã sửa**: thêm `id DESC` |
+| FINDING-R6-10 | thấp (audit) | như trên | Bỏ chặn tài khoản không bị chặn vẫn ghi dòng "unban" — việc không xảy ra | **Đã sửa**: 200, không ghi, không audit |
+| FINDING-R6-11 | thấp | `ip-bans.ts` | Danh sách chặn IP tăng dần theo id, chú thích hứa "mới nhất trước", trang không sắp lại | **Đã sửa** |
+| FINDING-R6-12 | thấp (audit) | `readers/index.get.ts` | Audit danh sách ghi trang được HỎI (`?page=9`) thay vì trang được XEM (dịch vụ kẹp về trang cuối) | **Đã sửa** |
+| FINDING-R6-13 | thấp (an ninh — oracle id) | `articles/[id]/boost.delete.ts` | Tra bài theo id rồi mới kiểm quyền loại: 404 vs 403 (boost.post và stats.get đã sửa, huỷ thì chưa) | **Đã sửa**: `articleActionScope(actor, 'update')` |
+| FINDING-R6-14 | thấp (dữ liệu) | `articles/[id]/boost.post.ts` | Kiểm "đã có lượt tăng dần đang chạy" trên pool trước transaction — bấm đúp: hai lượt chạy song song | **Đã sửa**: `SELECT … FOR UPDATE` hàng bài rồi kiểm, trong transaction; MySQL: thứ tự cũ 2 lượt, thứ tự mới yêu cầu sau chờ khoá rồi 409 |
+| FINDING-R6-15 | thấp (audit) | `articles/[id]/boost.delete.ts` | Bộ lập lịch hoàn tất lượt giữa lúc đọc và UPDATE có điều kiện: không hàng nào đổi mà vẫn audit "cancel ở 120/600" và trả 200 | **Đã sửa**: `readAffectedRows !== 1` → 409, không audit (quy tắc "chuyển trạng thái có cạnh tranh") |
+| FINDING-R6-16 | thấp (an ninh — oracle id) | `articles/[id]/export.get.ts` | 404 vs 403 như R6-13 | **Đã sửa**: `articleActionScope(adminUser, 'read')` |
+| FINDING-R6-17 | thấp (múi giờ — họ R5-3) | xuất HTML/ZIP/CSV/Google Docs | "Ngày" theo TZ tiến trình, tên tệp theo ngày UTC: tiến trình UTC (đường PM2) in bài đăng 03:00 ngày 29 (giờ VN) thành ngày 28; tệp tải 01:30 ngày 1/12 giờ VN mang ngày 30/11 ở mọi TZ | **Đã sửa**: `vietnamDateString` ở sáu chỗ |
+| FINDING-R6-18 | thấp | `articles/export-google.post.ts` | POST không body → `body.ids` TypeError → 500 | **Đã sửa**: 400 "Thiếu danh sách bài viết." |
+
+### Cần chủ dự án quyết (lát này không đổi)
+
+- **Dịch toàn cục không có trần chi phí**: `articlesLimit: 0` ("Tất cả bài viết") = mọi bài đã xuất bản × mọi ngôn ngữ, mỗi bài một lượt worker (nhiều lượt gọi), chỉ cần `settings.update`. Giữ nguyên vì là nút của tab.
+- **Chặn lại một tài khoản đã bị chặn** ghi đè `banned_by`/`banned_at`/`ban_reason` của lần chặn đầu (dấu vết gốc chỉ còn trong `activity_logs`) và tăng `tokenVersion` lần nữa — giữ 200 hay đổi thành 409?
+- **Chặn dải `/0`** (`0.0.0.0/0`, `1.2.3.4/0`) được nhận: chặn mọi người đọc IPv4 ở cả đăng nhập lẫn bình luận.
+- **`viewDay` là ngày UTC** cho cả lượt xem thật lẫn hàng `boost` của `article_view_daily`: biểu đồ "theo ngày" của bài xếp lượt xem 00:00–07:00 giờ VN vào hôm trước (cùng loại R5-4). Đổi sẽ lệch lịch sử và token chống F5.
+- **`chatbot/settings/clear`** chỉ xoá khoá trong `chatbot_settings`, còn đường gọi chatbot qua cổng AI dùng khoá của `ai_providers` — sau khi "xoá", trang vẫn báo có khoá nếu nhà cung cấp có khoá. Route không có nơi gọi trong `app/`: ứng viên gỡ bỏ.
+- **`languages/ai-translate.post.ts`** (dịch hết khoá thiếu trong một yêu cầu) không có nơi gọi trong `app/` (trang dùng `ai-translate-chunk`) và tính tiền vào `translation_article` thay vì `translation_ui` như hai route anh em: ứng viên gỡ bỏ.
+
+### Ghi nhận, không sửa (khuôn dùng chung hoặc ngoài phạm vi)
+
+- 22 handler đọc id bằng `Number.isFinite(id) || id <= 0` rồi `Math.floor`: `/readers/1.5/ban` tác động lên người đọc 1. Khuôn của cả dự án — sửa một lượt, không vá từng tệp.
+- `createIpBan` kiểm trùng rồi mới chèn: hai yêu cầu cùng địa chỉ đồng thời → `ER_DUP_ENTRY` (500) thay vì 409. `banReader` đếm tác động ngoài transaction: bình luận đăng chen giữa bị xoá mà không vào số của audit.
+- `state.error` của job dịch toàn cục là thông điệp Drizzle ("Failed query: <SQL> params: …") — người có `settings.read` thấy câu SQL.
+- Prompt của dịch khối (`universal-translation-blocks.ts`) và nhãn giao diện vẫn dán nội dung cán bộ viết không qua `fenceUntrustedContent` (đã ghi ở R5; giữ nguyên từng chữ prompt khi tách tệp).
+
+### Quyền (chỉ báo cáo, không đổi) — đường chi tiền AI không có cờ kiểu `canTest`
+
+- `system/universal-translate.post.ts` — `settings.update`; trần chi phí: không (ở trên).
+- `languages/ai-translate.post.ts`, `ai-translate-chunk.post.ts`, `ai-translate-key.post.ts` — `settings.update`.
+- `categories/index.post.ts`, `categories/[id].put.ts`, `content-types/index.post.ts`, `content-types/[id].put.ts` — `categories.create/update`; dịch AI chạy nền (`i18n-auto-translate.ts`) sang mọi ngôn ngữ đang bật mỗi lần tạo/sửa.
+- `articles/[id]/translations/translate.post.ts`, `translate-all.post.ts`, `articles/bulk-translate.post.ts` — `news.update` **cố định**, không theo loại của bài (người có `news.update` kích được dịch AI cho bài `document`) — cùng họ khoảng trống phạm vi loại bài của rà soát 2026-10-22; chưa có test (0 %), việc của R7.
+- Từ R5: `comments.read` (kiểm duyệt AI), `news.read` (dịch, biên tập), `settings.read` (dịch giao diện).
+
+### Lát sau (theo thứ tự xếp hạng)
+
+1. Hai handler 0 % lớn còn lại: `ai/moderation/queue/[id]/resolve.post.ts` (108) — họ moderation, dùng `_moderation-worker-family.ts`; `chatbot/sessions/[id].get.ts` (89) — `RIGHT(REGEXP_REPLACE(…))` cần đăng ký hàm cho SQLite (`DatabaseSync#function`) hoặc phát lại trên MySQL; rồi `chatbot/knowledge/template.get.ts` (70), `media-portal/youtube-meta.post.ts` (67), `categories/[id].put.ts` (60), `media/index.get.ts` (60).
+2. Phạm vi loại bài của ba route dịch bài (mục "Quyền" ở trên) — test + sửa theo `articleActionScope`/`requireReadableArticle`.
+3. LIKE chưa thoát còn lại: `articles/index.get.ts`, `export-csv.get.ts` (ô tìm), `media/index.get.ts`, `services/chatbot-knowledge.ts`.
+4. Các mục "cần chủ dự án quyết" ở trên, và hai mục còn chờ của R5 (chi phí Delify đếm hai lần; kết quả AI không đọc được ở `comments/ai-moderate` cần `app/**`).
+5. `services/view-boost-scheduler.ts` (55,3 %), `getArticleViewStats` trong `article-views.ts`.
