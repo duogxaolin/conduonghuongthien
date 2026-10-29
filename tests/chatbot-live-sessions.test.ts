@@ -5,6 +5,7 @@ import { issueSessionToken, verifySessionToken } from '../server/utils/chatbot/s
 import { normalizeVietnamesePhone, detectPhone, detectName } from '../server/utils/chatbot/contact-detect'
 import { summarizeUserAgent } from '../server/utils/chatbot/user-agent'
 import { chatPolicyDeclaration, chatPolicyPart, chatPolicySource, chatPolicySourceWith, readRepoFile } from './_chat-policy-family.ts'
+import { CHATBOT_COMPOSABLE_FAMILY, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 const SECRET = 'test-secret-not-a-real-key-0123456789abcdef'
 
@@ -133,9 +134,11 @@ test('summarizeUserAgent keeps an unrecognised agent visible rather than hiding 
 
 // Ghép cả `chatbot-storage.ts`: phần khử độc dữ liệu `localStorage` đã sang tệp
 // đó để kiểm được không cần nạp composable. Các khẳng định ở đây nói về hành vi,
-// nên chia theo tệp sẽ khiến một lần chuyển hàm trông như một hồi quy.
-const COMPOSABLE = readFileSync('app/composables/useChatbot.ts', 'utf8')
-  + '\n' + readFileSync('app/utils/chatbot-storage.ts', 'utf8')
+// nên chia theo tệp sẽ khiến một lần chuyển hàm trông như một hồi quy. Từ lần tách
+// wave3, `useChatbot.ts` là mặt tiền và mã nằm ở `composables/chatbot/*.ts`: đọc cả họ
+// (`CHATBOT_COMPOSABLE_FAMILY` — mặt tiền + mọi module + chatbot-storage).
+const COMPOSABLE = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY)
+const PERSIST_SKIPS_STREAMING = /function persist[\s\S]{0,900}isStreaming/
 // Playback moved into its own module — the composable had grown to 939 lines and
 // this block reads nothing from the conversation state, so it is testable on its
 // own. `useChatbot` re-exports it, so every call site kept one import path.
@@ -176,9 +179,20 @@ test('persisted conversations never include a half-typed message', () => {
   assert.match(COMPOSABLE, /isStreaming/, 'tracks the streaming flag')
   assert.match(
     COMPOSABLE,
-    /function persist[\s\S]{0,900}isStreaming/,
+    PERSIST_SKIPS_STREAMING,
     'persist() filters on isStreaming',
   )
+})
+
+test('injection proof: the persist and session-token checks read the module that carries them', () => {
+  const persistence = 'composables/chatbot/persistence.ts'
+  const source = readAppFile(persistence)
+  assert.match(source, /!item\.isStreaming && /, `${persistence} no longer has the filter this proof removes`)
+  assert.doesNotMatch(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [persistence]: source.replace('!item.isStreaming && ', '') }), PERSIST_SKIPS_STREAMING)
+  const send = 'composables/chatbot/send.ts'
+  assert.doesNotMatch(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [send]: readAppFile(send).replaceAll('X-Chat-Session', 'X-Other') }), /X-Chat-Session/)
+  // A module added later is read too: a secret in it is caught.
+  assert.match(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { 'composables/chatbot/later.ts': 'const s = process.env.ANALYTICS_HMAC_SECRET' }), /ANALYTICS_HMAC_SECRET/)
 })
 
 test('the client asks the server for a session token instead of signing one', () => {

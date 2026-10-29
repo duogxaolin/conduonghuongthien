@@ -6,6 +6,7 @@ import { nextTick, ref, watchEffect } from 'vue'
 
 import { normalizeSource, type ChatMessage } from '../app/composables/useChatbot'
 import { playTypewriter, TYPEWRITER_MAX_MS, TYPEWRITER_WORD_DELAY_MS } from '../app/composables/useChatbotTypewriter'
+import { CHATBOT_COMPOSABLE_FAMILY, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 /**
  * The waiting/typing indicator and the reveal animation, tested by *running*
@@ -209,8 +210,9 @@ test('playback drives a re-render on every word, not just on the first', async (
 test('the composable hands playback the array element, never the local literal', () => {
   // Guards the fix at its one call site. `playTypewriter(botMessage, ...)` reads
   // as correct and is the version that shipped broken, so the distinction needs
-  // to be asserted rather than left to reviewer memory.
-  const source = read('../app/composables/useChatbot.ts')
+  // to be asserted rather than left to reviewer memory. The call site is in a module of
+  // `useChatbot` since its wave3 split (`composables/chatbot/send.ts`): read the family.
+  const source = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY)
   const call = source.match(/playTypewriter\((\w+), accumulator\.text/)
   assert.ok(call, 'the playback call site moved; re-check that it passes a tracked element')
   assert.notEqual(
@@ -223,6 +225,14 @@ test('the composable hands playback the array element, never the local literal',
     /const tracked = conversation\.messages\[conversation\.messages\.length - 1\]!/,
     'the tracked element must come from the array Vue is observing',
   )
+})
+
+test('injection proof: the playback call-site check reads the module that makes the call', () => {
+  const send = 'composables/chatbot/send.ts'
+  const source = readAppFile(send)
+  assert.match(source, /playTypewriter\(tracked, accumulator\.text/)
+  const broken = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [send]: source.replace('playTypewriter(tracked, accumulator.text', 'playTypewriter(botMessage, accumulator.text') })
+  assert.equal(broken.match(/playTypewriter\((\w+), accumulator\.text/)?.[1], 'botMessage', 'the guard above would see the literal and fail')
 })
 
 // ─── Reference identity ──────────────────────────────────────────────────────

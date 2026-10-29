@@ -23,7 +23,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 | Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 222 · 209 |
 | Tệp import `rateLimitDeps` | 22 |
 | Suite `*-integration` (so matrix CI) | 22 (khớp) |
-| Dòng `default.vue` · `init.ts` · `useI18n.ts` · `useChatbot.ts` · `admin/profile.vue` | 401 · 80 · 265 · 857 · 277 |
+| Dòng `default.vue` · `init.ts` · `useI18n.ts` · `useChatbot.ts` · `admin/profile.vue` | 401 · 80 · 265 · 138 · 277 |
 | i18n seed: key · hàng · fallback `vi` | 583 · 631 · 426 |
 | Page Builder: section · content · layout | 9 · 7 · 3 |
 | Mục small talk mặc định | 122 |

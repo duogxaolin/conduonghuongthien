@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { CHATBOT_COMPOSABLE_FAMILY, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 // The widget was extracted out of `app/layouts/default.vue` so that the full-page
 // assistant at `/assistant` could render the same conversation without duplicating
@@ -12,14 +13,14 @@ import { parse } from '@vue/compiler-sfc'
 // assertions by file would make a future move of one function look like a
 // regression.
 const widgetPath = new URL('../app/components/ChatWidget.vue', import.meta.url)
-const composablePath = new URL('../app/composables/useChatbot.ts', import.meta.url)
 // Phần khử độc dữ liệu `localStorage` đã sang `app/utils/chatbot-storage.ts` để
 // kiểm được không cần nạp cả composable (`tests/chatbot-storage-boundary.test.ts`).
 // Ghép vào đây theo đúng nguyên tắc đã nêu ở trên: các khẳng định dưới đây nói về
-// **hành vi** của widget, không về việc tệp nào giữ dòng nào.
-const storagePath = new URL('../app/utils/chatbot-storage.ts', import.meta.url)
+// **hành vi** của widget, không về việc tệp nào giữ dòng nào. Từ lần tách wave3,
+// `useChatbot.ts` là mặt tiền của `composables/chatbot/*.ts`: đọc cả họ
+// (`CHATBOT_COMPOSABLE_FAMILY` = mặt tiền + mọi module + chatbot-storage).
 const widgetSource = await readFile(widgetPath, 'utf8')
-const composableSource = `${await readFile(composablePath, 'utf8')}\n${await readFile(storagePath, 'utf8')}`
+const composableSource = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY)
 
 const descriptor = parse(widgetSource, { filename: 'ChatWidget.vue' })
 const template = descriptor.descriptor.template?.content ?? ''
@@ -144,4 +145,21 @@ test('public widget contains no provider settings, secrets, internals, or raw er
   for (const marker of forbidden) assert.doesNotMatch(source, new RegExp(marker, 'i'))
   assert.doesNotMatch(script, /console\.(?:error|log)\(/)
   assert.doesNotMatch(script, /targetFullText \+= jsonStr/)
+})
+
+test('injection proof: the composable half of these checks reads every module of useChatbot', () => {
+  // "Must appear nowhere": a log line or a secret planted in any module — or in a module
+  // added later — is in what the checks above read.
+  const send = 'composables/chatbot/send.ts'
+  assert.match(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [send]: `${readAppFile(send)}\nconsole.log('x')\n` }), /console\.(?:error|log)\(/)
+  assert.match(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { 'composables/chatbot/later.ts': 'export const apiKey = 1' }), /apiKey/i)
+  // "Must appear": the abortable request lives in send.ts; without it the check is red.
+  const source = readAppFile(send)
+  assert.match(source, /chatRequestController\.abort\(\)/)
+  assert.doesNotMatch(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [send]: source.replaceAll('chatRequestController.abort()', 'void 0') }), /chatRequestController(?:\?)?\.abort\(\)/)
+  const quick = 'composables/chatbot/quick-questions.ts'
+  assert.doesNotMatch(
+    moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [quick]: readAppFile(quick).replace("fetch('/api/public/chatbot/quick-questions'", "fetch('/api/x'") }),
+    /fetch\('\/api\/public\/chatbot\/quick-questions'/,
+  )
 })

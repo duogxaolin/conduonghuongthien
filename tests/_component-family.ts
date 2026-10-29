@@ -6,7 +6,8 @@
  *
  * Families today: `ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, the public pages
  * `NEWS_PAGE_FAMILY` and `READER_PROFILE_FAMILY`, and the admin `AI_PROVIDERS_TAB_FAMILY`,
- * `LANGUAGES_PAGE_FAMILY` and `PAGE_BUILDER_FAMILY`. The parts are
+ * `LANGUAGES_PAGE_FAMILY` and `PAGE_BUILDER_FAMILY`; and one composable split into a
+ * directory of modules, `CHATBOT_COMPOSABLE_FAMILY` (`ModuleFamily`, below). The parts are
  * DERIVED from the directory, not listed (the design of tests/_moderation-page-parts.ts):
  * a part added later joins every "must appear nowhere" scan without anyone editing this
  * file. The named parts are a subset check, so a renamed/moved part turns the scan red
@@ -165,3 +166,61 @@ export const familyStyle = (family: ComponentFamily, overrides?: Record<string, 
 /** Whole files, concatenated — for "this must appear nowhere" checks. */
 export const familySource = (family: ComponentFamily, overrides?: Record<string, string>) =>
   familyFiles(family, overrides).map(f => f.source).join('\n')
+
+// ─── Composables split into a directory of modules ───────────────────────────
+
+/**
+ * A composable after its split: the entry file (same path, same exports — a facade), every
+ * `.ts` in its parts directory, and the utils it re-exports. The parts are DERIVED from the
+ * directory exactly like a component's (subset check on `expectedParts`; a missing or empty
+ * directory is red).
+ */
+export type ModuleFamily = {
+  /** `app/`-relative path of the composable that was split (now the facade). */
+  entry: string
+  /** `app/`-relative directory holding its modules. */
+  partsDir: string
+  /** Modules that exist today — a subset check on the directory scan. */
+  expectedParts: readonly string[]
+  /** Other files the old guards read together with it (`app/`-relative). */
+  extra: readonly string[]
+}
+
+/**
+ * `useChatbot` (857 lines before its wave3 split). The guards that read
+ * `composables/useChatbot.ts` + `utils/chatbot-storage.ts` read this instead: the facade,
+ * every module in `composables/chatbot/` (no `index.ts` there, so Nuxt auto-imports none of
+ * them), and the storage boundary.
+ */
+export const CHATBOT_COMPOSABLE_FAMILY: ModuleFamily = {
+  entry: 'composables/useChatbot.ts',
+  partsDir: 'composables/chatbot',
+  expectedParts: ['conversations.ts', 'persistence.ts', 'quick-questions.ts', 'send.ts', 'sources.ts', 'sse.ts', 'state.ts'],
+  extra: ['utils/chatbot-storage.ts'],
+}
+
+const isModulePart = (family: ModuleFamily, file: string) =>
+  path.posix.dirname(file) === family.partsDir && file.endsWith('.ts')
+
+/** `app/`-relative paths of every module of the family on disk, sorted. */
+export function moduleFamilyParts(family: ModuleFamily): string[] {
+  const dir = new URL(`${family.partsDir}/`, APP)
+  assert.ok(existsSync(dir), `app/${family.partsDir}/ không tồn tại — các module của ${family.entry} đi đâu? sửa guard, đừng để tập quét rỗng`)
+  const found = readdirSync(dir).filter(name => name.endsWith('.ts')).sort()
+  assert.ok(found.length > 0, `app/${family.partsDir}/ không còn .ts nào — tập quét rỗng`)
+  for (const expected of family.expectedParts) {
+    assert.ok(found.includes(expected), `${expected} vắng khỏi app/${family.partsDir}/ ${JSON.stringify(found)} — đổi tên/di chuyển phải cập nhật guard, không âm thầm thu hẹp tập quét`)
+  }
+  return found.map(name => `${family.partsDir}/${name}`)
+}
+
+/** Every file of the family (entry, modules, extras), with overrides applied (added paths join only inside the parts directory). */
+export function moduleFamilyFiles(family: ModuleFamily, overrides: Record<string, string> = {}): FamilyFile[] {
+  const known = [family.entry, ...moduleFamilyParts(family), ...family.extra]
+  const added = Object.keys(overrides).filter(file => !known.includes(file) && isModulePart(family, file))
+  return [...known, ...added].map(file => ({ file, source: overrides[file] ?? readAppFile(file) }))
+}
+
+/** Whole files, concatenated — what the single file used to be. */
+export const moduleFamilySource = (family: ModuleFamily, overrides?: Record<string, string>) =>
+  moduleFamilyFiles(family, overrides).map(f => f.source).join('\n')

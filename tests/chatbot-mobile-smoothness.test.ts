@@ -6,6 +6,7 @@ import { effectScope, nextTick, ref } from 'vue'
 
 import { renderChatMarkdown, renderChatMarkdownBlocks } from '../app/utils/markdown'
 import { CHAT_BOTTOM_THRESHOLD_PX, useChatAutoScroll } from '../app/composables/useChatAutoScroll'
+import { CHATBOT_COMPOSABLE_FAMILY, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 /**
  * Chatbot trên điện thoại "không mượt" — đo bằng trình duyệt ở 390×844 trước khi
@@ -92,24 +93,52 @@ test('the message body binds one v-html per block', () => {
   assert.doesNotMatch(template, /v-html="renderChatMarkdown\(/, 'one v-html for the whole answer rebuilds every node per chunk')
 })
 
+// `useChatbot` is a facade over `composables/chatbot/*.ts` since its wave3 split: the
+// stream code is read as the composable's family (tests/_component-family.ts).
+const composableSource = (overrides?: Record<string, string>) => moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, overrides)
+
+function streamFlushProblems(source: string): string[] {
+  const problems: string[] = []
+  if (!/scheduleStreamFlush\(streamFlush\)/.test(source)) problems.push('the read loop must queue, not write, each chunk')
+  if (!/requestAnimationFrame\(fire\)/.test(source)) problems.push('the queued copy must wait for a frame')
+  if (!/flushStreamNow\(streamFlush\)\s*\n\s*if \(buffer\)/.test(source)) problems.push('whatever is queued must land before playback reads the transcript')
+  if (!/catch \(error\) \{[\s\S]{0,200}cancelStreamFlush\(streamFlush\)/.test(source)) problems.push('a queued frame must not re-add a removed bot message')
+  return problems
+}
+
+function flushHeightProblems(source: string): string[] {
+  const flush = source.match(/const flushToTranscript = \(\) => \{[\s\S]*?\n {4}\}/)?.[0] ?? ''
+  if (!flush) return ['flushToTranscript not found']
+  const problems: string[] = []
+  // The question's "Đang gửi…" line goes when the reply bubble arrives, in the
+  // same frame — not when the stream closes, under a finished answer.
+  if (!/question\?\.status === 'pending'\) question\.status = undefined/.test(flush)) problems.push('the question stops "sending" with the first word')
+  // The pending indicator goes at the first word, not at the end of the stream.
+  if (!/isReplyStreaming\.value = true/.test(flush)) problems.push('the indicator goes at the first word')
+  if (!/const isAwaitingFirstWord = computed\(\(\) => isSubmitting\.value && !isReplyStreaming\.value\)/.test(source)) problems.push('isAwaitingFirstWord is gated on the first word')
+  return problems
+}
+
 test('stream chunks reach the transcript at most once per frame', () => {
-  const source = read('../app/composables/useChatbot.ts')
-  assert.match(source, /scheduleStreamFlush\(streamFlush\)/, 'the read loop must queue, not write, each chunk')
-  assert.match(source, /requestAnimationFrame\(fire\)/)
-  assert.match(source, /flushStreamNow\(streamFlush\)\s*\n\s*if \(buffer\)/, 'whatever is queued must land before playback reads the transcript')
-  assert.match(source, /catch \(error\) \{[\s\S]{0,200}cancelStreamFlush\(streamFlush\)/, 'a queued frame must not re-add a removed bot message')
+  assert.deepEqual(streamFlushProblems(composableSource()), [])
 })
 
 test('nothing above the reply changes height once the reply has started', () => {
-  const source = read('../app/composables/useChatbot.ts')
-  const flush = source.match(/const flushToTranscript = \(\) => \{[\s\S]*?\n {4}\}/)?.[0] ?? ''
-  assert.ok(flush, 'flushToTranscript not found')
-  // The question's "Đang gửi…" line goes when the reply bubble arrives, in the
-  // same frame — not when the stream closes, under a finished answer.
-  assert.match(flush, /question\?\.status === 'pending'\) question\.status = undefined/)
-  // The pending indicator goes at the first word, not at the end of the stream.
-  assert.match(flush, /isReplyStreaming\.value = true/)
-  assert.match(source, /const isAwaitingFirstWord = computed\(\(\) => isSubmitting\.value && !isReplyStreaming\.value\)/)
+  assert.deepEqual(flushHeightProblems(composableSource()), [])
+})
+
+test('injection proof: the stream checks read the modules that carry the code', () => {
+  const send = 'composables/chatbot/send.ts'
+  const state = 'composables/chatbot/state.ts'
+  const breakIn = (file: string, from: string, to: string) => {
+    const source = readAppFile(file)
+    assert.ok(source.includes(from), `${file} no longer contains ${from}`)
+    return composableSource({ [file]: source.replace(from, to) })
+  }
+  assert.notDeepEqual(streamFlushProblems(breakIn(send, 'scheduleStreamFlush(streamFlush)', 'flushStreamNow(streamFlush)')), [])
+  assert.notDeepEqual(streamFlushProblems(breakIn(send, 'cancelStreamFlush(streamFlush)\n', '\n')), [])
+  assert.notDeepEqual(flushHeightProblems(breakIn(send, "if (question?.status === 'pending') question.status = undefined", '')), [])
+  assert.notDeepEqual(flushHeightProblems(breakIn(state, '&& !isReplyStreaming.value', '')), [])
 })
 
 // ─── 3. Bám đáy theo ý người đọc ─────────────────────────────────────────────

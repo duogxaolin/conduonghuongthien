@@ -13,7 +13,6 @@
     "exempt": true,
     "reason": "Content, not logic: the hardcoded Vietnamese fallback dictionary used when the translations API is unreachable. It grows by one line per i18n key, so growth is not a regression."
   },
-  "app/composables/useChatbot.ts": 857,
   "app/layouts/admin.vue": 767,
   "app/layouts/default.vue": 401,
   "app/pages/admin/chatbot/settings.vue": 448,
