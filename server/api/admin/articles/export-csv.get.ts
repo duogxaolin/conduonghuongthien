@@ -2,6 +2,7 @@ import { getDb } from '../../../utils/db'
 import { articles, users, categories } from '../../../db/schema'
 import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
 import { articleReadScope } from '../../../services/articles'
+import { likeContains } from '../../../utils/like-pattern'
 import { eq, like, desc, sql, inArray, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'
 import { csvCell } from '../../../utils/spreadsheet-cell'
@@ -67,7 +68,7 @@ export default defineEventHandler(async (event) => {
       throw err
     }
 
-    if (search) conditions.push(like(articles.title, `%${search}%`))
+    if (search) conditions.push(like(articles.title, likeContains(search)))
     if (typeFilter) conditions.push(eq(articles.type, typeFilter))
     if (statusFilter) conditions.push(eq(articles.status, statusFilter))
     if (categoryIdFilter) conditions.push(eq(articles.categoryId, categoryIdFilter))
@@ -103,7 +104,8 @@ export default defineEventHandler(async (event) => {
     .leftJoin(categories, eq(articles.categoryId, categories.id))
     .leftJoin(parentCategories, eq(categories.parentId, parentCategories.id))
     .where(whereClause)
-    .orderBy(desc(articles.createdAt))
+    // The list's order (index.get.ts), ties included: which rows the MAX_EXPORT cut keeps is defined.
+    .orderBy(desc(articles.createdAt), desc(articles.id))
     .limit(MAX_EXPORT)
 
   // Sinh CSV.

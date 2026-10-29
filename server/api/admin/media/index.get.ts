@@ -1,6 +1,7 @@
 import { finitePositive, MAX_PAGE } from '../../../utils/query-number'
 import { getDb } from '../../../utils/db'
 import { media, users } from '../../../db/schema'
+import { likeContains } from '../../../utils/like-pattern'
 import { eq, like, desc, sql, count } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 
@@ -10,7 +11,8 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event)
   const page = finitePositive(query.page, 1, MAX_PAGE)
-  const perPage = Math.min(100, Math.max(10, Number(query.perPage || 30)))
+  // finitePositive before the floor of 10 (FINDING-R7-8: `?perPage=abc` was LIMIT NaN, a 500).
+  const perPage = Math.max(10, finitePositive(query.perPage || 30, 30, 100))
   const offset = (page - 1) * perPage
   const search = String(query.search || '').trim()
   const mimeFilter = String(query.type || '').trim() // image | video
@@ -19,7 +21,8 @@ export default defineEventHandler(async (event) => {
 
   const conditions = []
   if (search) {
-    conditions.push(like(media.originalName, `%${search}%`))
+    // The file name as typed: `_` (common in file names) and `%` are not wildcards (FINDING-R7-7).
+    conditions.push(like(media.originalName, likeContains(search)))
   }
   if (mimeFilter === 'image') {
     conditions.push(like(media.mimeType, 'image/%'))
@@ -46,7 +49,7 @@ export default defineEventHandler(async (event) => {
     .from(media)
     .leftJoin(users, eq(media.uploadedBy, users.id))
     .where(whereClause)
-    .orderBy(desc(media.createdAt))
+    .orderBy(desc(media.createdAt), desc(media.id)) // ties: one bulk upload shares a second (FINDING-R7-9)
     .limit(perPage)
     .offset(offset)
 

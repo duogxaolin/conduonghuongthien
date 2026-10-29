@@ -1,6 +1,8 @@
 import { and, asc, count, eq, like, or } from 'drizzle-orm'
 import { chatbotSmallTalk, activityLogs, type ChatbotSmallTalk } from '../db/schema'
 import { getDb } from '../utils/db'
+import { likeContains } from '../utils/like-pattern'
+import { isDuplicateEntry } from '../utils/mysql-errors'
 import { sanitizeHtml } from '../utils/sanitize-html'
 import { plain, normalizeQuestion } from '../utils/chatbot/small-talk'
 import { SMALL_TALK_CATEGORIES } from '../data/chatbot-small-talk-seed'
@@ -136,7 +138,8 @@ export async function listSmallTalk(params: { page?: number; perPage?: number; s
   const search = (params.search || '').trim()
   if (search.length > 200) throw new ChatbotSmallTalkValidationError('search exceeds 200 characters')
   const conditions = []
-  if (search) conditions.push(or(like(chatbotSmallTalk.question, `%${search}%`), like(chatbotSmallTalk.answer, `%${search}%`))!)
+  // The text as typed — `_` and `%` are not wildcards (FINDING-R7-7).
+  if (search) conditions.push(or(like(chatbotSmallTalk.question, likeContains(search)), like(chatbotSmallTalk.answer, likeContains(search)))!)
   if (params.category) { if (!(SMALL_TALK_CATEGORIES as readonly string[]).includes(params.category)) throw new ChatbotSmallTalkValidationError('category is invalid'); conditions.push(eq(chatbotSmallTalk.category, params.category)) }
   if (params.enabled !== undefined) conditions.push(eq(chatbotSmallTalk.isEnabled, params.enabled))
   const where = conditions.length ? and(...conditions) : undefined
@@ -145,9 +148,13 @@ export async function listSmallTalk(params: { page?: number; perPage?: number; s
   return { items: rows.map(serializeSmallTalk), pagination: { page, perPage, total: Number(total), totalPages: Math.ceil(Number(total) / perPage) } }
 }
 
-/** Turn a unique-key collision into a clear validation error instead of a raw SQL error. */
+/**
+ * Turn a unique-key collision into a clear validation error instead of a raw SQL error.
+ * Down the `cause` chain: Drizzle wraps the driver's error, so the top-level `code` this used to
+ * read was never there — a duplicate question was a 500 (FINDING-R7-6).
+ */
 function isDuplicateKeyError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ER_DUP_ENTRY'
+  return isDuplicateEntry(error)
 }
 
 export async function createSmallTalk(actorId: number, input: SmallTalkInput) {

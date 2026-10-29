@@ -21,7 +21,8 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event)
   const page = finitePositive(query.page, 1, MAX_PAGE)
-  const perPage = Math.min(100, Math.max(10, Number(query.perPage || 20)))
+  // finitePositive before the floor of 10 (FINDING-R7-8: `?perPage=abc` was LIMIT NaN, a 500).
+  const perPage = Math.max(10, finitePositive(query.perPage || 20, 20, 100))
   const offset = (page - 1) * perPage
 
   const items = await db
@@ -39,7 +40,7 @@ export default defineEventHandler(async (event) => {
     .from(articles)
     .leftJoin(users, eq(articles.authorId, users.id))
     .where(eq(articles.categoryId, categoryId))
-    .orderBy(desc(articles.createdAt))
+    .orderBy(desc(articles.createdAt), desc(articles.id)) // ties broken: pages never share a row (FINDING-R7-9)
     .limit(perPage)
     .offset(offset)
 
