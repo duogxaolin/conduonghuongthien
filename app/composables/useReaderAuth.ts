@@ -61,6 +61,17 @@ function clearClaimFlag(): void {
   }
 }
 
+/**
+ * What one claim attempt came to. The silent claim on every page load ignores it; the
+ * manual button on /profile reads it, so it never reports a claim that did not happen
+ * (FINDING-R1: a failed POST used to read as "Đã gắn N đoạn trò chuyện…").
+ *   - `skipped` — already asked in this browser session (or not in a browser);
+ *   - `nothing` — this device holds no ticket to send (or its storage is unreadable);
+ *   - `sent`    — the server accepted the tickets;
+ *   - `failed`  — the tickets did not reach the server, or it refused them.
+ */
+export type ClaimOutcome = 'skipped' | 'nothing' | 'sent' | 'failed'
+
 /** Reasons the portal refused a sign-in, as the OAuth endpoints report them. */
 const SIGN_IN_MESSAGES: Record<string, string> = {
   disabled:          'Đăng nhập bằng Google hiện đang tắt trên cổng thông tin.',
@@ -81,25 +92,27 @@ export function useReaderAuth() {
    * conversation started later in the same browser would then never be claimed,
    * because the flag from months ago would still be set.
    *
-   * Everything here is swallowed. This runs on every page load for every signed-in
-   * reader, on pages whose job is to display an article — a failed claim has no
-   * standing to surface an error, and the reader can always retry from /profile.
+   * Nothing here throws. This runs on every page load for every signed-in reader, on
+   * pages whose job is to display an article — a failed claim has no standing to
+   * surface an error there, and the reader can always retry from /profile. The
+   * outcome is RETURNED instead (`ClaimOutcome`), for the one caller that reports it.
    */
-  async function claimChats(): Promise<void> {
-    if (typeof window === 'undefined') return
+  async function claimChats(): Promise<ClaimOutcome> {
+    if (typeof window === 'undefined') return 'skipped'
+    let sessions: Array<{ token: string }>
     try {
-      if (sessionStorage.getItem(CLAIM_FLAG_KEY)) return
+      if (sessionStorage.getItem(CLAIM_FLAG_KEY)) return 'skipped'
 
       const raw = localStorage.getItem(CHAT_SESSIONS_KEY)
-      if (!raw) return
+      if (!raw) return 'nothing'
 
       const parsed = JSON.parse(raw) as { sessions?: unknown }
-      if (!Array.isArray(parsed?.sessions)) return
+      if (!Array.isArray(parsed?.sessions)) return 'nothing'
 
       // Only entries that actually carry a ticket. A conversation the visitor
       // started but never sent a message in has `token: null` — there is nothing
       // to prove and no row on the server to attach.
-      const sessions = parsed.sessions
+      sessions = parsed.sessions
         .filter((item): item is { token: string } =>
           !!item && typeof item === 'object' && typeof (item as { token?: unknown }).token === 'string' && !!(item as { token: string }).token)
         .map(item => ({ token: item.token }))
@@ -107,11 +120,19 @@ export function useReaderAuth() {
       // The flag is set even when there is nothing to send: the answer would be
       // the same on every subsequent page load in this session.
       sessionStorage.setItem(CLAIM_FLAG_KEY, '1')
-      if (!sessions.length) return
-
-      await ($fetch as (u: string, o: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/claim-chats', { method: 'POST', body: { sessions } })
+      if (!sessions.length) return 'nothing'
     } catch {
-      // Deliberately silent — see above.
+      // Storage refused (private browsing) or a malformed entry: nothing this device
+      // can prove. Silent — see above.
+      return 'nothing'
+    }
+
+    try {
+      await ($fetch as (u: string, o: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/claim-chats', { method: 'POST', body: { sessions } })
+      return 'sent'
+    } catch {
+      // Silent here — see above; the outcome tells the caller that asks.
+      return 'failed'
     }
   }
 

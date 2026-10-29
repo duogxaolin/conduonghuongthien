@@ -12,7 +12,9 @@
       <i class="fa-solid fa-link" aria-hidden="true"></i>
       {{ claiming ? 'Đang gắn…' : 'Nhận các đoạn chat trên thiết bị này' }}
     </button>
-    <p v-if="message" role="status" class="mt-2.5 mb-0 text-[0.83rem] font-semibold text-brand-600">{{ message }}</p>
+    <!-- Lượt nhận không tới được máy chủ: nói là hỏng, không bao giờ "Đã gắn …" (FINDING-R1). -->
+    <p v-if="error" role="alert" class="mt-2.5 mb-0 text-[0.83rem] font-semibold text-danger-soft">{{ error }}</p>
+    <p v-else-if="message" role="status" class="mt-2.5 mb-0 text-[0.83rem] font-semibold text-brand-600">{{ message }}</p>
   </div>
 </template>
 
@@ -25,6 +27,12 @@
  * cách chính. The claim (which clears the session flag first, or a second press would do
  * nothing) is the page's (`useReaderChatClaim`). Display only.
  */
-defineProps<{ claiming: boolean; message: string }>()
+defineProps<{
+  claiming: boolean
+  /** The outcome sentence (`''` when none). */
+  message: string
+  /** The claim's failure sentence (`''` when none) — shown instead of `message`. */
+  error: string
+}>()
 const emit = defineEmits<{ claim: [] }>()
 </script>

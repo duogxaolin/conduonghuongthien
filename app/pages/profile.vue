@@ -99,8 +99,8 @@
                 :total-pages="notifTotalPages"
                 :prev-disabled="notifPage <= 1 || notifPending"
                 :next-disabled="notifPage >= notifTotalPages || notifPending"
-                @prev="loadNotifications(notifPage - 1)"
-                @next="loadNotifications(notifPage + 1)"
+                @prev="showNotificationPage(notifPage - 1)"
+                @next="showNotificationPage(notifPage + 1)"
               />
             </section>
 
@@ -138,12 +138,12 @@
 
               <ReaderProfilePager
                 v-if="commentsData && commentsData.totalPages > 1"
-                :page="commentsData.page"
+                :page="commentsShownPage"
                 :total-pages="commentsData.totalPages"
-                :prev-disabled="commentsPage <= 1 || commentsPending"
-                :next-disabled="commentsPage >= commentsData.totalPages || commentsPending"
-                @prev="goToCommentPage(commentsPage - 1)"
-                @next="goToCommentPage(commentsPage + 1)"
+                :prev-disabled="commentsShownPage <= 1 || commentsPending"
+                :next-disabled="commentsShownPage >= commentsData.totalPages || commentsPending"
+                @prev="goToCommentPage(commentsShownPage - 1)"
+                @next="goToCommentPage(commentsShownPage + 1)"
               />
             </section>
 
@@ -182,7 +182,7 @@
 
                 <ReaderProfileChatList v-else :items="myChats" />
 
-                <ReaderProfileChatClaim :claiming="claiming" :message="claimMessage" @claim="claimNow" />
+                <ReaderProfileChatClaim :claiming="claiming" :message="claimMessage" :error="claimError" @claim="claimNow" />
               </template>
             </section>
           </div>
@@ -263,11 +263,19 @@ const {
   markAllRead: markAllNotificationsRead,
 } = useReaderNotifications()
 
-/** Nút thử lại gọi lại CHÍNH lượt fetch đã hỏng, ở đúng trang đang xem. */
-function reloadNotifications() {
-  loadNotifications(notifPage.value).catch((err) => {
+/**
+ * Nạp một trang thông báo; loader ném lại đúng 401 → bỏ danh tính, như mọi lượt nạp khác.
+ * Phân trang đi qua đây, không gọi thẳng từ template (401 không ai bắt — FINDING-R2).
+ */
+function showNotificationPage(page: number) {
+  loadNotifications(page).catch((err) => {
     if (errorStatus(err) === 401) forgetReader()
   })
+}
+
+/** Nút thử lại gọi lại CHÍNH lượt fetch đã hỏng, ở đúng trang đang xem. */
+function reloadNotifications() {
+  showNotificationPage(notifPage.value)
 }
 
 /**
@@ -300,6 +308,11 @@ const commentsError = ref(false)
 const commentsPage = ref(1)
 
 const myComments = computed(() => commentsData.value?.comments || [])
+/**
+ * Trang ĐANG HIỆN: nhãn và hai nút phân trang cùng đếm từ đây (FINDING-R3). `commentsPage`
+ * là trang ĐÃ XIN — "Thử lại" xin lại đúng nó.
+ */
+const commentsShownPage = computed(() => commentsData.value?.page ?? 1)
 
 /** Nút thử lại gọi lại CHÍNH lượt fetch đã hỏng — không `location.reload()`. */
 async function loadComments() {
@@ -342,10 +355,11 @@ async function loadChats() {
   }
 }
 
-const { claiming, claimMessage, claimNow } = useReaderChatClaim({
+const { claiming, claimMessage, claimError, claimNow } = useReaderChatClaim({
   claimChats,
   clearClaimFlag,
   loadChats,
+  chatsFailed: () => chatsError.value,
   chatCount: () => myChats.value.length,
 })
 
