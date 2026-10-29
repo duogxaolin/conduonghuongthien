@@ -24,7 +24,8 @@ import { checkAndModerateContent, fastPreModerate, type ModerationCheckOutput } 
 import { createModerationRegexBudget } from './moderation-regex'
 import { logError } from '../utils/logger'
 import { checkParentEligibility, resolveCommentTarget } from './comments-rules'
-import { isMissingReferencedRow } from '../utils/fk-error'
+import { missingCommentTarget } from '../utils/fk-error'
+import { withDeadlockRetry } from '../utils/deadlock-retry'
 import { logReplyEmailHeld, MODERATION_FAILED, replyEmailHoldReason, type ModerationFailure } from './comments-reply-email'
 
 /** Per reader. Window 1 phút — chặn spam nhanh thay vì khoá dài. */
@@ -229,10 +230,13 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
    * page that its author is never told about — which is the exact state this
    * feature exists to prevent, and it fails silently: the thread looks correct to
    * everyone except the one person waiting for an answer.
+   *
+   * A deadlock victim (a reply holds comment → reader; a ban or account deletion holds
+   * reader → comment) is run again whole, outside the rolled-back transaction: the limits and
+   * the instant check ran once above, moderation and e-mail run once below, nothing in the
+   * transaction acts outside it. Its values are returned, never left in outer variables.
    */
-  let id = 0
-  let notifiedReaderId: number | null = null
-  const written = await db.transaction(async (tx) => {
+  const written = await withDeadlockRetry(() => db.transaction(async (tx) => {
     const inserted = await tx.insert(articleComments).values({
       articleId:   target.kind === 'article' ? target.articleId : null,
       mediaItemId: target.kind === 'media' ? target.mediaItemId : null,
@@ -250,25 +254,28 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     // — silently. Same trap as callback.get.ts and ip-bans.ts, guarded by
     // tests/insert-id-integration.test.ts.
     const [header] = inserted
-    id = Number(header?.insertId ?? 0)
+    const id = Number(header?.insertId ?? 0)
 
     // No-op for a top-level comment, and for a reader answering themselves.
-    notifiedReaderId = await createReplyNotification({
+    const notifiedReaderId = await createReplyNotification({
       commentId:     id,
       parentId:      input.parentId,
       actorReaderId: input.readerId,
       tx,
     })
-  }).then(() => true, (error: unknown) => {
+    return { id, notifiedReaderId }
+  })).then(row => row, (error: unknown) => {
     // What the comment hangs on went (a ban or purge took the parent, the article or video was
-    // deleted) between the checks above and the insert: the checks' own answer, not a 500.
-    if (isMissingReferencedRow(error)) return false
+    // deleted) between the checks above and the insert: the checks' own answer, not a 500. Only
+    // those keys (utils/fk-error.ts) — the author's own row, say, is not "the thing replied to".
+    const gone = missingCommentTarget(error)
+    if (gone) return gone
     throw error
   })
-  if (!written) {
-    if (input.parentId !== null) return { ok: false, statusCode: 400, message: 'Bình luận gốc không tồn tại.' }
-    return { ok: false, statusCode: 404, message: target.kind === 'media' ? 'Video không tồn tại.' : 'Bài viết không tồn tại.' }
-  }
+  if (written === 'parent') return { ok: false, statusCode: 400, message: 'Bình luận gốc không tồn tại.' }
+  if (written === 'article') return { ok: false, statusCode: 404, message: 'Bài viết không tồn tại.' }
+  if (written === 'media') return { ok: false, statusCode: 404, message: 'Video không tồn tại.' }
+  const { id, notifiedReaderId } = written
 
   if (id <= 0) return { ok: true, id }
 

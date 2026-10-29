@@ -28,7 +28,8 @@
  *    suite can break the audit insert and watch what survives. `beforeNext(pattern,
  *    fn)` runs `fn` just before the next matching statement — another writer landing
  *    between a read and the write that relies on it. `txStatements` lists what ran
- *    while a transaction was open.
+ *    while a transaction was open; `transactionsBegun` counts BEGINs (a deadlock retry
+ *    must begin a new transaction per attempt).
  *  - `like ?` gets `escape '\'`, MySQL's default escape character (SQLite has none),
  *    so a pattern escaped for MySQL matches the same rows here.
  *  - JSON columns are decoded on read, as mysql2 does. Statements outside the
@@ -204,8 +205,10 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
   const tx = drizzle(execute)
   let transactionOpen = false
 
+  let transactionsBegun = 0
   async function transaction<T>(callback: (handle: typeof tx) => Promise<T>): Promise<T> {
     if (transactionOpen) throw new Error('nested transaction in the SQLite harness')
+    transactionsBegun += 1
     sqlite.exec('BEGIN')
     transactionOpen = true
     try {
@@ -267,7 +270,14 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     failNext(pattern: RegExp, fields?: Record<string, unknown>) { failures.push({ pattern, fields }) },
     /** `run` executes (on the same database) just before the next statement whose SQL matches `pattern`. */
     beforeNext(pattern: RegExp, run: () => void) { hooks.push({ pattern, run }) },
+    /**
+     * How many transactions were begun so far. A deadlock retry has to begin a NEW one per attempt:
+     * InnoDB has rolled the victim's back whole, so running the statements again inside the same
+     * callback would run them outside any transaction (verifier V4-10).
+     */
+    get transactionsBegun() { return transactionsBegun },
     reset() {
+      transactionsBegun = 0
       failures.length = 0
       hooks.length = 0
       statements.length = 0

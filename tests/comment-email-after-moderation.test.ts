@@ -50,20 +50,32 @@ const select = (projection: Row) => ({
     return chain
   },
 })
-/** The next comment insert fails with these fields (e.g. errno 1452: the parent went meanwhile). */
-let failNextInsert: Row | null = null
-const insert = () => ({
+/** Errors the next inserts throw, in order — each into one table (the comment, or the notification). */
+const insertFailures: Array<{ table: unknown, error: unknown }> = []
+let transactionsBegun = 0
+const insert = (table: unknown) => ({
   values: () => {
-    if (failNextInsert) {
-      const fields = failNextInsert
-      failNextInsert = null
-      return Promise.reject(Object.assign(new Error('Cannot add or update a child row: a foreign key constraint fails'), fields))
-    }
-    const result = Promise.resolve([{ insertId: 99 }])
-    return Object.assign(result, { onDuplicateKeyUpdate: async () => [{ affectedRows: 1 }] })
+    const at = insertFailures.findIndex(failure => failure.table === table)
+    const result = at >= 0 ? Promise.reject(insertFailures.splice(at, 1)[0]!.error) : Promise.resolve([{ insertId: 99 }])
+    result.catch(() => {}) // rejected only once awaited, as a Drizzle query is
+    return Object.assign(result, { onDuplicateKeyUpdate: () => result })
   },
 })
-const fakeDb = { select, insert, transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({ select, insert }) }
+const fakeDb = {
+  select,
+  insert,
+  transaction: async (fn: (tx: unknown) => Promise<unknown>) => { transactionsBegun += 1; return fn({ select, insert }) },
+}
+
+/** As on MySQL: Drizzle's "Failed query" error, the driver's error as its `cause` (verbatim message shape, MySQL 8.0.46). */
+const { DrizzleQueryError } = await import('drizzle-orm')
+const { readerNotifications } = await import('../server/db/schema')
+function fkError(table: string, constraint: string, column: string, references: string) {
+  const sqlMessage = `Cannot add or update a child row: a foreign key constraint fails (\`db\`.\`${table}\`, CONSTRAINT \`${constraint}\` FOREIGN KEY (\`${column}\`) REFERENCES \`${references}\` (\`id\`) ON DELETE CASCADE)`
+  return new DrizzleQueryError(`insert into \`${table}\` …`, [], Object.assign(new Error(sqlMessage), { errno: 1452, code: 'ER_NO_REFERENCED_ROW_2', sqlState: '23000', sqlMessage }))
+}
+const deadlockError = () => new DrizzleQueryError('insert into `article_comments` …', [],
+  Object.assign(new Error('Deadlock found when trying to get lock; try restarting transaction'), { errno: 1213, code: 'ER_LOCK_DEADLOCK' }))
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb, getPool: () => null } })
 
 // ─── Transport, limits, bans ──────────────────────────────────────────────────
@@ -74,19 +86,22 @@ mock.module('../server/utils/mailer', {
     sendMail: async (args: { to: string, subject: string, text: string }) => { mails.push(args) },
   },
 })
-mock.module('../server/utils/rate-limit-store', { namedExports: { recordRateLimitHit: async () => ({ blocked: false, retryAfterSeconds: 0 }) } })
+let rateLimitHits = 0
+mock.module('../server/utils/rate-limit-store', { namedExports: { recordRateLimitHit: async () => { rateLimitHits += 1; return { blocked: false, retryAfterSeconds: 0 } } } })
 mock.module('../server/utils/rate-limit-deps', { namedExports: { rateLimitDeps: () => ({}) } })
 mock.module('../server/services/ip-bans', { namedExports: { loadIpBanValues: async () => [] } })
 
 // ─── Moderation: the verdict each test wants ──────────────────────────────────
 type Behaviour = 'clean' | 'hide' | 'hide-write-failed' | 'flag-only' | 'ai-failed' | 'throw' | 'slow-clean' | 'slow-ai-failed' | 'deferred'
 let behaviour: Behaviour = 'clean'
+let preModerations = 0
 const moderationCalls: Array<{ targetId?: number }> = []
 /** What each moderation call was given besides the text — the request's regex budget. */
 const budgetsSeen = { instant: [] as unknown[], full: [] as unknown[] }
 mock.module('../server/services/moderation-worker', {
   namedExports: {
     fastPreModerate: async (_body: string, context?: { regexBudget?: unknown }) => {
+      preModerations += 1
       budgetsSeen.instant.push(context?.regexBudget)
       return { blocked: false, action: 'allow', severity: 'low', reason: '', matchedRule: '' }
     },
@@ -271,22 +286,68 @@ test('the subject of a reader reply is fixed and never carries the replier\'s ch
   assert.match(mails[0]!.text, /Ban quản trị đã trả lời bình luận của bạn/)
 })
 
-test('what the comment hangs on removed between the checks and the insert (FK 1452) is the checks\' own answer, not a 500', async () => {
+test('what the comment hangs on removed between the checks and the insert (FK 1452) is the checks\' own answer, not a 500', async (t) => {
+  t.after(() => { insertFailures.length = 0 }) // a failure here must not leave queued errors to the next test
   behaviour = 'clean'
   mails.length = 0
   moderationCalls.length = 0
   // A reply whose parent a ban / purge / account deletion removed meanwhile (verifier round 4, M1).
-  failNextInsert = { errno: 1452, code: 'ER_NO_REFERENCED_ROW_2' }
+  // On MySQL the 1452 is the `cause` of Drizzle's error (V4-08: without walking it, still a 500).
+  insertFailures.push({ table: articleComments, error: fkError('article_comments', 'fk_article_comments_parent', 'parent_id', 'article_comments') })
   assert.deepEqual(await createComment(replyInput('Một câu trả lời')), { ok: false, statusCode: 400, message: 'Bình luận gốc không tồn tại.' })
   // A top-level comment whose article was deleted meanwhile.
-  failNextInsert = { errno: 1452 }
+  insertFailures.push({ table: articleComments, error: fkError('article_comments', 'fk_article_comments_article', 'article_id', 'articles') })
   assert.deepEqual(await createComment({ readerId: 5, articleId: 1, parentId: null, body: 'Bình luận gốc', ip: '203.0.113.9', userAgent: 'test', event: requestEvent() }),
     { ok: false, statusCode: 404, message: 'Bài viết không tồn tại.' })
   await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual([moderationCalls.length, mails.length], [0, 0])
+  // Only the keys the comment hangs on (verifier L-3): the author's own row gone, or the
+  // notification's keys, are not "the thing replied to" — thrown, nothing mailed.
+  for (const error of [
+    fkError('article_comments', 'fk_article_comments_reader', 'reader_id', 'reader_accounts'),
+    Object.assign(new Error('Cannot add or update a child row'), { errno: 1452 }), // names no key
+  ]) {
+    insertFailures.push({ table: articleComments, error })
+    await assert.rejects(createComment(replyInput('Một câu trả lời')), (thrown: unknown) => thrown === error)
+  }
+  // V4-20: the comment insert went through, the NOTIFICATION's insert broke a key — thrown, not
+  // answered as a missing parent; the transaction rolls back and nobody is mailed.
+  const notifyFailure = fkError('reader_notifications', 'fk_reader_notifications_reader', 'reader_id', 'reader_accounts')
+  insertFailures.push({ table: readerNotifications, error: notifyFailure })
+  await assert.rejects(createComment(replyInput('Một câu trả lời')), (thrown: unknown) => thrown === notifyFailure)
+  await settle()
+  assert.deepEqual([moderationCalls.length, mails.length], [0, 0])
   // Any other failure is still thrown.
-  failNextInsert = { errno: 1205 }
-  await assert.rejects(createComment(replyInput('Một câu trả lời')), /foreign key constraint fails/)
+  const timeout = Object.assign(new Error('Lock wait timeout exceeded'), { errno: 1205 })
+  insertFailures.push({ table: articleComments, error: timeout })
+  await assert.rejects(createComment(replyInput('Một câu trả lời')), (thrown: unknown) => thrown === timeout)
+})
+
+test('a reply chosen as a deadlock victim is written again in a new transaction — the limits, checks, moderation and e-mail happen once', async (t) => {
+  // A reply holds its parent comment, then the parent author's reader row; a ban or an account
+  // deletion holds them the other way round. InnoDB rolls the victim back whole: before, a 500
+  // (verifier round 4, H-B — 10 of 10 next to a reader with 200–1000 comments).
+  behaviour = 'clean'
+  mails.length = 0
+  moderationCalls.length = 0
+  insertFailures.length = 0
+  t.after(() => { insertFailures.length = 0 }) // a failure here must not leave queued errors to the next test
+  insertFailures.push({ table: articleComments, error: deadlockError() }, { table: readerNotifications, error: deadlockError() })
+  const [hits, pre, begun] = [rateLimitHits, preModerations, transactionsBegun]
+  assert.deepEqual(await createComment(replyInput('Một câu trả lời')), { ok: true, id: 99 })
+  await settle()
+  // Exactly three attempts, each its own transaction (V4-10: a retry inside the rolled-back one;
+  // V4-17: two attempts) — and everything outside the transaction once.
+  assert.deepEqual([transactionsBegun - begun, rateLimitHits - hits, preModerations - pre, moderationCalls.length, mails.length], [3, 2, 1, 1, 1])
+
+  // Three in a row: the deadlock is the answer, nothing moderated, nothing mailed.
+  mails.length = 0
+  moderationCalls.length = 0
+  for (let n = 0; n < 3; n += 1) insertFailures.push({ table: articleComments, error: deadlockError() })
+  const before = transactionsBegun
+  await assert.rejects(createComment(replyInput('Một câu trả lời')), /Failed query/)
+  await settle()
+  assert.deepEqual([transactionsBegun - before, moderationCalls.length, mails.length, insertFailures.length], [3, 0, 0, 0])
 })
 
 test('a top-level comment (nobody to notify) is still moderated, and nothing is mailed', async () => {

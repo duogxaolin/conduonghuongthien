@@ -28,7 +28,7 @@ import { effectiveDisplayName } from '../utils/display-name'
 import { likeContains } from '../utils/like-pattern'
 import { readAffectedRows } from '../utils/affected-rows'
 import { withDeadlockRetry } from '../utils/deadlock-retry'
-import { readerExistsNow } from './reader-moderation-tx'
+import { readerStillExists } from './reader-moderation-tx'
 
 /** Server-enforced ceiling. A client-supplied page size is a request. */
 export const READER_MAX_PER_PAGE = 100
@@ -239,9 +239,10 @@ export async function banReader(params: { readerId: number, reason: string | nul
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-  // Reader row first (this UPDATE), then the comments, counted on this transaction — lock order and retry:
-  // reader-moderation-tx.ts. 0 rows: the account went while we waited (404, no audit — verifier D1).
+  // The base's statements (reader-moderation-tx.ts): counted first with plain reads on this transaction,
+  // then the reader row, then the comments. 0 rows: the account went meanwhile (404, no audit — D1).
   const impact = await withDeadlockRetry(() => db.transaction(async (tx) => {
+    const counted = await countReaderCommentImpact(params.readerId, tx)
     const flagged = readAffectedRows(await tx
       .update(readerAccounts)
       .set({
@@ -254,7 +255,6 @@ export async function banReader(params: { readerId: number, reason: string | nul
       .where(eq(readerAccounts.id, params.readerId)))
     if (flagged === 0) return null
     if (flagged !== 1) throw new Error('banReader: the driver did not report the affected rows')
-    const counted = await countReaderCommentImpact(params.readerId, tx)
 
     // The FK cascade on parent_id takes the administrator replies with the
     // top-level comments they sit under (design.md D8). The confirmation dialog
@@ -302,6 +302,7 @@ export async function unbanReader(params: { readerId: number, actorId: number })
   // Bỏ chặn không xoá gì (mọi số 0). Chỉ đổi hàng ĐANG bị chặn, đếm trong transaction: chưa bị
   // chặn — hay một lượt bỏ chặn khác vừa thắng — thì không ghi audit (FINDING-R6-10, M1).
   const impact = { comments: 0, adminReplies: 0, otherReaderReplies: 0 }
+  if (!existing.isBanned) return { ok: true, impact } // as the base: no transaction, no row touched
   await db.transaction(async (tx) => {
     const lifted = readAffectedRows(await tx
       .update(readerAccounts)
@@ -330,12 +331,9 @@ export async function deleteReader(params: { readerId: number, actorId: number }
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-  // Reader row first, then the comments, counted on this transaction (reader-moderation-tx.ts): what a ban
-  // or purge ahead of us removed is not counted again (4 claimed for 2 — verifier X1/D3). The DELETE is
-  // counted: 0 rows — the 404 of a missing account, no second "delete" row (M1 family).
+  // The base's statements (reader-moderation-tx.ts): plain-read counts on this transaction, then the
+  // DELETE, counted — 0 rows is the 404 of a missing account, no second "delete" row (M1 family).
   const impact = await withDeadlockRetry(() => db.transaction(async (tx) => {
-    await tx.select({ id: readerAccounts.id }).from(readerAccounts)
-      .where(eq(readerAccounts.id, params.readerId)).for('update')
     const counted = await countReaderCommentImpact(params.readerId, tx)
     const removed = readAffectedRows(await tx.delete(readerAccounts).where(eq(readerAccounts.id, params.readerId)))
     if (removed === 0) return null
@@ -370,12 +368,12 @@ export async function purgeReaderComments(params: { readerId: number, actorId: n
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-  // The shared deletion path (design.md D8), with its audit row. Locks the comments, never the reader row
-  // (verifier H1); a purge ahead of us has committed and we count what is left (M1). Removed nothing: the
-  // account may have gone meanwhile with its comments — a fresh read says so (404, no audit — D2).
+  // The shared deletion path (design.md D8), with its audit row — the base's statements, counted with plain
+  // reads on this transaction, never the reader row locked (reader-moderation-tx.ts). Removed nothing: the
+  // account may have gone with its comments — a plain read says so (404, no audit — D2).
   const impact = await withDeadlockRetry(() => db.transaction(async (tx) => {
     const removed = await deleteReaderComments(params.readerId, tx)
-    if (removed.comments === 0 && !await readerExistsNow(tx, params.readerId)) return null
+    if (removed.comments === 0 && !await readerStillExists(tx, params.readerId)) return null
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
       action:     'delete',
