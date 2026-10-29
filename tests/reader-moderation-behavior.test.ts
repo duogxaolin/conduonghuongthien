@@ -329,16 +329,81 @@ test('ip-bans: a valid address or IPv4 range is stored as normalised, with its a
 })
 
 test('FINDING-R6-11: the address-ban list is newest first, and a ban stays readable after its author account is deleted', async () => {
-  const first = await h.request('POST', '/api/admin/ip-bans', moderator, { value: '192.0.2.1' })
+  // Values that sort the other way round from their ids: newest first is not "highest address first".
+  const first = await h.request('POST', '/api/admin/ip-bans', moderator, { value: '198.51.100.9' })
   const second = await h.request('POST', '/api/admin/ip-bans', moderator, { value: '192.0.2.2', reason: 'Lặp lại' })
+  const third = await h.request('POST', '/api/admin/ip-bans', moderator, { value: '10.0.0.0/8' })
   h.harness.sqlite.prepare('DELETE FROM users WHERE id = ?').run(moderator.id)
   const response = await h.request('GET', '/api/admin/ip-bans', viewer)
   assert.equal(response.status, 200)
   // Before: oldest first, while the module promised "newest first — the officer
   // reviewing bans cares about recent decisions" (the page does not re-sort).
   assert.deepEqual((response.body.bans as Json[]).map(ban => [ban.id, ban.value, ban.reason, ban.createdByName]), [
-    [second.body.id, '192.0.2.2', 'Lặp lại', null], [first.body.id, '192.0.2.1', null, null],
+    [third.body.id, '10.0.0.0/8', null, null], [second.body.id, '192.0.2.2', 'Lặp lại', null], [first.body.id, '198.51.100.9', null, null],
   ])
+})
+
+// ─── Two identical requests at once (verifier M1) ────────────────────────────
+// `beforeNext` commits what the OTHER request did just before this one's first write in
+// its transaction — the interleaving two officers' clicks produce on MySQL (replayed on
+// MySQL 8 in /home/ray/orca/cdht-wave3-tests-r6-proof/mysql-reader-race-*.log).
+
+test('FINDING-R6-10 (M1): two unbans at once — the one that finds the ban already lifted records nothing', async () => {
+  const id = await reader({ isBanned: true, banReason: 'Spam', bannedAt: new Date(), bannedBy: moderator.id })
+  h.harness.beforeNext(/^update `reader_accounts`/, () => h.harness.sqlite.exec(
+    `COMMIT; UPDATE reader_accounts SET is_banned = 0, ban_reason = NULL, banned_at = NULL, banned_by = NULL WHERE id = ${id};
+     INSERT INTO activity_logs (user_id, action, resource, resource_id, meta) VALUES (${viewer.id}, 'update', 'readers', ${id}, '{"operation":"unban"}'); BEGIN`,
+  ))
+  const response = await h.request('POST', `/api/admin/readers/${id}/unban`, moderator)
+  // Same answer as for a reader who is not banned; before: a second "unban" row (30/30 on MySQL).
+  assert.deepEqual([response.status, response.body], [200, { ok: true }])
+  assert.deepEqual(audits().map(a => [a.userId, a.meta.operation]), [[viewer.id, 'unban']])
+  assert.equal(readerRow(id)!.isBanned, false)
+})
+
+test('FINDING-R6-10 (M1): two bans at once — the second counts only what it deleted, and both bump the ticket version', async () => {
+  const { id } = await readerWithThread()
+  // The other ban commits first: flag, version + 1, the reader's two comments gone.
+  h.harness.beforeNext(/^(select .* from `reader_accounts` .*for update|update `reader_accounts`)/s, () => h.harness.sqlite.exec(
+    `COMMIT; UPDATE reader_accounts SET is_banned = 1, ban_reason = 'Khác', banned_by = ${viewer.id}, token_version = token_version + 1 WHERE id = ${id};
+     DELETE FROM article_comments WHERE reader_id = ${id};
+     INSERT INTO activity_logs (user_id, action, resource, resource_id, meta) VALUES (${viewer.id}, 'update', 'readers', ${id}, '{"operation":"ban","deletedComments":2}'); BEGIN`,
+  ))
+  const response = await h.request('POST', `/api/admin/readers/${id}/ban`, moderator, { reason: 'Spam' })
+  assert.deepEqual([response.status, response.body.impact], [200, { comments: 0, adminReplies: 0, otherReaderReplies: 0 }])
+  // Before: this audit row also claimed the 2 comments (4 claimed for 2 deleted — 30/30 on
+  // MySQL), and `tokenVersion` was written from the stale read: 1 after two bans.
+  assert.deepEqual(audits().map(a => [a.userId, a.meta.deletedComments]), [[viewer.id, 2], [moderator.id, 0]])
+  assert.equal(readerRow(id)!.tokenVersion, 2)
+})
+
+test('FINDING-R6-10 (M1): two lifts of one address ban at once — the loser is the 404 of a missing ban, with no audit row', async () => {
+  const id = (await h.request('POST', '/api/admin/ip-bans', moderator, { value: '192.0.2.88' })).body.id as number
+  h.harness.beforeNext(/^delete from `reader_ip_bans`/, () => h.harness.sqlite.exec(
+    `COMMIT; DELETE FROM reader_ip_bans WHERE id = ${id};
+     INSERT INTO activity_logs (user_id, action, resource, resource_id, meta) VALUES (${viewer.id}, 'delete', 'reader_ip_bans', ${id}, '{"value":"192.0.2.88"}'); BEGIN`,
+  ))
+  const response = await h.request('DELETE', `/api/admin/ip-bans/${id}`, moderator)
+  // Before: 200 and a second "delete" row for one lift (30/30 on MySQL).
+  assert.deepEqual([response.status, response.body.statusMessage], [404, 'Không tìm thấy mục chặn này.'])
+  assert.deepEqual(audits().map(a => [a.userId, a.action]), [[moderator.id, 'create'], [viewer.id, 'delete']])
+})
+
+test('FINDING-R6-10 (M1): two bans of one address at once — the loser is the 409 of a duplicate, not a 500', async () => {
+  // The schema's UNIQUE(value), which the harness leaves out.
+  h.harness.sqlite.exec('CREATE UNIQUE INDEX test_reader_ip_bans_value ON reader_ip_bans (value)')
+  try {
+    h.harness.beforeNext(/^insert (?:ignore )?into `reader_ip_bans`/, () => h.harness.sqlite.exec(
+      `COMMIT; INSERT INTO reader_ip_bans (value, created_by) VALUES ('192.0.2.99', ${viewer.id}); BEGIN`,
+    ))
+    const response = await h.request('POST', '/api/admin/ip-bans', moderator, { value: '192.0.2.99' })
+    // Before: ER_DUP_ENTRY → 500 (30/30 on MySQL).
+    assert.deepEqual([response.status, response.body.statusMessage], [409, 'Địa chỉ này đã có trong danh sách chặn.'])
+    assert.equal(h.harness.rows(readerIpBans).length, 1)
+    assert.deepEqual(audits(), [])
+  } finally {
+    h.harness.sqlite.exec('DROP INDEX test_reader_ip_bans_value')
+  }
 })
 
 test('ip-bans delete: the row goes and the audit row keeps the value; 404 for a missing one; all or nothing', async () => {

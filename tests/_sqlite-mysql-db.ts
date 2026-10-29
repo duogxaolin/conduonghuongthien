@@ -156,14 +156,18 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
         cursor += 1
       })
       if (upsert && !names.length) throw new Error(`unsupported upsert of default values: ${fullSql}`)
+      // `insert ignore` skips a row that breaks a unique key, as MySQL's does (a suite that
+      // needs the key creates it: this harness leaves unique constraints out).
+      const insert = /^insert ignore /.test(sql) ? 'INSERT OR IGNORE' : 'INSERT'
       const statement = names.length
-        ? `INSERT INTO ${tableName} (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})${upsert?.conflictClause ?? ''}`
-        : `INSERT INTO ${tableName} DEFAULT VALUES`
+        ? `${insert} INTO ${tableName} (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})${upsert?.conflictClause ?? ''}`
+        : `${insert} INTO ${tableName} DEFAULT VALUES`
       // The update list's parameters follow the values' in MySQL's order too.
       if (upsert) values.push(...params.slice(cursor).map(toSqliteParam))
       const result = sqlite.prepare(statement).run(...values)
       affectedRows += Number(result.changes)
-      insertId = insertId || Number(result.lastInsertRowid)
+      // An ignored row has no id (MySQL answers insertId 0); SQLite would repeat the last one.
+      if (Number(result.changes) > 0) insertId = insertId || Number(result.lastInsertRowid)
     }
     return { rows: [{ insertId, affectedRows }] }
   }

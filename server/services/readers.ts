@@ -26,6 +26,7 @@ import { activityLogs, articleComments, articles, mediaItems, readerAccounts, us
 import { countReaderCommentImpact, deleteReaderComments, type ReaderCommentImpact } from './comments'
 import { effectiveDisplayName } from '../utils/display-name'
 import { likeContains } from '../utils/like-pattern'
+import { readAffectedRows } from '../utils/affected-rows'
 
 /** Server-enforced ceiling. A client-supplied page size is a request. */
 export const READER_MAX_PER_PAGE = 100
@@ -234,18 +235,18 @@ export async function banReader(params: { readerId: number, reason: string | nul
   const db = getDb()
 
   const [existing] = await db
-    .select({ id: readerAccounts.id, isBanned: readerAccounts.isBanned, tokenVersion: readerAccounts.tokenVersion, displayName: readerAccounts.displayName })
+    .select({ id: readerAccounts.id, displayName: readerAccounts.displayName })
     .from(readerAccounts)
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
 
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-
-  // Measured before the delete: afterwards there is nothing left to count, and a
-  // successful ban would be indistinguishable from one that removed nothing.
-  const impact = await countReaderCommentImpact(params.readerId)
-
+  // Counted before the delete, under the reader row's lock: two bans at once both claimed the same
+  // comments and wrote version + 1 from one stale read (FINDING-R6-10, verifier M1).
+  let impact: ReaderCommentImpact = { comments: 0, adminReplies: 0, otherReaderReplies: 0 }
   await db.transaction(async (tx) => {
+    await tx.select({ id: readerAccounts.id }).from(readerAccounts).where(eq(readerAccounts.id, params.readerId)).for('update')
+    impact = await countReaderCommentImpact(params.readerId)
     await tx
       .update(readerAccounts)
       .set({
@@ -253,7 +254,7 @@ export async function banReader(params: { readerId: number, reason: string | nul
         banReason:    params.reason?.trim() || null,
         bannedAt:     new Date(),
         bannedBy:     params.actorId,
-        tokenVersion: existing.tokenVersion + 1,
+        tokenVersion: sql`${readerAccounts.tokenVersion} + 1`,
       })
       .where(eq(readerAccounts.id, params.readerId))
 
@@ -300,17 +301,16 @@ export async function unbanReader(params: { readerId: number, actorId: number })
     .limit(1)
 
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-  // Bỏ chặn không xoá gì (mọi số 0); chưa bị chặn thì không ghi, không audit (FINDING-R6-10).
+  // Bỏ chặn không xoá gì (mọi số 0). Chỉ đổi hàng ĐANG bị chặn, đếm trong transaction: chưa bị
+  // chặn — hay một lượt bỏ chặn khác vừa thắng — thì không ghi audit (FINDING-R6-10, M1).
   const impact = { comments: 0, adminReplies: 0, otherReaderReplies: 0 }
-  if (!existing.isBanned) return { ok: true, impact }
-  // Update and audit row in one transaction, same reasoning as banReader: a second
-  // statement that fails must not leave the account unbanned with no record of who.
   await db.transaction(async (tx) => {
-    await tx
+    const lifted = readAffectedRows(await tx
       .update(readerAccounts)
       .set({ isBanned: false, banReason: null, bannedAt: null, bannedBy: null })
-      .where(eq(readerAccounts.id, params.readerId))
-
+      .where(and(eq(readerAccounts.id, params.readerId), eq(readerAccounts.isBanned, true))))
+    if (lifted === 0) return
+    if (lifted !== 1) throw new Error('unbanReader: the driver did not report the affected rows')
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
       action:     'update',
