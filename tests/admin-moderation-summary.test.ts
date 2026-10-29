@@ -99,8 +99,8 @@ async function mountModerationTab(fetchImpl: (url: string, opts?: Record<string,
       return `const {${names.replace(/\s+as\s+/g, ': ')}} = __modules[${JSON.stringify(from)}];`
     })
     .replace(/export default/, 'return')
-  // Auto-import của Nuxt (`ref`, `onMounted`) và `$fetch` toàn cục, cấp qua tham số.
-  const component = new Function('__modules', 'ref', 'onMounted', '$fetch', code)(modules, Vue.ref, () => {}, fetchImpl) as {
+  // Auto-import của Nuxt (`ref`, `onMounted`, `adminFetch` — lô F D-FETCH) và `$fetch` toàn cục, cấp qua tham số.
+  const component = new Function('__modules', 'ref', 'onMounted', '$fetch', 'adminFetch', code)(modules, Vue.ref, () => {}, fetchImpl, fetchImpl) as {
     setup: (props: object, ctx: object) => Record<string, unknown>
   }
   const bindings = component.setup({}, { expose: () => {}, emit: () => {}, attrs: {}, slots: {} })
@@ -140,7 +140,8 @@ test('bấm "Thử lại" thật sự tải lại: lỗi được xoá, hai endp
   const calls: Array<{ url: string; params?: unknown }> = []
   let mode: 'fail' | 'pass' = 'fail'
   const { bindings, tree } = await mountModerationTab(async (url, opts) => {
-    calls.push({ url, params: opts?.params })
+    // `params:` became `query:` (D-FETCH lô F: `AdminFetchOptions` has `query` only) — the same wire.
+    calls.push({ url, params: opts?.query ?? opts?.params })
     if (mode === 'fail') throw Object.assign(new Error('500'), { data: { statusMessage: 'Máy chủ kiểm duyệt không phản hồi.' } })
     if (url === '/api/admin/ai/moderation/queue') return { ok: true, total: 7, items: [] }
     return { ok: true, rules: [{ isEnabled: true }, { isEnabled: false }, { isEnabled: true }] }

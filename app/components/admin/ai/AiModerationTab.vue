@@ -15,6 +15,7 @@
  */
 import { errorMessage } from '~/utils/errorMessage'
 import { summarizeModeration, type ModerationSummary } from '~/utils/moderation-summary'
+import type { ModerationQueueResponse, ModerationRulesResponse } from '~/types/moderation'
 
 const moderationLoading = ref(false)
 const moderationError = ref('')
@@ -26,10 +27,10 @@ async function loadModeration() {
   try {
     const [queue, rules] = await Promise.all([
       // Chỉ cần tổng: xin 1 dòng, đọc `total` (đếm trước LIMIT ở máy chủ).
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ total?: unknown }>)('/api/admin/ai/moderation/queue', {
-        params: { status: 'pending', perPage: 1 },
+      adminFetch<ModerationQueueResponse>('/api/admin/ai/moderation/queue', {
+        query: { status: 'pending', perPage: 1 },
       }),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ rules?: Array<{ isEnabled?: unknown }> }>)('/api/admin/ai/moderation/rules'),
+      adminFetch<ModerationRulesResponse>('/api/admin/ai/moderation/rules'),
     ])
     summary.value = summarizeModeration(queue, rules)
   } catch (err: unknown) {

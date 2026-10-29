@@ -13,6 +13,18 @@ import type { Payload } from './handler-payload'
 type ServicesHandler = typeof import('~~/server/api/admin/ai/services/index.get').default
 type ServiceUpdateHandler = typeof import('~~/server/api/admin/ai/services/[id].put').default
 type TestCallHandler = typeof import('~~/server/api/admin/ai/test-call.post').default
+type UsageHandler = typeof import('~~/server/api/admin/ai/usage.get').default
+type LogsHandler = typeof import('~~/server/api/admin/ai/logs/index.get').default
+type ProvidersHandler = typeof import('~~/server/api/admin/ai/providers/index.get').default
+type PricingHandler = typeof import('~~/server/api/admin/ai/pricing/index.get').default
+
+/** `GET /api/admin/ai/usage` — the dashboard's month: totals, per service, per day, the budget. */
+export type AdminAiUsageResponse = Payload<UsageHandler>
+/** `GET /api/admin/ai/logs` — one page of the call log (AiLogsTab). */
+export type AdminAiLogsResponse = Payload<LogsHandler>
+/** `GET /api/admin/ai/providers` and `/pricing` — the parent's fallback read for the Services/Logs tabs. */
+export type AdminAiProvidersResponse = Payload<ProvidersHandler>
+export type AdminAiPricingResponse = Payload<PricingHandler>
 
 /** `GET /api/admin/ai/services` — one row per AI service, plus its `defaultSystemPrompt`. */
 export type AdminAiServicesResponse = Payload<ServicesHandler>
