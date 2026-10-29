@@ -142,6 +142,17 @@ describe('menu entries follow the account\'s grants (hand-written table)', () =>
     }
   })
 
+  it('the menu follows the signed-in account live — another account, the MFA entry and the grants with it', async (t) => {
+    const ctx = await openLayout(t, { user: superAdmin() })
+    assert.deepEqual(menuLabels(ctx), labels(() => true))
+    ctx.user.value = account('bientap', [{ resource: 'ai' }])
+    await ctx.settle()
+    assert.deepEqual(menuLabels(ctx), labels(e => ungated(e) || (typeof e.gate === 'object' && e.gate?.resource === 'ai')))
+    ctx.user.value = superAdmin()
+    await ctx.settle()
+    assert.ok(menuLabels(ctx).includes('Bắt buộc xác thực hai bước'))
+  })
+
   it('no account (signed out) leaves only the ungated entries and no account card or chip', async (t) => {
     const ctx = await openLayout(t, { user: null })
     assert.deepEqual(menuLabels(ctx), labels(ungated))
@@ -206,6 +217,19 @@ describe('the route: what each link hands the router, the accordion, the page ti
     await ctx.settle()
     await ctx.go('/admin/users-export', undefined)
     assert.equal(accordionButton(ctx).props['aria-expanded'], false, 'a mere string prefix does not')
+  })
+
+  it('a navigation that only changes the query, inside the group, leaves a hand-closed accordion closed', async (t) => {
+    // The accordion follows `route.path` (the drawer follows `fullPath`): `?page=2` on a
+    // settings page must not undo the officer closing it.
+    const ctx = await openLayout(t, { user: superAdmin(), path: '/admin/settings/backup', name: 'admin-settings-backup' })
+    await click(accordionButton(ctx))
+    await ctx.settle()
+    assert.equal(accordionButton(ctx).props['aria-expanded'], false)
+    await ctx.go('/admin/settings/backup?page=2', 'admin-settings-backup')
+    assert.equal(accordionButton(ctx).props['aria-expanded'], false)
+    await ctx.go('/admin/settings/general', 'admin-settings-general')
+    assert.equal(accordionButton(ctx).props['aria-expanded'], true, 'a new page inside the group does open it')
   })
 
   it('the accordion is open on a first load inside the group, and toggles by hand', async (t) => {
@@ -307,6 +331,26 @@ describe('the mobile drawer and the collapsed sidebar', () => {
     assert.deepEqual(ctx.lock(), { body: '', html: '', touch: '' })
   })
 
+  it('FINDING-AL1 (R1): the drawer closed and the layout gone in the same tick — the lock is still released', async (t) => {
+    // The scroll-lock watcher runs in the pre-flush: closing and unmounting in one tick never
+    // reaches it, so the release on unmount must follow the lock actually applied, not the flag.
+    const ctx = await openLayout(t)
+    await click(hamburger(ctx))
+    await ctx.settle()
+    assert.deepEqual(ctx.lock(), { body: 'hidden', html: 'hidden', touch: 'none' })
+    ;(backdrops(ctx)[0]!.props.onClick as () => void)()
+    ctx.close()
+    assert.deepEqual(ctx.lock(), { body: '', html: '', touch: '' })
+  })
+
+  it('FINDING-AL1 (R2): the drawer opened and the layout gone in the same tick — another owner\'s styles are left alone', async (t) => {
+    const ctx = await openLayout(t)
+    ctx.doc.body.style.overflow = 'clip'
+    ;(hamburger(ctx).props.onClick as () => void)()
+    ctx.close()
+    assert.deepEqual(ctx.lock(), { body: 'clip', html: '', touch: '' }, 'this layout never applied its lock, so it has none to release')
+  })
+
   it('leaving the layout with the drawer closed leaves the page styles alone', async (t) => {
     const ctx = await openLayout(t)
     ctx.doc.body.style.overflow = 'clip'
@@ -346,6 +390,19 @@ describe('the mobile drawer and the collapsed sidebar', () => {
     await ctx.settle()
     assert.ok(!hasClass(sidebar(ctx), 'collapsed'))
     assert.equal(findAll(sidebar(ctx), el => el.tag === 'input').length, 1, 'the search box is back (focus is not measured here)')
+  })
+
+  it('the icon rail shows every accordion entry even after the accordion was closed by hand (it has no accordion button)', async (t) => {
+    const ctx = await openLayout(t, { user: superAdmin() })
+    await click(accordionButton(ctx))
+    await ctx.settle()
+    assert.deepEqual(menuLabels(ctx), labels(e => e.group !== SETTINGS_GROUP))
+    await click(buttonByTitle(sidebar(ctx), 'Thu gọn sidebar'))
+    await ctx.settle()
+    assert.deepEqual(menuLabels(ctx), labels(() => true), `all ${MENU.length} icons, the ${MENU.filter(e => e.group === SETTINGS_GROUP).length} settings ones included`)
+    await click(one(findAll(sidebar(ctx), el => el.tag === 'div' && el.props.title === 'Mở rộng menu'), 'collapsed brand'))
+    await ctx.settle()
+    assert.equal(accordionButton(ctx).props['aria-expanded'], false, 'expanding again restores the hand-closed accordion')
   })
 
   it('the layout handles no key at all (Escape does not close the drawer) — pinned as is', async (t) => {
