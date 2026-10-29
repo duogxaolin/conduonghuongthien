@@ -11,7 +11,8 @@
  * (`submitBoost`/`cancelBoost`). Cha chỉ truyền `article` (cần id+title) + emit
  * 'close' + 'boost-applied' (cha refresh table sau khi boost).
  */
-import type { AdminArticleRow, AdminArticleStats, AdminArticleBoost } from '~/types/admin-api'
+import type { AdminArticleRow, AdminArticleStats, AdminArticleBoost, AdminArticleStatsResult } from '~/types/admin-api'
+import type { ArticleBoostCancelResponse, ArticleBoostResponse } from '~/types/admin-articles-api'
 import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
@@ -60,22 +61,31 @@ const dailyPeak = computed(() => {
   return rows.reduce((max: number, row: { total?: number }) => Math.max(max, Number(row.total || 0)), 0)
 })
 
+/**
+ * Mã lượt: chỉ câu trả lời của lượt đọc MỚI NHẤT cho bài ĐANG MỞ được ghi. Đóng/đổi bài cấp mã
+ * mới — trước đây mở "Bài 3" (chậm), đóng, mở "Bài 4": số liệu và lượt tăng dần của Bài 3 về
+ * sau hiện dưới tên Bài 4 (tests/admin-fetch-rollout-article-stats-translate.test.ts).
+ */
+let statsRequest = 0
 const loadStats = async () => {
   if (!props.article) return
+  const ticket = ++statsRequest
   statsLoading.value = true
   statsError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; stats: AdminArticleStats; boost: AdminArticleBoost }>)(`/api/admin/articles/${props.article.id}/stats`)
+    const res = await adminFetch<AdminArticleStatsResult>(`/api/admin/articles/${props.article.id}/stats`)
+    if (ticket !== statsRequest) return
     statsData.value = res.stats
     runningBoost.value = res.boost
   } catch (err: unknown) {
+    if (ticket !== statsRequest) return
     // Giữ lại lỗi trên màn hình kèm nút thử lại: một modal trống không nói được
     // là "bài này chưa có lượt xem" hay "không tải được số liệu".
     statsError.value = errorMessage(err, 'Không tải được số liệu lượt xem.')
     statsData.value = null
     runningBoost.value = null
   } finally {
-    statsLoading.value = false
+    if (ticket === statsRequest) statsLoading.value = false
   }
 }
 
@@ -85,6 +95,8 @@ watch(
   () => props.article,
   async (art) => {
     if (!art) {
+      statsRequest++ // lượt đọc của bài vừa đóng không còn ai chờ
+      statsLoading.value = false
       statsData.value = null
       runningBoost.value = null
       statsError.value = ''
@@ -127,7 +139,7 @@ const submitBoost = async () => {
   try {
     const body: Record<string, unknown> = { mode: boostMode.value, amount }
     if (boostMode.value === 'gradual') body.minutes = minutes
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${props.article.id}/boost`, { method: 'POST', body })
+    await adminFetch<ArticleBoostResponse>(`/api/admin/articles/${props.article.id}/boost`, { method: 'POST', body })
     toast.success(boostMode.value === 'instant' ? 'Đã cộng lượt xem ảo.' : 'Đã tạo lượt tăng dần.')
     boostAmount.value = null
     await loadStats()
@@ -151,7 +163,7 @@ const cancelBoost = async () => {
   })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${props.article.id}/boost`, { method: 'DELETE' })
+    await adminFetch<ArticleBoostCancelResponse>(`/api/admin/articles/${props.article.id}/boost`, { method: 'DELETE' })
     toast.success('Đã huỷ lượt tăng dần.')
     await loadStats()
   } catch (err: unknown) {

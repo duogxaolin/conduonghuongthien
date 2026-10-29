@@ -12,15 +12,12 @@
  * Cha truyền `show` + `bulkLangs`. Con emit `close` (đóng) + `started` (khi đã
  * xếp lịch dịch xong, cha refresh bảng + poll).
  */
-import type { AdminArticleRow } from '~/types/admin-api'
+import type { AdminArticleListResponse, BulkTranslateResponse, TranslationStatsResponse } from '~/types/admin-articles-api'
 import { errorMessage } from '~/utils/errorMessage'
 import AdminModal from '~/components/admin/AdminModal.vue'
 
-interface GlobalStats {
-  totalArticles: number
-  aiPendingTranslations: number
-  languages: Array<{ code: string; name: string; nativeName: string; translated: number; missing: number }>
-}
+/** Derived from the handler (was hand-written): `GET /api/admin/articles/translation-stats`. */
+type GlobalStats = Pick<TranslationStatsResponse, 'totalArticles' | 'aiPendingTranslations' | 'languages'>
 
 const props = defineProps<{
   show: boolean
@@ -44,9 +41,12 @@ watch(
   () => props.show,
   async (show) => {
     if (!show) return
+    // Never the previous opening's numbers: after a failed load they stayed on screen with
+    // "Bắt đầu dịch hàng loạt" enabled.
+    globalStats.value = null
     globalStatsLoading.value = true
     try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean } & GlobalStats>)('/api/admin/articles/translation-stats')
+      const res = await adminFetch<TranslationStatsResponse>('/api/admin/articles/translation-stats')
       if (res.ok) {
         globalStats.value = {
           totalArticles: res.totalArticles,
@@ -68,6 +68,27 @@ watch(
   { immediate: true },
 )
 
+/**
+ * Every missing published article of one language, EVERY page — the list answers at most 100
+ * per page, and reading only the first queued 100 of "Thiếu 120 bài" while reporting success.
+ * Read in full before that language is queued, so the set being paged does not shrink under
+ * the offsets; bounded by the first answer's page count.
+ */
+async function missingArticleIds(langCode: string): Promise<number[]> {
+  const ids = new Set<number>()
+  let lastPage = 1
+  for (let page = 1; page <= lastPage; page++) {
+    const res = await adminFetch<AdminArticleListResponse>('/api/admin/articles', {
+      query: { translation: `missing_${langCode}`, perPage: 100, status: 'published', page },
+    })
+    const items = res.items || []
+    for (const a of items) ids.add(Number(a.id))
+    if (page === 1) lastPage = res.pagination?.totalPages ?? 1
+    if (!items.length) break
+  }
+  return [...ids]
+}
+
 async function startGlobalTranslation() {
   if (selectedGlobalTargetLangs.value.length === 0) {
     toast.warning('Vui lòng chọn ít nhất một ngôn ngữ.')
@@ -80,13 +101,9 @@ async function startGlobalTranslation() {
 
   try {
     for (const langCode of selectedGlobalTargetLangs.value) {
-      const listRes = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminArticleRow[] }>)('/api/admin/articles', {
-        params: { translation: `missing_${langCode}`, perPage: 100, status: 'published' },
-      })
-      const targetArticles = listRes.items || []
-      if (targetArticles.length > 0) {
-        const ids = targetArticles.map(a => Number(a.id))
-        await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/articles/bulk-translate', {
+      const ids = await missingArticleIds(langCode)
+      if (ids.length > 0) {
+        await adminFetch<BulkTranslateResponse>('/api/admin/articles/bulk-translate', {
           method: 'POST',
           body: { ids, langCode, targetStatus: globalTargetStatus.value },
         })
@@ -102,7 +119,15 @@ async function startGlobalTranslation() {
       emit('started')
     }
   } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể bắt đầu dịch toàn bộ.'))
+    const reason = errorMessage(err, 'Không thể bắt đầu dịch toàn bộ.')
+    if (totalQueuedArticles === 0) {
+      toast.error(reason)
+    } else {
+      // The languages queued before the failure ARE translating in the background: say so and
+      // let the page follow them — otherwise pressing again queues them a second time.
+      toast.error(`${reason} Đã xếp lịch dịch ${totalQueuedArticles} lượt bài viết sang ${totalQueuedLangs} ngôn ngữ trước khi lỗi; các ngôn ngữ còn lại chưa được xếp.`)
+      emit('started')
+    }
   } finally {
     globalTranslating.value = false
   }

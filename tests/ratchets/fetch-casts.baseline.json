@@ -18,8 +18,6 @@
   "app/components/admin/ai/AiModerationTab.vue": 2,
   "app/components/admin/ai/AiServicesTab.vue": 3,
   "app/components/admin/articles/ArticleAIPanel.vue": 1,
-  "app/components/admin/articles/ArticleBoostStatsPanel.vue": 3,
-  "app/components/admin/articles/ArticleGlobalTranslateModal.vue": 3,
   "app/components/admin/articles/ArticleQuickViewModal.vue": 2,
   "app/components/admin/articles/ScanThumbnailsModal.vue": 2,
   "app/components/blocks/ContactFormBlock.vue": 1,
