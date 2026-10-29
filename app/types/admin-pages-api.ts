@@ -19,6 +19,9 @@ type VersionsHandler = typeof import('~~/server/api/admin/pages/[id]/versions/in
 type VersionCreateHandler = typeof import('~~/server/api/admin/pages/[id]/versions/index.post').default
 type VersionRestoreHandler = typeof import('~~/server/api/admin/pages/[id]/versions/[versionId]/restore.post').default
 type VersionDeleteHandler = typeof import('~~/server/api/admin/pages/[id]/versions/[versionId].delete').default
+type PagesListHandler = typeof import('~~/server/api/admin/pages/index.get').default
+type PageCreateHandler = typeof import('~~/server/api/admin/pages/index.post').default
+type PageDeleteHandler = typeof import('~~/server/api/admin/pages/[id].delete').default
 
 /** `PUT /api/admin/pages/:id/draft` — `{ blocks }` saves the draft, `{}` clears it. */
 export type PageDraftSaveResponse = Payload<DraftHandler>
@@ -29,3 +32,10 @@ export type PageVersionsResponse = Payload<VersionsHandler>
 export type PageVersionCreateResponse = Payload<VersionCreateHandler>
 export type PageVersionRestoreResponse = Payload<VersionRestoreHandler>
 export type PageVersionDeleteResponse = Payload<VersionDeleteHandler>
+
+// ─── The pages list (`pages/admin/content/pages/index.vue`, wave3 7.1 batch E) ───────────
+/** `GET /api/admin/pages` — its row is `AdminPageRow` (app/types/admin-api.ts). */
+export type AdminPagesListResponse = Payload<PagesListHandler>
+/** `POST /api/admin/pages` — also answers the `slug` it settled on; the list opens the builder by `id`. */
+export type PageCreateResponse = Payload<PageCreateHandler>
+export type PageDeleteResponse = Payload<PageDeleteHandler>

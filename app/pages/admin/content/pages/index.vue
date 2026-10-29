@@ -189,6 +189,7 @@
 
 <script setup lang="ts">
 import type { AdminPageRow } from '~/types/admin-api'
+import type { AdminPagesListResponse, PageCreateResponse, PageDeleteResponse } from '~/types/admin-pages-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -207,7 +208,7 @@ const fetchPages = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminPageRow[] }>)(`/api/admin/pages`)
+    const res = await adminFetch<AdminPagesListResponse>(`/api/admin/pages`)
     if (res.ok) {
       pages.value = res.items
       selection.keepOnly(visibleIds.value)
@@ -251,7 +252,7 @@ const createPage = async () => {
   if (!createForm.title.trim()) return
   creating.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; id: number }>)(`/api/admin/pages`, {
+    const res = await adminFetch<PageCreateResponse>(`/api/admin/pages`, {
       method: 'POST',
       body: { title: createForm.title.trim(), slug: createForm.slug.trim() || undefined },
     })
@@ -276,7 +277,7 @@ const removePage = async (p: AdminPageRow) => {
   })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/pages/${p.id}`, { method: 'DELETE' })
+    await adminFetch<PageDeleteResponse>(`/api/admin/pages/${p.id}`, { method: 'DELETE' })
     toast.success('Đã xóa trang.')
     await fetchPages()
   } catch (err: unknown) {

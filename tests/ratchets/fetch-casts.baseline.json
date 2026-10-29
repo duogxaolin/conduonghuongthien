@@ -49,7 +49,6 @@
   "app/pages/admin/chatbot/sessions/[id].vue": 1,
   "app/pages/admin/content/navigation/mobile.vue": 2,
   "app/pages/admin/content/navigation/navbar.vue": 2,
-  "app/pages/admin/content/pages/index.vue": 3,
   "app/pages/admin/media-portal/external.vue": 2,
   "app/pages/admin/media-portal/index.vue": 3,
   "app/pages/admin/media-portal/upload.vue": 1,
