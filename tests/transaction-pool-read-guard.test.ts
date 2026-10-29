@@ -14,9 +14,10 @@
  *   - this static scan: no `getDb()` / `getPool()` / `pool.query|execute(` written in a
  *     transaction body, and the helpers that fall back to the pool when no executor is given
  *     (`POOL_FALLBACK_HELPERS`) are always given one there;
- *   - the SQLite harness (`_sqlite-mysql-db.ts`) throws on a pool `select` while a
- *     transaction is open — which catches a call through any depth of helpers in every suite
- *     that runs the code (the reader suite went red on the base for ban and purge).
+ *   - the SQLite harness (`_sqlite-mysql-db.ts`) throws on a pool `select` or `execute` while
+ *     a transaction is open — which catches a call through any depth of helpers in every suite
+ *     that runs the code (the reader suite went red on the base for ban and purge); the last
+ *     test below pins that the harness does.
  * Text, not behaviour: the scan proves the shape, the harness and the MySQL replay
  * (docs/test-coverage-baseline-2026-10.md, "Lát R6") prove the rest.
  */
@@ -118,4 +119,23 @@ test('the scan bites: each injected shape is reported', () => {
   assert.deepEqual(inject('const impact = await countReaderCommentImpact(Number(id), tx)'), [])
   // An expression-bodied callback.
   assert.equal(violations([{ path: 'x.ts', source: 'await db.transaction(async tx => countReaderCommentImpact(Number(id)))' }]).length, 1)
+})
+
+test('the SQLite harness refuses a pool read — select or raw execute — while a transaction is open', async () => {
+  const { createSqliteMysqlDb } = await import('./_sqlite-mysql-db')
+  const { sql } = await import('drizzle-orm')
+  const { readerAccounts } = await import('../server/db/schema')
+  const harness = createSqliteMysqlDb([readerAccounts])
+  const { db } = harness
+  const counted = await db.transaction(async (tx) => {
+    assert.throws(() => db.select({ id: readerAccounts.id }).from(readerAccounts), /exhausts the pool/)
+    assert.throws(() => db.execute(sql`select 1`), /exhausts the pool/)
+    assert.throws(() => db.insert(readerAccounts), /commit on its own connection/)
+    // On the transaction itself, reads run.
+    return (await tx.select({ id: readerAccounts.id }).from(readerAccounts)).length
+  })
+  assert.equal(counted, 0)
+  // Once it has closed, the pool reads again.
+  assert.deepEqual(await db.select({ id: readerAccounts.id }).from(readerAccounts), [])
+  await db.execute(sql`select 1`)
 })

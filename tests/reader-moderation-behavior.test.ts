@@ -541,9 +541,14 @@ test('D2: an account deleted while its comment purge waits for the comments — 
   h.harness.beforeNext(/^select .* from `article_comments`/s, () => h.harness.sqlite.exec(
     `COMMIT; DELETE FROM article_comments WHERE reader_id = ${id}; DELETE FROM reader_accounts WHERE id = ${id}; BEGIN`,
   ))
+  const from = h.harness.txStatements.length
   const response = await h.request('DELETE', `/api/admin/readers/${id}/comments`, commentsOfficer)
   assert.deepEqual([response.status, response.body.statusMessage], [404, 'Không tìm thấy tài khoản người đọc.'])
   assert.deepEqual(audits(), [])
+  // Removed nothing → it asks whether the reader exists with a LOCKING read: on MySQL a plain read
+  // answers from the snapshot its first read took, before the wait — the deleted reader would
+  // still be there and the purge a 200 with an audit row. SQLite has no snapshots: the shape pins it.
+  assert.deepEqual(txShape(from).filter(s => /reader_accounts/.test(s)), ['select `reader_accounts` `reader_accounts`.`id` = for share'])
 })
 
 test('X1/D3: a ban that lands before an account deletion — the deletion counts only what it removed', async () => {

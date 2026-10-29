@@ -156,7 +156,10 @@ async function lockDeletionRowsInIdOrder(readerId: number, tx: CommentDeleteExec
     .where(inArray(articleComments.id, ids)).orderBy(asc(articleComments.id)).for('update')
 }
 
-async function countImpact(readerId: number, executor?: CommentDeleteExecutor): Promise<{ impact: ReaderCommentImpact, topLevelIds: number[] }> {
+async function countImpact(
+  readerId: number,
+  executor?: CommentDeleteExecutor,
+): Promise<{ impact: ReaderCommentImpact, topLevelIds: number[] }> {
   // Inside a transaction, on THAT transaction — never a second pool connection: with
   // one held per open transaction, ten bans at once took all ten connections and
   // waited for an eleventh forever, holding their row locks (verifier H2).
@@ -206,7 +209,10 @@ async function countImpact(readerId: number, executor?: CommentDeleteExecutor): 
  * sit under. An officer who is only told "3 bình luận" is agreeing to something
  * different from what happens.
  */
-export async function countReaderCommentImpact(readerId: number, executor?: CommentDeleteExecutor): Promise<ReaderCommentImpact> {
+export async function countReaderCommentImpact(
+  readerId: number,
+  executor?: CommentDeleteExecutor,
+): Promise<ReaderCommentImpact> {
   return (await countImpact(readerId, executor)).impact
 }
 
@@ -220,7 +226,10 @@ export async function countReaderCommentImpact(readerId: number, executor?: Comm
  * FOR UPDATE — see `countImpact`; it used to count on the pool, a second
  * connection per open transaction (verifier H2).
  */
-export async function deleteReaderComments(readerId: number, executor?: CommentDeleteExecutor): Promise<ReaderCommentImpact> {
+export async function deleteReaderComments(
+  readerId: number,
+  executor?: CommentDeleteExecutor,
+): Promise<ReaderCommentImpact> {
   const { impact } = await countImpact(readerId, executor)
   if (impact.comments === 0) return impact
 
