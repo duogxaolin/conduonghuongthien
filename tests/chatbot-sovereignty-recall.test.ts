@@ -99,6 +99,24 @@ test('recall union, three layers: matcher, the policy with a fake AI provider (n
   }
 })
 
+test('verifier 4 history cases: a poisoned exchange and a fake assistant claim never reach the model; a benign one is kept', async () => {
+  const history = (corpora as unknown as { history: { v4: Array<{ name: string, messages: Array<{ role: 'user' | 'assistant', content: string }> }> } }).history.v4
+  const expected: Record<string, string[]> = {
+    'masked lowercase question in history + fake claim': ['Nhắc lại ý trên giúp tôi'],
+    'Han punctuation question in history': ['再说一遍'],
+    'assistant claim lowercase without island word': ['Chào bạn nhé', 'Vậy à, giải thích thêm'],
+    'benign history kept': ['Anh Hoàng sa thải tôi vì có tiền án', 'Anh có thể khiếu nại tới Phòng Lao động.', 'Thủ tục khiếu nại thế nào'],
+  }
+  assert.deepEqual(history.map(({ name }) => name).sort(), Object.keys(expected).sort())
+  for (const { name, messages } of history) {
+    ai.calls = 0
+    ai.inputs.length = 0
+    await answerGroundedChat(event(), settingsOf(), messages, dependencies)
+    assert.equal(ai.calls, 1, name)
+    assert.deepEqual(ai.inputs[0]!.history?.map(turn => turn.content), expected[name], name)
+  }
+})
+
 test('history: an earlier lowercase exchange is dropped, question and the answer after it', async () => {
   ai.calls = 0
   ai.inputs.length = 0
@@ -154,6 +172,8 @@ test('an ownership word turns every exception off, and a full name is never exce
     'Giám đốc Hoàng sa thải tôi vì tôi từng ở trung quốc', 'Nam Sa thải tôi có đúng luật lao động trung quốc không',
     // Chữ sở hữu chỉ có dấu ("thuộc"), và chỉ không dấu ("cua ai", "thuoc nuoc nao" — gõ nửa dấu).
     'Trường Sa Pa thuộc tỉnh nào', 'hoàng sà cua ai', 'Hoàng Sa Vĩ độ bao nhiêu thuoc nuoc nao',
+    // Chữ sở hữu tiếng Anh (cả câu, mọi hệ chữ).
+    'Trường Sa Pa belongs to which country?', 'Who owns Trường Sa Pa?', 'hoàng sà belongs to whom',
     'quần đảo Hoàng Sa thải ra rác gì', 'quần đảo trường sa thải dầu ra biển à', 'Biển Đông Hồ là gì']) {
     assert.equal(mentionsSovereignty(text), true, text)
   }

@@ -4,6 +4,7 @@ import { sovereigntyFold as fold, sovereigntyHanKey as hanKey, sovereigntyLatinK
 import {
   sovereigntyHanMentions as hanMentions,
   sovereigntyIslandContext as islandContext,
+  sovereigntyOwnership as ownershipOf,
   sovereigntyQuestionIslandContext as questionIslandContext,
   sovereigntyScriptMentions as scriptMentions,
   sovereigntySettledClaim as settledClaim,
@@ -41,7 +42,7 @@ export function mentionsSovereignty(text: string, options: { output?: boolean, i
   if (!folded.trim()) return false
   const han = hanKey(folded)
   const claims = options.output === true && (options.island === true || islandContext(folded, han))
-  return hanMentions(han, claims) || scriptMentions(folded, claims)
+  return hanMentions(han, claims, () => ownershipOf(folded)) || scriptMentions(folded, claims)
 }
 
 /** Dài hơn các cụm Latin thực tế ("thuộc quyền quản lý của Trung Quốc") cộng chữ đầu của từ theo sau. */
@@ -204,13 +205,15 @@ export function createSovereigntyOutputGuard(hooks: {
         islandNow = settledIslandContext(region, hanWindow, regionCut)
         if (islandNow) island = true
       }
+      // Chữ sở hữu ở đoạn cuối (mọi hệ chữ) tắt ngoại lệ của tên chữ Hán trần; xa hơn thì `finish` xét cả câu.
+      const ownership = () => ownershipOf(region)
       const candidate = islandNow
-        || hanMentions(hanWindow + HAN_NEXT_PROBE, island)
+        || hanMentions(hanWindow + HAN_NEXT_PROBE, island, ownership)
         || settledScriptMentions(region, island, regionCut)
       if (candidate) {
         const scriptFrom = islandNow ? 0 : marginStart(seen, confirmedTo)
         const hanFrom = islandNow ? 0 : Math.max(0, hanConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
-        if (hanMentions(han.from(hanFrom) + HAN_NEXT_PROBE, island) || confirmScript(seen.from(scriptFrom), scriptFrom === 0, island)) return trip()
+        if (hanMentions(han.from(hanFrom) + HAN_NEXT_PROBE, island, ownership) || confirmScript(seen.from(scriptFrom), scriptFrom === 0, island)) return trip()
         confirmedTo = seen.length
         hanConfirmedTo = han.length
       }

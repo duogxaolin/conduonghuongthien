@@ -16,7 +16,9 @@ import { sovereigntyFold as fold, sovereigntyHanKey as hanKey, sovereigntyLatinK
 // (`hanKey`) chỉ dùng cho NGOẠI LỆ của tên trần: chữ đứng trước / hậu tố chỉ loại khi cùng mệnh đề.
 // Tên đầy đủ, 三沙, đường chín đoạn, bãi đá: không bao giờ có ngoại lệ.
 const HAN_FULL_NAMES = [
-  /[南西中东黄长]沙群岛|南海诸岛|(?<!越)南中国海/,
+  // 南中国海 không có ngoại lệ (vòng 5 bỏ "(?<!越)": tên chứa chữ sở hữu 中国 nên ngoại lệ đó không bao giờ có hiệu lực
+  // dưới luật chữ sở hữu) — "越南、中国海军", "越南中国海关" là chặn oan có chủ đích.
+  /[南西中东黄长]沙群岛|南海诸岛|南中国海/,
   /黄沙.{0,2}长沙|长沙.{0,2}黄沙|[黄长]沙岛/,
   /三沙/,
   /[九十]段线/,
@@ -30,7 +32,7 @@ const HAN_BARE_NAMES = [
   { name: /南[海沙]/g, before: new Set('越河云湖济海江华西东中岭闽安州山张王李刘陈杨赵周吴'), after: /^(?:[区县镇市港]|新区|街道|法院|观音|[电電][铁鉄])/ },
   { name: /西沙/g, before: new Set('东广江山陕'), after: /^[区县镇市]/ },
 ]
-// Tín hiệu quyền sở hữu: tắt mọi ngoại lệ ("佛山南海是中国的吗" bắt).
+// Tín hiệu quyền sở hữu trên khoá nối liền ("属，于" vẫn là 属于); chữ sở hữu hệ chữ khác do nơi gọi đưa vào.
 const HAN_OWNERSHIP = /中国|主权|属于|哪个国家|哪国|领土|归属|归谁|谁的/
 
 const HAN_BARE_ANY = /南[海沙]|西沙/
@@ -50,9 +52,9 @@ function breaksOf(han: string): Uint8Array {
   return marks
 }
 
-function bareHanName(han: string, joined: string): boolean {
+function bareHanName(han: string, joined: string, ownership: () => boolean): boolean {
   if (!HAN_BARE_ANY.test(joined)) return false
-  if (HAN_OWNERSHIP.test(joined)) return true
+  if (HAN_OWNERSHIP.test(joined) || ownership()) return true
   // Không có dấu câu thì không có chỗ ngắt nào (đọc ngoài mảng rỗng là undefined — "không ngắt").
   const breakBefore = han === joined ? NO_BREAKS : breaksOf(han)
   for (const { name, before, after } of HAN_BARE_NAMES) {
@@ -91,12 +93,24 @@ function exceptBenign(folded: string): string {
 // hiệu quyền sở hữu: "hoàng sà của ai", "Hoàng Sa Vĩ độ bao nhiêu thuộc nước nào" bắt.
 const FULL_NAME = /(?<![\p{L}])(?:quần\s+đảo\s+(?:hoàng|trường)\s*sa|quan\s+dao\s+(?:hoang|truong)\s*sa)(?![\p{L}])/iu
 const FULL_NAME_DONG = /(?<![\p{L}])(?:Biển|BIỂN)\s+(?:Đông|ĐÔNG)(?![\p{L}])/u
-const OWNERSHIP = /(?<![\p{L}])(?:về\s+tay|vào\s+tay|của\s+ai|của\s+nước|thuộc|nước\s+nào|kiểm\s+soát|tranh\s+chấp|chủ\s+quyền|lãnh\s+thổ|trung\s+quốc|tq|china|chinese|bắc\s+kinh|chiếm)(?![\p{L}])|中国|主权|属于|哪个国家|哪国|领土|归属|谁的/u
+// Chữ sở hữu xét trên CẢ câu, mọi hệ chữ: "广州南沙 thuộc nước nào?", "Who owns 佛山南海?", "Trường Sa Pa belongs to which
+// country?" — chữ hỏi tiếng Việt/Anh tắt cả ngoại lệ chữ Hán và ngược lại.
+const OWNERSHIP = new RegExp([
+  '(?<![\\p{L}])(?:về\\s+tay|vào\\s+tay|của\\s+ai|của\\s+nước|thuộc|nước\\s+nào|kiểm\\s+soát|tranh\\s+chấp|chủ\\s+quyền|lãnh\\s+thổ',
+  '|trung\\s+quốc|tq|china|chinese|bắc\\s+kinh|chiếm',
+  '|belongs?|owns?|owned|owner|whose|which\\s+country|sovereign(?:ty)?|territor(?:y|ial)|disputed?|control(?:s|led)?)(?![\\p{L}])',
+  '|中国|主权|属于|哪个国家|哪国|领土|归属|归谁|谁的',
+].join(''), 'u')
 const OWNERSHIP_LATIN = / (?:ve tay|vao tay|cua ai|cua nuoc|nuoc nao|kiem soat|tranh chap|chu quyen|lanh tho|trung quoc|tq|china|bac kinh) /
 
-function exceptionsOff(folded: string): boolean {
+/** Câu có chữ sở hữu (quyền sở hữu/chủ quyền) — tắt mọi ngoại lệ chặn oan. */
+export function sovereigntyOwnership(folded: string): boolean {
   const lower = folded.toLowerCase()
-  return FULL_NAME.test(folded) || FULL_NAME_DONG.test(folded) || OWNERSHIP.test(lower) || OWNERSHIP_LATIN.test(latinKey(lower))
+  return OWNERSHIP.test(lower) || (/[a-z]/.test(lower) && OWNERSHIP_LATIN.test(latinKey(lower)))
+}
+
+function exceptionsOff(folded: string): boolean {
+  return FULL_NAME.test(folded) || FULL_NAME_DONG.test(folded) || sovereigntyOwnership(folded)
 }
 
 // ─── Khoá Latin bỏ dấu: mặc định bắt ──────────────────────────────────────────────────────────────────────────────
@@ -237,10 +251,11 @@ const VIETNAMESE_MARK = /[\p{M}đĐ]/u
 /**
  * Câu có nói tới chủ đề, theo chữ Hán. `han` là khoá có ngắt (`sovereigntyHanKey`): tên khớp trên khoá nối liền, ngắt chỉ
  * dùng cho ngoại lệ của tên trần. `claims`: tính cả yêu sách — đầu ra có đảo/biển (trên khoá có ngắt, như trước).
+ * `ownership`: câu (cả phần không phải chữ Hán) có chữ sở hữu — chỉ gọi khi có tên trần cần xét ngoại lệ.
  */
-export function sovereigntyHanMentions(han: string, claims: boolean): boolean {
+export function sovereigntyHanMentions(han: string, claims: boolean, ownership: () => boolean = () => false): boolean {
   const joined = han.includes('|') ? han.replace(/\|/g, '') : han
-  return HAN_FULL_NAMES.some(pattern => pattern.test(joined)) || bareHanName(han, joined) || (claims && HAN_CLAIMS.test(han))
+  return HAN_FULL_NAMES.some(pattern => pattern.test(joined)) || bareHanName(han, joined, ownership) || (claims && HAN_CLAIMS.test(han))
 }
 
 /**

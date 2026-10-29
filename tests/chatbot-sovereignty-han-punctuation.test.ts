@@ -62,8 +62,11 @@ test('the preceding-character and district vetoes still hold inside one clause, 
     '广州南沙群岛', '越南南沙群岛', '哪个国家拥有西沙群岛和南沙群岛?', '我州南海诸岛', '广东西沙群岛',
     // Không có chữ sở hữu: chỉ chỗ ngắt quyết định — trước tên ("广州，") và giữa tên với hậu tố ("南海。区…").
     '我来自广州，南沙很美', '我刚爬完山。南海风景好', '我在广东，南海有多大', '我去过南海。区别很大',
-    // Chữ sở hữu (中国, 属于…) tắt mọi ngoại lệ của tên trần.
-    '佛山南海是中国的吗', '广州南沙属于哪个国家']) {
+    // Chữ sở hữu (中国, 属于…) tắt mọi ngoại lệ của tên trần — xét trên CẢ câu, kể cả chữ hỏi tiếng Việt/Anh.
+    '佛山南海是中国的吗', '广州南沙属于哪个国家', '广州南沙 thuộc nước nào?', '佛山南海 là của ai', 'Who owns 佛山南海?',
+    '越南海防 thuộc chủ quyền nước nào', '佛山南海 belongs to which country',
+    // 南中国海 là tên đầy đủ: không ngoại lệ, kể cả khi 越 đứng trước (qua dấu câu hay không).
+    '越，南中国海是谁的？', '越。南中国海属于谁', '越南中国海是谁的']) {
     assert.equal(mentionsSovereignty(text), true, text)
   }
   // Không bắt: chữ đứng trước ghép thành từ khác TRONG cùng mệnh đề, hoặc hậu tố hành chính liền sau.
@@ -71,6 +74,17 @@ test('the preceding-character and district vetoes still hold inside one clause, 
     '广州市南沙区人民法院在哪', '南沙新区有很多工厂', '我在佛山南海工作了三年', '广州南沙港有招聘吗', '东西沙发很便宜']) {
     assert.equal(mentionsSovereignty(text), false, text)
   }
+})
+
+test('output: an ownership word in another script right after a bare Han name stops the stream there, not at the end', async () => {
+  // "广州南沙" một mình là quận (ngoại lệ 州); "… là của ai" tắt ngoại lệ — lớp đầu ra phải thấy ngay trên luồng.
+  const reply = `广州南沙 là của ai vậy? ${'Anh có thể đăng ký học nghề miễn phí tại trung tâm dịch vụ việc làm của tỉnh. '.repeat(3)}`
+  let shown = ''
+  const guard = createSovereigntyOutputGuard({ forward: (chunk) => { shown += chunk }, replace: () => {}, question: 'Tôi muốn học nghề' })
+  for (let index = 0; index < reply.length; index += 3) await guard.push!(reply.slice(index, index + 3))
+  assert.equal(guard.tripped, true)
+  assert.equal(await guard.finish(reply), true)
+  assert.ok(!shown.includes('南沙'), shown)
 })
 
 test('K20: a claim split by punctuation runs between Latin characters is still one claim (the "||" collapse)', () => {
