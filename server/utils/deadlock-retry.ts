@@ -11,17 +11,15 @@
  *
  * Only a deadlock (1213). A lock-wait timeout (1205) has already waited
  * `innodb_lock_wait_timeout`; repeating it would hold the request minutes longer. Same rule
- * as the page-view ingestion's own retry (`analytics-ingestion.ts`).
+ * as the page-view ingestion's own retry (`analytics-ingestion.ts`), which reads its deadlocks
+ * through this same `isDeadlock` — the one definition in `server/` (it had its own byte-identical
+ * copy until slice R7; `tests/mysql-error-predicates.test.ts` keeps it to one).
  */
+import { hasMysqlError } from './mysql-errors'
 
 /** ER_LOCK_DEADLOCK (1213), on the error or anywhere down its `cause` chain (Drizzle wraps the driver's error). */
 export function isDeadlock(error: unknown): boolean {
-  for (let current: unknown = error, depth = 0; current && typeof current === 'object' && depth < 5; depth++) {
-    const { code, errno, cause } = current as { code?: unknown, errno?: unknown, cause?: unknown }
-    if (code === 'ER_LOCK_DEADLOCK' || errno === 1213) return true
-    current = cause
-  }
-  return false
+  return hasMysqlError(error, 1213, 'ER_LOCK_DEADLOCK')
 }
 
 /** Attempts in all, the first included. */
