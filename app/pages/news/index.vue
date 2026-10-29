@@ -58,7 +58,9 @@
               </span>
               <span class="text-sm text-[#3E4D3C]">
                 {{ t('n_search_result') }} <strong>&laquo;{{ searchQuery }}&raquo;</strong>
-                <span v-if="!pending" class="text-ink-soft ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
+                <!-- Không đếm khi lượt đọc hỏng: Nuxt đã đặt danh sách về rỗng, "(0 bài viết)"
+                     sẽ nói dối ngay trên thẻ lỗi (FINDING-N2). -->
+                <span v-if="!pending && !loadError" class="text-ink-soft ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
               </span>
             </div>
             <button
@@ -210,6 +212,12 @@
               </div>
             </div>
 
+            <!-- Hỏng ≠ "chưa có dữ liệu lượt xem" (FINDING-N3): nói là hỏng, cho thử lại riêng khối này. -->
+            <p v-else-if="mostReadFailed" role="alert" class="text-[0.85rem] text-danger-soft py-4 m-0">
+              {{ t('n_load_error_desc') }}
+              <button type="button" class="font-bold text-brand-600 underline" @click="retryMostRead()">{{ t('retry') }}</button>
+            </p>
+
             <NewsMostReadList v-else-if="mostRead.length" :items="mostRead" />
 
             <p v-else class="text-[0.85rem] text-ink-soft italic py-4 m-0">{{ t('n_no_views') }}</p>
@@ -302,11 +310,14 @@ const {
   scrollTargetId: 'news-list-top',
 })
 
-const { mostRead, mostReadPending } = usePublicMostRead('news', currentLang)
+const { mostRead, mostReadPending, mostReadFailed, retryMostRead } = usePublicMostRead('news', currentLang)
 
 // Category chips — DB-driven via /api/public/categories?type=news
-const { data: catData, pending: catPending } = useAsyncData('news-categories', () =>
-  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ id: number; name: string; slug: string; parentId: number | null }> }>)('/api/public/categories', { query: { type: 'news' } }),
+// Tên chuyên mục theo ngôn ngữ (FINDING-N1): `lang` đi trong query — `$fetch` lúc dựng phía
+// máy chủ không mang cookie `cdkt_lang`, máy chủ chỉ biết qua tham số — và có trong khoá,
+// nên đổi ngôn ngữ là đọc lại (cùng cách ContentTypeListSection và "Đọc nhiều").
+const { data: catData, pending: catPending } = useAsyncData(() => `news-categories-${currentLang.value}`, () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ id: number; name: string; slug: string; parentId: number | null }> }>)('/api/public/categories', { query: { type: 'news', lang: currentLang.value } }),
   {
     lazy: true,
     default: () => ({ ok: true, items: [] })

@@ -46,7 +46,10 @@ describe('/news — the wave3 4.2 parts', () => {
     assert.match(template, /<div v-if="pending" role="status" aria-busy="true"/)
     assert.match(template, /v-else-if="loadError"\s+role="alert"/)
     assert.match(template, /@click="refresh\(\)"/)
-    assert.equal(template.match(/role="alert"/g)?.length, 1, 'every error branch stays in the page')
+    // The list's card, and "Đọc nhiều" failing (FINDING-N3) with its own retry.
+    assert.equal(template.match(/role="alert"/g)?.length, 2, 'every error branch stays in the page')
+    assert.match(template, /v-else-if="mostReadFailed" role="alert"/)
+    assert.match(template, /@click="retryMostRead\(\)"/)
     assert.match(template, /<div v-if="catPending" role="status" aria-busy="true"/, 'the filter bar\'s loading chips stay in the page')
     assert.match(template, /<div v-if="mostReadPending" role="status" aria-busy="true"/, '"Đọc nhiều" skeleton stays in the page')
   })
