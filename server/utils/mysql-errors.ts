@@ -23,3 +23,13 @@ export function hasMysqlError(error: unknown, errno: number, code: string): bool
 export function isDuplicateEntry(error: unknown): boolean {
   return hasMysqlError(error, 1062, 'ER_DUP_ENTRY')
 }
+
+/**
+ * The message to LOG for a failed query: the driver's own (the `cause` of Drizzle's wrapper), never
+ * the wrapper's — "Failed query: <SQL> params: …" carries every bound value, a password hash and an
+ * e-mail included (FINDING-R7-10). Not for a response either way.
+ */
+export function driverMessage(error: unknown): string {
+  const driver = error instanceof Error && error.cause instanceof Error ? error.cause : error
+  return driver instanceof Error ? driver.message : String(driver)
+}

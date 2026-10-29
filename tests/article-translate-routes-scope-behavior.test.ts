@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test, { after, beforeEach, mock } from 'node:test'
+import test, { after, afterEach, beforeEach, mock } from 'node:test'
 
 /**
  * The permission scope of the three routes that start an AI translation of articles — as it IS
@@ -18,9 +18,12 @@ import test, { after, beforeEach, mock } from 'node:test'
  *     other article routes. translate-all with nothing left to translate answers 200 for any
  *     existing id without asking about its type;
  *   - bulk-translate checks the type of every id it can FIND, skips the ones it cannot and still
- *     counts them, audits them and hands them to the background job — a fractional id passes the
- *     `> 0` filter, matches no row in the check and reaches the job's INSERT (on MySQL, 1.5 → 2:
- *     a row on article 2 whatever its type — `mysql-bulk-fractional-id.sh`; FINDING-R7-5).
+ *     counts them, audits them and hands them to the background job (pinned). A fractional id
+ *     used to pass the `> 0` filter, match no row in the check and reach the job's INSERT (on
+ *     MySQL, 1.5 → 2: a placeholder `translating` row on article 2 whatever its type, blocking its
+ *     AI translation for 30 minutes — `mysql-bulk-fractional-id.sh`; FINDING-R7-5). Round 2 fixes
+ *     the INPUT only: whole ids (`Number.isSafeInteger`), the rest dropped like any unusable id; no
+ *     permission change (the gate and the cap on `articleIds` remain the owner's call).
  *
  * The AI worker is replaced (`runTranslationWorker` recorded, never called on a provider); the
  * bulk job's own loop is real and is awaited before each test ends, so no write lands after the
@@ -79,7 +82,9 @@ async function backgroundDone() {
   }
   throw new Error('bulk translation still running')
 }
-const translate = (id: number | string, body: unknown, who: Account | null = newsEditor) => h.request('POST', `/api/admin/articles/${id}/translations/translate`, who, body)
+// Also after a test that failed half-way (on the base, say): its job must not write into the next test.
+afterEach(() => backgroundDone())
+const translate =(id: number | string, body: unknown, who: Account | null = newsEditor) => h.request('POST', `/api/admin/articles/${id}/translations/translate`, who, body)
 const translateAll = (id: number | string, who: Account | null = newsEditor) => h.request('POST', `/api/admin/articles/${id}/translations/translate-all`, who, {})
 const bulk = (body: unknown, who: Account | null = newsEditor) => h.request('POST', '/api/admin/articles/bulk-translate', who, body)
 const translations = () => h.harness.rows(articleTranslations).map(row => [row.articleId, row.langCode, row.status])
@@ -163,18 +168,24 @@ test('bulk-translate: a missing id is skipped by the check but counted, audited 
   assert.deepEqual(translations(), [[news, 'en', 'translating'], [99_999, 'en', 'translating']])
 })
 
-test('FINDING-R7-5 (reported, not changed): a fractional id passes the `> 0` filter, matches no row in the type check and reaches the job', async () => {
+test('FINDING-R7-5: bulk-translate takes whole ids only — a fractional, negative, zero, huge or non-number id is dropped; none alone is a 400 with nothing written', async () => {
   const documentId = await article('document')
+  const news = await article()
   assert.equal(documentId, 1)
-  const plain = await bulk({ ids: [documentId], langCode: 'en' })
-  assert.deepEqual(plain.status, 403)
-  const fractional = await bulk({ ids: [documentId + 0.5], langCode: 'en' })
-  // 200 for the same caller: `id = 1.5` finds nothing to check. The job then inserts a row with
-  // article_id 1.5 — stored as 1.5 here; MySQL rounds it to 2 (the replay script).
-  assert.deepEqual([fractional.status, fractional.body], [200, { ok: true, count: 1 }])
+  assert.deepEqual((await bulk({ ids: [documentId], langCode: 'en' })).status, 403)
+  for (const ids of [[documentId + 0.5], [0.5], [-1], [0], [2 ** 53], ['1'], [null], [Number.POSITIVE_INFINITY]]) {
+    const response = await bulk({ ids, langCode: 'en' })
+    // Before: [1.5] answered 200 { count: 1 } for a caller refused on article 1 — `id = 1.5` found
+    // nothing to check and the job inserted article_id 1.5 (MySQL: article 2, whatever its type).
+    assert.deepEqual([response.status, response.body.statusMessage], [400, 'Chưa chọn bài viết hợp lệ nào.'], JSON.stringify(ids))
+  }
+  // Mixed with a whole id: the whole one goes on exactly as before, the fractional one is not there.
+  const mixed = await bulk({ ids: [news, news + 0.5], langCode: 'en' })
+  assert.deepEqual([mixed.status, mixed.body], [200, { ok: true, count: 1 }])
   await backgroundDone()
-  assert.deepEqual(workerCalls.map(call => call[0]), [1.5])
-  assert.deepEqual(translations(), [[1.5, 'en', 'translating']])
+  assert.deepEqual(workerCalls.map(call => call[0]), [news])
+  assert.deepEqual(translations(), [[news, 'en', 'translating']])
+  assert.deepEqual(audits(), [{ operation: 'bulk_translate_articles', langCode: 'en', count: 1, articleIds: [news] }])
 })
 
 test('bulk-translate: no ids or no language is a 400 before anything is written', async () => {

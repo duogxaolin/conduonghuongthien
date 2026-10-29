@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event)
   const page = finitePositive(query.page, 1, MAX_PAGE)
-  // finitePositive before the floor of 10 (FINDING-R7-8: `?perPage=abc` was LIMIT NaN, a 500).
+  // finitePositive before the floor of 10 (FINDING-R7-8: `abc` was NaN — no LIMIT, every row; `12.5` a 500).
   const perPage = Math.max(10, finitePositive(query.perPage || 30, 30, 100))
   const offset = (page - 1) * perPage
   const search = String(query.search || '').trim()

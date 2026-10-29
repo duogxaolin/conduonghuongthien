@@ -18,8 +18,9 @@ import test, { after, beforeEach } from 'node:test'
  *     (FINDING-R7-7, the R6-8 rule; `likeContains` from `server/utils/like-pattern.ts`, as the
  *     readers and media-portal lists). An ordinary search finds what it found before;
  *   - `perPage` goes through `finitePositive` before the floor of 10 — `?perPage=abc` was NaN past
- *     both clamps (LIMIT NaN: a 500 on MySQL, `perPage: null` in the JSON) and `12.5` a LIMIT MySQL
- *     refuses (FINDING-R7-8, the CLAUDE.md "query string số" rule);
+ *     both clamps: Drizzle then leaves LIMIT/OFFSET out, so on MySQL the base answered 200 with
+ *     EVERY row and `perPage: null` (verifier replay); `12.5` became `limit 12.5`, a 500
+ *     ER_PARSE_ERROR (FINDING-R7-8, the CLAUDE.md "query string số" rule);
  *   - rows that share `created_at` (an import, a bulk upload) come newest id first, so two pages
  *     never share or skip one (FINDING-R7-9, as R6-9) — the CSV export keeps the list's order.
  *
@@ -122,11 +123,12 @@ test('FINDING-R7-7: the chatbot knowledge and small-talk lists search question, 
   assert.deepEqual(await knowledge('100%'), ['Câu khác'], 'through an alias term')
   assert.deepEqual(await knowledge('Mẫu'), ['Mẫu mauX01 là gì?', 'Mẫu mau_01 là gì?'])
 
-  for (const question of ['xin_chao bạn', 'xinXchao bạn']) {
-    await h.harness.db.insert(chatbotSmallTalk).values({ category: 'greeting', question, normalizedQuestion: question, answer: 'Chào bạn' })
+  for (const [question, answer] of [['xin_chao bạn', 'Chào bạn'], ['xinXchao bạn', 'Chào bạn'], ['Mã hồ sơ?', 'Dạng ho_so_01'], ['Mã khác?', 'Dạng hoXsoX01']]) {
+    await h.harness.db.insert(chatbotSmallTalk).values({ category: 'greeting', question, normalizedQuestion: question, answer })
   }
   const smallTalk = async (search: string) => ((await get(`/api/admin/chatbot/small-talk?search=${encodeURIComponent(search)}`)).body.items as Array<{ question: string }>).map(item => item.question).sort()
   assert.deepEqual(await smallTalk('xin_chao'), ['xin_chao bạn'])
+  assert.deepEqual(await smallTalk('ho_so_01'), ['Mã hồ sơ?'], 'the answer column too')
   assert.deepEqual(await smallTalk('bạn'), ['xinXchao bạn', 'xin_chao bạn'])
 })
 
@@ -141,7 +143,7 @@ test('FINDING-R7-8: perPage is a whole number in [10, 100] — not a number fall
   for (const [raw, articleDefault, mediaDefault] of cases) {
     for (const [path, expected] of [[`/api/admin/articles?perPage=${raw}`, articleDefault], [`/api/admin/categories/${categoryId}/articles?perPage=${raw}`, articleDefault], [`/api/admin/media?perPage=${raw}`, mediaDefault]] as const) {
       const response = await get(path)
-      // Before: `abc` gave LIMIT NaN — `perPage: null` here, a 500 on MySQL — and 12.5 a LIMIT MySQL refuses.
+      // Before: `abc` was NaN — no LIMIT at all (every row, `perPage: null`) — and 12.5 a 500 (ER_PARSE_ERROR) on MySQL.
       assert.equal(response.status, 200, path)
       const { perPage, totalPages } = response.body.pagination as { perPage: number, totalPages: number }
       assert.equal(perPage, expected, path)
@@ -179,17 +181,26 @@ test('translatedLangs still lists each language once with its status (the expres
 
 // ─── Guard ───────────────────────────────────────────────────────────────────
 
-// One shape only: a "contains" pattern built as `%${…}%` inside `like(`. Prefix templates of
+// Two shapes of a raw "contains" pattern inside `like(` / `notLike(`: a template (`%${…}%`) and a
+// concatenation (`'%' + q + '%'`, either quote, either side — verifier N17). Prefix templates of
 // normalised slugs (`utils/slug.ts`) and the media module's constant / `sql` patterns are other
 // shapes this does not see — the census of every `like(` is in the R7 section of
 // docs/test-coverage-baseline-2026-10.md.
-test('FINDING-R7-7 guard: no like(column, `%${…}%`) — a "contains" pattern from a raw template — remains under server/', () => {
+const RAW_CONTAINS = /\b(?:not)?[Ll]ike\([^)]*(?:`%\$\{|(['"])%\1\s*\+|\+\s*(['"])%\2)/
+
+test('FINDING-R7-7 guard: no like(column, …) whose "contains" pattern is a raw template or concatenation remains under server/', () => {
+  for (const shape of ['like(t.a, `%${q}%`)', "like(t.a, '%' + q + '%')", 'notLike(t.a, q + "%")', "or(like(t.a, x), like(t.b, '%' + q))"]) {
+    assert.match(shape, RAW_CONTAINS, shape)
+  }
+  for (const fine of ['like(t.a, likeContains(q))', "like(t.slug, `${baseSlug}%`)", "like(media.mimeType, 'image/%')"]) {
+    assert.doesNotMatch(fine, RAW_CONTAINS, fine)
+  }
   const offenders: string[] = []
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
       const path = join(dir, name)
       if (statSync(path).isDirectory()) walk(path)
-      else if (path.endsWith('.ts') && /\blike\([^)]*`%\$\{/.test(readFileSync(path, 'utf8'))) offenders.push(path)
+      else if (path.endsWith('.ts') && RAW_CONTAINS.test(readFileSync(path, 'utf8'))) offenders.push(path)
     }
   }
   walk(new URL('../server', import.meta.url).pathname)

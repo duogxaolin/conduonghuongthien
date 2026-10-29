@@ -12,8 +12,8 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event)
   const page = finitePositive(query.page, 1, MAX_PAGE)
-  // finitePositive before the floor of 10: `?perPage=abc` was NaN through both clamps (LIMIT NaN,
-  // a 500) and `?perPage=12.5` a LIMIT MySQL refuses (FINDING-R7-8).
+  // finitePositive before the floor of 10: `?perPage=abc` was NaN through both clamps (Drizzle then
+  // drops LIMIT/OFFSET — every row) and `?perPage=12.5` a LIMIT MySQL refuses, a 500 (FINDING-R7-8).
   const perPage = Math.max(10, finitePositive(query.perPage || 20, 20, 100))
   const offset = (page - 1) * perPage
   const search = String(query.search || '').trim()

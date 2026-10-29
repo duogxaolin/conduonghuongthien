@@ -14,7 +14,10 @@ import test, { after, beforeEach } from 'node:test'
  *     check read the top-level `code` (FINDING-R7-6);
  *   - admin user create: an existing username or e-mail was meant to be a 400, and fell to the
  *     500 branch, whose message was Drizzle's "Failed query: <SQL> params: …" — the new account's
- *     e-mail and password hash in the officer's toast (FINDING-R7-10).
+ *     e-mail and password hash in the officer's toast (FINDING-R7-10). Its twin, user edit
+ *     (`users/[id].put.ts`), had no catch: an e-mail in use was an unhandled 500 and the whole
+ *     DrizzleQueryError, parameters and all, went to the server log (round 2). Both now log
+ *     `driverMessage` only — the log LINE is checked, not just its event name.
  *
  * The routes run on the SQLite harness (`_ai-route-harness.ts`); a unique-key failure is the
  * error MySQL raises (`failNext` with errno 1062 — the harness's own SQLite error carries no MySQL
@@ -28,6 +31,7 @@ const h = await startAiRouteHarness({
     { method: 'post', path: '/api/admin/chatbot/small-talk', handler: await load('../server/api/admin/chatbot/small-talk/index.post') },
     { method: 'put', path: '/api/admin/chatbot/small-talk/:id', handler: await load('../server/api/admin/chatbot/small-talk/[id].put') },
     { method: 'post', path: '/api/admin/users', handler: await load('../server/api/admin/users/index.post') },
+    { method: 'put', path: '/api/admin/users/:id', handler: await load('../server/api/admin/users/[id].put') },
   ],
 })
 after(() => h.server.close())
@@ -103,7 +107,7 @@ beforeEach(async () => {
   h.reset()
   officer = await h.account([
     { resource: 'chatbot_knowledge', canRead: true, canCreate: true, canUpdate: true },
-    { resource: 'users', canRead: true, canCreate: true },
+    { resource: 'users', canRead: true, canCreate: true, canUpdate: true },
   ], 'canbo')
 })
 
@@ -155,5 +159,41 @@ test('FINDING-R7-10: any other failure is a 500 that names no SQL, e-mail or pas
   // nhanvien_moi,nv.moi@example.vn,$2b$12$…").
   assert.deepEqual([failed.status, failed.body.statusMessage], [500, 'Lỗi hệ thống'])
   for (const leak of ['insert into', 'nv.moi@example.vn', '$2']) assert.ok(!shown.includes(leak), leak)
-  assert.ok(h.logged.some(line => line.includes('admin_users.create_failed')), 'logged')
+  // The log line itself (N21): the driver's message — here the harness's "injected failure: <SQL>",
+  // on MySQL "Cannot add or update a child row: …" — never Drizzle's "… params: <name>,<e-mail>,<hash>".
+  const line = h.logged.filter(each => each.includes('admin_users.create_failed'))
+  assert.equal(line.length, 1)
+  assert.match(line[0]!, /injected failure: insert into `users`/)
+  for (const leak of ['params:', 'nv.moi@example.vn', '$2', 'Cuc-Ky']) assert.ok(!line[0]!.includes(leak), `log: ${leak}`)
+})
+
+// ─── FINDING-R7-10, the update twin: admin user edit ─────────────────────────
+
+async function editableUser() {
+  const roleId = await roleToAssign()
+  await h.harness.db.insert(users).values({ id: 500, username: 'nhanvien_cu', email: 'nv.cu@example.vn', passwordHash: 'x', roleId })
+  return 500
+}
+
+test('FINDING-R7-10 (edit): an e-mail another account uses is a 400 — not an unhandled 500', async () => {
+  const id = await editableUser()
+  h.harness.failNext(/^update `users`/, { errno: 1062, code: 'ER_DUP_ENTRY' })
+  const response = await h.request('PUT', `/api/admin/users/${id}`, officer, { email: 'trung@example.vn' })
+  assert.deepEqual([response.status, response.body.statusMessage], [400, 'Email đã được dùng cho tài khoản khác.'])
+  assert.equal(h.harness.rows(users).find(row => row.id === id)!.email, 'nv.cu@example.vn')
+  assert.equal((await h.request('PUT', `/api/admin/users/${id}`, officer, { email: 'moi@example.vn' })).status, 200, 'an ordinary edit is unchanged')
+})
+
+test('FINDING-R7-10 (edit): any other failure — a new password included — is a 500 "Lỗi hệ thống"; neither the answer nor the log line carries a parameter or the hash', async () => {
+  const id = await editableUser()
+  h.harness.failNext(/^update `users`/, { errno: 1452, code: 'ER_NO_REFERENCED_ROW_2' })
+  const response = await h.request('PUT', `/api/admin/users/${id}`, officer, { email: 'nv.khac@example.vn', password: 'Mat-Khau-Moi-Rat-Dai-2026' })
+  assert.deepEqual([response.status, response.body.statusMessage], [500, 'Lỗi hệ thống'])
+  const line = h.logged.filter(each => each.includes('admin_users.update_failed'))
+  assert.equal(line.length, 1)
+  for (const leak of ['params:', 'nv.khac@example.vn', '$2', 'Mat-Khau']) {
+    assert.ok(!JSON.stringify(response.body).includes(leak), `answer: ${leak}`)
+    assert.ok(!line[0]!.includes(leak), `log: ${leak}`)
+  }
+  assert.equal(h.harness.rows(users).find(row => row.id === id)!.passwordHash, 'x', 'nothing written')
 })
