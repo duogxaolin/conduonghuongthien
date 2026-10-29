@@ -41,6 +41,12 @@ const save = (ctx: Editor) => all(ctx, el => el.tag === 'button' && /Cập Nhậ
 const thumbnail = (ctx: Editor) => all(ctx, el => el.tag === 'img')[0]
 const removeThumbnail = (ctx: Editor) => all(ctx, el => el.tag === 'button' && el.props['aria-label'] === 'Xóa ảnh đại diện')[0]!
 const fileInput = (ctx: Editor) => all(ctx, el => el.tag === 'input' && el.props.type === 'file')[0]!
+/**
+ * Is it on screen. Compare THIS, never the element itself: a failing `assert.equal(el, undefined)`
+ * makes node inspect the element — parent links and all — and the run hangs instead of failing
+ * (seen with a mutant that left the thumbnail in place).
+ */
+const shown = (el: MiniElement | undefined) => el !== undefined
 const RETRANSLATE = 'Phát hiện nội dung Tiếng Việt vừa thay đổi!'
 const retranslate = (ctx: Editor) => dialogs(ctx).find(d => d.props['aria-label'] === RETRANSLATE)
 const LEAVE_PROMPT = {
@@ -91,13 +97,13 @@ describe('article editor — load and TinyMCE', () => {
     const ctx = await openEditor(t, '42', { responder: server({ 'GET /api/admin/articles/42': (call) => { pending.push(call); return undefined } }) })
     assert.equal(placeholder(ctx)?.props['aria-busy'], 'true')
     assert.match(textOf(placeholder(ctx)!), /Đang tải nội dung bài viết/)
-    assert.equal(editorBox(ctx), undefined)
+    assert.equal(shown(editorBox(ctx)), false)
     assert.equal(ctx.tiny.configs.length, 0)
     assert.equal(isDisabled(save(ctx)), true)
     assert.equal(await ctx.leave(), true, 'nothing to lose while loading')
     pending[0]!.respond(json({ ok: true, article: ARTICLE }))
     await ctx.settle()
-    assert.equal(placeholder(ctx), undefined)
+    assert.equal(shown(placeholder(ctx)), false)
     assert.ok(editorBox(ctx))
     assert.deepEqual(ctx.tiny.log, ['init'])
     assert.equal(ctx.tiny.editor.html, '<p>Nội dung gốc</p>')
@@ -121,7 +127,7 @@ describe('article editor — load and TinyMCE', () => {
     assert.ok(placeholder(ctx))
     read!.respond(json({ ok: true, article: ARTICLE }))
     await ctx.settle()
-    assert.equal(placeholder(ctx), undefined)
+    assert.equal(shown(placeholder(ctx)), false)
     assert.equal(titleInput(ctx).model?.value, 'Bài gốc')
   })
 
@@ -313,7 +319,7 @@ describe('article editor — header, translations, re-translate prompt', () => {
     await click(byText(modal, 'button', 'Dịch lại tất cả ngay'))
     await ctx.settle()
     assert.deepEqual(ctx.panel.translateAll, ['ai_draft'])
-    assert.equal(retranslate(ctx), undefined)
+    assert.equal(shown(retranslate(ctx)), false)
   })
 
   it('ticked "Tự động xuất bản": published; while it starts the dialog is busy and the button says so', async (t) => {
@@ -332,20 +338,20 @@ describe('article editor — header, translations, re-translate prompt', () => {
     assert.equal(isDisabled(busy), true)
     ctx.panel.pending!()
     await ctx.settle()
-    assert.equal(retranslate(ctx), undefined)
+    assert.equal(shown(retranslate(ctx)), false)
   })
 
   it('an unchanged PUT asks nothing; "Để sau" closes without translating, and the next unchanged save asks nothing', async (t) => {
     const ctx = await openEditor(t, '42')
     await saveNow(ctx)
-    assert.equal(retranslate(ctx), undefined)
+    assert.equal(shown(retranslate(ctx)), false)
     await input(titleInput(ctx), 'Đổi tên')
     await saveNow(ctx)
     await click(byText(retranslate(ctx)!, 'button', 'Để sau / Giữ bản dịch hiện tại'))
     await ctx.settle()
-    assert.equal(retranslate(ctx), undefined)
+    assert.equal(shown(retranslate(ctx)), false)
     await saveNow(ctx)
-    assert.equal(retranslate(ctx), undefined)
+    assert.equal(shown(retranslate(ctx)), false)
     assert.deepEqual(ctx.panel.translateAll, [])
   })
 })
@@ -397,7 +403,7 @@ describe('article editor — AI panel and images', () => {
 
   it('thumbnail from the library; ✕ removes it', async (t) => {
     const ctx = await openEditor(t, 'new')
-    assert.equal(thumbnail(ctx), undefined)
+    assert.equal(shown(thumbnail(ctx)), false)
     await click(button(ctx, 'Chọn từ thư viện'))
     const request = ctx.pickers.at(-1)!
     assert.equal(request.multiple, undefined)
@@ -406,7 +412,7 @@ describe('article editor — AI panel and images', () => {
     assert.equal(thumbnail(ctx)?.props.src, '/uploads/dai-dien.jpg')
     assert.ok(button(ctx, 'Đổi từ thư viện'))
     await click(removeThumbnail(ctx))
-    assert.equal(thumbnail(ctx), undefined)
+    assert.equal(shown(thumbnail(ctx)), false)
   })
 
   it('thumbnail upload: the file goes up, the control is off meanwhile, the URL lands, the input is cleared; a failed upload keeps the old one', async (t) => {
