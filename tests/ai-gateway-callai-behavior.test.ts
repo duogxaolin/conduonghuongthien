@@ -115,12 +115,12 @@ const PRICING = { model: MODEL, promptCostPerMillion: '3', completionCostPerMill
 const HOST = 'api.provider.example'
 
 /** A fresh provider NAME per call unless one is given: the provider row is cached by name for 60 s. */
-function setup(options: { provider?: string, pricing?: Row | null, systemPrompt?: string | null } = {}) {
+function setup(options: { provider?: string, pricing?: Row | null, systemPrompt?: string | null, baseUrl?: string } = {}) {
   const provider = options.provider ?? unique('prov')
   const serviceKey = unique('svc')
   const rows: Record<string, Row | null> = {
     config: { serviceKey, provider, model: MODEL, isActive: true, systemPrompt: options.systemPrompt === undefined ? 'Hệ thống.' : options.systemPrompt, maxTokens: 512 },
-    provider: { provider, baseUrl: `https://${HOST}/v1`, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'cdef' },
+    provider: { provider, baseUrl: options.baseUrl ?? `https://${HOST}/v1`, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'cdef' },
     pricing: options.pricing === undefined ? PRICING : options.pricing,
   }
   const take = (table: unknown): unknown[] => {
@@ -351,8 +351,10 @@ for (const mode of MODES) {
 // ─── The API key ─────────────────────────────────────────────────────────────
 
 const echo = `Incorrect API key provided: Bearer ${SECRET}`
-const KEY_SCENARIOS: Array<{ label: string, replies: (mode: Mode) => Reply[], address?: string }> = [
+const KEY_SCENARIOS: Array<{ label: string, replies: (mode: Mode) => Reply[], address?: string, baseUrl?: string }> = [
   { label: 'success', replies: okReplies },
+  // Refused after the key is decrypted (the URL policy runs on the built request's URL): the warning must not carry it.
+  { label: 'a stored base URL outside the policy', replies: () => [], baseUrl: `http://${HOST}/v1` },
   { label: 'HTTP 401 echoing the key', replies: () => [json({ error: { message: echo } }, 401)] },
   { label: 'HTTP 500 echoing the key', replies: () => [{ status: 500, body: echo }] },
   { label: 'a 200 that is not JSON and echoes the key', replies: () => [{ status: 200, body: `<html>${echo}</html>` }] },
@@ -366,7 +368,8 @@ for (const scenario of KEY_SCENARIOS) {
     for (const mode of MODES) {
       if (scenario.label.startsWith('step 2') && !withTools(mode)) continue
       reset()
-      const { result, seen, chunks, toolEvents } = await run(mode, scenario.replies(mode), { address: scenario.address })
+      const { result, seen, chunks, toolEvents } = await run(mode, scenario.replies(mode), { address: scenario.address, setup: { baseUrl: scenario.baseUrl } })
+      if (scenario.baseUrl) assert.deepEqual([result.error, seen.requests.length, rec.warns.map(w => w.event)], ['provider_url_rejected', 0, ['ai_gateway.provider_url_rejected']], mode)
       const observable = JSON.stringify({ result, warns: rec.warns, infos: rec.infos, usage: rec.usage, chunks, toolEvents })
       assert.ok(!observable.includes(SECRET_PIECE), `${mode}: ${observable.slice(0, 300)}`)
       for (const { raw, options } of seen.requests) {
