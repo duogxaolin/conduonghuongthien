@@ -28,7 +28,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
 import * as Vue from 'vue'
 
-import { fire, findAll, textOf, type MiniElement } from './_sfc-mount.ts'
+import { fire, findAll, textOf } from './_sfc-mount.ts'
 import {
   alertText, dropped, h3Error, json, mountAdminPage, OFETCH_LINE, routes, sent, settle, unmountAll, wire,
   type MountedAdminPage, type NetCall, type Responder,

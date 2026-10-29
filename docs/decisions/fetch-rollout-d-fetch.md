@@ -414,6 +414,18 @@ nó "không còn tải". `admin-moderation-summary.test.ts` (harness tự biên 
 Test: `tests/admin-fetch-rollout-{navigation,roles,ai-tabs,submissions-list,media-portal-forms,media-picker,backup-list,session-picker}.test.ts`.
 Mọi test không mang nhãn FINDING xanh trên tệp nguồn của base (chạy lại trên `git show 551651c7:…`).
 
+**Đột biến: 24 chạy, 24 bị bắt** (mỗi cái làm ≥ 1 test đỏ, hoàn nguyên bằng `git checkout HEAD --`; nhật ký
+`mutations/M*.{diff,txt}` trong thư mục proof): hai lớp khoá `loaded` × hai trang menu (4); `roleId || 2` và
+luôn gửi `roleId` (2); mã lượt try/catch/finally của đơn đăng ký (3), nhật ký AI (3), bộ chọn ảnh (finally) và
+backup (try) (2); `testRequest++` khi mở dịch vụ, mã lượt ở thành công/lỗi của kiểm tra kết nối, `invalidate`
+xuống dưới phép kiểm mã (4); hai phép kiểm liên kết cũ của "Lấy thông tin" (2); `pagination.totalPages` →
+1 (1); bỏ `errorMessage` ở `external.vue` và ở lưu dịch vụ AI (2); 403 → 401 ở `upload.vue` (1). Một đột biến
+SỐNG lần đầu (M19 — mã lượt nhánh thành công của nhật ký AI: test chỉ cho lượt cũ về TRƯỚC) → test thêm
+"lượt cũ thành công về sau", chạy lại M19b bị bắt. Trước vòng đột biến, theo rà soát: hai test đua (nhật ký
+AI, bộ chọn ảnh) có lượt tải đầu trả rỗng nên không phân biệt được "đang tải" với "tắt tải sớm" — đổi lượt
+đầu trả một hàng; dòng `loaded.value = false` đầu `loadMenu` không quan sát được (chỉ "thử lại" của nhánh
+lỗi tải lại) — bỏ, không tính là đột biến.
+
 ### Còn lại cho lô G
 
 74 ép kiểu trong 46 tệp: 2 có tên trong `adminFetch.ts`; **phía quản trị 15 trong 8 tệp**; còn lại phía
