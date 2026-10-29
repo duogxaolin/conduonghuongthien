@@ -29,8 +29,15 @@
  * `outbound.ts` is spied, not replaced: each spy records the options and calls the real
  * sender, so the URL check, DNS→public IP, the pinned lookup, the redirect refusal, the
  * deadline and the byte cap all run; only the socket and the resolver are fakes.
+ *
+ * `CALLAI_WIRE_LOG=<file>` appends one JSON line per call: the bytes of every request
+ * (body as sent, method, path, headers), the DNS lookups, the options handed to outbound, the
+ * side-effect sequence, the result, the chunks, the tool events, the usage rows and the log
+ * lines (`executionMs` masked — wall clock). The same file run on two versions of the gateway
+ * must write identical logs: that is how the split was shown not to change the wire.
  */
 import assert from 'node:assert/strict'
+import { appendFileSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage } from 'node:http'
 import type { RequestOptions } from 'node:https'
@@ -222,6 +229,16 @@ async function run(mode: Mode, replies: Reply[], options: RunOptions = {}) {
       : {}),
     ...options.input,
   })
+  const wireLog = process.env.CALLAI_WIRE_LOG
+  if (wireLog) {
+    const masked = (rows: Row[]) => rows.map(row => ('executionMs' in row ? { ...row, executionMs: typeof row.executionMs } : row))
+    appendFileSync(wireLog, `${JSON.stringify({
+      mode,
+      requests: seen.requests.map(({ raw, options: o }) => ({ raw, method: o.method, path: o.path, hostname: o.hostname, headers: o.headers })),
+      lookups: seen.lookups, sends: rec.sends, order: rec.order, result, chunks, toolEvents, executed,
+      usage: masked(rec.usage), warns: rec.warns, infos: masked(rec.infos),
+    })}\n`)
+  }
   return { result, seen, chunks, toolEvents, executed, serviceKey, provider }
 }
 
