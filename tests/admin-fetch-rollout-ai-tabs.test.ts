@@ -158,6 +158,7 @@ describe(SERVICES_TAB, () => {
     assert.equal(textOf(testButton(opened)), 'Kiểm tra kết nối')
     pending[0]!.respond(json({ ok: true, model: 'model-a', provider: 'delify', reply: 'Câu của A.', durationMs: 9000, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, costVnd: 1 }))
     await settle()
+    assert.equal(opened.invalidated.count, 1, 'A\'s call still cost money: the parent refreshes usage even for a retired call')
     assert.doesNotMatch(textOf(dialog(opened)!), /Câu của A|model-a/)
     assert.equal(textOf(testButton(opened)), 'Kiểm tra kết nối')
     // B's own test still works and shows B's answer.
@@ -266,7 +267,8 @@ describe('components/admin/ai/AiLogsTab.vue', () => {
   it('FINDING: the older filter\'s answer landing last does not replace the newer one\'s rows (nor its failure, nor its end)', async () => {
     const pending: NetCall[] = []
     let first = true
-    const opened = await openLogs((call) => { if (first) { first = false; return answer([]) } pending.push(call); return undefined })
+    // The mount's own rows (small talk): shown again if an older request ended the loading state early.
+    const opened = await openLogs((call) => { if (first) { first = false; return answer([logRow(9, 'small_talk')]) } pending.push(call); return undefined })
     await filterBy(opened, 'chatbot')
     await filterBy(opened, 'moderation')
     pending[0]!.respond(answer([logRow(1, 'chatbot')]))

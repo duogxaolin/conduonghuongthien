@@ -376,7 +376,8 @@ mới trên tệp nguồn của base):**
 - **F-1 Menu chính + thanh mobile** (ghi đè cấu hình trang công khai): "Lưu cấu hình" nằm ở đầu trang,
   ngoài chuỗi tải/lỗi, chỉ khoá khi đang lưu — tải hỏng thì trạng thái giữ menu MẶC ĐỊNH sau dải lỗi, bấm
   Lưu PUT đè menu thật; lượt tải đầu còn bay thì trạng thái là `[]`, bấm Lưu PUT menu RỖNG. Nay cờ dương
-  `loaded` (false từ đầu mỗi lượt tải, true khi câu trả lời đã điền — kể cả `menu: null` = chưa lưu gì,
+  `loaded` (false tới khi một lượt tải điền xong — không đặt lại về false ở đầu lượt tải: chỉ "thử lại"
+  của nhánh LỖI tải lại, lúc đó cờ đã false, dòng đặt lại không quan sát được nên bỏ; true kể cả `menu: null` = chưa lưu gì,
   sửa mặc định là hợp lệ), hai lớp: nút `:disabled="saving || !loaded"` và `saveMenu` tự trả về. 8 test.
 - **F-2 Prompt dịch vụ AI**: "Kiểm tra kết nối" (lượt gọi AI thật, vài giây) của dịch vụ A, đóng hộp, mở B —
   câu trả lời (hoặc lỗi) của A hiện dưới tên B, nút của B kẹt "Đang test...". Mã lượt; mở dịch vụ cấp mã mới.

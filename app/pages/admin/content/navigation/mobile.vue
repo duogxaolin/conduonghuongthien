@@ -38,6 +38,7 @@ const error = ref('')
 const saving = ref(false)
 // Saving needs the editor to hold what the GET answered: a failed load filled it with the
 // default and an in-flight one left `[]`, and "Lưu cấu hình" PUT that over the real tab bar.
+// Never reset to false: only a load that FAILED reloads ("thử lại"), so it is false already.
 const loaded = ref(false)
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
@@ -55,7 +56,6 @@ function normalize(item: Partial<BottomNavItem>): BottomNavItem {
 
 async function loadMenu() {
   loading.value = true
-  loaded.value = false
   error.value = ''
   try {
     const res = await adminFetch<AdminMobileNavMenuResponse>(`/api/admin/settings/navigation/mobile`)

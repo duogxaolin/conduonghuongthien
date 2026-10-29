@@ -32,12 +32,12 @@ const menu = ref<MenuItem[]>([])
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
-const loaded = ref(false) // Save needs what the GET answered: a failed load left the default, an in-flight one `[]` — both PUT over the real menu.
+const loaded = ref(false) // Save needs what the GET answered (an in-flight load left `[]`, a failed one the default — both PUT over the real menu); only a load that FAILED reloads ("thử lại").
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
 
 async function loadMenu() {
-  loading.value = true; loaded.value = false
+  loading.value = true
   error.value = ''
   try {
     const res = await adminFetch<AdminNavbarMenuResponse>(`/api/admin/settings/navigation/navbar`)

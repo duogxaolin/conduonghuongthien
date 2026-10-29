@@ -98,7 +98,7 @@ describe(PICKER, () => {
   it('FINDING: the older search\'s answer landing last does not replace the newer one\'s images', async () => {
     const pending: NetCall[] = []
     let first = true
-    const opened = await openPicker((call) => { if (first) { first = false; return page([]) } pending.push(call); return undefined })
+    const opened = await openPicker((call) => { if (first) { first = false; return page([image(9, 'mount')]) } pending.push(call); return undefined })
     await search(opened, 'a')
     await search(opened, 'ab')
     pending[1]!.respond(page([image(2, 'ab')]))
@@ -111,7 +111,7 @@ describe(PICKER, () => {
   it('FINDING: the older search failing last puts no error over the newer images', async () => {
     const pending: NetCall[] = []
     let first = true
-    const opened = await openPicker((call) => { if (first) { first = false; return page([]) } pending.push(call); return undefined })
+    const opened = await openPicker((call) => { if (first) { first = false; return page([image(9, 'mount')]) } pending.push(call); return undefined })
     await search(opened, 'a')
     await search(opened, 'ab')
     pending[1]!.respond(page([image(2, 'ab')]))
@@ -125,7 +125,7 @@ describe(PICKER, () => {
   it('FINDING: the older search settling first keeps loading until the newer one is back', async () => {
     const pending: NetCall[] = []
     let first = true
-    const opened = await openPicker((call) => { if (first) { first = false; return page([]) } pending.push(call); return undefined })
+    const opened = await openPicker((call) => { if (first) { first = false; return page([image(9, 'mount')]) } pending.push(call); return undefined })
     await search(opened, 'a')
     await search(opened, 'ab')
     pending[0]!.respond(page([image(1, 'a')]))
