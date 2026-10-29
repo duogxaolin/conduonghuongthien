@@ -409,37 +409,80 @@ test('FINDING-R6-10 (M1): two purges of one reader\'s comments at once — the s
 // harness throws on a pool read while a transaction is open). Deadlocks and the hung pool
 // themselves are replayed on MySQL 8 (race2/race.sh, /home/ray/orca/cdht-wave3-tests-r6-proof/).
 
-/** The statements of the last transaction, each cut to its verb, table and lock clause. */
+/** The statements of the last transaction, each cut to verb, table, predicate, order and lock clause. */
 function txShape(from: number) {
   return h.harness.txStatements.slice(from).map(sql => sql
-    .replace(/^select .*? from (`\w+`)(?: where (`\w+`\.`\w+`) = \?)?.*?( for update)?$/s, 'select $1 $2$3')
-    .replace(/^(update|delete from|insert into) (`\w+`).*$/s, '$1 $2')
-    .replace(/\s+$/, ''))
+    .replace(/^select .*? from (`\w+`)(?: where (`\w+`\.`\w+`) (=|in) .*?)?( order by \S+ \w+)?( for (?:update|share))?$/s,
+      (_m, table: string, col?: string, op?: string, order?: string, lock?: string) =>
+        ['select', table, col ? `${col} ${op}` : '', order ? 'ordered' : '', lock?.trim() ?? ''].filter(Boolean).join(' '))
+    .replace(/^(update|delete from|insert into) (`\w+`).*$/s, '$1 $2'))
+}
+const isLock = (shape: string) => /for (update|share)$/.test(shape) || /^(update|delete)/.test(shape)
+const ORDERED_LOCK = 'select `article_comments` `article_comments`.`id` in ordered for update'
+
+/** Readers A and B who replied to each other: A wrote a1 and a reply under b1; B wrote b1 and a reply under a1. */
+async function mutualPair() {
+  const a = await reader({ displayName: 'A' })
+  const b = await reader({ displayName: 'B' })
+  const a1 = await comment({ articleId: 1, readerId: a })
+  const b1 = await comment({ articleId: 1, readerId: b })
+  const bUnderA = await comment({ articleId: 1, readerId: b, parentId: a1 })
+  const aUnderB = await comment({ articleId: 1, readerId: a, parentId: b1 })
+  return { a, b, a1, b1, bUnderA, aUnderB }
 }
 
-test('H1 lock order: purge locks the reader\'s comments first and never the reader row (a reply holds its parent comment, then the reader)', async () => {
+test('H3: a deletion locks every row it will touch — own comments and the replies under them — in ONE statement, ascending id', async () => {
+  const { a, a1, bUnderA, aUnderB } = await mutualPair()
+  const from = h.harness.txStatements.length
+  assert.equal((await h.request('DELETE', `/api/admin/readers/${a}/comments`, commentsOfficer)).status, 200)
+  const shape = txShape(from)
+  const at = shape.indexOf(ORDERED_LOCK)
+  // Before: A's own rows locked first (reader_id index), B's reply under a1 only later by the
+  // cascade — while B's purge held its own rows and reached for A's reply under b1: purge ‖ purge
+  // of two readers who replied to each other deadlocked 100/100 on MySQL (verifier H3).
+  assert.ok(at >= 0 && shape.slice(0, at).every(s => !isLock(s)), shape.join(' | '))
+  assert.deepEqual(h.harness.txParams[from + at], [a1, bUnderA, aUnderB].sort((x, y) => x - y))
+})
+
+test('H1 lock order: purge locks only comments — never the reader row (a reply holds its parent comment, then the reader)', async () => {
   const { id } = await readerWithThread()
   const from = h.harness.txStatements.length
   assert.equal((await h.request('DELETE', `/api/admin/readers/${id}/comments`, commentsOfficer)).status, 200)
   const shape = txShape(from)
   // Before: `select reader_accounts … for update` first — purge ‖ admin reply deadlocked 30/30 on MySQL.
-  assert.equal(shape[0], 'select `article_comments` `article_comments`.`reader_id` for update')
-  assert.deepEqual(shape.filter(s => /reader_accounts/.test(s) && !/^select `reader_accounts` `reader_accounts`.`id`$/.test(s)), [])
+  assert.equal(shape.find(isLock), ORDERED_LOCK)
+  assert.deepEqual(shape.filter(s => /reader_accounts/.test(s)), [], 'it removed comments: no read of the reader row at all')
   assert.deepEqual(shape.filter(s => /^(delete|insert)/.test(s)), ['delete from `article_comments`', 'insert into `activity_logs`'])
 })
 
-test('lock order: ban and account deletion keep the base order — the reader row, then its comments counted under FOR UPDATE', async () => {
+test('lock order: ban and account deletion keep the base order — the reader row, then the comments in id order', async () => {
   const { id } = await readerWithThread()
   let from = h.harness.txStatements.length
   assert.equal((await h.request('POST', `/api/admin/readers/${id}/ban`, moderator, {})).status, 200)
-  assert.deepEqual(txShape(from).slice(0, 2), ['update `reader_accounts`', 'select `article_comments` `article_comments`.`reader_id` for update'])
+  assert.deepEqual(txShape(from).filter(isLock).slice(0, 2), ['update `reader_accounts`', ORDERED_LOCK])
   const second = await reader()
   await comment({ readerId: second, articleId: 1 })
   from = h.harness.txStatements.length
   assert.equal((await h.request('DELETE', `/api/admin/readers/${second}`, moderator)).status, 200)
-  const shape = txShape(from)
-  assert.deepEqual(shape.slice(0, 2), ['select `reader_accounts` `reader_accounts`.`id` for update', 'select `article_comments` `article_comments`.`reader_id` for update'])
+  const shape = txShape(from).filter(isLock)
+  assert.deepEqual(shape.slice(0, 2), ['select `reader_accounts` `reader_accounts`.`id` = for update', ORDERED_LOCK])
   assert.ok(shape.indexOf('delete from `reader_accounts`') > 1, shape.join(' | '))
+})
+
+test('H3: purge is retried whole when chosen as a deadlock victim; three in a row leave everything as it was', async () => {
+  const deadlock = { errno: 1213, code: 'ER_LOCK_DEADLOCK' }
+  const { id } = await readerWithThread()
+  h.harness.failNext(/^delete from `article_comments`/, deadlock)
+  const purged = await h.request('DELETE', `/api/admin/readers/${id}/comments`, commentsOfficer)
+  // Before: no retry around purge — the victim was a 500 (purge ‖ purge 100/100 on MySQL).
+  assert.deepEqual([purged.status, purged.body.impact], [200, { comments: 2, adminReplies: 1, otherReaderReplies: 1 }])
+  assert.deepEqual(audits().map(a => a.meta.operation), ['purge_reader_comments'])
+
+  const other = (await readerWithThread()).id
+  for (let n = 0; n < 3; n += 1) h.harness.failNext(/^delete from `article_comments`/, deadlock)
+  assert.equal((await h.request('DELETE', `/api/admin/readers/${other}/comments`, commentsOfficer)).status, 500)
+  assert.equal(h.harness.rows(articleComments).filter(c => c.readerId === other).length, 2)
+  assert.equal(audits().length, 1)
 })
 
 test('H2: ban, purge and account deletion read only through their transaction — never a second pool connection', async () => {

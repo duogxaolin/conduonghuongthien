@@ -107,6 +107,7 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
   const hooks: Array<{ pattern: RegExp, run: () => void }> = []
   const statements: string[] = []
   const txStatements: string[] = []
+  const txParams: unknown[][] = []
 
   function maybeFail(sql: string) {
     const hook = hooks.findIndex(each => each.pattern.test(sql))
@@ -178,14 +179,14 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
 
   async function execute(sql: string, params: unknown[], method: Method): Promise<ProxyResult> {
     statements.push(sql)
-    if (transactionOpen) txStatements.push(sql)
+    if (transactionOpen) { txStatements.push(sql); txParams.push(params) }
     maybeFail(sql)
     if (/^insert/i.test(sql)) return runInsert(sql, params)
     if (/on duplicate key/i.test(sql)) throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
 
     // MySQL's LIKE escapes with `\` by default; SQLite's has no escape character unless
     // told. Without this an escaped `\_` would mean "a backslash, then any character".
-    const statement = sqlite.prepare(sql.replace(/ for update$/, '').replace(/ like \?/g, " like ? escape '\\'"))
+    const statement = sqlite.prepare(sql.replace(/ for (?:update|share)$/, '').replace(/ like \?/g, " like ? escape '\\'"))
     const bound = params.map(toSqliteParam)
     if (method === 'all') {
       const columns = statement.columns()
@@ -230,9 +231,9 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
       // A read on the pool while a transaction is open takes a SECOND connection: with the pool's
       // 10 all held by open transactions, each waits for an eleventh forever (verifier H2 — ten
       // bans at once hung the whole app). Reads inside a transaction go through `tx`.
-      if (transactionOpen && property === 'select') {
+      if (transactionOpen && (property === 'select' || property === 'execute')) {
         return () => {
-          throw new Error('db.select() on the pool while a transaction is open — on MySQL a second connection per transaction exhausts the pool')
+          throw new Error(`db.${String(property)}() on the pool while a transaction is open — on MySQL a second connection per transaction exhausts the pool`)
         }
       }
       const value = Reflect.get(target, property, target)
@@ -259,8 +260,9 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     rows,
     /** The raw SQL of every statement run so far. */
     statements,
-    /** The raw SQL of every statement run while a transaction was open. */
+    /** The raw SQL of every statement run while a transaction was open, and (same index) its parameters. */
     txStatements,
+    txParams,
     /** The next statement whose SQL matches `pattern` throws — with `fields` (e.g. `{ errno: 1213 }`) on the error. */
     failNext(pattern: RegExp, fields?: Record<string, unknown>) { failures.push({ pattern, fields }) },
     /** `run` executes (on the same database) just before the next statement whose SQL matches `pattern`. */
@@ -270,6 +272,7 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
       hooks.length = 0
       statements.length = 0
       txStatements.length = 0
+      txParams.length = 0
       for (const table of tables) sqlite.exec(`DELETE FROM \`${getTableName(table)}\``)
     },
   }

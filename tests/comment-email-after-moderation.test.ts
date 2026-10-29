@@ -50,8 +50,15 @@ const select = (projection: Row) => ({
     return chain
   },
 })
+/** The next comment insert fails with these fields (e.g. errno 1452: the parent went meanwhile). */
+let failNextInsert: Row | null = null
 const insert = () => ({
   values: () => {
+    if (failNextInsert) {
+      const fields = failNextInsert
+      failNextInsert = null
+      return Promise.reject(Object.assign(new Error('Cannot add or update a child row: a foreign key constraint fails'), fields))
+    }
     const result = Promise.resolve([{ insertId: 99 }])
     return Object.assign(result, { onDuplicateKeyUpdate: async () => [{ affectedRows: 1 }] })
   },
@@ -262,6 +269,24 @@ test('the subject of a reader reply is fixed and never carries the replier\'s ch
   assert.match(subject, /Có người trả lời bình luận của bạn/)
   // The name is still in the body, as text.
   assert.match(mails[0]!.text, /Ban quản trị đã trả lời bình luận của bạn/)
+})
+
+test('what the comment hangs on removed between the checks and the insert (FK 1452) is the checks\' own answer, not a 500', async () => {
+  behaviour = 'clean'
+  mails.length = 0
+  moderationCalls.length = 0
+  // A reply whose parent a ban / purge / account deletion removed meanwhile (verifier round 4, M1).
+  failNextInsert = { errno: 1452, code: 'ER_NO_REFERENCED_ROW_2' }
+  assert.deepEqual(await createComment(replyInput('Một câu trả lời')), { ok: false, statusCode: 400, message: 'Bình luận gốc không tồn tại.' })
+  // A top-level comment whose article was deleted meanwhile.
+  failNextInsert = { errno: 1452 }
+  assert.deepEqual(await createComment({ readerId: 5, articleId: 1, parentId: null, body: 'Bình luận gốc', ip: '203.0.113.9', userAgent: 'test', event: requestEvent() }),
+    { ok: false, statusCode: 404, message: 'Bài viết không tồn tại.' })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual([moderationCalls.length, mails.length], [0, 0])
+  // Any other failure is still thrown.
+  failNextInsert = { errno: 1205 }
+  await assert.rejects(createComment(replyInput('Một câu trả lời')), /foreign key constraint fails/)
 })
 
 test('a top-level comment (nobody to notify) is still moderated, and nothing is mailed', async () => {

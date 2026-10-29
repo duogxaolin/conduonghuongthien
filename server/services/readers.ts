@@ -28,6 +28,7 @@ import { effectiveDisplayName } from '../utils/display-name'
 import { likeContains } from '../utils/like-pattern'
 import { readAffectedRows } from '../utils/affected-rows'
 import { withDeadlockRetry } from '../utils/deadlock-retry'
+import { readerExistsNow } from './reader-moderation-tx'
 
 /** Server-enforced ceiling. A client-supplied page size is a request. */
 export const READER_MAX_PER_PAGE = 100
@@ -238,9 +239,8 @@ export async function banReader(params: { readerId: number, reason: string | nul
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-  // Base lock order — reader row (this UPDATE), then comments, as deletion and retention (a reply locks them the other
-  // way: a deadlock victim is retried whole). 0 rows: account gone while we waited (404, no audit — D1). Counted on THIS
-  // transaction under FOR UPDATE: two bans claimed the same comments (M1); a 2nd pool connection hung the pool (H2).
+  // Reader row first (this UPDATE), then the comments, counted on this transaction — lock order and retry:
+  // reader-moderation-tx.ts. 0 rows: the account went while we waited (404, no audit — verifier D1).
   const impact = await withDeadlockRetry(() => db.transaction(async (tx) => {
     const flagged = readAffectedRows(await tx
       .update(readerAccounts)
@@ -330,11 +330,12 @@ export async function deleteReader(params: { readerId: number, actorId: number }
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-  // Reader row first (base order), then its comments counted on THIS transaction under FOR UPDATE: what a
-  // ban or purge ahead of us removed is not counted again (4 claimed for 2 — verifier X1/D3). DELETE
-  // counted: 0 rows — the 404 of a missing account, no second "delete" row (M1 family). Deadlock: retried.
+  // Reader row first, then the comments, counted on this transaction (reader-moderation-tx.ts): what a ban
+  // or purge ahead of us removed is not counted again (4 claimed for 2 — verifier X1/D3). The DELETE is
+  // counted: 0 rows — the 404 of a missing account, no second "delete" row (M1 family).
   const impact = await withDeadlockRetry(() => db.transaction(async (tx) => {
-    await tx.select({ id: readerAccounts.id }).from(readerAccounts).where(eq(readerAccounts.id, params.readerId)).for('update')
+    await tx.select({ id: readerAccounts.id }).from(readerAccounts)
+      .where(eq(readerAccounts.id, params.readerId)).for('update')
     const counted = await countReaderCommentImpact(params.readerId, tx)
     const removed = readAffectedRows(await tx.delete(readerAccounts).where(eq(readerAccounts.id, params.readerId)))
     if (removed === 0) return null
@@ -369,13 +370,12 @@ export async function purgeReaderComments(params: { readerId: number, actorId: n
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-  // Shared deletion path (design.md D8) with its audit row. Locks the reader's COMMENTS (FOR UPDATE, counted on this
-  // transaction), never the reader row — a reply holds its comment, then the reader: reader-first deadlocked purge ‖
-  // reply 30/30 (verifier H1). A purge ahead of us committed: we count what is left (M1). Account gone: plain read → 404.
-  const impact = await db.transaction(async (tx) => {
+  // The shared deletion path (design.md D8), with its audit row. Locks the comments, never the reader row
+  // (verifier H1); a purge ahead of us has committed and we count what is left (M1). Removed nothing: the
+  // account may have gone meanwhile with its comments — a fresh read says so (404, no audit — D2).
+  const impact = await withDeadlockRetry(() => db.transaction(async (tx) => {
     const removed = await deleteReaderComments(params.readerId, tx)
-    const [still] = await tx.select({ id: readerAccounts.id }).from(readerAccounts).where(eq(readerAccounts.id, params.readerId)).limit(1)
-    if (!still) return null
+    if (removed.comments === 0 && !await readerExistsNow(tx, params.readerId)) return null
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
       action:     'delete',
@@ -390,7 +390,7 @@ export async function purgeReaderComments(params: { readerId: number, actorId: n
       },
     })
     return removed
-  })
+  }))
   if (!impact) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
   return { ok: true, impact }
 }

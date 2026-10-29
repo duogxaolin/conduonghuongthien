@@ -73,9 +73,17 @@ function selectOn(handle: Handle) {
   }
 }
 
+/** The next insert on the transaction throws an error carrying these fields (e.g. errno 1452). */
+let failNextTxInsert: Row | null = null
+
 function insertOn(handle: Handle) {
   return (table: unknown) => ({
     values: async (values: Row) => {
+      if (handle === 'tx' && failNextTxInsert) {
+        const fields = failNextTxInsert
+        failNextTxInsert = null
+        throw Object.assign(new Error('Cannot add or update a child row: a foreign key constraint fails'), fields)
+      }
       writes.push({ handle, op: 'insert', table, values })
       events.push(`${handle}:insert:${table === activityLogs ? 'activity_logs' : table === articleComments ? 'article_comments' : 'other'}`)
       return [{ insertId: nextInsertId }]
@@ -158,6 +166,7 @@ beforeEach(() => {
   events = []
   nextInsertId = 500
   notifyResult = 77
+  failNextTxInsert = null
   notifyCalls.length = 0
   mailCalls.length = 0
 })
@@ -267,13 +276,18 @@ describe('the reader comment impact, measured before anything is removed', () =>
   })
 
   it('deleteReaderComments runs its one DELETE on the caller executor and returns the counts taken before it', async () => {
-    selectQueue = [owned, under]
+    // Plain reads of the rows to lock, the ordered lock, then the locking reads the counts come from.
+    selectQueue = [owned, under, [], owned, under]
     const impact = await deleteReaderComments(42, executorHandle as never)
     assert.deepEqual(impact, { comments: 3, adminReplies: 1, otherReaderReplies: 2 })
     assert.deepEqual(writes.map(w => [w.handle, w.op, w.table === articleComments]), [['executor', 'delete', true]])
-    // The counts too are read on the executor (never a second pool connection inside a
-    // transaction — verifier H2), the reader's own rows first and under FOR UPDATE.
-    assert.deepEqual(selects.map(s => [s.handle, s.lock ?? null]), [['executor', 'update'], ['executor', null]])
+    // Everything on the executor (never a second pool connection inside a transaction —
+    // verifier H2): every row the deletion touches is locked in ONE statement, ascending id
+    // (verifier H3), and the counts come from locking reads.
+    assert.deepEqual(selects.map(s => [s.handle, s.lock ?? null]), [['executor', null], ['executor', null], ['executor', 'update'], ['executor', 'update'], ['executor', 'update']])
+    const lock = compile(selects[2]!.where)!
+    assert.match(lock.sql, /`article_comments`\.`id` in \(\?, \?, \?, \?, \?, \?, \?\)/)
+    assert.deepEqual(lock.params, [1, 2, 3, 20, 21, 22, 23])
     const where = compile(writes[0]!.where)!
     assert.match(where.sql, /`article_comments`\.`reader_id` = \?/)
     assert.deepEqual(where.params, [42])
@@ -408,6 +422,19 @@ describe('createAdminReply — the portal replying in public', () => {
     assert.deepEqual(await createAdminReply(base), { ok: false, statusCode: 404, message: 'Bình luận gốc không tồn tại.' })
     assert.equal(writes.length, 0)
     assert.equal(mailCalls.length, 0)
+  })
+
+  it('a parent removed between the read and the insert (FK 1452) is the same 404, not a 500; other errors still throw', async () => {
+    // A ban / purge / account deletion committed in between (verifier round 4, M1: 4–7 of 12
+    // admin replies next to 12 bans on MySQL answered 500).
+    selectQueue = [[{ id: 30, articleId: 3, mediaItemId: null, parentId: null }]]
+    failNextTxInsert = { errno: 1452, code: 'ER_NO_REFERENCED_ROW_2' }
+    assert.deepEqual(await createAdminReply(base), { ok: false, statusCode: 404, message: 'Bình luận gốc không tồn tại.' })
+    assert.deepEqual([writes.length, mailCalls.length, notifyCalls.length], [0, 0, 0])
+
+    selectQueue = [[{ id: 30, articleId: 3, mediaItemId: null, parentId: null }]]
+    failNextTxInsert = { errno: 1213, code: 'ER_LOCK_DEADLOCK' }
+    await assert.rejects(createAdminReply(base), /foreign key constraint fails/)
   })
 
   it('a parent belonging to no item is refused (409) rather than producing an orphan', async () => {

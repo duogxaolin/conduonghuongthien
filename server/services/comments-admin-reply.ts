@@ -14,6 +14,7 @@ import { activityLogs, articleComments } from '../db/schema'
 import { createReplyNotification } from './notifications'
 import { sendReplyEmail } from './notification-email'
 import { checkParentEligibility, resolveCommentTarget } from './comments-rules'
+import { isMissingReferencedRow } from '../utils/fk-error'
 
 export type AdminReplyResult =
   | { ok: true, id: number }
@@ -81,7 +82,7 @@ export async function createAdminReply(params: {
   // delete side.
   let id = 0
   let notifiedReaderId: number | null = null
-  await db.transaction(async (tx) => {
+  const written = await db.transaction(async (tx) => {
     const inserted = await tx.insert(articleComments).values({
       articleId:   target.kind === 'article' ? target.articleId : null,
       mediaItemId: target.kind === 'media' ? target.mediaItemId : null,
@@ -130,7 +131,13 @@ export async function createAdminReply(params: {
       actorReaderId: null,
       tx,
     })
+  }).then(() => true, (error: unknown) => {
+    // The parent went (ban, purge, account deletion) between the read above and the insert:
+    // the same answer as when it was already gone, not a 500 (utils/fk-error.ts).
+    if (isMissingReferencedRow(error)) return false
+    throw error
   })
+  if (!written) return { ok: false, statusCode: 404, message: 'Bình luận gốc không tồn tại.' }
 
   // After the commit, never inside it — an unreachable SMTP host must not hold
   // this reply's row locks open for a network timeout. See createComment.

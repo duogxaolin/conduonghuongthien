@@ -11,7 +11,7 @@
  * and nowhere else.
  */
 
-import { eq, inArray } from 'drizzle-orm'
+import { asc, eq, inArray } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { activityLogs, articleComments } from '../db/schema'
 
@@ -129,20 +129,47 @@ export type ReaderCommentImpact = {
  */
 type CommentDeleteExecutor = Pick<ReturnType<typeof getDb>, 'select' | 'delete'>
 
+/**
+ * Lock every row a reader's deletion will touch — their own comments and the replies under
+ * their top-level ones, which the FK cascade removes — in ONE statement, in ascending id order.
+ *
+ * Two deletions whose row sets overlap (two readers who replied to each other) then take the
+ * shared rows in the same order and queue. Locking the reader's own rows first and letting the
+ * cascade reach the other reader's replies later made each hold what the other needed next:
+ * purge ‖ purge deadlocked 100 of 100 rounds on MySQL 8 (verifier H3; 9–10 on the base).
+ *
+ * The ids come from a plain read; a row added between that read and the lock is taken by the
+ * locking reads in `countImpact` (rarely, out of order — the callers retry a deadlock victim).
+ */
+async function lockDeletionRowsInIdOrder(readerId: number, tx: CommentDeleteExecutor): Promise<void> {
+  const own = await tx
+    .select({ id: articleComments.id, parentId: articleComments.parentId })
+    .from(articleComments)
+    .where(eq(articleComments.readerId, readerId))
+  const tops = own.filter(row => row.parentId === null).map(row => row.id)
+  const replies = tops.length
+    ? await tx.select({ id: articleComments.id }).from(articleComments).where(inArray(articleComments.parentId, tops))
+    : []
+  const ids = [...new Set([...own, ...replies].map(row => row.id))].sort((a, b) => a - b)
+  if (!ids.length) return
+  await tx.select({ id: articleComments.id }).from(articleComments)
+    .where(inArray(articleComments.id, ids)).orderBy(asc(articleComments.id)).for('update')
+}
+
 async function countImpact(readerId: number, executor?: CommentDeleteExecutor): Promise<{ impact: ReaderCommentImpact, topLevelIds: number[] }> {
   // Inside a transaction, on THAT transaction — never a second pool connection: with
   // one held per open transaction, ten bans at once took all ten connections and
   // waited for an eleventh forever, holding their row locks (verifier H2).
   const db = executor ?? getDb()
+  if (executor) await lockDeletionRowsInIdOrder(readerId, executor)
 
   const ownRows = db
     .select({ id: articleComments.id, parentId: articleComments.parentId })
     .from(articleComments)
     .where(eq(articleComments.readerId, readerId))
-  // In a transaction the reader's own rows are read under FOR UPDATE, and first: the
-  // count is of what THIS transaction will delete — a ban or purge that held them has
-  // committed and they are gone — whatever the snapshot of a later plain read. New
-  // replies cannot appear under X-locked parents, so the plain read below is exact.
+  // In a transaction the counts come from LOCKING reads: the latest committed rows (a ban
+  // or purge that held them has committed and they are gone), not the snapshot the plain
+  // read above may have set before we waited; rows added since that read are locked here.
   const owned = await (executor ? ownRows.for('update') : ownRows)
 
   const topLevelIds = owned.filter(row => row.parentId === null).map(row => row.id)
@@ -153,10 +180,11 @@ async function countImpact(readerId: number, executor?: CommentDeleteExecutor): 
     // Everything hanging off this reader's top-level comments, split by author.
     // Counted in one pass rather than two queries so the two numbers cannot be
     // read from different moments.
-    const rows = await db
+    const replyRows = db
       .select({ id: articleComments.id, adminUserId: articleComments.adminUserId, readerId: articleComments.readerId })
       .from(articleComments)
       .where(inArray(articleComments.parentId, topLevelIds))
+    const rows = await (executor ? replyRows.for('update') : replyRows)
 
     for (const row of rows) {
       if (row.adminUserId !== null) adminReplies += 1
