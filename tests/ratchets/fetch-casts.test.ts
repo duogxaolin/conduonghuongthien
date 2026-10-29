@@ -17,8 +17,9 @@ import { baselinePath, isExempt, ratchet, readBaseline, type FileRatchet } from 
  * `$fetch<T>(…)` and `$fetch(url) as T` (a cast of the result, not of `$fetch`) do not.
  * Tests, docs and CLAUDE.md quote the pattern and are not measured.
  *
- * Named entry: `app/composables/adminFetch.ts` holds the one sanctioned cast plus the doc
- * comment that quotes the pattern it replaces (2).
+ * Named entries: `app/composables/adminFetch.ts` holds the one sanctioned cast plus the doc
+ * comment that quotes the pattern it replaces (2); `app/composables/publicFetch.ts` (lot G)
+ * holds the public site's one (1) — added with `--raise`, the one entry this ratchet ever raised.
  *
  * Baseline: tests/ratchets/fetch-casts.baseline.json. Regenerate (lowers only):
  *   node --experimental-strip-types --import ./scripts/ts-resolver.mjs tests/ratchets/fetch-casts.test.ts --update
@@ -32,7 +33,7 @@ export const FETCH_CASTS: FileRatchet = {
   defaultForNewFiles: 0,
   inScope: file => /^(?:app|server|shared)\/.+\.(?:vue|ts)$/.test(file),
   measure: text => text.match(FETCH_CAST)?.length ?? 0,
-  hint: 'Call `adminFetch<T>(url, options)` or `useAdminList` (app/composables/adminFetch.ts, useAdminList.ts) instead of casting `$fetch` (design D-FETCH).',
+  hint: 'Call `adminFetch<T>(url, options)` or `useAdminList` (admin), `publicFetch<T>(url, options)` (public site) — app/composables/{adminFetch,useAdminList,publicFetch}.ts — instead of casting `$fetch` (design D-FETCH).',
   exemptAllowed: [],
 }
 
@@ -71,6 +72,11 @@ ratchet(FETCH_CASTS, () => {
     assert.ok(adminFetch !== undefined && typeof adminFetch === 'object' && !isExempt(adminFetch)
       && adminFetch.value <= 2 && adminFetch.reason.trim() !== '',
       'app/composables/adminFetch.ts must stay a CAPPED named entry (its one cast plus the doc comment), with its reason')
+    // Lot G: the public counterpart — its one cast, no more (its doc comment does not quote the pattern).
+    const publicFetch = baseline['app/composables/publicFetch.ts']
+    assert.ok(publicFetch !== undefined && typeof publicFetch === 'object' && !isExempt(publicFetch)
+      && publicFetch.value <= 1 && publicFetch.reason.trim() !== '',
+      'app/composables/publicFetch.ts must stay a CAPPED named entry (its one cast), with its reason')
     // Absent from the baseline = capped at 0 by the ratchet test above.
     for (const file of ['app/composables/useAdminList.ts', 'app/pages/admin/comments/index.vue', 'app/pages/admin/readers/index.vue',
       'app/pages/admin/chatbot/sessions/index.vue']) {
