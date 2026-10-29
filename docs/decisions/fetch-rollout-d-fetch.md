@@ -5,7 +5,8 @@
 > Lô D (sau lô C): 25 ép kiểu nữa (148 → 123), hai danh sách phân loại dùng mã lượt, 12 lỗi
 > tìm thấy, một hợp đồng máy chủ sửa (409), và số còn lại cho lô E.
 > Lô E (cuối tệp): 21 ép kiểu nữa (123 → 102) ở 7 tệp, ba danh sách nữa dùng mã lượt, 16 lỗi
-> tìm thấy (24 test FINDING đỏ trên `88073004`), 25 đột biến, và số còn lại cho lô F.
+> tìm thấy (24 test FINDING đỏ trên `88073004`), 25 đột biến, và số còn lại cho lô F; sau kiểm chứng
+> độc lập: "Dịch toàn bộ" GIỮ trần 100 bài/ngôn ngữ + hỏi xác nhận, 3 hồi quy sửa, 17 đột biến mới.
 
 Lô B bỏ 56 ép kiểu `$fetch` ở 7 tệp bằng `adminFetch<T>()` (kiểu suy từ handler qua
 `Payload<…>`, `app/types/handler-payload.ts`), nhưng **không tệp nào** chuyển sang
@@ -230,8 +231,9 @@ Kiểu viết tay bị thay **lộ một lỗi**: `LogItem.createdAt: string`, h
 - Thống kê lượt xem: mở Bài 3 (chậm), đóng, mở Bài 4 — số liệu và lượt tăng dần của Bài 3 hiện dưới
   tên Bài 4 (cả nhánh lỗi và `finally`).
 - "Dịch toàn bộ": chỉ đọc trang đầu 100 bài thiếu (trần của endpoint danh sách) mà vẫn báo xong khi
-  màn hình ghi "Thiếu 120 bài" — nay đọc mọi trang trước khi xếp từng ngôn ngữ, chặn theo số trang của
-  câu trả lời đầu; ngôn ngữ sau hỏng thì báo "không thể bắt đầu" dù ngôn ngữ trước đã xếp, không emit
+  màn hình ghi "Thiếu 120 bài" — bản đầu của lô E đọc mọi trang; **sau kiểm chứng độc lập, trần 100
+  bài/ngôn ngữ mỗi lượt bấm được GIỮ** (xem "Sửa sau kiểm chứng độc lập" bên dưới) và thông báo nói
+  thật "en: 100/120 … bấm lại"; ngôn ngữ sau hỏng thì báo "không thể bắt đầu" dù ngôn ngữ trước đã xếp, không emit
   `started` (trang không theo dõi, bấm lại xếp trùng) — nay báo số đã xếp và emit; mở lại sau lượt đọc
   thống kê hỏng hiện số của lần mở trước với nút "Bắt đầu" bật.
 - Thư viện ảnh: không có lượt mới nhất (tìm rồi lọc video — kết quả tìm hiện dưới bộ lọc video); xoá ô
@@ -262,21 +264,57 @@ cuối thay vì trạng thái rỗng — mỗi thay đổi có test FINDING củ
 E2E: `tests/e2e/media-portal.spec.ts` (spec duy nhất đi qua một trang của lô này) 5/5 trên bản build
 lô E; các trang còn lại không có spec E2E.
 
-**Cần quyết định — chi phí "Dịch toàn bộ".** Trước một lượt bấm xếp tối đa 100 bài mỗi ngôn ngữ; nay
-xếp MỌI bài còn thiếu, mỗi bài là các lượt gọi AI có trả tiền. Chi tiêu bị chặn bởi ngân sách AI hằng
-tháng (`checkBudget` trước mỗi bài trong `article-translation-worker.ts` và trong mỗi `callAi`) — **chỉ
-khi ngân sách được đặt** (hoặc nhà cung cấp có hạn mức); ngân sách 0 = không giới hạn (spec R9.4). Bản
-sửa giữ đúng lời của giao diện ("Thiếu 120 bài", "Dịch toàn bộ"). Phương án thay thế một dòng nếu muốn
-giữ trần: đọc một trang 100 bài như cũ nhưng thông báo "đã xếp 100/120 — bấm lại để xếp tiếp".
+### Sửa sau kiểm chứng độc lập (verify "Đạt kèm sửa", bằng chứng `cdht-wave3-fetch-e-verify/`)
+
+**Quyết định chi phí "Dịch toàn bộ" (HIGH).** Bản đầu đọc mọi trang: trên CSDL tạm 1.123 bài × 5 ngôn
+ngữ, một lượt bấm xếp 5.615 bản dịch AI (base 500), không hỏi. Ngân sách AI hằng tháng (`checkBudget`)
+chỉ chặn khi đã đặt — 0 là không giới hạn. Quyết định (thiên về an toàn chi phí): **giữ trần 100 bài/ngôn
+ngữ mỗi lượt bấm như base** (`PER_CLICK`, không phân trang), và:
+- hỏi trước (`useConfirm`, `ConfirmModal` đè lên `AdminModal` như `ScanThumbnailsModal` đã làm): "Xếp lịch
+  dịch tối đa X bài sang Y ngôn ngữ (en: 100/120, …)? Mỗi bài là các lượt gọi AI có tính phí…" — số lấy
+  từ thống kê đang hiện (cận trên); từ chối thì không đọc danh sách, không gửi gì;
+- còn bài thì báo "Đã xếp … (en: 100/120). Còn bài chưa xếp — bấm lại sau khi lượt dịch đang chạy xong để
+  xếp tiếp", không báo xong; vẫn emit `started`; hai sửa còn lại của hộp (báo phần đã xếp khi hỏng giữa
+  chừng, không số cũ khi mở lại) giữ nguyên;
+- rời trang thì dừng vòng lặp (`disposed` sau mỗi `await`) — không POST cho trang đã rời.
+"Bấm lại" xếp bài KẾ vì bài đã dịch có hàng dịch và rời bộ lọc `missing_xx`; nhưng hàng chỉ được tạo khi
+worker xử lý tới bài đó (tuần tự), nên bấm lại khi lượt trước CÒN CHẠY sẽ liệt kê lại các bài chưa tới
+lượt — thông báo vì thế nói "sau khi lượt dịch đang chạy xong" (gốc ở máy chủ, xem việc còn mở).
+
+**Các sửa khác:**
+- Thư viện video (MEDIUM, hồi quy của lô E): câu trả lời muộn sau khi rời trang gọi `syncQuery()` → URL
+  của trang KẾ thành `…?page=2`, rồi tải thêm. Nay `onBeforeUnmount` cấp mã mới + chặn lượt mới
+  (`disposed`); lượt xoá trả về sau khi rời trang không tải lại. Thư viện ảnh cùng mẫu (chỉ `disposed`:
+  mọi lượt tiếp đều qua `fetchMedia`).
+- Trình soạn kiến thức (hồi quy): lưu/xuất bản thành công mà lượt đọc lại hỏng thì biểu mẫu biến mất. Nay
+  lượt đọc ĐẦU điền biểu mẫu (hỏng thì không có biểu mẫu); khi biểu mẫu đã giữ mục, lượt đọc (đọc lại sau
+  ghi, hoặc "thử lại" của nó) chỉ làm mới trạng thái — không thay chữ đang gõ; xuất bản/lưu trữ lấy trạng
+  thái từ câu trả lời của chính nó.
+- Thư viện video (hồi quy): cấu hình tải lên hỏng thoáng qua ẩn "Tải video lên" tới F5 — nay đọc lại cùng
+  lượt tải kế khi còn thiếu (đã có thì không đọc lại).
+- Ghim các đột biến sống của verifier: E07 (đọc lại sau ghi hỏng), E10/E11 (lỗi thao tác cũ được xoá khi
+  lưu/xuất bản lại thành công), E26 (trang quá cuối hỏi trang 3/3, không trang 1), E29 (toast lỗi tải thư
+  viện ảnh), E33 (lọc ở trang 2 hỏi trang 1). E20–E22 (phân trang "Dịch toàn bộ") hết đối tượng vì đã bỏ
+  phân trang.
+
+Test đỏ trước khi sửa (trên `07474e17`): 8 + 2 (xoá sau khi rời trang); **17/17 đột biến mới bị bắt**
+(`mutations/v1…v5.*` trong thư mục proof). Không chụp DOM riêng: trạng thái bình thường không đổi, các
+thay đổi là hộp xác nhận mới và trạng thái lỗi/đua, mỗi cái có test.
 
 ### Chưa sửa ở lô E (ngoài phạm vi phía khách quản trị — cần quyết định hoặc đợt máy chủ)
 
 - `server/services/article-translation-bulk.ts`: "Dịch toàn bộ" nhiều ngôn ngữ gọi
   `bulkTriggerTranslation` một lần mỗi ngôn ngữ, các lượt chạy nền song song và cùng ghi một
   `bulkTaskState` — tiến độ của banner là của lượt nào ghi sau.
-- `translation-stats.get.ts` đếm bản dịch `status != 'failed'` là đã dịch, còn bộ lọc `missing_xx` của
-  danh sách loại mọi bài có bất kỳ hàng dịch nào (kể cả `failed`) — bài dịch hỏng hiện "Thiếu" trong
-  thống kê nhưng "Dịch toàn bộ" không bao giờ xếp lại nó.
+- **Cần quyết định — hàng `failed` không bao giờ được xếp lại:** `translation-stats.get.ts` đếm bản dịch
+  `status != 'failed'` là đã dịch, còn bộ lọc `missing_xx` loại mọi bài có bất kỳ hàng dịch nào (kể cả
+  `failed`) — bài dịch hỏng hiện "Thiếu" trong thống kê nhưng "Dịch toàn bộ" không bao giờ xếp lại nó (ghim
+  bằng test KNOWN, không sửa máy chủ ở lô này).
+- `article-translation-bulk.ts`: hàng dịch chỉ được tạo khi worker tới bài đó, và lượt chạy chỉ bỏ qua
+  bài `translating`/`published` — bấm "Dịch toàn bộ" lại khi lượt trước còn chạy liệt kê lại các bài chưa
+  tới lượt, và bài đã dịch xong ở trạng thái `ai_draft` bị dịch lần nữa (chi phí gấp đôi). Hộp chỉ dặn
+  "bấm lại sau khi lượt đang chạy xong"; chặn tận gốc cần máy chủ (tạo hàng `translating` khi xếp, hoặc từ
+  chối khi đang có lượt chạy như `universal-translate` lô D).
 - `server/api/admin/media/index.get.ts`: tìm kiếm `like(%…%)` không thoát `%`/`_` (dịch vụ thư viện
   video đã dùng `likeContains`).
 - Panel thống kê: "Huỷ lượt tăng" không có cờ đang gửi — bấm hai lần gửi hai DELETE, lần hai báo lỗi 404.
