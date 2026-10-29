@@ -414,7 +414,7 @@ nó "không còn tải". `admin-moderation-summary.test.ts` (harness tự biên 
 Test: `tests/admin-fetch-rollout-{navigation,roles,ai-tabs,submissions-list,media-portal-forms,media-picker,backup-list,session-picker}.test.ts`.
 Mọi test không mang nhãn FINDING xanh trên tệp nguồn của base (chạy lại trên `git show 551651c7:…`).
 
-**Đột biến: 24 chạy, 24 bị bắt** (mỗi cái làm ≥ 1 test đỏ, hoàn nguyên bằng `git checkout HEAD --`; nhật ký
+**Đột biến: 24 đột biến, 23 bị bắt ngay + 1 bị bắt sau khi bổ sung test (M19 → M19b)** (mỗi cái làm ≥ 1 test đỏ, hoàn nguyên bằng `git checkout HEAD --`; nhật ký
 `mutations/M*.{diff,txt}` trong thư mục proof): hai lớp khoá `loaded` × hai trang menu (4); `roleId || 2` và
 luôn gửi `roleId` (2); mã lượt try/catch/finally của đơn đăng ký (3), nhật ký AI (3), bộ chọn ảnh (finally) và
 backup (try) (2); `testRequest++` khi mở dịch vụ, mã lượt ở thành công/lỗi của kiểm tra kết nối, `invalidate`
