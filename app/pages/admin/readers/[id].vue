@@ -186,6 +186,8 @@ async function deleteAccount() {
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không xoá được tài khoản này.'))
     busy.value = false
+    // 404: the account is already gone (another officer, retention): nothing left to show here.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   }
 }
 

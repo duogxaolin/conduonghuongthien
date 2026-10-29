@@ -385,9 +385,29 @@ describe('pages/admin/settings/ip-bans.vue', () => {
     assert.equal(opened.lastToast('success'), 'Đã bỏ chặn địa chỉ.')
 
     const refused = await mountAdminPage(PAGE, server({ 'DELETE /api/admin/ip-bans/4': () => h3Error(404, 'Không tìm thấy mục chặn.') }))
+    const start = refused.calls.length
     await click(buttons(row(refused, '198.51.100.7'), 'Bỏ chặn')[0]!)
     await settle()
     assert.equal(refused.lastToast('error'), 'Không tìm thấy mục chặn.')
+    // 404: already lifted (another officer, a double click — verifier round 3): the list is read again.
+    assert.deepEqual(refused.calls.slice(start).map(wire), ['DELETE /api/admin/ip-bans/4', 'GET /api/admin/ip-bans'])
+
+    const failed = await mountAdminPage(PAGE, server({ 'DELETE /api/admin/ip-bans/4': () => h3Error(500, 'Lỗi máy chủ.') }))
+    const from = failed.calls.length
+    await click(buttons(row(failed, '198.51.100.7'), 'Bỏ chặn')[0]!)
+    await settle()
+    assert.deepEqual(failed.calls.slice(from).map(wire), ['DELETE /api/admin/ip-bans/4'], 'any other failure leaves the list as it is')
+  })
+
+  it('add refused with 409 (listed meanwhile by another officer): the sentence stays inline and the list is read again', async () => {
+    const sentence = 'Địa chỉ này đã có trong danh sách chặn.'
+    const opened = await mountAdminPage(PAGE, server({ 'POST /api/admin/ip-bans': () => h3Error(409, sentence) }))
+    await input(byPlaceholder(opened, '203.0.113.45 hoặc 203.0.113.0/24'), '192.0.2.1')
+    const before = opened.calls.length
+    await fire(findAll(opened.page.root, el => el.tag === 'form')[0]!, 'submit')
+    await settle()
+    assert.deepEqual(opened.calls.slice(before).map(wire), ['POST /api/admin/ip-bans', 'GET /api/admin/ip-bans'])
+    assert.match(alertText(opened.page), new RegExp(sentence))
   })
 
   it('empty list / load failure / retry / dropped connection / `ok: false`', async () => {

@@ -348,6 +348,22 @@ describe('pages/admin/readers/[id].vue', () => {
     opened.page.unmount()
   })
 
+  it('delete account refused: 404 (already deleted by someone else) leaves for the list with the sentence; another refusal stays', async () => {
+    const gone = await openReader({ banned: false }, { 'DELETE /api/admin/readers/7': () => h3Error(404, 'Không tìm thấy tài khoản người đọc.') })
+    await click(byText(gone.page.root, 'button', 'Xoá tài khoản'))
+    await settle()
+    assert.equal(gone.lastToast('error'), 'Không tìm thấy tài khoản người đọc.')
+    // Before (verifier round 3): the page stayed on an account that no longer exists.
+    assert.deepEqual(gone.pushes, ['/admin/readers'])
+    gone.page.unmount()
+
+    const refused = await openReader({ banned: false }, { 'DELETE /api/admin/readers/7': () => h3Error(403, 'Forbidden: Insufficient permissions') })
+    await click(byText(refused.page.root, 'button', 'Xoá tài khoản'))
+    await settle()
+    assert.deepEqual(refused.pushes, [])
+    refused.page.unmount()
+  })
+
   it('delete one comment: the confirm warns about the replies under a top-level comment; delete then reload', async () => {
     const opened = await openReader()
     const before = opened.calls.length
