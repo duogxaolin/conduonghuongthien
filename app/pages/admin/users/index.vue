@@ -15,7 +15,7 @@ const showModal = ref(false)
 const showEditModal = ref(false)
 
 const form = reactive({ username: '', email: '', password: '', roleId: 2 })
-const editForm = reactive({ id: 0, username: '', email: '', password: '', roleId: 2, isActive: true })
+const editForm = reactive({ id: 0, username: '', email: '', password: '', roleId: null as number | null, isActive: true })
 const errorMsg = ref('')
 // One request at a time: a double click used to send the create/update twice.
 const saving = ref(false)
@@ -65,15 +65,15 @@ const handleCreateUser = async () => {
 
 const openEditModal = (user: AdminUserRow) => {
   editForm.id = user.id; editForm.username = user.username; editForm.email = user.email || ''
-  // `is_active` NULL = ĐÃ KHOÁ, như danh sách và cổng đăng nhập; đọc là "bật" thì lưu email mới cũng mở khoá.
-  editForm.roleId = user.roleId || 2; editForm.password = ''; editForm.isActive = user.isActive === true
+  // `is_active` NULL = ĐÃ KHOÁ (đọc "bật" thì lưu email cũng mở khoá); `role_id` NULL giữ NULL — `|| 2` từng gán vai trò 2 khi lưu email.
+  editForm.roleId = user.roleId; editForm.password = ''; editForm.isActive = user.isActive === true
   errorMsg.value = ''; showEditModal.value = true
 }
 
 const handleUpdateUser = async () => {
   if (saving.value) return
   errorMsg.value = ''
-  const body: Record<string, string | number | boolean> = { email: editForm.email, roleId: editForm.roleId, isActive: editForm.isActive }
+  const body: Record<string, string | number | boolean> = { email: editForm.email, ...(editForm.roleId === null ? {} : { roleId: editForm.roleId }), isActive: editForm.isActive }
   if (editForm.password.trim()) {
     if (editForm.password.trim().length < PASSWORD_MIN_LENGTH) {
       toast.warning(`Mật khẩu mới phải có ít nhất ${PASSWORD_MIN_LENGTH} ký tự`); return

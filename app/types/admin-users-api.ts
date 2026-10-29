@@ -14,11 +14,14 @@ type UserCreateHandler = typeof import('~~/server/api/admin/users/index.post').d
 type UserUpdateHandler = typeof import('~~/server/api/admin/users/[id].put').default
 type UserDeleteHandler = typeof import('~~/server/api/admin/users/[id].delete').default
 type ActivityLogsHandler = typeof import('~~/server/api/admin/activity-logs/index.get').default
+type RoleUpdateHandler = typeof import('~~/server/api/admin/roles/[id].put').default
 
 /** `GET /api/admin/users`. */
 export type AdminUsersResponse = Payload<UsersHandler>
-/** `GET /api/admin/roles`. */
+/** `GET /api/admin/roles` — also the role editor (`pages/admin/users/roles.vue`, batch F). */
 export type AdminRolesResponse = Payload<RolesHandler>
+/** `PUT /api/admin/roles/:id` — the role editor's "Lưu Phân Quyền" (batch F). */
+export type AdminRoleUpdateResponse = Payload<RoleUpdateHandler>
 export type AdminUserCreateResponse = Payload<UserCreateHandler>
 /** `PUT /api/admin/users/:id` — the edit dialog and the status button. */
 export type AdminUserUpdateResponse = Payload<UserUpdateHandler>
