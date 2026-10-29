@@ -252,6 +252,10 @@ test('the scan bites: each injected shape is reported', () => {
   assert.equal(v('const work = async (tx) => { await getDb().select().from(t) }\nawait db.transaction(work)'), 1)
   assert.equal(v('async function work(tx) { await getDb().select().from(t) }\nawait db.transaction(work)'), 1)
   assert.equal(inject("log(')')\n  const [r] = await getDb().select().from(t)"), 1)
+  // A brace in a string or a template would end the callback's body early by brace counting.
+  assert.equal(inject("log('}')\n  const [r] = await getDb().select().from(t)"), 1)
+  assert.equal(inject('log("}")\n  const [r] = await getDb().select().from(t)'), 1)
+  assert.equal(inject('log(`} ${n}`)\n  const [r] = await getDb().select().from(t)'), 1)
   assert.equal(v('const db = getDb()\nawait db.transaction(async (tx) => {\n const [r] = await db.select().from(t)\n})'), 1)
   assert.equal(inject('await countReaderCommentImpact(id /* , tx */)'), 1)
   assert.equal(inject('await deleteReaderComments(id, undefined)'), 1)
