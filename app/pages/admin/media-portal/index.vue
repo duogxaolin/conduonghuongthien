@@ -87,7 +87,7 @@ async function fetchMedia(mayAskForLastPage = true) {
     const listing = adminFetch<AdminMediaPage>(`/api/admin/media-portal`, { query: {
       page: currentPage.value, limit: PER_PAGE, search: search.value || undefined, status: statusFilter.value || undefined, source: sourceFilter.value || undefined,
     } })
-    if (!mediaConfig.value && !configReading) void fetchConfig()
+    if (!mediaConfig.value) void fetchConfig()
     const res = await listing
     if (ticket !== listRequest) return
     const last = Math.max(1, Math.ceil(res.total / PER_PAGE))
@@ -109,10 +109,8 @@ async function fetchMedia(mayAskForLastPage = true) {
 
 // The upload button's capabilities, on their own (failing hides the button, never the list); read again
 // with the next load while missing, so a passing failure is not kept until F5.
-let configReading = false
 async function fetchConfig() {
-  configReading = true
-  try { mediaConfig.value = await adminFetch<AdminMediaConfig>(`/api/admin/media-portal/config`) } catch { mediaConfig.value = null } finally { configReading = false }
+  try { mediaConfig.value = await adminFetch<AdminMediaConfig>(`/api/admin/media-portal/config`) } catch { mediaConfig.value = null }
 }
 
 /** Filters AND page live in the URL (shareable, survive F5) — the pager used to skip this. */

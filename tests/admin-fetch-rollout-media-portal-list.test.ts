@@ -206,6 +206,18 @@ describe(PAGE, () => {
     assert.deepEqual(opened.calls.slice(before).map(wire), [], 'a request was sent after the page was left')
   })
 
+  it('verify E: a delete answered after the page was left reloads nothing', async () => {
+    const held: NetCall[] = []
+    const opened = await open(server({ [`DELETE ${URL}/7`]: call => { held.push(call); return undefined } }))
+    void click(findAll(findAll(opened.page.root, el => el.tag === 'tr' && textOf(el).includes('Lễ ra trại'))[0]!, el => el.tag === 'button')[0]!)
+    await settle()
+    const before = opened.calls.length
+    opened.page.unmount()
+    held[0]!.respond(json({ ok: true }))
+    await settle()
+    assert.deepEqual(opened.calls.slice(before).map(wire), [], 'the list was reloaded for a page that is gone')
+  })
+
   it('verify E: the upload config failing at mount is read again with the next load, so "Tải video lên" comes back', async () => {
     let configCalls = 0
     const opened = await open(server({ [`GET ${URL}/config`]: () => (++configCalls === 1 ? h3Error(400, 'Tạm thời lỗi.') : json(CONFIG)) }))

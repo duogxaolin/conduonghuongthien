@@ -240,6 +240,18 @@ describe(PAGE, () => {
     assert.deepEqual(opened.calls.slice(before).map(wire), [], 'a request was sent after the page was left')
   })
 
+  it('verify E: a delete answered after the page was left reloads nothing', async () => {
+    const held: NetCall[] = []
+    const opened = await open(server({ [`DELETE ${URL}/5`]: call => { held.push(call); return undefined } }))
+    void click(findAll(tileOf(opened, 'anh-hoi-nghi.jpg'), el => el.tag === 'button' && textOf(el) === 'Xóa')[0]!)
+    await settle()
+    const before = opened.calls.length
+    opened.page.unmount()
+    held[0]!.respond(json({ ok: true }))
+    await settle()
+    assert.deepEqual(opened.calls.slice(before).map(wire), [], 'the list was reloaded for a page that is gone')
+  })
+
   it('FINDING: deleting the last tile of the last page shows the page before it, not "Chưa có file nào" (RED on base)', async () => {
     let total = 25
     const opened = await open(server({
