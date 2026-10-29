@@ -13,7 +13,8 @@
 > Lô G — phía công khai (cuối tệp): `publicFetch<T>` (một ép kiểu có tên), 54 ép kiểu công khai → 0 ở 34 tệp
 > (baseline 73 → 20; phía công khai 55 → 2), kiểu suy từ handler ở `app/types/public-{content,reader,site}-api.ts`,
 > ngữ nghĩa SSR từng chỗ gọi ghim bằng test mount chạy trên bản gốc lẫn lô G, G-1 sửa (nhãn chuyên mục của
-> hai khối), G-2 ghi nhận (thiếu `lang`), 31 lượt đột biến.
+> hai khối), G-2 sửa ở trang Page Builder tuỳ biến / ghi nhận ở `/news/<X>` (thiếu `lang`), 33 lượt đột biến,
+> E2E công khai 55/55 trên bản build.
 
 Lô B bỏ 56 ép kiểu `$fetch` ở 7 tệp bằng `adminFetch<T>()` (kiểu suy từ handler qua
 `Payload<…>`, `app/types/handler-payload.ts`), nhưng **không tệp nào** chuyển sang
@@ -530,18 +531,22 @@ handler sự kiện → chỉ trình duyệt), cùng khoá và cùng cờ. Chứ
   `#imports`/`~/` như bản build. `_sfc-mount.ts` thêm tuỳ chọn `importMeta` (thay `import.meta.server/client` như
   Vite — chạy được nhánh chỉ-máy-chủ: `await` của `[slug].vue`, `/news/<X>`).
 - Test mới: `tests/public-fetch.test.ts` (helper), `tests/public-fetch-rollout-{reader,article-print,live,i18n,blocks,analytics,pages}.test.ts`
-  (≈ 130 test). **Mọi test không mang nhãn FINDING xanh trên base `5f1bb07d`** (chạy trong worktree base
+  (**103** test). **Mọi test không mang nhãn FINDING xanh trên base `5f1bb07d`** (chạy trong worktree base
   `cdht-wave3-fetch-g-public-proof/wt-base`, đúng bộ test + harness của lô G; một commit chỉ-bằng-chứng `62dc9ff0`
   đổi đúng dòng import tương đối của `useSiteSettings` ở base để Node nạp được — không đổi hành vi).
-- Bốn bộ mount có sẵn chạy trên base và lô G với nhật ký DOM (`html` + dây + thân POST/DELETE + SEO mỗi nhịp):
-  `/news` 36 test / 58 ảnh chụp, `/profile` 33/85, luồng bình luận 33/110, `ArticleDetail` 25/37 — **giống hệt từng dòng**.
+- Bốn bộ mount có sẵn chạy trên base và lô G với nhật ký DOM (`html` + dây + thân POST/DELETE + SEO mỗi nhịp), đo lại
+  ở HEAD `f4677181`: `/news` 36 test / 58 ảnh chụp, `/profile` 33/85, luồng bình luận 33/110, `ArticleDetail` 25/37 —
+  **giống hệt từng dòng**.
 - Bộ đệm: `useI18n` phía máy chủ không hỏi gì, đọc ngôn ngữ từ header cookie, không ghi gì (không có `document`);
   phía trình duyệt MỘT lượt languages + MỘT lượt translations cho ngôn ngữ SẼ hiện, áp sau hydrate. Trạng thái phát
   trực tiếp, nút MXH, lượt đếm xem, video liên quan, beacon analytics: ngoài `useAsyncData` (không vào HTML đệm).
 
-**Guard sửa theo, không yếu đi:** `public-split-pages-source` (quét "phần tách không request" nhận cả `publicFetch` +
-cấy thử; `/profile` đếm 4 lượt `publicFetch` và cấm `$fetch`), `article-related-content` (fetcher gọi ngay là
-`publicFetch<…>(…)`), `single-flight` (2 lượt `publicFetch`, cấm `$fetch`). Không gate nào của phía quản trị đổi.
+**Guard sửa theo, không yếu đi:** mọi phép quét "không tự fetch" từng chỉ nhìn `$fetch` nay nhận cả `publicFetch`, mỗi
+cái kèm một lượt cấy chứng minh nó đỏ: `public-split-pages-source` (phần tách của /news và /profile; `/profile` đếm 4
+lượt `publicFetch` và cấm `$fetch`), `content-type-sidebar` (cột phải không trạng thái), `media-public-pages` (hero mặc
+định), `_admin-fetch-call.ts` (bộ phân loại "view quản trị có tải" của hai gate quét thư mục — một view quản trị gọi
+`publicFetch` sẽ không rơi khỏi gate). Sửa theo dạng mới: `article-related-content` (fetcher gọi ngay là
+`publicFetch<…>(…)`), `single-flight` (2 lượt `publicFetch`, cấm `$fetch`).
 
 ### Lỗi tìm thấy
 
@@ -550,8 +555,9 @@ cấy thử; `/profile` đếm 4 lượt `publicFetch` và cấm `$fetch`), `art
   thành `a.category?.name` — `category` là cột văn bản cũ, `.name` của chuỗi luôn `undefined`, `v-if` ẩn nhãn. Kiểu
   suy từ handler làm dòng đó đỏ typecheck. Trả lại `a.categoryName || ''`. Test FINDING (`public-fetch-rollout-blocks`)
   **đỏ trên `5f1bb07d`**, xanh sau (`base-red/blocks-rollout.txt`).
-- **G-2 (ghi nhận, KHÔNG sửa — ghim bằng test KNOWN): hai lượt đọc không gửi `lang`.**
-  - `/news/<X>` (`news/[category]/index.vue:75`, câu hỏi của phân công): lượt kiểm chuyên mục chỉ dùng tên để làm
+- **G-2: hai lượt đọc không gửi `lang`** — một sửa, một ghi nhận.
+  - `/news/<X>` (`news/[category]/index.vue:75`, câu hỏi của phân công) — **ghi nhận, KHÔNG sửa, ghim bằng test KNOWN**:
+    lượt kiểm chuyên mục chỉ dùng tên để làm
     **tiêu đề tài liệu** (`<cat.name> | …`). `/news/**` là tuyến `swr`: SSR không có cookie → tên tiếng Việt, đúng với
     HTML dùng chung. Sau hydrate khoá không có ngôn ngữ nên không đọc lại → người đọc tiếng Anh vào thẳng thấy tiêu đề
     tab tiếng Việt, đi tới bằng điều hướng phía client (trình duyệt gửi cookie) thì tiếng Anh. Lỗi thật nhưng chỉ ở
@@ -559,11 +565,16 @@ cấy thử; `/profile` đếm 4 lượt `publicFetch` và cấm `$fetch`), `art
     `resolveCategoryRoute` coi `pending` là nhánh `ArticleDetail` — trang chuyên mục sẽ nháy sang ArticleDetail và gọi
     `/api/public/articles/<slug chuyên mục>` (404). Gốc: quyết định nhánh phải giữ kết quả đã có khi đọc lại CÙNG slug
     (hoặc tiêu đề lấy tên từ `ContentTypeListSection`, vốn đã đọc chuyên mục theo `lang`).
-  - `[slug].vue` (trang Page Builder tuỳ biến): `/api/public/pages/<slug>` không có `?lang=` (khác `/`, `/about`,
-    `/contact`), handler chọn bản dịch của khối theo `lang` hoặc cookie. Tuyến catch-all **không** `swr`: SSR đọc ngôn ngữ
-    giao diện từ cookie nhưng `$fetch` máy chủ không mang cookie → khung giao diện tiếng Anh, nội dung khối tiếng Việt,
-    không đọc lại sau hydrate. Sửa gọn và an toàn với bộ đệm (thêm `?lang=${currentLang}` + đọc lại khi đổi ngôn ngữ như
-    `/about`) nhưng là đổi hành vi hiển thị ngoài việc gỡ ép kiểu — để lượt sau, kèm test đỏ→xanh.
+  - `[slug].vue` (trang Page Builder tuỳ biến) — **sửa**: `/api/public/pages/<slug>` không có `?lang=` (khác `/`,
+    `/about`, `/contact`), mà handler chọn bản dịch của khối theo `?lang=`, rồi cookie. Tuyến catch-all **không** `swr`:
+    SSR đọc ngôn ngữ giao diện từ cookie nhưng `$fetch` máy chủ không mang cookie → khung giao diện tiếng Anh, nội dung
+    khối tiếng Việt, và không đọc lại sau hydrate (lựa chọn đã lưu áp sau hydrate cũng không đổi nội dung). Nay
+    `?lang=${currentLang}` + `watch(currentLang) → refresh()` như `/about`; khoá giữ `page-<slug>` (đổi ngôn ngữ bằng
+    `setLang` tải lại trang). An toàn với bộ đệm: tuyến không `swr`, HTML không dùng chung giữa khách; lượt đọc lại đi
+    qua nhánh `pending` sẵn có của trang (khung chờ của `PageRenderer`), 404 phía client chỉ kết luận khi đã ổn định
+    (test "reading again is not a 404"). Hai lượt đọc định tuyến (thể loại, kiểm chuyên mục) không hiện chữ nào theo
+    ngôn ngữ → để nguyên. Hai test FINDING **đỏ trên `5f1bb07d`** (`base-red/pages-g2.txt`), xanh sau; đột biến M30
+    (bỏ `?lang=`), M31 (bỏ đọc lại) bị bắt.
 - **Đột biến tương đương (không phải lỗ test):** `retry: 0` trên POST (beacon analytics, lượt đếm xem bài/video) — ofetch
   không bao giờ thử lại POST, bỏ `retry: 0` không đổi gì quan sát được.
 
@@ -584,8 +595,8 @@ cấy thử; `/profile` đếm 4 lượt `publicFetch` và cấm `$fetch`), `art
 
 ### Đột biến
 
-**31 lượt**, mỗi lượt sửa một chỗ trong `app/`, chạy bộ test nhắm, hoàn nguyên bằng `git checkout HEAD --` (nhật ký
-`cdht-wave3-fetch-g-public-proof/mutations/M*.{diff,txt}`): **29 bị bắt**; **M07** (bỏ `keepalive` của lượt đếm xem bài)
+**33 lượt**, mỗi lượt sửa một chỗ trong `app/`, chạy bộ test nhắm, hoàn nguyên bằng `git checkout HEAD --` (nhật ký
+`cdht-wave3-fetch-g-public-proof/mutations/M*.{diff,txt}`): **31 bị bắt** (gồm M30/M31 của G-2); **M07** (bỏ `keepalive` của lượt đếm xem bài)
 SỐNG lần đầu → thêm test beacon (keepalive + bỏ sau 1,5 s) → **M07b bị bắt**; **M18** (bỏ `retry: 0` của beacon) SỐNG —
 tương đương (ở trên), test đổi tên cho nói đúng điều nó ghim; **M18c** (bỏ `keepalive` beacon) bị bắt. Theo mã:
 - helper: M01 `options ?? {}`, M02 bọc lỗi thành `Error` mới;
@@ -607,9 +618,24 @@ tương đương (ở trên), test đổi tên cho nói đúng điều nó ghim;
 - `useBulkSelection.ts`, `layouts/admin.vue` (quản trị — lô khác); hai ép kiểu máy chủ (`server/api/auth/google/callback.get.ts`,
   `server/api/admin/backup/drive/callback.get.ts` — `$fetch` ra Google từ Nitro, không phải `$fetch` của ứng dụng).
 
-### Chưa đo ở lô G
+### Cổng cuối
 
-- E2E: xem "Cổng cuối". Hydrate thật trên trình duyệt (lớp phủ tải đầu, đổi ngôn ngữ sau hydrate) chỉ được chứng minh bằng
-  harness Node, không bằng Chromium.
+- Unit đầy đủ (`TZ=Asia/Ho_Chi_Minh npm test`, Node 26, ở `37143e80`): 7710 test, 7656 pass, **0 fail**, 54 skip
+  (integration không có MySQL); sau đó chỉ đổi `[slug].vue` + test → các bộ liên quan chạy lại xanh (xem lần chạy
+  cuối trong báo cáo lô). Typecheck sạch (`f4677181`). `npm run docs:facts`: khối CLAUDE.md khớp. ESLint các tệp đổi:
+  0 lỗi, 0 cảnh báo. Ratchet 42/42.
+- **Bản build production** (`npm run build`, `f4677181`) và **E2E công khai 55/55** trên Chromium (`public-detail-status`,
+  `public-language-cache`, `public-list-pagination`, `public-single-h1`, `public-ssr-status`; cổng 3123, CSDL `cdkt_e2e_*`
+  tạm đã xoá): chứng minh auto-import `publicFetch` (layout, bốn trang có trần) và `#imports` của `useI18n` được bundler
+  giải đúng, bộ đệm SWR không ghi cookie `cdkt_lang`, HTML đệm tiếng Việt, đổi ngôn ngữ sau hydrate không lệch.
+
+### Chưa đo / chỗ yếu
+
+- Chứng minh "xanh trên base" của layout cần commit chỉ-bằng-chứng `62dc9ff0` (import tương đối của `useSiteSettings`
+  trong worktree base) — không có trên nhánh nào.
 - `useI18n`/`useLiveSearch`/plugin analytics được nạp bằng `loadAppModule` (`new Function`) — chạy thật, nhưng độ phủ
-  của Node không quy về tệp nguồn của chúng.
+  của Node không quy về tệp nguồn của chúng (0 % trong báo cáo độ phủ).
+- Hydrate thật chỉ được E2E công khai đi qua ở các tuyến nó có; các trang khác (khối trang chủ, `/search`, `/qa-documents`,
+  `/media/<id>`, `/in-bai`) được chứng minh bằng harness Node.
+- `retry: 0` trên POST (beacon, lượt đếm xem bài/video) là đột biến tương đương (ofetch không thử lại POST).
+- `publicFetch` vào baseline bằng `--raise` — lần nâng duy nhất của ratchet `fetch-casts`.
