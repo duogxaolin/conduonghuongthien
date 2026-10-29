@@ -330,3 +330,95 @@ công khai trong 36 tệp. Phía quản trị: `ai/AiServicesTab.vue` (3) + `ai/
 Vẫn cần cẩn thận như lô D ghi: `AnalyticsLiveDashboard.client.vue` (3, `Function()`), `useBulkSelection.ts`
 (harness tên cố định), `layouts/admin.vue` (2, cần test mount layout trước). Danh sách đơn đăng ký
 (đua nghi ngờ) và `settings/backup.vue` vẫn chưa đụng.
+
+## Lô F (nhánh `wave3/fetch-casts-f`, base `551651c7`)
+
+Bỏ **28** ép kiểu (baseline 102 → 74, 63 → 46 tệp); **phía quản trị 43 → 15** (25 → 8 tệp — đếm
+`app/pages/admin/**`, `app/components/admin/**`, `layouts/admin.vue`, `useUpload.ts`, `useBulkSelection.ts`;
+cách đếm "44/26" của lô E khác một tệp, số ở đây đo bằng chính baseline). Kiểu suy từ handler qua `Payload<…>`:
+
+| Nhóm | Tệp | Ép kiểu | Kiểu |
+|---|---|---|---|
+| Menu | `content/navigation/{navbar,mobile}.vue` | 4 | `admin-navigation-api.ts` (mới) |
+| Vai trò | `users/roles.vue` | 2 | `admin-users-api.ts` (thêm `AdminRoleUpdateResponse`) |
+| AI | `ai/{AiServicesTab,AiModerationTab,AiDashboardTab,AiLogsTab}.vue`, `ai/index.vue` | 10 | `admin-ai-api.ts` (mới), `moderation.ts` (sẵn có) |
+| Thư viện video | `media-portal/{external,upload}.vue`, `MediaPortalForm.vue`, `ChunkedUploader.vue` | 5 | `admin-media-portal-api.ts` (thêm), `AdminMediaConfig` |
+| Ảnh | `MediaLibraryModal.vue`, `useUpload.ts`, `TinyMceEditor.vue` | 4 | `AdminMediaListResponse`, `AdminMediaUploadResult` (sẵn có) |
+| Khác | `chatbot/sessions/[id].vue`, `ContentTypePicker.vue` | 3 | `admin-chatbot-api.ts`, `admin-taxonomy-api.ts` (thêm) |
+
+Ba tồn đọng của D-FETCH: `roleId || 2` (lỗi thật, F-3), đua bộ lọc của danh sách đơn đăng ký (thật,
+F-4), `backup.vue` → `useAdminList` (**không chuyển**, mã lượt — bảng dưới; F-9).
+
+**Hai ngoại lệ kiểu có tên** (không suy được trọn từ handler):
+- `GET /api/admin/settings/navigation/{navbar,mobile}` trả `menu` = `JSON.parse(raw)` — `any`, mà
+  `Serialize` bỏ khoá `any`; `menu` lấy kiểu của chính câu trả lời PUT (cái PUT lưu là cái GET đọc lại).
+- `POST /api/admin/ai/test-call`: ba object literal với `ok: boolean` (không phân biệt được) và
+  `model`/`provider` vọng lại từ `readBody` (`any`) — kiểu là hợp các biến thể của handler, mọi trường
+  tuỳ chọn, cộng `model?: string`. Gốc: handler đọc body không kiểu (đợt máy chủ).
+- `GET /api/admin/ai/delify/status` giữ `DelifyStatusResponse` khai trong tab (bỏ ép kiểu, không suy
+  kiểu): các trường của router bị `plainFields` nhặt là "giá trị phẳng bất kỳ", kiểu thật là của router.
+
+Kiểu viết tay bị thay **lộ hai sai lệch không ai đọc** (không phải lỗi hiển thị): `MediaItem.provider`
+(`'local'|'r2'`, cột là `varchar`) và `uploadedBy` (`number`, danh sách trả USERNAME) — `app/types/media.ts`
+nới theo handler; hàng nhật ký gọi AI nói `costUsd/costVnd: string`, handler gửi số (template bọc
+`Number()` nên không lệch). `AdminFetchOptions.body` nhận `ArrayBuffer` (phần tệp của bộ tải từng phần).
+
+**Hai danh sách thêm vào bảng "không dùng `useAdminList`"** — mẫu mã lượt (`listRequest`):
+
+| Tệp | Vì sao không dùng |
+|---|---|
+| `settings/backup.vue` | `admin-fetch-rollout-settings.test.ts` lái `filterType`/`loadBackups`/`totalPages` qua setup và `admin-error-retry-ui` ghim `loadBackups` làm "thử lại"; danh sách còn được nhịp hỏi 4 s (khi sao lưu/khôi phục chạy) và mọi thao tác tải lại; tệp ở trần 528 dòng. |
+| `submissions/index.vue` | Không phân trang; `watch([statusFilter, viewedFilter])` tải lại; `$fetch` TRẦN kiểu suy từ route — giữ nguyên (`adminFetch` sẽ đổi kiểu suy được lấy kiểu không kiểm). |
+
+**Lỗi tìm thấy (test FINDING đỏ trên `551651c7`; bằng chứng `cdht-wave3-fetch-f-proof/base-red/`, chạy test
+mới trên tệp nguồn của base):**
+
+- **F-1 Menu chính + thanh mobile** (ghi đè cấu hình trang công khai): "Lưu cấu hình" nằm ở đầu trang,
+  ngoài chuỗi tải/lỗi, chỉ khoá khi đang lưu — tải hỏng thì trạng thái giữ menu MẶC ĐỊNH sau dải lỗi, bấm
+  Lưu PUT đè menu thật; lượt tải đầu còn bay thì trạng thái là `[]`, bấm Lưu PUT menu RỖNG. Nay cờ dương
+  `loaded` (false từ đầu mỗi lượt tải, true khi câu trả lời đã điền — kể cả `menu: null` = chưa lưu gì,
+  sửa mặc định là hợp lệ), hai lớp: nút `:disabled="saving || !loaded"` và `saveMenu` tự trả về. 8 test.
+- **F-2 Prompt dịch vụ AI**: "Kiểm tra kết nối" (lượt gọi AI thật, vài giây) của dịch vụ A, đóng hộp, mở B —
+  câu trả lời (hoặc lỗi) của A hiện dưới tên B, nút của B kẹt "Đang test...". Mã lượt; mở dịch vụ cấp mã mới.
+  `invalidate` vẫn phát (chi phí đã đổi dù lượt đã bỏ).
+- **F-3 Người dùng — `roleId || 2`** (lỗi thật, không cố ý): `users.role_id` nullable (`ON DELETE SET NULL`;
+  xoá vai trò kiểm "không còn ai" rồi xoá, ngoài một transaction), hộp sửa luôn gửi lại `roleId` — sửa
+  email của tài khoản KHÔNG có vai trò gán thầm vai trò 2 (`editor` trong seed; `assertUserManageable(null)`
+  qua vì tài khoản không vai trò không có quyền nào), hoặc 400 "Vai trò không tồn tại." nếu không có vai
+  trò 2. Nay hộp không chọn vai trò nào và PUT không gửi `roleId` tới khi cán bộ chọn (select `required`
+  của trình duyệt buộc chọn trước khi gửi form). Biểu mẫu TẠO vẫn mặc định `roleId: 2` — thấy được trên
+  select, máy chủ từ chối nếu không tồn tại; chưa đổi.
+- **F-4 Danh sách đơn đăng ký**: đổi ô trạng thái rồi "Chưa ai xem" trước khi lượt đầu về — câu trả lời cũ
+  hiện hàng của bộ lọc cũ; lỗi cũ đè hàng mới; lượt cũ xong trước tắt skeleton. Mã lượt try/catch/finally.
+- **F-5 Biểu mẫu video YouTube**: ô liên kết sửa được trong lúc YouTube trả lời; câu trả lời cho liên kết
+  đã bị thay GHI mã video cũ vào ô (và tiêu đề cũ vào ô tiêu đề trống) — bản nháp lưu nhầm video. Nay bỏ
+  câu trả lời/lỗi khi ô không còn giữ liên kết đã hỏi (bấm "Lấy thông tin" để hỏi liên kết mới).
+- **F-6 Đăng video YouTube**: đọc cấu hình hỏng luôn hiện câu cố định (`catch {}`) — nay `errorMessage`.
+- **F-7 Bộ chọn ảnh** (lộ ra nhờ kiểu suy từ handler): đọc `res.totalPages` mà `GET /api/admin/media` trả
+  `pagination.totalPages` — luôn 1, không bao giờ hiện nút trang; ảnh ngoài 20 ảnh mới nhất chỉ chọn được
+  bằng cách tìm tên tệp. Thêm mã lượt (tìm rồi tìm lại / bấm trang).
+- **F-8 Nhật ký gọi AI**: "Lọc" hai lần trước khi lượt đầu về — câu trả lời cũ đè (nút Lọc không khoá).
+  Mã lượt. (Tổng quan AI KHÔNG thêm: nút kỳ lọc đã `:disabled` khi đang tải — đua không với tới được.)
+- **F-9 Danh sách backup**: lọc "CSDL" rồi "File" — dump CSDL hiện dưới "File", lỗi cũ đè, skeleton tắt sớm.
+- Không lỗi: `users/roles.vue` (nút lưu nằm TRONG nhánh đã tải — đã khoá đúng), `AiModerationTab`,
+  `ai/index.vue`, `chatbot/sessions/[id].vue`, `upload.vue` (403 đọc qua `errorStatus()` thay ép kiểu lỗi).
+- **KNOWN, chưa sửa**: `ContentTypePicker` — đọc danh mục con hỏng hiện "Thể loại này chưa có danh mục
+  con." và được nhớ tới khi mở lại hộp (sửa cần một câu lỗi mới — quyết định văn bản); ghim bằng test KNOWN.
+
+`ChunkedUploader` trao `(url, options) => adminFetch(url, options)` (không `request: adminFetch`):
+`tests/_admin-fetch-call.ts` nhận ra view có tải bằng `adminFetch(` — trao giá trị làm guard skeleton coi
+nó "không còn tải". `admin-moderation-summary.test.ts` (harness tự biên dịch tab) cấp thêm `adminFetch` và
+đọc `query` thay `params` (cùng wire — test mới ghim `?status=pending&perPage=1`).
+
+Test: `tests/admin-fetch-rollout-{navigation,roles,ai-tabs,submissions-list,media-portal-forms,media-picker,backup-list,session-picker}.test.ts`.
+Mọi test không mang nhãn FINDING xanh trên tệp nguồn của base (chạy lại trên `git show 551651c7:…`).
+
+### Còn lại cho lô G
+
+74 ép kiểu trong 46 tệp: 2 có tên trong `adminFetch.ts`; **phía quản trị 15 trong 8 tệp**; còn lại phía
+công khai. Phía quản trị CHƯA làm ở lô F: `analytics.vue` (2), `ProfileActivityHistory.vue` (2),
+`articles/ArticleQuickViewModal.vue` (2), `articles/ScanThumbnailsModal.vue` (2) — làm được ngay; cần cẩn
+thận: `AnalyticsLiveDashboard.client.vue` (3, 1060 dòng, `Function()`), `useBulkSelection.ts` (1 — harness
+của `_admin-page-harness.ts` + 3 test biên dịch nó với danh sách tên cố định, phải thêm `adminFetch` vào cả
+bốn); ngoài phạm vi lô F theo phân công: `layouts/admin.vue` (2), `articles/ArticleAIPanel.vue` (1, phần
+tách của trình soạn bài).
