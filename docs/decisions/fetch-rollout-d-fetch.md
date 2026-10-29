@@ -4,6 +4,9 @@
 > `adminFetch` đọc thân lỗi JSON của yêu cầu tải tệp, và số còn lại cho lô D.
 > Lô D (sau lô C): 25 ép kiểu nữa (148 → 123), hai danh sách phân loại dùng mã lượt, 12 lỗi
 > tìm thấy, một hợp đồng máy chủ sửa (409), và số còn lại cho lô E.
+> Lô E (cuối tệp): 21 ép kiểu nữa (123 → 102) ở 7 tệp, ba danh sách nữa dùng mã lượt, 16 lỗi
+> tìm thấy (24 test FINDING đỏ trên `88073004`), 25 đột biến, và số còn lại cho lô F; sau kiểm chứng
+> độc lập: "Dịch toàn bộ" GIỮ trần 100 bài/ngôn ngữ + hỏi xác nhận, 3 hồi quy sửa, 17 đột biến mới.
 
 Lô B bỏ 56 ép kiểu `$fetch` ở 7 tệp bằng `adminFetch<T>()` (kiểu suy từ handler qua
 `Payload<…>`, `app/types/handler-payload.ts`), nhưng **không tệp nào** chuyển sang
@@ -189,3 +192,141 @@ cố định, không có `adminFetch`), `layouts/admin.vue` (2, cần test mount
 đăng ký (`submissions/index.vue`, `$fetch` trần không ép kiểu) đọc mã nguồn thì tải lại theo bộ lọc
 không có mã lượt — nghi đua như các danh sách trên, chưa có test chứng minh, chưa sửa ở lô này; `settings/backup.vue` → `useAdminList` và `roleId || 2`
 chưa gặp trong phạm vi lô D.
+
+## Lô E (nhánh `wave3/7-1-fetch-casts-e`, base `88073004`)
+
+Bỏ **21** ép kiểu (123 → 102), kiểu phản hồi suy từ handler qua `Payload<…>`:
+
+| Nhóm | Tệp | Ép kiểu | Kiểu |
+|---|---|---|---|
+| Nhật ký | `users/activity.vue` | 3 | `admin-users-api.ts` (thêm `AdminActivityLogsResponse`) — thay `LogItem` viết tay |
+| Kho kiến thức | `chatbot/knowledge/[id].vue` | 3 | `admin-chatbot-api.ts` (thêm `AdminKnowledgeCreateResponse`) |
+| Bài viết | `articles/ArticleBoostStatsPanel.vue`, `articles/ArticleGlobalTranslateModal.vue` | 6 | `admin-articles-api.ts` (thêm boost/huỷ boost) — thay `GlobalStats` viết tay |
+| Trang | `content/pages/index.vue` | 3 | `admin-pages-api.ts` (thêm danh sách/tạo/xoá) |
+| Thư viện ảnh | `media/index.vue` | 3 | `admin-media-api.ts` (mới) — thay `StorageSize` viết tay |
+| Thư viện video | `media-portal/index.vue` | 3 | `admin-media-portal-api.ts` (thêm `MediaDeleteResponse`) |
+
+Kiểu viết tay bị thay **lộ một lỗi**: `LogItem.createdAt: string`, handler nói `string | null` —
+`new Date(null)` là ngày 1/1/1970 hợp lệ, nên hàng không có thời điểm in ra năm 1970.
+
+**Ba danh sách thêm vào bảng "không dùng `useAdminList`"** — cùng mẫu mã lượt (`listRequest`):
+
+| Tệp | Vì sao không dùng |
+|---|---|
+| `users/activity.vue` | Hợp với `useAdminList` về hình dạng (phân trang, lọc, chỉ đọc), nhưng `tests/admin-activity-logs.test.ts` ghim năm ref `filterX` và dạng `{ to: filterTo.value }` trong mã nguồn — chuyển là viết lại guard đó. Ứng viên đầu tiên khi guard được chuyển sang test hành vi. |
+| `media/index.vue` | Bộ chọn hàng loạt thu hẹp (`keepOnly`) sau mỗi lần ghi, như thể loại/danh mục; tệp ở đúng trần 456 dòng. Hỏi lại trang cuối (một lần) viết tại chỗ theo quy tắc của `useAdminList`. |
+| `media-portal/index.vue` | Bộ lọc và trang sống trong URL (`router.replace`), `useAdminList` không ghi URL; `admin-media-portal-ui.test.ts` ghim `loadError`/`fetchMedia`/`items.length === 0`. Hỏi lại trang cuối viết tại chỗ. |
+
+**Lỗi tìm thấy (test FINDING đỏ trên `88073004`, bằng chứng chạy trên tệp gốc trong thư mục proof):**
+
+- Nhật ký: tải hỏng hiện cả cảnh báo lẫn "Không có bản ghi nào khớp điều kiện lọc." (cảnh báo nằm
+  ngoài chuỗi tải/lỗi/rỗng); không có lượt mới nhất — lọc theo tài khoản rồi "Xoá lọc", câu trả lời cũ
+  về sau hiện nhật ký một người dưới bộ lọc đã xoá (cả nhánh lỗi và `finally`); hàng không có thời
+  điểm in 1/1/1970.
+- Kho kiến thức: "Xuất bản"/"Lưu trữ" mất mạng báo "Đã xảy ra lỗi." — nhánh `|| (…)` chết, đúng
+  lỗi lô C tìm ở trang danh sách; lỗi LƯU/xuất bản/kiểm bắt buộc dùng chung dải "thử lại" của lượt
+  tải — bấm vào tải lại mục, đè chữ đang gõ (nay `actionError` riêng, không nút tải lại); tải mục hỏng
+  vẫn hiện biểu mẫu trống lưu được, "Xuất bản" theo trạng thái mặc định `draft` — PUT đè mục thật
+  (nay cờ dương `loaded`, như trình soạn bài lô D; biểu mẫu chỉ hiện khi đang giữ mục).
+- Thống kê lượt xem: mở Bài 3 (chậm), đóng, mở Bài 4 — số liệu và lượt tăng dần của Bài 3 hiện dưới
+  tên Bài 4 (cả nhánh lỗi và `finally`).
+- "Dịch toàn bộ": chỉ đọc trang đầu 100 bài thiếu (trần của endpoint danh sách) mà vẫn báo xong khi
+  màn hình ghi "Thiếu 120 bài" — bản đầu của lô E đọc mọi trang; **sau kiểm chứng độc lập, trần 100
+  bài/ngôn ngữ mỗi lượt bấm được GIỮ** (xem "Sửa sau kiểm chứng độc lập" bên dưới) và thông báo nói
+  thật "en: 100/120 … bấm lại"; ngôn ngữ sau hỏng thì báo "không thể bắt đầu" dù ngôn ngữ trước đã xếp, không emit
+  `started` (trang không theo dõi, bấm lại xếp trùng) — nay báo số đã xếp và emit; mở lại sau lượt đọc
+  thống kê hỏng hiện số của lần mở trước với nút "Bắt đầu" bật.
+- Thư viện ảnh: không có lượt mới nhất (tìm rồi lọc video — kết quả tìm hiện dưới bộ lọc video); xoá ô
+  cuối của trang cuối hiện "Chưa có file nào. Hãy tải lên file đầu tiên!".
+- Thư viện video: danh sách và cấu hình tải lên chung một `Promise.all` — cấu hình hỏng thay danh sách
+  đã tải bằng "Không tải được danh sách video." (và cấu hình đọc lại mỗi lần lọc/sang trang; nay đọc
+  một lần, riêng); nút trang không ghi trang vào URL dù tài liệu của trang hứa "sống qua F5"; không có
+  lượt mới nhất; xoá video cuối của trang cuối hiện "Chưa có video nào" mà nút trang nằm trong nhánh dữ
+  liệu nên kẹt (dịch vụ không kẹp trang).
+- Danh sách trang (`content/pages/index.vue`): không có lỗi — lượt tải là nơi ghi hàng duy nhất, mọi
+  thao tác tải lại đều ẩn danh sách trong lúc chờ.
+
+**Đột biến: 25/25 bị bắt** (mỗi cái làm ≥ 1 test đỏ, hoàn nguyên bằng `git checkout --`): bỏ kiểm mã
+lượt ở `try`/`catch`/`finally` của nhật ký, panel thống kê, thư viện ảnh, thư viện video (12); khôi
+phục nhánh `||` chết (1); `v-else-if="loaded"` → `v-else` (1); "thử lại" cho cả lỗi thao tác (1); đọc
+một trang (1); bỏ `emit('started')` khi hỏng giữa chừng (1); bỏ xoá số cũ khi mở lại (1); tắt hỏi lại
+trang cuối ở hai thư viện (2); bỏ `syncQuery()` của nút trang (1); cấu hình hỏng ghi `loadError` (1);
+bỏ chặn `null` của `formatWhen` (1); bỏ `trim()` tiêu đề trang mới (1); bỏ `keepOnly` của danh sách
+trang (1). Nhật ký từng vòng: `mutations/r1…r6.*` trong thư mục proof.
+
+Không thuộc họ component nào của `tests/_component-family.ts` (không tệp nào đã tách). DOM trạng thái
+BÌNH THƯỜNG của cả 7 tệp giống hệt trước/sau (mount thật, `html()`; panel/modal so ở trạng thái đang
+mở), trừ một placeholder `<!--v-if-->` của nhật ký (khối lỗi rời nay nằm trong chuỗi). Mọi bản sửa
+FINDING ở trên CỐ Ý đổi trạng thái lỗi/đua của nó: nhật ký lỗi không còn trạng thái rỗng (đã chụp
+DOM); trình soạn kiến thức tải hỏng không còn biểu mẫu, lỗi thao tác không còn "thử lại"; modal mở
+lại sau lỗi không còn số cũ; thư viện video giữ danh sách khi cấu hình hỏng; hai thư viện hiện trang
+cuối thay vì trạng thái rỗng — mỗi thay đổi có test FINDING của nó, không chụp DOM riêng.
+E2E: `tests/e2e/media-portal.spec.ts` (spec duy nhất đi qua một trang của lô này) 5/5 trên bản build
+lô E; các trang còn lại không có spec E2E.
+
+### Sửa sau kiểm chứng độc lập (verify "Đạt kèm sửa", bằng chứng `cdht-wave3-fetch-e-verify/`)
+
+**Quyết định chi phí "Dịch toàn bộ" (HIGH).** Bản đầu đọc mọi trang: trên CSDL tạm 1.123 bài × 5 ngôn
+ngữ, một lượt bấm xếp 5.615 bản dịch AI (base 500), không hỏi. Ngân sách AI hằng tháng (`checkBudget`)
+chỉ chặn khi đã đặt — 0 là không giới hạn. Quyết định (thiên về an toàn chi phí): **giữ trần 100 bài/ngôn
+ngữ mỗi lượt bấm như base** (`PER_CLICK`, không phân trang), và:
+- hỏi trước (`useConfirm`, `ConfirmModal` đè lên `AdminModal` như `ScanThumbnailsModal` đã làm): "Xếp lịch
+  dịch tối đa X bài sang Y ngôn ngữ (en: 100/120, …)? Mỗi bài là các lượt gọi AI có tính phí…" — số lấy
+  từ thống kê đang hiện (cận trên); từ chối thì không đọc danh sách, không gửi gì;
+- còn bài thì báo "Đã xếp … (en: 100/120). Còn bài chưa xếp — bấm lại sau khi lượt dịch đang chạy xong để
+  xếp tiếp", không báo xong; vẫn emit `started`; hai sửa còn lại của hộp (báo phần đã xếp khi hỏng giữa
+  chừng, không số cũ khi mở lại) giữ nguyên;
+- rời trang thì dừng vòng lặp (`disposed` sau mỗi `await`) — không POST cho trang đã rời.
+"Bấm lại" xếp bài KẾ vì bài đã dịch có hàng dịch và rời bộ lọc `missing_xx`; nhưng hàng chỉ được tạo khi
+worker xử lý tới bài đó (tuần tự), nên bấm lại khi lượt trước CÒN CHẠY sẽ liệt kê lại các bài chưa tới
+lượt — thông báo vì thế nói "sau khi lượt dịch đang chạy xong" (gốc ở máy chủ, xem việc còn mở).
+
+**Các sửa khác:**
+- Thư viện video (MEDIUM, hồi quy của lô E): câu trả lời muộn sau khi rời trang gọi `syncQuery()` → URL
+  của trang KẾ thành `…?page=2`, rồi tải thêm. Nay `onBeforeUnmount` cấp mã mới + chặn lượt mới
+  (`disposed`); lượt xoá trả về sau khi rời trang không tải lại. Thư viện ảnh cùng mẫu (chỉ `disposed`:
+  mọi lượt tiếp đều qua `fetchMedia`).
+- Trình soạn kiến thức (hồi quy): lưu/xuất bản thành công mà lượt đọc lại hỏng thì biểu mẫu biến mất. Nay
+  lượt đọc ĐẦU điền biểu mẫu (hỏng thì không có biểu mẫu); khi biểu mẫu đã giữ mục, lượt đọc (đọc lại sau
+  ghi, hoặc "thử lại" của nó) chỉ làm mới trạng thái — không thay chữ đang gõ; xuất bản/lưu trữ lấy trạng
+  thái từ câu trả lời của chính nó.
+- Thư viện video (hồi quy): cấu hình tải lên hỏng thoáng qua ẩn "Tải video lên" tới F5 — nay đọc lại cùng
+  lượt tải kế khi còn thiếu (đã có thì không đọc lại).
+- Ghim các đột biến sống của verifier: E07 (đọc lại sau ghi hỏng), E10/E11 (lỗi thao tác cũ được xoá khi
+  lưu/xuất bản lại thành công), E26 (trang quá cuối hỏi trang 3/3, không trang 1), E29 (toast lỗi tải thư
+  viện ảnh), E33 (lọc ở trang 2 hỏi trang 1). E20–E22 (phân trang "Dịch toàn bộ") hết đối tượng vì đã bỏ
+  phân trang.
+
+Test đỏ trước khi sửa (trên `07474e17`): 8 + 2 (xoá sau khi rời trang); **17/17 đột biến mới bị bắt**
+(`mutations/v1…v5.*` trong thư mục proof). Không chụp DOM riêng: trạng thái bình thường không đổi, các
+thay đổi là hộp xác nhận mới và trạng thái lỗi/đua, mỗi cái có test.
+
+### Chưa sửa ở lô E (ngoài phạm vi phía khách quản trị — cần quyết định hoặc đợt máy chủ)
+
+- `server/services/article-translation-bulk.ts`: "Dịch toàn bộ" nhiều ngôn ngữ gọi
+  `bulkTriggerTranslation` một lần mỗi ngôn ngữ, các lượt chạy nền song song và cùng ghi một
+  `bulkTaskState` — tiến độ của banner là của lượt nào ghi sau.
+- **Cần quyết định — hàng `failed` không bao giờ được xếp lại:** `translation-stats.get.ts` đếm bản dịch
+  `status != 'failed'` là đã dịch, còn bộ lọc `missing_xx` loại mọi bài có bất kỳ hàng dịch nào (kể cả
+  `failed`) — bài dịch hỏng hiện "Thiếu" trong thống kê nhưng "Dịch toàn bộ" không bao giờ xếp lại nó (ghim
+  bằng test KNOWN, không sửa máy chủ ở lô này).
+- `article-translation-bulk.ts`: hàng dịch chỉ được tạo khi worker tới bài đó, và lượt chạy chỉ bỏ qua
+  bài `translating`/`published` — bấm "Dịch toàn bộ" lại khi lượt trước còn chạy liệt kê lại các bài chưa
+  tới lượt, và bài đã dịch xong ở trạng thái `ai_draft` bị dịch lần nữa (chi phí gấp đôi). Hộp chỉ dặn
+  "bấm lại sau khi lượt đang chạy xong"; chặn tận gốc cần máy chủ (tạo hàng `translating` khi xếp, hoặc từ
+  chối khi đang có lượt chạy như `universal-translate` lô D).
+- `server/api/admin/media/index.get.ts`: tìm kiếm `like(%…%)` không thoát `%`/`_` (dịch vụ thư viện
+  video đã dùng `likeContains`).
+- Panel thống kê: "Huỷ lượt tăng" không có cờ đang gửi — bấm hai lần gửi hai DELETE, lần hai báo lỗi 404.
+- Thư viện ảnh: "Thử lại" luôn tải trang 1, không phải trang vừa hỏng.
+
+### Còn lại cho lô F
+
+102 ép kiểu trong 63 tệp: 2 có tên trong `adminFetch.ts`; **44 phía quản trị trong 26 tệp**; 56 phía
+công khai trong 36 tệp. Phía quản trị: `ai/AiServicesTab.vue` (3) + `ai/{AiDashboardTab,AiModerationTab}.vue`
+(2), `ai/index.vue` (2), `analytics.vue` (2), `navigation/{mobile,navbar}.vue` (2+2), `users/roles.vue` (2),
+`media-portal/external.vue` (2), `ContentTypePicker.vue`, `ProfileActivityHistory.vue`,
+`ArticleQuickViewModal.vue`, `ScanThumbnailsModal.vue`, `useUpload.ts` (2 mỗi tệp), và mười tệp 1 ép kiểu.
+Vẫn cần cẩn thận như lô D ghi: `AnalyticsLiveDashboard.client.vue` (3, `Function()`), `useBulkSelection.ts`
+(harness tên cố định), `layouts/admin.vue` (2, cần test mount layout trước). Danh sách đơn đăng ký
+(đua nghi ngờ) và `settings/backup.vue` vẫn chưa đụng.

@@ -18,6 +18,7 @@ import type { Payload } from './handler-payload'
 
 type DetailHandler = typeof import('~~/server/api/admin/media-portal/[id].get').default
 type UpdateHandler = typeof import('~~/server/api/admin/media-portal/[id].put').default
+type DeleteHandler = typeof import('~~/server/api/admin/media-portal/[id].delete').default
 type ProcessHandler = typeof import('~~/server/api/admin/media-portal/[id]/process.post').default
 type ThumbnailSetHandler = typeof import('~~/server/api/admin/media-portal/[id]/thumbnail.post').default
 type ThumbnailClearHandler = typeof import('~~/server/api/admin/media-portal/[id]/thumbnail.delete').default
@@ -30,6 +31,8 @@ type CategoryDeleteHandler = typeof import('~~/server/api/admin/media-portal/cat
 /** `GET /api/admin/media-portal/:id`. */
 export type MediaDetailResponse = Payload<DetailHandler>
 export type MediaUpdateResponse = Payload<UpdateHandler>
+/** `DELETE /api/admin/media-portal/:id` — the list's delete (`pages/admin/media-portal/index.vue`, batch E). */
+export type MediaDeleteResponse = Payload<DeleteHandler>
 /** "Xử lý lại video" and "Chuyển mã" both post to `/process`. */
 export type MediaProcessResponse = Payload<ProcessHandler>
 export type MediaThumbnailSetResponse = Payload<ThumbnailSetHandler>

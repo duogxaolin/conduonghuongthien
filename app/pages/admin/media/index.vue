@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import type { AdminMediaRow } from '~/types/admin-api'
-definePageMeta({
-  layout: 'admin',
-  middleware: 'admin-auth'
-})
+import type { AdminMediaDeleteResponse, AdminMediaListResponse, AdminMediaStorageSize } from '~/types/admin-media-api'
+definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const mediaItems = ref<AdminMediaRow[]>([])
 const loading = ref(true)
@@ -17,13 +15,21 @@ const toast = useToast()
 const { confirm } = useConfirm()
 const { uploading, uploadBatch, tasks, uploadingBatch } = useUpload()
 
-const fetchMedia = async (page = 1) => {
+// Only the latest load writes (ticket, docs/decisions/fetch-rollout-d-fetch.md); a page past the end
+// (last tile deleted) asks ONCE for the last page, not "Chưa có file nào" (tests/admin-fetch-rollout-media-library.test.ts).
+// Leaving the page refuses new loads: a late answer's last-page follow-up, a delete/upload reload — nothing is sent.
+let listRequest = 0, disposed = false
+onBeforeUnmount(() => { disposed = true })
+const fetchMedia = async (page = 1, mayAskForLastPage = true): Promise<void> => {
+  if (disposed) return
+  const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminMediaRow[]; pagination: typeof pagination.value }>)(`/api/admin/media`, {
-      params: { page, search: search.value, type: filterType.value, perPage: 24 }
-    })
+    const res = await adminFetch<AdminMediaListResponse>(`/api/admin/media`, { query: { page, search: search.value, type: filterType.value, perPage: 24 } })
+    if (ticket !== listRequest) return
+    const last = Math.max(1, res.pagination.totalPages)
+    if (mayAskForLastPage && page > last && res.pagination.total > 0) return await fetchMedia(last, false)
     if (res.ok) {
       mediaItems.value = res.items
       pagination.value = res.pagination
@@ -31,10 +37,11 @@ const fetchMedia = async (page = 1) => {
       selection.keepOnly(visibleIds.value)
     }
   } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Lỗi tải thư viện media'))
+    if (ticket !== listRequest) return
     loadError.value = errorMessage(err, 'Lỗi tải thư viện media')
+    toast.error(loadError.value)
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
@@ -84,7 +91,7 @@ const deleteMedia = async (item: AdminMediaRow) => {
   const ok = await confirm({ title: 'Xóa tệp', message: `Bạn có chắc muốn xóa file ${item.originalName}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/${item.id}`, { method: 'DELETE' })
+    await adminFetch<AdminMediaDeleteResponse>(`/api/admin/media/${item.id}`, { method: 'DELETE' })
     toast.success('Đã xóa tệp media thành công!')
     await fetchMedia(pagination.value.page)
   } catch (err: unknown) {
@@ -125,11 +132,7 @@ const isBatching = computed(() => uploadingBatch.value && totalCount.value > 0)
 // Quét 3212 file mồ côi có thể treo trang grid, nên tách ra trang riêng chạy nền.
 
 // ─── Dung lượng storage (local + R2) ────────────────────────────────────────
-interface StorageSize {
-  local: { dbCount: number; dbBytes: number; diskCount: number; diskBytes: number }
-  r2: { configured: boolean; dbCount: number; dbBytes: number; bucketCount: number | null; bucketBytes: number | null }
-}
-const storageSize = ref<StorageSize | null>(null)
+const storageSize = ref<AdminMediaStorageSize | null>(null)
 const storageLoading = ref(false)
 const storageError = ref('')
 
@@ -144,7 +147,7 @@ async function fetchStorageSize() {
   storageLoading.value = true
   storageError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean } & StorageSize>)('/api/admin/media/storage-size')
+    const res = await adminFetch<AdminMediaStorageSize>('/api/admin/media/storage-size')
     if (res.ok) storageSize.value = res
   } catch (err: unknown) {
     storageError.value = errorMessage(err, 'Không thể lấy dung lượng storage.')
@@ -153,10 +156,7 @@ async function fetchStorageSize() {
   }
 }
 
-onMounted(() => {
-  fetchMedia()
-  void fetchStorageSize()
-})
+onMounted(() => { void fetchMedia(); void fetchStorageSize() })
 </script>
 
 <template>
