@@ -116,8 +116,13 @@ const recordShow: Vue.ObjectDirective<MiniElement> = {
   beforeUpdate(el, { value }) { el.shown = Boolean(value) },
 }
 
-/** The `vue` module as compiled SFCs see it: real, except for the DOM-only `v-model`/`v-show` directives. */
-const VUE_FOR_SFC: Record<string, unknown> = {
+/**
+ * The `vue` module as compiled SFCs see it: real, except for the DOM-only `v-model`/`v-show`
+ * directives. Exported so a harness can hand `modules: { vue: { ...VUE_FOR_SFC, … } }` with
+ * one more stand-in (the admin layout's `<Transition>`, whose real hooks need `classList`
+ * and `requestAnimationFrame`) without losing the two recorders.
+ */
+export const VUE_FOR_SFC: Record<string, unknown> = {
   ...Vue,
   vModelText: recordModel,
   vModelCheckbox: recordModel,

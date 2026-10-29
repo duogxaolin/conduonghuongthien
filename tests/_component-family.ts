@@ -6,8 +6,8 @@
  *
  * Families today: `ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, `CHAT_WIDGET_FAMILY`,
  * the public pages `NEWS_PAGE_FAMILY` and `READER_PROFILE_FAMILY`, and the admin `AI_PROVIDERS_TAB_FAMILY`,
- * `LANGUAGES_PAGE_FAMILY` and `PAGE_BUILDER_FAMILY`; and one composable split into a
- * directory of modules, `CHATBOT_COMPOSABLE_FAMILY` (`ModuleFamily`, below). The parts are
+ * `LANGUAGES_PAGE_FAMILY`, `PAGE_BUILDER_FAMILY` and the shell `ADMIN_LAYOUT_FAMILY`; and one composable
+ * split into a directory of modules, `CHATBOT_COMPOSABLE_FAMILY` (`ModuleFamily`, below). The parts are
  * DERIVED from the directory, not listed (the design of tests/_moderation-page-parts.ts):
  * a part added later joins every "must appear nowhere" scan without anyone editing this
  * file. The named parts are a subset check, so a renamed/moved part turns the scan red
@@ -130,6 +130,21 @@ export const CHAT_WIDGET_FAMILY: ComponentFamily = {
     'ChatWidgetMessageMeta.vue', 'ChatWidgetQuickQuestions.vue', 'ChatWidgetWelcome.vue',
   ],
   modules: ['composables/useChatCopy.ts', 'composables/useChatWidgetDialog.ts', 'composables/useChatWidgetTeaser.ts'],
+}
+
+/**
+ * The admin shell `layouts/admin.vue` (767 lines before its wave3 D-SPLIT split). The layout
+ * keeps the `layout_config` read, the drawer's backdrop, the content area and its scoped CSS;
+ * the parts render only; the menu, the sidebar states and the cache purge are composables.
+ */
+export const ADMIN_LAYOUT_FAMILY: ComponentFamily = {
+  parent: 'layouts/admin.vue',
+  partsDir: 'components/admin/layout',
+  expectedParts: ['AdminSidebar.vue', 'AdminSidebarNav.vue', 'AdminSidebarUserCard.vue', 'AdminTopBar.vue'],
+  modules: [
+    'composables/useAdminLayoutCacheClear.ts', 'composables/useAdminLayoutMenu.ts', 'composables/useAdminLayoutSidebar.ts',
+    'utils/admin-layout-menu.ts',
+  ],
 }
 
 export const readAppFile = (file: string): string => readFileSync(new URL(file, APP), 'utf8').replace(/\r\n/g, '\n')
