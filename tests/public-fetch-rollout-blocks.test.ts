@@ -17,7 +17,7 @@ import { describe, it } from 'node:test'
 import * as Vue from 'vue'
 
 import { findAll, fire, input, textOf, type MiniElement } from './_sfc-mount.ts'
-import { alerts, buttons, byTag, dropped, h3Error, json, mountPublic, routes, sent, settle, Stub, words, type NetCall } from './_public-mount-harness.ts'
+import { alerts, buttons, byTag, dropped, h3Error, json, mountPublic, routes, sent, settle, words, type NetCall } from './_public-mount-harness.ts'
 
 const article = (n: number, over: Record<string, unknown> = {}) => ({
   id: n, type: 'news', category: null, categoryId: 2, categoryName: 'Hà Nội', categorySlug: 'ha-noi',
