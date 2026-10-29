@@ -62,9 +62,10 @@ const dailyPeak = computed(() => {
 })
 
 /**
- * Mã lượt: chỉ câu trả lời của lượt đọc MỚI NHẤT cho bài ĐANG MỞ được ghi. Đóng/đổi bài cấp mã
- * mới — trước đây mở "Bài 3" (chậm), đóng, mở "Bài 4": số liệu và lượt tăng dần của Bài 3 về
- * sau hiện dưới tên Bài 4 (tests/admin-fetch-rollout-article-stats-translate.test.ts).
+ * Mã lượt: chỉ câu trả lời của lượt đọc MỚI NHẤT được ghi — mở bài khác là một lượt mới. Trước đây
+ * mở "Bài 3" (chậm), đóng, mở "Bài 4": số liệu và lượt tăng dần của Bài 3 về sau hiện dưới tên
+ * Bài 4 (tests/admin-fetch-rollout-article-stats-translate.test.ts). Bài đã đóng mà không mở bài
+ * nào: câu trả lời muộn ghi vào trạng thái của một panel đang ẩn, và lần mở sau xoá trước khi đọc.
  */
 let statsRequest = 0
 const loadStats = async () => {
@@ -95,8 +96,6 @@ watch(
   () => props.article,
   async (art) => {
     if (!art) {
-      statsRequest++ // lượt đọc của bài vừa đóng không còn ai chờ
-      statsLoading.value = false
       statsData.value = null
       runningBoost.value = null
       statsError.value = ''
