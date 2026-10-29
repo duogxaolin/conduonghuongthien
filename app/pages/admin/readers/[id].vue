@@ -141,6 +141,8 @@ async function unbanReader() {
     await load()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không bỏ chặn được tài khoản này.'))
+    // 404: the account was deleted meanwhile (another officer, retention) — as for the other actions.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   } finally {
     busy.value = false
   }

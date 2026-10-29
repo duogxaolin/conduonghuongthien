@@ -366,10 +366,15 @@ describe('pages/admin/readers/[id].vue', () => {
     refused.page.unmount()
   })
 
-  it('ban or purge refused with 404 (the account was deleted meanwhile): the sentence, then back to the list; any other refusal stays', async () => {
+  it('ban, unban or purge refused with 404 (the account was deleted meanwhile): the sentence, then back to the list; any other refusal stays', async () => {
     const sentence = 'Không tìm thấy tài khoản người đọc.'
-    for (const [route, button] of [['POST /api/admin/readers/7/ban', 'Chặn tài khoản'], ['DELETE /api/admin/readers/7/comments', 'Xoá toàn bộ bình luận']] as const) {
-      const gone = await openReader({ banned: false }, { [route]: () => h3Error(404, sentence) })
+    for (const [route, button, banned] of [
+      ['POST /api/admin/readers/7/ban', 'Chặn tài khoản', false],
+      ['DELETE /api/admin/readers/7/comments', 'Xoá toàn bộ bình luận', false],
+      // Verifier round 4, L-4: unban was the one action that still stayed on a deleted account.
+      ['POST /api/admin/readers/7/unban', 'Bỏ chặn', true],
+    ] as const) {
+      const gone = await openReader({ banned }, { [route]: () => h3Error(404, sentence) })
       gone.answers.prompt = ''
       await click(byText(gone.page.root, 'button', button))
       await settle()
@@ -377,11 +382,12 @@ describe('pages/admin/readers/[id].vue', () => {
       assert.deepEqual([gone.lastToast('error'), gone.pushes], [sentence, ['/admin/readers']], route)
       gone.page.unmount()
     }
-    for (const [route, button, refusal] of [
-      ['POST /api/admin/readers/7/ban', 'Chặn tài khoản', () => h3Error(409, 'Tài khoản này đã bị chặn.')],
-      ['DELETE /api/admin/readers/7/comments', 'Xoá toàn bộ bình luận', () => h3Error(403, 'Bạn không có quyền thực hiện thao tác này.')],
+    for (const [route, button, refusal, banned] of [
+      ['POST /api/admin/readers/7/ban', 'Chặn tài khoản', () => h3Error(409, 'Tài khoản này đã bị chặn.'), false],
+      ['DELETE /api/admin/readers/7/comments', 'Xoá toàn bộ bình luận', () => h3Error(403, 'Bạn không có quyền thực hiện thao tác này.'), false],
+      ['POST /api/admin/readers/7/unban', 'Bỏ chặn', () => h3Error(500, 'Lỗi máy chủ.'), true],
     ] as const) {
-      const refused = await openReader({ banned: false }, { [route]: refusal })
+      const refused = await openReader({ banned }, { [route]: refusal })
       refused.answers.prompt = ''
       await click(byText(refused.page.root, 'button', button))
       await settle()
