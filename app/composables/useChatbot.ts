@@ -328,11 +328,10 @@ function boundedUserHistory(): { sender: 'user' | 'bot', text: string }[] {
 }
 
 /**
- * Accumulates one SSE line into `target`.
- *
- * `text` is collected separately from the message so playback can start from
- * empty; writing straight to `message.text` would show the whole answer for one
- * frame before the typewriter reset it.
+ * Accumulates one SSE line into `target`. `text` is collected apart from the message so playback can start
+ * from empty (writing `message.text` would show the whole answer for a frame before the typewriter reset it).
+ * `chatbot.replace` swaps `text` instead of appending: the server withdrew what it streamed (sovereignty guard);
+ * the `content` in the same frame is only for an older widget, which can only append.
  */
 export function parseSseLine(line: string, target: { text: string, message: ChatMessage }): void {
   const trimmed = line.trim()
@@ -349,6 +348,7 @@ export function parseSseLine(line: string, target: { text: string, message: Chat
 
   const chatbot = data?.chatbot as Record<string, unknown> | undefined
   if (chatbot && typeof chatbot === 'object') {
+    if (typeof chatbot.replace === 'string') target.text = chatbot.replace.slice(0, CHATBOT_CLIENT_LIMITS.maxOutputChars)
     if (chatbot.toolEvent && typeof chatbot.toolEvent === 'object') {
       const te = chatbot.toolEvent as { name: string; query?: string; status: 'calling' | 'done'; count?: number }
       if (!Array.isArray(target.message.toolCalls)) target.message.toolCalls = []
