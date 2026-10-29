@@ -391,7 +391,9 @@ test('FINDING-R6-10 (M1): two deletions of one account at once — the loser is 
 
 test('FINDING-R6-10 (M1): two purges of one reader\'s comments at once — the second counts only what it deleted', async () => {
   const { id } = await readerWithThread()
-  h.harness.beforeNext(/^(select .* from `reader_accounts` .*for update|delete from `article_comments`)/s, () => h.harness.sqlite.exec(
+  // The other purge commits before this one's first read of the comments (on MySQL: before its
+  // FOR UPDATE is granted — while that purge runs, this one waits on the row locks).
+  h.harness.beforeNext(/^select .* from `article_comments`/s, () => h.harness.sqlite.exec(
     `COMMIT; DELETE FROM article_comments WHERE reader_id = ${id};
      INSERT INTO activity_logs (user_id, action, resource, resource_id, meta) VALUES (${viewer.id}, 'delete', 'comments', ${id}, '{"operation":"purge_reader_comments","deletedComments":2}'); BEGIN`,
   ))
@@ -399,6 +401,120 @@ test('FINDING-R6-10 (M1): two purges of one reader\'s comments at once — the s
   assert.deepEqual([response.status, response.body.impact], [200, { comments: 0, adminReplies: 0, otherReaderReplies: 0 }])
   // Before: this row claimed the same 2 comments again (4 claimed for 2 — 30/30 on MySQL).
   assert.deepEqual(audits().map(a => [a.userId, a.meta.deletedComments]), [[viewer.id, 2], [commentsOfficer.id, 0]])
+})
+
+// ─── Lock order, one connection, an account gone while we wait (verifier round 3: H1, H2, D1–D3) ──
+// SQLite has one connection, no row locks and no pool: what these tests can pin is WHICH
+// statements a transaction runs, in which order, and that every read goes through it (the
+// harness throws on a pool read while a transaction is open). Deadlocks and the hung pool
+// themselves are replayed on MySQL 8 (race2/race.sh, /home/ray/orca/cdht-wave3-tests-r6-proof/).
+
+/** The statements of the last transaction, each cut to its verb, table and lock clause. */
+function txShape(from: number) {
+  return h.harness.txStatements.slice(from).map(sql => sql
+    .replace(/^select .*? from (`\w+`)(?: where (`\w+`\.`\w+`) = \?)?.*?( for update)?$/s, 'select $1 $2$3')
+    .replace(/^(update|delete from|insert into) (`\w+`).*$/s, '$1 $2')
+    .replace(/\s+$/, ''))
+}
+
+test('H1 lock order: purge locks the reader\'s comments first and never the reader row (a reply holds its parent comment, then the reader)', async () => {
+  const { id } = await readerWithThread()
+  const from = h.harness.txStatements.length
+  assert.equal((await h.request('DELETE', `/api/admin/readers/${id}/comments`, commentsOfficer)).status, 200)
+  const shape = txShape(from)
+  // Before: `select reader_accounts … for update` first — purge ‖ admin reply deadlocked 30/30 on MySQL.
+  assert.equal(shape[0], 'select `article_comments` `article_comments`.`reader_id` for update')
+  assert.deepEqual(shape.filter(s => /reader_accounts/.test(s) && !/^select `reader_accounts` `reader_accounts`.`id`$/.test(s)), [])
+  assert.deepEqual(shape.filter(s => /^(delete|insert)/.test(s)), ['delete from `article_comments`', 'insert into `activity_logs`'])
+})
+
+test('lock order: ban and account deletion keep the base order — the reader row, then its comments counted under FOR UPDATE', async () => {
+  const { id } = await readerWithThread()
+  let from = h.harness.txStatements.length
+  assert.equal((await h.request('POST', `/api/admin/readers/${id}/ban`, moderator, {})).status, 200)
+  assert.deepEqual(txShape(from).slice(0, 2), ['update `reader_accounts`', 'select `article_comments` `article_comments`.`reader_id` for update'])
+  const second = await reader()
+  await comment({ readerId: second, articleId: 1 })
+  from = h.harness.txStatements.length
+  assert.equal((await h.request('DELETE', `/api/admin/readers/${second}`, moderator)).status, 200)
+  const shape = txShape(from)
+  assert.deepEqual(shape.slice(0, 2), ['select `reader_accounts` `reader_accounts`.`id` for update', 'select `article_comments` `article_comments`.`reader_id` for update'])
+  assert.ok(shape.indexOf('delete from `reader_accounts`') > 1, shape.join(' | '))
+})
+
+test('H2: ban, purge and account deletion read only through their transaction — never a second pool connection', async () => {
+  // The harness throws on a pool read while a transaction is open. Before: ban counted the
+  // comments on the pool inside its transaction (10 bans at once hung the pool and the app
+  // on MySQL), and purge did the same through deleteReaderComments since the base.
+  for (const send of [
+    async () => h.request('POST', `/api/admin/readers/${(await readerWithThread()).id}/ban`, moderator, {}),
+    async () => h.request('DELETE', `/api/admin/readers/${(await readerWithThread()).id}/comments`, commentsOfficer),
+    async () => h.request('DELETE', `/api/admin/readers/${(await readerWithThread()).id}`, moderator),
+  ]) {
+    const response = await send()
+    assert.equal(response.status, 200, JSON.stringify(response.body))
+  }
+  assert.ok(h.logged.every(line => !/pool while a transaction is open/.test(line)))
+})
+
+test('a ban or an account deletion chosen as a deadlock victim (a reply locks comment → reader) is retried whole, once', async () => {
+  const deadlock = { errno: 1213, code: 'ER_LOCK_DEADLOCK' }
+  const { id } = await readerWithThread()
+  await h.harness.sqlite.prepare('UPDATE reader_accounts SET token_version = 7 WHERE id = ?').run(id)
+  // InnoDB rolls the victim back whole; the harness rolls back on the thrown error the same way.
+  h.harness.failNext(/^delete from `article_comments`/, deadlock)
+  const banned = await h.request('POST', `/api/admin/readers/${id}/ban`, moderator, { reason: 'Spam' })
+  // Before: the deadlock was a 500 for the ban (X4: 27–30 of 30 on MySQL, base included).
+  assert.deepEqual([banned.status, banned.body.impact], [200, { comments: 2, adminReplies: 1, otherReaderReplies: 1 }])
+  assert.equal(readerRow(id)!.tokenVersion, 8, 'one bump: the failed attempt left nothing')
+  assert.deepEqual(audits().map(a => a.meta.operation), ['ban'])
+
+  const other = await reader()
+  h.harness.failNext(/^delete from `reader_accounts`/, deadlock)
+  assert.equal((await h.request('DELETE', `/api/admin/readers/${other}`, moderator)).status, 200)
+  assert.equal(readerRow(other), undefined)
+  assert.equal(audits().filter(a => a.action === 'delete').length, 1)
+
+  // Not a deadlock: no retry, the 500 of the failure.
+  const third = await reader()
+  h.harness.failNext(/^update `reader_accounts`/)
+  assert.equal((await h.request('POST', `/api/admin/readers/${third}/ban`, moderator, {})).status, 500)
+  assert.equal(readerRow(third)!.isBanned, false)
+})
+
+test('D1: an account deleted while its ban waits for the row — 404 and no audit row for an account that is gone', async () => {
+  const { id } = await readerWithThread()
+  h.harness.beforeNext(/^update `reader_accounts`/, () => h.harness.sqlite.exec(
+    `COMMIT; DELETE FROM article_comments WHERE reader_id = ${id}; DELETE FROM reader_accounts WHERE id = ${id}; BEGIN`,
+  ))
+  const response = await h.request('POST', `/api/admin/readers/${id}/ban`, moderator, { reason: 'x' })
+  // Before: 200 and a "ban" audit row for the deleted account (5/5 on MySQL, base too).
+  assert.deepEqual([response.status, response.body.statusMessage], [404, 'Không tìm thấy tài khoản người đọc.'])
+  assert.deepEqual(audits(), [])
+})
+
+test('D2: an account deleted while its comment purge waits for the comments — 404 and no audit row', async () => {
+  const { id } = await readerWithThread()
+  h.harness.beforeNext(/^select .* from `article_comments`/s, () => h.harness.sqlite.exec(
+    `COMMIT; DELETE FROM article_comments WHERE reader_id = ${id}; DELETE FROM reader_accounts WHERE id = ${id}; BEGIN`,
+  ))
+  const response = await h.request('DELETE', `/api/admin/readers/${id}/comments`, commentsOfficer)
+  assert.deepEqual([response.status, response.body.statusMessage], [404, 'Không tìm thấy tài khoản người đọc.'])
+  assert.deepEqual(audits(), [])
+})
+
+test('X1/D3: a ban that lands before an account deletion — the deletion counts only what it removed', async () => {
+  const { id } = await readerWithThread()
+  // The ban commits while the deletion waits for the reader row (its first statement).
+  h.harness.beforeNext(/^select .* from `reader_accounts` .*for update/s, () => h.harness.sqlite.exec(
+    `COMMIT; UPDATE reader_accounts SET is_banned = 1, token_version = token_version + 1 WHERE id = ${id};
+     DELETE FROM article_comments WHERE reader_id = ${id};
+     INSERT INTO activity_logs (user_id, action, resource, resource_id, meta) VALUES (${viewer.id}, 'update', 'readers', ${id}, '{"operation":"ban","deletedComments":2}'); BEGIN`,
+  ))
+  const response = await h.request('DELETE', `/api/admin/readers/${id}`, moderator)
+  assert.deepEqual([response.status, response.body.impact], [200, { comments: 0, adminReplies: 0, otherReaderReplies: 0 }])
+  // Before: the deletion counted before its transaction and claimed the same 2 (4 for 2, X1 30/30 on MySQL).
+  assert.deepEqual(audits().map(a => [a.userId, a.meta.deletedComments]), [[viewer.id, 2], [moderator.id, 0]])
 })
 
 test('FINDING-R6-10 (M1): two lifts of one address ban at once — the loser is the 404 of a missing ban, with no audit row', async () => {

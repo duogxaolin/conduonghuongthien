@@ -122,13 +122,28 @@ export type ReaderCommentImpact = {
   otherReaderReplies: number
 }
 
-async function countImpact(readerId: number): Promise<{ impact: ReaderCommentImpact, topLevelIds: number[] }> {
-  const db = getDb()
+/**
+ * What reads and deletes a reader's comments: the pool, or a transaction the caller
+ * already opened. Typed structurally rather than importing Drizzle's transaction
+ * type, which is not exported in a usable shape here.
+ */
+type CommentDeleteExecutor = Pick<ReturnType<typeof getDb>, 'select' | 'delete'>
 
-  const owned = await db
+async function countImpact(readerId: number, executor?: CommentDeleteExecutor): Promise<{ impact: ReaderCommentImpact, topLevelIds: number[] }> {
+  // Inside a transaction, on THAT transaction — never a second pool connection: with
+  // one held per open transaction, ten bans at once took all ten connections and
+  // waited for an eleventh forever, holding their row locks (verifier H2).
+  const db = executor ?? getDb()
+
+  const ownRows = db
     .select({ id: articleComments.id, parentId: articleComments.parentId })
     .from(articleComments)
     .where(eq(articleComments.readerId, readerId))
+  // In a transaction the reader's own rows are read under FOR UPDATE, and first: the
+  // count is of what THIS transaction will delete — a ban or purge that held them has
+  // committed and they are gone — whatever the snapshot of a later plain read. New
+  // replies cannot appear under X-locked parents, so the plain read below is exact.
+  const owned = await (executor ? ownRows.for('update') : ownRows)
 
   const topLevelIds = owned.filter(row => row.parentId === null).map(row => row.id)
 
@@ -163,18 +178,9 @@ async function countImpact(readerId: number): Promise<{ impact: ReaderCommentImp
  * sit under. An officer who is only told "3 bình luận" is agreeing to something
  * different from what happens.
  */
-export async function countReaderCommentImpact(readerId: number): Promise<ReaderCommentImpact> {
-  return (await countImpact(readerId)).impact
+export async function countReaderCommentImpact(readerId: number, executor?: CommentDeleteExecutor): Promise<ReaderCommentImpact> {
+  return (await countImpact(readerId, executor)).impact
 }
-
-/**
- * What `deleteReaderComments` runs its DELETE on. `executor` lets a caller run
- * it inside a transaction it already opened, so a deletion and the audit row
- * describing it commit together. Defaults to the pool for callers that own no
- * transaction. Typed structurally rather than importing Drizzle's transaction
- * type, which is not exported in a usable shape here.
- */
-type CommentDeleteExecutor = Pick<ReturnType<typeof getDb>, 'delete'>
 
 /**
  * Removes every comment a reader wrote, and the administrator replies beneath
@@ -182,10 +188,12 @@ type CommentDeleteExecutor = Pick<ReturnType<typeof getDb>, 'delete'>
  *
  * Returns the counts measured before the delete, because after it there is
  * nothing left to count and a successful purge would be indistinguishable from
- * one that never ran.
+ * one that never ran. With an `executor` (a transaction), counted on it under
+ * FOR UPDATE — see `countImpact`; it used to count on the pool, a second
+ * connection per open transaction (verifier H2).
  */
 export async function deleteReaderComments(readerId: number, executor?: CommentDeleteExecutor): Promise<ReaderCommentImpact> {
-  const { impact } = await countImpact(readerId)
+  const { impact } = await countImpact(readerId, executor)
   if (impact.comments === 0) return impact
 
   // One statement: the FK cascade on parentId removes the replies, including the

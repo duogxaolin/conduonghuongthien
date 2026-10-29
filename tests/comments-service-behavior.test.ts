@@ -39,6 +39,8 @@ type SelectCall = {
   where: unknown
   limit?: number
   offset?: number
+  /** `.for('update')` — a locking read. */
+  lock?: string
 }
 type WriteCall = { handle: Handle, op: 'insert' | 'delete', table: unknown, values?: Row, where?: unknown }
 
@@ -62,6 +64,7 @@ function selectOn(handle: Handle) {
       orderBy() { return chain },
       limit(limit: number) { call.limit = limit; return chain },
       offset(offset: number) { call.offset = offset; return chain },
+      for(strength: string) { call.lock = strength; return chain },
       then(resolve: (value: Row[]) => unknown, reject?: (reason: unknown) => unknown) {
         return Promise.resolve(rows).then(resolve, reject)
       },
@@ -91,7 +94,7 @@ function deleteOn(handle: Handle) {
 }
 
 const txHandle = { select: selectOn('tx'), insert: insertOn('tx'), delete: deleteOn('tx') }
-const executorHandle = { delete: deleteOn('executor') }
+const executorHandle = { select: selectOn('executor'), delete: deleteOn('executor') }
 const fakeDb = {
   select: selectOn('pool'),
   insert: insertOn('pool'),
@@ -268,6 +271,9 @@ describe('the reader comment impact, measured before anything is removed', () =>
     const impact = await deleteReaderComments(42, executorHandle as never)
     assert.deepEqual(impact, { comments: 3, adminReplies: 1, otherReaderReplies: 2 })
     assert.deepEqual(writes.map(w => [w.handle, w.op, w.table === articleComments]), [['executor', 'delete', true]])
+    // The counts too are read on the executor (never a second pool connection inside a
+    // transaction — verifier H2), the reader's own rows first and under FOR UPDATE.
+    assert.deepEqual(selects.map(s => [s.handle, s.lock ?? null]), [['executor', 'update'], ['executor', null]])
     const where = compile(writes[0]!.where)!
     assert.match(where.sql, /`article_comments`\.`reader_id` = \?/)
     assert.deepEqual(where.params, [42])
@@ -277,6 +283,8 @@ describe('the reader comment impact, measured before anything is removed', () =>
     selectQueue = [[{ id: 1, parentId: null }], []]
     await deleteReaderComments(42)
     assert.deepEqual(writes.map(w => [w.handle, w.op]), [['pool', 'delete']])
+    // On the pool (no transaction to hold them) nothing is locked.
+    assert.deepEqual(selects.map(s => [s.handle, s.lock ?? null]), [['pool', null], ['pool', null]])
   })
 })
 

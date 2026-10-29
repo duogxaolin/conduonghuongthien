@@ -19,7 +19,11 @@
  *    rolls every write in it back. While it is open, a write issued on the POOL
  *    object (`db.insert` instead of `tx.insert`) throws — on MySQL that write would
  *    run on another connection and commit on its own, which is the bug the
- *    "audit in the same transaction" rule exists to stop.
+ *    "audit in the same transaction" rule exists to stop. A pool READ while it is open
+ *    throws too: on MySQL it takes a second connection, and with every connection of
+ *    the pool held by an open transaction each waits for one more forever (verifier H2).
+ *    What SQLite cannot show — one connection, no row locks, no pool — is lock ORDER and
+ *    contention; `txStatements` pins the order, MySQL replays show the rest.
  *  - `failNext(pattern)` makes the next statement whose SQL matches throw, so a
  *    suite can break the audit insert and watch what survives. `beforeNext(pattern,
  *    fn)` runs `fn` just before the next matching statement — another writer landing
@@ -99,7 +103,7 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     sqlite.exec(`CREATE TABLE \`${getTableName(table)}\` (${definitions.join(', ')})`)
   }
 
-  const failures: RegExp[] = []
+  const failures: Array<{ pattern: RegExp, fields?: Record<string, unknown> }> = []
   const hooks: Array<{ pattern: RegExp, run: () => void }> = []
   const statements: string[] = []
   const txStatements: string[] = []
@@ -107,10 +111,10 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
   function maybeFail(sql: string) {
     const hook = hooks.findIndex(each => each.pattern.test(sql))
     if (hook >= 0) hooks.splice(hook, 1)[0]!.run()
-    const index = failures.findIndex(pattern => pattern.test(sql))
+    const index = failures.findIndex(each => each.pattern.test(sql))
     if (index >= 0) {
-      failures.splice(index, 1)
-      throw new Error(`injected failure: ${sql}`)
+      const [{ fields }] = failures.splice(index, 1) as [{ fields?: Record<string, unknown> }]
+      throw Object.assign(new Error(`injected failure: ${sql}`), fields)
     }
   }
 
@@ -223,6 +227,14 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
           throw new Error(`db.${String(property)}() on the pool while a transaction is open — on MySQL it would commit on its own connection`)
         }
       }
+      // A read on the pool while a transaction is open takes a SECOND connection: with the pool's
+      // 10 all held by open transactions, each waits for an eleventh forever (verifier H2 — ten
+      // bans at once hung the whole app). Reads inside a transaction go through `tx`.
+      if (transactionOpen && property === 'select') {
+        return () => {
+          throw new Error('db.select() on the pool while a transaction is open — on MySQL a second connection per transaction exhausts the pool')
+        }
+      }
       const value = Reflect.get(target, property, target)
       return typeof value === 'function' ? value.bind(target) : value
     },
@@ -249,8 +261,8 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     statements,
     /** The raw SQL of every statement run while a transaction was open. */
     txStatements,
-    /** The next statement whose SQL matches `pattern` throws. */
-    failNext(pattern: RegExp) { failures.push(pattern) },
+    /** The next statement whose SQL matches `pattern` throws — with `fields` (e.g. `{ errno: 1213 }`) on the error. */
+    failNext(pattern: RegExp, fields?: Record<string, unknown>) { failures.push({ pattern, fields }) },
     /** `run` executes (on the same database) just before the next statement whose SQL matches `pattern`. */
     beforeNext(pattern: RegExp, run: () => void) { hooks.push({ pattern, run }) },
     reset() {
