@@ -415,6 +415,14 @@ test('tool loop (buffered): a step-1 or step-2 body that is not a JSON object �
   }
 })
 
+test('as is, not endorsed: a leading BOM is tolerated by the plain buffered answer (it trims first) and refused by a buffered tool step', async () => {
+  const withBom = String.fromCharCode(0xFEFF) + JSON.stringify({ choices: [{ message: { content: 'Đáp.' } }] })
+  reset()
+  assert.deepEqual([(await run('buffered', [{ body: withBom }])).result.text], ['Đáp.'])
+  reset()
+  assert.deepEqual((await run('tools-buffered', [{ body: withBom }])).result, { ok: false, error: 'provider_error' })
+})
+
 test('tool loop: an onToolCall that throws ends the call as provider_error — before the tool on "calling", before step 2 on "done"', async () => {
   for (const mode of ['tools-buffered', 'tools-stream'] as const) {
     for (const when of ['calling', 'done']) {
