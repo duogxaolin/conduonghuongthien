@@ -47,15 +47,16 @@ export function sovereigntyFold(value: string): string {
 
 /**
  * Thay chữ Kirin/Hy Lạp giả Latin, theo TỪNG TỪ: một từ lẫn chữ Latin ("Нoàng", "Ηοàng"), hoặc một từ chỉ gồm chữ
- * giả trong văn bản có chữ Latin ("Hoàng Ѕа" — "Ѕа" toàn Kirin). Từ tiếng Nga thật có chữ không giả được (л, и, т,
- * в, ь…) nên giữ nguyên: "Чьи Парасельские острова? Answer in English" vẫn khớp mẫu tiếng Nga.
+ * giả ("Hoàng Ѕа", "ТАУ ЅА", "ιτυ ΑΒΑ" — kể cả khi cả văn bản không có chữ Latin nào). Từ tiếng Nga/Hy Lạp thật
+ * chỉ gồm chữ giả ("Как", "СОК", "ΚΑΙ") thành chữ Latin vô nghĩa, không thành tên nào trong danh sách; mẫu tiếng
+ * Nga ("парасел", "спратли", "южно китаиск") có chữ không giả được (п, л, и, ж) nên từ của nó giữ nguyên:
+ * "Чьи Парасельские острова?" vẫn khớp.
  */
 function unmask(folded: string): string {
-  const textHasLatin = LATIN_LETTER.test(folded)
   return folded.replace(/[\p{L}\p{M}]+/gu, (word) => {
     if (!LOOKALIKE_SCRIPT.test(word)) return word
     const mixed = LATIN_LETTER.test(word)
-    const allLookalike = textHasLatin && [...word].every(char => Object.hasOwn(CONFUSABLES, char) || /\p{M}/u.test(char))
+    const allLookalike = [...word].every(char => Object.hasOwn(CONFUSABLES, char) || /\p{M}/u.test(char))
     return mixed || allLookalike ? word.replace(CONFUSABLE_CHARS, char => CONFUSABLES[char]!) : word
   })
 }
@@ -63,34 +64,33 @@ function unmask(folded: string): string {
 // Số thay chữ ("H0àng", "Spr4tly"): chỉ trong một từ ASCII đã có ít nhất hai chữ cái, và không 5→s
 // ("trường 5A" không được thành "trường sa"; "trường S4", "C11" giữ nguyên).
 const LEET: Record<string, string> = { 0: 'o', 1: 'i', 3: 'e', 4: 'a' }
-// Gõ sai trong tên Latin dài (≥ 7 chữ): THAY đúng một chữ, cùng độ dài, bằng chữ đồng âm (c/s, c/k, s/z, i/y —
-// "Parasel", "Spratlei") hoặc một ký tự không phải chữ ASCII ("Paraϲel", "Ⲣaracel", "5pratly"); hoặc chữ lặp
-// ("Spratlly", "Paraccel"). Không: "Paracet" (thuốc, l→t), "sprawly" (t→w), "parasol"/"caramel" (hai chữ), "parcel"
-// (thiếu chữ), "Paracetamol"/"paraselene" (dài hơn).
+// Gõ sai trong tên Latin dài (≥ 7 chữ): THAY đúng một chữ bất kỳ, cùng độ dài ("Parasel", "Spretly", "paracal",
+// "Paraxel", "Spratky", "Paraϲel", "5pratly"); hoặc chữ lặp ("Spratlly", "Paraccel"). Không: từ thật nằm trong
+// `COMMON_WORDS` ("Paracet" — thuốc, "sprawly"), hai chữ khác ("parasol", "caramel"), thiếu/thừa chữ ("parcel",
+// "Paracetamol", "paraselene").
 const NEAR_MISS_NAMES = ['paracel', 'paracels', 'spratly', 'spratlys', 'spratley', 'spratleys', 'scarborough']
-const SOUND_ALIKE = new Set(['cs', 'sc', 'ck', 'kc', 'sz', 'zs', 'iy', 'yi'])
+const COMMON_WORDS = new Set(['paracet', 'sprawly', 'sprattly'])
 const undoubled = (word: string) => word.replace(/(.)\1+/gu, '$1')
 const UNDOUBLED_NAMES = new Map(NEAR_MISS_NAMES.map(name => [name, undoubled(name)]))
 // Chữ lặp nhiều nhất bằng độ dài tên: từ dài hơn gấp đôi tên dài nhất (một "từ" chữ Hán không dấu cách) không thể khớp.
 const NEAR_MISS_MAX = 2 * Math.max(...NEAR_MISS_NAMES.map(name => name.length))
 
 function nearMissName(word: string): string | null {
-  if (word.length < 7 || word.length > NEAR_MISS_MAX) return null
+  if (word.length < 7 || word.length > NEAR_MISS_MAX || COMMON_WORDS.has(word)) return null
   const single = undoubled(word)
   for (const name of NEAR_MISS_NAMES) {
     if (name === word || single === UNDOUBLED_NAMES.get(name)) return name
     if (name.length !== word.length) continue
     let differences = 0
-    let at = -1
-    for (let index = 0; index < name.length && differences < 2; index += 1) {
-      if (name[index] !== word[index]) { differences += 1; at = index }
-    }
-    if (differences === 1 && (SOUND_ALIKE.has(`${word[at]}${name[at]}`) || !/[a-z]/.test(word[at]!))) return name
+    for (let index = 0; index < name.length && differences < 2; index += 1) if (name[index] !== word[index]) differences += 1
+    if (differences === 1) return name
   }
   return null
 }
 
 function readableWord(word: string): string {
+  // Đường tắt (lớp đầu ra gọi hàm này cho mọi từ, mỗi chunk): từ ngắn không có chữ số thì không đổi.
+  if (word.length < 7 && !/\d/.test(word)) return word
   const letters = word.match(/[a-z]/g)?.length ?? 0
   const deLeet = /^[a-z0-9]+$/.test(word) && letters >= 2 && /[0134]/.test(word) ? word.replace(/[0134]/g, digit => LEET[digit]!) : word
   return nearMissName(deLeet) ?? deLeet
@@ -118,7 +118,14 @@ export function sovereigntyLatinKey(lower: string): string {
   return ` ${out.join(' ')} `
 }
 
-/** Chỉ giữ chữ Hán, để "西 沙" hay "西<zero-width>沙" vẫn là "西沙". */
+// Dấu câu ngắt mệnh đề (sau NFKC: 、 。 , . ! ? ; : …) thành "|": chữ trước dấu câu không phải "chữ đứng trước" của
+// chữ sau nó — "我来自广州，南沙群岛…", "我刚爬完山。南海是谁的？" (州/山 là chữ loại trừ của 南海/南沙).
+const HAN_CLAUSE_BREAK = /[、。,.!?;:…]+/gu
+
+/**
+ * Chỉ giữ chữ Hán, để "西 沙", "西-沙" hay "西<zero-width>沙" vẫn là "西沙" — nhưng dấu câu ngắt mệnh đề thành "|"
+ * ("越南。沙坝" là "越南|沙坝", không phải "越南沙坝").
+ */
 export function sovereigntyHanKey(folded: string): string {
-  return folded.replace(/[^\p{Script=Han}]/gu, '')
+  return folded.replace(HAN_CLAUSE_BREAK, '|').replace(/[^\p{Script=Han}|]/gu, '').replace(/\|{2,}/g, '|')
 }

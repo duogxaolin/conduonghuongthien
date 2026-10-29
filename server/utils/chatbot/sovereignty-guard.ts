@@ -1,6 +1,15 @@
 import { chatTurnText, isUserTurn, type ChatTurn } from './chat-turns'
-// Chuẩn hoá (NFKC, bỏ ký tự vô hình, gộp chữ Hán, khoá Latin bỏ dấu…) ở tệp thuần riêng.
+// Chuẩn hoá (NFKC, bỏ ký tự không hiện, gộp chữ Hán, khoá Latin bỏ dấu…) và phép khớp ở hai tệp thuần riêng.
 import { sovereigntyFold as fold, sovereigntyHanKey as hanKey, sovereigntyLatinKey as latinKey } from './sovereignty-normalize'
+import {
+  sovereigntyHanMentions as hanMentions,
+  sovereigntyIslandContext as islandContext,
+  sovereigntyQuestionIslandContext as questionIslandContext,
+  sovereigntyScriptMentions as scriptMentions,
+  sovereigntySettledClaim as settledClaim,
+  sovereigntySettledIslandContext as settledIslandContext,
+  sovereigntySettledScriptMentions as settledScriptMentions,
+} from './sovereignty-patterns'
 
 /**
  * Chủ quyền biển, đảo — câu trả lời do máy chủ viết, không bao giờ do model.
@@ -19,187 +28,9 @@ import { sovereigntyFold as fold, sovereigntyHanKey as hanKey, sovereigntyLatinK
  *    bằng lập trường chính thức (`createSovereigntyOutputGuard`);
  *  - `SOVEREIGNTY_PROMPT_RULES` nối vào system prompt là lớp dự phòng.
  *
- * Khớp nhầm có chủ đích: "đường Hoàng Sa" (tên phố) cũng nhận câu trả lời này — vô hại, còn bỏ sót thì không.
+ * Bộ khớp (`sovereignty-patterns.ts`) thiên về bắt: khớp nhầm có chủ đích như "đường Hoàng Sa" (tên phố) cũng
+ * nhận câu trả lời này — vô hại, còn bỏ sót thì không.
  */
-
-// `hanKey` nối chữ qua dấu câu, nên "越南。沙坝" thành "越南沙坝": 南海/南沙/西沙 không tính khi chữ
-// đứng trước ghép thành từ khác — 越南海防, 越南沙坝, 河南沙县, 海南海口, 中南海, 东西沙发, 广西沙田, và quận
-// 佛山南海区 / 广州南沙区 (sau tên thành phố). "越南南沙群岛" vẫn khớp qua chữ 南 thứ hai; "三沙市南沙区" khớp qua 三沙.
-// "长沙"/"黄沙" trần là thành phố / từ thường.
-const HAN_PATTERNS = [
-  /(?<![越河云湖济海江华西东中岭闽安州山])南[海沙]/,
-  /(?<![东广江山陕])西沙/,
-  /(?<!越)南中国海/,
-  /[中东黄长]沙群岛/,
-  /黄沙.{0,2}长沙|长沙.{0,2}黄沙|[黄长]沙岛/,
-  /三沙/,
-  /[九十]段线/,
-  // 永兴岛 = Phú Lâm, 南威岛 = Trường Sa Lớn, 赤瓜礁 = Gạc Ma; còn lại là các bãi Trung Quốc chiếm ở Trường Sa.
-  /永兴岛|南威岛|赤瓜礁|永暑礁|华阳礁|东门礁|南薰礁|渚碧礁|美济礁/,
-]
-
-// "… sa thải / sa ngã / sa đà…": động từ, không phải tên quần đảo ("nhà trường sa thải", "lãnh đạo nam sa thải",
-// "giám đốc Hoàng sa thải tôi"); "… Sa Pa / Sa Đéc / Sa Huỳnh / Sa Thầy / Sa Rài": địa danh ("trường Sa Pa").
-const NOT_SA_VERB = '(?!(?:thai|nga|doa|sut|lay|mac|sam|luoi|vao|da|co|chan|ban|pa|dec|huynh|thay|rai) )'
-
-const LATIN_PATTERNS = [
-  new RegExp(` hoang ?sa ${NOT_SA_VERB}`), // "Hoàng Sa" viết hoa khớp ở PROPER_NAMES bất kể từ sau ("Hoàng Sa vào tay…")
-  / dao truong ?sa /, // quần đảo / huyện đảo Trường Sa
-  new RegExp(` truong ?sa ${NOT_SA_VERB}`), // "trường sa" thường (không viết hoa)
-  // Tên Hán-Việt của tên gọi Trung Quốc: 西沙 = Tây Sa, 南沙 = Nam Sa, 三沙 = Tam Sa.
-  new RegExp(` dao (?:tay|nam|tam) sa ${NOT_SA_VERB}`),
-  / gac ma (?!tuy )/, // không phải "gác ma túy"
-  / paracels? /,
-  / spratle?ys? /,
-  / xi ?sha /,
-  / nan ?sha /,
-  / sansha /,
-  // Tiếng Nga (prompt hứa hỗ trợ): latinKey giữ chữ Kirin, khớp theo gốc từ; bỏ dấu nên "й" thành "и".
-  / парасел/,
-  / спратли/,
-  / южно китаиск/,
-  / s(?:outh)? china sea /,
-  / west philippine sea /,
-  / mer de chine /,
-  / mar de (?:la )?china /,
-  / east sea /,
-  / nine ?dash /,
-  / duong luoi bo /,
-  / duong chin doan /,
-  / chu quyen bien dao /,
-  / bien nam trung hoa /,
-  // Tên đảo/bãi lẻ tiếng Anh (dạng không trùng chữ thường: "Scarborough" trần là thị trấn Anh).
-  / woody island /,
-  / itu aba /,
-  / fiery cross /,
-  / (?:mischief|subi|johnson(?: south)?|gaven|hughes|cuarteron) reefs? /,
-  / scarborough (?:shoal|reef|island)s? /,
-  / taiping island /,
-]
-
-// Hai từ của một tên nối bằng khoảng trắng/gạch (như trước), hoặc MỘT ký tự nối lạ ("Biển_Đông", "Biển/Đông",
-// "Biển・Đông", "Biển*Đông"…), hoặc không gì ("BiểnĐông" — kể cả sau khi bỏ ký tự vô hình "Biển<U+200B>Đông").
-// Không dấu câu: "đi biển.Đông Anh là quê tôi" (gõ vội, thiếu dấu cách), "biển. Đông Anh", "miền Tây. Sa Pa" là hai
-// câu — nên không ".", ",", ":".
-const JOIN = '(?:[\\s\\-\\u2010-\\u2015]+|[_/·•∙・*+~|])?'
-
-// Bỏ dấu thì "biển đông" trùng "biến động"/"biển động", "trường sa lấy" trùng "trường sa lầy": hai cụm này xét
-// trên chữ CÒN dấu, trừ "(bãi) biển đông người", "biển Đông Á (Bank)" và "trường sa thải/ngã/đà…", "trường Sa Pa".
-const MARKED_PATTERNS = [
-  new RegExp(`(?<![\\p{L}])(?<!bãi\\s+)biển${JOIN}đông(?![\\p{L}])(?!\\s+(?:người|khách|nghịt|vui|đúc|kín|bắc|nam|á)(?![\\p{L}]))`, 'u'),
-  new RegExp(`(?<![\\p{L}])trường${JOIN}sa(?![\\p{L}])(?!\\s+(?:thải|ngã|đọa|đoạ|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn|pa|đéc|huỳnh|thầy|vỹ|vĩ|rài)(?![\\p{L}]))`, 'u'),
-  new RegExp(`(?<![\\p{L}])biển${JOIN}nam${JOIN}trung${JOIN}hoa(?![\\p{L}])`, 'u'),
-  // "Hoàng Xa" (gõ sai) viết thường là "xa nhà", "huy hoàng xa xưa": chỉ ngay sau chữ đảo (viết hoa: PROPER_NAMES).
-  new RegExp(`(?<![\\p{L}])đảo\\s+hoàng${JOIN}xa(?![\\p{L}])`, 'u'),
-  // "Ba Bình" trần là tên người ("anh Ba Bình") và "ba bình oxy": chỉ khi chữ đảo đứng SÁT ("Ba Bình là đảo…";
-  // "đảo Ba Bình" ở FEATURE_NAMES).
-  /(?<![\p{L}])ba\s+bình\s+(?:(?:là|cũng\s+là|vốn\s+là)\s+)?(?:(?:một|hòn)\s+)*đảo(?![\p{L}])/u,
-]
-
-// Tên đảo/bãi lẻ hay được hỏi riêng: sau "đá"/"bãi"/"đảo", và tên viết hoa như tên riêng — "xếp đá chữ thập",
-// "trò chơi đảo sinh tồn", "Tư Nghĩa" (huyện), "cung Song Tử" không phải. Chỉ nối bằng khoảng trắng.
-const titleOrUpper = (names: string[]) => names.flatMap(name => [name, name.toUpperCase()]).map(name => name.replace(/ /g, '\\s+')).join('|')
-const REEF_NAMES = ['Chữ Thập', 'Vành Khăn', 'Xu Bi', 'Gạc Ma', 'Ga Ven', 'Tư Nghĩa', 'Châu Viên', 'Ba Đầu', 'Tốc Tan', 'Hoàng Nham', 'Cỏ Mây']
-const ISLAND_NAMES = ['Ba Bình', 'Phú Lâm', 'Song Tử', 'Sinh Tồn', 'Nam Yết', 'Thị Tứ', 'Sơn Ca', 'Tri Tôn', 'Quang Hòa', 'Hữu Nhật',
-  'Linh Côn', 'Duy Mộng', 'Bạch Quy', 'Loại Ta', 'Bến Lạc', 'An Bang']
-const FEATURE_NAMES = new RegExp(`(?<![\\p{L}])(?:(?:[Đđ]á|ĐÁ|[Bb]ãi|BÃI)\\s+(?:${titleOrUpper(REEF_NAMES)})|(?:[Đđ]ảo|ĐẢO)\\s+(?:${titleOrUpper(ISLAND_NAMES)}))(?![\\p{L}])`, 'u')
-// Viết hoa là tên riêng: khớp bất kể từ đứng sau ("Trường Sa vào tay…", "Biển Đông người Trung Quốc gọi…",
-// "Tây Sa"/"Nam Sa"/"Tam Sa" — trừ khi "Sa" mở đầu một địa danh khác ("miền Tây Sa Đéc", "Việt Nam Sa Pa",
-// "TÂY SA PA"), đứng trước một tên riêng khác ("công ty Tam Sa Việt Nam" — trừ "Tây Sa Trung Quốc gọi…",
-// "Nam Sa Islands") hoặc là động từ ("anh Nam Sa thải tôi")), trừ hướng "(vùng) biển Đông Bắc / Đông Nam".
-// Địa danh Sa… so không phân biệt hoa/thường ("Việt Nam Sa pa" gõ vội).
-const SA_PLACES = ['pa', 'đéc', 'huỳnh', 'thầy', 'vỹ', 'vĩ', 'rài']
-  .map(word => [...word].map(char => `[${char}${char.toUpperCase()}]`).join('')).join('|')
-const NOT_SA_PLACE = `(?!\\s+(?:(?:${SA_PLACES})(?![\\p{L}])|(?!Trung|Island|Archipelago)\\p{Lu}\\p{Ll}|(?:thải|ngã|đọa|sút|lầy|mạc|sầm|lưới|vào|đà|cơ|chân|bàn)(?![\\p{L}])))`
-// "Hoàng Sa"/"Hoàng Xa" viết hoa cũng là tên riêng (viết thường: "Hoàng sa thải tôi", "Hoàng xa nhà" — người tên
-// Hoàng); "Biển Hoa Nam" chỉ viết hoa "Hoa" ("lễ hội biển hoa Nam Định" không phải), trừ "… Nam Định".
-const PROPER_NAMES = new RegExp([
-  `(?<![\\p{L}])(?:(?:Trường|Truong|TRƯỜNG|TRUONG|Hoàng|Hoang|HOÀNG|HOANG)${JOIN}(?:Sa|SA)`,
-  `|(?:Hoàng|HOÀNG)${JOIN}(?:Xa|XA)`,
-  `|(?:Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)${JOIN}(?:Sa|SA)${NOT_SA_PLACE}`,
-  `|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)${JOIN}(?:Đông|Dong|ĐÔNG|DONG)(?!\\s+(?:Bắc|Nam|Á|bắc|nam|BẮC|NAM)(?![\\p{L}]))`,
-  `|(?:[Bb]iển|BIỂN)${JOIN}(?:Hoa|HOA)${JOIN}(?:Nam|NAM)(?!\\s+(?:Định|ĐỊNH)(?![\\p{L}])))(?![\\p{L}])`,
-].join(''), 'u')
-const OTHER_SCRIPTS = /パラセル|スプラトリー|파라셀|스프래틀리|남중국해/
-
-// Yêu sách không gọi tên quần đảo ("lãnh thổ không thể tách rời của Trung Quốc", "中国对这些岛屿拥有…主权").
-// Chỉ xét ở ĐẦU RA (câu trả lời của model, lượt trợ lý cũ), và chỉ khi cùng đoạn có nói tới đảo/biển: người
-// hoàn lương từng chấp hành án "trên lãnh thổ Trung Quốc" là đúng đối tượng của cổng, không phải yêu sách.
-// Kể cả tên riêng của từng đảo/bãi hay được hỏi lẻ ("Đá Chữ Thập thuộc chủ quyền của Trung Quốc") — chỉ dạng
-// không trùng chữ thường: "đá Chữ Thập" (không phải "Hội Chữ thập đỏ"), không "Phú Lâm" (tên phường), không
-// 太平/黄岩/中业 trần (太平洋, "过程中业务"; 太平岛/黄岩岛 đã khớp qua 岛), không "mischief/woody/subi" trần.
-// "đảo" động từ ("đảo lộn", "đảo nợ", "khuynh đảo") và "Côn Đảo" (trại giam) không tính.
-const ISLAND_HAN = /岛|礁|海域|领海/
-const ISLAND_WORDS = new RegExp([
-  '(?<![\\p{L}])(?:vùng biển|lãnh hải|hải phận|bãi đá|đá ngầm|ba bình|đá chữ thập|vành khăn|xu bi|hoàng nham',
-  '|islands?|islets?|archipelagos?|reefs?|shoals?|atolls?|itu aba|fiery cross|scarborough)(?![\\p{L}])',
-  '|(?<![\\p{L}])(?<!(?:khuynh|điên|lảo|chao|côn)\\s+)đảo(?![\\p{L}])',
-  '(?!\\s+(?:lộn|ngược|nợ|chính|mắt|chiều|điên|ngũ|mạch|hướng|vòng|phách)(?![\\p{L}]))',
-].join(''), 'u')
-// Ngữ cảnh lấy từ CÂU HỎI thì hẹp hơn: hỏi về một hòn đảo, không phải người ở "huyện đảo Lý Sơn" hay ngư dân
-// "bị bắt trên vùng biển" kể chuyện thụ án ở Trung Quốc.
-const QUESTION_ISLAND_HAN = /群岛|岛礁|礁/
-const QUESTION_ISLAND_WORDS = /(?<![\p{L}])(?:quần đảo|hòn đảo|đảo (?:này|đó|ấy|kia|nào)|ba bình|đá chữ thập|vành khăn|xu bi|hoàng nham|islands?|archipelagos?|reefs?|itu aba|fiery cross|scarborough)(?![\p{L}])/u
-const HAN_CLAIMS = /中国.{0,6}领土|领土.{0,6}中国|固有领土|属于中国|中国.{0,15}主权|主权.{0,4}中国|自古以来.{0,4}中国|中国.{0,4}管辖/
-const LATIN_CLAIMS = [
-  / lanh tho (?:\S+ ){0,5}trung quoc /,
-  / thuoc (?:\S+ ){0,4}trung quoc /,
-  / chu quyen (?:\S+ ){0,3}trung quoc /,
-  / trung quoc (?:\S+ ){0,4}(?:chu quyen|quan ly|kiem soat|chiem dong|chiem giu) /,
-  / (?:vung bien|lanh hai|hai phan) (?:\S+ ){0,3}trung quoc /,
-  / belongs? to china /,
-  / part of china /,
-  / china (?:\S+ ){0,4}(?:sovereignty|territory) /,
-  / chinese (?:territory|sovereignty|control|administration|jurisdiction) /,
-  / (?:indisputable|inherent) (?:sovereignty|part|territory) /,
-]
-
-/** Chữ do model viết có nói tới đảo/biển — điều kiện để tính yêu sách. */
-function islandContext(folded: string, han: string): boolean {
-  return ISLAND_HAN.test(han) || ISLAND_WORDS.test(folded.toLowerCase())
-}
-
-// Từ cuối (có thể chưa viết xong). Lookbehind: chỉ vị trí ĐẦU từ mới quét tới cuối — không có nó, một dãy chữ Hán
-// dài không dấu cách bị quét lại từ mọi vị trí (bậc hai, mỗi chunk).
-const LAST_WORD = /(?<![\p{L}\p{M}\p{N}])[\p{L}\p{M}\p{N}]+$/u
-const FIRST_WORD = /^[\p{L}\p{M}\p{N}]+/u
-
-/**
- * `islandContext` giữa luồng, trên phần đã chốt: bỏ từ cuối chưa viết xong (và mẩu từ đầu cửa sổ bị cắt — "[C]ôn
- * Đảo"), và một "đảo" ở cuối chỉ tính khi vẫn là đảo với từ thử "lộn" theo sau — model stream theo âm tiết,
- * "…bị đảo | lộn sau khi…" từng bật cờ "có đảo" vĩnh viễn rồi thay câu trả lời đúng cho người từng thụ án.
- */
-function settledIslandContext(window: string, han: string, cutAtStart: boolean): boolean {
-  if (ISLAND_HAN.test(han)) return true
-  let folded = fold(window)
-  if (cutAtStart) folded = folded.replace(FIRST_WORD, '')
-  return ISLAND_WORDS.test(`${folded.replace(LAST_WORD, '').toLowerCase()} lộn`)
-}
-
-function questionIslandContext(question: string): boolean {
-  const folded = fold(question)
-  return QUESTION_ISLAND_HAN.test(hanKey(folded)) || QUESTION_ISLAND_WORDS.test(folded.toLowerCase())
-}
-
-/** Chỉ cụm yêu sách, trên phần đã chốt (bỏ từ cuối chưa viết xong) — để biết khi nào phải giữ chữ lại. */
-function settledClaim(window: string, han: string): boolean {
-  if (HAN_CLAIMS.test(han)) return true
-  const latin = latinKey(fold(window).replace(LAST_WORD, '').toLowerCase())
-  return LATIN_CLAIMS.some(pattern => pattern.test(latin))
-}
-
-function hanMentions(han: string, claims: boolean): boolean {
-  return HAN_PATTERNS.some(pattern => pattern.test(han)) || (claims && HAN_CLAIMS.test(han))
-}
-
-/** Mọi thứ trừ chữ Hán: tên riêng, cụm còn dấu, chữ Latin/Kirin bỏ dấu, chữ Nhật/Hàn. */
-function scriptMentions(folded: string, claims: boolean): boolean {
-  if (PROPER_NAMES.test(folded) || FEATURE_NAMES.test(folded) || OTHER_SCRIPTS.test(folded)) return true
-  const lower = folded.toLowerCase()
-  if (MARKED_PATTERNS.some(pattern => pattern.test(lower))) return true
-  const latin = latinKey(lower)
-  return LATIN_PATTERNS.some(pattern => pattern.test(latin)) || (claims && LATIN_CLAIMS.some(pattern => pattern.test(latin)))
-}
 
 /**
  * `output` = đang xét chữ do model viết: tính cả yêu sách không gọi tên quần đảo, khi có nói tới đảo/biển
@@ -213,23 +44,105 @@ export function mentionsSovereignty(text: string, options: { output?: boolean, i
   return hanMentions(han, claims) || scriptMentions(folded, claims)
 }
 
-// Các mẫu loại trừ theo từ đứng sau ("trường sa thải", "biển Đông Bắc", "gác ma túy"): giữa luồng, từ đó có thể
-// chưa tới, nên một cụm ở cuối chỉ tính khi khớp với mọi từ có thể theo sau. Mỗi họ mẫu một từ thử là đủ
-// ("bắc" cũng nằm trong danh sách loại trừ của "biển đông" chữ thường). Thêm mẫu loại trừ mới → thêm từ thử.
-const NEXT_WORD_PROBES = ['thải', 'Bắc', 'túy']
 /** Dài hơn các cụm Latin thực tế ("thuộc quyền quản lý của Trung Quốc") cộng chữ đầu của từ theo sau. */
 const STREAM_HOLD_CHARS = 48
 const STREAM_LOOKBACK_CHARS = 96
 /** Dài hơn mẫu chữ Hán dài nhất (`中国.{0,15}主权`). */
 const HAN_LOOKBACK_CHARS = 24
+/**
+ * Bước xác nhận chỉ xét phần chưa xác nhận cộng một lề — lề dài hơn ngữ cảnh trái của mọi mẫu ("bãi" + khoảng trắng
+ * trước "biển đông", "越" trước "南海防", yêu sách nhiều chữ). Xét lại CẢ luồng mỗi lần (như trước) là bậc hai: chuỗi
+ * "佛山南海区" × 80 000 chunk 1 ký tự từng mất 14,8 s.
+ */
+const CONFIRM_MARGIN_CHARS = 160
+/** Lề tính theo ký tự KHÔNG phải khoảng trắng ("bãi" + 100 dấu cách + "biển đông"), lùi tối đa chừng này ký tự thô. */
+const CONFIRM_MARGIN_CAP = 2048
+const HAN_CONFIRM_MARGIN_CHARS = 40
+/**
+ * "Từ thử" của chữ Hán giữa luồng: 南海/南沙/西沙 ở cuối chưa biết chữ sau ("佛山市南海|区" là quận), nên chỉ tính khi
+ * vẫn khớp với một hậu tố hành chính nối sau — tức là chờ chữ kế. `finish` xét cả câu.
+ */
+const HAN_NEXT_PROBE = '区'
+/** Lùi tối đa khi tìm từ đứng trước cửa sổ (một dãy chữ Hán dài không dấu cách không bị quét lại mỗi chunk). */
+const WORD_BACKTRACK_CHARS = 64
 
-/** Phần ngoài chữ Hán, chỉ tới ranh giới từ cuối: từ cuối có thể chưa viết xong ("Hoàng Sa|ng"). */
-function settledScriptMentions(text: string, claims: boolean, cutAtStart = false): boolean {
-  let folded = fold(text)
-  // Cửa sổ cắt giữa một từ: bỏ mẩu đầu ("[l]east sea" không phải "east sea").
-  if (cutAtStart) folded = folded.replace(FIRST_WORD, '')
-  const settled = folded.replace(LAST_WORD, '')
-  return NEXT_WORD_PROBES.every(next => scriptMentions(`${settled} ${next}`, claims))
+const isWordChar = (char: string | undefined) => char !== undefined && /[\p{L}\p{M}\p{N}]/u.test(char)
+
+/**
+ * Điểm bắt đầu xác nhận: lùi từ `confirmedTo` qua `CONFIRM_MARGIN_CHARS` ký tự không phải khoảng trắng (dãy dấu cách
+ * dài không ăn hết lề — "bãi" + 100 dấu cách + "biển đông"), rồi về đầu từ chứa điểm đó. Cụm đầu vùng mất ngữ cảnh trái
+ * do ranh giới thì `confirmScript` lo (hai vùng lệch nhau một từ).
+ */
+function marginStart(seen: { from(start: number): string }, confirmedTo: number): number {
+  const base = Math.max(0, confirmedTo - CONFIRM_MARGIN_CAP)
+  const before = seen.from(base).slice(0, confirmedTo - base)
+  let at = before.length
+  for (let visible = 0; at > 0 && visible < CONFIRM_MARGIN_CHARS; at -= 1) if (!/\s/u.test(before[at - 1]!)) visible += 1
+  while (at > 0 && isWordChar(before[at - 1])) at -= 1
+  return base + at
+}
+
+/** Đầu của từ kế tiếp sau vị trí `index`. */
+function nextWordStart(text: string, index: number): number {
+  let at = index
+  while (at < text.length && isWordChar(text[at])) at += 1
+  while (at < text.length && !isWordChar(text[at])) at += 1
+  return at
+}
+
+/**
+ * Xác nhận trên vùng `scope` (bắt đầu ở đầu một từ, trước phần đã xác nhận ít nhất `CONFIRM_MARGIN_CHARS` chữ). Ranh
+ * giới vùng có thể tách một cụm CŨ khỏi ngữ cảnh trái của nó ("bãi | biển đông", "huy | hoàng xa") — cụm đó đã được
+ * xác nhận sạch ở lượt trước, giờ lại khớp. Nên xét hai vùng: từ từ thứ hai và từ từ thứ ba. Cụm mới thật (nằm sau phần
+ * đã xác nhận, cách xa ranh giới) có đủ ngữ cảnh ở cả hai; cụm giả do mất ngữ cảnh chỉ khớp ở vùng mà nó đứng đầu.
+ */
+function confirmScript(scope: string, fromStart: boolean, island: boolean): boolean {
+  if (fromStart) return settledScriptMentions(fold(scope), island, false)
+  const second = nextWordStart(scope, 0)
+  return settledScriptMentions(fold(scope.slice(second)), island, false)
+    && settledScriptMentions(fold(scope.slice(nextWordStart(scope, second))), island, false)
+}
+
+/** Đuôi giữ ở dạng chuỗi phẳng: đủ cho cửa sổ, lề xác nhận và phần giữ lại. */
+const TRANSCRIPT_TAIL_CHARS = 4096
+
+/**
+ * Văn bản đã nhận của luồng. Cắt một chuỗi nối dài (`seen += chunk; seen.slice(…)`) làm V8 làm phẳng CẢ chuỗi mỗi
+ * chunk — bậc hai ẩn (80 000 chunk một chữ Hán: ~3 s). Ở đây giữ các mảnh và một đuôi phẳng ngắn; chỉ khi cần xa
+ * hơn đuôi (xác nhận đầu tiên, xét lại cả luồng khi cờ "có đảo" bật, nhả sau khi giữ chữ lâu) mới nối cả một lần.
+ */
+function createTranscript() {
+  const parts: string[] = []
+  let length = 0
+  let tail = ''
+  return {
+    get length() { return length },
+    append(text: string) {
+      if (!text) return
+      parts.push(text)
+      length += text.length
+      tail = (tail + text).slice(-TRANSCRIPT_TAIL_CHARS)
+    },
+    /** Từ vị trí `start` (trên toàn văn bản) tới hết. */
+    from(start: number): string {
+      const tailStart = length - tail.length
+      if (start >= tailStart) return tail.slice(Math.max(0, start) - tailStart)
+      const all = parts.join('')
+      parts.length = 0
+      parts.push(all)
+      return all.slice(Math.max(0, start))
+    },
+  }
+}
+
+/** Đầu của từ đứng TRƯỚC từ chứa vị trí `index` (lùi tối đa `WORD_BACKTRACK_CHARS`). */
+function previousWordStart(text: string, index: number): number {
+  const floor = Math.max(0, index - WORD_BACKTRACK_CHARS)
+  let at = index
+  while (at > floor && isWordChar(text[at - 1])) at -= 1
+  while (at > floor && !isWordChar(text[at - 1])) at -= 1
+  while (at > floor && isWordChar(text[at - 1])) at -= 1
+  return at
 }
 
 /**
@@ -242,9 +155,9 @@ function settledScriptMentions(text: string, claims: boolean, cutAtStart = false
  * chunk (`中国|领土`, `Hoàng| Sa`) không hiện ra nửa chừng — trừ khi từ theo sau một cụm cần biết từ đó
  * ("biển Đông |…") dài bất thường; widget vẫn rút lại khi chặn. `finish` nhả nốt khi câu trả lời sạch.
  *
- * Mỗi chunk chỉ xét đoạn cuối (rẻ, tuyến tính) để tìm ứng viên, rồi xác nhận ứng viên trên cả luồng: đoạn cuối
- * có thể mất chữ đứng trước ("bãi" trôi khỏi cửa sổ của "bãi biển đông đúc", "越" của "越南海防"), và yêu sách
- * có thể đứng trước chữ "đảo/岛" xa hơn cửa sổ.
+ * Mỗi chunk chỉ xét đoạn cuối để tìm ứng viên, rồi xác nhận ứng viên trên phần chưa xác nhận cộng một lề (đoạn
+ * cuối có thể mất chữ đứng trước: "bãi" của "bãi biển đông đúc", "越" của "越南海防"). Cờ "có đảo" bật thì yêu sách
+ * đứng trước chữ "đảo/岛" ở bất kỳ đâu đều tính: xét lại cả luồng MỘT lần. Tuyến tính theo độ dài luồng.
  */
 export function createSovereigntyOutputGuard(hooks: {
   /** `onChunk` của luồng; không có khi không stream (`/api/chat`). */
@@ -254,13 +167,16 @@ export function createSovereigntyOutputGuard(hooks: {
   question?: string
 }) {
   const forward = hooks.forward
-  let seen = ''
-  let han = ''
+  const seen = createTranscript()
+  const han = createTranscript()
   let released = 0
   let tripped = false
   let island = questionIslandContext(hooks.question ?? '')
   // Đã có cụm yêu sách mà chưa có chữ đảo/biển: chưa chặn, nhưng không nhả thêm chữ nào cho tới khi biết.
   let claimHeld = false
+  // Phần đầu luồng đã xác nhận là sạch (với cờ `island` hiện tại).
+  let confirmedTo = 0
+  let hanConfirmedTo = 0
 
   const trip = async () => {
     tripped = true
@@ -271,31 +187,47 @@ export function createSovereigntyOutputGuard(hooks: {
     get tripped() { return tripped },
     push: forward && (async (chunk: string): Promise<void> => {
       if (tripped || !chunk) return
-      seen += chunk
+      seen.append(chunk)
       const addedHan = hanKey(fold(chunk))
-      han += addedHan
-      const hanWindow = han.slice(-(addedHan.length + HAN_LOOKBACK_CHARS))
-      const window = seen.slice(-(chunk.length + STREAM_LOOKBACK_CHARS))
-      const islandNow = !island && settledIslandContext(window, hanWindow, window.length < seen.length)
-      if (islandNow) island = true
+      han.append(addedHan)
+      const hanWindow = han.from(han.length - addedHan.length - HAN_LOOKBACK_CHARS)
+      // Đoạn xét: cửa sổ cuối, mở rộng thêm một từ về trái — từ đó chỉ làm ngữ cảnh ("Côn" của "Côn Đảo"), không
+      // được tính. Fold một lần cho cả cờ "có đảo", ứng viên và yêu sách.
+      const windowStart = Math.max(0, seen.length - chunk.length - STREAM_LOOKBACK_CHARS)
+      const lead = Math.max(0, windowStart - WORD_BACKTRACK_CHARS)
+      const near = seen.from(lead)
+      const regionAt = windowStart === 0 ? 0 : previousWordStart(near, windowStart - lead)
+      const regionCut = lead + regionAt > 0
+      const region = fold(near.slice(regionAt))
+      let islandNow = false
+      if (!island) {
+        islandNow = settledIslandContext(region, hanWindow, regionCut)
+        if (islandNow) island = true
+      }
       const candidate = islandNow
-        || hanMentions(hanWindow, island)
-        || settledScriptMentions(window, island, window.length < seen.length)
-      if (candidate && (hanMentions(han, island) || settledScriptMentions(seen, island))) return trip()
-      if (!island && !claimHeld) claimHeld = settledClaim(window, hanWindow)
+        || hanMentions(hanWindow + HAN_NEXT_PROBE, island)
+        || settledScriptMentions(region, island, regionCut)
+      if (candidate) {
+        const scriptFrom = islandNow ? 0 : marginStart(seen, confirmedTo)
+        const hanFrom = islandNow ? 0 : Math.max(0, hanConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
+        if (hanMentions(han.from(hanFrom) + HAN_NEXT_PROBE, island) || confirmScript(seen.from(scriptFrom), scriptFrom === 0, island)) return trip()
+        confirmedTo = seen.length
+        hanConfirmedTo = han.length
+      }
+      if (!island && !claimHeld) claimHeld = settledClaim(region, hanWindow)
       if (claimHeld) return
       const upTo = seen.length - STREAM_HOLD_CHARS
       if (upTo > released) {
-        const release = seen.slice(released, upTo)
+        const release = seen.from(released).slice(0, upTo - released)
         released = upTo
         await forward(release)
       }
     }),
     /** Hết luồng: xét cả câu trả lời cuối; sạch thì nhả phần đuôi đang giữ. `true` = đã thay. */
     async finish(answer: string): Promise<boolean> {
-      if (!tripped && (mentionsSovereignty(answer, { output: true, island }) || mentionsSovereignty(seen, { output: true, island }))) await trip()
+      if (!tripped && (mentionsSovereignty(answer, { output: true, island }) || mentionsSovereignty(seen.from(0), { output: true, island }))) await trip()
       if (!tripped && forward && released < seen.length) {
-        const rest = seen.slice(released)
+        const rest = seen.from(released)
         released = seen.length
         await forward(rest)
       }
