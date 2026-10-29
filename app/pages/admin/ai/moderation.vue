@@ -383,7 +383,13 @@ async function resolveItem(item: ModerationQueueItem, action: ModerationResolveA
   if (!ok) return
 
   const body = { action }
-  if (!(await write(() => adminFetch<ModerationResolveResponse>(`/api/admin/ai/moderation/queue/${item.id}/resolve`, { method: 'POST', body }), 'Không thể xử lý đối soát.'))) return
+  try {
+    await adminFetch<ModerationResolveResponse>(`/api/admin/ai/moderation/queue/${item.id}/resolve`, { method: 'POST', body })
+  } catch (err: unknown) { // 409: người khác vừa xử lý; 404: mục đã mất — hàng trên màn hình đã cũ, đọc lại
+    toast.error(errorMessage(err, 'Không thể xử lý đối soát.'))
+    if ([404, 409].includes(errorStatus(err) ?? 0)) await Promise.all([loadQueue(), loadWorkerStatus()])
+    return
+  }
   toast.success('Đã xử lý đối soát thành công!')
   // Số "pending" của worker-status cũng đổi (huy hiệu khi đang lọc trạng thái khác).
   // Hàng đợi tải lại hỏng hiện trên tab của nó (`queueError`), không thành toast "không xử lý được".

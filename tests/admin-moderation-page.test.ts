@@ -626,22 +626,37 @@ describe('moderation page — review queue tab', () => {
     assert.equal(calls.length, from)
   })
 
-  it('a failed resolve toasts the server\'s sentence (dropped: the fallback) and reloads nothing', async () => {
+  it('a failed resolve toasts the server\'s sentence (dropped: the fallback); only a 409 or 404 — the row on screen is stale — re-reads the queue and the worker count', async () => {
     const server = moderationServer()
-    let answer: () => Response | Error = () => h3Error(404, 'Mục đối soát không tồn tại.')
+    let answer: () => Response | Error = () => h3Error(500, 'Lỗi máy chủ.')
     server.state.override = call => (call.url.pathname.endsWith('/resolve') ? answer() : undefined)
     const { page, calls, toasts } = await openPage(server)
     await openTab(page, 'queue')
-    const from = calls.length
+    const wires = (from: number) => sentFrom(calls, from).map(c => (typeof c === 'string' ? c : c.wire))
+    let from = calls.length
     await click(button(queueRowOf(page, 1), 'Bỏ ẩn'))
     await settle()
-    assert.equal(lastToast(toasts, 'error'), 'Mục đối soát không tồn tại.')
-    assert.deepEqual(sentFrom(calls, from).map(c => (typeof c === 'string' ? c : c.wire)), [`POST ${API}/queue/1/resolve`])
+    assert.equal(lastToast(toasts, 'error'), 'Lỗi máy chủ.')
+    assert.deepEqual(wires(from), [`POST ${API}/queue/1/resolve`])
+
+    // Another officer resolved the row first (server FINDING-R7-1), or it is gone: before, the
+    // stale row kept offering a decision already made until a manual reload (R7, as R6 L3).
+    for (const [status, sentence] of [[409, 'Mục đối soát vừa được người khác xử lý. Vui lòng tải lại danh sách.'], [404, 'Mục đối soát không tồn tại.']] as const) {
+      answer = () => h3Error(status, sentence)
+      from = calls.length
+      await click(button(queueRowOf(page, 1), 'Bỏ ẩn'))
+      await settle()
+      assert.equal(lastToast(toasts, 'error'), sentence)
+      assert.deepEqual(wires(from), [`POST ${API}/queue/1/resolve`, `GET ${API}/queue?status=pending&page=1&perPage=20`, `GET ${API}/worker-status`], String(status))
+      assert.equal(toasts.filter(t => t.type === 'success').length, 0)
+    }
 
     answer = dropped
+    from = calls.length
     await click(button(queueRowOf(page, 1), 'Bỏ ẩn'))
     await settle()
     assert.equal(lastToast(toasts, 'error'), 'Không thể xử lý đối soát.')
+    assert.deepEqual(wires(from), [`POST ${API}/queue/1/resolve`])
     assertOnlyServerSentences(toasts, page)
   })
 
