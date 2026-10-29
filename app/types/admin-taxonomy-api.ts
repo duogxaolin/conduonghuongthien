@@ -29,3 +29,13 @@ export type AdminCategoryDeleteResponse = Payload<CategoryDeleteHandler>
 export type AdminContentTypesResponse = Payload<ContentTypesHandler>
 export type AdminContentTypeSaveResponse = Payload<ContentTypeCreateHandler> | Payload<ContentTypeUpdateHandler>
 export type AdminContentTypeDeleteResponse = Payload<ContentTypeDeleteHandler>
+
+/**
+ * The menu editors' picker (`components/admin/ContentTypePicker.vue`, batch F) reads the PUBLIC
+ * lists, so both menu pages can use it whatever their permissions — admin-side code, typed by the
+ * admin convention (the lot D precedent of `login.vue`'s `/api/public/settings`).
+ */
+type PublicContentTypesHandler = typeof import('~~/server/api/public/content-types.get').default
+type PublicCategoriesHandler = typeof import('~~/server/api/public/categories.get').default
+export type PickerContentTypesResponse = Payload<PublicContentTypesHandler>
+export type PickerCategoriesResponse = Payload<PublicCategoriesHandler>

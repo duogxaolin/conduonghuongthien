@@ -42,3 +42,8 @@ export type AdminSmallTalkSaveResponse = Payload<SmallTalkCreateHandler> | Paylo
 export type AdminSmallTalkDeleteResponse = Payload<SmallTalkDeleteHandler>
 /** `PATCH /api/admin/chatbot/small-talk/:id/toggle`. */
 export type AdminSmallTalkToggleResponse = Payload<SmallTalkToggleHandler>
+
+// ─── One chat session (`/admin/chatbot/sessions/[id]`, batch F) ───────────────
+type SessionDetailHandler = typeof import('~~/server/api/admin/chatbot/sessions/[id].get').default
+/** `GET /api/admin/chatbot/sessions/:id` — the session, its transcript and the forms filed from it. */
+export type AdminChatSessionResponse = Payload<SessionDetailHandler>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
 import AdminModal from '~/components/admin/AdminModal.vue'
+import type { PickerCategoriesResponse, PickerContentTypesResponse } from '~/types/admin-taxonomy-api'
 
 /**
  * Dialog picker chọn một Content-Type (và tùy chọn category con) để thêm nhanh
@@ -52,7 +53,7 @@ const fetchTypes = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicContentType[] }>)('/api/public/content-types')
+    const res = await adminFetch<PickerContentTypesResponse>('/api/public/content-types')
     if (res.ok) {
       items.value = res.items
     } else {
@@ -73,7 +74,7 @@ const fetchChildren = async (typeSlug: string) => {
   if (childrenByType[typeSlug]) return // đã cache
   loadingChildren[typeSlug] = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicCategory[] }>)(`/api/public/categories`, { query: { type: typeSlug } })
+    const res = await adminFetch<PickerCategoriesResponse>(`/api/public/categories`, { query: { type: typeSlug } })
     if (res.ok) {
       // Chỉ lấy root (parentId === null) — children cháu không query (nav chỉ 1 cấp).
       childrenByType[typeSlug] = res.items.filter((c) => c.parentId === null)
