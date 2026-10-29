@@ -136,6 +136,9 @@ Bỏ **25** ép kiểu (148 → 123), kiểu phản hồi suy từ handler qua `
 phía quản trị, nên theo quy ước của phía quản trị; phía công khai (`default.vue`, `ArticleDetail`,
 `in-bai`) chưa chọn cách. `layouts/admin.vue` đọc cùng endpoint nhưng **chưa** chuyển: chưa có test
 hành vi mount được layout (767 dòng), và chuyển trước khi có test trái yêu cầu (1) của 7.1.
+*(Cập nhật 2026-10-29, lô tách admin layout: test mount nay có — `tests/admin-layout.test.ts`,
+`ADMIN_LAYOUT_FILE=<tệp>` chạy cùng bộ test trên bản trước/sau; ép kiểu của "Xoá cache" dời sang
+`useAdminLayoutCacheClear` thành `adminFetch<Payload<handler>>`; còn đúng 1 — lượt đọc `layout_config` này.)*
 
 **Lỗi tìm thấy (test FINDING đỏ trên `fb4751c1`):**
 
@@ -188,7 +191,8 @@ công khai trong 36 tệp. Phía quản trị còn nhiều nhất (3): `users/ac
 `articles/ArticleBoostStatsPanel.vue`, `articles/ArticleGlobalTranslateModal.vue`; cần cẩn thận:
 `ai/AiServicesTab.vue` + `ai/*` (đang tách AiProvidersTab), `AnalyticsLiveDashboard.client.vue`
 (script bị test trích bằng `Function()`), `useBulkSelection.ts` (harness biên dịch nó với danh sách tên
-cố định, không có `adminFetch`), `layouts/admin.vue` (2, cần test mount layout trước). Danh sách đơn
+cố định, không có `adminFetch`), `layouts/admin.vue` (2, cần test mount layout trước — nay 1 và
+test mount đã có, xem cập nhật ở trên). Danh sách đơn
 đăng ký (`submissions/index.vue`, `$fetch` trần không ép kiểu) đọc mã nguồn thì tải lại theo bộ lọc
 không có mã lượt — nghi đua như các danh sách trên, chưa có test chứng minh, chưa sửa ở lô này; `settings/backup.vue` → `useAdminList` và `roleId || 2`
 chưa gặp trong phạm vi lô D.
@@ -328,5 +332,6 @@ công khai trong 36 tệp. Phía quản trị: `ai/AiServicesTab.vue` (3) + `ai/
 `media-portal/external.vue` (2), `ContentTypePicker.vue`, `ProfileActivityHistory.vue`,
 `ArticleQuickViewModal.vue`, `ScanThumbnailsModal.vue`, `useUpload.ts` (2 mỗi tệp), và mười tệp 1 ép kiểu.
 Vẫn cần cẩn thận như lô D ghi: `AnalyticsLiveDashboard.client.vue` (3, `Function()`), `useBulkSelection.ts`
-(harness tên cố định), `layouts/admin.vue` (2, cần test mount layout trước). Danh sách đơn đăng ký
+(harness tên cố định), `layouts/admin.vue` (nay 1 — lượt đọc `layout_config`; test mount đã có:
+`tests/admin-layout.test.ts`, lô tách admin layout 2026-10-29). Danh sách đơn đăng ký
 (đua nghi ngờ) và `settings/backup.vue` vẫn chưa đụng.
