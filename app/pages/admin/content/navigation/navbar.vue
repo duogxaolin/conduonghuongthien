@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import ContentTypePicker from '~/components/admin/ContentTypePicker.vue'
-
+import type { AdminNavbarMenuResponse, AdminNavbarSaveResponse } from '~/types/admin-navigation-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const toast = useToast()
 const { hasPermission } = useAdminAuth()
 const canEdit = computed(() => hasPermission('settings', 'update'))
 
-type ChildItem = { id: string; label: string; url: string; openNewTab: boolean }
-type MenuItem = { id: string; label: string; url: string; openNewTab: boolean; children: ChildItem[] }
+type ChildItem = { id: string; label: string; url: string; openNewTab?: boolean }
+type MenuItem = { id: string; label: string; url: string; openNewTab?: boolean; children: ChildItem[] }
 
 const DEFAULT_MENU: MenuItem[] = [
   { id: 'home', label: 'Trang chủ', url: '/', openNewTab: false, children: [] },
@@ -32,31 +32,31 @@ const menu = ref<MenuItem[]>([])
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
+const loaded = ref(false) // Save needs what the GET answered: a failed load left the default, an in-flight one `[]` — both PUT over the real menu.
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
 
 async function loadMenu() {
-  loading.value = true
+  loading.value = true; loaded.value = false
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; menu: MenuItem[] | null }>)(`/api/admin/settings/navigation/navbar`)
-    if (res.ok && Array.isArray(res.menu) && res.menu.length) {
-      menu.value = res.menu.map(item => ({ ...item, children: Array.isArray(item.children) ? item.children : [] }))
-    } else {
-      menu.value = DEFAULT_MENU.map(item => ({ ...item, children: item.children.map(c => ({ ...c })) }))
-    }
+    const res = await adminFetch<AdminNavbarMenuResponse>(`/api/admin/settings/navigation/navbar`)
+    menu.value = res.ok && Array.isArray(res.menu) && res.menu.length
+      ? res.menu.map(item => ({ ...item, children: Array.isArray(item.children) ? item.children : [] }))
+      : DEFAULT_MENU.map(item => ({ ...item, children: item.children.map(c => ({ ...c })) }))
+    loaded.value = true
   } catch (err: unknown) {
     error.value = errorMessage(err, 'Không tải được cấu hình menu navbar.')
-    menu.value = DEFAULT_MENU.map(item => ({ ...item, children: item.children.map(c => ({ ...c })) }))
   } finally {
     loading.value = false
   }
 }
 
 async function saveMenu() {
+  if (!loaded.value) return
   saving.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/navigation/navbar`, { method: 'PUT', body: { menu: menu.value } })
+    await adminFetch<AdminNavbarSaveResponse>(`/api/admin/settings/navigation/navbar`, { method: 'PUT', body: { menu: menu.value } })
     toast.success('Đã lưu cấu hình navbar thành công!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu menu'))
@@ -166,7 +166,7 @@ onMounted(loadMenu)
           <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
           Khôi phục mặc định
         </button>
-        <button v-if="canEdit" type="button" :disabled="saving" class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white hover:bg-[#245b2a] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2" @click="saveMenu">
+        <button v-if="canEdit" type="button" :disabled="saving || !loaded" class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white hover:bg-[#245b2a] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2" @click="saveMenu">
           <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'" aria-hidden="true"></i>
           {{ saving ? 'Đang lưu…' : 'Lưu cấu hình' }}
         </button>

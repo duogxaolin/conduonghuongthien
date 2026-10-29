@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ContentTypePicker from '~/components/admin/ContentTypePicker.vue'
+import type { AdminMobileNavMenuResponse, AdminMobileNavSaveResponse } from '~/types/admin-navigation-api'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -35,6 +36,9 @@ const menu = ref<BottomNavItem[]>([])
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
+// Saving needs the editor to hold what the GET answered: a failed load filled it with the
+// default and an in-flight one left `[]`, and "Lưu cấu hình" PUT that over the real tab bar.
+const loaded = ref(false)
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
 
@@ -51,23 +55,25 @@ function normalize(item: Partial<BottomNavItem>): BottomNavItem {
 
 async function loadMenu() {
   loading.value = true
+  loaded.value = false
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; menu: BottomNavItem[] | null }>)(`/api/admin/settings/navigation/mobile`)
+    const res = await adminFetch<AdminMobileNavMenuResponse>(`/api/admin/settings/navigation/mobile`)
     if (res.ok && Array.isArray(res.menu) && res.menu.length) {
       menu.value = res.menu.map(normalize)
     } else {
       menu.value = DEFAULT_MENU.map(i => ({ ...i }))
     }
+    loaded.value = true
   } catch (err: unknown) {
     error.value = errorMessage(err, 'Không tải được cấu hình thanh điều hướng.')
-    menu.value = DEFAULT_MENU.map(i => ({ ...i }))
   } finally {
     loading.value = false
   }
 }
 
 async function saveMenu() {
+  if (!loaded.value) return
   // Enforce single featured item
   const featuredCount = menu.value.filter(i => i.featured).length
   if (featuredCount > 1) {
@@ -76,7 +82,7 @@ async function saveMenu() {
   }
   saving.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/navigation/mobile`, { method: 'PUT', body: { menu: menu.value } })
+    await adminFetch<AdminMobileNavSaveResponse>(`/api/admin/settings/navigation/mobile`, { method: 'PUT', body: { menu: menu.value } })
     toast.success('Đã lưu thanh điều hướng mobile thành công!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu menu'))
@@ -153,7 +159,7 @@ onMounted(loadMenu)
           <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
           Khôi phục mặc định
         </button>
-        <button v-if="canEdit" type="button" :disabled="saving" class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white hover:bg-[#245b2a] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2" @click="saveMenu">
+        <button v-if="canEdit" type="button" :disabled="saving || !loaded" class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white hover:bg-[#245b2a] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2" @click="saveMenu">
           <i class="fa-solid" :class="saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'" aria-hidden="true"></i>
           {{ saving ? 'Đang lưu…' : 'Lưu cấu hình' }}
         </button>
