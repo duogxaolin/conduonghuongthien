@@ -96,11 +96,13 @@ describe('pages/[slug].vue over publicFetch', () => {
       ['content-types-catchall-gioi-thieu', true, '{"ok":false,"items":[]}', 1],
       ['cat-check-gioi-thieu-', true, '{"ok":true,"items":[]}', 2],
     ])
-    assert.deepEqual(sent(ctx.calls), [
+    // Paths and places only — the page's `?lang=` is FINDING G-2's, pinned by its own tests below.
+    assert.deepEqual(ctx.calls.map(call => `${call.via}: ${call.method} ${call.url.pathname}`), [
       'asyncData: GET /api/public/pages/gioi-thieu',
       'asyncData: GET /api/public/content-types',
-      'asyncData: GET /api/public/categories?type=gioi-thieu',
+      'asyncData: GET /api/public/categories',
     ])
+    assert.equal(ctx.calls[2]!.url.search, '?type=gioi-thieu')
     assert.deepEqual(prop(renderer(ctx)!, 'blocks'), BLOCKS)
     assert.deepEqual(ctx.shown, [])
   })
@@ -170,16 +172,42 @@ describe('pages/[slug].vue over publicFetch', () => {
     assert.equal(findAll(failed.page.root, el => el.tag === 'ContentTypeListSection').length, 1)
   })
 
-  it('KNOWN (FINDING G-2): the page and category reads carry no `lang`; their keys have no language', async (t) => {
+  it('FINDING G-2: the page is read in the reader\'s language (`?lang=`), and again when it changes — blocks follow', async (t) => {
     const ctx = await openSlug(t, { slug: 'gioi-thieu' }, {
-      'GET /api/public/pages/gioi-thieu': () => json(PAGE('gioi-thieu')),
+      'GET /api/public/pages/gioi-thieu': call => json({ ...PAGE('gioi-thieu'), blocks: [{ id: 1, blockType: 'rich_text', data: { html: `<p>${call.url.searchParams.get('lang') ?? 'none'}</p>` } }] }),
       'GET /api/public/content-types': () => json(TYPES),
       'GET /api/public/categories': () => json({ ok: true, items: [] }),
     })
+    assert.equal(sent(ctx.calls)[0], 'asyncData: GET /api/public/pages/gioi-thieu?lang=vi')
     ctx.currentLang.value = 'en'
     await settle()
-    assert.ok(ctx.calls.every(call => !call.url.searchParams.has('lang')))
-    assert.equal(ctx.calls.length, 3, 'a language switch reads nothing again')
+    assert.deepEqual(sent(ctx.calls).filter(line => typeof line === 'string' && line.includes('/pages/')), [
+      'asyncData: GET /api/public/pages/gioi-thieu?lang=vi',
+      'asyncData: GET /api/public/pages/gioi-thieu?lang=en',
+    ])
+    assert.deepEqual(prop(renderer(ctx)!, 'blocks'), [{ id: 1, blockType: 'rich_text', data: { html: '<p>en</p>' } }])
+    assert.deepEqual(ctx.shown, [], 'reading again is not a 404')
+    // The routing reads localise nothing shown here (content types have no translation; the
+    // category check only matches slugs) and stay as they were.
+    assert.ok(ctx.calls.filter(call => !call.url.pathname.startsWith('/api/public/pages/')).every(call => !call.url.searchParams.has('lang')))
+  })
+
+  it('FINDING G-2: an English reader\'s first (server) render asks the page in English', async (t) => {
+    const ctx = await mountPublic(t, {
+      file: 'pages/[slug].vue',
+      lang: 'en',
+      route: { path: '/gioi-thieu', params: { slug: 'gioi-thieu' } },
+      responder: routes({
+        'GET /api/public/pages/gioi-thieu': () => json(PAGE('gioi-thieu')),
+        'GET /api/public/content-types': () => json(TYPES),
+        'GET /api/public/categories': () => json({ ok: true, items: [] }),
+      }),
+      auto: { ...PREVIEW, showError: () => {} },
+      importMeta: { server: true, client: false },
+      suspense: true,
+    })
+    await settle()
+    assert.equal(sent(ctx.calls)[0], 'asyncData: GET /api/public/pages/gioi-thieu?lang=en')
   })
 })
 

@@ -74,6 +74,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from '~/composables/useI18n'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
 import { resolveCategoryRoute } from '~/utils/category-route-decision'
 import { blocksRenderOwnH1 } from '~/utils/blocks/page-heading'
@@ -91,9 +92,13 @@ const slug = computed(() => String(route.params.slug || ''))
 // `[slug].vue` này — `idParam` tồn tại ⇔ route `/api/public/articles`.
 const idParam = computed(() => (route.params.id ? String(route.params.id) : ''))
 
+// FINDING G-2 (D-FETCH lô G): ngôn ngữ đi trong query như `/`, `/about`, `/contact` — handler
+// chọn bản dịch của khối theo `?lang=`, rồi cookie; `$fetch` lúc SSR không mang cookie, nên
+// thiếu nó thì khung giao diện theo ngôn ngữ người đọc còn nội dung khối luôn tiếng Việt.
+const { currentLang } = useI18n()
 const asyncData = useAsyncData(
   () => `page-${slug.value}`,
-  () => publicFetch<PublicPageResponse>(`/api/public/pages/${slug.value}`),
+  () => publicFetch<PublicPageResponse>(`/api/public/pages/${slug.value}?lang=${currentLang.value}`),
   {
     lazy: true,
     default: () => ({ ok: false, page: null, blocks: [] }),
@@ -101,6 +106,8 @@ const asyncData = useAsyncData(
   }
 )
 const { data, pending, error, refresh, status } = asyncData
+// Đổi ngôn ngữ (hoặc lựa chọn đã lưu áp sau hydrate) → đọc lại trang, như `/about`.
+watch(currentLang, () => { void refresh() })
 
 // Branch 2: Content-Type list. Khi `/api/public/pages/<slug>` trả không có page
 // block, slug có thể là `slug` của một content-type custom (vd /video_tuyen_truyen).
