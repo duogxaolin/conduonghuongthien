@@ -3,15 +3,17 @@
  * the re-translate prompt opened on a save with NO edit.
  *
  * After a PUT the page compares the Vietnamese title, excerpt and body with a snapshot and, if
- * any differs, asks "Phát hiện nội dung Tiếng Việt vừa thay đổi!" — confirm, and every
- * translation is redone by the AI (as drafts, or published). The body snapshot was the HTML as
- * STORED (`form.content` at load), but the body compared at save is the HTML as TinyMCE
- * SERIALISES it (`form.content = getEditorContent()`), and the editor rewrites HTML on the way in
- * (blocks on their own lines, `<br>` → `<br />`, entities). So any article whose stored HTML is
- * not already in TinyMCE's own format — imported from the old CMS, sanitised by the server —
- * asked on every plain "Cập Nhật Bài Viết", and an officer who believed it replaced the curated
- * translations with machine drafts. The unsaved-changes guard never had this problem: its body
- * baseline is taken from the editor (`init`).
+ * any differs, asks "Phát hiện nội dung Tiếng Việt vừa thay đổi!" — "Dịch lại tất cả ngay" POSTs
+ * `translate-all`. The body snapshot was the HTML as STORED (`form.content` at load), but the body
+ * compared at save is the HTML as TinyMCE SERIALISES it (`form.content = getEditorContent()`),
+ * and the editor rewrites HTML on the way in (blocks on their own lines, `<br>` → `<br />`,
+ * entities). So any article whose stored HTML is not already in TinyMCE's own format — imported
+ * from the old CMS, sanitised by the server — claimed "the Vietnamese text changed" on every plain
+ * "Cập Nhật Bài Viết": a false statement, and a prompt officers learn to dismiss — including the
+ * time the text really did change. (Confirming does NOT overwrite existing translations:
+ * `triggerTranslateAllLanguages` queues only missing or failed languages — a separate finding,
+ * docs/decisions/refactor-large-files.md.) The unsaved-changes guard never had this problem: its
+ * body baseline is taken from the editor (`init`).
  *
  * Fixed: the load snapshot's body is rebased onto the editor's serialisation when the editor
  * takes the loaded body — at its `init` (first load) or right away (a "Thử lại" with the editor
