@@ -2,6 +2,8 @@
 import { useI18n } from '~/composables/useI18n'
 import { computed } from 'vue'
 import { usePublicArticleList, usePublicMostRead } from '~/composables/usePublicArticleList'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicCategoriesResponse } from '~/types/public-content-api'
 import { ALL_CATEGORIES } from '~/utils/public-article-list'
 import { formatDateVN } from '~/utils/formatDate'
 import { cleanExcerpt } from '~/utils/article-excerpt'
@@ -41,17 +43,12 @@ const props = defineProps({
 
 const { t, currentLang } = useI18n()
 
-interface PublicCategory {
-  id: number
-  name: string
-  slug: string
-  parentId: number | null
-}
+type PublicCategory = PublicCategoriesResponse['items'][number]
 
 // ─── Category pills (DB-driven via /api/public/categories?type=<slug>) ─────────
 const { data: catData, pending: catPending } = await useAsyncData(
   () => `content-type-cats-${props.typeSlug}-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicCategory[] }>)('/api/public/categories', {
+  () => publicFetch<PublicCategoriesResponse>('/api/public/categories', {
     query: { type: props.typeSlug, lang: currentLang.value },
   }),
   {

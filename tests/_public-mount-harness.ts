@@ -356,7 +356,10 @@ export async function loadAppModule(
     }
   }
   const exported = [...code.matchAll(/^export\s+(?:async\s+)?(?:function|const|let)\s+(\w+)/gm)].map(match => match[1]!)
+  // `export default <expr>` (a Nuxt plugin) becomes `default` of the result.
+  if (/^export\s+default\s/m.test(code)) exported.push('default: __default')
   const body = code
+    .replace(/^export\s+default\s/m, 'const __default = ')
     .replace(IMPORT_FROM, (_m, clause: string, from: string) => {
       const named = /^\{([^}]*)\}$/.exec(clause.trim())
       if (named) return `const {${named[1]!.replace(/\s+as\s+/g, ': ')}} = __modules[${JSON.stringify(from)}];`

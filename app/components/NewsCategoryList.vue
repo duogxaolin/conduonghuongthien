@@ -264,7 +264,9 @@ import { computed } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
 import { usePublicMostRead } from '~/composables/usePublicArticleList'
+import { publicFetch } from '~/composables/publicFetch'
 import type { PublicArticleListItem } from '~/utils/public-types'
+import type { PublicArticlesResponse } from '~/types/public-content-api'
 
 const { t, currentLang } = useI18n()
 
@@ -285,7 +287,7 @@ const categoryNavList = computed(() => [
 
 const { data, pending, error, refresh } = await useAsyncData(
   () => `news-category-${props.categorySlug}-${currentLang.value}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }>; pagination: Record<string, unknown> }>)('/api/public/articles', {
+  () => publicFetch<PublicArticlesResponse>('/api/public/articles', {
     query: { type: 'news', categorySlug: props.categorySlug, limit: props.limit, lang: currentLang.value },
   }),
   {

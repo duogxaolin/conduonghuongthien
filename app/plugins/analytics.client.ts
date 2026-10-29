@@ -1,9 +1,12 @@
+import { publicFetch } from '../composables/publicFetch'
+import type { PublicPageViewResponse } from '../types/public-site-api'
 import { ANALYTICS_ENDPOINT, classifyDevice, classifySource, createPageViewCollector, isConservativeBot } from '../utils/analytics-collector'
 
-// Separate the $fetch call from the inline arrow so TS doesn't instantiate the
-// full $fetch generic chain at the inference site (TS2589).
+// The one page-view beacon: fire-and-forget (keepalive, no retry, 1.5 s), every failure
+// swallowed — analytics never disturbs a page. `publicFetch` (D-FETCH lot G) instead of a
+// `$fetch` cast, which TS2589 forced here before.
 function postAnalytics(payload: unknown): Promise<void> {
-  return ($fetch as (url: string, opts: Record<string, unknown>) => Promise<unknown>)(ANALYTICS_ENDPOINT, {
+  return publicFetch<PublicPageViewResponse>(ANALYTICS_ENDPOINT, {
     method: 'POST',
     body: payload as Record<string, unknown>,
     keepalive: true,
