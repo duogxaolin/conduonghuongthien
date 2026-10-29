@@ -392,7 +392,8 @@ const MIGRATED_TO_ADMIN_MODAL: Record<string, number> = {
   // tách (wave3 4.2) — tệp trang không còn hộp thoại nào.
   'components/admin/languages/page/LanguagesMoveModal.vue': 1,
   'components/admin/languages/page/LanguagesTranslateProgressModal.vue': 1,
-  'pages/admin/content/articles/[id].vue': 1,
+  // Trình soạn bài viết: hộp nhắc dịch lại là một phần tách (wave3) — tệp trang không còn hộp thoại nào.
+  'components/admin/articles/editor/ArticleReTranslateModal.vue': 1,
   'components/admin/articles/ArticleQuickViewModal.vue': 1,
   'components/admin/articles/ArticleGlobalTranslateModal.vue': 1,
   'components/admin/MediaLibraryModal.vue': 1,

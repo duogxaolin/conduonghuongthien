@@ -20,7 +20,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
-  LANGUAGES_PAGE_FAMILY, PAGE_BUILDER_FAMILY, familyFiles, familyVueFiles, readAppFile, type ComponentFamily,
+  ARTICLE_EDITOR_FAMILY, LANGUAGES_PAGE_FAMILY, PAGE_BUILDER_FAMILY, familyFiles, familyVueFiles, readAppFile, type ComponentFamily,
 } from './_component-family.ts'
 import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
 
@@ -36,6 +36,8 @@ for (const [family, part, alertCount] of [
   [LANGUAGES_PAGE_FAMILY, 'components/admin/languages/page/LanguagesPageHeader.vue', 2],
   // The page load, and the versions list (shown in the drawer's `#error` slot, FINDING-B1).
   [PAGE_BUILDER_FAMILY, 'components/admin/page-builder/PageMetaModal.vue', 2],
+  // One banner: a failed load (with "Thử lại") or a refused save (the save button is its retry).
+  [ARTICLE_EDITOR_FAMILY, 'components/admin/articles/editor/ArticleEditorPublishPanel.vue', 1],
 ] as const) {
   describe(`${family.parent} — the wave3 4.2 parts`, () => {
     it('the display parts call no API and raise no toast or confirm', () => {
@@ -84,5 +86,45 @@ describe('the page builder family — no $fetch, no v-html', () => {
     const part = 'components/admin/page-builder/PageVersionsDrawer.vue'
     assert.deepEqual(vHtml({ [part]: readAppFile(part).replace('<span class="truncate">', '<span class="truncate" v-html="v.label">') }), [part])
     assert.deepEqual(vHtml({ [PAGE_BUILDER_FAMILY.parent]: readAppFile(PAGE_BUILDER_FAMILY.parent).replace('<p>{{ loadError }}</p>', '<p v-html="loadError"></p>') }), [PAGE_BUILDER_FAMILY.parent])
+  })
+})
+
+/**
+ * The article editor family (wave3): no `$fetch` (its six casts went to `adminFetch<T>()` in 7.1
+ * batch D), no `v-html` (AI HTML reaches the editor through `setEditorContent`, never rendered by
+ * the page — the one `v-html` of that flow is ArticleAIPanel's, inventoried in
+ * tests/security-ai-editorial-html.test.ts), and ONE TinyMCE init — the project's second init
+ * path (CLAUDE.md "TinyMCE admin editor") lives in `useArticleEditorTinymce.ts`, where
+ * tests/admin-article-editor.test.ts pins its config byte for byte.
+ */
+describe('the article editor family — no $fetch, no v-html, one TinyMCE init', () => {
+  const TINYMCE_HOME = 'composables/useArticleEditorTinymce.ts'
+  const bareFetch = (overrides?: Record<string, string>) => familyFiles(ARTICLE_EDITOR_FAMILY, overrides).filter(f => /\$fetch\b/.test(f.source)).map(f => f.file)
+  const vHtml = (overrides?: Record<string, string>) => familyVueFiles(ARTICLE_EDITOR_FAMILY, overrides).filter(f => /\bv-html\b|innerHTML/.test(f.source)).map(f => f.file)
+  const inits = (overrides?: Record<string, string>) => familyFiles(ARTICLE_EDITOR_FAMILY, overrides)
+    .flatMap(f => (f.source.match(/\btinymce\.init\(/g) ?? []).map(() => f.file))
+
+  it('no file of the family calls or casts $fetch', () => {
+    assert.deepEqual(bareFetch(), [])
+  })
+
+  it('no file of the family renders HTML', () => {
+    assert.deepEqual(vHtml(), [])
+  })
+
+  it('TinyMCE is initialised once, in useArticleEditorTinymce.ts, at height 700', () => {
+    assert.deepEqual(inits(), [TINYMCE_HOME])
+    assert.match(readAppFile(TINYMCE_HOME), /\n {6}height: 700,\n/)
+  })
+
+  it('proof: $fetch in a composable, v-html in a part or the page, a second init anywhere, is caught', () => {
+    const composable = 'composables/useArticleEditorSave.ts'
+    assert.deepEqual(bareFetch({ [composable]: `${readAppFile(composable)}\nexport const leak = () => $fetch('/api/admin/articles')\n` }), [composable])
+    const part = 'components/admin/articles/editor/ArticleEditorMainForm.vue'
+    assert.deepEqual(vHtml({ [part]: readAppFile(part).replace('<div :id="editorId"', '<div v-html="title" :id="editorId"') }), [part])
+    const page = ARTICLE_EDITOR_FAMILY.parent
+    assert.deepEqual(vHtml({ [page]: readAppFile(page).replace('<span>{{ errorMsg || saveError }}</span>', '<span v-html="errorMsg"></span>') }), [page])
+    const added = `${ARTICLE_EDITOR_FAMILY.partsDir}/Extra.vue`
+    assert.deepEqual(inits({ [added]: '<script setup lang="ts">\nonMounted(() => window.tinymce.init({ selector: "#x" }))\n</script>' }), [TINYMCE_HOME, added])
   })
 })
