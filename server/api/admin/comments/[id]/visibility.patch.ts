@@ -12,6 +12,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { articleComments, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { readAffectedRows } from '../../../../utils/affected-rows'
 
 export default defineEventHandler(async (event) => {
   const actor = event.context.adminUser
@@ -41,13 +42,19 @@ export default defineEventHandler(async (event) => {
   }
 
   await db.transaction(async (tx) => {
-    await tx
+    const [updated] = await tx
       .update(articleComments)
       .set({
         isHidden: hidden,
         flagReason: hidden ? (reason || null) : null,
       })
       .where(eq(articleComments.id, Math.floor(id)))
+    // Counted (mysql2 reports MATCHED rows): a comment deleted since the read above — a ban, a
+    // purge, another officer — is a 404, not a 200 with an audit row about a comment that is gone
+    // (FINDING-R7-12, the R6-10 rule).
+    if (readAffectedRows(updated) !== 1) {
+      throw createError({ statusCode: 404, statusMessage: 'Bình luận không tồn tại.' })
+    }
 
     await tx.insert(activityLogs).values({
       userId: actor.id ?? null,
