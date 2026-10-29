@@ -243,11 +243,20 @@ test('the Doc\'s meta line carries the Vietnamese calendar day, in any process t
     for (const zone of ['UTC', 'Asia/Ho_Chi_Minh']) {
       process.env.TZ = zone
       reset()
-      // 03:00 on 29 October in Hà Nội; a process on UTC used to print the 28th.
-      await exportArticlesToGoogle('rt', 'cid', 'cs', [{ ...article(9, null), publishedAt: new Date(Date.UTC(2026, 9, 28, 20)) }], '20261029')
+      // 03:00 on 29 October in Hà Nội; a process on UTC used to print the 28th. The day is
+      // the publication's, not the creation's (1 September).
+      await exportArticlesToGoogle('rt', 'cid', 'cs', [{ ...article(9, null), publishedAt: new Date(Date.UTC(2026, 9, 28, 20)), createdAt: new Date(Date.UTC(2026, 8, 1, 3)) }], '20261029')
       assert.match(JSON.stringify(docRequests), /Ngày: 2026-10-29/, zone)
     }
   } finally {
     process.env.TZ = before
   }
+})
+
+test('an article whose date the database could not give back (Invalid Date) is exported with an empty day, not a failed export', async () => {
+  reset()
+  const result = await exportArticlesToGoogle('rt', 'cid', 'cs', [{ ...article(10, null), publishedAt: new Date(Number.NaN) }, article(11, null)], '20261029')
+  // Before: `vietnamDateString` threw a RangeError for the first article.
+  assert.equal(result.count, 2)
+  assert.match(JSON.stringify(docRequests[0]), /Ngày: (?!\d)/)
 })

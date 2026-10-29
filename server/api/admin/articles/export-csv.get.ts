@@ -115,12 +115,8 @@ export default defineEventHandler(async (event) => {
   const rows: string[] = [header.map(csvCell).join(',')]
 
   for (const a of items) {
-    // Ngày theo lịch VN, không theo TZ tiến trình (FINDING-R6-17).
-    const fmtDate = (d: Date | null | string) => {
-      if (!d) return ''
-      const dt = d instanceof Date ? d : new Date(d)
-      return Number.isNaN(dt.getTime()) ? '' : vietnamDateString(dt)
-    }
+    // Ngày theo lịch VN, không theo TZ tiến trình (FINDING-R6-17); ngày hỏng → '' (trong vietnamDateString).
+    const fmtDate = (d: Date | null | string) => (d ? vietnamDateString(d instanceof Date ? d : new Date(d)) : '')
     rows.push([
       a.id,
       a.title ?? '',

@@ -162,6 +162,13 @@ test('ZIP: the readable articles, one standalone page each; the others left out,
   }
 })
 
+test('ZIP: the pages come newest first, whatever order the ids were given in', async () => {
+  const older = await article({ slug: 'cu', createdAt: new Date(Date.UTC(2026, 8, 1)) })
+  const newer = await article({ slug: 'moi', createdAt: new Date(Date.UTC(2026, 9, 1)) })
+  const zip = await raw(`/api/admin/articles/export-batch?ids=${older},${newer}`, newsReader)
+  assert.deepEqual([...unzip(zip.bytes).keys()], ['moi.html', 'cu.html'])
+})
+
 // ─── Google ──────────────────────────────────────────────────────────────────
 
 test('FINDING-R6-18: Google export — no body is a 400, not a 500; ids checked; only readable articles reach the export', async () => {
@@ -200,6 +207,25 @@ test('Google export: an unlinked Drive or an unusable OAuth client is a 400 that
     assert.deepEqual([response.status, response.body.statusMessage], [400, message])
   }
   assert.deepEqual(drive.calls, [])
+})
+
+// ─── A date the database cannot give back (verifier L1) ──────────────────────
+
+test('a stored zero date (0000-00-00) prints an empty day and fails no export — one article, the ZIP, the CSV', async () => {
+  const id = await article({ slug: 'ngay-hong', title: 'Ngày hỏng' })
+  // MySQL without NO_ZERO_DATE keeps it; Drizzle reads it as an Invalid Date.
+  h.harness.sqlite.prepare("UPDATE articles SET published_at = '0000-00-00 00:00:00', created_at = '0000-00-00 00:00:00' WHERE id = ?").run(id)
+  const html = await h.request('GET', `/api/admin/articles/${id}/export`, newsReader)
+  // Before: `toISOString()` of an Invalid Date threw a RangeError — a 500 for the whole export.
+  assert.equal(html.status, 200)
+  assert.match(String(html.body.text), /Trạng thái: published · Ngày: <\/p>/)
+  assert.equal((await h.request('GET', `/api/admin/articles/${id}/export?format=md`, newsReader)).status, 200)
+  const zip = await raw(`/api/admin/articles/export-batch?ids=${id}`, newsReader)
+  assert.equal(zip.status, 200)
+  assert.match(unzip(zip.bytes).get('ngay-hong.html')!, /Ngày: <\/p>/)
+  const csv = await h.request('GET', '/api/admin/articles/export-csv', newsReader)
+  assert.equal(csv.status, 200)
+  assert.match(String(csv.body.text), /,ngay-hong,.*,,$/m)
 })
 
 // ─── Dates: the Vietnamese calendar day, in any process time zone ────────────

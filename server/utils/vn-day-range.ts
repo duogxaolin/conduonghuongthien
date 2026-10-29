@@ -63,7 +63,11 @@ export function vietnamDayStartOf(at: Date): Date {
  * đăng 03:00 ngày 29 (giờ VN) thành ngày 28 (FINDING-R6-17).
  */
 export function vietnamDateString(at: Date): string {
-  return new Date(at.getTime() + VIETNAM_OFFSET_MS).toISOString().slice(0, 10)
+  const time = at.getTime()
+  // Một cột ngày giữ `0000-00-00` (MySQL không bật NO_ZERO_DATE) đọc ra Invalid Date: trả
+  // chuỗi rỗng — `toISOString()` ném RangeError và làm hỏng CẢ lượt xuất (verifier L1).
+  if (Number.isNaN(time)) return ''
+  return new Date(time + VIETNAM_OFFSET_MS).toISOString().slice(0, 10)
 }
 
 /**
