@@ -287,6 +287,14 @@ describe('components/admin/ai/AiLogsTab.vue', () => {
     await settle()
     assert.equal(alertText(opened.page), '')
     assert.equal(services(opened).length, 1)
+    // The older SUCCESS landing last.
+    await filterBy(opened, 'chatbot')
+    await filterBy(opened, 'moderation')
+    pending[5]!.respond(answer([logRow(6, 'moderation')]))
+    await settle()
+    pending[4]!.respond(answer([logRow(5, 'chatbot'), logRow(7, 'chatbot')]))
+    await settle()
+    assert.equal(services(opened).length, 1, 'the older filter\'s two rows did not replace the newer one\'s')
   })
 })
 
