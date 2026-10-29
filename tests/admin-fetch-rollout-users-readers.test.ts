@@ -366,7 +366,7 @@ describe('pages/admin/readers/[id].vue', () => {
     refused.page.unmount()
   })
 
-  it('ban or purge refused with 404 (the account was deleted meanwhile): the sentence, then back to the list; a 409 stays', async () => {
+  it('ban or purge refused with 404 (the account was deleted meanwhile): the sentence, then back to the list; any other refusal stays', async () => {
     const sentence = 'Không tìm thấy tài khoản người đọc.'
     for (const [route, button] of [['POST /api/admin/readers/7/ban', 'Chặn tài khoản'], ['DELETE /api/admin/readers/7/comments', 'Xoá toàn bộ bình luận']] as const) {
       const gone = await openReader({ banned: false }, { [route]: () => h3Error(404, sentence) })
@@ -377,12 +377,17 @@ describe('pages/admin/readers/[id].vue', () => {
       assert.deepEqual([gone.lastToast('error'), gone.pushes], [sentence, ['/admin/readers']], route)
       gone.page.unmount()
     }
-    const already = await openReader({ banned: false }, { 'POST /api/admin/readers/7/ban': () => h3Error(409, 'Tài khoản này đã bị chặn.') })
-    already.answers.prompt = ''
-    await click(byText(already.page.root, 'button', 'Chặn tài khoản'))
-    await settle()
-    assert.deepEqual(already.pushes, [])
-    already.page.unmount()
+    for (const [route, button, refusal] of [
+      ['POST /api/admin/readers/7/ban', 'Chặn tài khoản', () => h3Error(409, 'Tài khoản này đã bị chặn.')],
+      ['DELETE /api/admin/readers/7/comments', 'Xoá toàn bộ bình luận', () => h3Error(403, 'Bạn không có quyền thực hiện thao tác này.')],
+    ] as const) {
+      const refused = await openReader({ banned: false }, { [route]: refusal })
+      refused.answers.prompt = ''
+      await click(byText(refused.page.root, 'button', button))
+      await settle()
+      assert.deepEqual(refused.pushes, [], route)
+      refused.page.unmount()
+    }
   })
 
   it('delete one comment: the confirm warns about the replies under a top-level comment; delete then reload', async () => {
