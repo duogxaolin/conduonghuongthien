@@ -1,75 +1,18 @@
 <template>
   <div class="min-h-screen bg-surface">
     <!-- Page Header & Hero Section — hero text đơn giản trên nền gradient nhạt -->
-    <PageHero>
-      <!-- Breadcrumb navigation -->
-      <nav aria-label="Đường dẫn trang" class="mb-4">
-        <ol class="flex items-center gap-1.5 text-xs text-ink-muted m-0 p-0 list-none flex-wrap">
-          <li class="flex items-center gap-1.5">
-            <nuxt-link to="/" class="hover:text-brand-800 transition-colors flex items-center gap-1">
-              <i class="fa-solid fa-house text-[0.7rem] text-brand-600" aria-hidden="true"></i>
-              <span>{{ t('home') }}</span>
-            </nuxt-link>
-          </li>
-          <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
-          <li class="font-bold text-[#2A3B27] flex items-center gap-1">
-            <span>{{ t('news') }}</span>
-            <span v-if="activeCategory !== 'all' && activeCategoryName" class="font-normal text-ink-muted">
-              &rsaquo; <span class="font-bold text-[#2A3B27]">{{ activeCategoryName }}</span>
-            </span>
-          </li>
-        </ol>
-      </nav>
-
-      <div class="max-w-2xl">
-        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-line border border-[#D0DFCE] text-brand-800 text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
-          <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-          <span>{{ t('n_portal_badge') }}</span>
-        </div>
-        <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-ink-strong tracking-tight leading-[1.2] m-0">
-          {{ pageTitle }}
-        </h1>
-        <p class="text-[0.92rem] sm:text-base text-ink-soft mt-2 mb-0 leading-relaxed">
-          {{ t('n_index_desc') }}
-        </p>
-      </div>
-    </PageHero>
+    <NewsListHero
+      :active-category="activeCategory"
+      :active-category-name="activeCategoryName"
+      :page-title="pageTitle"
+    />
 
     <!-- Search + Category Pills — đẩy ra khỏi hero, nằm ngay đầu nội dung -->
     <section class="pt-6 lg:pt-8">
       <div class="container">
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <!-- Search Box -->
-          <div class="w-full lg:w-80 shrink-0">
-            <form @submit.prevent="applySearch" class="relative flex items-center">
-              <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7C8D78] pointer-events-none text-xs">
-                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-              </span>
-              <input
-                v-model="searchInput"
-                type="text"
-                :placeholder="t('n_search_placeholder')"
-                :aria-label="t('n_search_placeholder')"
-                class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-ink placeholder-[#8A9986] focus:border-brand-600 focus:ring-2 focus:ring-brand-600/30 focus:outline-none transition-all shadow-sm"
-              />
-              <button
-                v-if="searchInput"
-                type="button"
-                @click="clearSearchInput"
-                class="absolute right-12 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-[#97A593] hover:text-ink-secondary text-xs transition-colors"
-                title="Xóa chữ"
-                aria-label="Xóa từ khóa tìm kiếm"
-              >
-                ✕
-              </button>
-              <button
-                type="submit"
-                class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-800 text-white text-xs font-bold transition-all shadow-sm"
-              >
-                {{ t('n_search_btn_short') }}
-              </button>
-            </form>
-          </div>
+          <NewsSearchBox v-model="searchInput" @submit="applySearch" @clear="clearSearchInput" />
 
           <!-- Category Pills Filter Bar -->
           <nav aria-label="Lọc bản tin theo chuyên mục" class="flex-1 min-w-0">
@@ -84,47 +27,13 @@
               ></div>
             </div>
 
-            <template v-else>
-              <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none flex-wrap">
-                <button
-                  type="button"
-                  :aria-pressed="activeCategory === 'all'"
-                  :class="pillClass(activeCategory === 'all')"
-                  @click="setCategory('all')"
-                >
-                  <i class="fa-solid fa-layer-group text-xs" aria-hidden="true"></i>
-                  <span>{{ t('n_all_news') }}</span>
-                </button>
-                <button
-                  v-for="cat in rootCategories"
-                  :key="cat.id"
-                  type="button"
-                  :aria-pressed="activeCategory === cat.slug"
-                  :class="pillClass(activeCategory === cat.slug)"
-                  @click="setCategory(cat.slug)"
-                >
-                  <i :class="categoryIcon(cat.slug)" aria-hidden="true"></i>
-                  <span>{{ cat.name }}</span>
-                </button>
-              </div>
-
-              <div v-if="activeChildren.length" class="flex items-center gap-2 overflow-x-auto pt-2.5 pb-1 sm:flex-wrap text-xs">
-                <span class="text-ink-soft font-semibold flex items-center gap-1 shrink-0">
-                  <i class="fa-solid fa-turn-down text-[0.65rem] rotate-[-90deg]" aria-hidden="true"></i>
-                  {{ t('n_subtopic') }}
-                </span>
-                <button
-                  v-for="child in activeChildren"
-                  :key="child.id"
-                  type="button"
-                  :aria-pressed="activeCategory === child.slug"
-                  :class="subPillClass(activeCategory === child.slug)"
-                  @click="setCategory(child.slug)"
-                >
-                  {{ child.name }}
-                </button>
-              </div>
-            </template>
+            <NewsCategoryPills
+              v-else
+              :active-category="activeCategory"
+              :root-categories="rootCategories"
+              :active-children="activeChildren"
+              @select="setCategory"
+            />
           </nav>
         </div>
       </div>
@@ -260,193 +169,25 @@
 
           <!-- Content Render -->
           <template v-else>
-            <!-- Featured / Lead Article: Kích thước chuẩn gọn gàng theo Image #1, không bị zoom vỡ ảnh -->
-            <article
-              v-if="featured"
-              class="group bg-white rounded-2xl overflow-hidden border border-line shadow-[0_4px_16px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_30px_rgba(74,103,65,0.12)] hover:border-accent transition-all duration-300 flex flex-col lg:flex-row lg:items-stretch mb-6"
-            >
-              <nuxt-link
-                :to="`/news/${featured.slug}`"
-                class="block overflow-hidden lg:w-[42%] xl:w-[40%] shrink-0 relative bg-surface-tint no-underline"
-              >
-                <SafeImg
-                  :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
-                  :alt="featured.title" img-class="w-full h-[220px] sm:h-[250px] lg:h-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-105"
-                  loading="lazy"
-                  decoding="async"
-                  sizes="384px sm:512px lg:768px"
-                />
-                <div class="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-              </nuxt-link>
+            <!-- Featured / Lead Article -->
+            <NewsFeaturedCard v-if="featured" :item="featured" />
 
-              <div class="p-5 sm:p-6 lg:p-6 xl:p-7 flex flex-col justify-between flex-1 min-w-0 bg-white">
-                <div>
-                  <div class="flex items-center gap-2.5 mb-2.5 text-xs flex-wrap">
-                    <span class="inline-block bg-[#689F38] text-white font-extrabold px-2.5 py-0.5 rounded text-[0.7rem] uppercase tracking-wider shadow-sm">
-                      {{ t('n_featured_badge') }}
-                    </span>
-                    <span
-                      v-if="featured.categoryName"
-                      class="text-ink-secondary font-semibold text-[0.82rem]"
-                    >
-                      {{ featured.categoryName }}
-                    </span>
-                    <span class="text-ink-soft text-[0.8rem] font-medium">
-                      {{ formatDate(featured) }}
-                    </span>
-                  </div>
-
-                  <h2 class="text-[1.15rem] sm:text-[1.28rem] lg:text-[1.32rem] font-black leading-[1.35] mb-2 m-0 text-ink-strong">
-                    <nuxt-link
-                      :to="`/news/${featured.slug}`"
-                      class="text-ink-strong no-underline transition-colors duration-200 hover:text-[#2D5A27]"
-                    >
-                      {{ featured.title }}
-                    </nuxt-link>
-                  </h2>
-
-                  <p v-if="featured.excerpt" class="text-[0.88rem] text-ink-soft leading-relaxed m-0 line-clamp-2 mb-3">
-                    {{ cleanExcerpt(featured.excerpt) }}
-                  </p>
-                </div>
-
-                <div>
-                  <nuxt-link
-                    :to="`/news/${featured.slug}`"
-                    class="inline-flex items-center gap-1.5 text-brand-800 hover:text-[#1B3617] font-bold text-[0.88rem] transition-all no-underline group/link"
-                  >
-                    <span>{{ t('n_read_more') }}</span>
-                    <i class="fa-solid fa-arrow-right text-[0.72rem] transition-transform duration-200 group-hover/link:translate-x-1" aria-hidden="true"></i>
-                  </nuxt-link>
-                </div>
-              </div>
-            </article>
-
-            <!-- Section Title Divider -->
-            <div v-if="rest.length" class="flex items-center justify-between pt-3 pb-3 border-b-2 border-line mt-1 mb-5">
-              <div class="flex items-center gap-2.5">
-                <span class="w-2.5 h-6 rounded-sm bg-brand-600" aria-hidden="true"></span>
-                <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
-                  {{ t('n_list_title') }}
-                </h2>
-                <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-line text-brand-800">
-                  {{ t('n_count_suffix').replace('{n}', String(pagination.total)) }}
-                </span>
-              </div>
-              <span v-if="pagination.totalPages > 1" class="text-xs text-ink-soft font-medium hidden sm:inline">
-                {{ t('page_of').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
-              </span>
-            </div>
-
-            <!-- Responsive 3-Column Magazine Grid -->
-            <div v-if="rest.length" :class="articleGridClass">
-              <article
-                v-for="item in rest"
-                :key="item.id"
-                class="group bg-white rounded-2xl overflow-hidden border border-line shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-accent transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
-              >
-                <!-- Thumbnail: strictly 16:9 -->
-                <nuxt-link :to="`/news/${item.slug}`" class="block relative w-full aspect-video overflow-hidden bg-surface-tint no-underline shrink-0">
-                  <SafeImg
-                    :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
-                    :alt="item.title" img-class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
-                    loading="lazy"
-                    decoding="async"
-                    sizes="256px sm:384px lg:512px"
-                  />
-                  <div class="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                </nuxt-link>
-
-                <!-- Card Content: flex-1 flex-col justify-between -->
-                <div class="p-4 sm:p-5 flex flex-col flex-1">
-                  <div class="flex items-center gap-2 text-xs text-ink-soft font-medium mb-2">
-                    <span
-                      v-if="item.categoryName"
-                      class="inline-block bg-surface-tint text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider"
-                    >
-                      {{ item.categoryName }}
-                    </span>
-                    <span class="flex items-center gap-1 text-ink-soft text-[0.75rem]">
-                      <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
-                      <span>{{ formatDate(item) }}</span>
-                    </span>
-                  </div>
-
-                  <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-ink-strong group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
-                    <nuxt-link :to="`/news/${item.slug}`" class="text-ink-strong hover:text-[#2D5A27] no-underline">
-                      {{ item.title }}
-                    </nuxt-link>
-                  </h3>
-
-                  <p v-if="item.excerpt" class="text-[0.84rem] text-ink-soft leading-relaxed line-clamp-2 mb-3 m-0">
-                    {{ cleanExcerpt(item.excerpt) }}
-                  </p>
-
-                  <!-- Footer action pinned to bottom of card with mt-auto -->
-                  <div class="mt-auto pt-3 border-t border-surface-tint flex items-center justify-between text-xs text-ink-soft">
-                    <nuxt-link
-                      :to="`/news/${item.slug}`"
-                      class="inline-flex items-center gap-1.5 font-bold text-brand-800 hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
-                    >
-                      <span>{{ t('n_view_details') }}</span>
-                      <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
-                    </nuxt-link>
-                    <span class="text-[#6B7B68] font-medium text-[0.72rem]">{{ t('n_c11_badge') }}</span>
-                  </div>
-                </div>
-              </article>
-            </div>
+            <!-- List header + 3-column magazine grid (each renders only when there are cards) -->
+            <NewsArticleGrid
+              :items="rest"
+              :total="pagination.total"
+              :page="pagination.page"
+              :total-pages="pagination.totalPages"
+              :grid-class="articleGridClass"
+            />
             <!-- Enhanced Pagination -->
-            <nav
+            <NewsPagination
               v-if="pagination.totalPages > 1"
-              aria-label="Phân trang bản tin"
-              class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-line"
-            >
-              <div class="text-xs text-[#6F7F6C] font-medium order-2 sm:order-1">
-                {{ t('n_pagination_summary').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
-              </div>
-
-              <div class="flex items-center gap-1.5 flex-wrap justify-center order-1 sm:order-2">
-                <button
-                  type="button"
-                  class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all duration-200 hover:border-brand-600 hover:text-brand-600 hover:bg-surface-tint disabled:opacity-30 disabled:cursor-not-allowed"
-                  :disabled="pagination.page <= 1"
-                  @click="setPage(pagination.page - 1)"
-                  :aria-label="t('page_prev')"
-                >
-                  <i class="fa-solid fa-chevron-left text-[0.7rem]" aria-hidden="true"></i>
-                </button>
-
-                <template v-for="(p, i) in pageRange" :key="p">
-                  <span
-                    v-if="i > 0 && p - (pageRange[i - 1] ?? p) > 1"
-                    class="text-[#8C9C88] text-xs px-1 select-none font-bold"
-                    aria-hidden="true"
-                  >&hellip;</span>
-                  <button
-                    type="button"
-                    :aria-current="pagination.page === p ? 'page' : undefined"
-                    :class="[
-                      'inline-flex items-center justify-center min-w-9 h-9 px-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all duration-200',
-                      pagination.page === p
-                        ? 'bg-brand-600 text-white shadow-sm border border-[#4A6741]'
-                        : 'bg-white border border-[#D5E1D3] text-ink-secondary hover:border-brand-600 hover:text-brand-600 hover:bg-surface-tint'
-                    ]"
-                    @click="setPage(p)"
-                  >{{ p }}</button>
-                </template>
-
-                <button
-                  type="button"
-                  class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all duration-200 hover:border-brand-600 hover:text-brand-600 hover:bg-surface-tint disabled:opacity-30 disabled:cursor-not-allowed"
-                  :disabled="pagination.page >= pagination.totalPages"
-                  @click="setPage(pagination.page + 1)"
-                  :aria-label="t('page_next')"
-                >
-                  <i class="fa-solid fa-chevron-right text-[0.7rem]" aria-hidden="true"></i>
-                </button>
-              </div>
-            </nav>
+              :page="pagination.page"
+              :total-pages="pagination.totalPages"
+              :page-range="pageRange"
+              @go="setPage"
+            />
           </template>
         </div>
 
@@ -469,148 +210,24 @@
               </div>
             </div>
 
-            <ul v-else-if="mostRead.length" class="list-none p-0 m-0">
-              <li
-                v-for="(item, i) in mostRead"
-                :key="item.id"
-                class="flex gap-3 py-[13px] border-b border-line last:border-b-0"
-              >
-                <span class="w-7 shrink-0 text-right text-[1.45rem] leading-[1.15] font-extrabold" :class="i < 3 ? 'text-accent' : 'text-line-strong'">{{ i + 1 }}</span>
-                <h3 class="text-[0.9rem] font-bold leading-[1.4] m-0 min-w-0">
-                  <nuxt-link
-                    :to="`/news/${item.slug}`"
-                    class="text-ink no-underline transition-colors duration-300 hover:text-brand-600 line-clamp-2"
-                  >{{ item.title }}</nuxt-link>
-                </h3>
-              </li>
-            </ul>
+            <NewsMostReadList v-else-if="mostRead.length" :items="mostRead" />
 
             <p v-else class="text-[0.85rem] text-ink-soft italic py-4 m-0">{{ t('n_no_views') }}</p>
           </div>
 
           <!-- Widget 2: Chuyên mục bản tin -->
-          <div v-if="rootCategories.length" class="bg-white rounded-2xl border border-line shadow-sm p-5">
-            <div class="flex items-center gap-2 pb-3 border-b border-surface-tint mb-3">
-              <span class="w-7 h-7 rounded-lg bg-line text-brand-600 flex items-center justify-center text-xs shadow-sm">
-                <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
-              </span>
-              <h2 class="text-[0.92rem] font-black text-ink-strong uppercase tracking-wide m-0">
-                {{ t('n_category_widget') }}
-              </h2>
-            </div>
-            <div class="flex flex-col divide-y divide-surface-tint">
-              <button
-                type="button"
-                class="flex items-center justify-between py-2.5 text-xs font-extrabold text-left transition-colors"
-                :class="activeCategory === 'all' ? 'text-brand-800' : 'text-ink-secondary hover:text-brand-800'"
-                @click="setCategory('all')"
-              >
-                <span class="flex items-center gap-2">
-                  <i class="fa-solid fa-layer-group text-[0.7rem] text-[#8CA088]" aria-hidden="true"></i>
-                  <span>{{ t('n_all_news') }}</span>
-                </span>
-                <i class="fa-solid fa-chevron-right text-[0.65rem] text-[#A0B09C]" aria-hidden="true"></i>
-              </button>
-              <button
-                v-for="cat in rootCategories"
-                :key="cat.id"
-                type="button"
-                class="flex items-center justify-between py-2.5 text-xs font-extrabold text-left transition-colors"
-                :class="activeCategory === cat.slug ? 'text-brand-800' : 'text-ink-secondary hover:text-brand-800'"
-                @click="setCategory(cat.slug)"
-              >
-                <span class="flex items-center gap-2">
-                  <i :class="categoryIcon(cat.slug)" class="text-[0.7rem] text-[#8CA088]" aria-hidden="true"></i>
-                  <span>{{ cat.name }}</span>
-                </span>
-                <i class="fa-solid fa-chevron-right text-[0.65rem] text-[#A0B09C]" aria-hidden="true"></i>
-              </button>
-            </div>
-          </div>
+          <NewsCategoryWidget
+            v-if="rootCategories.length"
+            :active-category="activeCategory"
+            :categories="rootCategories"
+            @select="setCategory"
+          />
 
           <!-- Widget 3: Hotline & Hỗ Trợ 24/7 -->
-          <div class="relative rounded-2xl overflow-hidden shadow-md text-white bg-gradient-to-br from-[#294B26] via-[#203D1E] to-[#162D15] p-6 border border-[#3E6539]">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="w-6 h-6 rounded-full bg-white/15 flex items-center justify-center text-xs">
-                <i class="fa-solid fa-shield-halved text-[#A8D59D]" aria-hidden="true"></i>
-              </span>
-              <span class="text-[0.7rem] font-black uppercase tracking-wider text-[#A8D59D]">{{ t('support_24_7') }}</span>
-            </div>
-            <h3 class="text-[1.05rem] font-black m-0 mb-1.5 leading-snug">{{ t('hotline_title') }}</h3>
-            <p class="text-xs leading-relaxed m-0 mb-4 text-white/80">
-              {{ t('hotline_desc') }}
-            </p>
-
-            <a
-              href="tel:0903480985"
-              class="flex items-center justify-center gap-2.5 w-full bg-[#4a7c1e] hover:bg-[#3d6b15] text-white py-2.5 px-4 rounded-xl text-sm font-black no-underline transition-all shadow-md mb-2.5"
-            >
-              <i class="fa-solid fa-phone" aria-hidden="true"></i>
-              <span>0903.480.985</span>
-            </a>
-
-            <nuxt-link
-              to="/assistant"
-              class="flex items-center justify-center gap-2 w-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold py-2 px-3 rounded-xl no-underline transition-all border border-white/15"
-            >
-              <i class="fa-solid fa-robot text-[0.8rem]" aria-hidden="true"></i>
-              <span>{{ t('ask_ai_24_7') }}</span>
-            </nuxt-link>
-          </div>
+          <NewsHotlineWidget />
 
           <!-- Widget 4: Tra cứu nhanh -->
-          <div class="bg-white rounded-2xl border border-line shadow-sm p-5">
-            <div class="flex items-center gap-2 pb-3 border-b border-surface-tint mb-3">
-              <span class="w-7 h-7 rounded-lg bg-line text-brand-600 flex items-center justify-center text-xs shadow-sm">
-                <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
-              </span>
-              <h2 class="text-[0.92rem] font-black text-ink-strong uppercase tracking-wide m-0">
-                {{ t('quick_tools') }}
-              </h2>
-            </div>
-            <div class="flex flex-col gap-2 text-xs">
-              <nuxt-link
-                to="/documents"
-                class="flex items-center justify-between p-2.5 rounded-xl bg-surface hover:bg-surface-tint text-[#2C3E29] font-bold no-underline transition-all border border-line"
-              >
-                <span class="flex items-center gap-2">
-                  <i class="fa-solid fa-scale-balanced text-brand-600" aria-hidden="true"></i>
-                  <span>{{ t('documents_title') }}</span>
-                </span>
-                <i class="fa-solid fa-arrow-right text-[0.65rem] text-[#8CA088]" aria-hidden="true"></i>
-              </nuxt-link>
-              <nuxt-link
-                to="/legal-qa"
-                class="flex items-center justify-between p-2.5 rounded-xl bg-surface hover:bg-surface-tint text-[#2C3E29] font-bold no-underline transition-all border border-line"
-              >
-                <span class="flex items-center gap-2">
-                  <i class="fa-solid fa-circle-question text-brand-600" aria-hidden="true"></i>
-                  <span>{{ t('legal_qa') }}</span>
-                </span>
-                <i class="fa-solid fa-arrow-right text-[0.65rem] text-[#8CA088]" aria-hidden="true"></i>
-              </nuxt-link>
-              <nuxt-link
-                to="/role-models"
-                class="flex items-center justify-between p-2.5 rounded-xl bg-surface hover:bg-surface-tint text-[#2C3E29] font-bold no-underline transition-all border border-line"
-              >
-                <span class="flex items-center gap-2">
-                  <i class="fa-solid fa-award text-brand-600" aria-hidden="true"></i>
-                  <span>{{ t('role_models') }}</span>
-                </span>
-                <i class="fa-solid fa-arrow-right text-[0.65rem] text-[#8CA088]" aria-hidden="true"></i>
-              </nuxt-link>
-              <nuxt-link
-                to="/reintegration-models"
-                class="flex items-center justify-between p-2.5 rounded-xl bg-surface hover:bg-surface-tint text-[#2C3E29] font-bold no-underline transition-all border border-line"
-              >
-                <span class="flex items-center gap-2">
-                  <i class="fa-solid fa-people-group text-brand-600" aria-hidden="true"></i>
-                  <span>{{ t('reintegration') }}</span>
-                </span>
-                <i class="fa-solid fa-arrow-right text-[0.65rem] text-[#8CA088]" aria-hidden="true"></i>
-              </nuxt-link>
-            </div>
-          </div>
+          <NewsQuickLinksWidget />
         </aside>
       </div>
     </section>
@@ -618,12 +235,32 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * `/news` — the public news list.
+ *
+ * Split in wave3 4.2 (724 lines → this file + `components/news/*`). Kept here: every
+ * request (the list and "Đọc nhiều" through usePublicArticleList, the categories — its
+ * `$fetch` cast stays here: there is no public typed fetch helper), the category tree, the
+ * search banner, the loading / error + retry / empty / out-of-range branches of the list,
+ * the loading chips of the filter bar and the skeleton + empty line of "Đọc nhiều". The
+ * parts render only: hero (the page's one `<h1>`), search box (`v-model`), category chips,
+ * lead story, list header + grid, pagination, the loaded "Đọc nhiều" list and three rail
+ * widgets. They emit; navigation stays in the composable.
+ */
 import { computed } from 'vue'
-import { formatDateVN } from '~/utils/formatDate'
-import { cleanExcerpt } from '~/utils/article-excerpt'
 import { useI18n } from '~/composables/useI18n'
 import { useLayoutConfig } from '~/composables/useLayoutConfig'
 import { usePublicArticleList, usePublicMostRead } from '~/composables/usePublicArticleList'
+import NewsListHero from '~/components/news/NewsListHero.vue'
+import NewsSearchBox from '~/components/news/NewsSearchBox.vue'
+import NewsCategoryPills from '~/components/news/NewsCategoryPills.vue'
+import NewsFeaturedCard from '~/components/news/NewsFeaturedCard.vue'
+import NewsArticleGrid from '~/components/news/NewsArticleGrid.vue'
+import NewsPagination from '~/components/news/NewsPagination.vue'
+import NewsMostReadList from '~/components/news/NewsMostReadList.vue'
+import NewsCategoryWidget from '~/components/news/NewsCategoryWidget.vue'
+import NewsHotlineWidget from '~/components/news/NewsHotlineWidget.vue'
+import NewsQuickLinksWidget from '~/components/news/NewsQuickLinksWidget.vue'
 
 const { t, currentLang } = useI18n()
 const { articleGridClass } = useLayoutConfig()
@@ -697,28 +334,4 @@ const pageTitle = computed(() => {
   if (activeCategory.value === 'all') return t('n_activity_heading')
   return activeCategoryName.value || t('n_activity_heading')
 })
-
-// Visual pill classes
-const pillClass = (active: boolean) => [
-  'inline-flex items-center gap-2 shrink-0 whitespace-nowrap rounded-full border cursor-pointer px-4 py-2 text-[0.82rem] font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
-  active
-    ? 'bg-brand-600 border-[#4A6741] text-white shadow-sm shadow-brand-600/25'
-    : 'bg-white border-[#D5E1D3] text-ink-secondary hover:border-brand-600 hover:text-brand-800 hover:bg-surface-tint'
-]
-
-const subPillClass = (active: boolean) => [
-  'shrink-0 whitespace-nowrap rounded-lg border cursor-pointer px-3 py-1 font-bold transition-all duration-200 text-xs',
-  active
-    ? 'bg-brand-800 border-brand-800 text-white shadow-sm'
-    : 'bg-white border-line text-[#556350] hover:border-brand-800 hover:text-brand-800 hover:bg-surface-tint'
-]
-
-const categoryIcon = (slug: string) => {
-  if (slug.includes('noi-bat') || slug.includes('tieu-diem')) return 'fa-solid fa-star text-xs'
-  if (slug.includes('dia-phuong') || slug.includes('tinh')) return 'fa-solid fa-location-dot text-xs'
-  return 'fa-solid fa-newspaper text-xs'
-}
-
-const formatDate = (item: { publishedAt?: string | null; createdAt?: string | null }) =>
-  formatDateVN(item.publishedAt || item.createdAt)
 </script>
