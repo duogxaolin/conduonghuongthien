@@ -25,6 +25,8 @@
  */
 
 import { ref, type Ref } from 'vue'
+import type { LiveChatHistoryResponse, LiveChatSendResponse } from '../types/public-site-api'
+import { publicFetch } from './publicFetch'
 
 export interface LiveChatMessage {
   id: number
@@ -84,7 +86,7 @@ export function useLiveChat() {
   const loadHistory = async (attempt: number, readySessionId: number) => {
     historyLoading.value = true
     try {
-      const history = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, sessionId: number | null, messages: LiveChatMessage[] }>)(HISTORY_URL, {
+      const history = await publicFetch<LiveChatHistoryResponse>(HISTORY_URL, {
         params: { limit: HISTORY_LIMIT },
       })
       if (attempt !== connectionAttempt) return
@@ -264,7 +266,7 @@ export function useLiveChat() {
     })
 
     try {
-      const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, id: number }>)(SEND_URL, {
+      const res = await publicFetch<LiveChatSendResponse>(SEND_URL, {
         method: 'POST',
         body: { content: trimmed, sessionId: sessionId.value },
       })

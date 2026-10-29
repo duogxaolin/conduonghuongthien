@@ -223,6 +223,8 @@ export async function mountPublic(t: TestContext, options: PublicMountOptions) {
       fail: reject,
     }
     calls.push(call)
+    // As a browser does: an aborted request (ofetch's `timeout`, a caller's `signal`) rejects.
+    init.signal?.addEventListener('abort', () => reject(init.signal!.reason ?? new DOMException('Aborted', 'AbortError')), { once: true })
     const answer = options.responder(call)
     if (answer === HOLD) return
     if (answer instanceof Error) reject(answer)

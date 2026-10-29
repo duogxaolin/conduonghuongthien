@@ -64,6 +64,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { browserPollerEnv, createVisiblePoller, type VisiblePoller } from '~/utils/visible-poller'
+import { publicFetch } from '~/composables/publicFetch'
+import type { LivestreamActiveResponse } from '~/types/public-site-api'
 
 const route = useRoute()
 /** Ẩn ticker khi đang ở chính trang /media — ở đó LiveHero đã hiển thị buổi phát. */
@@ -92,7 +94,7 @@ const startedLabel = computed(() => {
 
 async function loadActive() {
   try {
-    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, active: boolean, session: ActiveSession | null }>)(
+    const response = await publicFetch<LivestreamActiveResponse>(
       '/api/public/livestream/active',
       { retry: 0, timeout: 4000 },
     )

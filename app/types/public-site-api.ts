@@ -13,3 +13,14 @@ import type { Payload } from './handler-payload'
  * `LoginPublicSettingsResponse` (admin-auth-api.ts).
  */
 export type PublicSettingsPayload = Payload<typeof import('~~/server/api/public/settings.get').default>
+
+// ─── Livestream ──────────────────────────────────────────────────────────────
+
+/** `GET /api/public/livestream/active` — `active: false, session: null` when nothing is on air. */
+export type LivestreamActiveResponse = Payload<typeof import('~~/server/api/public/livestream/active.get').default>
+
+/** `GET /api/public/livestream/chat/history?limit=` — the open session's last messages. */
+export type LiveChatHistoryResponse = Payload<typeof import('~~/server/api/public/livestream/chat/history.get').default>
+
+/** `POST /api/public/livestream/chat/send` — `{ ok, id }` of the accepted message. */
+export type LiveChatSendResponse = Payload<typeof import('~~/server/api/public/livestream/chat/send.post').default>

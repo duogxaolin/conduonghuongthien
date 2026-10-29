@@ -19,6 +19,15 @@ import type { Payload } from './handler-payload'
 export type PublicCategoriesResponse = Payload<typeof import('~~/server/api/public/categories.get').default>
 
 /**
+ * `GET /api/public/articles?type=&categorySlug=&limit=&page=&lang=&sort=` — one page of
+ * published articles (titles/excerpts localised by `?lang=`, then the cookie, then
+ * Vietnamese). Read by the list composable, the home blocks, /legal-qa and the news rails.
+ * The block casts it replaces declared a `featuredImage` and a `category: { name, slug }`
+ * the handler never sends (`category` is the legacy text column).
+ */
+export type PublicArticlesResponse = Payload<typeof import('~~/server/api/public/articles.get').default>
+
+/**
  * `GET /api/public/articles/<slug>?lang=` — one published article (404 otherwise, thrown).
  * The hand-written shape it replaces declared a `featuredImage` the handler never sends,
  * an `article: … | null` the handler never answers (a missing article is a 404), and an

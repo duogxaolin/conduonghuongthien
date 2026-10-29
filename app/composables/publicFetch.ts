@@ -39,10 +39,14 @@ export type PublicFetchMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 export interface PublicFetchOptions {
   method?: PublicFetchMethod
-  /** `undefined` values are dropped from the query string, as with bare `$fetch`. */
-  query?: Record<string, unknown>
+  /**
+   * `undefined` values are dropped from the query string, as with bare `$fetch`. `object`,
+   * not `Record<string, unknown>`: the list composables build their query as an interface
+   * (`ArticleListQuery`, `MediaListQuery`), which has no index signature.
+   */
+  query?: object
   /** ofetch's alias of `query`. */
-  params?: Record<string, unknown>
+  params?: object
   /** Plain objects and arrays are sent as JSON. */
   body?: Record<string, unknown> | unknown[]
   signal?: AbortSignal
