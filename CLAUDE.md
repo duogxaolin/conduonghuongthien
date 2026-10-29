@@ -58,6 +58,7 @@ app/
 │   ├── SectionBar.vue / ToastContainer.vue / ArticleDetail.vue
 │   ├── article/ (5 phần hiển thị tách từ ArticleDetail.vue: ArticleMetaHeader/Toc/Body/ShareBar/RelatedList — `v-html` thân bài ở ArticleBody, chỉ ArticleDetail dùng)
 │   ├── ChatWidget.vue / NewsCategoryList.vue / ArticleComments.vue
+│   ├── chat-widget/ (7 phần hiển thị tách từ ChatWidget.vue: Header/ConversationList/QuickQuestions/Composer/Launcher/MessageMeta/Welcome — lỗi/thử lại/role=alert/đang tải ở cha)
 │   ├── comments/ (3 phần hiển thị tách từ ArticleComments.vue: CommentThreadItem/PendingList/Composer)
 │   ├── ReaderAvatar.vue / ReaderNotificationBell.client.vue (.client bắt buộc — swr:60)
 │   ├── admin/MediaLibraryModal.vue / TinyMceEditor.vue / ConfirmModal.vue
@@ -68,7 +69,8 @@ app/
 │   └── blocks/registry.ts / blocks/types.ts / submission-status.ts = CHỈ re-export từ `shared/` (liệt kê tên, alias `~~/shared`)
 │   (plain-text.ts / display-name.ts / query-number.ts đã chuyển sang `server/utils/`)
 ├── composables/
-│   ├── useAdminAuth.ts / useChatbot.ts (+ useChatbotTypewriter.ts)
+│   ├── useAdminAuth.ts / useChatbot.ts (mặt tiền; mã ở chatbot/*.ts, không index.ts → không auto-import) (+ useChatbotTypewriter.ts)
+│   ├── useChatWidgetDialog.ts / useChatWidgetTeaser.ts / useChatCopy.ts (tách từ ChatWidget.vue)
 │   ├── useI18n.ts (+ i18n-default-dictionary.ts = fallback hardcoded vi; mọi lang kể cả vi fetch DB) / useReaderAuth.ts
 │   ├── useReaderNotifications.ts / useReadingHistory.ts (localStorage only) / useToast.ts
 │   └── useAnalyticsNocTable.ts
@@ -199,7 +201,7 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 
 - `server/db/init.ts` (1302 → 73 dòng; sau thêm `try/finally` nhả kết nối khi khôi phục CSDL gọi nó trong tiến trình server): 7 file `schema-tables/*.ts` theo domain giữ mọi `CREATE TABLE`; `init.ts` chỉ còn thứ tự gọi (ràng buộc FK thật). `db:drift` đọc cả 9 tệp như một nguồn DDL duy nhất.
 - `app/layouts/default.vue` (1301 → 401, `wc -l` 2026-10-14): tách 7 component `app/components/layout/Default*.vue` + 5 composable (`useLayoutNav`/`useSiteSettings`/`useLiveSearch`/`useReaderMenu`/`useMobileMenu`) + skip-link a11y + `id="main-content"`; guard test ghép nguồn qua `tests/_layout-parts.ts` (→ CHANGELOG § 7).
-- `app/composables/useChatbot.ts` (939→740, lớn lại sau đó) → `useChatbotTypewriter.ts`.
+- `app/composables/useChatbot.ts` (939→740, lớn lại sau đó) → `useChatbotTypewriter.ts`; wave3 (857 → 138): mặt tiền cùng API, 7 module `composables/chatbot/` (state/persistence/sse/send/conversations/quick-questions/sources; bộ đếm request đang bay chỉ ở `send.ts`). `ChatWidget.vue` (620 → 400): 7 phần `components/chat-widget/` + `useChatWidgetDialog`/`useChatWidgetTeaser`/`useChatCopy`. Test hành vi `tests/chat-widget-behavior.test.ts` (mount thật, viết trước khi tách); guard đọc họ tệp `CHAT_WIDGET_FAMILY`/`CHATBOT_COMPOSABLE_FAMILY` (`tests/_component-family.ts`) → `docs/decisions/refactor-large-files.md`.
 - **Module máy chủ đã tách = barrel liệt kê tên** (không `export *`; nơi gọi và `mock.module` vẫn trỏ đường cũ; tệp con không nạp barrel ở bất kỳ dạng nào; trạng thái cấp module có một chủ — `tests/service-split-boundaries.test.ts`, nhóm suy từ thư mục, luật 1/4 cho mọi nhóm, luật 5 (API barrel)/6 (nơi gọi ngoài nhóm chỉ qua barrel) theo nhóm). Test hành vi viết **trước** khi tách, xanh trên bản gốc. Chi tiết → CHANGELOG § 41–43, 52:
   - `media-portal.ts` (1208 → 74) → `media-portal-{assets,stream,thumbnail,admin-write,thumbnail-override}.ts` (+ `-constants`/`-public`/`-admin-read`/`media-validation`/`media-views`); guard ảnh YouTube quét toàn bộ `server/`+`app/`, không theo danh sách tên.
   - `video-processing.ts` (1168 → 38) → `video-{transcode-pipeline,process-runner,renditions,thumbnail-frame,disk-guard,processing-job}.ts`; chỉ đường ống được `trackProcessingClaim`/`forgetProcessingClaim`; argv `cpulimit` của production ghim qua `setCpulimitAvailableForTests`.
