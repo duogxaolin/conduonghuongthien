@@ -14,6 +14,21 @@ import type { Payload } from './handler-payload'
  */
 export type PublicSettingsPayload = Payload<typeof import('~~/server/api/public/settings.get').default>
 
+/** `GET /api/public/languages` — the active languages, in display order. */
+export type PublicLanguagesResponse = Payload<typeof import('~~/server/api/public/languages.get').default>
+
+/** `GET /api/public/translations/<code>` — the interface dictionary of one language, by group. */
+export type PublicTranslationsResponse = Payload<typeof import('~~/server/api/public/translations/[code].get').default>
+
+/** `GET /api/public/social-links` — the visible links of the floating bubble. */
+export type PublicSocialLinksResponse = Payload<typeof import('~~/server/api/public/social-links/index.get').default>
+
+/** `POST /api/public/analytics/page-view` — always 202; `accepted` says whether it counted. */
+export type PublicPageViewResponse = Payload<typeof import('~~/server/api/public/analytics/page-view.post').default>
+
+/** `POST /api/submissions` — a citizen's form (support / contact blocks): `{ ok, id }`. */
+export type PublicSubmissionResponse = Payload<typeof import('~~/server/api/submissions.post').default>
+
 // ─── Livestream ──────────────────────────────────────────────────────────────
 
 /** `GET /api/public/livestream/active` — `active: false, session: null` when nothing is on air. */

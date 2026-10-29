@@ -20,9 +20,11 @@
  * a reactive `{ path, params, query }`; `useSeoMeta`/`useHead` and `useSsrFailureStatus`
  * are recorded. Components the view does not import render as plain elements with props.
  */
+import { existsSync, readFileSync } from 'node:fs'
+import { stripTypeScriptTypes } from 'node:module'
 import path from 'node:path'
 import type { TestContext } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createFetch } from 'ofetch'
 import * as Vue from 'vue'
 
@@ -321,6 +323,51 @@ export type PublicMount = Awaited<ReturnType<typeof mountPublic>>
 
 /** A component that renders nothing (a child the view under test only passes props to). */
 export const Stub = Vue.defineComponent({ inheritAttrs: false, setup: () => () => null })
+
+// ─── Loading a composable Node cannot import as is ───────────────────────────
+
+const IMPORT_FROM = /^import\s+([^'"]*?)\s*from\s*['"]([^'"]+)['"];?/gm
+
+/**
+ * Evaluate one `app/` module the way the Nuxt build would, for a composable that imports
+ * `#imports` or a `~/` path (useI18n, useLiveSearch): types stripped, `import.meta.server` /
+ * `client` replaced, each import taken from `modules` when given there, else loaded for real
+ * (`~/` and relative paths from disk). A fresh evaluation each call — fresh module state.
+ * Nuxt auto-imports the module uses bare (`useState`, `navigateTo`) come from `names`.
+ */
+export async function loadAppModule(
+  file: string,
+  options: { modules?: Record<string, Record<string, unknown>>, importMeta?: { server: boolean, client: boolean }, names?: Record<string, unknown> } = {},
+): Promise<Record<string, unknown>> {
+  const absolute = path.isAbsolute(file) ? file : path.join(APP, file)
+  const meta = options.importMeta ?? { server: false, client: true }
+  const code = stripTypeScriptTypes(readFileSync(absolute, 'utf8'))
+    .replace(/\bimport\.meta\.(server|client|dev)\b/g, (_m, flag: 'server' | 'client' | 'dev') => String(flag === 'dev' ? false : meta[flag]))
+  const modules: Record<string, unknown> = {}
+  for (const [, , from] of code.matchAll(IMPORT_FROM)) {
+    if (modules[from!]) continue
+    if (options.modules?.[from!]) { modules[from!] = options.modules[from!]; continue }
+    if (from!.startsWith('~/') || from!.startsWith('.')) {
+      const base = from!.startsWith('~/') ? path.join(APP, from!.slice(2)) : path.resolve(path.dirname(absolute), from!)
+      const target = existsSync(base) ? base : `${base}.ts`
+      modules[from!] = await import(pathToFileURL(target).href)
+    } else {
+      modules[from!] = await import(from!)
+    }
+  }
+  const exported = [...code.matchAll(/^export\s+(?:async\s+)?(?:function|const|let)\s+(\w+)/gm)].map(match => match[1]!)
+  const body = code
+    .replace(IMPORT_FROM, (_m, clause: string, from: string) => {
+      const named = /^\{([^}]*)\}$/.exec(clause.trim())
+      if (named) return `const {${named[1]!.replace(/\s+as\s+/g, ': ')}} = __modules[${JSON.stringify(from)}];`
+      if (/^\w+$/.test(clause.trim())) return `const ${clause.trim()} = __modules[${JSON.stringify(from)}].default;`
+      if (!clause.trim()) return ''
+      throw new Error(`${file}: unsupported import clause \`${clause}\``)
+    })
+    .replace(/^export\s+(?=(?:async\s+)?(?:function|const|let)\s)/gm, '')
+  const names = Object.entries(options.names ?? {})
+  return new Function('__modules', ...names.map(([name]) => name), `${body}\nreturn { ${exported.join(', ')} }`)(modules, ...names.map(([, value]) => value)) as Record<string, unknown>
+}
 
 // ─── Reading the screen ──────────────────────────────────────────────────────
 

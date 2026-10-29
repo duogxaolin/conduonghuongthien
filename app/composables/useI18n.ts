@@ -1,7 +1,9 @@
 import { computed, type Ref } from 'vue'
 import { useHead, useNuxtApp, useRequestHeader, useState } from '#imports'
 import { hardcodedDictionary } from './i18n-default-dictionary'
+import { publicFetch } from './publicFetch'
 import { createSingleFlight } from '~/utils/single-flight'
+import type { PublicLanguagesResponse, PublicTranslationsResponse } from '~/types/public-site-api'
 import {
   LOCALE_STORAGE_KEY,
   localeFromCookieHeader,
@@ -137,7 +139,7 @@ export const useI18n = () => {
   function loadLanguagesFromDb(): Promise<void> {
     return singleFlight('languages', async () => {
       try {
-        const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ code: string; name: string; nativeName: string; isDefault: boolean }> }>)('/api/public/languages')
+        const res = await publicFetch<PublicLanguagesResponse>('/api/public/languages')
         if (res.ok && Array.isArray(res.items) && res.items.length > 0) {
           const items = res.items.map(l => ({
             code: l.code,
@@ -183,7 +185,7 @@ export const useI18n = () => {
   // dictionary chỉ còn fallback khi DB chưa seed / API hỏng / SSR chưa fetch xong.
   function loadTranslations(lang: string): Promise<void> {
     return singleFlight(`translations:${lang}`, () =>
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; translations: Record<string, Record<string, string>> }>)(
+      publicFetch<PublicTranslationsResponse>(
         `/api/public/translations/${lang}`,
       )
         .then((res) => {

@@ -40,3 +40,22 @@ export type PublicArticleRelatedResponse = Payload<typeof import('~~/server/api/
 
 /** `POST /api/public/articles/<slug>/view` — always 202; `accepted` says whether it counted. */
 export type PublicArticleViewResponse = Payload<typeof import('~~/server/api/public/articles/[slug]/view.post').default>
+
+/**
+ * `GET /api/public/pages/<slug>` — a visible Page Builder page and its rendered block tree
+ * (`ok: false, page: null` for an unknown/hidden slug — the handler declares the shape,
+ * `PublicPageResponse`). Read by `/`, `/about`, `/contact` and the catch-all `[slug]`.
+ */
+export type PublicPageResponse = Payload<typeof import('~~/server/api/public/pages/[slug].get').default>
+
+/** `GET /api/public/content-types` — the content types a catch-all slug may name. */
+export type PublicContentTypesResponse = Payload<typeof import('~~/server/api/public/content-types.get').default>
+
+/** `GET /api/public/search?q=&type=&page=&limit=` — articles, Q&A and pages in one paged list. */
+export type PublicSearchResponse = Payload<typeof import('~~/server/api/public/search.get').default>
+
+/** `GET /api/public/chatbot/knowledge?page=&perPage=&search=&topic=` — the published Q&A (`/qa-documents`). */
+export type PublicKnowledgeResponse = Payload<typeof import('~~/server/api/public/chatbot/knowledge.get').default>
+
+/** `POST /api/public/media/<shortId>/view` — always 202; `accepted` says whether it counted. */
+export type PublicMediaViewResponse = Payload<typeof import('~~/server/api/public/media/[shortId]/view.post').default>
