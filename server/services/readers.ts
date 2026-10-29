@@ -34,12 +34,9 @@ export const READER_MAX_PER_PAGE = 100
 // ─── Display name ────────────────────────────────────────────────────────────
 
 /**
- * Re-exported from utils/display-name.ts, which is where the name logic actually
- * lives — this module cannot host it, because services/comments.ts needs the same
- * functions to render names on the public thread and already imports this file.
- *
- * Re-exported rather than moved silently so the existing call sites and
- * tests/reader-profile.test.ts keep one obvious import path.
+ * Re-exported from utils/display-name.ts, where the name logic lives (services/comments.ts
+ * needs it for the public thread and already imports this file), so the existing call sites
+ * and tests/reader-profile.test.ts keep one obvious import path.
  */
 export {
   DISPLAY_NAME_FALLBACK,
@@ -331,13 +328,14 @@ export async function deleteReader(params: { readerId: number, actorId: number }
     .from(readerAccounts)
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
-
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-
   const impact = await countReaderCommentImpact(params.readerId)
-
-  await db.transaction(async (tx) => {
-    await tx.delete(readerAccounts).where(eq(readerAccounts.id, params.readerId))
+  // The DELETE is counted: a delete that landed since the read above leaves 0 rows — the 404
+  // of a missing account, no second "delete" row for one deletion (verifier M1 family).
+  const deleted = await db.transaction(async (tx) => {
+    const removed = readAffectedRows(await tx.delete(readerAccounts).where(eq(readerAccounts.id, params.readerId)))
+    if (removed === 0) return false
+    if (removed !== 1) throw new Error('deleteReader: the driver did not report the affected rows')
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
       action:     'delete',
@@ -352,8 +350,9 @@ export async function deleteReader(params: { readerId: number, actorId: number }
         deletedOtherReaderReplies: impact.otherReaderReplies,
       },
     })
+    return true
   })
-
+  if (!deleted) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
   return { ok: true, impact }
 }
 
@@ -369,12 +368,13 @@ export async function purgeReaderComments(params: { readerId: number, actorId: n
 
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
 
-  // The shared deletion path, not a local DELETE (design.md D8) — and inside one
-  // transaction with its audit row, for the same reason ban and account deletion
-  // are: rows gone with no record of who removed them is precisely the loss the
-  // audit log exists to prevent.
+  // The shared deletion path, not a local DELETE (design.md D8), in one transaction with
+  // its audit row (rows gone with no record of who removed them is the loss the log exists
+  // to prevent) — and under the reader row's lock, so a purge running meanwhile has finished
+  // and this one counts what is left: two at once both claimed the same comments (M1 family).
   let impact = { comments: 0, adminReplies: 0, otherReaderReplies: 0 }
   await db.transaction(async (tx) => {
+    await tx.select({ id: readerAccounts.id }).from(readerAccounts).where(eq(readerAccounts.id, params.readerId)).for('update')
     impact = await deleteReaderComments(params.readerId, tx)
 
     await tx.insert(activityLogs).values({

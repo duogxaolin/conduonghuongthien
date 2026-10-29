@@ -377,6 +377,30 @@ test('FINDING-R6-10 (M1): two bans at once — the second counts only what it de
   assert.equal(readerRow(id)!.tokenVersion, 2)
 })
 
+test('FINDING-R6-10 (M1): two deletions of one account at once — the loser is the 404 of a missing account, with no audit row', async () => {
+  const id = await reader()
+  h.harness.beforeNext(/^delete from `reader_accounts`/, () => h.harness.sqlite.exec(
+    `COMMIT; DELETE FROM reader_accounts WHERE id = ${id};
+     INSERT INTO activity_logs (user_id, action, resource, resource_id, meta) VALUES (${viewer.id}, 'delete', 'readers', ${id}, '{"deletedComments":0}'); BEGIN`,
+  ))
+  const response = await h.request('DELETE', `/api/admin/readers/${id}`, moderator)
+  // Before: 200 and a second "delete" row for one deletion (30/30 on MySQL).
+  assert.deepEqual([response.status, response.body.statusMessage], [404, 'Không tìm thấy tài khoản người đọc.'])
+  assert.deepEqual(audits().map(a => [a.userId, a.action]), [[viewer.id, 'delete']])
+})
+
+test('FINDING-R6-10 (M1): two purges of one reader\'s comments at once — the second counts only what it deleted', async () => {
+  const { id } = await readerWithThread()
+  h.harness.beforeNext(/^(select .* from `reader_accounts` .*for update|delete from `article_comments`)/s, () => h.harness.sqlite.exec(
+    `COMMIT; DELETE FROM article_comments WHERE reader_id = ${id};
+     INSERT INTO activity_logs (user_id, action, resource, resource_id, meta) VALUES (${viewer.id}, 'delete', 'comments', ${id}, '{"operation":"purge_reader_comments","deletedComments":2}'); BEGIN`,
+  ))
+  const response = await h.request('DELETE', `/api/admin/readers/${id}/comments`, commentsOfficer)
+  assert.deepEqual([response.status, response.body.impact], [200, { comments: 0, adminReplies: 0, otherReaderReplies: 0 }])
+  // Before: this row claimed the same 2 comments again (4 claimed for 2 — 30/30 on MySQL).
+  assert.deepEqual(audits().map(a => [a.userId, a.meta.deletedComments]), [[viewer.id, 2], [commentsOfficer.id, 0]])
+})
+
 test('FINDING-R6-10 (M1): two lifts of one address ban at once — the loser is the 404 of a missing ban, with no audit row', async () => {
   const id = (await h.request('POST', '/api/admin/ip-bans', moderator, { value: '192.0.2.88' })).body.id as number
   h.harness.beforeNext(/^delete from `reader_ip_bans`/, () => h.harness.sqlite.exec(
@@ -403,6 +427,18 @@ test('FINDING-R6-10 (M1): two bans of one address at once — the loser is the 4
     assert.deepEqual(audits(), [])
   } finally {
     h.harness.sqlite.exec('DROP INDEX test_reader_ip_bans_value')
+  }
+})
+
+test('an address-ban insert skipped for another reason than a duplicate (IGNORE hides a foreign-key error too) is an error, not "already listed"', async () => {
+  // RAISE(IGNORE) skips the row the way MySQL's INSERT IGNORE skips one whose created_by is gone.
+  h.harness.sqlite.exec('CREATE TRIGGER test_skip_ip_ban BEFORE INSERT ON reader_ip_bans BEGIN SELECT RAISE(IGNORE); END')
+  try {
+    const response = await h.request('POST', '/api/admin/ip-bans', moderator, { value: '192.0.2.123' })
+    assert.equal(response.status, 500)
+    assert.deepEqual([h.harness.rows(readerIpBans), audits()], [[], []])
+  } finally {
+    h.harness.sqlite.exec('DROP TRIGGER test_skip_ip_ban')
   }
 })
 

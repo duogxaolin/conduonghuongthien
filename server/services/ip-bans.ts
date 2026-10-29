@@ -93,7 +93,13 @@ export async function createIpBan(params: { value: string, reason: string | null
     })
     return true
   })
-  if (!created) return { ok: false, statusCode: 409, message: 'Địa chỉ này đã có trong danh sách chặn.' }
+  if (!created) {
+    // IGNORE also turns other errors (a foreign key on created_by) into 0 rows: only a row
+    // holding this value now makes it a duplicate — anything else is not "already listed".
+    const [listed] = await db.select({ id: readerIpBans.id }).from(readerIpBans).where(eq(readerIpBans.value, verdict.value)).limit(1)
+    if (!listed) throw new Error('createIpBan: the insert was ignored, and not for a duplicate value')
+    return { ok: false, statusCode: 409, message: 'Địa chỉ này đã có trong danh sách chặn.' }
+  }
 
   return { ok: true, id }
 }
