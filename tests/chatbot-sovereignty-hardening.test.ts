@@ -55,8 +55,9 @@ const SHY = String.fromCodePoint(0x00ad)
 const EVASIONS = [
   // Ký tự định dạng vô hình giữa hai từ (ZWSP, WJ, SHY) và hai từ dính liền.
   'BiểnĐông của ai', `Biển${ZWSP}Đông của ai`, `Biển${WJ}Đông của ai`, `Biển${SHY}Đông`,
-  // Dấu nối giữa hai từ.
-  'Biển_Đông của ai', 'Biển.Đông thuộc ai', 'Biển/Đông', 'Tây-Sa thuộc ai', 'Nam-Sa thuộc ai', 'Tam-Sa',
+  // Dấu nối giữa hai từ. ("Biển.Đông" đã bỏ khỏi danh sách theo kiểm chứng vòng 2: "." không dấu cách là dấu câu gõ
+  // vội — "đi biển.Đông Anh là quê tôi" — nên không còn là ký tự nối; xem chatbot-sovereignty-false-positives.)
+  'Biển_Đông của ai', 'Biển/Đông', 'Tây-Sa thuộc ai', 'Nam-Sa thuộc ai', 'Tam-Sa',
   'Tây-Sa thuộc Trung Quốc phải không',
   // Chữ Latin mở rộng / Kirin / Hy Lạp nhìn như chữ Việt.
   'Biển Ɖông của ai', 'biển ɖông thuộc nước nào', 'Нoàng Sa (chữ Н Kirin) thuộc ai', 'Paraсel islands', 'Ηoàng Sa thuộc ai',
