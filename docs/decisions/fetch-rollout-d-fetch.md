@@ -10,6 +10,10 @@
 > Lô F (cuối tệp): 28 ép kiểu nữa (102 → 74; phía quản trị 43 → 15), 9 lỗi (F-1…F-9: menu lưu đè khi
 > tải hỏng, `roleId || 2`, đua bộ lọc đơn đăng ký/backup/nhật ký AI, bộ chọn ảnh không có trang 2…),
 > hai danh sách nữa dùng mã lượt (backup không sang `useAdminList`), 24 đột biến, số còn lại cho lô G.
+> Lô G — phía công khai (cuối tệp): `publicFetch<T>` (một ép kiểu có tên), 54 ép kiểu công khai → 0 ở 34 tệp
+> (baseline 73 → 20; phía công khai 55 → 2), kiểu suy từ handler ở `app/types/public-{content,reader,site}-api.ts`,
+> ngữ nghĩa SSR từng chỗ gọi ghim bằng test mount chạy trên bản gốc lẫn lô G, G-1 sửa (nhãn chuyên mục của
+> hai khối), G-2 ghi nhận (thiếu `lang`), 31 lượt đột biến.
 
 Lô B bỏ 56 ép kiểu `$fetch` ở 7 tệp bằng `adminFetch<T>()` (kiểu suy từ handler qua
 `Payload<…>`, `app/types/handler-payload.ts`), nhưng **không tệp nào** chuyển sang
@@ -470,3 +474,142 @@ thận: `AnalyticsLiveDashboard.client.vue` (3, 1060 dòng, `Function()`), `useB
 của `_admin-page-harness.ts` + 3 test biên dịch nó với danh sách tên cố định, phải thêm `adminFetch` vào cả
 bốn); ngoài phạm vi lô F theo phân công: `layouts/admin.vue` (2), `articles/ArticleAIPanel.vue` (1, phần
 tách của trình soạn bài).
+
+## Lô G — phía công khai (nhánh `wave3/fetch-casts-g-public`, base `5f1bb07d`)
+
+Bỏ **54** ép kiểu `$fetch` ở **34** tệp công khai (baseline 73 → **20**; phía công khai 55 → **2**: `useChatbot.ts`
+ngoài phạm vi + chính `publicFetch.ts`). Kiểu phản hồi suy từ handler qua `Payload<…>`:
+
+| Nhóm | Tệp | Ép kiểu | Kiểu |
+|---|---|---|---|
+| Tin tức, trang | `news/index.vue`, `news/[category]/index.vue`, `index/about/contact.vue`, `[slug].vue`, `search.vue`, `qa-documents.vue`, `legal-qa/index.vue` | 11 | `public-content-api.ts` (mới) |
+| Người đọc | `useReaderAuth.ts`, `useReaderNotifications.ts`, `profile.vue`, `ArticleComments.vue` | 14 | `public-reader-api.ts` (mới) + `public-api.ts` (sẵn có) |
+| Bài viết | `ArticleDetail.vue`, `in-bai/[slug].vue`, `layouts/default.vue` | 7 | `public-content-api.ts`, `public-site-api.ts` (mới) |
+| Danh sách, khối | `usePublicArticleList/MediaList.ts`, 6 khối `blocks/*`, `NewsCategoryList`, `ContentTypeListSection` | 10 | `PublicArticlesResponse`, `PublicCategoriesResponse`, `MediaListPayload` |
+| Video | `media/[shortId].vue` | 3 | `MediaDetail/ListPayload` (sẵn có), `PublicMediaViewResponse` |
+| Toàn trang | `useI18n.ts`, `useLiveSearch.ts`, `useLiveChat.ts`, `LiveHero`, `LiveTickerBar`, `SocialBubble`, `plugins/analytics.client.ts` | 9 | `public-site-api.ts` |
+
+### Quyết định
+
+- **`publicFetch<T>` riêng (`app/composables/publicFetch.ts`), không dùng lại `adminFetch`.** `adminFetch` đã có
+  hành vi riêng của quản trị (đọc thân lỗi JSON của lượt tải tệp) và có thể có thêm; trang công khai không được
+  thừa hưởng nó do tình cờ. `publicFetch` là **một lời gọi trần của `$fetch` toàn cục** — không `useRequestFetch`,
+  `useFetch`, `useNuxtApp`, không thêm header: lúc SSR, `$fetch` toàn cục của Nuxt không chuyển cookie của khách
+  (`cdkt_lang`, vé người đọc), và đó là thứ giữ HTML của các tuyến `swr` giống nhau cho mọi khách. Cùng đối tượng
+  lỗi (không bọc, không `async` — lỗi ném đồng bộ vẫn đồng bộ), url + options đi nguyên (cùng đối tượng). Options
+  là đúng những khoá chỗ gọi công khai dùng: `method/query/params/body/signal/retry/timeout/keepalive`; `params`
+  (bí danh `query` của ofetch) giữ nguyên ở các khối — mỗi chỗ gọi chỉ đổi hàm được gọi; `query`/`params` kiểu
+  `object` vì các composable danh sách dựng query bằng interface (không có index signature).
+- **Một ép kiểu có tên, thêm bằng `--raise`** — lần nâng duy nhất của ratchet này (`fetch-casts.test.ts` khoá
+  `publicFetch.ts` ≤ 1 cạnh `adminFetch.ts` ≤ 2). Bản không ép kiểu (`$fetch<T>(url, options)`) đã thử: TS2589 +
+  TS2345 (bằng chứng `cdht-wave3-fetch-g-public-proof/probe/zzProbeG.ts`, `typecheck-1.log`).
+- **Import tường minh `~/composables/publicFetch`** ở mọi nơi (harness mount nạp đúng tệp thật, không phải sửa),
+  trừ năm tệp có trần dòng: `layouts/default.vue` (401, CLAUDE.md cấm thêm logic), `search.vue` (423),
+  `qa-documents.vue` (480), `legal-qa/index.vue` và `media/[shortId].vue` (đúng 400) — dùng auto-import của Nuxt và
+  kiểu `import('…')` nội dòng, số dòng không tăng. `useI18n.ts` lấy `publicFetch` từ `#imports` cùng `useHead`/
+  `useState` (cùng module): số dòng của nó (265) nằm trong khối số liệu của CLAUDE.md, mà lô này không sửa CLAUDE.md.
+- `useSiteSettings.ts` nhập `useLayoutConfig` bằng đường dẫn tương đối (`~/` chỉ Nuxt hiểu) để layout công khai
+  mount được trong Node.
+
+**Kiểu viết tay bị thay lộ sai lệch** (không lỗi hiển thị trừ G-1): `featuredImage` (khai ở `ArticleDetail`,
+`in-bai`, `useArticleRelated`, 5 kiểu ép của khối — handler không bao giờ gửi, không nơi nào đọc); `article: … | null`
+(bài không có là 404 ném, không phải `null`) và index signature `[key: string]: unknown`; `faviconUrl` + `settings?`
+tuỳ chọn của `/api/public/settings`; `SocialLink.iconType` là union ba giá trị, cột là `varchar(16)`; kiểu ép của
+`/qa-documents` khai `topics: {slug, name, count}` — handler gửi `{topic, total}` (trang ép lại sang `PublicQaTopic`
+đúng, nên vẫn hiện đúng); `category: {name, slug}` của khối (G-1).
+
+### Ngữ nghĩa SSR giữ y hệt — cách chứng minh
+
+Mỗi chỗ gọi ở lại đúng nơi nó đứng (trong handler `useAsyncData` → dựng phía máy chủ + payload; sau mount / trong
+handler sự kiện → chỉ trình duyệt), cùng khoá và cùng cờ. Chứng minh bằng test chạy được, không đọc chữ:
+
+- `tests/_public-mount-harness.ts` (mới): mount view thật qua `_sfc-mount`, ofetch thật trên mạng giả, `useAsyncData`
+  giả theo Nuxt 4.6.1 **ghi** từng lượt đăng ký (khoá, `lazy`, `server`, `immediate`, `default()`, số nguồn `watch`,
+  `getCachedData`) và **`NetCall.via`** — lượt gọi `$fetch` nằm trong handler `useAsyncData` hay ngoài (đọc lúc GỌI,
+  lượt thử lại giữ nhãn); `keepalive`/`signal` (huỷ → từ chối như trình duyệt); `loadAppModule` nạp composable dùng
+  `#imports`/`~/` như bản build. `_sfc-mount.ts` thêm tuỳ chọn `importMeta` (thay `import.meta.server/client` như
+  Vite — chạy được nhánh chỉ-máy-chủ: `await` của `[slug].vue`, `/news/<X>`).
+- Test mới: `tests/public-fetch.test.ts` (helper), `tests/public-fetch-rollout-{reader,article-print,live,i18n,blocks,analytics,pages}.test.ts`
+  (≈ 130 test). **Mọi test không mang nhãn FINDING xanh trên base `5f1bb07d`** (chạy trong worktree base
+  `cdht-wave3-fetch-g-public-proof/wt-base`, đúng bộ test + harness của lô G; một commit chỉ-bằng-chứng `62dc9ff0`
+  đổi đúng dòng import tương đối của `useSiteSettings` ở base để Node nạp được — không đổi hành vi).
+- Bốn bộ mount có sẵn chạy trên base và lô G với nhật ký DOM (`html` + dây + thân POST/DELETE + SEO mỗi nhịp):
+  `/news` 36 test / 58 ảnh chụp, `/profile` 33/85, luồng bình luận 33/110, `ArticleDetail` 25/37 — **giống hệt từng dòng**.
+- Bộ đệm: `useI18n` phía máy chủ không hỏi gì, đọc ngôn ngữ từ header cookie, không ghi gì (không có `document`);
+  phía trình duyệt MỘT lượt languages + MỘT lượt translations cho ngôn ngữ SẼ hiện, áp sau hydrate. Trạng thái phát
+  trực tiếp, nút MXH, lượt đếm xem, video liên quan, beacon analytics: ngoài `useAsyncData` (không vào HTML đệm).
+
+**Guard sửa theo, không yếu đi:** `public-split-pages-source` (quét "phần tách không request" nhận cả `publicFetch` +
+cấy thử; `/profile` đếm 4 lượt `publicFetch` và cấm `$fetch`), `article-related-content` (fetcher gọi ngay là
+`publicFetch<…>(…)`), `single-flight` (2 lượt `publicFetch`, cấm `$fetch`). Không gate nào của phía quản trị đổi.
+
+### Lỗi tìm thấy
+
+- **G-1 (sửa): nhãn chuyên mục của `RoleModelsBlock` và `ReintegrationBlock` không bao giờ hiện.** Bản đầu của khối
+  (`20073b4d`) đọc `a.categoryName`; `30b87195` ("typecheck clean") thêm kiểu ép bịa `category: {name, slug}` và đổi
+  thành `a.category?.name` — `category` là cột văn bản cũ, `.name` của chuỗi luôn `undefined`, `v-if` ẩn nhãn. Kiểu
+  suy từ handler làm dòng đó đỏ typecheck. Trả lại `a.categoryName || ''`. Test FINDING (`public-fetch-rollout-blocks`)
+  **đỏ trên `5f1bb07d`**, xanh sau (`base-red/blocks-rollout.txt`).
+- **G-2 (ghi nhận, KHÔNG sửa — ghim bằng test KNOWN): hai lượt đọc không gửi `lang`.**
+  - `/news/<X>` (`news/[category]/index.vue:75`, câu hỏi của phân công): lượt kiểm chuyên mục chỉ dùng tên để làm
+    **tiêu đề tài liệu** (`<cat.name> | …`). `/news/**` là tuyến `swr`: SSR không có cookie → tên tiếng Việt, đúng với
+    HTML dùng chung. Sau hydrate khoá không có ngôn ngữ nên không đọc lại → người đọc tiếng Anh vào thẳng thấy tiêu đề
+    tab tiếng Việt, đi tới bằng điều hướng phía client (trình duyệt gửi cookie) thì tiếng Anh. Lỗi thật nhưng chỉ ở
+    tiêu đề tab. **Không sửa ở lô này**: thêm ngôn ngữ vào khoá/`watch` làm lượt đọc lại đưa `status` về `pending`, mà
+    `resolveCategoryRoute` coi `pending` là nhánh `ArticleDetail` — trang chuyên mục sẽ nháy sang ArticleDetail và gọi
+    `/api/public/articles/<slug chuyên mục>` (404). Gốc: quyết định nhánh phải giữ kết quả đã có khi đọc lại CÙNG slug
+    (hoặc tiêu đề lấy tên từ `ContentTypeListSection`, vốn đã đọc chuyên mục theo `lang`).
+  - `[slug].vue` (trang Page Builder tuỳ biến): `/api/public/pages/<slug>` không có `?lang=` (khác `/`, `/about`,
+    `/contact`), handler chọn bản dịch của khối theo `lang` hoặc cookie. Tuyến catch-all **không** `swr`: SSR đọc ngôn ngữ
+    giao diện từ cookie nhưng `$fetch` máy chủ không mang cookie → khung giao diện tiếng Anh, nội dung khối tiếng Việt,
+    không đọc lại sau hydrate. Sửa gọn và an toàn với bộ đệm (thêm `?lang=${currentLang}` + đọc lại khi đổi ngôn ngữ như
+    `/about`) nhưng là đổi hành vi hiển thị ngoài việc gỡ ép kiểu — để lượt sau, kèm test đỏ→xanh.
+- **Đột biến tương đương (không phải lỗ test):** `retry: 0` trên POST (beacon analytics, lượt đếm xem bài/video) — ofetch
+  không bao giờ thử lại POST, bỏ `retry: 0` không đổi gì quan sát được.
+
+### Ratchet trước/sau
+
+- `fetch-casts`: **73 → 20** (46 → 13 tệp). Phía công khai (ngoài `pages/admin`, `components/admin`, `layouts/admin`,
+  `useBulkSelection`, `adminFetch`, `server/`): 55 → 2 (`useChatbot.ts` 1 + `publicFetch.ts` 1 có tên). Còn lại: quản trị
+  14 (`AnalyticsLiveDashboard` 3, `ProfileActivityHistory` 2, `ArticleQuickViewModal` 2, `ScanThumbnailsModal` 2,
+  `analytics.vue` 2, `ArticleAIPanel` 1, `useBulkSelection` 1, `layouts/admin.vue` 1), `adminFetch` 2, máy chủ 2.
+- `file-length`: hạ `in-bai/[slug].vue` 496 → 477, `ContentTypeListSection.vue` 525 → 522, `SocialBubble.client.vue`
+  518 → 515; không tệp nào tăng (`legal-qa`, `media/[shortId]` giữ đúng 400, `default.vue` 401, `useI18n.ts` 265).
+  `--update` còn muốn hạ `server/services/readers.ts` 550 → 548 — không thuộc lô này, để nguyên.
+- `hex-colors`: không đổi (không thêm màu). `v-html`: không thêm.
+- Độ phủ (Node 24.21, image `cdkt-cov:node24`, `TZ=Asia/Ho_Chi_Minh`, lệnh của CI `npm run test:coverage`, toàn bộ
+  xanh): `app/composables` 87,58 % (8450/9648) → **mốc 87.58** (từ 85.68; thư mục lô này đụng: `publicFetch.ts` mới,
+  composable người đọc/danh sách/chat chạy thật qua test mới). `app/utils` 96,82 %, `server/api`, `server/utils`, `shared`
+  cũng RISE nhưng lô này không sửa các thư mục đó — không nâng.
+
+### Đột biến
+
+**31 lượt**, mỗi lượt sửa một chỗ trong `app/`, chạy bộ test nhắm, hoàn nguyên bằng `git checkout HEAD --` (nhật ký
+`cdht-wave3-fetch-g-public-proof/mutations/M*.{diff,txt}`): **29 bị bắt**; **M07** (bỏ `keepalive` của lượt đếm xem bài)
+SỐNG lần đầu → thêm test beacon (keepalive + bỏ sau 1,5 s) → **M07b bị bắt**; **M18** (bỏ `retry: 0` của beacon) SỐNG —
+tương đương (ở trên), test đổi tên cho nói đúng điều nó ghim; **M18c** (bỏ `keepalive` beacon) bị bắt. Theo mã:
+- helper: M01 `options ?? {}`, M02 bọc lỗi thành `Error` mới;
+- bỏ/đổi `lang`: M03 danh mục /news, M11 bản dịch luôn `vi`, M15 khối tin, M27 `ContentTypeListSection`;
+- đổi method/query/thân: M04 đăng xuất `PUT`, M05 trang thông báo luôn 1, M06 checkpoint `id` thay `ids`, M10 chat thiếu
+  `sessionId`, M16 biểu mẫu thiếu `recipientEmail`, M25 `/qa-documents` bỏ `search/topic`, M26 thư viện video bỏ query,
+  M29 trang bình luận /profile luôn 1;
+- đổi ngữ nghĩa SSR / nơi gọi: M12 `useI18n` hỏi ngôn ngữ cả ở máy chủ, M19 thêm query vào lượt cài đặt của layout, M20
+  lượt đếm xem video chạy cả ở máy chủ, M22 `/search` thành lazy, M23 bỏ `await` phía máy chủ của `[slug]`, M24 `/in-bai`
+  thành lazy, M28 danh mục /news hết lazy;
+- option ofetch: M07/M07b + M18c bỏ `keepalive`, M08 bỏ `retry: 0` ticker, M09 `timeout` 4000 → 400, M13 bỏ `signal`
+  gợi ý tìm kiếm, M18 (tương đương), M21 bỏ `retry: 0` video liên quan;
+- lỗi: M17 biểu mẫu liên hệ bỏ `errorMessage` (câu máy chủ không tới người dân); G-1: M14 xoá nhãn chuyên mục.
+
+### Ngoại lệ có tên (không đổi ở lô này)
+
+- `app/composables/useChatbot.ts` (1, `/api/public/chatbot/lead`): chatbot có bất biến riêng (SSE, chủ quyền) và đang
+  thuộc lô tách khác — để nguyên theo phân công.
+- `useBulkSelection.ts`, `layouts/admin.vue` (quản trị — lô khác); hai ép kiểu máy chủ (`server/api/auth/google/callback.get.ts`,
+  `server/api/admin/backup/drive/callback.get.ts` — `$fetch` ra Google từ Nitro, không phải `$fetch` của ứng dụng).
+
+### Chưa đo ở lô G
+
+- E2E: xem "Cổng cuối". Hydrate thật trên trình duyệt (lớp phủ tải đầu, đổi ngôn ngữ sau hydrate) chỉ được chứng minh bằng
+  harness Node, không bằng Chromium.
+- `useI18n`/`useLiveSearch`/plugin analytics được nạp bằng `loadAppModule` (`new Function`) — chạy thật, nhưng độ phủ
+  của Node không quy về tệp nguồn của chúng.
