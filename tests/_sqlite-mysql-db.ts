@@ -48,7 +48,9 @@ type ProxyResult = { rows: unknown[] }
 function sqliteLiteral(value: unknown): string {
   if (typeof value === 'boolean') return value ? '1' : '0'
   if (typeof value === 'number') return String(value)
-  return `'${String(value).replace(/'/g, "''")}'`
+  // A JSON column's default (`.default([])`) is stored as its JSON text, as Drizzle sends it.
+  const text = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
+  return `'${text.replace(/'/g, "''")}'`
 }
 
 function toSqliteParam(value: unknown): SQLInputValue {
