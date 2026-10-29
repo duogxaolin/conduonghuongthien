@@ -858,6 +858,8 @@ Lát thứ sáu: mục 2, 4, 5 của "Lát sau" ở lát R5 (mục 1 — chi ph�
 
 **Sau lát** (log `coverage-after.log`, Node 24, cây cuối `55b11413`): 789 tệp, 179 chưa nạp, **86,57 %** (77 406 / 89 411). `server/api` 70,38 → 74,55, `server/services` 86,99 → 89,87, `server/utils` 95,14 → 95,18. Mức nền ratchet nâng đúng ba thư mục lát này đụng, bằng số đo (sửa tay, không `--update` vì `--update` nâng cả `shared`): `server/api` 70,37 → 74,55, `server/services` 86,98 → 89,87, `server/utils` 95,13 → 95,18 (`coverage-ratchet-final.log`). Toàn bộ unit + ratchet (lệnh CI `npm test`, Node 26 cục bộ, `TZ=Asia/Ho_Chi_Minh`, `unit-full.log`): 7 227 test, 0 đỏ, 54 bỏ qua (integration không có MySQL). Sáu suite mới + test ngày của Google chạy lại ở `TZ=UTC`: 65/65 xanh (`new-suites-tz-utc.log`). `file-length.baseline.json`: bỏ mục `universal-translation.ts` (540 → 359, dưới 400); `readers.ts` giữ đúng 550.
 
+**Sau vòng kiểm chứng** (M1, M2, L1–L5 bên dưới; log `coverage-verifier-round.log`, Node 24, cây `72d73eb9` + tài liệu): 789 tệp, 179 chưa nạp, **86,58 %** (77 427 / 89 428). `server/api` 74,55 → 74,549 (14 412 / 19 332 — bộ chặn ngày riêng của `export-csv.get.ts` gộp vào `vietnamDateString`, mất một dòng đã phủ), `server/services` 89,87 → 89,89 (`universal-translation-blocks.ts` 97,9 → 100 %, `ip-bans.ts` 97,7 %), `server/utils` giữ 95,18. Mức nền theo số đo làm tròn xuống, không vượt số đo: `server/api` 74,55 → **74,54**, `server/services` 89,87 → **89,88**, `server/utils` giữ 95,18. Unit + ratchet (`npm test`, Node 26): 7 246 test, 0 đỏ, 54 bỏ qua — ở cả `TZ=Asia/Ho_Chi_Minh` (`unit-full-verifier-vn.log`) và `TZ=UTC` (`unit-full-verifier-utc.log`).
+
 ### Harness (thêm, không đổi hành vi cũ — 45 suite dùng chung: 410/410 xanh, `harness-users-f.log`)
 
 - `_ai-route-harness.ts`: câu trả lời nhà cung cấp có thể là promise — giữ job nền giữa lượt (test 409, huỷ).
@@ -908,7 +910,7 @@ Mỗi suite chạy "trên base" bằng `findings-on-rev.sh <commit trước> <su
 | FINDING-R6-7 | thấp (chi phí) | `system/universal-translate.post.ts` | `articlesLimit` "abc"/-1 → "không giới hạn": cả kho × mọi ngôn ngữ | **Đã sửa**: 400 nếu không phải số nguyên ≥ 0; 0 vẫn là "tất cả" (xem "cần chủ dự án quyết") |
 | FINDING-R6-8 | thấp (quy ước CLAUDE.md) | `readers.ts` | Ô tìm người đọc dán chữ vào LIKE không thoát: `nguyen_van` khớp `nguyenxvan`, `%` khớp mọi người | **Đã sửa**: `likeContains` |
 | FINDING-R6-9 | thấp | như trên | Sắp `last_seen_at DESC` không khoá phụ — MySQL trả hàng hoà theo thứ tự bất kỳ, hai trang có thể trùng/thiếu một người | **Đã sửa**: thêm `id DESC` |
-| FINDING-R6-10 | thấp (audit) | như trên | Bỏ chặn tài khoản không bị chặn vẫn ghi dòng "unban" — việc không xảy ra | **Đã sửa**: 200, không ghi, không audit |
+| FINDING-R6-10 | trung bình (audit, tranh chấp) | `readers.ts`, `ip-bans.ts` | Bỏ chặn tài khoản không bị chặn vẫn ghi dòng "unban" — việc không xảy ra. Vòng 1 chỉ chặn trường hợp tuần tự (đọc `is_banned` ngoài transaction): hai POST `unban` cùng lúc vẫn ghi hai dòng (verifier M1, 30/30 trên MySQL). Cùng mẫu ở ba đường anh em: hai lần chặn cùng lúc cùng nhận đã xoá các bình luận (4 cho 2) và cùng ghi `tokenVersion` từ một lần đọc cũ; hai lần gỡ chặn IP ghi hai dòng "delete"; hai lần chặn cùng địa chỉ → `ER_DUP_ENTRY` 500 | **Đã sửa** (hai vòng): `UPDATE … AND is_banned=1` + `readAffectedRows` trong transaction, audit chỉ khi 1 hàng; chặn: `FOR UPDATE` hàng người đọc rồi mới đếm, `token_version + 1`; gỡ IP: DELETE được đếm, 0 → 404; tạo IP: `INSERT IGNORE` + đếm, 0 → 409. MySQL 8 sau sửa: 30/30 mỗi kịch bản đúng một audit / 201+409 (`mysql-reader-race-after.log`) |
 | FINDING-R6-11 | thấp | `ip-bans.ts` | Danh sách chặn IP tăng dần theo id, chú thích hứa "mới nhất trước", trang không sắp lại | **Đã sửa** |
 | FINDING-R6-12 | thấp (audit) | `readers/index.get.ts` | Audit danh sách ghi trang được HỎI (`?page=9`) thay vì trang được XEM (dịch vụ kẹp về trang cuối) | **Đã sửa** |
 | FINDING-R6-13 | thấp (an ninh — oracle id) | `articles/[id]/boost.delete.ts` | Tra bài theo id rồi mới kiểm quyền loại: 404 vs 403 (boost.post và stats.get đã sửa, huỷ thì chưa) | **Đã sửa**: `articleActionScope(actor, 'update')` |
@@ -928,10 +930,32 @@ Không hoàn nguyên; liệt kê để không thành đổi ngầm:
 - R6-18: POST xuất Google không body: 500 → **400**.
 - R6-5: khối mà model cứ bỏ sót một trường được hỏi lại — và tính tiền — **mỗi lượt**, không bao giờ "xong"; trước đây nó ghi nửa bản dịch một lần rồi thôi.
 - R6-8: ô tìm người đọc trả **ít hàng hơn** khi chữ gõ có `_`/`%`.
-- R6-10: bỏ chặn khi không bị chặn: vẫn 200, nhưng không còn dòng audit.
+- R6-10: bỏ chặn khi không bị chặn (kể cả người thua khi hai người bấm cùng lúc): vẫn 200, nhưng không còn dòng audit. Gỡ chặn IP cùng lúc: người thua 200 → **404**; chặn cùng địa chỉ cùng lúc: người thua 500 → **409**; chặn cùng lúc: dòng audit thứ hai báo 0 bình luận đã xoá (trước báo lặp lại số của người thắng).
+- R6-11: danh sách chặn IP **đảo thứ tự** (mới nhất lên đầu).
+- R6-1, R6-2: **tỉ lệ % độ phủ** của tab "Dịch toàn cục" đổi (thường giảm: bản dịch bài nháp/khoá mồ côi không còn được tính; khối chỉ có số không còn bị đếm thiếu).
+- Câu báo hoàn tất của job nay đếm số ngôn ngữ thật sự được dịch (`allLangs`), không phải số mã trong yêu cầu.
+- Verifier L2: tăng/huỷ tăng lượt xem trên loại bài cán bộ **thấy được mà không sửa được**: 404 → **403** (loại không thấy, không sửa: vẫn 404).
+- Verifier L1: bài có ngày hỏng (`0000-00-00`) được xuất với "Ngày:" trống thay vì 500 cả lượt (Google: không còn bị bỏ khỏi lượt xuất).
+- Verifier L3: huỷ bị từ chối 409/404 thì panel tự đọc lại số liệu (lượt đã xong biến khỏi màn hình), toast lỗi giữ nguyên.
 - R6-17: trên Docker (TZ VN), tên tệp xuất từ 00:00 tới 07:00 giờ VN nay mang ngày VN (trước là ngày hôm trước); trên đường PM2 (TZ UTC) cả "Ngày" in trong tệp cũng đổi.
 
 **Dữ liệu ghi trước bản sửa.** R6-3: bản dịch khối đã lưu chưa lọc — `stored-html-sanitize.ts` duyệt `page_blocks` qua `sanitizeBlockData` (phủ `translations[lang]`), nên người vận hành chạy `npm run db:sanitize-html` (xem trước) rồi `npm run db:sanitize-html -- --apply` (sao lưu CSDL trước). R6-4/R6-5: bản dịch khối đã lưu có `badge` tự thêm hay chỉ có `bodyHtml` vẫn được coi là "đã dịch" và không gì sửa lại — xoá chúng (để lượt sau dịch lại) là quyết định của chủ dự án.
+
+### Kiểm chứng độc lập (verifier, `/home/ray/orca/cdht-wave3-tests-r6-verify/`) và cách xử lý
+
+Kết luận verifier: "Đạt kèm sửa" — 17/18 FINDING tái hiện đỏ→xanh, R6-14/R6-15 xác nhận trên MySQL 8, không hồi quy ngoài 18 FINDING. Xử lý (commit `cc73b18b`…`72d73eb9`; chín test mới đỏ trên `52d7b527` và chỉ chúng, `verifier-fixes-on-52d7b527.log`):
+
+| Mục | Nội dung | Xử lý |
+|---|---|---|
+| M1 (trung bình) | R6-10 chưa tới gốc: hai `unban` đồng thời → hai audit (30/30 MySQL) | Sửa như dòng R6-10 ở bảng trên, cùng ba đường anh em. Phát lại 30 vòng × 4 kịch bản trên MySQL 8.0.46 trước/sau sửa (`mysql-reader-race.sh`, CSDL tạm `cdkt_r6b_*` đã xoá): unban 2 → 1 audit; chặn: nhận 4 → 2 bình luận, tokenVersion 1 → 2; gỡ IP 200+200/2 audit → 200+404/1; tạo IP 201+500 → 201+409. Test harness: người kia commit ngay trước lệnh ghi đầu tiên trong transaction (`beforeNext`); harness `insert ignore` → `INSERT OR IGNORE` |
+| M2 (trung bình) | Nhánh HTML hỏng của R6-5 (V05) và lần thử HTML thứ hai của R6-3 (V11) chưa từng chạy | Hai test hành vi; V05, V11 nay đỏ |
+| L1 | `vietnamDateString(Invalid Date)` ném RangeError → 500 cả lượt xuất | Chặn chung trong `vietnamDateString` → `''`; bộ chặn riêng của CSV bỏ (thừa) nên đột biến E02 không còn chỗ áp — đột biến tương đương với nó (bỏ bộ chặn chung) làm đỏ test của cả bốn đường |
+| L2 | boost dùng scope `'update'`, quy ước đường ghi là `['read', action]` | Đổi cả boost.post và boost.delete; loại thấy-không-sửa 404 → 403 (đã ghi ở trên); B03 nay đỏ |
+| L3 | Huỷ nhận 409 mà UI vẫn hiện "đang chạy" + nút huỷ | `loadStats()` khi 409/404, giữ toast; ba test qua trang danh sách bài |
+| L4 | Đột biến sống V03, V04, V06, V10, E05, E06, R06, R02 | Test cho từng cái — đều đỏ. **R02 tương đương**: handler đã kẹp `perPage` bằng `finitePositive(…, 25, 100)` thành số nguyên trong [1, 100], dịch vụ kẹp lại đúng khoảng đó, nên `perPage` của handler luôn bằng `result.perPage`. B05 tương đương (verifier xác nhận) |
+| L5 | Tài liệu | Mục này, dòng R6-10, danh sách "thay đổi người dùng thấy" ở trên |
+
+Đột biến vòng này (`mutants-v.list` / `mutants-v.log`): 25 chạy, 24 chết, 1 sống tương đương (R02). Trong đó 14 đột biến cho các bản sửa mới (M1 ×7, L1 ×1 trên hai suite, L2 ×3 kể cả B03, L3 ×3), tất cả chết.
 
 ### Cần chủ dự án quyết (lát này không đổi)
 
