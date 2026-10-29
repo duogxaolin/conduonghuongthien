@@ -26,6 +26,17 @@ type CategoriesHandler = typeof import('~~/server/api/admin/media-portal/categor
 type CategoryCreateHandler = typeof import('~~/server/api/admin/media-portal/categories/index.post').default
 type CategoryUpdateHandler = typeof import('~~/server/api/admin/media-portal/categories/[id].put').default
 type CategoryDeleteHandler = typeof import('~~/server/api/admin/media-portal/categories/[id].delete').default
+type ExternalCreateHandler = typeof import('~~/server/api/admin/media-portal/external.post').default
+type YoutubeMetaHandler = typeof import('~~/server/api/admin/media-portal/youtube-meta.post').default
+
+// ─── A YouTube video (`/admin/media-portal/external`, batch F) ────────────────
+/** `POST /api/admin/media-portal/external` — the new draft's `id` (plus `slug`/`shortId`, unused). */
+export type MediaExternalCreateResponse = Payload<ExternalCreateHandler>
+/**
+ * `POST /api/admin/media-portal/youtube-meta` — "Lấy thông tin" of the video form: `ok: false`
+ * with `reason: 'invalid' | 'fetch_failed'`, or the oEmbed title/author/thumbnail and the id.
+ */
+export type MediaYoutubeMetaResponse = Payload<YoutubeMetaHandler>
 
 // ─── One video ───────────────────────────────────────────────────────────────
 /** `GET /api/admin/media-portal/:id`. */

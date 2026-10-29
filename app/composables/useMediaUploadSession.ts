@@ -1,8 +1,10 @@
 import { reactive } from 'vue'
+import type { AdminFetchOptions } from './adminFetch'
 
 type Descriptor = { uploadId: string, filename: string, size: number, lastModified: number, fingerprint: string }
 type Session = { uploadId: string, filename: string, declaredSize: number, chunkSize: number, totalChunks: number, receivedParts: number[], status: string, mediaItemId: number | null }
-type UploadFetch = <T>(url: string, options?: { method?: 'POST' | 'PUT', body?: unknown, headers?: Record<string, string>, signal?: AbortSignal, retry?: number }) => Promise<T>
+// The page passes `adminFetch` itself (ChunkedUploader.vue), so the bodies are what it sends.
+type UploadFetch = <T>(url: string, options?: { method?: 'POST' | 'PUT', body?: AdminFetchOptions['body'], headers?: Record<string, string>, signal?: AbortSignal, retry?: number }) => Promise<T>
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>
 
 /** Hash every byte in bounded blocks: changed middle sections must also reject a resume. */
