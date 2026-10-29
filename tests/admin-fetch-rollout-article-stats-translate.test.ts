@@ -20,8 +20,11 @@
  *     totals and running boost were shown under "Bài 4" (and its late failure or its `finally`
  *     overwrote Bài 4's state). Only the answer for the article still open is shown now;
  *   - modal: "Dịch toàn bộ" read ONE page of 100 missing articles per language (the list
- *     endpoint's cap) — with "Thiếu 120 bài" on screen it queued 100 and said it was done. It
- *     reads every page now;
+ *     endpoint's cap) — with "Thiếu 120 bài" on screen it queued 100 and said it was done.
+ *     DECISION after the independent verify (cost): the cap of 100 per language per click STAYS
+ *     (reading every page queued 5 615 paid translations in one click on a 1 123-article DB, with
+ *     no confirmation); the click now asks first with the numbers, and the toast says "100/120 —
+ *     bấm lại" instead of "done". Leaving the page stops the loop;
  *   - modal: when a later language failed, the ones already queued were not reported — the
  *     toast said it could not start, `started` was never emitted, so the page did not poll the
  *     translation running in the background (and pressing again queued those articles twice);
@@ -321,25 +324,98 @@ describe('components/admin/articles/ArticleGlobalTranslateModal.vue (through the
     for (const t of refused.toasts) assert.doesNotMatch(t.message, OFETCH_LINE)
   })
 
-  it('FINDING: more missing articles than one page (100) are all queued (RED on base)', async () => {
-    const many = Array.from({ length: 120 }, (_, i) => article(100 + i))
-    const opened = await open(server({
-      'GET /api/admin/articles/translation-stats': () => json({ ...LANGS(), totalArticles: 120, languages: [LANGS(120).languages[0]] }),
+  /**
+   * A fake server that behaves like `missing_<lang>`: an article leaves the list once it has a translation
+   * row — modelled as "once queued and translated" — and an article whose row is `failed` never shows up
+   * in it at all (the list's NOT EXISTS sees the failed row), while the stats still count it as missing.
+   */
+  function missingServer(missing: number[], failed: number[] = []) {
+    const translated = new Set<number>()
+    return server({
+      'GET /api/admin/articles/translation-stats': () => json({
+        ...LANGS(), totalArticles: missing.length + failed.length,
+        languages: [{ code: 'en', name: 'English', nativeName: 'English', translated: 0, missing: missing.length + failed.length }],
+      }),
       'GET /api/admin/articles': (call) => {
         if (!isMissingList(call)) return listAnswer(ROWS)
-        const page = Number(call.url.searchParams.get('page') ?? 1)
-        return listAnswer(many.slice((page - 1) * 100, page * 100), page, many.length, 100)
+        const left = missing.filter(id => !translated.has(id)).map(id => article(id))
+        return listAnswer(left.slice(0, 100), 1, left.length, 100)
       },
-    }))
+      'POST /api/admin/articles/bulk-translate': (call) => {
+        for (const id of (call.body as { ids: number[] }).ids) translated.add(id)
+        return json({ ok: true, count: (call.body as { ids: number[] }).ids.length })
+      },
+    })
+  }
+  const ids = (from: number, count: number) => Array.from({ length: count }, (_, i) => from + i)
+
+  it('DECISION (verify E, cost): one click queues at most 100 per language and says 100/N; the next click queues the next ones', async () => {
+    const opened = await open(missingServer(ids(100, 120)))
     await openModal(opened)
+    let before = opened.calls.length
+    await click(startButton(opened))
+    await settle()
+    let sent = queued(opened, before) as Array<{ ids: number[] }>
+    assert.equal(sent.length, 1, 'one request per language')
+    assert.deepEqual(sent[0]!.ids, ids(100, 100), 'more than the per-click cap of 100 was queued')
+    assert.ok(opened.calls.slice(before).filter(isMissingList).every(c => !c.url.searchParams.has('page')), 'paged past the first 100')
+    const told = opened.lastToast('success') ?? ''
+    assert.match(told, /100\/120/, `the toast hides that 20 are left: "${told}"`)
+    assert.match(told, /bấm lại/)
+    assert.ok(pollsStarted(opened, before), 'the page was not told a translation started')
+    // Second click (the first batch has been translated): the next 20, none of the first 100 again.
+    await openModal(opened)
+    before = opened.calls.length
+    await click(startButton(opened))
+    await settle()
+    sent = queued(opened, before) as Array<{ ids: number[] }>
+    assert.deepEqual(sent.map(s => s.ids), [ids(200, 20)])
+    assert.equal(opened.lastToast('success'), 'Đã xếp lịch dịch 20 lượt bài viết sang 1 ngôn ngữ! Hệ thống đang xử lý trong nền.')
+  })
+
+  it('DECISION (verify E, cost): the click asks first, naming languages × articles and that each is a paid AI call; declining queues nothing', async () => {
+    const opened = await open(missingServer(ids(100, 120)))
+    await openModal(opened)
+    opened.answers.confirm = false
     const before = opened.calls.length
     await click(startButton(opened))
     await settle()
-    const sent = queued(opened, before) as Array<{ ids: number[] }>
-    assert.equal(sent.length, 1, 'one request per language')
-    assert.equal(sent[0]!.ids.length, 120, `${sent[0]!.ids.length} of 120 missing articles queued`)
-    assert.deepEqual(sent[0]!.ids, many.map(a => a.id))
-    assert.equal(opened.lastToast('success'), 'Đã xếp lịch dịch 120 lượt bài viết sang 1 ngôn ngữ! Hệ thống đang xử lý trong nền.')
+    const asked = opened.confirms.at(-1)?.message ?? ''
+    assert.match(asked, /tối đa 100 bài sang 1 ngôn ngữ/, `no count in the confirmation: "${asked}"`)
+    assert.match(asked, /en: 100\/120/)
+    assert.match(asked, /tính phí/)
+    assert.deepEqual(queued(opened, before), [])
+    assert.equal(opened.calls.slice(before).filter(isMissingList).length, 0, 'the list was read before the officer agreed')
+    assert.ok(!pollsStarted(opened, before))
+  })
+
+  it('KNOWN (server, not fixed here): an article whose translation FAILED is counted missing but never listed, so never queued', async () => {
+    // Stats: "Thiếu 3 bài" (failed rows are not "translated"); the list's NOT EXISTS hides #9 — it is never sent.
+    const opened = await open(missingServer([7, 8], [9]))
+    await openModal(opened)
+    assert.match(modalText(opened), /Thiếu 3 bài/)
+    const before = opened.calls.length
+    await click(startButton(opened))
+    await settle()
+    assert.deepEqual(queued(opened, before), [{ ids: [7, 8], langCode: 'en', targetStatus: 'ai_draft' }])
+    assert.equal(opened.lastToast('success'), 'Đã xếp lịch dịch 2 lượt bài viết sang 1 ngôn ngữ! Hệ thống đang xử lý trong nền.')
+  })
+
+  it('verify E: leaving the page while a language is being read queues nothing after it', async () => {
+    const held: NetCall[] = []
+    const opened = await open(server({
+      'GET /api/admin/articles/translation-stats': () => json(LANGS(1, 1)),
+      'GET /api/admin/articles': call => (isMissingList(call) ? (held.push(call), undefined) : listAnswer(ROWS)),
+    }))
+    await openModal(opened)
+    void click(startButton(opened))
+    await settle()
+    assert.equal(held.length, 1)
+    const before = opened.calls.length
+    opened.page.unmount()
+    held[0]!.respond(listAnswer([article(4)], 1, 1, 100))
+    await settle()
+    assert.deepEqual(opened.calls.slice(before).map(wire), [], 'requests sent after the page was left')
   })
 
   it('FINDING: a language failing after another was queued reports the queued one and lets the page follow it (RED on base)', async () => {
