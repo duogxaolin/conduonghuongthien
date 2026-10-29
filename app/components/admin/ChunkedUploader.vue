@@ -75,9 +75,7 @@ function initController() {
   controller.value = useMediaUploadSession({
     actorId: user.value.id, storage, maxUploadSize: props.maxUploadSize,
     ...(props.replaceItemId ? { replaceItemId: props.replaceItemId } : {}),
-    // Spelled as a call, not `request: adminFetch`: the skeleton/error guards find a view that
-    // fetches by `adminFetch(` (tests/_admin-fetch-call.ts).
-    request: (url, options) => adminFetch(url, options),
+    request: adminFetch,
   })
 }
 

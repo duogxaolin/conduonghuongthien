@@ -169,6 +169,38 @@ describe(SERVICES_TAB, () => {
     assert.match(textOf(dialog(opened)!), /Câu của B/)
   })
 
+  it('FINDING: A\'s late answer while B\'s own test is running leaves B "Đang test..." (no second paid call can start)', async () => {
+    const pending: NetCall[] = []
+    const opened = await openServices(servicesServer({ 'POST /api/admin/ai/test-call': (call) => { pending.push(call); return undefined } }))
+    await configure(opened, 'Chatbot')
+    void fire(testButton(opened), 'click')
+    await settle()
+    await fire(button(dialog(opened)!, 'Huỷ'), 'click')
+    await configure(opened, 'Kiểm duyệt')
+    void fire(testButton(opened), 'click')
+    await settle()
+    assert.equal(pending.length, 2)
+    pending[0]!.respond(json({ ok: true, model: 'model-a', provider: 'delify', reply: 'Câu của A.', durationMs: 9000, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, costVnd: 1 }))
+    await settle()
+    assert.equal(textOf(testButton(opened)), 'Đang test...', 'B\'s call is still out: A\'s `finally` must not re-enable the button')
+    assert.equal(testButton(opened).props.disabled, true)
+    pending[1]!.respond(json({ ok: true, model: 'model-b', provider: 'delify', reply: 'Câu của B.', durationMs: 50, usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, costVnd: 1 }))
+    await settle()
+    assert.equal(textOf(testButton(opened)), 'Kiểm tra kết nối')
+    assert.match(textOf(dialog(opened)!), /Câu của B/)
+  })
+
+  it('a FINISHED result of service A is not shown when service B is opened', async () => {
+    const opened = await openServices()
+    await configure(opened, 'Chatbot')
+    await fire(testButton(opened), 'click')
+    await settle()
+    assert.match(textOf(dialog(opened)!), /Tôi là trợ lý\./)
+    await fire(button(dialog(opened)!, 'Huỷ'), 'click')
+    await configure(opened, 'Kiểm duyệt')
+    assert.doesNotMatch(textOf(dialog(opened)!), /Tôi là trợ lý|Kiểm tra thành công|Thành công/)
+  })
+
   it('FINDING: a test call that FAILS after the dialog moved to another service shows nothing there either', async () => {
     const pending: NetCall[] = []
     const opened = await openServices(servicesServer({ 'POST /api/admin/ai/test-call': (call) => { pending.push(call); return undefined } }))

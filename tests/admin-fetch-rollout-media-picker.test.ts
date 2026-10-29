@@ -95,6 +95,33 @@ describe(PICKER, () => {
     assert.deepEqual(shown(opened), ['anh-2.jpg'])
   })
 
+  it('page 2 failing: the pager stays on the page shown ("1 / 3", never "2 / 3"); "Thử lại" reloads that page, "Trang sau" asks for 2 again', async () => {
+    // KNOWN, kept: "Thử lại" reloads the page SHOWN (1), not the page whose load failed (2) — the page
+    // number moves only once a page has arrived, so the pager never names a page whose images are not
+    // on screen. The officer presses "Trang sau" again (lot E noted the same for the library page).
+    let failPage2 = true
+    const opened = await openPicker((call) => {
+      const asked = Number(call.url.searchParams.get('page'))
+      if (asked === 2 && failPage2) return h3Error(403, 'Không đọc được trang 2.')
+      return page([image(asked, `anh-${asked}`)], 3, asked)
+    })
+    await fire(nextButton(opened)!, 'click')
+    await settle()
+    assert.match(alertText(opened.page), /Không đọc được trang 2\./)
+    assert.match(textOf(opened.page.root), /1 \/ 3/)
+    assert.doesNotMatch(textOf(opened.page.root), /2 \/ 3/)
+    const before = opened.calls.length
+    await fire(findAll(opened.page.root, el => el.tag === 'button' && textOf(el).includes('Thử lại'))[0]!, 'click')
+    await settle()
+    assert.deepEqual(opened.calls.slice(before).map(wire), [`GET ${LIST}?search&perPage=20&page=1`])
+    assert.deepEqual(shown(opened), ['anh-1.jpg'])
+    failPage2 = false
+    await fire(nextButton(opened)!, 'click')
+    await settle()
+    assert.match(textOf(opened.page.root), /2 \/ 3/)
+    assert.deepEqual(shown(opened), ['anh-2.jpg'])
+  })
+
   it('FINDING: the older search\'s answer landing last does not replace the newer one\'s images', async () => {
     const pending: NetCall[] = []
     let first = true

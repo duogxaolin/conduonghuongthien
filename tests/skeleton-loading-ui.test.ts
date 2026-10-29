@@ -18,7 +18,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
-import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+import { fetchesData } from './_admin-fetch-call.ts'
 import { ARTICLE_COMMENTS_FAMILY, ARTICLE_DETAIL_FAMILY, NEWS_PAGE_FAMILY, familyVueFiles, readAppFile } from './_component-family.ts'
 import { COLOR_TOKENS, type ColorToken } from '../shared/color-tokens.ts'
 
@@ -434,8 +434,9 @@ test('placeholder containers announce themselves as busy', async () => {
  * EITHER pinned above OR named in `NO_SKELETON_NEEDED` with its reason.
  */
 // Shared with tests/admin-error-retry-ui.test.ts — includes adminFetch/useAdminList,
-// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan.
-const FETCH_CALL = ADMIN_FETCH_CALL
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan;
+// decided on code with comments dropped (`fetchesData`, tests/_admin-fetch-call.ts).
+const FETCH_CALL = { test: fetchesData }
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const found: string[] = []

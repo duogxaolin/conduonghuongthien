@@ -17,9 +17,10 @@
  *     "Lưu cấu hình" PUT that default over the site's real navigation;
  *   - while the first load was still in flight the state was `[]`, and "Lưu cấu hình" PUT
  *     an EMPTY menu (the navbar stores `[]`; the tab bar too).
- * Saving now needs a positive `loaded` flag — false from the start of every load, true only
- * once the answer filled the editor — enforced twice, each with its own test: the button is
- * disabled, and `saveMenu` returns without a request when a click reaches it anyway.
+ * Saving now needs a positive `loaded` flag — false until a load has filled the editor (it is
+ * not reset when a load starts: only "thử lại" of a FAILED load reloads, and the flag is false
+ * then) — enforced twice, each with its own test: the button is disabled, and `saveMenu`
+ * returns without a request when a click reaches it anyway.
  */
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'

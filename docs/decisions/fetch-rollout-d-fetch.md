@@ -352,7 +352,7 @@ cách đếm "44/26" của lô E khác một tệp, số ở đây đo bằng ch
 Ba tồn đọng của D-FETCH: `roleId || 2` (lỗi thật, F-3), đua bộ lọc của danh sách đơn đăng ký (thật,
 F-4), `backup.vue` → `useAdminList` (**không chuyển**, mã lượt — bảng dưới; F-9).
 
-**Hai ngoại lệ kiểu có tên** (không suy được trọn từ handler):
+**Ba ngoại lệ kiểu có tên** (không suy được trọn từ handler):
 - `GET /api/admin/settings/navigation/{navbar,mobile}` trả `menu` = `JSON.parse(raw)` — `any`, mà
   `Serialize` bỏ khoá `any`; `menu` lấy kiểu của chính câu trả lời PUT (cái PUT lưu là cái GET đọc lại).
 - `POST /api/admin/ai/test-call`: ba object literal với `ok: boolean` (không phân biệt được) và
@@ -397,7 +397,9 @@ mới trên tệp nguồn của base):**
 - **F-5 Biểu mẫu video YouTube**: ô liên kết sửa được trong lúc YouTube trả lời; câu trả lời cho liên kết
   đã bị thay GHI mã video cũ vào ô (và tiêu đề cũ vào ô tiêu đề trống) — bản nháp lưu nhầm video. Nay bỏ
   câu trả lời/lỗi khi ô không còn giữ liên kết đã hỏi (bấm "Lấy thông tin" để hỏi liên kết mới).
-- **F-6 Đăng video YouTube**: đọc cấu hình hỏng luôn hiện câu cố định (`catch {}`) — nay `errorMessage`.
+- **F-6 Đăng video YouTube** (`media-portal/external.vue` — KHÔNG phải `upload.vue`): đọc cấu hình hỏng luôn
+  hiện câu cố định (`catch {}`) — nay `errorMessage`. `upload.vue` chỉ đổi cách đọc 403 (`errorStatus()`);
+  nhánh lỗi KHÁC 403 của nó vẫn câu cố định "Không kiểm tra được khả năng tải video…" (có từ trước — KNOWN).
 - **F-7 Bộ chọn ảnh** (lộ ra nhờ kiểu suy từ handler): đọc `res.totalPages` mà `GET /api/admin/media` trả
   `pagination.totalPages` — luôn 1, không bao giờ hiện nút trang; ảnh ngoài 20 ảnh mới nhất chỉ chọn được
   bằng cách tìm tên tệp. Thêm mã lượt (tìm rồi tìm lại / bấm trang).
@@ -409,9 +411,13 @@ mới trên tệp nguồn của base):**
 - **KNOWN, chưa sửa**: `ContentTypePicker` — đọc danh mục con hỏng hiện "Thể loại này chưa có danh mục
   con." và được nhớ tới khi mở lại hộp (sửa cần một câu lỗi mới — quyết định văn bản); ghim bằng test KNOWN.
 
-`ChunkedUploader` trao `(url, options) => adminFetch(url, options)` (không `request: adminFetch`):
-`tests/_admin-fetch-call.ts` nhận ra view có tải bằng `adminFetch(` — trao giá trị làm guard skeleton coi
-nó "không còn tải". `admin-moderation-summary.test.ts` (harness tự biên dịch tab) cấp thêm `adminFetch` và
+`ChunkedUploader` trao thẳng `request: adminFetch` cho phiên tải. Hai gate quét thư mục (lỗi/thử lại và
+skeleton) nay quyết "view có tải" trên MÃ, không trên chữ: `fetchesData()` (`tests/_admin-fetch-call.ts`)
+bỏ chú thích (`<!-- -->`, khối, dòng — `//` sau `:` hay trong URL được giữ) rồi nhận `adminFetch` ở mọi vị trí
+mã (gọi hoặc trao giá trị). Trước đó một chú thích trích `adminFetch(…)` giữ view trong danh sách sau khi mã
+thôi tải (verifier V20), còn trao giá trị thì bị coi "không tải" — bản đầu lô F đã phải bọc một hàm chỉ để
+khớp regex (`tests/admin-fetch-call-guard.test.ts`). `ADMIN_FETCH_CALL` cũ giữ nguyên cho các test khác dùng
+nó. `admin-moderation-summary.test.ts` (harness tự biên dịch tab) cấp thêm `adminFetch` và
 đọc `query` thay `params` (cùng wire — test mới ghim `?status=pending&perPage=1`).
 
 Test: `tests/admin-fetch-rollout-{navigation,roles,ai-tabs,submissions-list,media-portal-forms,media-picker,backup-list,session-picker}.test.ts`.
@@ -428,6 +434,16 @@ SỐNG lần đầu (M19 — mã lượt nhánh thành công của nhật ký AI
 AI, bộ chọn ảnh) có lượt tải đầu trả rỗng nên không phân biệt được "đang tải" với "tắt tải sớm" — đổi lượt
 đầu trả một hàng; dòng `loaded.value = false` đầu `loadMenu` không quan sát được (chỉ "thử lại" của nhánh
 lỗi tải lại) — bỏ, không tính là đột biến.
+
+**Tồn đọng ghi nhận sau kiểm chứng độc lập (không đổi hành vi):**
+- Bộ chọn ảnh: tải trang 2 hỏng thì trang vẫn "1 / N" (số trang chỉ đổi khi trang đã về, không bao giờ ghi
+  "2 / N" với ảnh trang 1) và "Thử lại" tải lại trang ĐANG HIỆN (1), không phải trang vừa hỏng — bấm "Trang
+  sau" lại; ghim bằng test (KNOWN, như thư viện ảnh lô E).
+- `backup.vue`: nhịp hỏi 4 s gọi `loadBackups()` mỗi nhịp; một lượt tải lâu hơn 4 s bị lượt của nhịp sau
+  bỏ (mã lượt) — danh sách đứng yên tới khi một lượt kịp về hoặc nhịp dừng (sao lưu/khôi phục xong rồi tải
+  lại). Tự hồi phục, chỉ chậm hiển thị; chặn gốc cần nhịp hỏi không tải danh sách khi lượt trước còn bay.
+- Prompt dịch vụ AI: test thêm cho mã lượt ở `finally` (lượt A về muộn khi B đang kiểm tra — nút B vẫn
+  "Đang test...", không mở đường cho lượt gọi AI thứ hai) và cho việc xoá kết quả ĐÃ XONG của A khi mở B.
 
 **Chưa đo ở lô F:** E2E không chạy — `tests/e2e/admin-retry.spec.ts` (đi qua `submissions/index.vue`) và
 `tests/e2e/media-portal.spec.ts` (thư viện video) là hai spec chạm trang của lô này; coverage không đo (máy
