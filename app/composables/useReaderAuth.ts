@@ -13,6 +13,8 @@
  * already uses, and the reason no route is added to `routeRules` for any of this.
  */
 import { computed, ref } from 'vue'
+import type { ReaderClaimChatsResponse, ReaderLogoutResponse, ReaderMeResponse } from '../types/public-reader-api'
+import { publicFetch } from './publicFetch'
 
 export type ReaderProfile = {
   displayName: string
@@ -128,7 +130,7 @@ export function useReaderAuth() {
     }
 
     try {
-      await ($fetch as (u: string, o: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/claim-chats', { method: 'POST', body: { sessions } })
+      await publicFetch<ReaderClaimChatsResponse>('/api/public/reader/claim-chats', { method: 'POST', body: { sessions } })
       return 'sent'
     } catch {
       // Silent here — see above; the outcome tells the caller that asks.
@@ -143,7 +145,7 @@ export function useReaderAuth() {
     loading.value = true
     failed.value = false
     try {
-      const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, reader: ReaderProfile | null }>)('/api/public/reader/me')
+      const response = await publicFetch<ReaderMeResponse>('/api/public/reader/me')
       reader.value = response?.reader ?? null
       loaded.value = true
       // Only once identity is confirmed: an anonymous visitor has no account to
@@ -173,7 +175,7 @@ export function useReaderAuth() {
 
   async function signOut(): Promise<void> {
     try {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/logout', { method: 'POST' })
+      await publicFetch<ReaderLogoutResponse>('/api/public/reader/logout', { method: 'POST' })
     } catch {
       // Ignored on purpose: the cookie is HTTP-only, so if the request did not
       // land there is nothing the client can do about it, and showing an error
