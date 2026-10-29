@@ -24,10 +24,11 @@ type Row = Record<string, unknown>
 const REPLIER_NAME = 'Ban quản trị'
 
 // ─── Database: rows chosen by table + projection ──────────────────────────────
-const { articles, articleComments, readerAccounts } = await import('../server/db/schema')
+const { articles, articleComments, mediaItems, readerAccounts } = await import('../server/db/schema')
 function rowsFor(table: unknown, projection: Row): Row[] {
   const keys = Object.keys(projection)
   if (table === articles) return [{ id: 1, title: 'Bài viết', slug: 'bai-viet', status: 'published', commentsEnabled: true }]
+  if (table === mediaItems) return [{ id: 9, title: 'Video', slug: 'video', shortId: 'AbCdEfGhIjK', status: 'published', commentsEnabled: true }]
   if (table === readerAccounts) {
     return keys.includes('email')
       ? [{ email: 'parent-author@example.vn', emailNotifications: true, isBanned: false }]
@@ -299,6 +300,11 @@ test('what the comment hangs on removed between the checks and the insert (FK 14
   insertFailures.push({ table: articleComments, error: fkError('article_comments', 'fk_article_comments_article', 'article_id', 'articles') })
   assert.deepEqual(await createComment({ readerId: 5, articleId: 1, parentId: null, body: 'Bình luận gốc', ip: '203.0.113.9', userAgent: 'test', event: requestEvent() }),
     { ok: false, statusCode: 404, message: 'Bài viết không tồn tại.' })
+  // A comment under a video whose video was deleted meanwhile (verifier round 5, L-2) — the media key,
+  // wrapped in Drizzle's error as on MySQL: the video's own 404, not the article's and not a 500.
+  insertFailures.push({ table: articleComments, error: fkError('article_comments', 'fk_article_comments_media', 'media_item_id', 'media_items') })
+  assert.deepEqual(await createComment({ readerId: 5, mediaItemId: 9, parentId: null, body: 'Bình luận dưới video', ip: '203.0.113.9', userAgent: 'test', event: requestEvent() }),
+    { ok: false, statusCode: 404, message: 'Video không tồn tại.' })
   await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual([moderationCalls.length, mails.length], [0, 0])
   // Only the keys the comment hangs on (verifier L-3): the author's own row gone, or the

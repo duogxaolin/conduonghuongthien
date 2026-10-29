@@ -246,6 +246,11 @@ test('the scan bites: each injected shape is reported', () => {
   assert.equal(v('await db.transaction(async tx => countReaderCommentImpact(Number(id)))'), 1)
   // Verifier round 4, L-1 — every form its probe found missed:
   assert.equal(inject('const [r] = await getDb().select().from(t)', 'await db.transaction(async function (tx) {'), 1)
+  // …and a `function` callback is READ, not merely reported as unreadable (verifier round 5, L-3):
+  // a clean one is no violation, a non-async one with a pool read is exactly one.
+  assert.equal(inject('const [r] = await tx.select().from(t)', 'await db.transaction(async function (tx) {'), 0)
+  assert.equal(inject('return getDb().select().from(t)', 'await db.transaction(function work(tx) {'), 1)
+  assert.equal(inject('return tx.select().from(t)', 'await db.transaction(function work(tx) {'), 0)
   assert.equal(v('await db.transaction((tx) => {\n return getDb().select().from(t)\n})'), 1)
   assert.equal(v('await db.transaction(tx => countReaderCommentImpact(id))'), 1)
   assert.equal(inject('const [r] = await getDb().select().from(t)', 'await db.transaction<number>(async (tx) => {'), 1)
