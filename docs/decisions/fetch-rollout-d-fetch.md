@@ -7,6 +7,9 @@
 > Lô E (cuối tệp): 21 ép kiểu nữa (123 → 102) ở 7 tệp, ba danh sách nữa dùng mã lượt, 16 lỗi
 > tìm thấy (24 test FINDING đỏ trên `88073004`), 25 đột biến, và số còn lại cho lô F; sau kiểm chứng
 > độc lập: "Dịch toàn bộ" GIỮ trần 100 bài/ngôn ngữ + hỏi xác nhận, 3 hồi quy sửa, 17 đột biến mới.
+> Lô F (cuối tệp): 28 ép kiểu nữa (102 → 74; phía quản trị 43 → 15), 9 lỗi (F-1…F-9: menu lưu đè khi
+> tải hỏng, `roleId || 2`, đua bộ lọc đơn đăng ký/backup/nhật ký AI, bộ chọn ảnh không có trang 2…),
+> hai danh sách nữa dùng mã lượt (backup không sang `useAdminList`), 24 đột biến, số còn lại cho lô G.
 
 Lô B bỏ 56 ép kiểu `$fetch` ở 7 tệp bằng `adminFetch<T>()` (kiểu suy từ handler qua
 `Payload<…>`, `app/types/handler-payload.ts`), nhưng **không tệp nào** chuyển sang
@@ -425,6 +428,13 @@ SỐNG lần đầu (M19 — mã lượt nhánh thành công của nhật ký AI
 AI, bộ chọn ảnh) có lượt tải đầu trả rỗng nên không phân biệt được "đang tải" với "tắt tải sớm" — đổi lượt
 đầu trả một hàng; dòng `loaded.value = false` đầu `loadMenu` không quan sát được (chỉ "thử lại" của nhánh
 lỗi tải lại) — bỏ, không tính là đột biến.
+
+**Chưa đo ở lô F:** E2E không chạy — `tests/e2e/admin-retry.spec.ts` (đi qua `submissions/index.vue`) và
+`tests/e2e/media-portal.spec.ts` (thư viện video) là hai spec chạm trang của lô này; coverage không đo (máy
+có Node 26, baseline đo trên Node 24 `cdkt-cov:node24`; baseline không nâng). Đổi cấu hình test có sẵn:
+`admin-moderation-summary.test.ts` (cấp `adminFetch`, đọc `query`). Còn nhỏ, chưa sửa: tải menu hỏng rồi
+bấm "Khôi phục mặc định" vẫn báo "nhớ bấm Lưu" trong khi Lưu đang khoá; mở lại CÙNG dịch vụ AI khi lượt
+kiểm tra còn bay thì nút bật lại — có thể gửi lượt gọi AI (tính phí) thứ hai song song (đổi lấy F-2).
 
 ### Còn lại cho lô G
 
