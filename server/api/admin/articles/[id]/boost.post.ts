@@ -26,12 +26,14 @@ export default defineEventHandler(async (event) => {
 
   const actor = event.context.adminUser
   const db = getDb()
-  // The lookup is scoped to the types the caller may update, so an id of a type
-  // they may not touch is the same 404 as a missing one (no existence oracle).
+  // The lookup is scoped to the types the caller may read OR update — the write-path
+  // scope of CLAUDE.md (`['read', <action>]`), as `[id].put.ts`: an id of a type they may
+  // not touch at all is the same 404 as a missing one (no existence oracle), a type they
+  // can see but not change is an honest 403 below (it was 404 — verifier L2).
   const [article] = await db
     .select({ id: articles.id, type: articles.type, title: articles.title })
     .from(articles)
-    .where(and(eq(articles.id, id), articleActionScope(actor, 'update')))
+    .where(and(eq(articles.id, id), articleActionScope(actor, ['read', 'update'])))
     .limit(1)
   if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 

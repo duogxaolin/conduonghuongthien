@@ -22,13 +22,14 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
   const actor = event.context.adminUser
-  // Scoped to the types the caller may update, as boost.post and stats.get are: an id
-  // of a type they may not touch is the same 404 as a missing one. Looked up by id
-  // alone, it was 404 vs 403 — an oracle for which ids exist (FINDING-R6-13).
+  // Scoped to the types the caller may read OR update (CLAUDE.md's write-path scope, as
+  // boost.post): an id of a type they may not touch at all is the same 404 as a missing
+  // one. Looked up by id alone, it was 404 vs 403 — an oracle for which ids exist
+  // (FINDING-R6-13); a type they can see but not change stays an honest 403 (verifier L2).
   const [article] = await db
     .select({ id: articles.id, type: articles.type, title: articles.title })
     .from(articles)
-    .where(and(eq(articles.id, id), articleActionScope(actor, 'update')))
+    .where(and(eq(articles.id, id), articleActionScope(actor, ['read', 'update'])))
     .limit(1)
   if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 

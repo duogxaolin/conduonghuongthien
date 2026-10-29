@@ -107,6 +107,22 @@ test('FINDING-R6-13: an article of a type the caller may not update is the same 
   assert.deepEqual(audits(), [])
 })
 
+test('the write-path scope (CLAUDE.md: read OR update): a type seen but not changeable is an honest 403; update without read still works', async () => {
+  const documentId = await article('document')
+  await runningJob(documentId)
+  // Seen, not changeable: 403 on both — before (scope "update" only) the boost and the
+  // cancel answered 404 as if the article did not exist (verifier L2).
+  const seer = await h.account([{ resource: 'news', canRead: true, canUpdate: true }, { resource: 'documents', canRead: true }], 'xemvanban')
+  for (const response of [await boost(documentId, { mode: 'instant', amount: 5 }, seer), await cancel(documentId, seer)]) {
+    assert.deepEqual([response.status, response.body.statusMessage], [403, 'Forbidden: Insufficient permissions'])
+  }
+  // Changeable without being readable: allowed, as the update path of the article itself.
+  const changer = await h.account([{ resource: 'documents', canUpdate: true }], 'suavanban')
+  assert.equal((await cancel(documentId, changer)).status, 200)
+  assert.equal((await boost(documentId, { mode: 'instant', amount: 5 }, changer)).status, 200)
+  assert.deepEqual(audits().map(a => [a.userId, a.meta.mode]), [[changer.id, 'cancel'], [changer.id, 'instant']])
+})
+
 test('every field is checked before anything is written: a malformed id, mode, amount or duration is a 400', async () => {
   const id = await article()
   for (const bad of ['abc', '0', '1.5', '-2']) assert.equal((await boost(bad, { mode: 'instant', amount: 5 })).status, 400, bad)
