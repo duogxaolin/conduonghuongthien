@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '../../../../../utils/db'
 import { aiModerationRules, activityLogs } from '../../../../../db/schema'
 import { requireResourcePermission } from '../../../../../utils/permissions'
+import { readAffectedRows } from '../../../../../utils/affected-rows'
 import { invalidateModerationRulesCache } from '../../../../../services/moderation-worker'
 
 export default defineEventHandler(async (event) => {
@@ -22,7 +23,12 @@ export default defineEventHandler(async (event) => {
   }
 
   await db.transaction(async (tx) => {
-    await tx.delete(aiModerationRules).where(eq(aiModerationRules.id, id))
+    // Counted: a rule another officer deleted since the read above is a 404 with no second
+    // "delete" audit row (FINDING-R7-12, the R6-10 rule).
+    const [deleted] = await tx.delete(aiModerationRules).where(eq(aiModerationRules.id, id))
+    if (readAffectedRows(deleted) !== 1) {
+      throw createError({ statusCode: 404, statusMessage: 'Quy tắc không tồn tại.' })
+    }
     await tx.insert(activityLogs).values({
       userId: adminUser.id ?? null,
       action: 'delete',

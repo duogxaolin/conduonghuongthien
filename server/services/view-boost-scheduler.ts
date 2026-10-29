@@ -31,6 +31,7 @@ import { getDb, getPool } from '../utils/db'
 import { articleViewBoost } from '../db/schema'
 import { addFabricatedViews } from './article-views'
 import { withNamedLock } from '../utils/named-lock'
+import { affectedRowsOrZero } from '../utils/affected-rows'
 import { logError, logInfo } from '../utils/logger'
 
 const LOCK_NAME = 'cdkt:articles:view-boost'
@@ -151,7 +152,7 @@ export async function runBoostPass(options: RunBoostPassOptions = {}): Promise<B
         // would let a crash between the two statements replay the same delivery
         // on the next pass; this order can only lose one, which is the side to
         // fail on when the number is presented as fabricated anyway.
-        if (updated.affectedRows) {
+        if (affectedRowsOrZero(updated)) {
           await addFabricatedViews({ articleId: job.articleId, amount: due.deliver })
           result.delivered += due.deliver
         }
@@ -161,7 +162,7 @@ export async function runBoostPass(options: RunBoostPassOptions = {}): Promise<B
           .update(articleViewBoost)
           .set({ status: 'completed' })
           .where(and(eq(articleViewBoost.id, job.id), eq(articleViewBoost.status, 'running')))
-        if (closed.affectedRows) result.completed += 1
+        if (affectedRowsOrZero(closed)) result.completed += 1
       }
     }
 
@@ -175,6 +176,7 @@ export async function runBoostPass(options: RunBoostPassOptions = {}): Promise<B
 }
 
 let timer: ReturnType<typeof setInterval> | null = null
+let warmup: ReturnType<typeof setTimeout> | null = null
 
 /**
  * Start ticking. Idempotent, and `unref()`ed so the timer never holds the
@@ -195,11 +197,17 @@ export function startViewBoostScheduler(): void {
   timer.unref?.()
   // First pass is deferred: at boot the database may not be reachable yet, and
   // init/seed are still running.
-  const warmup = setTimeout(tick, 60_000)
+  warmup = setTimeout(() => { warmup = null; tick() }, 60_000)
   warmup.unref?.()
 }
 
+/**
+ * Stop ticking — the deferred first pass included: stopped within its first minute, the scheduler
+ * used to run that pass anyway, after stop (FINDING-R7-11).
+ */
 export function stopViewBoostScheduler(): void {
+  if (warmup) clearTimeout(warmup)
+  warmup = null
   if (!timer) return
   clearInterval(timer)
   timer = null

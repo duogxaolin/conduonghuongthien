@@ -1193,3 +1193,135 @@ Kết luận cho tiêu chí (a): **lỗi 1213 / lỗi khác của người viế
 3. LIKE chưa thoát còn lại: `articles/index.get.ts`, `export-csv.get.ts` (ô tìm), `media/index.get.ts`, `services/chatbot-knowledge.ts`.
 4. Các mục "cần chủ dự án quyết" ở trên, và hai mục còn chờ của R5 (chi phí Delify đếm hai lần; kết quả AI không đọc được ở `comments/ai-moderate` cần `app/**`).
 5. `services/view-boost-scheduler.ts` (55,3 %), `getArticleViewStats` trong `article-views.ts`.
+
+## Lát R7 của task 5.2 — đo lại 2026-10-29 (Node 24, `551651c7`)
+
+Lát thứ bảy: mục 1, 2, 3, 5 của "Lát sau" ở R6, cộng gộp `isDeadlock` và các route ghi/xoá 0 % của `server/api`. Không đổi phạm vi hay thứ tự khoá (bài học R6): mọi sửa chuyển trạng thái giữ nguyên câu lệnh và thứ tự của base, chỉ thêm điều kiện vào câu `UPDATE`/`DELETE` đã có và đếm `readAffectedRows` trong transaction; không `FOR UPDATE`/`FOR SHARE` mới, không `withDeadlockRetry` mới. Vòng 1 đã vi phạm điều này ở một chỗ (R7-3: đi tiếp sau lỗi 1062 làm khoá của câu chèn hỏng sống tới commit) — verifier đo được, vòng 2 hoàn lại về base (mục "Kiểm chứng độc lập" bên dưới). `app/`: một tệp (`pages/admin/ai/moderation.vue`, đọc lại hàng đợi khi 409/404).
+
+**Đo ở đâu.** `npm run test:coverage` trong `cdkt-cov:node24` (`TZ=Asia/Ho_Chi_Minh`) trên `wave3/integration` = `551651c7` trước khi đụng gì (`coverage-before.log`, thư mục bằng chứng `/home/ray/orca/cdht-wave3-tests-r7-proof/`): 793 tệp, 178 chưa nạp, **86,74 %** (78 107 / 90 048); `server/api` 74,61, `server/services` 90,01, `server/utils` 95,48. Ratchet báo RISE ở `shared` (+3,58) trên cây chưa đụng — của nhánh gộp trước, lát này không nâng.
+
+### Đã làm trong lát này (cột "Sau": `lcov-after.info`, mọi dòng vật lý của tệp đã nạp)
+
+| # | Tệp | Trước | Sau | Suite |
+|---|---|---|---|---|
+| 1 | `ai/moderation/queue/[id]/resolve.post.ts` | 0 % (108) | 97,5 % (153/157) | `moderation-queue-resolve-behavior` |
+| 2 | `articles/[id]/translations/translate.post.ts`, `translate-all.post.ts`, `articles/bulk-translate.post.ts` | 0 % | 82,6 / 91,7 / 100 % | `article-translate-routes-scope-behavior` |
+| 3 | `services/article-translations.ts` | 23,8 % (111/467) | 47,5 % (222/467) | như trên |
+| 4 | `articles/index.get.ts`, `export-csv.get.ts` | 85,3 / 86,0 % | 87,4 / 86,2 % | `admin-list-search-behavior` |
+| 5 | `media/index.get.ts`, `categories/[id]/articles.get.ts`, `chatbot/knowledge/index.get.ts`, `chatbot/small-talk/index.get.ts` | 0 % | 95,8 / 96,8 / 100 / 87,0 % | như trên |
+| 6 | `services/chatbot-small-talk.ts` | 52,6 % (130/247) | 90,2 % (229/254) | như trên + `mysql-error-predicates` |
+| 7 | `services/chatbot-knowledge.ts` | 96,9 % | 98,7 % | `admin-list-search-behavior` |
+| 8 | `services/view-boost-scheduler.ts` | 55,3 % (114/206) | 100 % (214/214) | `view-boost-pass-behavior` |
+| 9 | `utils/mysql-errors.ts` (mới), `utils/deadlock-retry.ts` | — / 100 % | 100 / 100 % | `mysql-error-predicates` |
+| 10 | `users/index.post.ts` | 84,5 % (71/84) | 91,4 % (85/93) | như trên |
+| 11 | `chatbot/sessions/[id].get.ts` | 0 % (89) | 100 % (121/121) | `chatbot-session-detail-behavior` |
+| 12 | `chatbot/sessions/[id]/index.delete.ts`, `bulk-delete.post.ts`, `ai/moderation/rules/[id].delete.ts`, `comments/[id]/visibility.patch.ts` | 0 % (43 + 57 + 32 + 44) | 97,2 / 100 / 95,3 / 100 % | `admin-delete-race-behavior` |
+
+`analytics-ingestion.ts` 82,4 → 81,9 %: bỏ bản `isDeadlock` chép (7 dòng đều đã phủ). Mục 7 của đề ("thư mục độ phủ thấp nhất trong `server/api`") làm bốn route ghi/xoá 0 % theo mức phá huỷ (#12); các route 0 % lớn khác ở "Lát sau".
+
+**Sau lát** (`coverage-after.log`, Node 24, cây `b4312d1a`): 794 tệp, 163 chưa nạp, **87,79 %** (thêm 1 tệp `mysql-errors.ts`; 15 tệp rời danh sách chưa nạp). `server/api` 74,61 → **77,96**, `server/services` 90,01 → **90,98**, `server/utils` 95,48 → **95,61**. Mức nền ratchet nâng đúng ba thư mục lát này đụng, bằng số ratchet tự in (làm tròn xuống, không vượt số đo; sửa tay, không `--update` vì `--update` nâng cả `shared`): `server/api` 74,54 → 77,96, `server/services` 89,91 → 90,98, `server/utils` 95,41 → 95,60 (`coverage-ratchet-final.log`).
+
+### Harness
+
+Không đổi `_sqlite-mysql-db.ts` / `_ai-route-harness.ts`. Bốn thứ cục bộ trong suite, mỗi thứ nêu tên trong đầu tệp:
+- `admin-list-search-behavior`: biểu thức MySQL-only `GROUP_CONCAT(DISTINCT CONCAT(…) SEPARATOR ',')` (cột `translatedLangs`) được viết lại thành bản SQLite (`a || ':' || b`) bằng cách bọc `sqlite.prepare`; suite đỏ nếu không còn gặp biểu thức đó (đếm số lần viết lại).
+- `chatbot-session-detail-behavior`: `REGEXP_REPLACE`/`RIGHT` đăng ký trên kết nối SQLite bằng bản JS (`DatabaseSync#function`) — kiểm hình dạng truy vấn và handler, KHÔNG kiểm REGEXP_REPLACE của MySQL; SQL biên dịch được ghim.
+- Chỗ chen ngang: lượt kia commit ngay trước câu ĐẦU TIÊN trong transaction của handler (`COMMIT; …; BEGIN` — transaction lúc đó còn rỗng, đúng như MySQL: lượt thua hoặc bắt đầu sau commit, hoặc chờ khoá hàng tới commit; `UPDATE`/`DELETE` có điều kiện đọc hàng đã commit mới nhất). Lỗi trùng khoá mô phỏng bằng `failNext` mang `errno 1062` (lỗi UNIQUE của SQLite không có mã MySQL).
+- `article-translate-routes-scope-behavior`: `article-translation-worker` thay bằng `mock.module` (ghi lại lượt gọi, không gọi nhà cung cấp); vòng lặp của job hàng loạt chạy thật và được chờ xong trước khi test kết thúc.
+
+### Đột biến (`mutants-r7.list` / `mutants-r7.log`; cây sản phẩm khôi phục từng byte, "production tree clean")
+
+30 chạy, **30 chết**, 0 sống. Theo nhóm: resolve 6 (bỏ điều kiện trạng thái, bỏ 409, bỏ kiểm IP, lưu IP thô, nuốt mọi lỗi chèn lệnh cấm, ném lại lỗi trùng); LIKE 5 (mỗi nơi một — ba cái làm đỏ thêm guard cấu trúc); perPage 3; khoá phụ `id` 4 (kể cả CSV); view-boost 3 (không xoá hẹn giờ hoãn, đổi tên khoá, giao không cần `running`); bộ đọc lỗi 5 (chỉ đọc tầng trên — làm đỏ cả hai nơi gọi deadlock và R7-6/R7-10; small-talk quay về đọc `code` tầng trên; users bỏ nhánh trùng; users lộ `String(err)`; ingestion tự đọc `cause.errno`); ba route đếm hàng 3; trang kiểm duyệt không đọc lại khi 409 — 1. Mỗi đột biến làm đỏ đúng test ghim bất biến của nó (nhiều test chỉ khi chúng ghim cùng bất biến). Không đột biến nào cho nhánh `readAffectedRows === null` của resolve: harness luôn trả số, nên đột biến đó tương đương ở đây. (Hai đột biến resolve "nuốt mọi lỗi chèn lệnh cấm" / "ném lại lỗi trùng" nhắm khối bắt 1062 đã hoàn lại ở vòng 2 — không còn chỗ áp; vòng 2 có danh sách riêng, dưới.)
+
+### Lỗi tìm thấy (ghim lúc viết test, sửa sau đó)
+
+Chạy "trên base" bằng `findings-on-rev.sh 551651c7 <suite>`: **đúng** các test `FINDING-R7-n` đỏ, mọi test khác xanh (`resolve-on-base.log` 7, `search-on-base.log` 6, `predicates-on-base.log` 5 — thêm helper mới và guard một định nghĩa, `boost-pass-on-base.log` 1, `delete-race-on-base.log` 3, `moderation-page-on-base.log` 1). Test "hai nơi gọi thử lại cùng tập lỗi" xanh trên cả hai — gộp `isDeadlock` không đổi hành vi.
+
+| Mã | Mức | Tệp | Lỗi | Trạng thái |
+|---|---|---|---|---|
+| FINDING-R7-1 | trung bình (tranh chấp, audit) | `ai/moderation/queue/[id]/resolve.post.ts` | Đọc trạng thái ngoài transaction rồi `UPDATE … WHERE id` không điều kiện: duyệt thua cuộc đua với xoá → hàng ghi "approved" trên bình luận đã xoá, audit lần hai; xoá thua duyệt → xoá bình luận người kia vừa duyệt; bấm đúp → hai audit | **Đã sửa**: `UPDATE … WHERE id AND status = <đã đọc>` + `readAffectedRows` trong transaction, 0 → 409, mọi thứ của lượt thua rollback. Thứ tự câu lệnh như base. MySQL 8: `mysql-resolve-race.log` (base: queue=approved, audits=2; sửa: queue=rejected, audits=1, cả khi lượt duyệt chờ khoá hàng bình luận) |
+| FINDING-R7-2 | thấp (D11) | như trên | `ban_ip` lưu nguyên `authorIp`: `unknown` (bộ phân giải IP không có địa chỉ) thành lệnh cấm khớp mọi người đọc không đọc được IP; không có IP → vẫn xoá bình luận và ghi "Đã cấm IP" | **Đã sửa**: qua `validateBanValue` như form danh sách chặn; không hợp lệ/không có → 400, không ghi gì; lưu giá trị đã chuẩn hoá |
+| FINDING-R7-3 | thấp | như trên | Hai lượt cấm cùng địa chỉ cùng lúc: lượt sau `ER_DUP_ENTRY` → 500, cả lượt rollback; bấm lại thì qua (lần đọc thấy lệnh cấm, không chèn) | **KNOWN — giữ như base** (vòng 2). Vòng 1 thử bắt riêng 1062 rồi đi tiếp; verifier đo khoá thật bằng `performance_schema.data_locks`: câu chèn hỏng để lại khoá X trên supremum của PRIMARY và S next-key trên bản ghi `value` trùng, sống tới commit (base: rollback ngay ở 1062, nhả ngay) — cấm một địa chỉ KHÁC phải chờ (trung vị ~272 ms so với ~10 ms ở base, không trần khi lượt xử lý chờ tiếp khoá khác). Đã hoàn lại byte-identical với base. Test ghim hành vi base (500, rollback toàn bộ, bấm lại 200). Việc tồn đọng thiết kế khoá: ví dụ thử lại MỘT lần **ngoài** transaction khi gặp 1062 (lần thứ hai đọc thấy lệnh cấm) — chưa đo, change riêng |
+| FINDING-R7-4 | — (chỉ ghim) | như trên | Duyệt hàng `chat`/`livestream_chat` chỉ đổi hàng đợi — `is_flagged`/`is_deleted` của worker giữ nguyên; máy chủ nhận chuyển trạng thái từ mọi trạng thái (duyệt hàng đã "rejected" → "approved" trên bình luận đã xoá) dù trang chỉ hiện nút cho `pending` | **Không đổi** — cần chủ dự án quyết (dưới) |
+| FINDING-R7-5 | thấp (an ninh — phạm vi loại bài) | ba route dịch bài | Cổng `news.update` cố định AND quyền `update` theo loại ở dịch vụ: không lộ dịch AI sang loại khác cho `news.update`, nhưng (a) tồn tại trả lời trước quyền — 403 vs 404 (oracle id, họ R6-13/R6-16); `translate-all` khi không còn gì để dịch trả 200 cho mọi id có thật, không hỏi loại; (b) `bulk-translate` lọc `id > 0`, id phân số (`1.5`) không khớp hàng nào ở bước kiểm loại (không hỏi quyền) rồi job chèn hàng `translating` với `article_id = 1.5` → MySQL làm tròn thành **2**, bất kể loại bài 2 (`mysql-bulk-fractional-id.log`); worker cập nhật trạng thái theo `1.5` nên hàng kẹt `translating` tới khi reaper 30 phút đánh `failed`, chặn dịch bài 2 trong lúc đó (409). Kết luận verifier: **không phải leo thang quyền ghi nội dung** (người gửi đã có `news.update`; không ghi được nội dung bài loại khác); tác hại là hàng giữ chỗ `translating` chặn dịch AI cặp (bài, ngôn ngữ) 30 phút + dòng audit mang id lệch; `articleIds` không có trần; chỉ `bulk-translate` dính | (a) **báo cáo, không đổi** (chính sách quyền — chủ dự án). (b) **Vòng 2 sửa tối thiểu phần đầu vào**: `bulk-translate.post.ts` chỉ nhận id `Number.isSafeInteger(id) && id > 0`, id khác bị bỏ khỏi danh sách như mọi id không dùng được (không còn id nào → 400 có sẵn); id nguyên giữ nguyên hành vi. Đề xuất chủ dự án duyệt thêm: trần số lượng `articleIds`, chính sách quyền |
+| FINDING-R7-6 | thấp | `services/chatbot-small-talk.ts` | Nhánh "câu hỏi đã có" đọc `error.code` tầng trên — Drizzle 0.45 bọc lỗi driver (`DrizzleQueryError`, mã ở `cause`), nên không bao giờ khớp: trùng câu hỏi → 500 | **Đã sửa**: `isDuplicateEntry` (đi theo `cause`). Test cấu trúc cũ ghim đúng chuỗi `ER_DUP_ENTRY` ở tầng trên — đã đổi |
+| FINDING-R7-7 | thấp (quy ước, họ R6-8) | `articles/index.get.ts`, `export-csv.get.ts`, `media/index.get.ts`, `services/chatbot-knowledge.ts`, `services/chatbot-small-talk.ts` (thứ năm, tìm bằng grep) | Ô tìm dán chữ vào LIKE không thoát: `ban_hanh` khớp `banXhanh`, `%` khớp mọi hàng | **Đã sửa**: `likeContains`; guard cấu trúc — chỉ đúng một hình: không còn `like(cột, \`%${…}%\`)` (mẫu "chứa" dựng bằng template) dưới `server/`. Rà tay mọi `like(`/`notLike(` còn lại (`grep -rnE "\b(not)?[Ll]ike\("`): các ô tìm đều qua `likeContains`/`containsPattern`/`contains()`; còn `` `${baseSlug}%` `` ở `utils/slug.ts`, `utils/unique-media-slug.ts` (tìm slug trùng để đánh số — đầu vào là slug đã chuẩn hoá, khớp rộng chỉ đếm thừa ứng viên) và các mẫu hằng/`sql` của nhóm media (`media-sync-rewrite`, `media-repoint`, `media-repair`) — không phải chữ người dùng gõ; guard không bắt các hình đó. MySQL 8 `utf8mb4_unicode_ci`: `mysql-admin-search.log` (thoát → đúng nghĩa đen, vẫn không phân biệt dấu/hoa thường) |
+| FINDING-R7-8 | thấp (quy ước "query string số") | `articles/index.get.ts`, `categories/[id]/articles.get.ts`, `media/index.get.ts` | `Math.min(100, Math.max(10, Number(perPage)))`: `abc` → NaN qua cả hai kẹp → Drizzle bỏ hẳn LIMIT/OFFSET: trên MySQL base trả **200 với TOÀN BỘ hàng** và `perPage: null` (verifier replay — vòng 1 viết sai là 500); `12.5` → `limit 12.5` → **500** `ER_PARSE_ERROR` | **Đã sửa**: `Math.max(10, finitePositive(perPage || mặc định, mặc định, 100))` — trống/thiếu giữ mặc định như cũ |
+| FINDING-R7-9 | thấp (họ R6-9) | ba danh sách trên + `export-csv.get.ts` | `ORDER BY created_at DESC` không khoá phụ: hàng trùng giây (nhập hàng loạt, tải lên hàng loạt) về theo thứ tự bất kỳ — hai trang chung/thiếu hàng; MySQL 8 trả trùng giây theo id tăng (`mysql-admin-search.log`). Verifier, 300 hàng cùng một giây, 30 trang × 10: base **194 hàng khác nhau, 69 lặp, 106 mất**; HEAD 300/0/0 (`/home/ray/orca/cdht-wave3-tests-r7-verify/replay-r79.log`) | **Đã sửa**: thêm `id DESC`; CSV giữ thứ tự của danh sách (hàng nào bị cắt ở `MAX_EXPORT` là xác định) |
+| FINDING-R7-10 | trung bình (lộ dữ liệu cho cán bộ) | `users/index.post.ts` | Như R7-6: kiểm `code === 'ER_DUP_ENTRY'` tầng trên không bao giờ khớp → tạo tài khoản trùng tên/email rơi vào nhánh 500 có `statusMessage = err.message` = "Failed query: insert into `users` … params: <tên>,<email>,<hash bcrypt>" — hiện trong toast | **Đã sửa**: trùng → 400 "đã tồn tại"; lỗi khác → 500 "Lỗi hệ thống", thông điệp của driver (không tham số) vào log `admin_users.create_failed` |
+| FINDING-R7-11 | thấp | `services/view-boost-scheduler.ts` | `stopViewBoostScheduler` không xoá hẹn giờ hoãn 60 s: dừng trong phút đầu vẫn chạy một lượt sau khi dừng. Không có nơi gọi `stop` ở production (dev reload, test) | **Đã sửa**. Cùng mẫu ở `retention-scheduler.ts`, `analytics-scheduler.ts` — ghi nhận, không sửa (ngoài phạm vi); `backup-scheduler.ts` đã đúng |
+| FINDING-R7-12 | thấp (audit, họ R6-10) | `chatbot/sessions/[id]/index.delete.ts`, `ai/moderation/rules/[id].delete.ts`, `comments/[id]/visibility.patch.ts` | Đọc hàng ngoài transaction, ghi theo id không đếm: hàng bị xoá giữa chừng (retention, người khác, lệnh chặn) → 200 + audit cho việc không xảy ra | **Đã sửa**: `readAffectedRows !== 1` → 404, rollback (mysql2 bật `FOUND_ROWS` mặc định — UPDATE đếm hàng khớp, nên ẩn lại hàng đã ẩn kèm cùng lý do không thành 404 giả). `sessions/bulk-delete` vốn đếm — ghim nguyên trạng (kể cả audit "đã xoá 0") |
+
+`view-boost-scheduler.ts`: `.affectedRows` đọc thẳng → `affectedRowsOrZero` (quy ước CLAUDE.md; tương đương hành vi — không phải FINDING, không có đột biến).
+
+### Thay đổi người dùng thấy — chủ dự án xác nhận
+
+- R7-1: xử lý đối soát thua cuộc đua (hai cán bộ, bấm đúp): 200 → **409** "Mục đối soát vừa được người khác xử lý…", không audit; trang tự đọc lại hàng đợi và số đếm khi 409/404 (trước: hàng cũ giữ nút, toast lỗi).
+- R7-2: "Cấm IP" trên hàng `authorIp = unknown`/rỗng/không hợp lệ: 200 (xoá bình luận, ghi "Đã cấm IP", lưu lệnh cấm vô nghĩa) → **400**, không ghi gì. Trang vẫn hiện nút "Cấm IP" cho `unknown` — bấm sẽ nhận toast lỗi.
+- R7-3: không đổi (vòng 2 hoàn lại): hai lượt cấm cùng địa chỉ cùng lúc, lượt sau vẫn 500 như base.
+- R7-5 (vòng 2): `bulk-translate` với id không nguyên (`1.5`, `2**53`…) — trước 200 và một hàng `translating` trên bài làm tròn; nay id đó bị bỏ, chỉ có nó → **400** "Chưa chọn bài viết hợp lệ nào."
+- R7-10 (vòng 2, bản sửa tài khoản): đổi email sang email đã dùng: 500 → **400** "Email đã được dùng cho tài khoản khác."; lỗi khác: 500 "Lỗi hệ thống", log chỉ có thông điệp driver.
+- R7-6, R7-10: trùng câu small-talk / tài khoản: 500 → **400**; lỗi khác khi tạo tài khoản: toast "Failed query: …" → "Lỗi hệ thống".
+- R7-7: năm ô tìm trả **ít hàng hơn** khi chữ gõ có `_`/`%`.
+- R7-8: `perPage` không phải số → mặc định (trước: 200 với mọi hàng, `perPage: null`); `12.5` → 12 (trước: 500); `1e999` → mặc định (trước: 100).
+- R7-9: thứ tự hàng trùng giây đổi (id mới trước) ở danh sách bài, bài theo danh mục, media, CSV.
+- R7-12: ba route trên hàng vừa mất: 200 → **404**, không audit. Giao diện chưa theo: xoá quy tắc (`pages/admin/ai/moderation.vue:366`, tệp đúng 400 dòng — ratchet) và ẩn/hiện bình luận (`pages/admin/comments/index.vue:135-150`) nhận 404 chỉ toast, không tải lại danh sách — chưa làm.
+
+### Cần chủ dự án quyết (lát này không đổi)
+
+- **Phạm vi quyền của ba route dịch bài** (R7-5): giữ cổng `news.update` cố định (người chỉ có `documents.update` không dịch được bài của mình) hay chuyển sang `articleActionScope(actor, ['read','update'])` như các route bài khác (đóng luôn oracle 403/404)? Phần đầu vào (id không nguyên) vòng 2 đã sửa tối thiểu — anh duyệt thêm; trần số lượng `articleIds` (hiện không có) cũng là quyết định của anh.
+- **Thiết kế khoá cho hai lượt cấm cùng địa chỉ** (R7-3, KNOWN): giữ 500 + bấm lại, hay change riêng (thử lại một lần ngoài transaction khi 1062 — chưa đo).
+- **Duyệt hàng chat/livestream** (R7-4): có khôi phục `is_deleted`/`is_flagged` không? (thêm bảng vào transaction — đổi phạm vi khoá, change riêng.) Và có chặn chuyển trạng thái ngoài `pending` ở máy chủ (khớp trang) không?
+- **`authorIp = unknown`** vẫn được lưu vào hàng đợi và trang vẫn hiện nút "Cấm IP" cho nó.
+
+### Ghi nhận, không sửa
+
+- `seed-groups.ts` (`isDuplicateKey`, độ sâu 4) và `backup-registry.ts` (`ER_BAD_FIELD_ERROR`) còn bộ đọc lỗi riêng — ứng viên chuyển sang `hasMysqlError`.
+- Hai bộ thoát LIKE song song: `utils/like-pattern.ts` (`likeContains`, admin) và `utils/sql-like.ts` (`containsPattern`, cắt 200 ký tự, công khai). Lát này dùng `likeContains` cho admin như R6; gộp là việc riêng.
+- `stop` của `retention-scheduler.ts` / `analytics-scheduler.ts` cùng thiếu xoá hẹn giờ hoãn (R7-11).
+- Thông điệp log `article_view_boost.scheduler_failed` là `error.message` của Drizzle — có SQL và tham số (ở đây không có bí mật).
+- Họ R7-10 (đẩy `err.message` thô vào `statusMessage`; với lỗi Drizzle đó là SQL + tham số), rà bằng grep, chưa xem từng nơi: `backup/[filename].delete.ts`, `backup/restore.post.ts`, `backup/restore-upload.post.ts` (nhánh 500 — chỉ SuperAdmin), `settings/backup.put.ts:180`, `ai/delify/sync.post.ts:132`. Các nơi còn lại grep thấy chỉ đẩy thông điệp của lỗi kiểm tra do dịch vụ tự soạn (`…ValidationError`, `RepointInputError`, …). Họ "lỗi không bắt → Nitro ghi cả `DrizzleQueryError` kèm tham số vào log": vòng 2 sửa `users/[id].put.ts` (verifier nêu); các handler ghi khác chưa rà.
+- `pages/admin/ai/moderation.vue` nay đúng 400 dòng: lần sửa sau sẽ chạm ratchet độ dài tệp.
+
+### Điều CHƯA đo
+
+- Tranh chấp thật trên MySQL cho R7-12 — chỉ SQLite (chen ngang ở câu đầu transaction). R7-1/R7-3/R7-5/R7-7/R7-8/R7-9/phiên chat có replay MySQL (của lát và của verifier); không có suite `*-integration` mới (sẽ kéo theo ma trận CI). Người viết không liên quan: vòng 1 KHÔNG đo (và R7-3 vòng 1 đã làm họ chờ — verifier bắt được); vòng 2 đo lại cho resolve (mục "Kiểm chứng độc lập"), các route khác chưa.
+- So khớp không phân biệt dấu/hoa thường của `_ci` trong test đơn vị (SQLite chỉ không phân biệt hoa thường ASCII) — chỉ trong `mysql-admin-search.log`.
+- REGEXP_REPLACE của MySQL trên dữ liệu thật (ICU, collation cột) — một replay 7 số điện thoại.
+- Giao diện sau 404 của trang quy tắc kiểm duyệt, bình luận, phiên chat.
+- E2E, build, MySQL integration suites — không chạy trong lát này.
+
+### Cổng cuối
+
+- Unit + ratchet (lệnh CI `npm test`, Node 26 cục bộ, `TZ=Asia/Ho_Chi_Minh`, `unit-full.log`): **7 367 test, 0 đỏ, 54 bỏ qua** (integration không có MySQL). Chín suite lát này đụng chạy lại ở `TZ=UTC`: 128/128 (`new-suites-tz-utc.log`).
+- `nuxt typecheck` (`ANALYTICS_HMAC_SECRET` giả, `nuxt prepare` trước): **0 lỗi**, exit 0 (`typecheck.log`; cần `NODE_OPTIONS=--max-old-space-size=3072` dưới cap80 — mặc định heap ~1 GB hết bộ nhớ).
+- `npm run docs:facts`: khối số liệu CLAUDE.md không đổi (`docs-facts-*.log`). ESLint trên các tệp đổi: 0 lỗi, 0 cảnh báo.
+- `file-length.baseline.json` không đổi: mọi tệp mới < 400 dòng (lớn nhất `moderation-queue-resolve-behavior` 262); `pages/admin/ai/moderation.vue` 394 → 400 (đúng ngưỡng).
+- Mỗi commit sửa lỗi kèm test đỏ trên `551651c7` (bảng "Lỗi tìm thấy").
+
+### Kiểm chứng độc lập (verifier vòng 1, `/home/ray/orca/cdht-wave3-tests-r7-verify/`) và vòng 2
+
+Kết luận verifier trên `3c79ef08`: **Không đạt, chỉ vì R7-3**; mọi sửa khác đúng gốc, không hồi quy. Vòng 2 (commit `ee883ace`, `9021ffe3` + tài liệu):
+
+| Mục | Nội dung | Xử lý |
+|---|---|---|
+| R7-3 | Bắt 1062 trong transaction giữ khoá của câu chèn hỏng (X supremum PRIMARY + S next-key trên `value` trùng, `performance_schema.data_locks`) tới commit — cấm địa chỉ không liên quan chờ lan truyền (trung vị ~272 ms so với ~10 ms base), không trần. Con số "1,51 s" của vòng 1 là `DO SLEEP(2)` của script, không phải phép đo; câu "`createIpBan` tương thích" và "không đổi khoá nào" sai | **Hoàn lại** đoạn chèn lệnh cấm về base (`git diff 551651c7 -- resolve.post.ts`: chỉ còn `AND status = ?`/409 của R7-1 và giá trị đã kiểm của R7-2). Test thành KNOWN ghim hành vi base. Replay MySQL 8 bằng chính harness của verifier (`replay/lib.mts`, `replay/resolve.mts` chép nguyên; `run-r73-replay.sh` → `r73-replay.log`, CSDL tạm `cdkt_r7_rp_*` đã xoá): **D** ×6 xen kẽ — cả base lẫn HEAD: lượt thua 500, không tới được câu xoá bình luận (rollback ở 1062), không khoá nào sống sau đó; **F** (cấm địa chỉ khác bắt đầu 50 ms sau, xếp sau lượt thua) base 8,5 / 8,6 / 10,5 / 11,1 / 13,0 / 16,8 ms (trung vị 10,8), HEAD 8,7 / 9,5 / 12,2 / 13,1 / 21,2 / 62,0 ms (trung vị 12,7; lượt 62 ms lúc tải 5 phút 8,7 — cùng dải base, vòng 1 là 267–417 ms); **C** ban‖ban cùng địa chỉ ×100 ×2: base 200+500 ×100 (99/1, 99/1), HEAD 200+500 ×100 (99/1, 97/3 — chỉ khác ai thắng); **E** kèm người viết không liên quan ×100 ×2: cấm địa chỉ khác p50 base 22,5 / 23,7 ms, HEAD 25,0 / 23,7 ms; gỡ chặn khác base 12,3 / 13,1, HEAD 10,4 / 13,8; chèn bình luận base 20,9 / 22,1, HEAD 22,4 / 22,0. HEAD ≈ base |
+| R7-5 | Không phải leo thang quyền ghi nội dung; tác hại: hàng giữ chỗ `translating` chặn dịch AI cặp (bài, ngôn ngữ) 30 phút + audit lệch id; `articleIds` không trần; chỉ `bulk-translate` | Sửa tối thiểu phần đầu vào (`Number.isSafeInteger(id) && id > 0`); test `[1.5]`, `[0.5]`, `-1`, `0`, `2**53`, chuỗi, `null`, `Infinity` → 400 không ghi gì; trộn với id nguyên → chỉ id nguyên đi tiếp như cũ. Trần `articleIds` + chính sách quyền: chủ dự án |
+| R7-8 | Base trên MySQL: `abc` → 200 với mọi hàng (Drizzle bỏ LIMIT/OFFSET khi NaN), `12.5` → 500 `ER_PARSE_ERROR` (vòng 1 viết `abc` → 500) | Sửa bảng, chú thích test và chú thích ba handler |
+| R7-9 | Bằng chứng mạnh hơn của verifier: 300 hàng một giây, trang 10 — base 194/69/106, HEAD 300/0/0 | Ghi vào bảng |
+| N17 | Guard LIKE chỉ bắt template; dạng ghép chuỗi trên cột `answer` của small-talk lọt | Guard bắt cả `'%' + q`, `q + '%'` (hai loại nháy) và `notLike(`, có tự kiểm mẫu dương/âm; test small-talk tìm cả cột `answer` |
+| N21 | Test R7-10 chỉ kiểm tên sự kiện log | Kiểm nội dung dòng log: có thông điệp driver, không `params:`, email, `$2`, mật khẩu — cho tạo và sửa tài khoản |
+| Ngoài phạm vi (verifier nêu) | `users/[id].put.ts`: đổi sang email đã dùng → 500 không bắt, `DrizzleQueryError` (tham số, có thể có hash mới) vào log server | **Sửa nhỏ** (cùng khuôn R7-10): 1062 → 400 "Email đã được dùng cho tài khoản khác."; lỗi khác → 500 "Lỗi hệ thống" + log `admin_users.update_failed` chỉ có `driverMessage` (helper dùng chung ở `utils/mysql-errors.ts`, `users/index.post.ts` dùng lại) |
+| Ngoài phạm vi (verifier nêu) | Xoá quy tắc (`moderation.vue:366`) và ẩn/hiện bình luận (`comments/index.vue:135-150`) nhận 404 chỉ toast, không tải lại | Chỉ ghi (mục "Thay đổi người dùng thấy"); `moderation.vue` đúng 400 dòng |
+
+Đột biến vòng 2 (`mutants-r7v2.list` / `.log`): **11 chạy, 11 chết** — chèn lệnh cấm `INSERT IGNORE` (đỏ cả test KNOWN), bỏ kiểm lệnh cấm có sẵn (đỏ cả KNOWN), bulk nhận mọi số dương / số hữu hạn, ghép chuỗi trên `answer` small-talk (guard + hành vi), ghép chuỗi trên `topic` kho tri thức (guard), log tạo / sửa tài khoản ghi thông điệp của wrapper, `driverMessage` trả wrapper (đỏ cả hai), bỏ nhánh 1062 của sửa tài khoản, sửa tài khoản ném lỗi thô. Chạy trên base (`round2-on-base.log`, `round2-translate-on-base.log`): đỏ đúng các test FINDING (R7-1 ×4, R7-2 ×2, R7-5 mới, R7-6, R7-7 ×4 kể cả guard, R7-8, R7-9, R7-10 ×4, helper, một định nghĩa `isDeadlock`); test KNOWN R7-3 **xanh trên base** (cùng hành vi). Suite dịch bài thêm `afterEach` chờ job nền — trước đó một test FINDING đỏ giữa chừng trên base để job ghi lẫn sang test kế.
+
+Cổng vòng 2 (cây `9021ffe3` + tài liệu): unit + ratchet (`TZ=Asia/Ho_Chi_Minh`, `unit-full-round2.log`) **7 369 test, 0 đỏ, 54 bỏ qua**; `nuxt typecheck` 0 lỗi (`typecheck-round2.log`); `docs:facts` không đổi; ESLint các tệp đổi 0 lỗi, 0 cảnh báo. Độ phủ đo lại Node 24 vì mã sản phẩm đổi (`coverage-round2.log`): 87,79 %, `server/api` 77,98, `server/services` 90,98, `server/utils` 95,61 — không thư mục nào tụt; mốc ratchet giữ nguyên (77,96 / 90,98 / 95,60), không nâng.
+
+### Lát sau (theo thứ tự xếp hạng)
+
+1. Bốn quyết định ở trên (phạm vi route dịch bài + trần `articleIds`; thiết kế khoá cho hai lượt cấm cùng địa chỉ — R7-3; duyệt chat/livestream; nút "Cấm IP" cho `unknown`).
+2. Trang quy tắc kiểm duyệt / bình luận / phiên chat: đọc lại khi 404 (R7-12), như trang hàng đợi.
+3. Route 0 % lớn còn lại: `chatbot/knowledge/template.get.ts` (70), `media-portal/youtube-meta.post.ts` (67), `categories/[id].put.ts` (60), `pages/[id]/versions/index.post.ts` (57), `ai/moderation/settings.put.ts` (56), `content-types/[id].put.ts` (49).
+4. Gộp `isDuplicateKey` của `seed-groups.ts` và hai bộ thoát LIKE; `stop` của hai scheduler còn lại (R7-11).
+5. Hai mục còn chờ của R5 (chi phí Delify đếm hai lần; kết quả AI không đọc được ở `comments/ai-moderate`), `getArticleViewStats`.

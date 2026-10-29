@@ -99,7 +99,10 @@ test('deleteSmallTalk refuses system rows and maps duplicate keys to a validatio
   const source = readFileSync(new URL('../server/services/chatbot-small-talk.ts', import.meta.url), 'utf8')
   assert.match(source, /if \(current\.isSystem\) throw new ChatbotSmallTalkValidationError/u, 'system rows must not be deletable')
   assert.match(source, /isDuplicateKeyError\(error\)/u, 'duplicate key must be caught')
-  assert.match(source, /ER_DUP_ENTRY/u)
+  // Through the shared walker: the literal `code === 'ER_DUP_ENTRY'` this used to pin read only the
+  // top level of Drizzle's wrapper and never matched (FINDING-R7-6 — the behaviour, create and
+  // update, is in tests/mysql-error-predicates.test.ts).
+  assert.match(source, /isDuplicateEntry\(error\)/u)
   // sanitizeHtml applied on the shared write-validation path (create + update).
   assert.match(source, /sanitizeHtml/u)
 })
