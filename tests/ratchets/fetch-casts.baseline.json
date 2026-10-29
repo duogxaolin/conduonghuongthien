@@ -40,7 +40,7 @@
   "app/composables/useReaderAuth.ts": 3,
   "app/composables/useReaderNotifications.ts": 3,
   "app/composables/useUpload.ts": 2,
-  "app/layouts/admin.vue": 2,
+  "app/layouts/admin.vue": 1,
   "app/layouts/default.vue": 1,
   "app/pages/[slug].vue": 3,
   "app/pages/about.vue": 1,

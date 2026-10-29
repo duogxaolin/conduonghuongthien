@@ -6,7 +6,7 @@
  *
  * Families today: `ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, the public pages
  * `NEWS_PAGE_FAMILY` and `READER_PROFILE_FAMILY`, and the admin `AI_PROVIDERS_TAB_FAMILY`,
- * `LANGUAGES_PAGE_FAMILY` and `PAGE_BUILDER_FAMILY`. The parts are
+ * `LANGUAGES_PAGE_FAMILY`, `PAGE_BUILDER_FAMILY` and the shell `ADMIN_LAYOUT_FAMILY`. The parts are
  * DERIVED from the directory, not listed (the design of tests/_moderation-page-parts.ts):
  * a part added later joins every "must appear nowhere" scan without anyone editing this
  * file. The named parts are a subset check, so a renamed/moved part turns the scan red
@@ -111,6 +111,21 @@ export const PAGE_BUILDER_FAMILY: ComponentFamily = {
   modules: [
     'composables/useBuilderTreeEdits.ts', 'composables/usePageMeta.ts', 'composables/usePageVersions.ts',
     'utils/blocks/builder-tree.ts', 'utils/page-builder/versions.ts',
+  ],
+}
+
+/**
+ * The admin shell `layouts/admin.vue` (767 lines before its wave3 D-SPLIT split). The layout
+ * keeps the `layout_config` read, the drawer's backdrop, the content area and its scoped CSS;
+ * the parts render only; the menu, the sidebar states and the cache purge are composables.
+ */
+export const ADMIN_LAYOUT_FAMILY: ComponentFamily = {
+  parent: 'layouts/admin.vue',
+  partsDir: 'components/admin/layout',
+  expectedParts: ['AdminSidebar.vue', 'AdminSidebarNav.vue', 'AdminSidebarUserCard.vue', 'AdminTopBar.vue'],
+  modules: [
+    'composables/useAdminLayoutCacheClear.ts', 'composables/useAdminLayoutMenu.ts', 'composables/useAdminLayoutSidebar.ts',
+    'utils/admin-layout-menu.ts',
   ],
 }
 
