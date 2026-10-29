@@ -19,10 +19,13 @@
  *     history `cdkt_reader_history_v1`, the chat tickets `cdkt_sessions_v1`);
  *   - `window.location` — `signIn()` writes `href`; read it back from `location`;
  *   - `useSeoMeta(input)` — recorded; `useI18n()` — the real fallback dictionaries.
- * `<client-only>`, `<ReaderAvatar>` and `<nuxt-link>` stay unresolved: plain elements with
- * their props (client-only's content renders inside it). `resolveComponent('NuxtLink')`
- * resolves to nothing as well, so a notification with a target renders a `<NuxtLink>`
- * element carrying `to`.
+ * `<client-only>` and `<ReaderAvatar>` stay unresolved: plain elements with their props
+ * (client-only's content renders inside it). `NuxtLink` is registered as a stand-in that
+ * renders a `<nuxt-link to>` element around its slot, so `<nuxt-link>` in a template and
+ * `resolveComponent('NuxtLink')` in a script (a notification with a target) reach the SAME
+ * component — as in Nuxt. Left unresolved, the two would render under two different tag
+ * names depending on whether the file declares a `NuxtLink` binding, which is not a
+ * difference a browser ever sees.
  *
  * Environment, for running the SAME suite against another version of the page:
  *   READER_PROFILE_FILE=<file>     mount that file instead of app/pages/profile.vue;
@@ -224,6 +227,15 @@ async function freshComposables() {
   return out
 }
 
+/** `<nuxt-link to>` around the slot; class and listeners fall through onto it. */
+const NuxtLinkStandIn = Vue.defineComponent({
+  name: 'NuxtLink',
+  props: { to: { type: [String, Object], default: undefined } },
+  setup(props, { slots }) {
+    return () => Vue.h('nuxt-link', { to: props.to }, slots.default?.())
+  },
+})
+
 export type MountOptions = { local?: Record<string, string>, session?: Record<string, string> }
 const MOUNTS = new WeakMap<TestContext, number>()
 
@@ -267,6 +279,7 @@ export async function mountProfile(t: TestContext, server = readerServer(), opti
       ...composables,
       '~/composables/useI18n': { useI18n: () => ({ t: translate, currentLang }) },
     },
+    components: { NuxtLink: NuxtLinkStandIn },
   })
 
   let open = true

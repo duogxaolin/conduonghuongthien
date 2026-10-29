@@ -223,7 +223,7 @@ test('notifications: unread count, each item (link when reachable, a note when n
     'Ban quản trị đã trả lời bình luận của bạn • 20/10/2026 Trả lời số 3 Bài viết hiện không mở bình luận',
   ])
   const targets = rows.map(li => li.children.find(c => c.kind === 'element')!)
-  assert.deepEqual(targets.map(el => ('tag' in el ? el.tag : '')), ['NuxtLink', 'NuxtLink', 'div'])
+  assert.deepEqual(targets.map(el => ('tag' in el ? el.tag : '')), ['nuxt-link', 'nuxt-link', 'div'])
   assert.deepEqual(targets.map(el => ('props' in el ? el.props.to ?? null : null)), ['/news/bai-viet-1#comment-1', '/news/bai-viet-2#comment-2', null])
   // Unread vs read styling.
   assert.ok(String(byTag(rows[0]!, 'span')[0]!.props.class).includes('bg-accent'))
