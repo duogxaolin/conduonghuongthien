@@ -41,6 +41,8 @@ const APP = fileURLToPath(new URL('../app/', import.meta.url))
  */
 const publicFetch: unknown = await import('../app/composables/publicFetch.ts')
   .then(module => (module as { publicFetch: unknown }).publicFetch, () => undefined)
+/** The same, for a `#imports` stand-in (useI18n takes `publicFetch` from `#imports`); undefined before lot G. */
+export const realPublicFetch = publicFetch
 
 // ─── Fake network under real ofetch ──────────────────────────────────────────
 

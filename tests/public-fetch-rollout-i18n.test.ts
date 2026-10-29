@@ -21,7 +21,7 @@ import { afterEach, describe, it } from 'node:test'
 import { createFetch } from 'ofetch'
 import * as Vue from 'vue'
 
-import { loadAppModule } from './_public-mount-harness.ts'
+import { loadAppModule, realPublicFetch } from './_public-mount-harness.ts'
 
 type Call = { method: string, wire: string, signal: AbortSignal | null | undefined }
 const g = globalThis as Record<string, unknown>
@@ -90,7 +90,8 @@ type I18n = { currentLang: Vue.Ref<string>, t: (key: string) => string, locales:
 async function loadI18n(where: 'client' | 'server', options: { hydrating?: boolean, cookieHeader?: string } = {}) {
   const nuxt = nuxtStubs({ hydrating: options.hydrating ?? true, cookieHeader: options.cookieHeader })
   const module = await loadAppModule('composables/useI18n.ts', {
-    modules: { '#imports': nuxt.imports },
+    // `#imports` is Nuxt's auto-import registry: on lot G useI18n takes `publicFetch` from it.
+    modules: { '#imports': { ...nuxt.imports, publicFetch: realPublicFetch } },
     importMeta: { server: where === 'server', client: where === 'client' },
   })
   return { useI18n: module.useI18n as () => I18n, hydrate: nuxt.hydrate }
