@@ -8,7 +8,7 @@
  * home rather than one copy per endpoint.
  */
 
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 
 import { getDb } from '../utils/db'
 import { activityLogs, readerIpBans, users } from '../db/schema'
@@ -29,7 +29,8 @@ export type IpBanRow = {
   createdByName: string | null
 }
 
-/** Newest first — the officer reviewing bans cares about recent decisions. The
+/** Newest first — the officer reviewing bans cares about recent decisions (the page
+ *  does not re-sort; this used to order by id ascending — FINDING-R6-11). The
  *  leftJoin keeps a row readable after the account that made it is deleted. */
 export async function listIpBans(): Promise<IpBanRow[]> {
   return getDb()
@@ -43,7 +44,7 @@ export async function listIpBans(): Promise<IpBanRow[]> {
     })
     .from(readerIpBans)
     .leftJoin(users, eq(readerIpBans.createdBy, users.id))
-    .orderBy(readerIpBans.id)
+    .orderBy(desc(readerIpBans.id))
 }
 
 export type CreateIpBanResult =

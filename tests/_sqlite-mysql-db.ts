@@ -22,6 +22,8 @@
  *    "audit in the same transaction" rule exists to stop.
  *  - `failNext(pattern)` makes the next statement whose SQL matches throw, so a
  *    suite can break the audit insert and watch what survives.
+ *  - `like ?` gets `escape '\'`, MySQL's default escape character (SQLite has none),
+ *    so a pattern escaped for MySQL matches the same rows here.
  *  - JSON columns are decoded on read, as mysql2 does. Statements outside the
  *    dialect subset SQLite shares with MySQL (`now()`, `IF()`) throw rather than
  *    being approximated.
@@ -162,7 +164,9 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     if (/^insert/i.test(sql)) return runInsert(sql, params)
     if (/on duplicate key/i.test(sql)) throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
 
-    const statement = sqlite.prepare(sql.replace(/ for update$/, ''))
+    // MySQL's LIKE escapes with `\` by default; SQLite's has no escape character unless
+    // told. Without this an escaped `\_` would mean "a backslash, then any character".
+    const statement = sqlite.prepare(sql.replace(/ for update$/, '').replace(/ like \?/g, " like ? escape '\\'"))
     const bound = params.map(toSqliteParam)
     if (method === 'all') {
       const columns = statement.columns()

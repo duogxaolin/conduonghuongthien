@@ -25,6 +25,7 @@ import { getDb } from '../utils/db'
 import { activityLogs, articleComments, articles, mediaItems, readerAccounts, users } from '../db/schema'
 import { countReaderCommentImpact, deleteReaderComments, type ReaderCommentImpact } from './comments'
 import { effectiveDisplayName } from '../utils/display-name'
+import { likeContains } from '../utils/like-pattern'
 
 /** Server-enforced ceiling. A client-supplied page size is a request. */
 export const READER_MAX_PER_PAGE = 100
@@ -89,9 +90,9 @@ export async function listReaders(params: {
 
   const conditions = []
   if (params.search) {
-    const needle = `%${params.search}%`
-    // Email is searched but never used as a key (design.md D6) — it is mutable
-    // and reassignable, so matching a reader on it would merge two people.
+    // The text as typed: `_`/`%` escaped, not wildcards (FINDING-R6-8). Email is searched
+    // but never a key (design.md D6) — mutable and reassignable, it would merge two people.
+    const needle = likeContains(params.search)
     conditions.push(or(like(readerAccounts.displayName, needle), like(readerAccounts.email, needle)))
   }
   if (params.banned === 'banned') conditions.push(eq(readerAccounts.isBanned, true))
@@ -124,7 +125,7 @@ export async function listReaders(params: {
     })
     .from(readerAccounts)
     .where(where)
-    .orderBy(desc(readerAccounts.lastSeenAt))
+    .orderBy(desc(readerAccounts.lastSeenAt), desc(readerAccounts.id)) // id: MySQL returns ties in any order — pages shared/skipped rows (FINDING-R6-9)
     .limit(perPage)
     .offset((page - 1) * perPage)
 
@@ -293,16 +294,17 @@ export async function unbanReader(params: { readerId: number, actorId: number })
   const db = getDb()
 
   const [existing] = await db
-    .select({ id: readerAccounts.id, displayName: readerAccounts.displayName })
+    .select({ id: readerAccounts.id, displayName: readerAccounts.displayName, isBanned: readerAccounts.isBanned })
     .from(readerAccounts)
     .where(eq(readerAccounts.id, params.readerId))
     .limit(1)
 
   if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
-
-  // Update and audit row in one transaction, same reasoning as banReader: a
-  // second statement that fails must not leave the account unbanned with
-  // nothing recording who did it or when.
+  // Bỏ chặn không xoá gì (mọi số 0); chưa bị chặn thì không ghi, không audit (FINDING-R6-10).
+  const impact = { comments: 0, adminReplies: 0, otherReaderReplies: 0 }
+  if (!existing.isBanned) return { ok: true, impact }
+  // Update and audit row in one transaction, same reasoning as banReader: a second
+  // statement that fails must not leave the account unbanned with no record of who.
   await db.transaction(async (tx) => {
     await tx
       .update(readerAccounts)
@@ -317,9 +319,7 @@ export async function unbanReader(params: { readerId: number, actorId: number })
       meta:       { operation: 'unban', displayName: existing.displayName },
     })
   })
-
-  // Bỏ chặn không xoá gì, nên mọi số đều là 0.
-  return { ok: true, impact: { comments: 0, adminReplies: 0, otherReaderReplies: 0 } }
+  return { ok: true, impact }
 }
 
 /** Delete the account row; comments follow by FK cascade. */
