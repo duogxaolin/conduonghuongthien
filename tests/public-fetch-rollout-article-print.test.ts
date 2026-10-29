@@ -15,6 +15,7 @@ import { describe, it } from 'node:test'
 import * as Vue from 'vue'
 
 import { byTag, h3Error, json, mountPublic, routes, sent, settle, Stub, words, type NetCall } from './_public-mount-harness.ts'
+import { articleServer, HOLD, openDetail } from './_article-detail-harness.ts'
 
 const ARTICLE = {
   ok: true,
@@ -112,6 +113,26 @@ describe('/in-bai/<slug> over publicFetch', () => {
     })
     t.mock.timers.tick(400)
     assert.equal(failed.printed(), 0)
+  })
+})
+
+// ─── ArticleDetail's view ping (its other reads: tests/article-detail-page.test.ts) ──
+
+describe('ArticleDetail view ping over publicFetch', () => {
+  it('a beacon: POST after mount with keepalive, abandoned after 1.5 s (`timeout: 1500`), swallowed', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const server = articleServer()
+    server.state.override = call => (call.method === 'POST' ? HOLD : undefined)
+    const ctx = await openDetail(t, server)
+    const ping = ctx.calls.find(call => call.method === 'POST')!
+    assert.equal(ping.url.pathname, '/api/public/articles/hanh-trinh/view')
+    assert.equal(ping.keepalive, true, 'keepalive reaches fetch: the count survives leaving the page')
+    t.mock.timers.tick(1499)
+    assert.equal(ping.signal?.aborted, false)
+    t.mock.timers.tick(1)
+    assert.equal(ping.signal?.aborted, true)
+    await settle()
+    assert.deepEqual(ctx.detail.errors, [])
   })
 })
 

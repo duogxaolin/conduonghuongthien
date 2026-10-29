@@ -5,7 +5,7 @@
  *
  * What a visitor's browser does is pinned: one POST per page shown (`app:mounted`, then each
  * `page:finish` to a NEW path), body `{ path, sourceCategory, deviceClass }`, sent with
- * `keepalive` (it may outlive the page), never retried (`retry: 0`: a 503 is posted once),
+ * `keepalive` (it may outlive the page), posted once on a 503 (a POST: ofetch's default is no retry),
  * abandoned after 1.5 s, every failure swallowed (analytics never disturbs a page); a bot and
  * an admin path send nothing. Green on the base tree (5f1bb07d, cast) and on lot G alike.
  */
@@ -77,7 +77,9 @@ describe('analytics.client.ts — the page-view beacon over publicFetch', () => 
     assert.ok(posts.every(p => p.keepalive === true), 'keepalive reaches fetch')
   })
 
-  it('a 503 is posted ONCE (`retry: 0`) and swallowed', async () => {
+  // `retry: 0` cannot be told apart here: ofetch never retries a POST by default (mutation
+  // M18 of lot G survives as an EQUIVALENT mutant). What a visitor sees is pinned: one post.
+  it('a 503 is posted once and swallowed', async () => {
     const posts = network(() => json({ statusCode: 503 }, 503))
     const app = await startPlugin()
     app.fire('app:mounted')

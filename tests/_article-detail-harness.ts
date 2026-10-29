@@ -50,6 +50,9 @@ export type NetCall = {
   method: string
   url: URL
   body: unknown
+  /** What ofetch handed to `fetch` (D-FETCH lot G pins the view ping's beacon options). */
+  keepalive?: boolean
+  signal?: AbortSignal | null
   respond: (response: Response) => void
   fail: (error: Error) => void
 }
@@ -215,10 +218,13 @@ export async function mountDetail(t: TestContext, server = articleServer(), prop
       method: (init.method ?? 'GET').toUpperCase(),
       url: new URL(raw, 'http://portal.test'),
       body: typeof init.body === 'string' ? JSON.parse(init.body) : init.body,
+      keepalive: init.keepalive,
+      signal: init.signal,
       respond: resolve,
       fail: reject,
     }
     calls.push(call)
+    init.signal?.addEventListener('abort', () => reject(init.signal!.reason), { once: true })
     const answer = server.respond(call)
     if (answer === HOLD) return
     if (answer instanceof Error) reject(answer)
