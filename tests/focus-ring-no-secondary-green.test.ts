@@ -97,7 +97,8 @@ const DARK_GREEN = `(?:brand-900|\\[${COLOR_TOKENS['brand-900']}\\])`
 test('the two dark launchers carry a white ring with a dark offset', () => {
   let launchers = 0
   for (const [file, marker] of [
-    ['components/ChatWidget.vue', /chatbot-toggle-btn/],
+    // The chat launcher is a part of ChatWidget since its wave3 split.
+    ['components/chat-widget/ChatWidgetLauncher.vue', /chatbot-toggle-btn/],
     ['components/SocialBubble.client.vue', new RegExp(`from-${DARK_GREEN} to-\\[#153317\\]`, 'i')],
   ] as const) {
     const source = readFileSync(new URL(file, root), 'utf8')

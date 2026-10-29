@@ -6,7 +6,7 @@ import { effectScope, nextTick, ref } from 'vue'
 
 import { renderChatMarkdown, renderChatMarkdownBlocks } from '../app/utils/markdown'
 import { CHAT_BOTTOM_THRESHOLD_PX, useChatAutoScroll } from '../app/composables/useChatAutoScroll'
-import { CHATBOT_COMPOSABLE_FAMILY, moduleFamilySource, readAppFile } from './_component-family.ts'
+import { CHATBOT_COMPOSABLE_FAMILY, chatSurfaceSource, chatSurfaceTemplate, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 /**
  * Chatbot trên điện thoại "không mượt" — đo bằng trình duyệt ở 390×844 trước khi
@@ -268,33 +268,49 @@ test('the first scroll by the visitor drops the stop at the question', async () 
   })
 })
 
+// The widget is read as its whole family since its wave3 split (the input row, header and
+// launcher are parts in components/chat-widget/): `chatSurfaceSource/Template`.
 test('both surfaces decide "follow" from the pinned state, not a post-growth measurement', () => {
   for (const file of SURFACES) {
-    const source = read(file)
+    const source = chatSurfaceSource(file)
     assert.match(source, /useChatAutoScroll\(chatContainer, chatContent\)/, `${file} must use the shared follow logic`)
-    for (const send of source.matchAll(/(?:const sendBotMessage|const askBot|function retryMessage)[\s\S]*?submitBotQuestion\(/g)) {
+    const sends = [...source.matchAll(/(?:const sendBotMessage|const askBot|function retryMessage)[\s\S]*?submitBotQuestion\(/g)]
+    assert.equal(sends.length, 3, `${file}: the three ways to send were not all found`)
+    for (const send of sends) {
       assert.match(send[0], /followLatestQuestion\(\)/, `${file}: a send must stop the follow at the new question`)
     }
-    assert.match(templateOf(file), /:data-chat-anchor="msg\.sender === 'user'/, `${file}: questions must be marked as stops`)
+    assert.match(chatSurfaceTemplate(file), /:data-chat-anchor="msg\.sender === 'user'/, `${file}: questions must be marked as stops`)
     assert.match(source, /const wasAtBottom = force \|\| isPinnedToBottom\.value/, file)
     assert.doesNotMatch(source, /el\.scrollHeight - el\.scrollTop - el\.clientHeight < 80/, `${file} still measures after growth`)
-    assert.match(templateOf(file), /ref="chatContent"/, `${file} needs an inner block for the ResizeObserver`)
+    assert.match(chatSurfaceTemplate(file), /ref="chatContent"/, `${file} needs an inner block for the ResizeObserver`)
   }
 })
 
 // ─── Điện thoại: bàn phím, zoom, trình đọc màn hình ──────────────────────────
 
+function smallInputs(template: string): { checked: string[], tooSmall: string[] } {
+  const tags = template.match(/<(input|textarea)\b[^>]*>/g) ?? []
+  const visible = tags.filter(tag => !/name="_h"/.test(tag))
+  // A bare `text-[0.88rem]` (no breakpoint prefix) applies on phones.
+  return { checked: visible, tooSmall: visible.filter(tag => /(?<![:\w-])text-\[0?\.\d+rem\]/.test(tag) || !/\btext-base\b/.test(tag)) }
+}
+
 test('text inputs are 16px on phones so iOS Safari does not zoom on focus', () => {
   for (const file of SURFACES) {
-    const tags = templateOf(file).match(/<(input|textarea)\b[^>]*>/g) ?? []
-    const visible = tags.filter(tag => !/name="_h"/.test(tag))
-    assert.ok(visible.length > 0, `${file} has text inputs`)
-    for (const tag of visible) {
-      // A bare `text-[0.88rem]` (no breakpoint prefix) applies on phones.
-      assert.doesNotMatch(tag, /(?<![:\w-])text-\[0?\.\d+rem\]/, `${file}: below 16px on phones: ${tag.slice(0, 120)}`)
-      assert.match(tag, /\btext-base\b/, `${file}: ${tag.slice(0, 120)}`)
-    }
+    const { checked, tooSmall } = smallInputs(chatSurfaceTemplate(file))
+    assert.ok(checked.length > 0, `${file} has text inputs`)
+    assert.deepEqual(tooSmall.map(tag => tag.slice(0, 120)), [], `${file}: below 16px on phones`)
   }
+  // The question box itself is among what is checked — not only the contact form.
+  assert.ok(smallInputs(chatSurfaceTemplate(SURFACES[0])).checked.some(tag => tag.includes('id="public-chatbot-input"')))
+})
+
+test('injection proof: the 16px rule reaches the input row part of the widget', () => {
+  const composer = 'components/chat-widget/ChatWidgetComposer.vue'
+  const source = readAppFile(composer)
+  assert.ok(source.includes('text-base md:text-[0.88rem]'), `${composer} no longer has the class this proof shrinks`)
+  const broken = chatSurfaceTemplate(SURFACES[0], { [composer]: source.replace('text-base md:text-[0.88rem]', 'text-[0.88rem]') })
+  assert.equal(smallInputs(broken).tooSmall.length, 1)
 })
 
 test('the full-screen widget follows the visible viewport when the keyboard opens', () => {
@@ -316,7 +332,7 @@ test('message bubbles are not alerts', () => {
   // Every streamed chunk changes the bubble's text. As `role="alert"` each change
   // was an assertive interruption, and every past message was an alert too.
   for (const file of SURFACES) {
-    const template = templateOf(file)
+    const template = chatSurfaceTemplate(file)
     const bubble = template.match(/<div\s+class="max-w-\[8\d%\][^>]*>/)?.[0]
     assert.ok(bubble, `${file}: bubble not found`)
     assert.doesNotMatch(bubble, /role="alert"/, file)

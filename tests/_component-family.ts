@@ -4,8 +4,8 @@
  * source, so a guard that used to grep the 730-line file keeps reading everything the file
  * used to contain.
  *
- * Families today: `ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, the public pages
- * `NEWS_PAGE_FAMILY` and `READER_PROFILE_FAMILY`, and the admin `AI_PROVIDERS_TAB_FAMILY`,
+ * Families today: `ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, `CHAT_WIDGET_FAMILY`,
+ * the public pages `NEWS_PAGE_FAMILY` and `READER_PROFILE_FAMILY`, and the admin `AI_PROVIDERS_TAB_FAMILY`,
  * `LANGUAGES_PAGE_FAMILY` and `PAGE_BUILDER_FAMILY`; and one composable split into a
  * directory of modules, `CHATBOT_COMPOSABLE_FAMILY` (`ModuleFamily`, below). The parts are
  * DERIVED from the directory, not listed (the design of tests/_moderation-page-parts.ts):
@@ -115,6 +115,23 @@ export const PAGE_BUILDER_FAMILY: ComponentFamily = {
   ],
 }
 
+/**
+ * The public chat widget (`ChatWidget.vue`, 620 lines before its wave3 split). The parent
+ * keeps the dialog element, the transcript and every error / retry / loading branch; the
+ * parts in `components/chat-widget/` render only; the modules are the modal mechanics
+ * (focus, inert, Escape/Tab), the teaser timers and the clipboard. The conversation itself
+ * is `CHATBOT_COMPOSABLE_FAMILY` (below), which guards read alongside.
+ */
+export const CHAT_WIDGET_FAMILY: ComponentFamily = {
+  parent: 'components/ChatWidget.vue',
+  partsDir: 'components/chat-widget',
+  expectedParts: [
+    'ChatWidgetComposer.vue', 'ChatWidgetConversationList.vue', 'ChatWidgetHeader.vue', 'ChatWidgetLauncher.vue',
+    'ChatWidgetMessageMeta.vue', 'ChatWidgetQuickQuestions.vue', 'ChatWidgetWelcome.vue',
+  ],
+  modules: ['composables/useChatCopy.ts', 'composables/useChatWidgetDialog.ts', 'composables/useChatWidgetTeaser.ts'],
+}
+
 export const readAppFile = (file: string): string => readFileSync(new URL(file, APP), 'utf8').replace(/\r\n/g, '\n')
 
 const isPart = (family: ComponentFamily, file: string) =>
@@ -166,6 +183,26 @@ export const familyStyle = (family: ComponentFamily, overrides?: Record<string, 
 /** Whole files, concatenated — for "this must appear nowhere" checks. */
 export const familySource = (family: ComponentFamily, overrides?: Record<string, string>) =>
   familyFiles(family, overrides).map(f => f.source).join('\n')
+
+// ─── The two chat surfaces ───────────────────────────────────────────────────
+
+/**
+ * The widget and `/assistant` render the same conversation, and a dozen guards check
+ * both ("each surface has one pending indicator", "inputs are 16px on phones", …). They
+ * name the surfaces by path as they always did (`../app/components/ChatWidget.vue`,
+ * `app/pages/assistant.vue`); these read the widget as its whole family and any other
+ * surface as its one file.
+ */
+const appRelative = (file: string) => file.replace(/^(?:\.\.\/)?app\//, '')
+const isChatWidget = (file: string) => appRelative(file) === CHAT_WIDGET_FAMILY.parent
+
+export const chatSurfaceSource = (file: string, overrides?: Record<string, string>): string =>
+  isChatWidget(file) ? familySource(CHAT_WIDGET_FAMILY, overrides) : readAppFile(appRelative(file))
+
+export const chatSurfaceTemplate = (file: string, overrides?: Record<string, string>): string =>
+  isChatWidget(file)
+    ? familyTemplate(CHAT_WIDGET_FAMILY, overrides)
+    : parse(readAppFile(appRelative(file)), { filename: file }).descriptor.template?.content ?? ''
 
 // ─── Composables split into a directory of modules ───────────────────────────
 

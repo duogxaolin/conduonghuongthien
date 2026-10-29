@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { autocompleteFor, controlId, errorId, leadContactInvalid, leadFieldId, validateFormField } from '../app/utils/form-a11y'
 import { renderSfcTemplate } from './_render-sfc-template'
+import { chatSurfaceSource } from './_component-family.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const read = (rel: string) => readFileSync(path.join(root, rel), 'utf8')
@@ -180,8 +181,10 @@ describe('SupportFormBlock — nhãn gắn id/for (SSR thật của template)', 
 describe('biểu mẫu để-lại-liên-hệ trong chat (kiểm cấu trúc — template cần cả composable chat để mount)', () => {
   // STRUCTURAL: ChatWidget/assistant phụ thuộc useChatbot + hàng chục ref; chỉ kiểm
   // dây nối nhãn/lỗi trong source, phần logic id/invalid đã được test hành vi ở trên.
+  // ChatWidget is read as its whole family since its wave3 split (tests/_component-family.ts):
+  // the counts below hold for the widget however its markup is divided.
   for (const file of ['app/components/ChatWidget.vue', 'app/pages/assistant.vue']) {
-    const source = read(file)
+    const source = chatSurfaceSource(file)
     for (const field of ['name', 'phone', 'email', 'question']) {
       it(`${file}: ô "${field}" có <label for> sr-only + id cùng biểu thức`, () => {
         assert.match(source, new RegExp(`<label :for="leadFieldId\\(uid, msg\\.id \\|\\| index, '${field}'\\)" class="sr-only">`))

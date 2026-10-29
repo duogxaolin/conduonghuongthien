@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
-import { CHATBOT_COMPOSABLE_FAMILY, moduleFamilySource, readAppFile } from './_component-family.ts'
+import {
+  CHAT_WIDGET_FAMILY, CHATBOT_COMPOSABLE_FAMILY, familyScript, familySource, familyTemplate, familyVueFiles,
+  moduleFamilySource, readAppFile,
+} from './_component-family.ts'
 
 // The widget was extracted out of `app/layouts/default.vue` so that the full-page
 // assistant at `/assistant` could render the same conversation without duplicating
@@ -12,23 +14,23 @@ import { CHATBOT_COMPOSABLE_FAMILY, moduleFamilySource, readAppFile } from './_c
 // file holds a given line, so `script` spans both halves. Splitting the
 // assertions by file would make a future move of one function look like a
 // regression.
-const widgetPath = new URL('../app/components/ChatWidget.vue', import.meta.url)
 // Phần khử độc dữ liệu `localStorage` đã sang `app/utils/chatbot-storage.ts` để
 // kiểm được không cần nạp cả composable (`tests/chatbot-storage-boundary.test.ts`).
 // Ghép vào đây theo đúng nguyên tắc đã nêu ở trên: các khẳng định dưới đây nói về
-// **hành vi** của widget, không về việc tệp nào giữ dòng nào. Từ lần tách wave3,
-// `useChatbot.ts` là mặt tiền của `composables/chatbot/*.ts`: đọc cả họ
-// (`CHATBOT_COMPOSABLE_FAMILY` = mặt tiền + mọi module + chatbot-storage).
-const widgetSource = await readFile(widgetPath, 'utf8')
+// **hành vi** của widget, không về việc tệp nào giữ dòng nào. Từ lần tách wave3 cả
+// hai nửa là một HỌ tệp (tests/_component-family.ts): `CHAT_WIDGET_FAMILY` = ChatWidget.vue
+// + mọi phần trong components/chat-widget/ + useChatWidgetDialog/Teaser/useChatCopy, và
+// `CHATBOT_COMPOSABLE_FAMILY` = useChatbot.ts + mọi module composables/chatbot/ + chatbot-storage.
+const widgetTemplate = (overrides?: Record<string, string>) => familyTemplate(CHAT_WIDGET_FAMILY, overrides)
+const widgetScript = (overrides?: Record<string, string>) => familyScript(CHAT_WIDGET_FAMILY, overrides)
 const composableSource = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY)
 
-const descriptor = parse(widgetSource, { filename: 'ChatWidget.vue' })
-const template = descriptor.descriptor.template?.content ?? ''
-const script = `${descriptor.descriptor.scriptSetup?.content ?? ''}\n${composableSource}`
-const source = `${widgetSource}\n${composableSource}`
+const template = widgetTemplate()
+const script = `${widgetScript()}\n${composableSource}`
+const source = `${familySource(CHAT_WIDGET_FAMILY)}\n${composableSource}`
 
 test('public widget SFC parses and uses API-backed quick questions only', () => {
-  assert.equal(descriptor.errors.length, 0)
+  for (const f of familyVueFiles(CHAT_WIDGET_FAMILY)) assert.deepEqual(parse(f.source, { filename: f.file }).errors, [], f.file)
   assert.match(script, /fetch\('\/api\/public\/chatbot\/quick-questions'/)
   assert.match(template, /v-for="question in quickQuestions"/)
   assert.match(template, /:key="question\.id"/)
@@ -145,6 +147,24 @@ test('public widget contains no provider settings, secrets, internals, or raw er
   for (const marker of forbidden) assert.doesNotMatch(source, new RegExp(marker, 'i'))
   assert.doesNotMatch(script, /console\.(?:error|log)\(/)
   assert.doesNotMatch(script, /targetFullText \+= jsonStr/)
+})
+
+test('injection proof: the widget half of these checks reads every part of ChatWidget', () => {
+  // "Must appear": the quick-question chips, the bounded input and the safe-area padding
+  // moved into parts; taking them out of their part turns the family read red.
+  const chips = 'components/chat-widget/ChatWidgetQuickQuestions.vue'
+  assert.doesNotMatch(widgetTemplate({ [chips]: readAppFile(chips).replace('v-for="question in quickQuestions"', 'v-for="question in []"') }), /v-for="question in quickQuestions"/)
+  const composer = 'components/chat-widget/ChatWidgetComposer.vue'
+  assert.doesNotMatch(widgetTemplate({ [composer]: readAppFile(composer).replace(':maxlength="limits.maxMessageChars"', '') }), /:maxlength="(?:CHATBOT_CLIENT_LIMITS|limits)\.maxMessageChars"/)
+  const meta = 'components/chat-widget/ChatWidgetMessageMeta.vue'
+  assert.doesNotMatch(widgetTemplate({ [meta]: readAppFile(meta).replace('messageKindLabel(msg.kind)', "''") }), /messageKindLabel\(msg\.kind\)/)
+  // "Must appear nowhere": markup or a log line planted in a part — or a part added
+  // later — is in what the checks read.
+  assert.match(widgetTemplate({ 'components/chat-widget/ChatWidgetLater.vue': '<template><div v-html="x"></div></template>' }), /v-html/)
+  const dialog = 'composables/useChatWidgetDialog.ts'
+  assert.match(widgetScript({ [dialog]: `${readAppFile(dialog)}\nconsole.log('x')\n` }), /console\.(?:error|log)\(/)
+  // Focus back to the launcher lives in the dialog module now.
+  assert.doesNotMatch(widgetScript({ [dialog]: readAppFile(dialog).replace('chatToggleButton.value?.focus()', 'void 0') }), /chatToggleButton\.value\?\.focus\(\)/)
 })
 
 test('injection proof: the composable half of these checks reads every module of useChatbot', () => {

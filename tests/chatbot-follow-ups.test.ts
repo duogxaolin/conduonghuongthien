@@ -13,7 +13,7 @@ import {
 } from '../server/utils/chatbot/follow-ups'
 import type { RetrievalEntry } from '../server/utils/chatbot/retrieval'
 import { normalizeFollowUps, normalizeStoredMessage } from '../app/utils/chatbot-storage'
-import { CHATBOT_COMPOSABLE_FAMILY, moduleFamilySource, readAppFile } from './_component-family.ts'
+import { CHATBOT_COMPOSABLE_FAMILY, chatSurfaceTemplate, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 /**
  * Câu hỏi gợi ý tiếp theo = AI đề xuất + kho tri thức xác nhận.
@@ -249,8 +249,9 @@ test('injection proof: dropping the suggestions from the stream reader or from p
 })
 
 test('both surfaces show chips under the latest finished answer only', () => {
+  // The widget is read as its whole family since its wave3 split (tests/_component-family.ts).
   for (const file of ['../app/components/ChatWidget.vue', '../app/pages/assistant.vue']) {
-    const template = parse(read(file), { filename: file }).descriptor.template?.content ?? ''
+    const template = chatSurfaceTemplate(file)
     const chips = template.match(/<ChatFollowUps[\s\S]*?\/>/)?.[0] ?? ''
     assert.ok(chips, `${file} must render the chips`)
     assert.match(chips, /!msg\.isStreaming/, `${file}: not while the answer is still arriving`)

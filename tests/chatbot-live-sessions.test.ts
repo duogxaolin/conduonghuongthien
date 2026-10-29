@@ -5,7 +5,7 @@ import { issueSessionToken, verifySessionToken } from '../server/utils/chatbot/s
 import { normalizeVietnamesePhone, detectPhone, detectName } from '../server/utils/chatbot/contact-detect'
 import { summarizeUserAgent } from '../server/utils/chatbot/user-agent'
 import { chatPolicyDeclaration, chatPolicyPart, chatPolicySource, chatPolicySourceWith, readRepoFile } from './_chat-policy-family.ts'
-import { CHATBOT_COMPOSABLE_FAMILY, moduleFamilySource, readAppFile } from './_component-family.ts'
+import { CHAT_WIDGET_FAMILY, CHATBOT_COMPOSABLE_FAMILY, familySource, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 const SECRET = 'test-secret-not-a-real-key-0123456789abcdef'
 
@@ -204,9 +204,13 @@ test('the client asks the server for a session token instead of signing one', ()
 })
 
 test('the widget ships a honeypot field and the server treats a filled one as a bot', () => {
-  const widget = readFileSync('app/components/ChatWidget.vue', 'utf8')
-  assert.match(widget, /name="_h"/, 'honeypot input present')
-  assert.match(widget, /tabindex="-1"/, 'kept out of the tab order')
+  // The input row is a part of the widget since its wave3 split: read the widget's family,
+  // and check the honeypot input tag itself (not "somewhere in the file").
+  const widget = familySource(CHAT_WIDGET_FAMILY)
+  const honeypot = widget.match(/<input\b[^>]*name="_h"[^>]*>/)?.[0] ?? ''
+  assert.ok(honeypot, 'honeypot input present')
+  assert.match(honeypot, /tabindex="-1"/, 'kept out of the tab order')
+  assert.match(widget, /if \(honeypot\.value\.trim\(\) !== ''\) return/, 'a filled honeypot sends nothing')
 
   const handler = readFileSync('server/api/public/chatbot/index.post.ts', 'utf8')
   // Answering 200 with a plausible reply is the point: a 400 or 403 would tell
