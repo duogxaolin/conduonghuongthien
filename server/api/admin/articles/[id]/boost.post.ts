@@ -59,19 +59,6 @@ export default defineEventHandler(async (event) => {
     return { ok: true, mode: input.mode, amount: input.amount }
   }
 
-  // One running job per article. Two overlapping schedules would both compute
-  // their own share of elapsed time and the operator would have no single figure
-  // to read progress from — the second request is refused rather than merged,
-  // because merging would change an amount the first operator authorised.
-  const [running] = await db
-    .select({ id: articleViewBoost.id })
-    .from(articleViewBoost)
-    .where(and(eq(articleViewBoost.articleId, article.id), eq(articleViewBoost.status, 'running')))
-    .limit(1)
-  if (running) {
-    throw createError({ statusCode: 409, statusMessage: 'Bài viết đang có một lượt tăng dần chạy dở. Vui lòng huỷ lượt đó trước.' })
-  }
-
   const startedAt = new Date()
   const endsAt = new Date(startedAt.getTime() + input.minutes * 60_000)
 
@@ -81,6 +68,23 @@ export default defineEventHandler(async (event) => {
   // zone for the whole callback, so referencing it in there throws at runtime —
   // the defect that made every article-create call return 500 (see CLAUDE.md).
   const boostId = await db.transaction(async (tx) => {
+    // One running job per article. Two overlapping schedules would both compute
+    // their own share of elapsed time and the operator would have no single figure
+    // to read progress from — the second request is refused rather than merged,
+    // because merging would change an amount the first operator authorised.
+    // Checked HERE, under the article row's lock: two requests for one article queue
+    // on the lock and the second sees the first one's job. Read before the
+    // transaction, both saw none and both inserted (FINDING-R6-14).
+    await tx.select({ id: articles.id }).from(articles).where(eq(articles.id, article.id)).for('update')
+    const [running] = await tx
+      .select({ id: articleViewBoost.id })
+      .from(articleViewBoost)
+      .where(and(eq(articleViewBoost.articleId, article.id), eq(articleViewBoost.status, 'running')))
+      .limit(1)
+    if (running) {
+      throw createError({ statusCode: 409, statusMessage: 'Bài viết đang có một lượt tăng dần chạy dở. Vui lòng huỷ lượt đó trước.' })
+    }
+
     const [inserted] = await tx.insert(articleViewBoost).values({
       articleId: article.id,
       totalAmount: input.amount,

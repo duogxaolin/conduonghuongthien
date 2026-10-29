@@ -21,7 +21,10 @@
  *    run on another connection and commit on its own, which is the bug the
  *    "audit in the same transaction" rule exists to stop.
  *  - `failNext(pattern)` makes the next statement whose SQL matches throw, so a
- *    suite can break the audit insert and watch what survives.
+ *    suite can break the audit insert and watch what survives. `beforeNext(pattern,
+ *    fn)` runs `fn` just before the next matching statement — another writer landing
+ *    between a read and the write that relies on it. `txStatements` lists what ran
+ *    while a transaction was open.
  *  - `like ?` gets `escape '\'`, MySQL's default escape character (SQLite has none),
  *    so a pattern escaped for MySQL matches the same rows here.
  *  - JSON columns are decoded on read, as mysql2 does. Statements outside the
@@ -31,7 +34,8 @@
  *    SQLite twin: a single-row insert whose update list is only `` `col` = ? ``
  *    becomes `ON CONFLICT DO UPDATE SET` with the same assignments. With no unique
  *    index besides the primary key (see above), both fire on the same conflict.
- *    Anything else in the update list (`values(col)`, `col + 1`, `IF(...)`) throws.
+ *    `` `col` = `table`.`col` + ? `` is accepted too: in both dialects the column names
+ *    the row already stored. Anything else (`values(col)`, `IF(...)`) throws.
  */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { getTableColumns, getTableName, SQL } from 'drizzle-orm'
@@ -94,9 +98,13 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
   }
 
   const failures: RegExp[] = []
+  const hooks: Array<{ pattern: RegExp, run: () => void }> = []
   const statements: string[] = []
+  const txStatements: string[] = []
 
   function maybeFail(sql: string) {
+    const hook = hooks.findIndex(each => each.pattern.test(sql))
+    if (hook >= 0) hooks.splice(hook, 1)[0]!.run()
     const index = failures.findIndex(pattern => pattern.test(sql))
     if (index >= 0) {
       failures.splice(index, 1)
@@ -113,7 +121,7 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     const at = sql.indexOf(marker)
     if (at === -1) return null
     const assignments = splitTopLevel(sql.slice(at + marker.length))
-    if (!assignments.length || !assignments.every(assignment => /^`[^`]+` = \?$/.test(assignment))) {
+    if (!assignments.length || !assignments.every(assignment => /^`([^`]+)` = (?:\?|`[^`]+`\.`\1` \+ \?)$/.test(assignment))) {
       throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
     }
     return { insert: sql.slice(0, at), conflictClause: ` ON CONFLICT DO UPDATE SET ${assignments.join(', ')}` }
@@ -160,6 +168,7 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
 
   async function execute(sql: string, params: unknown[], method: Method): Promise<ProxyResult> {
     statements.push(sql)
+    if (transactionOpen) txStatements.push(sql)
     maybeFail(sql)
     if (/^insert/i.test(sql)) return runInsert(sql, params)
     if (/on duplicate key/i.test(sql)) throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
@@ -232,11 +241,17 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     rows,
     /** The raw SQL of every statement run so far. */
     statements,
+    /** The raw SQL of every statement run while a transaction was open. */
+    txStatements,
     /** The next statement whose SQL matches `pattern` throws. */
     failNext(pattern: RegExp) { failures.push(pattern) },
+    /** `run` executes (on the same database) just before the next statement whose SQL matches `pattern`. */
+    beforeNext(pattern: RegExp, run: () => void) { hooks.push({ pattern, run }) },
     reset() {
       failures.length = 0
+      hooks.length = 0
       statements.length = 0
+      txStatements.length = 0
       for (const table of tables) sqlite.exec(`DELETE FROM \`${getTableName(table)}\``)
     },
   }
