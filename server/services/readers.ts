@@ -125,7 +125,7 @@ export async function listReaders(params: {
     })
     .from(readerAccounts)
     .where(where)
-    .orderBy(desc(readerAccounts.lastSeenAt), desc(readerAccounts.id)) // id: MySQL returns ties in any order — pages shared/skipped rows (FINDING-R6-9)
+    .orderBy(desc(readerAccounts.lastSeenAt), desc(readerAccounts.id)) // id breaks ties: stable pages (FINDING-R6-9)
     .limit(perPage)
     .offset((page - 1) * perPage)
 

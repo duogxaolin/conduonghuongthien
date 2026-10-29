@@ -939,7 +939,7 @@ Không hoàn nguyên; liệt kê để không thành đổi ngầm:
 - Verifier L3: huỷ bị từ chối 409/404 thì panel tự đọc lại số liệu (lượt đã xong biến khỏi màn hình), toast lỗi giữ nguyên.
 - R6-17: trên Docker (TZ VN), tên tệp xuất từ 00:00 tới 07:00 giờ VN nay mang ngày VN (trước là ngày hôm trước); trên đường PM2 (TZ UTC) cả "Ngày" in trong tệp cũng đổi.
 - Vòng 3–4 (verifier vòng 4, L2), người đọc và chặn IP:
-  - Chặn tài khoản thua cuộc đua với xoá tài khoản hoặc retention (tài khoản biến mất khi lượt chặn đang chờ khoá): 200 + dòng audit "ban" cho tài khoản không còn → **404**, không audit (D1, X1 99/100, X7 100/100 trên MySQL).
+  - Chặn tài khoản thua cuộc đua với xoá tài khoản hoặc retention (tài khoản biến mất khi lượt chặn đang chờ khoá): 200 + dòng audit "ban" cho tài khoản không còn → **404**, không audit (D1, X1 98–99/100 — `05cc0a3f` 99, `4b89b2f5` 98 —, X7 100/100 trên MySQL).
   - Xoá toàn bộ bình luận của người đọc khi retention / xoá tài khoản đã xoá người đọc trước: 200 + audit → **404**, không audit (D2, X10 100/100; X8 xoá tài khoản ‖ purge: purge 404 ở vài vòng trên 100).
   - Trang chặn IP: thêm bị 409 / gỡ bị 404 → toast lỗi rồi **tự đọc lại danh sách** (lỗi khác: không đọc lại).
   - Trang một người đọc: chặn / xoá toàn bộ bình luận / xoá tài khoản bị 404 → toast lỗi rồi **về `/admin/readers`** (xoá tài khoản từ vòng 3, hai nút kia từ vòng 4); lỗi khác ở lại trang, nút dùng lại được.
@@ -1027,7 +1027,9 @@ Xử lý (commit `816c7780`, `a0f28878`, `42d9ba30`, `4b89b2f5`):
 - **M1**: `server/utils/fk-error.ts` `isMissingReferencedRow` (errno 1452 / `ER_NO_REFERENCED_ROW_2`, đi cả chuỗi `cause` vì Drizzle bọc lỗi driver); `createAdminReply` và `createComment` bắt lỗi đó trên transaction chèn → đúng câu bước kiểm trước đó trả (404 / 400 / 404, mục "người dùng thấy"). Lỗi khác vẫn ném (test: 1213, 1205).
 - **L1**: `readers/[id].vue` — chặn và xoá bình luận bị 404 → về danh sách. **L5**: test V3-18, V3-21; thêm "xoá bình luận bị 403 ở lại trang" (đột biến `r4-ui-purge-nav-any` sống ở lượt đầu — test chỉ ghim lỗi không phải 404 cho nút chặn).
 - **L4**: guard tĩnh nhận mọi dạng arrow (`async (tx) =>`, `async tx =>`; thân khối hay biểu thức), quét cả đối số của lời gọi transaction bằng đếm ngoặc, tách đối số helper mặc định pool bằng đếm ngoặc; test tiêm cho từng dạng và cho transaction dưới `withDeadlockRetry`. Harness: guard pool chặn cả `execute`, có test riêng (đột biến bỏ nó nay đỏ).
-- `readers.ts` giữ 550 dòng (trần ratchet), 4 dòng > 120 ký tự (base 5); `comments-deletion.ts` về đúng 1 dòng dài như base.
+- `readers.ts` giữ 550 dòng (trần ratchet), 3 dòng > 120 ký tự — đều là mã có từ base (chuỗi SQL `commentCount`, chữ ký `banReader`, `auditReaderRead`), không dòng chú thích nào (dòng chú thích dài của R6-9 rút ngắn ở commit tài liệu vòng 4; base có 4 dòng dài); `comments-deletion.ts` về đúng 1 dòng dài như base.
+- Ánh xạ 1452 rộng hơn câu trả lời: mọi FK 1452 trên transaction chèn được trả như "bình luận cha / bài / video không còn". Hàng mất cũng có thể là tài khoản người đăng (bị xoá khi đang đăng) hay cán bộ trả lời — vẫn hơn 500 cũ, nhưng câu chữ khi đó không đúng hẳn; thu hẹp theo tên ràng buộc là một thay đổi riêng.
+- L4 hỏi cả `query`: `server/` không dùng API quan hệ `db.query.*` (grep: chỉ một chú thích ở `utils/db.ts`), và drizzle của harness không có schema nên mã kiểu đó không chạy được ở đó — guard pool chặn `select` + `execute`.
 
 **Phát lại MySQL 8.0.46** — bộ script verify3 chép sang `/home/ray/orca/cdht-wave3-tests-r6-proof/round4/` (`race.ts`, `race.sh` — chỉ đổi thư mục và tiền tố CSDL `cdkt_r6d_*`; `race-all.sh` chạy mọi chế độ). Mỗi chạy một CSDL tạm, xoá ngay, `innodb_trx` toàn máy = 0 sau mỗi lần. Ô = lỗi 1213 **hiện ra** (HTTP 500) / deadlock **ẩn** (`lock_deadlocks` tăng — gồm cả cái retry đã che). Base `52d7b527` và HEAD `05cc0a3f` là số của verifier (verify3, `mysql-base-*`, `mysql-head-*`); "Sau vòng 4" là `mysql-r4b-*` trên cây đã commit.
 
