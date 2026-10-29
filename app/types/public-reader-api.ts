@@ -31,3 +31,15 @@ export type ReaderNotificationsResponse = Payload<typeof import('~~/server/api/p
 
 /** `POST /api/public/reader/notifications/read` — `{ ids }` or `{ all: true }`. */
 export type ReaderNotificationsReadResponse = Payload<typeof import('~~/server/api/public/reader/notifications/read.post').default>
+
+// ─── A reader's writes to a comment thread (ArticleComments → useCommentWrites) ───
+// The thread itself (`GET /api/public/comments/<slug>`) is `CommentThreadPayload` in public-api.ts.
+
+/** `POST /api/public/comments` — `{ ok, id }` of the new comment (held for moderation or shown). */
+export type CommentPostResponse = Payload<typeof import('~~/server/api/public/comments/index.post').default>
+
+/** `DELETE /api/public/comments/<id>` — the reader's own comment. */
+export type CommentDeleteResponse = Payload<typeof import('~~/server/api/public/comments/[id].delete').default>
+
+/** `GET /api/public/comments/checkpoint?ids=` — `isHidden` of the reader's own comments (moderation outcome). */
+export type CommentCheckpointResponse = Payload<typeof import('~~/server/api/public/comments/checkpoint.get').default>

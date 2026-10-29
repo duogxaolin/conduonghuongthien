@@ -26,7 +26,7 @@
   flow is `composables/useCommentWrites.ts`, the anchors `composables/useCommentAnchor.ts`,
   the markup of one comment / the optimistic list / the compose box
   `components/comments/*.vue` (display only), the pure helpers `utils/comment-thread.ts`.
-  The four `$fetch` calls stay here (no public typed fetch helper exists).
+  The four requests stay here, as `publicFetch<T>()` calls (D-FETCH lot G).
 -->
 <template>
   <section
@@ -161,11 +161,13 @@ import { useReaderAuth } from '~/composables/useReaderAuth'
 import { useI18n } from '~/composables/useI18n'
 import { useCommentAnchor } from '~/composables/useCommentAnchor'
 import { useCommentWrites } from '~/composables/useCommentWrites'
+import { publicFetch } from '~/composables/publicFetch'
 import { requestedCommentsPage } from '~/utils/comment-thread'
 import CommentThreadItem from '~/components/comments/CommentThreadItem.vue'
 import CommentPendingList from '~/components/comments/CommentPendingList.vue'
 import CommentComposer from '~/components/comments/CommentComposer.vue'
 import type { CommentThreadPayload, PublicCommentItem } from '~/types/public-api'
+import type { CommentCheckpointResponse, CommentDeleteResponse, CommentPostResponse } from '~/types/public-reader-api'
 
 const { t } = useI18n()
 
@@ -257,12 +259,12 @@ const {
   forgetReader,
   // Ba lượt ghi — request ở đây, luồng ở composable (xem đầu tệp).
   api: {
-    post: payload => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; id?: number }>)('/api/public/comments', {
+    post: payload => publicFetch<CommentPostResponse>('/api/public/comments', {
       method: 'POST',
       body: payload,
     }),
-    remove: id => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/public/comments/${id}`, { method: 'DELETE' }),
-    checkpoint: id => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: Array<{ id: number; isHidden: boolean }> }>)(
+    remove: id => publicFetch<CommentDeleteResponse>(`/api/public/comments/${id}`, { method: 'DELETE' }),
+    checkpoint: id => publicFetch<CommentCheckpointResponse>(
       '/api/public/comments/checkpoint',
       { query: { ids: String(id) } },
     ),
@@ -275,7 +277,7 @@ async function loadThread() {
   try {
     // Kiểu tường minh: `$fetch` trên một URL dựng bằng template string không suy
     // được tuyến nào, nên nó trả `{}` và mọi phép đọc trường thành lỗi.
-    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<CommentThreadPayload>)(
+    const response = await publicFetch<CommentThreadPayload>(
       threadPath,
       { query: threadQuery.value },
     )

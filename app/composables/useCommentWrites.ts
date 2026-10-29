@@ -8,9 +8,8 @@ import { commentDraftKey, removeCommentFromThread, threadHasComment } from '../u
 /**
  * The three writes of the thread, as the component hands them in.
  *
- * The requests themselves stay in `components/ArticleComments.vue`: each is a `$fetch` cast,
- * and the public side has no typed fetch helper (`adminFetch` is the admin one) — so the
- * casts stay counted where they were (fetch-cast ratchet) and this file holds the flow.
+ * The requests themselves stay in `components/ArticleComments.vue` (each a `publicFetch<T>()`
+ * call since D-FETCH lot G, typed from the handler) and this file holds the flow.
  */
 export type CommentWriteApi = {
   post: (body: Record<string, unknown>) => Promise<{ ok: boolean; id?: number }>
