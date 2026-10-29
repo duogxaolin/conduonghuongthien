@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MediaItem } from '~/types/media'
+import type { AdminMediaListResponse } from '~/types/admin-media-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
 import { isDeliberateEnter } from '~/utils/admin-modal'
 
@@ -25,23 +26,31 @@ const totalPages = ref(1)
  * that is already there. Same contract as the admin pages in
  * tests/admin-error-retry-ui.test.ts.
  */
+// Only the LATEST load writes (a search, then another, or a page click, before the first answer):
+// the ticket of docs/decisions/fetch-rollout-d-fetch.md. The page count is `pagination.totalPages`
+// — the hand-written cast read a top-level `totalPages` the handler never sent, so it was always 1
+// and the picker never offered a second page (tests/admin-fetch-rollout-media-picker.test.ts).
+let listRequest = 0
 const fetchMedia = async (pg = 1) => {
+  const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: MediaItem[]; totalPages: number }>)('/api/admin/media', {
-      params: { search: searchQuery.value, perPage: 20, page: pg }
+    const res = await adminFetch<AdminMediaListResponse>('/api/admin/media', {
+      query: { search: searchQuery.value, perPage: 20, page: pg }
     })
+    if (ticket !== listRequest) return
     if (res.ok) {
       mediaItems.value = res.items
-      totalPages.value = res.totalPages || 1
+      totalPages.value = res.pagination.totalPages || 1
       page.value = pg
     }
   } catch (err: unknown) {
+    if (ticket !== listRequest) return
     loadError.value = errorMessage(err, 'Lỗi tải thư viện media')
     toast.error(loadError.value)
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
