@@ -18,8 +18,10 @@ import test, { after, beforeEach } from 'node:test'
  *     stores when it had no address) or no address at all is a 400 — before, `unknown` became a
  *     ban row matching every visitor whose address could not be read, and no address gave
  *     "Đã cấm IP" with nothing banned (FINDING-R7-2);
- *   - two bans of one address at once both succeed with one ban row — before, the second was
- *     ER_DUP_ENTRY's 500 (FINDING-R7-3); any other failure of that insert is still a 500.
+ *   - KNOWN, the base's behaviour kept (FINDING-R7-3): two bans of one address at once — the
+ *     second is ER_DUP_ENTRY's 500 and rolls back whole; clicking again goes through. Going on
+ *     past the 1062 was tried and reverted (it held the failed INSERT's locks to commit — the
+ *     doc's R7 section); any other failure of that insert is a 500 too.
  *
  * Pinned, not changed (owner's call — doc "R7"): the server accepts a resolve from any status
  * (approve of a row already rejected answers 200 "approved" while its comment is gone; the page
@@ -240,20 +242,26 @@ test('pinned (FINDING-R7-4, owner\'s call): approve of a chat or livestream row 
 
 // ─── Two bans of one address ─────────────────────────────────────────────────
 
-test('FINDING-R7-3: a ban that meets the same address banned since its read succeeds — one ban row, comment deleted, row banned', async () => {
+test('KNOWN (FINDING-R7-3, as the base): a ban that meets the same address banned since its read is a 500, everything rolled back — clicking again goes through', async () => {
   const commentId = await comment()
   const id = await queued({ targetId: commentId })
   // The other request's ban commits after this one's SELECT found none; its INSERT then hits the
   // unique key — MySQL answers ER_DUP_ENTRY (the harness's SQLite error carries no MySQL code).
   h.harness.beforeNext(/^insert into `reader_ip_bans`/, () => h.harness.sqlite.exec("COMMIT; INSERT INTO reader_ip_bans (value, reason) VALUES ('203.0.113.5', 'lượt kia'); BEGIN"))
   h.harness.failNext(/^insert into `reader_ip_bans`/, { errno: 1062, code: 'ER_DUP_ENTRY' })
-  const response = await resolve(id, { action: 'ban_ip' })
-  // Before: 500 and the whole resolve rolled back — the officer had to click again.
-  assert.equal(response.status, 200)
+  // Kept as the base answers it. Going on past the 1062 (tried in R7, reverted) kept the failed
+  // INSERT's locks to commit and stalled bans of unrelated addresses — a lock-design change, its
+  // own change. Only the other request's ban exists; nothing of this one survived.
+  assert.equal((await resolve(id, { action: 'ban_ip' })).status, 500)
+  assert.deepEqual([bans().map(ban => ban.reason), comments(), queueRows().map(row => row.status), audits()], [['lượt kia'], [{ id: commentId, isHidden: true }], ['pending'], []])
+  assert.deepEqual(h.harness.txStatements.map(shape).slice(-2), ['select `reader_ip_bans`', 'insert into `reader_ip_bans`'], 'the transaction ends at the failed INSERT')
+
+  // The officer clicks again: the read now finds the ban, nothing is inserted, the resolve goes through.
+  assert.equal((await resolve(id, { action: 'ban_ip' })).status, 200)
   assert.deepEqual([bans().map(ban => ban.reason), comments(), queueRows().map(row => row.status), audits().length], [['lượt kia'], [], ['banned'], 1])
 })
 
-test('FINDING-R7-3: any other failure of the ban insert (a foreign key) is still a 500 with everything rolled back', async () => {
+test('any other failure of the ban insert (a foreign key) is a 500 with everything rolled back', async () => {
   const commentId = await comment()
   const id = await queued({ targetId: commentId })
   h.harness.failNext(/^insert into `reader_ip_bans`/, { errno: 1452, code: 'ER_NO_REFERENCED_ROW_2' })

@@ -10,7 +10,6 @@ import {
 import { requireResourcePermission } from '../../../../../../utils/permissions'
 import { readAffectedRows } from '../../../../../../utils/affected-rows'
 import { validateBanValue } from '../../../../../../utils/ip-ban'
-import { isDuplicateEntry } from '../../../../../../utils/mysql-errors'
 
 const VALID_ACTIONS = new Set(['approve', 'reject_delete', 'ban_ip'])
 
@@ -24,6 +23,13 @@ const VALID_ACTIONS = new Set(['approve', 'reject_delete', 'ban_ip'])
  * transaction — the comment it unhid or deleted, the ban it inserted — rolls back with it
  * (FINDING-R7-1). The statements and their order are the base's: only the queue UPDATE gained
  * its `status = ?` and nothing reads under a lock (no new lock scope — slice R6 lesson).
+ *
+ * KNOWN, kept as the base has it (FINDING-R7-3): two bans of one address at once — the second
+ * INSERT hits the unique key, ER_DUP_ENTRY is a 500 and its whole resolve rolls back; clicking
+ * again goes through (the read then finds the ban). Catching the 1062 and going on was tried in
+ * slice R7 and reverted: the failed INSERT's locks (X on the PK supremum, S next-key on the
+ * duplicate `value`) then lived until commit and stalled bans of unrelated addresses (verifier,
+ * performance_schema.data_locks). Any change here is a lock-design change — its own change.
  */
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -85,26 +91,21 @@ export default defineEventHandler(async (event) => {
           .delete(articleComments)
           .where(eq(articleComments.id, queueItem.targetId))
       }
-    } else if (action === 'ban_ip' && banValue) {
-      const [existingBan] = await tx
-        .select()
-        .from(readerIpBans)
-        .where(eq(readerIpBans.value, banValue))
-        .limit(1)
+    } else if (action === 'ban_ip') {
+      // Ban IP if available
+      if (banValue) {
+        const [existingBan] = await tx
+          .select()
+          .from(readerIpBans)
+          .where(eq(readerIpBans.value, banValue))
+          .limit(1)
 
-      if (!existingBan) {
-        try {
+        if (!existingBan) {
           await tx.insert(readerIpBans).values({
             value: banValue,
             reason: `AI An ninh phát hiện vi phạm: ${queueItem.flaggedReason.slice(0, 200)}`,
             createdBy: adminUser.id ?? null,
           })
-        } catch (error) {
-          // Another request banned this address since the read above (two flagged comments from
-          // one address, resolved at once): the address is banned, which is what was asked. A
-          // duplicate key rolls back only its statement in InnoDB, so the transaction goes on.
-          // Anything else — the actor's own foreign key — is still a failure (FINDING-R7-3).
-          if (!isDuplicateEntry(error)) throw error
         }
       }
 
