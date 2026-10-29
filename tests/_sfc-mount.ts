@@ -58,11 +58,20 @@ function detach(node: MiniNode): void {
 }
 
 /**
- * `focus()` exists and does nothing — a page calls it on a template ref (login.vue moves
- * focus to the code field). Non-enumerable, so it is not part of the element's data.
+ * `focus()` exists — a page calls it on a template ref (login.vue moves focus to the code
+ * field). It does nothing unless a test installed a recorder with `recordFocus()`, which
+ * then hears every call with the element (it moves no focus: there is no
+ * `document.activeElement` here). Non-enumerable, so it is not part of the element's data.
  */
-const createElement = (tag: string): MiniElement =>
-  Object.defineProperty({ kind: 'element', tag, props: {}, children: [], parent: null } as MiniElement, 'focus', { value: () => {} })
+let focusRecorder: ((el: MiniElement) => void) | null = null
+/** Hear every `focus()` called on a mini element (`null` to stop). One recorder at a time. */
+export function recordFocus(recorder: ((el: MiniElement) => void) | null): void {
+  focusRecorder = recorder
+}
+const createElement = (tag: string): MiniElement => {
+  const el = { kind: 'element', tag, props: {}, children: [], parent: null } as MiniElement
+  return Object.defineProperty(el, 'focus', { value: () => { focusRecorder?.(el) } })
+}
 
 const renderer = Vue.createRenderer<MiniNode, MiniElement>({
   insert(child, parent, anchor) {

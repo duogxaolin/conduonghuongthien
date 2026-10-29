@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
+import { readdirSync } from 'node:fs'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 import {
-  CHAT_WIDGET_FAMILY, CHATBOT_COMPOSABLE_FAMILY, familyScript, familySource, familyTemplate, familyVueFiles,
-  moduleFamilySource, readAppFile,
+  autoImportedIndexFiles, CHAT_WIDGET_FAMILY, CHATBOT_COMPOSABLE_FAMILY, familyScript, familySource, familyTemplate, familyVueFiles,
+  moduleFamilyParts, moduleFamilySource, readAppFile,
 } from './_component-family.ts'
 
 // The widget was extracted out of `app/layouts/default.vue` so that the full-page
@@ -165,6 +166,15 @@ test('injection proof: the widget half of these checks reads every part of ChatW
   assert.match(widgetScript({ [dialog]: `${readAppFile(dialog)}\nconsole.log('x')\n` }), /console\.(?:error|log)\(/)
   // Focus back to the launcher lives in the dialog module now.
   assert.doesNotMatch(widgetScript({ [dialog]: readAppFile(dialog).replace('chatToggleButton.value?.focus()', 'void 0') }), /chatToggleButton\.value\?\.focus\(\)/)
+})
+
+test('useChatbot keeps ONE public surface: no index file in composables/chatbot/ for Nuxt to auto-import', () => {
+  // The directory scan itself refuses an index (moduleFamilyParts asserts it); a planted one is red.
+  assert.deepEqual(moduleFamilyParts(CHATBOT_COMPOSABLE_FAMILY).filter(file => /\/index\.\w+$/.test(file)), [])
+  assert.deepEqual(autoImportedIndexFiles(readdirSync(new URL('../app/composables/chatbot/', import.meta.url))), [])
+  for (const planted of ['index.ts', 'index.js', 'index.mts', 'index.mjs'])
+    assert.deepEqual(autoImportedIndexFiles(['send.ts', planted, 'state.ts']), [planted], planted)
+  assert.deepEqual(autoImportedIndexFiles(['reindex.ts', 'index.d.ts.map', 'indexes.ts']), [])
 })
 
 test('injection proof: the composable half of these checks reads every module of useChatbot', () => {

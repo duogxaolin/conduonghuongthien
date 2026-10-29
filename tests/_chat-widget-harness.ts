@@ -33,6 +33,9 @@
  * tests/chatbot-mobile-smoothness.test.ts drives on a fake scroller; here the follow calls
  * the widget makes, their order, and that the two refs it was handed are wired, are what
  * is checked.
+ * Every `focus()` called on a rendered element (`recordFocus` in tests/_sfc-mount.ts) is
+ * appended to `focuses` — "the widget asked for the question box / the launcher". Not in
+ * the DOM log, so logs recorded before it existed still compare.
  * The dialog element is given the few DOM members `app/utils/focus-return.ts` reads
  * (`parentElement`, `children`, attributes, `querySelectorAll`, `contains`), so the REAL
  * inert/Tab-trap/focus-return code runs: `inert` shows up in `html()` on the elements it
@@ -53,7 +56,7 @@ import { createFetch } from 'ofetch'
 import * as Vue from 'vue'
 
 import { hardcodedDictionary } from '../app/composables/i18n-default-dictionary.ts'
-import { findAll, loadSfc, mountSfc, textOf, type MiniElement, type MiniNode, type MountedSfc, type SfcEnv } from './_sfc-mount.ts'
+import { findAll, loadSfc, mountSfc, recordFocus, textOf, type MiniElement, type MiniNode, type MountedSfc, type SfcEnv } from './_sfc-mount.ts'
 
 export const WIDGET = process.env.CHAT_WIDGET_FILE
   ? path.resolve(process.env.CHAT_WIDGET_FILE)
@@ -334,6 +337,11 @@ export async function mountChat(t: TestContext, server = chatServer(), options: 
   const events: string[] = []
   const log: Logged = event => { events.push(event) }
   const restore: Restore[] = []
+  // `focus()` called on a rendered element (the question box, the launcher button) — kept
+  // apart from `events`, which the focus-return checks read exactly. It moves no focus.
+  const focuses: string[] = []
+  recordFocus(el => { focuses.push(describe(el)) })
+  restore.push(() => recordFocus(null))
 
   const fetchImpl = (input: RequestInfo | URL, init: RequestInit = {}) => new Promise<Response>((resolve, reject) => {
     const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
@@ -499,7 +507,7 @@ export async function mountChat(t: TestContext, server = chatServer(), options: 
   const keydownListeners = () => listeners.get('keydown')?.size ?? 0
 
   return {
-    widget, server, calls, events, scrolls, local, doc, body, opener, media, route, navigations, clipboard,
+    widget, server, calls, events, focuses, scrolls, local, doc, body, opener, media, route, navigations, clipboard,
     composable, settle, tick, key, keydownListeners, close,
   }
 }

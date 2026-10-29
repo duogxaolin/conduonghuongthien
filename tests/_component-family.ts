@@ -239,11 +239,22 @@ export const CHATBOT_COMPOSABLE_FAMILY: ModuleFamily = {
 const isModulePart = (family: ModuleFamily, file: string) =>
   path.posix.dirname(file) === family.partsDir && file.endsWith('.ts')
 
+/**
+ * Names in a module family's directory that Nuxt would auto-import. Nuxt scans
+ * `composables/*.ts` AND `composables/<dir>/index.{ts,js,mjs,mts}`: an `index` there would
+ * turn the modules' internal exports (`persist`, `hydrate`, `cancelInFlight`, …) into
+ * app-wide globals, and the facade would stop being the one public surface.
+ */
+export const autoImportedIndexFiles = (names: readonly string[]): string[] =>
+  names.filter(name => /^index\.(?:ts|js|mjs|mts)$/.test(name))
+
 /** `app/`-relative paths of every module of the family on disk, sorted. */
 export function moduleFamilyParts(family: ModuleFamily): string[] {
   const dir = new URL(`${family.partsDir}/`, APP)
   assert.ok(existsSync(dir), `app/${family.partsDir}/ không tồn tại — các module của ${family.entry} đi đâu? sửa guard, đừng để tập quét rỗng`)
-  const found = readdirSync(dir).filter(name => name.endsWith('.ts')).sort()
+  const names = readdirSync(dir)
+  assert.deepEqual(autoImportedIndexFiles(names), [], `app/${family.partsDir}/ có tệp index — Nuxt sẽ auto-import mọi export của nó; chỉ ${family.entry} là bề mặt công khai`)
+  const found = names.filter(name => name.endsWith('.ts')).sort()
   assert.ok(found.length > 0, `app/${family.partsDir}/ không còn .ts nào — tập quét rỗng`)
   for (const expected of family.expectedParts) {
     assert.ok(found.includes(expected), `${expected} vắng khỏi app/${family.partsDir}/ ${JSON.stringify(found)} — đổi tên/di chuyển phải cập nhật guard, không âm thầm thu hẹp tập quét`)
