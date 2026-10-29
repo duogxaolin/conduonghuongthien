@@ -1,7 +1,8 @@
 /**
  * Source guards for the public pages split in wave3 4.2 whose parts sit in their own
- * directory (`/news` → components/news/): the parts render only — no request, no
- * navigation — and the page keeps every loading / error + retry branch it had.
+ * directory (`/news` → components/news/, `/profile` → components/reader-profile/): the
+ * parts render only — no request, no navigation — and the page keeps every loading /
+ * error + retry branch it had.
  *
  * Why it matters: the error card, its `role="alert"` and its "Thử lại" call the page's own
  * request (`refresh()` of the list); a part that fetched for itself would bring a failure
@@ -13,7 +14,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { NEWS_PAGE_FAMILY, familyFiles, familyVueFiles, readAppFile } from './_component-family.ts'
+import { NEWS_PAGE_FAMILY, READER_PROFILE_FAMILY, familyFiles, familyVueFiles, readAppFile } from './_component-family.ts'
 
 /** A request or a navigation. */
 const SIDE_EFFECT = /\$fetch\b|\buseFetch\b|\buseAsyncData\b|\bnavigateTo\b|\buseRoute\b|\buseRouter\b|\busePublicArticleList\b|\busePublicMostRead\b/
@@ -76,5 +77,47 @@ describe('/news — the wave3 4.2 parts', () => {
 
     const grid = 'components/news/NewsArticleGrid.vue'
     assert.deepEqual(vHtml({ [grid]: readAppFile(grid).replace('{{ item.title }}', '<span v-html="item.title"></span>') }), [grid])
+  })
+})
+
+/**
+ * `/profile` (the reader's page): every load stays on the page, inside `<client-only>`,
+ * after mount (tests/reader-profile-page.test.ts pins those chains); the writes went to
+ * three composables that RECEIVE the request — so neither the composables nor the parts
+ * call `$fetch` or touch the reader's identity/notifications/history stores themselves.
+ * A part that did would read the module state of `useReaderAuth` on its own, outside the
+ * page's 401 handling.
+ */
+describe('/profile — the wave3 4.2 parts and write composables', () => {
+  const family = READER_PROFILE_FAMILY
+  // The stores by CALL: a part imports their types (`import type { NotificationItem } from
+  // '~/composables/useReaderNotifications'`), which reads nothing.
+  const READER_STATE = /\$fetch\b|\buseFetch\b|\buseAsyncData\b|\bnavigateTo\b|\buseReaderAuth\(|\buseReaderNotifications\(|\buseReadingHistory\(|\blocalStorage\b|\bsessionStorage\b/
+  const offenders = (overrides?: Record<string, string>) =>
+    familyFiles(family, overrides).filter(f => f.file !== family.parent && READER_STATE.test(code(f.source))).map(f => f.file)
+
+  it('parts and composables neither request nor reach the reader stores', () => {
+    assert.deepEqual(offenders(), [])
+  })
+
+  it('the page keeps the identity, the three loads and their error branches', () => {
+    const page = readAppFile(family.parent)
+    const template = templateOf(page)
+    assert.match(page, /useReaderAuth\(\)/)
+    assert.match(page, /useReaderNotifications\(\)/)
+    assert.match(page, /useReadingHistory\(\)/)
+    assert.equal(page.match(/\(\$fetch as\b/g)?.length, 4, 'the four casts (two loads, two writes handed to the composables) stay on the page')
+    assert.equal(template.match(/role="alert"/g)?.length, 3, 'notifications, comments and chats: every load error branch stays in the page')
+  })
+
+  it('proof: a request or a store read planted in a part, in a composable or in a new part is caught', () => {
+    const part = 'components/reader-profile/ReaderProfileChatClaim.vue'
+    for (const planted of ["void $fetch('/api/public/reader/chats')", 'const { reader } = useReaderAuth()', "localStorage.getItem('cdkt_sessions_v1')"]) {
+      assert.deepEqual(offenders({ [part]: readAppFile(part).replace('</script>', `${planted}\n</script>`) }), [part], planted)
+    }
+    const composable = 'composables/useReaderNameEdit.ts'
+    assert.deepEqual(offenders({ [composable]: `${readAppFile(composable)}\nexport const leak = () => $fetch('/api/public/reader/profile')\n` }), [composable])
+    const added = `${family.partsDir}/ReaderProfileExtra.vue`
+    assert.deepEqual(offenders({ [added]: '<script setup lang="ts">\nconst n = useReaderNotifications()\n</script>' }), [added])
   })
 })

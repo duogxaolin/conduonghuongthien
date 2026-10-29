@@ -4,9 +4,9 @@
  * source, so a guard that used to grep the 730-line file keeps reading everything the file
  * used to contain.
  *
- * Families today: `ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, the public page
- * `NEWS_PAGE_FAMILY`, and the admin `AI_PROVIDERS_TAB_FAMILY`, `LANGUAGES_PAGE_FAMILY` and
- * `PAGE_BUILDER_FAMILY`. The parts are
+ * Families today: `ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, the public pages
+ * `NEWS_PAGE_FAMILY` and `READER_PROFILE_FAMILY`, and the admin `AI_PROVIDERS_TAB_FAMILY`,
+ * `LANGUAGES_PAGE_FAMILY` and `PAGE_BUILDER_FAMILY`. The parts are
  * DERIVED from the directory, not listed (the design of tests/_moderation-page-parts.ts):
  * a part added later joins every "must appear nowhere" scan without anyone editing this
  * file. The named parts are a subset check, so a renamed/moved part turns the scan red
@@ -85,6 +85,22 @@ export const NEWS_PAGE_FAMILY: ComponentFamily = {
     'NewsListHero.vue', 'NewsMostReadList.vue', 'NewsPagination.vue', 'NewsQuickLinksWidget.vue', 'NewsSearchBox.vue',
   ],
   modules: ['utils/news/list-display.ts'],
+}
+
+/**
+ * The reader's own page `/profile` (741 lines before its wave3 4.2 split; NOT
+ * `/admin/profile`). The loads stay on the page; the writes went to three composables that
+ * receive the request as a function; the parts render only.
+ */
+export const READER_PROFILE_FAMILY: ComponentFamily = {
+  parent: 'pages/profile.vue',
+  partsDir: 'components/reader-profile',
+  expectedParts: [
+    'ReaderProfileChatClaim.vue', 'ReaderProfileChatList.vue', 'ReaderProfileCommentList.vue', 'ReaderProfileEmailSwitch.vue',
+    'ReaderProfileHero.vue', 'ReaderProfileHistory.vue', 'ReaderProfileIdentity.vue', 'ReaderProfileNotificationList.vue',
+    'ReaderProfileNotificationsHeader.vue', 'ReaderProfilePager.vue', 'ReaderProfileSignIn.vue',
+  ],
+  modules: ['composables/useReaderChatClaim.ts', 'composables/useReaderEmailPreference.ts', 'composables/useReaderNameEdit.ts'],
 }
 
 /** The page builder (`/admin/content/pages/[id]`, 795 lines before its wave3 4.2 split). */

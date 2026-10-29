@@ -39,7 +39,6 @@
   "app/pages/admin/users/index.vue": 415,
   "app/pages/assistant.vue": 470,
   "app/pages/in-bai/[slug].vue": 496,
-  "app/pages/profile.vue": 741,
   "app/pages/qa-documents.vue": 480,
   "app/pages/search.vue": 423,
   "app/utils/docs/admin-docs-system.ts": 526,
