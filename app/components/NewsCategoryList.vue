@@ -265,7 +265,6 @@ import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
 import { usePublicMostRead } from '~/composables/usePublicArticleList'
 import { publicFetch } from '~/composables/publicFetch'
-import type { PublicArticleListItem } from '~/utils/public-types'
 import type { PublicArticlesResponse } from '~/types/public-content-api'
 
 const { t, currentLang } = useI18n()
@@ -297,8 +296,8 @@ const { data, pending, error, refresh } = await useAsyncData(
   },
 )
 
-const newsList = computed(() => (data.value as { articles?: PublicArticleListItem[] })?.articles || [])
-const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
+const newsList = computed(() => data.value?.articles || [])
+const loadError = computed(() => !!error.value || data.value?.ok === false)
 
 // "Đọc nhiều": the shared loader passes `lang` and keys `useAsyncData` on the
 // full query (design D25). The hand-written copy used the constant key

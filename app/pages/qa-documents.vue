@@ -398,7 +398,6 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from '~/composables/useI18n'
-import type { PublicQaDocument, PublicQaTopic, PublicQaPagination } from '~/utils/public-types'
 
 const { t } = useI18n()
 useSeoMeta({
@@ -441,10 +440,10 @@ const { data, pending, error, refresh } = useAsyncData(
   },
 )
 
-const entries = computed(() => (data.value as { items?: PublicQaDocument[] })?.items || [])
-const topics = computed(() => (data.value as { topics?: PublicQaTopic[] })?.topics || [])
-const pagination = computed(() => (data.value as { pagination?: PublicQaPagination })?.pagination || { page: 1, perPage: 20, total: 0, totalPages: 0 })
-const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
+const entries = computed(() => data.value?.items || [])
+const topics = computed(() => data.value?.topics || [])
+const pagination = computed(() => data.value?.pagination || { page: 1, perPage: 20, total: 0, totalPages: 0 })
+const loadError = computed(() => !!error.value || data.value?.ok === false)
 
 const highlightId = computed(() => {
   const raw = Number(String(route.hash || '').replace('#qa-', ''))

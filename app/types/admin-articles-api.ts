@@ -38,6 +38,8 @@ type TranslationDeleteHandler = typeof import('~~/server/api/admin/articles/[id]
 type LanguagesHandler = typeof import('~~/server/api/admin/languages/index.get').default
 type BoostHandler = typeof import('~~/server/api/admin/articles/[id]/boost.post').default
 type BoostCancelHandler = typeof import('~~/server/api/admin/articles/[id]/boost.delete').default
+type ScanThumbnailsHandler = typeof import('~~/server/api/admin/articles/scan-thumbnails.post').default
+type TranslationReadHandler = typeof import('~~/server/api/admin/articles/[id]/translations/[lang].get').default
 
 // ─── The article list ────────────────────────────────────────────────────────
 /**
@@ -64,6 +66,12 @@ export type ArticleExportGoogleResponse = Payload<ExportGoogleHandler>
 /** `POST` / `DELETE /api/admin/articles/:id/boost` — the view-count panel (`ArticleBoostStatsPanel.vue`, batch E). */
 export type ArticleBoostResponse = Payload<BoostHandler>
 export type ArticleBoostCancelResponse = Payload<BoostCancelHandler>
+/**
+ * `POST /api/admin/articles/scan-thumbnails` — "Quét ảnh thumbnail hỏng" (`ScanThumbnailsModal.vue`,
+ * batch H), both the dry run and the fix. The hand-written shape it replaces had `message?`;
+ * the handler always sends one (the modal reads it only after a fix that changed nothing).
+ */
+export type ArticleScanThumbnailsResponse = Payload<ScanThumbnailsHandler>
 
 // ─── The editor (`pages/admin/content/articles/[id].vue`, batch D) ───────────
 /**
@@ -83,6 +91,12 @@ export type ArticleTranslateAllResponse = Payload<TranslateAllHandler>
 export type ArticleTranslationsResponse = Payload<TranslationsHandler>
 export type ArticleTranslationRow = ArticleTranslationsResponse['items'][number]
 export type ArticleTranslationSaveResponse = Payload<TranslationSaveHandler>
+/**
+ * `GET /api/admin/articles/:id/translations/:lang` — one translation, the whole row ("Xem nhanh",
+ * `ArticleQuickViewModal.vue`, batch H; 404 thrown when there is none). The hand-written shape it
+ * replaces said `title: string`; the column is nullable.
+ */
+export type ArticleTranslationReadResponse = Payload<TranslationReadHandler>
 export type ArticleTranslationStatusResponse = Payload<TranslationStatusHandler>
 export type ArticleTranslationDeleteResponse = Payload<TranslationDeleteHandler>
 /** `GET /api/admin/languages` — the panel offers the active non-Vietnamese ones. */

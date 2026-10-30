@@ -15,6 +15,10 @@
 > ngữ nghĩa SSR từng chỗ gọi ghim bằng test mount chạy trên bản gốc lẫn lô G, G-1 sửa (nhãn chuyên mục của
 > hai khối), G-2b ghi nhận ở `/news/<X>` (thiếu `lang`); G-2a (trang tuỳ biến) đã thử rồi GỠ ở vòng 2 — không phải lỗi
 > (`BlockNode` dịch theo `data.translations`) và gây nháy; 31 + 7 lượt đột biến; E2E công khai 55/55 trên bản build.
+> Lô H (cuối tệp): 13 ép kiểu quản trị cuối (trừ `ArticleAIPanel`, chờ nhánh tách trình soạn bài) → baseline 20 → 7;
+> ba ép kiểu DỮ LIỆU công khai có từ trước bỏ (JS biên dịch giống hệt); `ItemOf` một định nghĩa + guard AST; 4 lỗi
+> (H-1 lịch sử hoạt động không có lượt mới nhất; H-2/H-3/H-4 hộp "Xem nhanh" — câu trả lời muộn của bản dịch khác,
+> "Xuất bản ngay" khi bản dịch chưa hiện, PATCH muộn ghi lên bản dịch khác); 35 đột biến.
 
 Lô B bỏ 56 ép kiểu `$fetch` ở 7 tệp bằng `adminFetch<T>()` (kiểu suy từ handler qua
 `Payload<…>`, `app/types/handler-payload.ts`), nhưng **không tệp nào** chuyển sang
@@ -656,4 +660,164 @@ hành vi base); R03 `BlockNode` bỏ `translations`, R04 `BlockNode` ngôn ngữ
 - Còn lại, chưa làm (không phải ép kiểu `$fetch`, không đổi hành vi): ba ép kiểu DỮ LIỆU có từ trước
   (`DocumentsBlock.vue:180`, `NewsCategoryList.vue:300`, `qa-documents.vue:444-447` — `(data.value as { … })`) nay bỏ được
   vì `data` đã có kiểu từ handler; để lượt sau (cần typecheck riêng, `qa-documents` ép sang `PublicQaDocument`/`PublicQaTopic`
-  viết tay trong `utils/public-types.ts`).
+  viết tay trong `utils/public-types.ts`). *(Làm ở lô H, dưới đây.)*
+
+## Lô H (nhánh `wave3/fetch-casts-h`, base `a7f312c1`)
+
+Bỏ **13** ép kiểu `$fetch` phía quản trị (baseline `fetch-casts` 20 → **7**, 13 → 6 tệp), ba ép kiểu DỮ LIỆU công khai có
+từ trước, và gộp `ItemOf<T>`. Kiểu phản hồi suy từ handler qua `Payload<…>`:
+
+| Nhóm | Tệp | Ép kiểu | Kiểu |
+|---|---|---|---|
+| Phân tích | `pages/admin/analytics.vue`, `components/admin/AnalyticsLiveDashboard.client.vue` | 2 + 3 | `admin-dashboard-api.ts` (thêm `AnalyticsDrillDownResponse` = pages \| dimensions, `AnalyticsNocResponse`; summary/live/breakdown sẵn có) |
+| Hồ sơ | `components/admin/ProfileActivityHistory.vue` | 2 | `admin-profile.ts` (thêm `ProfileHistoryResponse`), `AdminUsersResponse` (sẵn có) |
+| Bài viết | `articles/ArticleQuickViewModal.vue`, `articles/ScanThumbnailsModal.vue` | 2 + 2 | `admin-articles-api.ts` (thêm `ArticleTranslationReadResponse`, `ArticleScanThumbnailsResponse`; `ArticleTranslationStatusResponse` sẵn có) |
+| Hàng loạt | `composables/useBulkSelection.ts` | 1 | `admin-api.ts` (thêm `AdminBulkOutcome` = `Payload<typeof runBulk>`) |
+| Khung | `layouts/admin.vue` | 1 | `PublicSettingsPayload` (public-site-api.ts, sẵn có) |
+| Công khai — ép kiểu `data.value`, không phải `$fetch as` | `blocks/DocumentsBlock.vue`, `NewsCategoryList.vue`, `pages/qa-documents.vue` | 1 + 2 + 4 dòng | `data` đã mang kiểu từ lô G |
+
+### Quyết định
+
+- **`ItemOf` ở tệp riêng `app/types/item-of.ts`**, không gộp vào `handler-payload.ts`: guard của `Payload` khớp NGUYÊN VĂN dòng
+  `import type { Payload } from './handler-payload'` ở `admin-api.ts`/`moderation.ts` và lấy alias ĐẦU TIÊN của tệp chung — gộp vào
+  đó là sửa guard đang chạy đúng. Guard mới `tests/item-of-single-definition.test.ts` (AST, cùng khung): tên `ItemOf` ngoài tệp chung,
+  cùng điều kiện (`… extends readonly (infer U)[] ? U : …`, có/không `readonly`, `Array<infer U>`, `ReadonlyArray<infer U>`) dưới tên
+  khác hoặc viết nội dòng — đều đỏ; `X[number]` và điều kiện trả thứ khác (`? Promise<U>`) xanh. Đỏ trên `a7f312c1` (hai bản chép).
+- **`AdminBulkOutcome` suy từ `runBulk`, không từ một handler**: `useBulkAction` nhận URL từ trang. Cả 16 URL các trang trao cho
+  `bulk.run` là handler `return runBulk(…)`; `tests/admin-fetch-rollout-bulk-action.test.ts` giữ điều đó (quét mọi `.run({ url: '…' })`
+  trong `app/`, đỏ khi một thao tác hàng loạt trỏ tới route trả hình khác — đột biến M25). Ba route xoá hàng loạt khác (phiên chat, giá
+  AI, nhà cung cấp AI) không đi qua composable. `BulkResult` viết tay GIỮ làm kiểu tham số của `bulkResultMessage` (nhận câu trả lời
+  thiếu trường) — không còn là kiểu của lượt gọi.
+- `useBulkSelection.ts` không import GIÁ TRỊ (harness biên dịch nguồn bằng `new Function`): `adminFetch` tự import của Nuxt, kiểu bằng
+  `import type` (bị xoá khi bỏ kiểu). **Chỉ MỘT harness biên dịch tệp này** (`_admin-page-harness.ts` `loadBulk`, nay cấp `adminFetch` và
+  được export) — phân công và ghi chú lô E/F nói "bốn": `admin-bulk-selection-ui`/`chatbot-small-talk-ui-contract` chỉ đọc nguồn bằng
+  regex, `admin-slug-input` thay composable bằng stub; không sửa ba tệp đó.
+- `layouts/admin.vue`: `adminFetch` (phía quản trị đọc endpoint công khai, như `login.vue` lô D), import tường minh như
+  `useAdminLayoutCacheClear` (harness layout không cấp auto-import `adminFetch`). Kiểu `PublicSettingsPayload` — endpoint đã có HAI kiểu
+  suy (`LoginPublicSettingsResponse` lô D, `PublicSettingsPayload` lô G); dùng cái mang tên endpoint, không thêm cái thứ ba.
+- `AnalyticsLiveDashboard.client.vue` (script bị test trích bằng `Function()`): chỉ đổi 3 dòng gọi và thay 3 kiểu viết tay bằng alias của
+  kiểu suy (1060 → 1034 dòng); mọi mẫu `analytics-live-dashboard-ui.test.ts` ghim (query breakdown, ba `onSuccess:`, thân
+  `normalizeFilter`) nguyên văn. `errorMessage` CỤC BỘ của tệp ("Yêu cầu thất bại (500)") giữ — đổi sang helper chung là đổi chữ hiện ra.
+  `NocRow` của `useAnalyticsNocTable` nhận đúng hàng suy (typecheck), không nới composable.
+- Ba ép kiểu dữ liệu công khai: chỉ đổi kiểu. **Mã JS biên dịch (script + template inline, đã bỏ kiểu) giống hệt base**, so sau khi bỏ
+  khoảng trắng và ngoặc của phép ép; kiểm âm tính (so với `5f1bb07d`, khác thật) phát hiện khác (`proof/public-casts-identity.txt`,
+  `proof/compiled-identity.ts`). `?.ok === false` giữ (nhánh chết: handler trả `ok:false` kèm 503, `$fetch` ném — không bỏ ở lô kiểu).
+  `PublicQaDocument`/`PublicQaTopic`/`PublicQaPagination` (`utils/public-types.ts`) nay không còn ai dùng (grep `app/ server/ shared/
+  tests/ scripts/`, CLAUDE.md) — **đã xoá** sau kiểm chứng độc lập (typecheck 0 lỗi).
+- `adminFetch` tự import trong component quản trị, như 16 component khác (layout là ngoại lệ ở trên).
+
+**Kiểu viết tay bị thay lộ sai lệch** (không lỗi hiển thị): bản dịch `title: string` (cột nullable — `null` in chuỗi rỗng như cũ); lịch
+sử `createdAt: string` (nullable; `formatDateTimeVN` in "—"); quét ảnh `message?` (handler luôn gửi); analytics thiếu `ok`,
+`windowMinutes`, `nextCursor`; `PublicQaDocument.topic: string | null` (cột `NOT NULL`).
+
+### Lỗi tìm thấy (test FINDING đỏ trên `a7f312c1`; bằng chứng `cdht-wave3-fetch-h-proof/base-red/`)
+
+- **H-1 Lịch sử hoạt động** (`/admin/profile`, `ProfileActivityHistory.vue`): bộ chọn tài khoản (SuperAdmin) vẫn đổi được khi đang tải
+  và không có lượt mới nhất — chọn B rồi "Tài khoản của tôi" trước khi B về: lịch sử của B (đăng nhập, IP, thiết bị) hiện dưới "Tài
+  khoản của tôi" và KHÔNG có dòng "Bạn đang xem lịch sử của …" (dòng đó cần giá trị bộ chọn, nay rỗng). Lỗi muộn của B phủ lịch sử của
+  mình; `finally` của B tắt skeleton khi lượt của mình còn tải. Nay mã lượt try/catch/finally (3 test).
+- **H-2 "Xem nhanh" bản dịch** (`ArticleQuickViewModal.vue`, luôn mount trong danh sách bài): mở bản dịch Bài 3 (chậm), đóng, mở Bài 4 —
+  câu trả lời của Bài 3 về sau hiện dưới Bài 4 ("Bài viết gốc: Bài 4", chữ của Bài 3, nhãn EN) và "Xuất bản ngay" PATCH Bài 3; về trước
+  câu trả lời của Bài 4 thì tắt "Đang tải" của Bài 4 bằng chữ Bài 3; lỗi muộn của Bài 3 toast và ĐÓNG hộp Bài 4 (và toast cả khi cán bộ
+  chỉ đóng hộp). Nay mỗi lần mở/đóng/đổi lấy một mã (4 test).
+- **H-3 "Xuất bản ngay" khi bản dịch chưa hiện** (tải-rồi-ghi): chỗ giữ "Đang tải..." có status `loading` (không bao giờ `published`) nên
+  chân hộp đã có "Xuất bản ngay" — một lần bấm xuất bản bản dịch AI chưa ai đọc. Kiểm bằng **`AdminModal` THẬT** (render SSR, Teleport tới
+  body: nút ở chân hộp, không `disabled`), không chỉ bằng `OpenModal` của harness (bài học lô G). Nay cờ dương `loaded` (false từ đầu mỗi
+  lượt mở, true chỉ khi bản dịch của lượt này đã điền), hai lớp, mỗi lớp một test: nút `:disabled="!loaded"` và `toggleStatus` tự trả về;
+  thêm test mở lại (khoá lại tới khi bản dịch kế hiện) và test W-1 của kiểm chứng độc lập (câu trả lời muộn của bài trước không mở khoá
+  nút của bài đang tải — giết đột biến V01: dời `loaded.value = true` xuống `finally`).
+- **H-4 PATCH muộn** (cùng hộp): bấm "Xuất bản ngay" ở Bài 3, đóng trước khi trả lời, mở Bài 4 — câu trả lời ghi "đã xuất bản" lên bản
+  dịch Bài 4 trên màn hình. Nay ghi vào bản dịch của chính lượt bấm (toast vẫn báo Bài 3 đã xuất bản — đúng sự thật).
+- **Không lỗi**: `analytics.vue` (mã lượt + `AbortController` đã có — test ghim huỷ lượt cũ / khi rời trang), bảng trực tiếp (poller có
+  thế hệ), "Quét ảnh hỏng" (mọi điều khiển ẩn/khoá khi quét/sửa, không đóng được khi đang chạy — không có cách để câu trả lời rơi vào hộp
+  đã đóng/mở lại), `useBulkAction`, layout.
+
+Không sửa nào đổi trạng thái BÌNH THƯỜNG: DOM của 5 view đã đổi (mount thật, `html()`) giống hệt base ở trạng thái bình thường
+(`proof/dom-identity.test.ts` + `.txt`) — riêng "Xem nhanh" khác đúng `disabled=false` trên nút (trình duyệt không vẽ thuộc tính đó);
+nhật ký DOM 126 bước của `admin-layout.test.ts` giống từng byte. Không nháy, không đổi bộ đệm (toàn trang quản trị, không SWR).
+**Sửa sau kiểm chứng độc lập:** bản đầu không thêm lớp `disabled:` cho nút bị khoá (để giữ class y hệt) — lúc tải nút trông như bật mà
+không phản hồi. Vì DOM của nút đã đổi sẵn (thuộc tính `disabled`), nay thêm `disabled:opacity-60 disabled:cursor-wait` theo quy ước
+quản trị (~180 chỗ `disabled:opacity-*`; `LiveChat`/`BlockLoadError` dùng đúng cặp này): ở trạng thái bình thường lớp `disabled:` không
+áp dụng (khác biệt DOM duy nhất là chuỗi class + `disabled=false`); test H-3 (nút) ghim lớp đó.
+
+### Test
+
+Mới: `tests/admin-fetch-rollout-{analytics,profile-history,article-modals,bulk-action}.test.ts`, `tests/item-of-single-definition.test.ts`;
+thêm 1 test vào `public-fetch-rollout-blocks` (NewsCategoryList hiện mọi bài — đột biến M27 sống qua bộ cũ).
+Sau kiểm chứng độc lập: test W-1 (ở trên); **ngữ nghĩa `ItemOf` kiểm kiểu thật** — `tests/` nằm ngoài typecheck của app
+(`.nuxt/tsconfig.json` chỉ gồm `tests/nuxt/**`), nên test dựng một chương trình TypeScript trong bộ nhớ (tệp chung NGUYÊN VĂN + probe
+`Equal<…> = true`): phần tử mảng, `readonly`, tuple, danh sách nullable, và `never` (không `unknown`) cho thứ không phải mảng; chứng
+minh đỏ ĐÚNG lý do (chỉ dòng probe, không lỗi phân giải) khi `: never` → `: unknown` hoặc bỏ `readonly`. **Guard URL hàng loạt** nay đi
+từ chính lời gọi: mọi `useBulkAction(` phải giữ trong `const <tên>`, mọi `<tên>.run(` được đọc; nháy đơn/kép/template không `${…}` là chuỗi
+cố định; `url` là biến hoặc template động, options truyền gián tiếp, `run` phân rã, kết quả không giữ trong `const` → LỖI (không bỏ qua). **Mọi test không mang nhãn
+FINDING xanh trên base** (chạy trong worktree base `proof/wt-base`, đúng bộ test + harness lô H): lịch sử 5/5, hai hộp bài viết 8/8,
+analytics 8/8, hàng loạt 6/6, blocks 25/25; FINDING đỏ trên base: 3 + 9. Hai tệp chưa từng có test hành vi (`analytics.vue`, bảng trực
+tiếp) nay mount thật — bảng trực tiếp là bản build trình duyệt (`import.meta.client`), ba poller thật.
+
+Harness (`_admin-page-harness.ts`, cộng thêm): `NetCall.signal` (đọc `.aborted` để thấy huỷ), tuỳ chọn `importMeta`, `loadBulk` export
+và cấp `adminFetch`. 401 test dùng harness xanh (30 tệp; 399 lúc đo, +2 test ở `f17a8f0c`). `<Teleport>` thô của hộp quét đứng thay bằng `Fragment` (một component đứng thay
+KHÔNG vẽ lại: trình biên dịch giao con của Teleport dạng block, patch tối ưu bỏ qua component không đổi props — `open` false → true
+không vẽ gì; Fragment vá con như Teleport thật).
+
+### Ratchet trước/sau
+
+- `fetch-casts`: **20 → 7** (13 → 6 tệp). Còn lại: `ArticleAIPanel.vue` 1 (nhánh `wave3/article-editor-split` chờ gộp), `useChatbot.ts` 1
+  (ngoại lệ lô G), `adminFetch.ts` 2 + `publicFetch.ts` 1 (có tên), hai callback Google ở `server/` 2. Phía quản trị còn đúng 1.
+- `file-length`: hạ `AnalyticsLiveDashboard.client.vue` 1060 → 1034, `qa-documents.vue` 480 → 479; không tệp nào tăng. `--update` còn
+  muốn hạ `server/services/readers.ts` 550 → 548 — không thuộc lô này, để nguyên.
+- `hex-colors`: không đổi. `v-html`: không thêm (kiểm kê `security-ai-editorial-html` xanh).
+- Độ phủ: **không đo, không nâng** (máy Node 26; baseline đo bằng Node 24 qua `cdkt-cov:node24`). Thư mục đo bị đụng: `app/composables`
+  (`useBulkSelection.ts` +1 dòng `import type`; tệp này chưa bao giờ được `import` khi test — đã nằm trong danh sách "không nạp" của
+  lần đo lô G, `cdht-wave3-fetch-g-public-proof/coverage-node24.txt`, 87 dòng mã ở 0 %).
+
+### Đột biến (mỗi cái một chỗ, chạy bộ test nhắm, hoàn nguyên bằng `git checkout HEAD --`; `proof/mutations/M*.{diff,txt}`, `batch*.log`)
+
+**35 đột biến (M01–M34 + M31b): 32 bị bắt ngay; M27 sống → thêm test → bị bắt; M31 thiết kế sai (khoá `preset` không tồn tại, bộ
+phân tích bỏ qua → cùng chiều rộng 1240, tương đương) → M31b (`containerWidth: 'wide'`) bị bắt.**
+- mã lượt: lịch sử try/catch/finally (M01–M03), Xem nhanh try/catch/finally (M04–M06), mã chỉ cấp khi mở, không khi đóng (M07);
+- khoá `loaded`: nút (M08), handler (M09), không đặt lại ở lượt mở kế (M10); PATCH muộn ghi lên bản dịch đang mở (M11); PATCH → PUT (M12);
+- hàng loạt: bỏ `ids` khỏi thân (M13), bỏ cả lựa chọn thay vì chỉ id thành công (M14), toast luôn `success` (M33); một handler hàng loạt
+  thôi `return runBulk` (M25);
+- analytics: `path` ↔ `filter` (M15), bỏ `signal` của summary (M16), `perPage` 10 → 20 (M28), 403 → 401 (M34); bảng trực tiếp: NOC
+  `limit` 50 → 20 (M17), bỏ `signal` của live (M18) và của NOC (M29);
+- layout: khoá `useAsyncData` (M19), URL (M20), `default()` khác `null` (M31/M31b);
+- quét ảnh: `dryRun` của lượt sửa → true (M21), bỏ `defaultCover` (M22), thân quét rỗng (M30); lịch sử luôn gửi `userId` (M32);
+- `ItemOf`: chép lại vào `admin-api.ts` (M23); công khai: `topics` ← `items` (M24), bỏ bài đầu của DocumentsBlock (M26) / NewsCategoryList (M27).
+
+Sau kiểm chứng độc lập (`proof/mutations/verify-round.log`): **V01** của verifier (dời `loaded.value = true` xuống `finally`) — bị bắt bởi
+test W-1; **M35** (`ItemOf` trên tệp thật: `: never` → `: unknown`) — bị bắt bởi test kiểm kiểu; **M36** (một trang đổi URL sang
+template `${…}`) — bị bắt bởi guard URL; **M25** chạy lại trên guard mới — bị bắt. 4/4.
+
+### Cổng cuối
+
+- Unit đầy đủ (`TZ=Asia/Ho_Chi_Minh npm test`, Node 26, mã ứng dụng ở `a26f2749`): **7814 test, 7760 pass, 0 fail, 54 skip**
+  (integration không có MySQL) — `proof/full-unit.txt`.
+- Typecheck 0 lỗi (sau commit cuối của mã, `proof/typecheck-final.log`); mỗi bước có typecheck riêng (`proof/typecheck-step*.log`).
+- `npm run docs:facts`: khối CLAUDE.md khớp (không tệp nào của lô H nằm trong khối số liệu).
+- ESLint 23 tệp đổi (chạy lại ở HEAD): 0 lỗi, 2 cảnh báo CÓ TỪ TRƯỚC (`i` không dùng ở bảng trực tiếp, `v-html` của "Xem nhanh" — cùng hai cảnh báo trên base).
+- Ratchet 42/42.
+- Vòng sau kiểm chứng độc lập (HEAD mã `c477ad11`): unit đầy đủ **7818 test, 7764 pass, 0 fail, 54 skip** (`proof/full-unit-r2.txt`);
+  typecheck 0 lỗi (`proof/typecheck-r2.log`); docs:facts khớp; ESLint 24 tệp đổi: 0 lỗi, cùng 2 cảnh báo có từ trước; ratchet 42/42
+  (`--update` vẫn chỉ muốn hạ `readers.ts` — để nguyên).
+
+### Đo phía trình duyệt (kiểm chứng độc lập, Chromium, component thật — `cdht-wave3-fetch-h-verify/browser/evidence/`)
+
+- H-1…H-4 tái hiện trên base bằng component thật.
+- `AdminModal` thật: `inert` bật cho phần ngoài khi mở, gỡ khi đóng.
+- Focus ban đầu lúc bản dịch đang tải rơi vào liên kết "Mở trong trang soạn thảo" (nút "Xuất bản ngay" bị khoá) — Enter không xuất bản;
+  H-3 chỉ xảy ra khi BẤM CHUỘT lúc lượt GET còn chạy.
+- Bấm đúp "Xuất bản ngay" gửi 2 PATCH ở cả base và HEAD — CÓ TỪ TRƯỚC, không thuộc lô này (không có cờ đang gửi; PATCH cùng trạng thái
+  là idempotent ở máy chủ).
+
+### Chưa đo / chỗ yếu
+
+- **E2E không chạy** (cần `E2E_DB_PASSWORD` + bản build): `admin-mfa.spec.ts` (tiêu đề khối lịch sử), `analytics-ingestion.spec.ts`,
+  `admin-write-paths.spec.ts` là các spec chạm trang của lô này.
+- SSR + hydrate trong Nuxt THẬT (bản build) chưa đo; integration MySQL chưa chạy (suite integration tự bỏ qua khi thiếu MySQL).
+- Guard "mọi URL của `bulk.run` → `return runBulk(`" là regex trên nguồn handler: một handler gán `runBulk` vào biến rồi trả nguyên vẫn
+  cùng hình mà guard đỏ (chặt hơn cần, không lỏng hơn). Không chốt số 16 (thêm/bớt một thao tác hàng loạt đúng không làm đỏ); thay vào đó
+  kiểm phép quét thấy một URL ở trang và một ở component. Verifier đã tự mở cả 16 handler: mỗi cái đúng một `return runBulk(`.
+- `useBulkSelection.ts` và các composable nạp bằng `new Function` không quy độ phủ về tệp nguồn.
+- Gộp với `wave3/article-editor-split`: cả hai nhánh sửa `tests/ratchets/file-length.baseline.json` (dòng khác nhau) — xung đột dòng JSON
+  nếu có thì đơn giản; lô H không chạm tệp của nhánh đó.
+- Kiểu `Payload` của `history.get.ts` bỏ `userId` (lấy từ `event.context.adminUser`, `any`) — khối không đọc; gốc như ngoại lệ `auth/me` lô C.

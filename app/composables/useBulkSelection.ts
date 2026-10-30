@@ -9,6 +9,8 @@
  * matching the filter" is a different and far more dangerous feature — it would
  * have to travel to the server as a filter rather than a list of ids.
  */
+import type { AdminBulkOutcome } from '../types/admin-api'
+
 export function useBulkSelection() {
   const selected = ref<Set<number>>(new Set())
 
@@ -129,7 +131,7 @@ export function useBulkAction(selection: ReturnType<typeof useBulkSelection>) {
 
     busy.value = true
     try {
-      const result = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<BulkResult>)(options.url, {
+      const result = await adminFetch<AdminBulkOutcome>(options.url, {
         method: 'POST',
         body: { ...options.body, ids },
       })
