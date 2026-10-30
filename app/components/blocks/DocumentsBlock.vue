@@ -135,7 +135,6 @@ import { computed, onMounted, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
 import { publicFetch } from '~/composables/publicFetch'
-import type { PublicArticleListItem } from '~/utils/public-types'
 import type { PublicArticlesResponse } from '~/types/public-content-api'
 import BlockLoadError from './BlockLoadError.vue'
 
@@ -177,7 +176,7 @@ onMounted(() => {
 const loadError = computed(() => !!error.value)
 
 const docs = computed(() =>
-  ((data.value as { articles?: PublicArticleListItem[] })?.articles || []).map(a => ({
+  (data.value?.articles || []).map(a => ({
     id: a.id,
     slug: a.slug,
     title: a.title,
