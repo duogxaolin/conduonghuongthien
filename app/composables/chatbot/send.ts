@@ -48,37 +48,13 @@ export function cancelInFlight(): void {
   botInputError.value = ''
 }
 
-const autoTitleOf = (text: string) => text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
-
-/**
- * The words the server refused (moderation, 400) while this page lives, as titles
- * (`autoTitleOf`). No conversation takes one as its title again (FINDING-C2). In memory only:
- * after a reload, the same words sent again and failing before the server judges them title the
- * conversation like any first question (KNOWN F2).
- */
-const refusedTitles = new Set<string>()
-
-/** Titles the conversation from its first real message — never with refused words. No-op afterwards. */
+/** Titles the conversation from its first real message. No-op afterwards. */
 function applyAutoTitle(text: string): void {
   const conversation = activeConversation.value
   const alreadyTitled = conversation.messages.some(item => item.sender === 'user')
   if (alreadyTitled) return
-  const title = autoTitleOf(text)
-  if (title && !refusedTitles.has(title)) conversation.title = title
-}
-
-/**
- * The title once a refused question has left the conversation (its words already in
- * `refusedTitles`). Never refused words, whatever else holds them: a failed send of the same
- * words titled the conversation and stays — unsaved — beside "Thử lại" or is resent with Enter;
- * a copy cancelled before its first word, or answered earlier, stays too (FINDING-C2: direct,
- * "Thử lại", Enter again). The first question in other words gives the title (the one before
- * this send, unless that was refused words); with none, the blank title.
- */
-function titleWithout(conversation: StoredConversation, titleBeforeSend: string): string {
-  const first = conversation.messages.find(item => item.sender === 'user' && !refusedTitles.has(autoTitleOf(item.text)))
-  if (!first) return 'Cuộc trò chuyện mới'
-  return refusedTitles.has(titleBeforeSend) ? autoTitleOf(first.text) : titleBeforeSend
+  const title = text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
+  if (title) conversation.title = title
 }
 
 async function ensureSessionToken(conversation: StoredConversation): Promise<string | null> {
@@ -163,9 +139,8 @@ class ChatSendRejected extends Error {
 /**
  * `true` = câu trả lời đã về. Còn lại là lượt hỏng: `ChatSendFailure` khi máy chủ trả
  * một mã không-ok (đã phân loại), `null` khi hỏng không mang mã (mạng, luồng rỗng, huỷ).
- * `titleBeforeSend`: tiêu đề hội thoại trước khi câu này tự đặt tiêu đề — trả lại nếu câu bị chặn.
  */
-async function fetchStreamBotReply(userMessage: ChatMessage, titleBeforeSend: string, onScroll?: () => void): Promise<true | ChatSendFailure | null> {
+async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => void): Promise<true | ChatSendFailure | null> {
   if (isSubmitting.value) return null
   const requestSequence = ++botRequestSequence
   const conversation = activeConversation.value
@@ -282,13 +257,9 @@ async function fetchStreamBotReply(userMessage: ChatMessage, titleBeforeSend: st
     // sends it to the model on the next request — otherwise a user could smuggle
     // disallowed content past the gate by relying on conversation history. The
     // bot's refusal bubble stays so the user sees why their turn was rejected.
-    // The title it gave the conversation goes too, as on the 400 path, here before any
-    // `persist` (the playback's included) can save it (FINDING-C2).
     if (botMessage.kind === 'moderation_blocked') {
       const userIdx = conversation.messages.findIndex(item => item.id === userMessage.id)
       if (userIdx !== -1) conversation.messages.splice(userIdx, 1)
-      refusedTitles.add(autoTitleOf(userMessage.text))
-      conversation.title = titleWithout(conversation, titleBeforeSend)
       persist()
     }
     return true
@@ -344,7 +315,7 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   onScroll?.()
 
   const requestSequence = botRequestSequence + 1
-  const outcome = await fetchStreamBotReply(question, titleBeforeSend, onScroll)
+  const outcome = await fetchStreamBotReply(question, onScroll)
   if (awaitedQuestion === question) awaitedQuestion = null
   if (requestSequence !== botRequestSequence) return
   const succeeded = outcome === true
@@ -360,8 +331,7 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
     // nháp trong ô nhập; lý do đã ở `botInputError` (tests/chatbot-send-rejection.test.ts).
     const index = conversation.messages.findIndex(item => item.id === question.id)
     if (index !== -1) conversation.messages.splice(index, 1)
-    refusedTitles.add(autoTitleOf(text))
-    conversation.title = titleWithout(conversation, titleBeforeSend)
+    conversation.title = titleBeforeSend
     if (failure.maxChars) inputCharLimit.value = Math.min(inputCharLimit.value, failure.maxChars)
     botInput.value = text
     persist()

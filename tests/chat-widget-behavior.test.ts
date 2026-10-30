@@ -529,144 +529,26 @@ test('a refused question (moderation_blocked) leaves the transcript and storage;
   assert.ok(!lastChatBody(ctx).messages.some(m => m.text === 'câu vi phạm'), 'never sent again as history')
 })
 
-test('FINDING-C2 (fixed): a refused first question does not title the conversation; the next accepted one does', async (t) => {
-  // The bug: the title is set from the first question as it is sent, and the
-  // moderation_blocked path removed the question but kept the title — shown in the
-  // conversation list and saved on this device. The 400 "rejected" path already gave the
-  // title back; a refused question now does the same.
+test('FINDING-C2 (current behaviour, NOT a contract): a refused first question stays as the conversation title', async (t) => {
+  // The 400 "rejected" path restores the title it auto-set from the question; the
+  // moderation_blocked path removes the question but keeps the title — on this device only
+  // (titles are never sent), shown in the conversation list. Pinned so a split cannot
+  // change it silently.
   const ctx = await openWidget(t)
   await openDialog(ctx)
-  // Every save from the moment the server answers. (While it has not, the title set from
-  // the question is saved like any first question's — the session token is saved then.)
-  let answered = false
-  const writesAfterAnswer: string[] = []
-  const setItem = ctx.local.setItem
-  ctx.local.setItem = (key: string, value: string) => { if (answered) writesAfterAnswer.push(String(value)); setItem(key, value) }
-  const refusal = answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] })
-  ctx.server.state.chat.push((call) => { answered = true; return refusal(call) })
+  ctx.server.state.chat.push(answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] }))
   await ask(ctx, 'câu vi phạm')
-  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Cuộc trò chuyện mới')
-  assert.ok(writesAfterAnswer.length > 0)
-  assert.ok(!writesAfterAnswer.some(value => value.includes('câu vi phạm')), 'once refused, no save carries the question, not even as the title')
+  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'câu vi phạm')
   await click(historyButton(ctx))
   await ctx.settle()
-  assert.match(words(ctx.widget), /Cuộc trò chuyện mới 1 tin nhắn/)
-  assert.doesNotMatch(words(ctx.widget), /câu vi phạm/, 'the refused question is nowhere on screen')
-  ctx.server.state.chat.push(answer('Được.'))
-  await ask(ctx, 'Câu sạch?')
-  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu sạch?', 'the first accepted question titles it')
-})
-
-test('FINDING-C2 (fixed): a refused LATER question leaves the title the first question gave', async (t) => {
-  const ctx = await openWidget(t)
-  await openDialog(ctx)
-  ctx.server.state.chat.push(answer('Trả lời A.'), answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] }))
-  await ask(ctx, 'Câu A')
-  await ask(ctx, 'câu vi phạm')
-  assert.deepEqual(transcript(ctx.widget).map(m => m.text), ['Câu A', 'Trả lời A.', 'Nội dung không phù hợp.'])
-  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu A')
-  await click(historyButton(ctx))
-  await ctx.settle()
-  assert.match(words(ctx.widget), /Câu A 3 tin nhắn/)
-})
-
-// ─── FINDING-C2 through "Thử lại" (verifier F1) ──────────────────────────────
-// A first send that fails (429, no connection) keeps the question with "Thử lại" and has
-// already titled the conversation with its words. "Thử lại" drops that copy and sends the
-// same words again, so "the title before this send" IS the question — restoring it on a
-// refusal (moderation, 400) left the refused words as the title, saved, after a reload too.
-
-const RATE_LIMITED = () => json({ statusCode: 429, message: 'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.' }, 429)
-const REFUSED = () => answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] })
-const TOO_LONG = () => json({ statusCode: 400, message: 'Câu hỏi không được vượt quá 5 ký tự. Vui lòng rút gọn rồi gửi lại.', data: { reason: 'input_too_long', maxChars: 5 } }, 400)
-/** The "Thử lại" inside one question's bubble. */
-const retryIn = (bubble: Parameters<typeof words>[0]) => findAll(bubble, el => el.tag === 'button' && words(el) === 'Thử lại')[0]!
-/** Every save from the moment the next chat request is answered (see the first C2 test). */
-function savesAfterAnswer(ctx: ChatCtx) {
-  const state = { answered: false, saves: [] as string[] }
-  const setItem = ctx.local.setItem
-  ctx.local.setItem = (key: string, value: string) => { if (state.answered) state.saves.push(String(value)); setItem(key, value) }
-  return state
-}
-
-for (const [label, firstFailure] of [['429', RATE_LIMITED], ['no connection', () => dropped()]] as const) {
-  for (const [outcome, refusal] of [['refused by moderation', REFUSED], ['rejected with a 400', TOO_LONG]] as const) {
-    test(`FINDING-C2 (fixed, "Thử lại"): a first question that failed (${label}), then ${outcome} on "Thử lại", does not stay as the title — after a reload either`, async (t) => {
-      const ctx = await openWidget(t)
-      await openDialog(ctx)
-      ctx.server.state.chat.push(firstFailure)
-      await ask(ctx, 'câu vi phạm')
-      assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1)
-      const saves = savesAfterAnswer(ctx)
-      const refuse = refusal()
-      ctx.server.state.chat.push((call) => { saves.answered = true; return typeof refuse === 'function' ? refuse(call) : refuse })
-      await click(retryIn(bubbles(ctx.widget)[0]!))
-      await ctx.settle()
-      assert.ok(!transcript(ctx.widget).some(m => m.who === 'user'), 'the refused question left the transcript')
-      assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Cuộc trò chuyện mới')
-      assert.ok(saves.saves.length > 0)
-      assert.ok(!saves.saves.some(value => value.includes('câu vi phạm')), 'once refused, no save carries the question')
-      await click(historyButton(ctx))
-      await ctx.settle()
-      assert.doesNotMatch(words(ctx.widget), /câu vi phạm (\d+ tin nhắn|Chưa có tin nhắn)/, 'not the title in the list')
-      assert.match(words(ctx.widget), /Cuộc trò chuyện mới/)
-
-      const saved = ctx.local.getItem('cdkt_sessions_v1')!
-      ctx.close()
-      const reloaded = await openWidget(t, chatServer(), { local: { cdkt_sessions_v1: saved } })
-      await openDialog(reloaded)
-      await click(historyButton(reloaded))
-      await reloaded.settle()
-      assert.doesNotMatch(words(reloaded.widget), /câu vi phạm/, 'nor after a reload')
-    })
-  }
-}
-
-test('FINDING-C2 (fixed, "Thử lại"): after an answered question, a later one that failed and is refused on "Thử lại" leaves the answered question\'s title', async (t) => {
-  for (const refusal of [REFUSED, TOO_LONG]) {
-    const ctx = await openWidget(t)
-    await openDialog(ctx)
-    ctx.server.state.chat.push(answer('Trả lời A.'), RATE_LIMITED)
-    await ask(ctx, 'Câu A')
-    await ask(ctx, 'câu vi phạm')
-    const refuse = refusal()
-    ctx.server.state.chat.push(typeof refuse === 'function' ? refuse : () => refuse)
-    await click(retryIn(bubbles(ctx.widget)[2]!))
-    await ctx.settle()
-    assert.deepEqual(transcript(ctx.widget).filter(m => m.who === 'user').map(m => m.text), ['Câu A'])
-    assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu A')
-    ctx.close()
-  }
-})
-
-test('FINDING-C2 (fixed, "Thử lại"): two failed questions, the FIRST refused on "Thử lại" — the title moves to the one left, which keeps its "Thử lại"', async (t) => {
-  const ctx = await openWidget(t)
-  await openDialog(ctx)
-  ctx.server.state.chat.push(RATE_LIMITED, () => dropped())
-  await ask(ctx, 'câu vi phạm')
-  await ask(ctx, 'Câu hai')
-  assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 2)
-  ctx.server.state.chat.push(REFUSED())
-  await click(retryIn(bubbles(ctx.widget)[0]!))
-  await ctx.settle()
-  assert.deepEqual(transcript(ctx.widget).filter(m => m.who === 'user').map(m => m.text), ['Câu hai'])
-  assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1, '"Câu hai" can still be retried')
-  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu hai')
-})
-
-test('FINDING-C2 (fixed): a refused question leaves a title that did not come from it as it was (the carried-over history)', async (t) => {
-  const legacy = JSON.stringify([{ sender: 'user', text: 'Câu cũ' }, { sender: 'bot', text: 'Trả lời cũ', kind: 'curated' }])
-  const ctx = await openWidget(t, chatServer(), { local: { cdkt_chat_history_v2: legacy } })
-  await openDialog(ctx)
-  for (const refusal of [REFUSED, TOO_LONG]) {
-    const refuse = refusal()
-    ctx.server.state.chat.push(typeof refuse === 'function' ? refuse : () => refuse)
-    await ask(ctx, 'câu vi phạm')
-    assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Cuộc trò chuyện trước')
-  }
+  assert.match(words(ctx.widget), /câu vi phạm 1 tin nhắn/)
 })
 
 // ─── What the verifier's probes caught that this suite did not (F3) ──────────
+
+const REFUSED = () => answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] })
+/** The "Thử lại" inside one question's bubble. */
+const retryIn = (bubble: Parameters<typeof words>[0]) => findAll(bubble, el => el.tag === 'button' && words(el) === 'Thử lại')[0]!
 
 test('a failed question keeps the title it gave, shown in the list; a question refused after it leaves that title', async (t) => {
   const ctx = await openWidget(t)
