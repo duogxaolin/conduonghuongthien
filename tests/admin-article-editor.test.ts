@@ -341,6 +341,26 @@ describe('article editor — header, translations, re-translate prompt', () => {
     assert.equal(shown(retranslate(ctx)), false)
   })
 
+  it('the dialog\'s own close (✕, and AdminModal\'s Escape/backdrop, which emit the same `close`) shuts the prompt without translating — not while it starts', async (t) => {
+    const ctx = await openEditor(t, '42')
+    await input(titleInput(ctx), 'Đổi tên')
+    await saveNow(ctx)
+    const closeX = () => findAll(retranslate(ctx)!, el => el.tag === 'button' && el.props['aria-label'] === 'Đóng')[0]!
+    await click(closeX())
+    await ctx.settle()
+    assert.equal(shown(retranslate(ctx)), false)
+    assert.deepEqual(ctx.panel.translateAll, [])
+
+    await input(titleInput(ctx), 'Đổi tên lần hai')
+    await saveNow(ctx)
+    ctx.panel.hold = true
+    void click(byText(retranslate(ctx)!, 'button', 'Dịch lại tất cả ngay'))
+    await ctx.settle()
+    assert.equal(isDisabled(closeX()), true, 'the dialog closes under a running re-translation')
+    ctx.panel.pending!()
+    await ctx.settle()
+  })
+
   it('an unchanged PUT asks nothing; "Để sau" closes without translating, and the next unchanged save asks nothing', async (t) => {
     const ctx = await openEditor(t, '42')
     await saveNow(ctx)

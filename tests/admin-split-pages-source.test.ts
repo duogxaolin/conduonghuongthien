@@ -18,6 +18,8 @@
  */
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { parse as parseSfc } from '@vue/compiler-sfc'
+import ts from 'typescript'
 
 import {
   ARTICLE_EDITOR_FAMILY, LANGUAGES_PAGE_FAMILY, PAGE_BUILDER_FAMILY, familyFiles, familyVueFiles, readAppFile, type ComponentFamily,
@@ -102,7 +104,7 @@ describe('the article editor family — no $fetch, no v-html, one TinyMCE init',
   const bareFetch = (overrides?: Record<string, string>) => familyFiles(ARTICLE_EDITOR_FAMILY, overrides).filter(f => /\$fetch\b/.test(f.source)).map(f => f.file)
   const vHtml = (overrides?: Record<string, string>) => familyVueFiles(ARTICLE_EDITOR_FAMILY, overrides).filter(f => /\bv-html\b|innerHTML/.test(f.source)).map(f => f.file)
   const inits = (overrides?: Record<string, string>) => familyFiles(ARTICLE_EDITOR_FAMILY, overrides)
-    .flatMap(f => (f.source.match(/\btinymce\.init\(/g) ?? []).map(() => f.file))
+    .flatMap(f => tinymceInitCalls(f.file, f.source).map(() => f.file))
 
   it('no file of the family calls or casts $fetch', () => {
     assert.deepEqual(bareFetch(), [])
@@ -127,4 +129,66 @@ describe('the article editor family — no $fetch, no v-html, one TinyMCE init',
     const added = `${ARTICLE_EDITOR_FAMILY.partsDir}/Extra.vue`
     assert.deepEqual(inits({ [added]: '<script setup lang="ts">\nonMounted(() => window.tinymce.init({ selector: "#x" }))\n</script>' }), [TINYMCE_HOME, added])
   })
+
+  it('proof: a second init written with optional chaining, a bracket key or a cast is caught too', () => {
+    // The first version of this guard grepped `tinymce.init(` and was blind to every form below.
+    assert.equal(/\btinymce\.init\(/.test('window.tinymce?.init({})'), false)
+    const added = `${ARTICLE_EDITOR_FAMILY.partsDir}/Extra.vue`
+    for (const call of [
+      'window.tinymce?.init({ selector: "#x" })',
+      "window.tinymce['init']({ selector: '#x' })",
+      'window.tinymce?.["init"]({ selector: "#x" })',
+      '(window as WindowWithTinyMce).tinymce!.init({ selector: "#x" })',
+      '((window as WindowWithTinyMce).tinymce as TinyMceGlobal).init({ selector: "#x" })',
+    ]) {
+      assert.deepEqual(inits({ [added]: `<script setup lang="ts">\nonMounted(() => ${call})\n</script>` }), [TINYMCE_HOME, added], call)
+    }
+    const composable = 'composables/useArticleEditorSave.ts'
+    assert.deepEqual(inits({ [composable]: `${readAppFile(composable)}\nexport const again = () => (window as WindowWithTinyMce).tinymce?.['init']({})\n` }).sort(), [composable, TINYMCE_HOME].sort())
+    const page = ARTICLE_EDITOR_FAMILY.parent
+    assert.deepEqual(inits({ [page]: readAppFile(page).replace('</script>', 'onMounted(() => window.tinymce?.init({}))\n</script>') }).sort(), [page, TINYMCE_HOME].sort())
+    // Not an init: another method, another object.
+    assert.deepEqual(inits({ [added]: '<script setup lang="ts">\nwindow.tinymce?.get("x")?.remove(); editor.init?.(); other.init({})\n</script>' }), [TINYMCE_HOME])
+  })
 })
+
+/**
+ * Every `tinymce.init(…)` call in one file of the family, read with the TypeScript parser — a
+ * `.vue` file's `<script>`/`<script setup>` (templates cannot reach `window`). A call is one whose
+ * callee is `init` — `.init`, `?.init`, `['init']`, `?.['init']` — on an object that is `tinymce`
+ * or ends in `.tinymce`, through parentheses, `!` and `as` casts. An alias (`const t = window
+ * .tinymce; t.init(…)`) is out of reach of any source scan; the behaviour suite's fake TinyMCE
+ * (tests/admin-article-editor.test.ts) counts the real inits at run time.
+ */
+function tinymceInitCalls(file: string, source: string): string[] {
+  const scripts = file.endsWith('.vue')
+    ? (() => { const { descriptor } = parseSfc(source, { filename: file }); return [descriptor.script?.content ?? '', descriptor.scriptSetup?.content ?? ''] })()
+    : [source]
+  const unwrap = (node: ts.Expression): ts.Expression => {
+    let current = node
+    while (ts.isParenthesizedExpression(current) || ts.isNonNullExpression(current) || ts.isAsExpression(current) || ts.isTypeAssertionExpression(current) || ts.isSatisfiesExpression(current)) current = current.expression
+    return current
+  }
+  const isTinymce = (node: ts.Expression) => {
+    const target = unwrap(node)
+    if (ts.isIdentifier(target)) return target.text === 'tinymce'
+    if (ts.isPropertyAccessExpression(target)) return target.name.text === 'tinymce'
+    if (ts.isElementAccessExpression(target)) return ts.isStringLiteralLike(target.argumentExpression) && target.argumentExpression.text === 'tinymce'
+    return false
+  }
+  const found: string[] = []
+  for (const script of scripts) {
+    const sf = ts.createSourceFile(file, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        const callee = unwrap(node.expression)
+        const isInit = (ts.isPropertyAccessExpression(callee) && callee.name.text === 'init')
+          || (ts.isElementAccessExpression(callee) && ts.isStringLiteralLike(callee.argumentExpression) && callee.argumentExpression.text === 'init')
+        if (isInit && isTinymce((callee as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression)) found.push(node.getText(sf))
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sf)
+  }
+  return found
+}
