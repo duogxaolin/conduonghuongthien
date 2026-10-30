@@ -395,4 +395,34 @@ describe('the mount sequence', () => {
     assert.equal(byTag(aside(ctx.detail)!, 'li').length, 2, 'the related list from that one read')
     assert.equal(sent(ctx.calls).filter(c => typeof c === 'object').length, 1, 'one view ping')
   })
+
+  it('hydrated with the article and its related list (the server read both): mount reads neither again', async (t) => {
+    const server = articleServer()
+    const ctx = await openDetail(t, server, {}, { hydrated: {
+      'article-detail-hanh-trinh-vi': { data: { ok: true, article: server.state.article } },
+      'article-related-hanh-trinh': { data: server.state.related },
+    } })
+    assert.equal(reads(ctx, ARTICLE), 0)
+    assert.equal(reads(ctx, RELATED), 0)
+    assert.equal(byTag(ctx.detail, 'h1').length, 1)
+  })
+
+  it('hydrated after the SERVER read failed: mount reads that one again — the rescue the guard keeps', async (t) => {
+    const server = articleServer()
+    const failedArticle = await openDetail(t, server, {}, { hydrated: {
+      'article-detail-hanh-trinh-vi': { error: true },
+      'article-related-hanh-trinh': { data: server.state.related },
+    } })
+    assert.equal(reads(failedArticle, ARTICLE), 1, 'the article, once')
+    assert.equal(reads(failedArticle, RELATED), 0)
+    assert.equal(byTag(failedArticle.detail, 'h1').length, 1, 'and it shows')
+
+    const failedRelated = await openDetail(t, articleServer(), {}, { hydrated: {
+      'article-detail-hanh-trinh-vi': { data: { ok: true, article: server.state.article } },
+      'article-related-hanh-trinh': { error: true },
+    } })
+    assert.equal(reads(failedRelated, ARTICLE), 0)
+    assert.equal(reads(failedRelated, RELATED), 1, 'the related list, once')
+    assert.equal(byTag(aside(failedRelated.detail)!, 'li').length, 2)
+  })
 })
