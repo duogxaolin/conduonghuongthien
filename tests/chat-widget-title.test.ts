@@ -273,6 +273,27 @@ test('failed, "Tạo mới", back, "Thử lại" refused: the right conversation
   assert.deepEqual([...await assertNeverTitled(t, ctx, watch, W)].sort(), [DEFAULT_TITLE, DEFAULT_TITLE])
 })
 
+test('the dialog closed while a retried question waits, then refused: the title rule still runs on that conversation', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(RATE_LIMITED, () => HOLD)
+  await ask(ctx, W)
+  await click(retryIn(bubbles(ctx.widget)[0]!))
+  await ctx.settle()
+  ctx.key('Escape')
+  await ctx.settle()
+  assert.equal(isOpen(ctx.widget), false)
+  const watch = { answered: false, saves: [] as string[] }
+  const setItem = ctx.local.setItem
+  ctx.local.setItem = (key: string, value: string) => { if (watch.answered) watch.saves.push(String(value)); setItem(key, value) }
+  const held = ctx.server.state.held.shift()!
+  watch.answered = true
+  held.respond((REFUSED() as (call: NetCall) => Response)(held))
+  await ctx.settle()
+  await openDialog(ctx)
+  assert.deepEqual(await assertNeverTitled(t, ctx, watch, W), [DEFAULT_TITLE])
+})
+
 test('clearing or deleting the conversation while the words wait: the request is cancelled, no refusal is processed, no title is left', async (t) => {
   for (const how of ['clear', 'delete'] as const) {
     const ctx = await openWidget(t)
