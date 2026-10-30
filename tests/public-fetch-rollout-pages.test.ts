@@ -11,15 +11,17 @@
  * (key, `lazy`, `default()`, watch count), `via` and the wire of every request, the server-only
  * `await` (run with `import.meta.server`), the SSR failure hook (`useSsrFailureStatus`), and
  * what renders for a good and a failed answer. Green on the base tree (5f1bb07d, casts) and on
- * lot G alike. The KNOWN tests pin FINDING G-2 (no `lang` on the catch-all / news category
- * reads) as it is — documented in docs/decisions/fetch-rollout-d-fetch.md, not changed here.
+ * lot G alike. The KNOWN test pins FINDING G-2b (no `lang` on the /news/<X> category check) as it
+ * is; the catch-all's page read pins the base behaviour (no `lang`, no re-read) after G-2a was
+ * tried and reverted — the blocks are translated by BlockNode (pinned here with the real
+ * component). Both documented in docs/decisions/fetch-rollout-d-fetch.md.
  */
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import * as Vue from 'vue'
 
 import { findAll, fire, textOf } from './_sfc-mount.ts'
-import { alerts, buttons, byTag, dropped, h3Error, json, mountPublic, routes, sent, settle, words, type NetCall } from './_public-mount-harness.ts'
+import { alerts, buttons, byTag, dropped, h3Error, HOLD, json, mountPublic, routes, sent, settle, words, type NetCall } from './_public-mount-harness.ts'
 
 const PREVIEW = { usePagePreview: () => ({ isPreview: Vue.ref(false), previewBlocks: Vue.ref(null), selectedId: Vue.ref(null) }) }
 const BLOCKS = [{ id: 1, blockType: 'rich_text', data: { html: '<p>Xin chào</p>' } }]
@@ -172,27 +174,44 @@ describe('pages/[slug].vue over publicFetch', () => {
     assert.equal(findAll(failed.page.root, el => el.tag === 'ContentTypeListSection').length, 1)
   })
 
-  it('FINDING G-2: the page is read in the reader\'s language (`?lang=`), and again when it changes — blocks follow', async (t) => {
+  // G-2a of lot G was tried and REVERTED (docs/decisions/fetch-rollout-d-fetch.md): the page needs no
+  // `?lang=` — `BlockNode` merges `data.translations[currentLang]` where it renders (pinned below),
+  // on the server and in the browser — and asking again on a language switch made the catch-all
+  // flicker and request on `swr` routes. These pin the base behaviour.
+  it('the page read carries no `lang`, and a language switch reads nothing again (Page Builder page)', async (t) => {
     const ctx = await openSlug(t, { slug: 'gioi-thieu' }, {
-      'GET /api/public/pages/gioi-thieu': call => json({ ...PAGE('gioi-thieu'), blocks: [{ id: 1, blockType: 'rich_text', data: { html: `<p>${call.url.searchParams.get('lang') ?? 'none'}</p>` } }] }),
+      'GET /api/public/pages/gioi-thieu': () => json(PAGE('gioi-thieu')),
       'GET /api/public/content-types': () => json(TYPES),
       'GET /api/public/categories': () => json({ ok: true, items: [] }),
     })
-    assert.equal(sent(ctx.calls)[0], 'asyncData: GET /api/public/pages/gioi-thieu?lang=vi')
     ctx.currentLang.value = 'en'
     await settle()
-    assert.deepEqual(sent(ctx.calls).filter(line => typeof line === 'string' && line.includes('/pages/')), [
-      'asyncData: GET /api/public/pages/gioi-thieu?lang=vi',
-      'asyncData: GET /api/public/pages/gioi-thieu?lang=en',
+    assert.deepEqual(sent(ctx.calls), [
+      'asyncData: GET /api/public/pages/gioi-thieu',
+      'asyncData: GET /api/public/content-types',
+      'asyncData: GET /api/public/categories?type=gioi-thieu',
     ])
-    assert.deepEqual(prop(renderer(ctx)!, 'blocks'), [{ id: 1, blockType: 'rich_text', data: { html: '<p>en</p>' } }])
-    assert.deepEqual(ctx.shown, [], 'reading again is not a 404')
-    // The routing reads localise nothing shown here (content types have no translation; the
-    // category check only matches slugs) and stay as they were.
-    assert.ok(ctx.calls.filter(call => !call.url.pathname.startsWith('/api/public/pages/')).every(call => !call.url.searchParams.has('lang')))
+    assert.deepEqual(prop(renderer(ctx)!, 'blocks'), BLOCKS)
   })
 
-  it('FINDING G-2: an English reader\'s first (server) render asks the page in English', async (t) => {
+  it('a custom content-type page keeps its list through a language switch — no re-read, no flicker to the page skeleton', async (t) => {
+    const ctx = await openSlug(t, { slug: 'hoc-nghe' }, {
+      'GET /api/public/pages/hoc-nghe': () => json(MISS),
+      'GET /api/public/content-types': () => json(TYPES),
+      'GET /api/public/categories': () => json({ ok: true, items: [] }),
+    })
+    const shown = () => findAll(ctx.page.root, el => el.tag === 'ContentTypeListSection' || el.tag === 'PageRenderer').map(el => el.tag)
+    assert.deepEqual(shown(), ['ContentTypeListSection'])
+    const before = ctx.calls.length
+    ctx.currentLang.value = 'en'
+    await Vue.nextTick()
+    assert.deepEqual(shown(), ['ContentTypeListSection'], 'the list stays in the very next render')
+    await settle()
+    assert.deepEqual(shown(), ['ContentTypeListSection'])
+    assert.equal(ctx.calls.length, before, 'nothing is read again')
+  })
+
+  it('an English reader\'s server render asks the page without `lang` (the blocks carry their translations)', async (t) => {
     const ctx = await mountPublic(t, {
       file: 'pages/[slug].vue',
       lang: 'en',
@@ -207,7 +226,47 @@ describe('pages/[slug].vue over publicFetch', () => {
       suspense: true,
     })
     await settle()
-    assert.equal(sent(ctx.calls)[0], 'asyncData: GET /api/public/pages/gioi-thieu?lang=en')
+    assert.equal(sent(ctx.calls)[0], 'asyncData: GET /api/public/pages/gioi-thieu')
+  })
+})
+
+// ─── Where a Page Builder page is translated: BlockNode (the REAL component) ──
+
+describe('components/blocks/BlockNode.vue — a block renders in the reader\'s language from `data.translations`', () => {
+  /** The leaf, reduced to what it is handed: the block BlockNode localised. */
+  const Leaf = Vue.defineComponent({
+    props: { block: { type: Object, default: null } },
+    setup: props => () => Vue.h('leaf-block', null, String((props.block as { data?: { title?: string } } | null)?.data?.title ?? '')),
+  })
+  const NODE = { id: 1, blockType: 'heading', data: { title: 'Giới thiệu chung', translations: { en: { title: 'About us' } } } }
+
+  async function open(t: Parameters<typeof mountPublic>[0], lang: string, node: Record<string, unknown> = NODE) {
+    const ctx = await mountPublic(t, {
+      file: 'components/blocks/BlockNode.vue',
+      lang,
+      props: { node },
+      responder: routes({}),
+      modules: { './blockComponents': { resolveBlockComponent: () => Leaf } },
+    })
+    await settle()
+    return ctx
+  }
+  const text = (ctx: Awaited<ReturnType<typeof open>>) => findAll(ctx.page.root, el => el.tag === 'leaf-block').map(textOf)
+
+  it('Vietnamese: the stored text; English: the `translations.en` override — chosen where it renders, nothing requested', async (t) => {
+    const vi = await open(t, 'vi')
+    assert.deepEqual(text(vi), ['Giới thiệu chung'])
+    vi.currentLang.value = 'en'
+    await settle()
+    assert.deepEqual(text(vi), ['About us'], 'a language switch re-renders the same block in English')
+    assert.deepEqual(vi.calls, [], 'no request: the translations came with the page')
+    const en = await open(t, 'en')
+    assert.deepEqual(text(en), ['About us'], 'an English first render (the server\'s) is already English')
+  })
+
+  it('no translation for the language: the stored text stays', async (t) => {
+    const ctx = await open(t, 'fr')
+    assert.deepEqual(text(ctx), ['Giới thiệu chung'])
   })
 })
 
@@ -248,7 +307,7 @@ describe('pages/news/[category]/index.vue over publicFetch', () => {
     assert.equal(failed.ssrStatus[0]!.failed(), true)
   })
 
-  it('KNOWN (FINDING G-2): the check sends no `lang`; a language switch does not read again (title stays in the language of the first read)', async (t) => {
+  it('KNOWN (FINDING G-2b): the check sends no `lang`; a language switch does not read again (title stays in the language of the first read)', async (t) => {
     const ctx = await open(t, () => json(CATEGORY))
     ctx.currentLang.value = 'en'
     await settle()
@@ -273,6 +332,17 @@ describe('pages/search.vue over publicFetch', () => {
     assert.match(words(ctx.page), /Kết quả một/)
     assert.match(words(ctx.page), /Tìm thấy 1 kết quả/)
   })
+  it('top-level `await`: nothing renders while the search read is open (the server\'s HTML carries the results)', async (t) => {
+    const held: NetCall[] = []
+    const ctx = await mountPublic(t, { file: 'pages/search.vue', route: { path: '/search', query: { q: 'ket qua' } }, responder: routes({ 'GET /api/public/search': call => (held.push(call), HOLD) }), suspense: true })
+    await settle()
+    assert.equal(held.length, 1)
+    assert.deepEqual(findAll(ctx.page.root, el => el !== ctx.page.root), [], 'the setup is still awaiting the read')
+    held[0]!.respond(json(ANSWER))
+    await settle()
+    assert.match(words(ctx.page), /Kết quả một/)
+  })
+
   it('a failed search is an error (role=alert) with a retry that reads again', async (t) => {
     let up = false
     const ctx = await open(t, () => (up ? json(ANSWER) : h3Error(500, 'Lỗi máy chủ')))

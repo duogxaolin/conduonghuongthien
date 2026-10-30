@@ -17,7 +17,7 @@ import { describe, it } from 'node:test'
 import * as Vue from 'vue'
 
 import { findAll, fire, input, textOf, type MiniElement } from './_sfc-mount.ts'
-import { alerts, buttons, byTag, dropped, h3Error, json, mountPublic, routes, sent, settle, words, type NetCall } from './_public-mount-harness.ts'
+import { alerts, buttons, byTag, dropped, h3Error, HOLD, json, mountPublic, routes, sent, settle, words, type NetCall } from './_public-mount-harness.ts'
 
 const article = (n: number, over: Record<string, unknown> = {}) => ({
   id: n, type: 'news', category: null, categoryId: 2, categoryName: 'Hà Nội', categorySlug: 'ha-noi',
@@ -157,6 +157,48 @@ describe('components/ContentTypeListSection.vue over publicFetch (categories)', 
     assert.ok(sent(ctx.calls).includes('asyncData: GET /api/public/categories?type=hoc-nghe&lang=vi'))
     assert.match(words(ctx.page), /Cơ khí/)
     assert.match(words(ctx.page), /May mặc/)
+  })
+})
+
+// ─── Top-level `await`: the setup waits for the read (the server's HTML carries the data) ──
+
+describe('top-level `await useAsyncData` is kept (NewsCategoryList, ContentTypeListSection)', () => {
+  const elements = (ctx: Awaited<ReturnType<typeof mountPublic>>) => findAll(ctx.page.root, el => el !== ctx.page.root)
+
+  it('NewsCategoryList: nothing renders while its list read is open; the answer releases it', async (t) => {
+    const held: NetCall[] = []
+    const ctx = await mountPublic(t, {
+      file: 'components/NewsCategoryList.vue',
+      props: { categorySlug: 'tin-hoat-dong', title: 'Tin hoạt động', limit: 4 },
+      responder: routes({ 'GET /api/public/articles': call => (call.url.searchParams.get('sort') === 'views' ? json(list(2)) : (held.push(call), HOLD)) }),
+      suspense: true,
+    })
+    await settle()
+    assert.equal(held.length, 1)
+    assert.deepEqual(elements(ctx), [], 'the setup is still awaiting the read')
+    held[0]!.respond(json(list(4)))
+    await settle()
+    assert.match(words(ctx.page), /Bài số 4/)
+  })
+
+  it('ContentTypeListSection: nothing renders while its categories read is open; the answer releases it', async (t) => {
+    const held: NetCall[] = []
+    const ctx = await mountPublic(t, {
+      file: 'components/ContentTypeListSection.vue',
+      route: { path: '/hoc-nghe' },
+      props: { typeSlug: 'hoc-nghe', typeName: 'Học nghề' },
+      responder: routes({
+        'GET /api/public/categories': call => (held.push(call), HOLD),
+        'GET /api/public/articles': () => json(list(2)),
+      }),
+      suspense: true,
+    })
+    await settle()
+    assert.equal(held.length, 1)
+    assert.deepEqual(elements(ctx), [], 'the setup is still awaiting the categories')
+    held[0]!.respond(json({ ok: true, items: [{ id: 1, name: 'Cơ khí', slug: 'co-khi', parentId: null, type: 'hoc-nghe', description: null, displayOrder: 1 }] }))
+    await settle()
+    assert.match(words(ctx.page), /Cơ khí/)
   })
 })
 
