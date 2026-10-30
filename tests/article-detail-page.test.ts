@@ -369,11 +369,60 @@ describe('the related read runs alongside the article read (M17/M18)', () => {
 })
 
 describe('the mount sequence', () => {
-  it('reads article and related on setup and once more on mount while still empty (the cached-payload rescue)', async (t) => {
-    const ctx = await mountDetail(t)
+  it('FINDING-R8-6: a client-side navigation reads the article and the related list ONCE each — mount does not re-send reads still in flight', async (t) => {
+    // This harness runs `useAsyncData` as a client-side navigation does (Nuxt starts a lazy
+    // read before mount), so both reads are in flight at `onMounted`. The mount's re-read is for
+    // a HYDRATED page that came without content (status success/error, not pending): calling
+    // `refresh()` on a pending read made Nuxt cancel it and send it again — measured on a
+    // production build of a7f312c1: GET …/r8-tin-5 and GET …/related twice per click
+    // (docs/test-coverage-baseline-2026-10.md § R8). The hydrated paths are measured there too.
+    const server = articleServer()
+    const held: NetCall[] = []
+    server.state.override = (call) => {
+      if (call.method !== 'GET' || !call.url.pathname.startsWith('/api/public/articles/')) return undefined
+      held.push(call)
+      return HOLD
+    }
+    const ctx = await mountDetail(t, server)
     await ctx.settle()
-    assert.ok(reads(ctx, ARTICLE) >= 1)
-    assert.ok(reads(ctx, RELATED) >= 1)
+    assert.equal(reads(ctx, ARTICLE), 1, 'one article read')
+    assert.equal(reads(ctx, RELATED), 1, 'one related read')
+    server.state.override = () => undefined
+    for (const call of held) server.answer(call)
+    await ctx.settle()
+    assert.equal(reads(ctx, ARTICLE), 1)
+    assert.equal(reads(ctx, RELATED), 1)
+    assert.equal(byTag(aside(ctx.detail)!, 'li').length, 2, 'the related list from that one read')
     assert.equal(sent(ctx.calls).filter(c => typeof c === 'object').length, 1, 'one view ping')
+  })
+
+  it('hydrated with the article and its related list (the server read both): mount reads neither again', async (t) => {
+    const server = articleServer()
+    const ctx = await openDetail(t, server, {}, { hydrated: {
+      'article-detail-hanh-trinh-vi': { data: { ok: true, article: server.state.article } },
+      'article-related-hanh-trinh': { data: server.state.related },
+    } })
+    assert.equal(reads(ctx, ARTICLE), 0)
+    assert.equal(reads(ctx, RELATED), 0)
+    assert.equal(byTag(ctx.detail, 'h1').length, 1)
+  })
+
+  it('hydrated after the SERVER read failed: mount reads that one again — the rescue the guard keeps', async (t) => {
+    const server = articleServer()
+    const failedArticle = await openDetail(t, server, {}, { hydrated: {
+      'article-detail-hanh-trinh-vi': { error: true },
+      'article-related-hanh-trinh': { data: server.state.related },
+    } })
+    assert.equal(reads(failedArticle, ARTICLE), 1, 'the article, once')
+    assert.equal(reads(failedArticle, RELATED), 0)
+    assert.equal(byTag(failedArticle.detail, 'h1').length, 1, 'and it shows')
+
+    const failedRelated = await openDetail(t, articleServer(), {}, { hydrated: {
+      'article-detail-hanh-trinh-vi': { data: { ok: true, article: server.state.article } },
+      'article-related-hanh-trinh': { error: true },
+    } })
+    assert.equal(reads(failedRelated, ARTICLE), 0)
+    assert.equal(reads(failedRelated, RELATED), 1, 'the related list, once')
+    assert.equal(byTag(aside(failedRelated.detail)!, 'li').length, 2)
   })
 })

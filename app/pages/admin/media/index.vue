@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminMediaRow } from '~/types/admin-api'
 import type { AdminMediaDeleteResponse, AdminMediaListResponse, AdminMediaStorageSize } from '~/types/admin-media-api'
+import { formatByteSize } from '~/utils/byte-size'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const mediaItems = ref<AdminMediaRow[]>([])
@@ -135,13 +136,8 @@ const isBatching = computed(() => uploadingBatch.value && totalCount.value > 0)
 const storageSize = ref<AdminMediaStorageSize | null>(null)
 const storageLoading = ref(false)
 const storageError = ref('')
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-}
+// Tệp trên đĩa chưa có hàng `media`. Đĩa không đọc được (`null`, R8-5) → không suy ra gì.
+const orphanCount = computed(() => { const l = storageSize.value?.local; return l?.diskCount != null ? l.diskCount - l.dbCount : 0 })
 
 async function fetchStorageSize() {
   storageLoading.value = true
@@ -214,24 +210,25 @@ onMounted(() => { void fetchMedia(); void fetchStorageSize() })
               </span>
               <span class="text-sm font-bold text-brand-950">Local /uploads</span>
             </div>
-            <span class="text-base font-extrabold text-brand-700">{{ formatBytes(storageSize.local.diskBytes) }}</span>
+            <span class="text-base font-extrabold text-brand-700">{{ formatByteSize(storageSize.local.diskBytes) }}</span>
           </div>
           <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-ink-muted">
-            <li class="flex justify-between gap-2">
+            <li v-if="storageSize.local.diskCount == null" class="text-danger-soft">Không đọc được thư mục uploads (sai quyền truy cập hoặc lỗi ổ đĩa) — chưa biết dung lượng thật.</li>
+            <li v-else class="flex justify-between gap-2">
               <span>File trên đĩa</span>
               <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.diskCount.toLocaleString('vi-VN') }} tệp</span>
             </li>
             <li class="flex justify-between gap-2">
               <span>Đã ghi DB (local)</span>
-              <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatBytes(storageSize.local.dbBytes) }}</span>
+              <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatByteSize(storageSize.local.dbBytes) }}</span>
             </li>
-            <li v-if="storageSize.local.diskCount > storageSize.local.dbCount" class="flex justify-between gap-2 text-[#765b00]">
+            <li v-if="orphanCount > 0" class="flex justify-between gap-2 text-[#765b00]">
               <span>Mồ côi (chưa có DB)</span>
-              <span class="font-semibold">{{ (storageSize.local.diskCount - storageSize.local.dbCount).toLocaleString('vi-VN') }} tệp</span>
+              <span class="font-semibold">{{ orphanCount.toLocaleString('vi-VN') }} tệp</span>
             </li>
           </ul>
           <NuxtLink
-            v-if="storageSize.local.diskCount > storageSize.local.dbCount"
+            v-if="orphanCount > 0"
             to="/admin/media/scan"
             class="mt-2 inline-flex items-center gap-1.5 text-[0.72rem] font-semibold text-brand-700 no-underline hover:underline"
           >
@@ -249,7 +246,7 @@ onMounted(() => { void fetchMedia(); void fetchStorageSize() })
               </span>
               <span class="text-sm font-bold text-brand-950">R2 Bucket</span>
             </div>
-            <span v-if="storageSize.r2.bucketBytes != null" class="text-base font-extrabold text-[#7c4a00]">{{ formatBytes(storageSize.r2.bucketBytes) }}</span>
+            <span v-if="storageSize.r2.bucketBytes != null" class="text-base font-extrabold text-[#7c4a00]">{{ formatByteSize(storageSize.r2.bucketBytes) }}</span>
             <span v-else class="text-base font-extrabold text-[#9ca3af]">—</span>
           </div>
           <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-ink-muted">
@@ -266,7 +263,7 @@ onMounted(() => { void fetchMedia(); void fetchStorageSize() })
               </li>
               <li class="flex justify-between gap-2">
                 <span>Đã ghi DB (r2)</span>
-                <span class="font-semibold text-[#3d4f3f]">{{ storageSize.r2.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatBytes(storageSize.r2.dbBytes) }}</span>
+                <span class="font-semibold text-[#3d4f3f]">{{ storageSize.r2.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatByteSize(storageSize.r2.dbBytes) }}</span>
               </li>
             </template>
           </ul>
