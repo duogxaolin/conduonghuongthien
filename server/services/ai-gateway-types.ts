@@ -72,8 +72,15 @@ export type ExecutedToolCall = NonNullable<AiCallResult['toolCallsExecuted']>[nu
 
 /**
  * What the prelude of `callAi` hands the paths once every refusal has passed: the
- * request as built (its headers carry the decrypted key — it goes to `ai-gateway-send.ts`
- * and nowhere else), and the names the token rules and the epilogue need.
+ * request as built, and the names the token rules and the epilogue need.
+ *
+ * The request's headers carry the decrypted key, and this object travels whole: into
+ * `runToolLoop`, `runStreamedAnswer` and `runBufferedAnswer` (which hand
+ * `providerCall` to the senders) and into `recordAiCall` (which reads only `provider` and
+ * `model`). Only `ai-gateway-send.ts` puts the key on the wire; every other holder must
+ * not log, return or throw it — pinned by `tests/ai-gateway-callai-behavior.test.ts`
+ * (results, log lines, usage rows, chunks, request bodies; the error that escapes when the
+ * pricing read fails is the one test on the epilogue's throwing branch).
  */
 export interface PreparedAiCall {
   /** `ai_service_configs.provider` — the name the token rules test (`delify`). */
