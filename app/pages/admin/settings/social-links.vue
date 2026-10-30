@@ -2,13 +2,14 @@
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 import type {
-  AdminSocialLink, LayoutSettingsResponse, LayoutSettingsSaveResponse, SocialLinkCreateResponse, SocialLinkDeleteResponse,
+  AdminSocialLink, SocialLinkCreateResponse, SocialLinkDeleteResponse,
   SocialLinksReorderResponse, SocialLinksResponse, SocialLinkUpdateResponse,
 } from '~/types/admin-settings-api'
 // Kiểu suy từ handler: `iconType` là `string` của cột (máy chủ chỉ lưu 3 giá trị) — startEdit thu hẹp.
 type SocialLink = AdminSocialLink
 
-import { useLayoutConfig, type LayoutConfig, DEFAULT_LAYOUT_CONFIG } from '~/composables/useLayoutConfig'
+import { useLayoutConfig } from '~/composables/useLayoutConfig'
+import { useLayoutSettingsForm } from '~/composables/useLayoutSettingsForm'
 
 const toast = useToast()
 const { confirm } = useConfirm()
@@ -59,39 +60,12 @@ function applyPreset(p: Preset) {
   form.value.color = p.color
 }
 
-const layoutLoading = ref(true)
-const layoutBusy = ref(false)
-const layoutDraft = ref<LayoutConfig>({ ...DEFAULT_LAYOUT_CONFIG })
-
-async function loadLayout() {
-  layoutLoading.value = true
-  try {
-    const res = await adminFetch<LayoutSettingsResponse>('/api/admin/settings/layout')
-    if (res?.ok && res.config) layoutDraft.value = { ...res.config }
-  } catch {
-    // layout chưa cấu hình → giữ default
-  } finally {
-    layoutLoading.value = false
-  }
-}
-
-async function saveLayout() {
-  layoutBusy.value = true
-  try {
-    const res = await adminFetch<LayoutSettingsSaveResponse>('/api/admin/settings/layout', {
-      method: 'PUT',
-      body: { ...layoutDraft.value },
-    })
-    if (res?.ok && res.config) {
-      setConfig(res.config)
-      toast.success('Đã lưu cấu hình hiển thị mạng xã hội thành công!')
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Lưu cấu hình thất bại.'))
-  } finally {
-    layoutBusy.value = false
-  }
-}
+// Kiểu hiển thị MXH là một phần của `settings.layout_config` — PUT ghi CẢ hàng (độ rộng khung,
+// lưới bài viết…). Tải/khoá/lưu dùng chung với general.vue: chỉ lưu khi bản nháp giữ cấu hình
+// thật — trước đây nút bật cả lúc đang tải và sau khi tải hỏng, PUT mặc định đè cả hàng (R8-3).
+const {
+  draft: layoutDraft, loading: layoutLoading, busy: layoutBusy, loaded: layoutLoaded, error: layoutError, load: loadLayout, save: saveLayout,
+} = useLayoutSettingsForm({ toast, setConfig, savedMessage: 'Đã lưu cấu hình hiển thị mạng xã hội thành công!' })
 
 async function load() {
   loading.value = true
@@ -249,7 +223,7 @@ onMounted(() => {
         <button
           type="button"
           class="inline-flex items-center gap-1.5 bg-brand-700 hover:bg-brand-900 text-white font-bold px-3.5 py-1.5 rounded-lg cursor-pointer border-0 text-xs transition-colors disabled:opacity-50"
-          :disabled="layoutBusy"
+          :disabled="layoutBusy || !layoutLoaded"
           @click="saveLayout"
         >
           <i v-if="layoutBusy" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
@@ -259,6 +233,11 @@ onMounted(() => {
       </div>
 
       <div v-if="layoutLoading" class="text-xs text-ink-muted py-2">Đang tải cấu hình...</div>
+      <!-- Tải hỏng: nói ra, không vẽ kiểu mặc định như thể là kiểu đang dùng (R8-3). -->
+      <p v-else-if="layoutError" role="alert" class="m-0 text-xs text-danger-soft py-2">
+        <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ layoutError }}
+        <button type="button" class="font-bold text-brand-600 underline" @click="loadLayout()">Thử lại</button>
+      </p>
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         <!-- popup -->
         <button

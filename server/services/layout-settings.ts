@@ -75,11 +75,17 @@ export function validateLayoutConfig(input: unknown): LayoutConfig {
   }
 }
 
+/**
+ * Đọc CSDL hỏng thì NÉM (handler trả 500). Chưa lưu gì, hoặc hàng sửa tay không còn parse/hợp lệ,
+ * thì đọc là mặc định (lưu lại là sửa nó). Trả mặc định với `ok: true` khi CSDL hỏng là nói dối
+ * hai biểu mẫu quản trị: chúng PUT lại NGUYÊN hàng đã đọc, nên một cú bấm ghi mặc định đè cấu hình
+ * thật (R8, `tests/settings-layout-behavior.test.ts`).
+ */
 export async function getLayoutConfig(): Promise<LayoutConfig> {
+  const db = getDb()
+  const [row] = await db.select().from(settings).where(eq(settings.key, 'layout_config'))
+  if (!row || !row.value) return { ...DEFAULT_LAYOUT_CONFIG }
   try {
-    const db = getDb()
-    const [row] = await db.select().from(settings).where(eq(settings.key, 'layout_config'))
-    if (!row || !row.value) return { ...DEFAULT_LAYOUT_CONFIG }
     return validateLayoutConfig(JSON.parse(row.value))
   } catch {
     return { ...DEFAULT_LAYOUT_CONFIG }

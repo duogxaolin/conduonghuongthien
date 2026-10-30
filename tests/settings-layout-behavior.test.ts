@@ -107,6 +107,18 @@ test('nothing stored, or a stored value that no longer parses or validates, read
   assert.deepEqual((await read()).body, { ok: true, config: VALID })
 })
 
+test('FINDING-R8-4: a database failure reading the layout is a 500 — never the defaults with `ok: true`', async () => {
+  // The admin forms (settings/general.vue, settings/social-links.vue) PUT back the WHOLE row
+  // they loaded: defaults read as "the stored layout" were one click from overwriting it.
+  await harness.db.insert(settings).values({ key: 'layout_config', value: JSON.stringify(VALID), type: 'json', group: 'layout' })
+  assert.deepEqual((await read()).body, { ok: true, config: VALID })
+  harness.failNext(/`settings`\.`key` = \?/)
+  const failed = await read()
+  assert.equal(failed.status, 500)
+  assert.ok(!JSON.stringify(failed.body).includes('containerWidth'), 'no layout in a failed answer')
+  assert.deepEqual((await read()).body, { ok: true, config: VALID }, 'the failure was that one read')
+})
+
 test('every field is checked against its closed set or range: a bad value is a 400 and nothing is written', async () => {
   const cases: Array<[unknown, RegExp]> = [
     ['not json', /Dữ liệu cấu hình/],
