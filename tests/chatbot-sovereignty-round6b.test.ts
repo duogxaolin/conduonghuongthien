@@ -66,8 +66,15 @@ test('traditional-script claims are claims: withdrawn as a reply (stream and /ap
     const kept = withoutSovereigntyTurns([{ role: 'user', content: '請問' }, { role: 'assistant', content: reply }, { role: 'user', content: '謝謝' }])
     assert.deepEqual(kept.map(turn => turn.content), ['請問', '謝謝'], reply)
   }
-  // Ownership chữ phồn thể tắt ngoại lệ của tên trần như chữ giản thể: "佛山南海屬於哪個國家" (属于/哪个国家).
-  for (const text of ['佛山南海屬於哪個國家', '廣州南沙歸誰', '佛山南海是誰的']) assert.equal(mentionsSovereignty(text), true, text)
+  // Mỗi chữ gộp có nhân chứng riêng (chỉ cụm cần đúng chữ đó): 611588c2 không gộp chữ nào trong số này nên không bắt hộ.
+  for (const reply of ['這些島嶼是中國的領土。', '這些島嶼自古以來就是中國的。', '這些島嶼由中國管轄。', '中國對這些島嶼擁有主權。']) {
+    assert.equal(mentionsSovereignty(reply, { output: true }), true, reply)
+  }
+  // Chữ sở hữu phồn thể tắt ngoại lệ của tên trần như chữ giản thể — 越 đứng trước loại 南海 ở cả hai bộ khớp, nên chỉ chữ
+  // sở hữu (哪个国家 / 归谁 / 谁的 / 归属 / 属于) làm câu bị bắt.
+  for (const text of ['越南海防是哪個國家的', '越南海防歸誰', '越南海防是誰的', '越南海防的歸屬', '越南海防屬於哪國']) assert.equal(mentionsSovereignty(text), true, text)
+  // Tên chỉ bộ mới có (611588c2 không có 黄岩岛), phồn thể 巖.
+  assert.equal(mentionsSovereignty('黃巖島現況'), true)
 })
 
 test('KNOWN false positive kept on purpose: "hỏi về Tây Sa Đéc" — the unaccented key reads "về Tây" as "về tay" (an ownership word)', () => {
