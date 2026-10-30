@@ -654,6 +654,18 @@ test('FINDING-C2 (fixed, "Thử lại"): two failed questions, the FIRST refused
   assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu hai')
 })
 
+test('FINDING-C2 (fixed): a refused question leaves a title that did not come from it as it was (the carried-over history)', async (t) => {
+  const legacy = JSON.stringify([{ sender: 'user', text: 'Câu cũ' }, { sender: 'bot', text: 'Trả lời cũ', kind: 'curated' }])
+  const ctx = await openWidget(t, chatServer(), { local: { cdkt_chat_history_v2: legacy } })
+  await openDialog(ctx)
+  for (const refusal of [REFUSED, TOO_LONG]) {
+    const refuse = refusal()
+    ctx.server.state.chat.push(typeof refuse === 'function' ? refuse : () => refuse)
+    await ask(ctx, 'câu vi phạm')
+    assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Cuộc trò chuyện trước')
+  }
+})
+
 // ─── What the verifier's probes caught that this suite did not (F3) ──────────
 
 test('a failed question keeps the title it gave, shown in the list; a question refused after it leaves that title', async (t) => {
