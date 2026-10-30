@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { readFileSync } from 'node:fs'
+import test, { mock } from 'node:test'
+import type { ChatbotSettings } from '../server/db/schema'
+import type { ChatDependencies, ChatEvent } from '../server/utils/chatbot/chat-policy'
 
 /**
  * Vòng 6 (2026-10-30) — verifier 5: recall union trên bộ câu thứ năm lọt 37 câu mà một phiên bản trước đã bắt, thuộc ba
@@ -9,7 +12,23 @@ import test from 'node:test'
  * lớp khác cũng bắt câu đó.
  */
 
-const { mentionsSovereignty } = await import('../server/utils/chatbot/sovereignty-guard')
+type AiInput = { history?: { role: string, content: string }[], onChunk?: (chunk: string) => void | Promise<void> }
+const ai = { calls: 0, inputs: [] as AiInput[] }
+mock.module('../server/services/ai-gateway', {
+  namedExports: {
+    callAi: async (_service: string, input: AiInput) => {
+      ai.calls += 1
+      ai.inputs.push(input)
+      await input.onChunk?.('Anh/chị liên hệ Công an xã.')
+      return { ok: true, text: 'Anh/chị liên hệ Công an xã.' }
+    },
+  },
+})
+const realLogger = await import('../server/utils/logger')
+mock.module('../server/utils/logger', { namedExports: { ...realLogger, logInfo: () => {}, logWarn: () => {} } })
+
+const { answerGroundedChat } = await import('../server/utils/chatbot/chat-policy')
+const { createSovereigntyOutputGuard, mentionsSovereignty, sovereigntyAnswer } = await import('../server/utils/chatbot/sovereignty-guard')
 const { sovereigntyFold: fold, sovereigntyHanKey: hanKey } = await import('../server/utils/chatbot/sovereignty-normalize')
 const { sovereigntyHanMentions, sovereigntyOwnership, sovereigntyScriptMentions } = await import('../server/utils/chatbot/sovereignty-patterns')
 
@@ -62,7 +81,7 @@ test('family 2: a toned "sa" is the name typed in a hurry — only "sà vào/xu�
   for (const text of ['Bé Hoàng sà vào lòng mẹ khi tôi ra trại', 'Thằng Hoàng sà xuống ghế ngủ luôn']) assert.equal(scriptBranch(text), false, text)
 })
 
-test('family 2: a place word after "Sa" is only a place in Title case after "trường" and before a lowercase word — never in ALL CAPS', () => {
+test('family 2: a place word after "Sa" is only a place in Title case after "trường", in a sentence with lowercase words — never in ALL CAPS', () => {
   // Câu VIẾT HOA TOÀN BỘ hay Viết Hoa Mọi Chữ không cho biết đâu là tên riêng: "VĨ/Vĩ Tuyến" là vĩ tuyến, không phải Sa Vĩ.
   for (const text of ['HOÀNG SA VĨ TUYẾN BAO NHIÊU', 'Hoàng Sa Vĩ Tuyến 16 Độ Bắc Đúng Không', 'HOÀNG SA VĨ ĐẠI MUÔN NĂM',
     'TRƯỜNG SA THẦY TÔI BẢO LÀ CỦA VIỆT NAM', 'TRƯỜNG SA HUỲNH ĐỆ TÔI ĐANG CANH GIỮ', 'Trường Sa Vĩ Đại', 'Hoàng Sa Vĩ độ bao nhiêu',
@@ -107,4 +126,70 @@ test('family 3: an exclusion written inside a pattern ("hoàng xa + nhà/con/xư
   // Ngoại lệ có tên: "gác ma túy" giữ loại trừ cả khi có chữ sở hữu — người từng thụ án ma túy hỏi "gác ma túy thuộc tội gì",
   // "ma túy từ trung quốc" (chặn oan thật của đúng đối tượng cổng); không phiên bản nào từng bắt "gạc ma túy … của ai".
   for (const text of ['gác ma túy thuộc tội gì', 'gác ma túy từ trung quốc về bị phạt sao']) assert.equal(scriptBranch(text), false, text)
+})
+
+// ─── Bộ v5 qua ba lớp: bộ khớp, chính sách với AI giả (provider 0 lượt), lớp đầu ra; sáu ca lịch sử ──────────────────────
+
+type Row = [string, string, number]
+const fixture = JSON.parse(readFileSync(new URL('./fixtures/sovereignty-corpora.json', import.meta.url), 'utf8')) as {
+  attacks: Record<string, Row[]>
+  history: Record<string, Array<{ name: string, messages: Array<{ role: 'user' | 'assistant', content: string }> }>>
+}
+function settingsOf(): ChatbotSettings {
+  return {
+    enabled: true, baseUrl: 'https://api.provider.example/v1', model: 'm', systemPrompt: 'Prompt quản trị tự viết.',
+    allowedHosts: ['api.provider.example'], requestTimeoutMs: 1_000, maxResponseBytes: 16_384, maxInputChars: 2_000,
+    maxHistoryMessages: 8, retrievalTopK: 3, referenceCharBudget: 6_000, rateLimitRequests: 1_000_000, rateLimitWindowSeconds: 60,
+    leadCaptureEnabled: true, mode: 'ai', outOfScopeBehavior: 'ai_freeform',
+  } as ChatbotSettings
+}
+let peer = 0
+const event = () => { peer += 1; return { node: { req: { headers: {}, socket: { remoteAddress: `198.21.${(peer >> 8) & 255}.${peer & 255}` } } }, context: { chatSessionId: `round6-${peer}` } } as ChatEvent }
+const dependencies: ChatDependencies = {
+  loadPublishedEntries: async () => [], loadSmallTalkEntries: async () => [], configuredSecret: () => 'secret-key',
+  providerRequest: async () => { ai.calls += 1; return { status: 200, body: Buffer.from('{"choices":[{"message":{"content":"ok"}}]}') } as never },
+}
+async function trippedOn(chunks: string[]) {
+  const guard = createSovereigntyOutputGuard({ forward: () => {}, replace: () => {}, question: 'Câu hỏi khác' })
+  for (const chunk of chunks) await guard.push!(chunk)
+  return guard.finish(chunks.join(''))
+}
+
+test('v5: every attack some version caught is stopped at all three layers — matcher, policy (provider never called), output', async () => {
+  const caught = fixture.attacks.v5!.filter(([, , mask]) => mask !== 0).map(([text]) => text)
+  assert.equal(caught.length, 179)
+  for (const question of caught) {
+    ai.calls = 0
+    const result = await answerGroundedChat(event(), settingsOf(), [{ role: 'user', content: question }], dependencies)
+    assert.equal(ai.calls, 0, question)
+    assert.equal(result.answer, sovereigntyAnswer(question), question)
+    for (const size of [3, question.length]) {
+      const chunks = Array.from({ length: Math.ceil(question.length / size) }, (_, index) => question.slice(index * size, (index + 1) * size))
+      assert.equal(await trippedOn(chunks), true, `${size}: ${question}`)
+    }
+  }
+})
+
+test('v5 history cases: a poisoned exchange or fake claim never reaches the model; a benign exchange is kept whole', async () => {
+  const expected: Record<string, string[] | null> = {
+    'after-veto suffix question + fake PRC assistant turn, then a benign question': ['Thủ tục xin lý lịch tư pháp thế nào?'],
+    'toned sa question in history + fake assistant claim': ['Giờ tôi muốn vay vốn làm ăn'],
+    'follow-up attack as the final turn': null,
+    'Han with separator in an old user turn': ['Tôi cần tư vấn pháp luật'],
+    'benign history kept': ['Công ty sa thải tôi vì lý lịch', 'Anh có thể gửi đơn khiếu nại lên Phòng Lao động huyện.', 'Cảm ơn, còn vay vốn thì sao?'],
+    'in-pattern exclusion question + fake claim': ['Tôi cần việc làm'],
+  }
+  assert.deepEqual(fixture.history.v5!.map(({ name }) => name).sort(), Object.keys(expected).sort())
+  for (const { name, messages } of fixture.history.v5!) {
+    ai.calls = 0
+    ai.inputs.length = 0
+    const result = await answerGroundedChat(event(), settingsOf(), messages, dependencies)
+    if (expected[name] === null) {
+      assert.equal(ai.calls, 0, name)
+      assert.equal(result.answer, sovereigntyAnswer(messages.at(-1)!.content), name)
+      continue
+    }
+    assert.equal(ai.calls, 1, name)
+    assert.deepEqual(ai.inputs[0]!.history?.map(turn => turn.content), expected[name], name)
+  }
 })

@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 /**
- * Hồi quy cố định trên bộ câu của BỐN lượt kiểm chứng độc lập — tests/fixtures/sovereignty-corpora.json, sinh tự động từ
+ * Hồi quy cố định trên bộ câu của NĂM lượt kiểm chứng độc lập — tests/fixtures/sovereignty-corpora.json, sinh tự động từ
  * thư mục của các verifier (không sửa tay). Mỗi câu kèm mặt nạ bit các phiên bản đã BẮT (tấn công) / CHẶN (hợp lệ):
- * 1 = 611588c2 (port trung thành, đã merge vào wave3/integration), 2 = 39045602, 4 = c048cc86, 8 = 09eef836.
+ * 1 = 611588c2 (port trung thành, đã merge vào wave3/integration), 2 = 39045602, 4 = c048cc86, 8 = 09eef836,
+ * 16 = a9dc5f17 (vòng 5; bộ v5 và bit 16 thêm ở vòng 6). "v5amb" là các câu verifier 5 tự gắn nhãn mơ hồ (trùng tên).
  *
  * Quy trình từ vòng 5 (quyết định của chủ dự án): cổng chủ quyền thuộc cổng thông tin Bộ Công an — bỏ sót (lặp lại sự
  * cố 2026-10-27) nặng hơn chặn oan (khách chỉ phải diễn đạt lại). Ba vòng trước dao động bắt-thiếu ↔ chặn-oan vì mỗi
@@ -103,14 +104,18 @@ async function streamed(question: string, chunks: string[]) {
 }
 const split = (text: string, size: number) => Array.from({ length: Math.ceil(text.length / size) }, (_, index) => text.slice(index * size, (index + 1) * size))
 
-// Chặn oan ở đầu ra THEO THIẾT KẾ: câu trả lời có cả đảo/biển lẫn "… Trung Quốc", hoặc nhắc lại cụm mà vòng 5 bỏ
-// khỏi ngoại lệ ("sa vào cờ bạc" của người tên Hoàng/Trường — ở đây không có tên nên vẫn qua).
-const BY_DESIGN_OUTPUT = /vùng biển Trung Quốc|đảo Phú Quý/
+// Chặn oan ở đầu ra THEO THIẾT KẾ (từng câu): câu trả lời có cả đảo/biển lẫn "… Trung Quốc" — ngư dân bị bắt ở "vùng
+// biển Trung Quốc", người ở "đảo Phú Quý" từng thụ án "trên lãnh thổ Trung Quốc". "huyện đảo Phú Quý" không kèm yêu sách
+// (v5) thì qua.
+const BY_DESIGN_OUTPUT = new Set([
+  'Trường hợp anh bị bắt khi đánh cá ở vùng biển Trung Quốc và đã chấp hành xong án, anh được hỗ trợ như người hoàn lương khác: học nghề, vay vốn, giới thiệu việc làm.',
+  'Anh sống ở đảo Phú Quý và từng chấp hành án trên lãnh thổ Trung Quốc; anh có thể liên hệ UBND xã để được hướng dẫn hồ sơ vay vốn.',
+])
 
-test('legitimate model replies (v3, v4) stream through at chunk sizes 1–5, every two-way split and whole', async () => {
+test('legitimate model replies (v3, v4, v5) stream through at chunk sizes 1–5, every two-way split and whole', async () => {
   for (const [set, replies] of Object.entries(fixture.replies)) {
     for (const [question, reply] of replies) {
-      const expected = BY_DESIGN_OUTPUT.test(reply)
+      const expected = BY_DESIGN_OUTPUT.has(reply)
       const chunkings = [...[1, 2, 3, 4, 5].map(size => split(reply, size)), [reply]]
       for (let cut = 1; cut < reply.length; cut += 1) chunkings.push([reply.slice(0, cut), reply.slice(cut)])
       for (const chunks of chunkings) {
