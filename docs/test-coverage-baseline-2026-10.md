@@ -1390,3 +1390,7 @@ Test FINDING đỏ trên `a7f312c1` và CHỈ chúng (chạy bộ test mới tr�
 - `storage-size`: thư mục CON không đọc được vẫn bị bỏ qua, tổng hiện là số thật (thấp hơn) — ghi nhận, chưa báo trên trang; lỗi R2 vẫn không log (từ R4). Chỉ đo khi chạy không phải root (root đọc xuyên mode 000 — test tự bỏ qua).
 - Trang cài đặt: "Khôi phục mặc định" / chỉnh tay khi bố cục tải hỏng — khối bố cục không hiện (nhánh lỗi), nên không với tới; chưa có E2E cho ba trang này (`admin-retry.spec.ts` đi qua `data-retention.vue`).
 - R8-7/R8-8 chưa sửa (cần quyết định cùng G-2b: quyết định nhánh / khoá theo ngôn ngữ mà không nháy).
+- R8-6 đo trên trình duyệt chỉ ở điều hướng `/news` → `/news/<bài>`; các tuyến khác vẽ cùng `ArticleDetail` (`[slug].vue` hai đoạn, `/documents/<bài>`, gương sáng/mô hình) dựa vào việc là cùng component (E2E `public-detail-status` đi qua `/<thể loại>/<bài>` và xanh). Khoá "Lưu Cài Đặt" khi GET còn bay (R8-1) chỉ có test mount, không trình duyệt/E2E.
+- `media.storage_size_disk_unreadable` ghi một dòng `warn` mỗi lượt quét dung lượng khi volume sai chủ; KHÔNG gửi cảnh báo vận hành (`dispatchOpsAlert` chỉ gửi sự kiện trong `ALERT_EVENT_SET`).
+- Đột biến sống khác của verifier ngoài bốn mục được giao: PV6 (`ReaderProfileHistory` khoá `v-for` theo chỉ số thay slug) — chưa xử lý; có thể tương đương ở DOM tối giản (`html()` giống nhau).
+- Bản build/E2E/trình duyệt chạy trên cây làm việc trước khi commit `a78d3c70`; `git diff --stat a78d3c70 accb378c -- app server shared nuxt.config.ts` rỗng — cùng mã sản phẩm với HEAD.
