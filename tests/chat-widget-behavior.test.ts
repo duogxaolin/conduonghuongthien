@@ -570,6 +570,152 @@ test('FINDING-C2 (fixed): a refused LATER question leaves the title the first qu
   assert.match(words(ctx.widget), /Câu A 3 tin nhắn/)
 })
 
+// ─── FINDING-C2 through "Thử lại" (verifier F1) ──────────────────────────────
+// A first send that fails (429, no connection) keeps the question with "Thử lại" and has
+// already titled the conversation with its words. "Thử lại" drops that copy and sends the
+// same words again, so "the title before this send" IS the question — restoring it on a
+// refusal (moderation, 400) left the refused words as the title, saved, after a reload too.
+
+const RATE_LIMITED = () => json({ statusCode: 429, message: 'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.' }, 429)
+const REFUSED = () => answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] })
+const TOO_LONG = () => json({ statusCode: 400, message: 'Câu hỏi không được vượt quá 5 ký tự. Vui lòng rút gọn rồi gửi lại.', data: { reason: 'input_too_long', maxChars: 5 } }, 400)
+/** The "Thử lại" inside one question's bubble. */
+const retryIn = (bubble: Parameters<typeof words>[0]) => findAll(bubble, el => el.tag === 'button' && words(el) === 'Thử lại')[0]!
+/** Every save from the moment the next chat request is answered (see the first C2 test). */
+function savesAfterAnswer(ctx: ChatCtx) {
+  const state = { answered: false, saves: [] as string[] }
+  const setItem = ctx.local.setItem
+  ctx.local.setItem = (key: string, value: string) => { if (state.answered) state.saves.push(String(value)); setItem(key, value) }
+  return state
+}
+
+for (const [label, firstFailure] of [['429', RATE_LIMITED], ['no connection', () => dropped()]] as const) {
+  for (const [outcome, refusal] of [['refused by moderation', REFUSED], ['rejected with a 400', TOO_LONG]] as const) {
+    test(`FINDING-C2 (fixed, "Thử lại"): a first question that failed (${label}), then ${outcome} on "Thử lại", does not stay as the title — after a reload either`, async (t) => {
+      const ctx = await openWidget(t)
+      await openDialog(ctx)
+      ctx.server.state.chat.push(firstFailure)
+      await ask(ctx, 'câu vi phạm')
+      assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1)
+      const saves = savesAfterAnswer(ctx)
+      const refuse = refusal()
+      ctx.server.state.chat.push((call) => { saves.answered = true; return typeof refuse === 'function' ? refuse(call) : refuse })
+      await click(retryIn(bubbles(ctx.widget)[0]!))
+      await ctx.settle()
+      assert.ok(!transcript(ctx.widget).some(m => m.who === 'user'), 'the refused question left the transcript')
+      assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Cuộc trò chuyện mới')
+      assert.ok(saves.saves.length > 0)
+      assert.ok(!saves.saves.some(value => value.includes('câu vi phạm')), 'once refused, no save carries the question')
+      await click(historyButton(ctx))
+      await ctx.settle()
+      assert.doesNotMatch(words(ctx.widget), /câu vi phạm (\d+ tin nhắn|Chưa có tin nhắn)/, 'not the title in the list')
+      assert.match(words(ctx.widget), /Cuộc trò chuyện mới/)
+
+      const saved = ctx.local.getItem('cdkt_sessions_v1')!
+      ctx.close()
+      const reloaded = await openWidget(t, chatServer(), { local: { cdkt_sessions_v1: saved } })
+      await openDialog(reloaded)
+      await click(historyButton(reloaded))
+      await reloaded.settle()
+      assert.doesNotMatch(words(reloaded.widget), /câu vi phạm/, 'nor after a reload')
+    })
+  }
+}
+
+test('FINDING-C2 (fixed, "Thử lại"): after an answered question, a later one that failed and is refused on "Thử lại" leaves the answered question\'s title', async (t) => {
+  for (const refusal of [REFUSED, TOO_LONG]) {
+    const ctx = await openWidget(t)
+    await openDialog(ctx)
+    ctx.server.state.chat.push(answer('Trả lời A.'), RATE_LIMITED)
+    await ask(ctx, 'Câu A')
+    await ask(ctx, 'câu vi phạm')
+    const refuse = refusal()
+    ctx.server.state.chat.push(typeof refuse === 'function' ? refuse : () => refuse)
+    await click(retryIn(bubbles(ctx.widget)[2]!))
+    await ctx.settle()
+    assert.deepEqual(transcript(ctx.widget).filter(m => m.who === 'user').map(m => m.text), ['Câu A'])
+    assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu A')
+    ctx.close()
+  }
+})
+
+test('FINDING-C2 (fixed, "Thử lại"): two failed questions, the FIRST refused on "Thử lại" — the title moves to the one left, which keeps its "Thử lại"', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(RATE_LIMITED, () => dropped())
+  await ask(ctx, 'câu vi phạm')
+  await ask(ctx, 'Câu hai')
+  assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 2)
+  ctx.server.state.chat.push(REFUSED())
+  await click(retryIn(bubbles(ctx.widget)[0]!))
+  await ctx.settle()
+  assert.deepEqual(transcript(ctx.widget).filter(m => m.who === 'user').map(m => m.text), ['Câu hai'])
+  assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1, '"Câu hai" can still be retried')
+  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu hai')
+})
+
+// ─── What the verifier's probes caught that this suite did not (F3) ──────────
+
+test('a failed question keeps the title it gave, shown in the list; a question refused after it leaves that title', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(() => dropped(), REFUSED())
+  await ask(ctx, 'Câu một')
+  await click(historyButton(ctx))
+  await ctx.settle()
+  assert.match(words(ctx.widget), /Câu một 1 tin nhắn/, 'the failed question is still there, and titles the conversation')
+  await click(historyButton(ctx))
+  await ctx.settle()
+  await ask(ctx, 'câu vi phạm')
+  assert.deepEqual(transcript(ctx.widget).map(m => m.text), ['Câu một', 'Nội dung không phù hợp.'])
+  assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1, '"Câu một" can still be retried')
+  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu một')
+})
+
+test('the same words asked twice: the second, failed one is the one marked; the answered one is untouched', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(answer('Một.'), () => dropped())
+  await ask(ctx, 'Giống nhau')
+  await ask(ctx, 'Giống nhau')
+  const [first, , second] = bubbles(ctx.widget)
+  assert.equal(words(first!), 'Giống nhau')
+  assert.doesNotMatch(String(first!.props.class), /bg-danger-bg|opacity-60/)
+  assert.match(String(second!.props.class), /bg-danger-bg/)
+  assert.match(words(second!), /Thử lại$/)
+})
+
+test('a second submit while the first question waits sends nothing and adds no question', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  const held = holdChat(ctx)
+  await ask(ctx, 'Câu một')
+  await input(mainInput(ctx.widget), 'Câu hai')
+  await fire(sendForm(ctx.widget), 'submit')
+  await ctx.settle()
+  assert.equal(chatCalls(ctx).length, 1)
+  assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Câu một' }])
+  const stream = held.release()
+  stream.push(content('Trả lời.'))
+  stream.done()
+  await ctx.settle()
+  assert.deepEqual(transcript(ctx.widget).map(m => m.text), ['Câu một', 'Trả lời.'], 'no question left waiting')
+  assert.ok(!bubbles(ctx.widget).some(bubble => /Đang gửi…/.test(words(bubble))))
+})
+
+test('"Thử lại" sends the failed question as asked, not what the input holds by then', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(() => dropped(), answer('Đã nhận.'))
+  await ask(ctx, 'Câu gốc')
+  await input(mainInput(ctx.widget), 'Câu khác đang soạn')
+  await ctx.settle()
+  await click(retryIn(bubbles(ctx.widget)[0]!))
+  await ctx.settle()
+  assert.deepEqual(lastChatBody(ctx).messages, [{ sender: 'user', text: 'Câu gốc' }])
+  assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Câu gốc' }, { who: 'bot', text: 'Đã nhận.' }])
+})
+
 test('waiting 20 s for the first word says so inside the status region; the first word clears it', async (t) => {
   const ctx = await openWidget(t)
   await openDialog(ctx)

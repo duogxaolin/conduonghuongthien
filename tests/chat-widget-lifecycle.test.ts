@@ -204,6 +204,33 @@ test('FINDING-C3 (fixed): leaving while the chat session is still being opened �
   assert.doesNotMatch(words(bubbles(ctx.widget)[0]!), /Đang gửi…/)
 })
 
+test('FINDING-C3 (fixed): a cancelled question unwinding late does not let go of the NEXT question still waiting', async (t) => {
+  // B is left while its session request hangs; A2 is then sent and waits; B's session comes
+  // back late, so B's send unwinds while A2 is the question awaited. Leaving A2 must still
+  // stop it "sending" — the late unwind must not have forgotten which question is awaited.
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(answer('Trả lời A.'))
+  await ask(ctx, 'Câu A')
+  await pickFromList(ctx, 'Tạo mới')
+  ctx.server.state.session = () => HOLD
+  await ask(ctx, 'Câu B')
+  const session = ctx.server.state.held.shift()!
+  await pickFromList(ctx, 'Câu A')
+  ctx.server.state.chat.push(() => HOLD)
+  await ask(ctx, 'Câu A2')
+  assert.equal(awaiting(ctx).length, 1, 'A2 is waiting')
+  session.respond(json({ ok: true, token: 'tok.late' }))
+  await ctx.settle()
+  assert.equal(awaiting(ctx).length, 1, 'A2 is still waiting after B unwound')
+  await pickFromList(ctx, 'Câu B')
+  await pickFromList(ctx, 'Câu A')
+  const a2 = bubbles(ctx.widget).at(-1)!
+  assert.equal(words(a2), 'Câu A2', 'not "Đang gửi…"')
+  assert.doesNotMatch(String(a2.props.class), /opacity-60/)
+  assert.deepEqual(parsedStorage(ctx)!.sessions.find(s => s.title === 'Câu A')?.messages.map(m => m.text), ['Câu A', 'Trả lời A.', 'Câu A2'])
+})
+
 test('FINDING-C3 (fixed): cancelled before or after the first word, the conversation ends the same — on screen, saved, and in the next request', async (t) => {
   const ends: unknown[] = []
   for (const firstWordArrived of [false, true]) {
