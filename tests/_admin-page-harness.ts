@@ -35,6 +35,8 @@ export type NetCall = {
   method: string
   url: URL
   body: unknown
+  /** The `signal` ofetch handed `fetch` (the caller's, when it passed one) — read `.aborted` to see a cancel. */
+  signal: AbortSignal | undefined
   /** Answer a request the responder left pending. */
   respond: (response: Response) => void
   fail: (error: Error) => void
@@ -49,6 +51,7 @@ export function installNetwork(responder: Responder): NetCall[] {
       method: (init.method ?? 'GET').toUpperCase(),
       url: new URL(raw, 'http://admin.test'),
       body: typeof init.body === 'string' ? JSON.parse(init.body) : init.body,
+      signal: init.signal ?? undefined,
       respond: resolve,
       fail: reject,
     }
@@ -133,6 +136,8 @@ export interface MountOptions {
   auto?: Record<string, unknown>
   /** A `<script setup>` with a top-level `await` (tests/_sfc-mount.ts `suspense`). */
   suspense?: boolean
+  /** What `import.meta.server/client` read (tests/_sfc-mount.ts `importMeta`) — a `.client.vue` that reads `import.meta.client`. */
+  importMeta?: { server: boolean, client: boolean, dev?: boolean }
 }
 
 export interface MountedAdminPage {
@@ -214,6 +219,7 @@ export async function mountAdminPage(file: string, responder: Responder, options
     modules: options.modules,
     components: { ClientOnly, ...options.components },
     suspense: options.suspense,
+    importMeta: options.importMeta,
   }, options.props)
   // Idempotent, and remembered: `unmountAll()` (an `afterEach`) stops a failed test's
   // polling intervals, which would otherwise keep the test process alive.

@@ -5,37 +5,11 @@ import {
   type AnalyticsPanelPoller,
   type AnalyticsPanelPollingState,
 } from '~/utils/analytics-live-polling'
+// Suy từ handler (D-FETCH lô H) — thay ba kiểu viết tay cùng hình.
+import type { AnalyticsBreakdownResponse as BreakdownResponse, AnalyticsLiveResponse as LiveResponse, AnalyticsNocResponse as NocResponse } from '~/types/admin-dashboard-api'
 
 type BreakdownScope = 'path' | 'source_category' | 'device_class' | 'country_code' | 'region_code'
-type Freshness = 'current' | 'stale' | 'empty'
-type UniqueVisitorSemantics = 'approximate_minute_token'
-type LiveResponse = {
-  points: { bucketStart: string; pageViews: number; approximateUniqueVisitors: number; uniqueVisitorSemantics: UniqueVisitorSemantics }[]
-  fiveMinuteTotals: { pageViews: number; approximateUniqueVisitors: number; eventsPerMinute: number; uniqueVisitorSemantics: UniqueVisitorSemantics }
-  generatedAt: string
-  latestBucketStart: string | null
-  nextPollAfterSeconds: number
-  freshness: Freshness
-  stale: boolean
-}
-type BreakdownResponse = {
-  scope: BreakdownScope
-  rows: { rank: number; value: string; pageViews: number; approximateUniqueVisitors: number; share: number; uniqueVisitorSemantics: UniqueVisitorSemantics }[]
-  totalPageViews: number
-  generatedAt: string
-  latestBucketStart: string | null
-  nextPollAfterSeconds: number
-  freshness: Freshness
-  stale: boolean
-}
-type NocResponse = {
-  rows: NocRow[]
-  generatedAt: string
-  latestBucketStart: string | null
-  nextPollAfterSeconds: number
-  freshness: Freshness
-  stale: boolean
-}
+type Freshness = LiveResponse['freshness']
 
 type PanelKey = 'live' | 'breakdown' | 'noc'
 type UiConnectionState = 'denied' | 'hidden' | 'loading' | 'disconnected' | 'partial' | 'connected'
@@ -122,7 +96,7 @@ function createBreakdownPoller() {
   const scope = selectedScope.value
   const filter = selectedFilter.value
   return createAnalyticsPanelPoller<BreakdownResponse>({
-    request: signal => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<BreakdownResponse>)('/api/admin/analytics/live/breakdown', {
+    request: signal => adminFetch<BreakdownResponse>('/api/admin/analytics/live/breakdown', {
       signal,
       query: { scope, window: 60, limit: 10, value: filter || undefined },
     }),
@@ -134,7 +108,7 @@ function createBreakdownPoller() {
 }
 
 const livePoller = createAnalyticsPanelPoller<LiveResponse>({
-  request: signal => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<LiveResponse>)('/api/admin/analytics/live', { signal, query: { window: 60 } }),
+  request: signal => adminFetch<LiveResponse>('/api/admin/analytics/live', { signal, query: { window: 60 } }),
   onSuccess: response => { liveData.value = response },
   isStale: response => response.stale,
   onStateChange: state => { livePollingSnapshot.value = state },
@@ -142,7 +116,7 @@ const livePoller = createAnalyticsPanelPoller<LiveResponse>({
 })
 let breakdownPoller: AnalyticsPanelPoller = createBreakdownPoller()
 const nocPoller = createAnalyticsPanelPoller<NocResponse>({
-  request: signal => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<NocResponse>)('/api/admin/analytics/noc', { signal, query: { limit: 50 } }),
+  request: signal => adminFetch<NocResponse>('/api/admin/analytics/noc', { signal, query: { limit: 50 } }),
   onSuccess: response => { nocData.value = response },
   isStale: response => response.stale,
   onStateChange: state => { nocPollingSnapshot.value = state },
