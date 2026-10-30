@@ -60,16 +60,19 @@ function applyAutoTitle(text: string): void {
 }
 
 /**
- * The title once a refused question (moderation, 400) has left the conversation: never one
- * taken from its words. "The title before this send" alone is not enough — a first send that
- * failed (429, no connection) already titled the conversation with these words, and "Thử lại"
- * drops that copy and sends them again (FINDING-C2, retry path). With no question of the
- * visitor's left: the blank title; a title from these words: the next question's; else as before.
+ * The title once a refused question (moderation, 400) has left the conversation. It is never
+ * the refused words as a title (`autoTitleOf`, the cut `applyAutoTitle` makes), whatever else
+ * holds them: a failed send of the same words already titled the conversation, and stays —
+ * unsaved — beside "Thử lại" or is resent with Enter; a copy cancelled before its first word
+ * (or answered earlier) stays too (FINDING-C2: direct, "Thử lại", Enter again). The first
+ * question in other words gives the title (the one before this send, unless that was the
+ * refused words); with none, the blank title. Each branch returns something else than them.
  */
 function titleWithout(conversation: StoredConversation, removedText: string, titleBeforeSend: string): string {
-  const first = conversation.messages.find(item => item.sender === 'user')
+  const refused = autoTitleOf(removedText)
+  const first = conversation.messages.find(item => item.sender === 'user' && autoTitleOf(item.text) !== refused)
   if (!first) return 'Cuộc trò chuyện mới'
-  return titleBeforeSend === autoTitleOf(removedText) ? autoTitleOf(first.text) : titleBeforeSend
+  return titleBeforeSend === refused ? autoTitleOf(first.text) : titleBeforeSend
 }
 
 async function ensureSessionToken(conversation: StoredConversation): Promise<string | null> {
