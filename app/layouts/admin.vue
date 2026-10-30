@@ -3,6 +3,8 @@ import { useLayoutConfig, parseLayoutSetting } from '~/composables/useLayoutConf
 import { useAdminLayoutMenu } from '~/composables/useAdminLayoutMenu'
 import { useAdminLayoutSidebar } from '~/composables/useAdminLayoutSidebar'
 import { useAdminLayoutCacheClear } from '~/composables/useAdminLayoutCacheClear'
+import { adminFetch } from '~/composables/adminFetch'
+import type { PublicSettingsPayload } from '~/types/public-site-api'
 import { adminPageTitle } from '~/utils/admin-layout-menu'
 import AdminSidebar from '~/components/admin/layout/AdminSidebar.vue'
 import AdminTopBar from '~/components/admin/layout/AdminTopBar.vue'
@@ -21,10 +23,9 @@ import AdminTopBar from '~/components/admin/layout/AdminTopBar.vue'
 const { containerPx, setConfig } = useLayoutConfig()
 const containerStyleVar = computed(() => ({ '--container-max': `${containerPx.value}px` }))
 
-type PublicSettingsResponse = { settings?: Record<string, string | null> }
-await useAsyncData<PublicSettingsResponse | null>(
+await useAsyncData<PublicSettingsPayload | null>(
   'admin-layout-config',
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  () => adminFetch<PublicSettingsPayload>('/api/public/settings'),
   { default: () => null },
 ).then(({ data }) => {
   if (data.value?.settings?.layout_config) {
