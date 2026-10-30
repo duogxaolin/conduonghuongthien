@@ -337,7 +337,7 @@ describe('pages/search.vue over publicFetch', () => {
     const ctx = await mountPublic(t, { file: 'pages/search.vue', route: { path: '/search', query: { q: 'ket qua' } }, responder: routes({ 'GET /api/public/search': call => (held.push(call), HOLD) }), suspense: true })
     await settle()
     assert.equal(held.length, 1)
-    assert.deepEqual(findAll(ctx.page.root, el => el !== ctx.page.root), [], 'the setup is still awaiting the read')
+    assert.deepEqual(findAll(ctx.page.root, el => el !== ctx.page.root).map(el => el.tag), [], 'the setup is still awaiting the read')
     held[0]!.respond(json(ANSWER))
     await settle()
     assert.match(words(ctx.page), /Kết quả một/)

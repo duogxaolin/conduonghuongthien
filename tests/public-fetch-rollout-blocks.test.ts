@@ -163,7 +163,9 @@ describe('components/ContentTypeListSection.vue over publicFetch (categories)', 
 // ─── Top-level `await`: the setup waits for the read (the server's HTML carries the data) ──
 
 describe('top-level `await useAsyncData` is kept (NewsCategoryList, ContentTypeListSection)', () => {
-  const elements = (ctx: Awaited<ReturnType<typeof mountPublic>>) => findAll(ctx.page.root, el => el !== ctx.page.root)
+  // Tags, not the elements: a failing deepEqual over mini-DOM nodes (circular `parent`) would
+  // spend minutes rendering its diff.
+  const elements = (ctx: Awaited<ReturnType<typeof mountPublic>>) => findAll(ctx.page.root, el => el !== ctx.page.root).map(el => el.tag)
 
   it('NewsCategoryList: nothing renders while its list read is open; the answer releases it', async (t) => {
     const held: NetCall[] = []
