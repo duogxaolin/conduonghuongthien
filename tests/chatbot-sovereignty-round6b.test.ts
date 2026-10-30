@@ -65,6 +65,13 @@ test('traditional-script claims are claims: withdrawn as a reply (stream and /ap
   for (const text of ['佛山南海屬於哪個國家', '廣州南沙歸誰', '佛山南海是誰的']) assert.equal(mentionsSovereignty(text), true, text)
 })
 
+test('KNOWN false positive kept on purpose: "hỏi về Tây Sa Đéc" — the unaccented key reads "về Tây" as "về tay" (an ownership word)', () => {
+  // Sửa thử (chữ "về/vào tay" chỉ khi có dấu hoặc không dấu hẳn) làm lọt "tôi muốn hỏi về tây sa" của tập giữ lại vòng 6 —
+  // recall là cổng cứng nên giữ chặn oan này (verifier 6, mục 4). Ai sửa được mà không mất câu tấn công nào thì đảo test.
+  assert.equal(mentionsSovereignty('Tôi muốn hỏi về Tây Sa Đéc'), true)
+  assert.equal(mentionsSovereignty('tôi muốn hỏi về tây sa'), true)
+})
+
 test('/api/chat (no stream) and finish: a punctuation-split Han claim is withdrawn by the answer alone', async () => {
   for (const separator of SEPARATORS) {
     const guard = createSovereigntyOutputGuard({ replace: () => {}, question: '请问一下' })

@@ -302,23 +302,26 @@ test('output: "Côn Đảo", "khuynh đảo", "đảo lộn/nợ/mắt/ngược"
 
 test('output: linear in the stream length — per-chunk cost stays flat over 40 000 one-character chunks of an excluded Han name', async () => {
   // Vòng 6: "越南海防" (cả hai bộ khớp loại — 越 đứng trước) thay "佛山南海区" (611588c2 chặn, nên phép hợp rút ngay). Chữ này
-  // nặng hơn (cửa sổ bắt đầu ở 南 thành ứng viên mỗi 4 chunk, phải xác nhận) và phép hợp hỏi hai bộ khớp: 80 000 chunk ~4,5–
-  // 10 s tuỳ tải máy, nên dùng 40 000 chunk, tám cửa sổ 5 000.
-  const chars = [...'越南海防'.repeat(10_000)]
-  const guard = createSovereigntyOutputGuard({ forward: () => {}, replace: () => {}, question: 'Câu hỏi khác' })
-  const marks: number[] = []
-  for (let index = 0; index < chars.length; index += 1) {
-    if (index % 5_000 === 0) marks.push(performance.now())
-    await guard.push!(chars[index]!)
+  // nặng hơn (ứng viên mỗi 4 chunk). Vòng 6b: không trần tuyệt đối (6 s từng đỏ ở 10,7 s khi máy bận) — gấp đôi độ dài thì
+  // thời gian ≤ 2,75 lần (bậc hai: 4 lần; "佛山南海区" × 80 000 từng mất 14,8 s), và cửa sổ cuối không đắt hơn cửa sổ đầu.
+  const run = async (count: number) => {
+    const chars = [...'越南海防'.repeat(count / 4)]
+    const guard = createSovereigntyOutputGuard({ forward: () => {}, replace: () => {}, question: 'Câu hỏi khác' })
+    const marks: number[] = []
+    for (let index = 0; index < chars.length; index += 1) {
+      if (index % (count / 8) === 0) marks.push(performance.now())
+      await guard.push!(chars[index]!)
+    }
+    marks.push(performance.now())
+    assert.equal(await guard.finish(chars.join('')), false)
+    return marks.slice(1).map((mark, index) => mark - marks[index]!)
   }
-  marks.push(performance.now())
-  assert.equal(await guard.finish(chars.join('')), false)
-  const windows = marks.slice(1).map((mark, index) => mark - marks[index]!)
-  const total = windows.reduce((sum, ms) => sum + ms, 0)
-  // Bậc hai từng mất 14,8 s cho 80 000 chunk "佛山南海区"; tuyến tính ở đây ~2–3 s.
-  assert.ok(total < 6_000, `${total.toFixed(0)} ms`)
+  const sum = (windows: number[]) => windows.reduce((total, ms) => total + ms, 0)
+  const half = Math.min(sum(await run(20_000)), sum(await run(20_000)))
+  const windows = await run(40_000)
+  assert.ok(sum(windows) < 2.75 * half, `${sum(windows).toFixed(0)} ms vs ${half.toFixed(0)} ms for half the length`)
   // So với chính nó, không phụ thuộc tốc độ máy: 5 000 chunk cuối tốn như 5 000 chunk đầu (đo ~0,85–1,15). Nối lại cả
-  // văn bản mỗi chunk (bỏ đuôi phẳng của bản ghi) cho ~2,7–3,1 dù tổng vẫn dưới trần. Lấy min hai cửa sổ: một lần GC
+  // văn bản mỗi chunk (bỏ đuôi phẳng của bản ghi) cho ~2,7–3,1 dù tổng có thể vẫn nhỏ. Lấy min hai cửa sổ: một lần GC
   // không làm đỏ; cửa sổ đầu có JIT khởi động nên bỏ.
   const early = Math.min(windows[1]!, windows[2]!)
   const late = Math.min(windows[6]!, windows[7]!)
