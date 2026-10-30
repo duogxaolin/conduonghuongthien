@@ -35,7 +35,9 @@ const LOOKALIKE_SCRIPT = /[\p{Script=Cyrillic}\p{Script=Greek}]/u
 const INVISIBLE = new RegExp('[\\p{Cf}\\p{Default_Ignorable_Code_Point}\\u2800]', 'gu')
 // Chữ Hán dính liền chữ cái hệ khác là ranh giới từ (vòng 6b, verifier 6): "Hoàng Sa是谁的", "请问Hoàng Sa属于哪个国家",
 // "South China Sea是什么" — tiếng Trung không dùng dấu cách, nên tên Latin/Việt chen vào câu tiếng Trung từng thành một "từ"
-// với chữ Hán bên cạnh và lọt mọi mẫu khớp trọn từ. Khoá chữ Hán bỏ dấu cách nên không đổi.
+// với chữ Hán bên cạnh và lọt mọi mẫu khớp trọn từ. Khoá chữ Hán bỏ dấu cách nên không đổi. Ranh giới cũng làm từ đứng sau
+// của một ngoại lệ "trọn từ" hơn ("hoàng xa nhà是什么" — trước đó 是 dính vào "nhà" nên ngoại lệ không áp và câu bị bắt), nên
+// nơi gọi khớp trên CẢ HAI phép gấp khi có chữ Hán (`splitHan = false` cho bản không ranh giới) — không mất câu nào.
 const HAN_SCRIPT_BOUNDARY = /(?<=\p{Script=Han})(?=[^\P{L}\p{Script=Han}])|(?<=[^\P{L}\p{Script=Han}])(?=\p{Script=Han})/gu
 const HAN_CHAR = /\p{Script=Han}/u
 
@@ -47,10 +49,10 @@ const HAN_CHAR = /\p{Script=Han}/u
  * Bỏ ký tự không hiện làm DÍNH hai từ ("Biển<U+200B>Đông" → "BiểnĐông"): mẫu nhiều từ ở guard nhận nối rỗng (`JOIN`).
  * Bỏ chúng TRƯỚC khi thay chữ giả: "Н<U+200B>oàng" phải thành một từ mới thấy là từ lẫn chữ.
  */
-export function sovereigntyFold(value: string): string {
+export function sovereigntyFold(value: string, splitHan = true): string {
   const visible = value.normalize('NFKC').replace(INVISIBLE, '')
   // Lớp đầu ra gọi hàm này nhiều lần mỗi chunk: chỉ tìm ranh giới hệ chữ khi có chữ Hán.
-  const folded = (HAN_CHAR.test(visible) ? visible.replace(HAN_SCRIPT_BOUNDARY, ' ') : visible)
+  const folded = (splitHan && HAN_CHAR.test(visible) ? visible.replace(HAN_SCRIPT_BOUNDARY, ' ') : visible)
     .replace(HAN_FOLD_CHARS, char => HAN_FOLD[char]!)
     .replace(/[ÐƉ]/g, 'Đ').replace(/[ðɖ]/g, 'đ')
   // Lớp đầu ra gọi hàm này mỗi chunk: chỉ duyệt từng từ khi văn bản có chữ Kirin/Hy Lạp.

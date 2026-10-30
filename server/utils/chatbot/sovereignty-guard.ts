@@ -48,14 +48,21 @@ export function mentionsSovereignty(text: string, options: { output?: boolean, i
   return mentions611(text, options) || sovereigntyMatcherMentions(text, options)
 }
 
-/** Chỉ bộ khớp mới, KHÔNG hợp 611588c2 — để đo và kiểm phần ngoại lệ chặn oan của riêng nó. */
+/**
+ * Chỉ bộ khớp mới, KHÔNG hợp 611588c2 — để đo và kiểm phần ngoại lệ chặn oan của riêng nó. Có chữ Hán thì khớp trên cả phép
+ * gấp có ranh giới hệ chữ lẫn phép gấp không ranh giới (`sovereigntyFold`): ranh giới chỉ được THÊM câu bắt.
+ */
 export function sovereigntyMatcherMentions(text: string, options: { output?: boolean, island?: boolean } = {}): boolean {
-  const folded = fold(text)
+  return matcherOn(fold(text), options) || (HAN_CHAR.test(text) && matcherOn(fold(text, false), options))
+}
+
+function matcherOn(folded: string, options: { output?: boolean, island?: boolean }): boolean {
   if (!folded.trim()) return false
   const han = hanKey(folded)
   const claims = options.output === true && (options.island === true || islandContext(folded, han))
   return hanMentions(han, claims, () => ownershipOf(folded)) || scriptMentions(folded, claims)
 }
+const HAN_CHAR = /\p{Script=Han}/u
 
 /** Dài hơn các cụm Latin thực tế ("thuộc quyền quản lý của Trung Quốc") cộng chữ đầu của từ theo sau. */
 const STREAM_HOLD_CHARS = 48
@@ -230,17 +237,19 @@ export function createSovereigntyOutputGuard(hooks: {
       const regionCut = lead + regionAt > 0
       const rawRegion = near.slice(regionAt)
       const region = fold(rawRegion)
+      // Có chữ Hán: thêm phép gấp KHÔNG ranh giới hệ chữ — ranh giới chỉ được thêm câu bắt (xem `sovereigntyMatcherMentions`).
+      const plain = HAN_CHAR.test(rawRegion) ? fold(rawRegion, false) : null
       let islandNow = false
       if (!island) {
-        islandNow = settledIslandContext(region, hanWindow, regionCut)
+        islandNow = settledIslandContext(region, hanWindow, regionCut) || (plain !== null && settledIslandContext(plain, hanWindow, regionCut))
         if (islandNow) island = true
       }
       // Chữ sở hữu ở đoạn cuối (mọi hệ chữ) tắt ngoại lệ của tên chữ Hán trần; xa hơn thì `finish` xét cả câu.
-      const ownership = () => ownershipOf(region)
+      const ownership = () => ownershipOf(region) || (plain !== null && ownershipOf(plain))
       // Mỗi bước hỏi cả hai bộ khớp trên cùng đoạn: bộ mới, rồi 611588c2 (tự gấp chữ thô; khoá chữ Hán không "|").
       const candidate = islandNow
         || hanMentions(hanWindow + HAN_NEXT_PROBE, island, ownership)
-        || settledScriptMentions(region, island, regionCut)
+        || settledScriptMentions(region, island, regionCut) || (plain !== null && settledScriptMentions(plain, island, regionCut))
         || han611(joinedWindow, island) || (SCRIPT_LETTER.test(region) && settledScript611(rawRegion, island, regionCut))
       if (candidate) {
         const scriptFrom = islandNow ? 0 : marginStart(seen, confirmedTo)
@@ -248,14 +257,17 @@ export function createSovereigntyOutputGuard(hooks: {
         const joinedFrom = islandNow ? 0 : Math.max(0, joinedConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
         const confirm = confirmScript(seen.from(scriptFrom), scriptFrom === 0)
         if (hanMentions(han.from(hanFrom) + HAN_NEXT_PROBE, island, ownership) || han611(joined.from(joinedFrom), island)
-          || confirm(text => settledScriptMentions(fold(text), island, false))
+          || confirm(text => settledScriptMentions(fold(text), island, false) || (HAN_CHAR.test(text) && settledScriptMentions(fold(text, false), island, false)))
           || confirm(text => SCRIPT_LETTER.test(fold(text)) && settledScript611(text, island, false))) return trip()
         confirmedTo = seen.length
         hanConfirmedTo = han.length
         joinedConfirmedTo = joined.length
       }
       // Cụm yêu sách Latin của 611588c2 cũng cần chữ cái ngoài chữ Hán: đoạn chỉ có chữ Hán chỉ xét khoá chữ Hán.
-      if (!island && !claimHeld) claimHeld = settledClaim(region, joinedWindow) || settledClaim611(SCRIPT_LETTER.test(region) ? rawRegion : '', joinedWindow)
+      if (!island && !claimHeld) {
+        claimHeld = settledClaim(region, joinedWindow) || (plain !== null && settledClaim(plain, joinedWindow))
+          || settledClaim611(SCRIPT_LETTER.test(region) ? rawRegion : '', joinedWindow)
+      }
       if (claimHeld) return
       const upTo = seen.length - STREAM_HOLD_CHARS
       if (upTo > released) {

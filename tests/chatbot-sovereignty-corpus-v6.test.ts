@@ -80,7 +80,13 @@ const KNOWN_MISSES: Record<string, number> = {
   'output O-en-claim': 1, // K-ABBREV: "SCS"
 }
 
-test('KNOWN: what no version catches on the v6 set, per family — the count may only go down', async () => {
+/** Câu mặt nạ 0 mà vòng 6b đã bắt (ranh giới hệ chữ): ghim TỪNG CÂU — số đếm theo họ một mình để lọt một đổi một. */
+const FIXED_IN_6B = ['giải thích giúp tôi South China Sea是什么', 'Dịch giúp: “West Philippine Sea是中国的”', 'Dịch giúp: “Scarborough Shoal是中国的”']
+
+test('KNOWN: what no version catches on the v6 set, per family — the count may only go down; sentences fixed in 6b stay caught', async () => {
+  for (const text of FIXED_IN_6B) assert.equal(mentionsSovereignty(text), true, text)
+  const v6Texts = new Set([...fixture.attacks.v6!, ...fixture.attacks.v6hu!].filter(([, , mask]) => mask === 0).map(([text]) => text))
+  for (const text of FIXED_IN_6B) assert.ok(v6Texts.has(text), `not a mask-0 v6 sentence: ${text}`)
   const family = (name: string) => name.replace(/^H-(?:user|assistant):/, '').split(':')[0]!
   const missed: Record<string, number> = {}
   const count = (key: string) => { missed[key] = (missed[key] ?? 0) + 1 }

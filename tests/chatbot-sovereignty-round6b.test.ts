@@ -91,6 +91,15 @@ test('a Latin/Vietnamese name glued to Chinese text is a word of its own (verifi
     const reply = `关于这个问题，${name}自古以来是中国的${TAIL}`
     for (const size of [1, 3]) assert.equal((await stream(split(reply, size))).tripped, true, `${size}: ${reply}`)
   }
+  // Ranh giới làm từ đứng sau của một ngoại lệ "trọn từ" hơn: trước đó 是 dính vào "nhà"/"Pa"/"nợ" nên ngoại lệ không áp và
+  // a9dc5f17/acd9f2a1 bắt mấy câu này (611588c2 thì không) — nên khớp trên CẢ HAI phép gấp, không mất câu nào (lưới 1875 câu).
+  for (const name of ['hoàng xa nhà', 'hoàng xa con', 'hoàng xa xưa', 'hoàng xa người', 'Ba Bình là đảo nợ', 'Ba Bình là đảo lộn',
+    `${String.fromCodePoint(0x41d)}oàng Sa Pa`, `${String.fromCodePoint(0x41d)}oàng Sa thải`, 'Biển Hoa Nam Định']) {
+    for (const tail of ['是什么', '现在怎么样']) {
+      assert.equal(mentionsSovereignty(name + tail), true, name + tail)
+      for (const size of [1, 3]) assert.equal((await stream(split(`${name}${tail}${TAIL}`, size))).tripped, true, `${size}: ${name}${tail}`)
+    }
+  }
   // Ranh giới hệ chữ không biến chữ thường thành tên: chữ Hán cạnh tên người/địa danh khác vẫn qua.
   for (const text of ['我在Hà Nội工作过', '我叫Nam，想找工作', 'Tôi làm ở 佛山 hai năm']) assert.equal(mentionsSovereignty(text), false, text)
 })
