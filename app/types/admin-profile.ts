@@ -17,10 +17,8 @@
  *   - creating recovery codes also answers a `message` (the page keeps its own sentence),
  *     turning them off also answers `lockoutRisk` (the page re-reads the status instead).
  */
-import type { Serialize } from 'nitropack/types'
-
-/** As in app/types/admin-api.ts: what the browser holds after JSON, not what the handler returned. */
-type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
+/** What the browser holds after JSON, not what the handler returned (one definition: handler-payload.ts). */
+import type { Payload } from './handler-payload'
 
 type StatusHandler = typeof import('~~/server/api/admin/profile/mfa/index.get').default
 type PasswordHandler = typeof import('~~/server/api/admin/profile/password.put').default

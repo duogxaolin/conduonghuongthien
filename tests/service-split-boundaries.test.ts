@@ -38,7 +38,9 @@
  *   • `ai-gateway.ts` — barrel; mã ở `ai-gateway-{call,config,types}.ts` + ba tệp tách từ trước
  *     (`ai-sse.ts`, `ai-text-cleaner.ts`, `ai-response-parse.ts` — `ai-sse.ts` import thẳng
  *     `ai-text-cleaner.ts`, nên nó phải thuộc nhóm thì luật 6 mới đúng). `callAi` dời nguyên
- *     khối sang `ai-gateway-call.ts` (giữ từng byte; trần dòng ghi ở ratchet). Mẫu
+ *     khối sang `ai-gateway-call.ts` (giữ từng byte), rồi được tách theo bước sang
+ *     `ai-gateway-{send,tool-loop,tools,no-tools,tokens,record}.ts` (phần mở đầu + khoá giữ ở
+ *     `ai-gateway-call.ts`; hành vi ghim bởi `ai-gateway-callai-behavior`, viết trước). Mẫu
  *     `AI_GATEWAY_PART` ở `_ai-gateway-family.ts` — một nguồn với guard một-đầu-đọc-SSE và
  *     guard `fetch` trần.
  *
@@ -787,7 +789,8 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     assert.equal(expected.backup!.length, 6)
     assert.equal(expected['moderation-worker']!.length, 8)
     assert.equal(expected['chat-policy']!.length, 7)
-    assert.equal(expected['ai-gateway']!.length, 6)
+    // 12 từ lượt tách chính `callAi` (6 tệp con mới: send, tool-loop, tools, no-tools, tokens, record).
+    assert.equal(expected['ai-gateway']!.length, 12)
     // 6 từ 4.3c tiếp: sổ lớp 2 tách khỏi tệp chạy (`moderation-regex-budget.ts`).
     assert.equal(expected['moderation-regex']!.length, 6)
     for (const [name, family] of Object.entries(FAMILIES)) {

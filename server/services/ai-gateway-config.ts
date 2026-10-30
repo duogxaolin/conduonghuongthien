@@ -9,7 +9,6 @@
  */
 import { eq } from 'drizzle-orm'
 import type { Database } from '../utils/db'
-import { effectiveSystemPrompt } from '../utils/ai/prompt-defaults'
 import {
   aiServiceConfigs, aiProviders, aiModelPricing,
   type AiServiceConfig, type AiProvider, type AiModelPricing,
@@ -84,6 +83,4 @@ async function loadPricing(db: Database, model: string): Promise<AiModelPricing 
   return row ?? null
 }
 
-// `effectiveSystemPrompt` (stored prompt, or the service's default when blank) is passed
-// through so `callAi` reaches it on its existing import line: that file is capped.
-export { policyForProvider, loadServiceConfig, loadProvider, loadPricing, effectiveSystemPrompt }
+export { policyForProvider, loadServiceConfig, loadProvider, loadPricing }

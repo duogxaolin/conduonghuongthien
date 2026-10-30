@@ -14,10 +14,8 @@
  *     into its `message`), the repoint answer `byTarget`;
  *   - "Hủy quét"/"Hủy sync" answer `{ ok: false, message }` (HTTP 200) when no job runs.
  */
-import type { Serialize } from 'nitropack/types'
-
-/** As in app/types/admin-api.ts: what the browser holds after JSON, not what the handler returned. */
-type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
+/** What the browser holds after JSON, not what the handler returned (one definition: handler-payload.ts). */
+import type { Payload } from './handler-payload'
 
 type CountsHandler = typeof import('~~/server/api/admin/media/counts.get').default
 type ScanHandler = typeof import('~~/server/api/admin/media/scan.post').default

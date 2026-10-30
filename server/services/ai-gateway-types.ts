@@ -2,9 +2,13 @@
  * The input and result types of `callAi` — part of the `ai-gateway.ts` family
  * (wave3-long-term 4.3, D-SPLIT). Moved verbatim; callers import them from the barrel
  * `./ai-gateway`.
+ *
+ * The last section holds the types the parts of `callAi` hand each other (the split of the
+ * function itself): the barrel does not re-export them.
  */
 import type { Database } from '../utils/db'
 import type { ProviderRequest, ResolveProviderHost } from '../utils/chatbot/outbound'
+import type { ProviderCall } from '../utils/chatbot/providers'
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -60,3 +64,50 @@ export interface AiCallResult {
   /** Tools executed during this call */
   toolCallsExecuted?: Array<{ name: string; query?: string; count?: number; data?: unknown }>
 }
+
+// ─── Between the parts of `callAi` (not re-exported) ─────────────────────
+
+/** One tool run by the tool loop, as `AiCallResult.toolCallsExecuted` lists it. */
+export type ExecutedToolCall = NonNullable<AiCallResult['toolCallsExecuted']>[number]
+
+/**
+ * What the prelude of `callAi` hands the paths once every refusal has passed: the
+ * request as built, and the names the token rules and the epilogue need.
+ *
+ * The request's headers carry the decrypted key, and this object travels whole: into
+ * `runToolLoop`, `runStreamedAnswer` and `runBufferedAnswer` (which hand
+ * `providerCall` to the senders) and into `recordAiCall` (which reads only `provider` and
+ * `model`). Only `ai-gateway-send.ts` puts the key on the wire; every other holder must
+ * not log, return or throw it — pinned by `tests/ai-gateway-callai-behavior.test.ts`
+ * (results, log lines, usage rows, chunks, request bodies; the error that escapes when the
+ * pricing read fails is the one test on the epilogue's throwing branch).
+ */
+export interface PreparedAiCall {
+  /** `ai_service_configs.provider` — the name the token rules test (`delify`). */
+  provider: string
+  model: string
+  /** The wire format (`policyForProvider`). */
+  policy: string
+  providerCall: ProviderCall
+}
+
+/**
+ * A path that failed. No usage row is written for it: every failure returns before the
+ * epilogue (recorded as is — see the split's notes in docs/decisions/refactor-large-files.md).
+ */
+export interface AiPathFailure {
+  ok: false
+  error: 'provider_error' | 'parse_error'
+}
+
+/** A path that produced an answer: the billed token counts and, for the tool loop, the tools run. */
+export interface AiPathAnswer {
+  ok: true
+  answerText: string
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  toolCallsExecuted?: ExecutedToolCall[]
+}
+
+export type AiPathOutcome = AiPathFailure | AiPathAnswer
