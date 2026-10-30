@@ -272,11 +272,14 @@ watch(currentLang, () => {
 })
 
 onMounted(() => {
-  // Nếu hydrate từ SSR mà chưa có bài viết (hoặc lệch cache), fetch ngay lập tức
-  if (!article.value) {
+  // Nếu hydrate từ SSR mà chưa có bài viết (hoặc lệch cache), fetch ngay lập tức. Lượt đọc
+  // ĐANG BAY thì không: điều hướng phía client đã bắt đầu nó (lazy, trước mount) — gọi lại là
+  // Nuxt huỷ rồi gửi lại, hai GET bài + hai GET liên quan mỗi lần bấm vào bài (đo trên bản
+  // build, R8-6). Danh sách liên quan rỗng sau hydrate thì refresh lấy lại payload, không gửi gì.
+  if (!article.value && !pending.value) {
     void refresh()
   }
-  if (!relatedArticles.value.length) {
+  if (!relatedArticles.value.length && !relatedPending.value) {
     void refreshRelated()
   }
 })
