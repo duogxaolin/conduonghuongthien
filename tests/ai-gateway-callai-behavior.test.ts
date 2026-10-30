@@ -121,10 +121,13 @@ const MODEL = 'behaviour-model'
 const PRICING = { model: MODEL, promptCostPerMillion: '3', completionCostPerMillion: '15' }
 const HOST = 'api.provider.example'
 
-/** A fresh provider NAME per call unless one is given: the provider row is cached by name for 60 s. */
-function setup(options: { provider?: string, pricing?: Row | null, systemPrompt?: string | null, baseUrl?: string } = {}) {
+/**
+ * A fresh provider NAME and service key per call unless one is given: both rows are cached
+ * (by provider name / by service key) for 60 s. `pricingError` makes the pricing read fail.
+ */
+function setup(options: { provider?: string, serviceKey?: string, pricing?: Row | null, pricingError?: Error, systemPrompt?: string | null, baseUrl?: string } = {}) {
   const provider = options.provider ?? unique('prov')
-  const serviceKey = unique('svc')
+  const serviceKey = options.serviceKey ?? unique('svc')
   const rows: Record<string, Row | null> = {
     config: { serviceKey, provider, model: MODEL, isActive: true, systemPrompt: options.systemPrompt === undefined ? 'Hệ thống.' : options.systemPrompt, maxTokens: 512 },
     provider: { provider, baseUrl: options.baseUrl ?? `https://${HOST}/v1`, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'cdef' },
@@ -133,7 +136,12 @@ function setup(options: { provider?: string, pricing?: Row | null, systemPrompt?
   const take = (table: unknown): unknown[] => {
     if (table === aiServiceConfigs) { rec.order.push('read:config'); return [rows.config] }
     if (table === aiProviders) { rec.order.push('read:provider'); return [rows.provider] }
-    if (table === aiModelPricing) { rec.order.push('read:pricing'); advance(clock.pricing); return rows.pricing ? [rows.pricing] : [] }
+    if (table === aiModelPricing) {
+      rec.order.push('read:pricing')
+      advance(clock.pricing)
+      if (options.pricingError) throw options.pricingError
+      return rows.pricing ? [rows.pricing] : []
+    }
     throw new Error('unexpected table')
   }
   const db = {
@@ -511,5 +519,87 @@ test('a fenced variable reaches the system prompt verbatim on every path — a {
       assert.deepEqual(messages[0], { role: 'system', content: `Trả lời câu: ${fenced} — với vai trợ lý.` }, `${mode} ${where}`)
       assert.deepEqual(messages[1], { role: 'user', content: 'Câu hỏi của khách' }, `${mode} ${where}`)
     }
+  }
+})
+
+// ─── Which system prompt is sent (after the verifier's survivors M20/M22) ────
+
+test('chatbot with an operator-written stored prompt and no prompt of its own: the request carries that prompt + the sovereignty rules, once, on every path', async () => {
+  // `effectiveSystemPrompt` appends the rules for `chatbot` to whatever prompt runs —
+  // `ai-gateway-default-prompt-behavior` checks the pure function for a written prompt and
+  // the gateway only for a stored null. This is the gateway, for a written prompt.
+  // The `chatbot` key is cached for 60 s: every call in this file uses the same stored row.
+  const { SOVEREIGNTY_PROMPT_RULES } = await import('../server/utils/chatbot/sovereignty-guard')
+  const stored = 'Prompt quản trị tự viết cho {{role}}.'
+  for (const mode of MODES) {
+    reset()
+    const { seen, result } = await run(mode, okReplies(mode), {
+      setup: { serviceKey: 'chatbot', provider: 'chatbot-operator-prov', systemPrompt: stored },
+      input: { variables: { role: 'trợ lý' } },
+    })
+    assert.equal(result.ok, true, mode)
+    const system = (seen.requests[0]!.body.messages as Row[])[0]
+    assert.deepEqual(system, { role: 'system', content: `Prompt quản trị tự viết cho trợ lý.\n\n${SOVEREIGNTY_PROMPT_RULES}` }, mode)
+    assert.equal(String(system!.content).split(SOVEREIGNTY_PROMPT_RULES).length - 1, 1, `${mode}: once`)
+  }
+})
+
+test('as is: a caller\'s EMPTY systemPrompt is sent as is — `??`, not `||`: no fallback to the stored prompt or the default', async () => {
+  // Recorded, not endorsed: a `chatbot` caller that passed '' would send no prompt and no
+  // sovereignty rules. The one caller that passes a prompt (chat-policy's grounded prompt)
+  // never passes an empty one.
+  for (const mode of MODES) {
+    reset()
+    const { seen } = await run(mode, okReplies(mode), { setup: { systemPrompt: 'Prompt đã lưu.' }, input: { systemPrompt: '' } })
+    assert.deepEqual((seen.requests[0]!.body.messages as Row[])[0], { role: 'system', content: '' }, mode)
+  }
+})
+
+test('plain stream: a stream with nothing visible is parse_error — not provider_error — and nothing is logged', async () => {
+  for (const [label, body] of [
+    ['only [DONE]', DONE],
+    ['only reasoning', content('<think>chỉ nghĩ</think>') + usage(40, 8) + DONE],
+    ['no events at all', ': keep-alive\n\n'],
+  ] as const) {
+    reset()
+    const { result, chunks } = await run('stream', [sse(body)])
+    assert.deepEqual(result, { ok: false, error: 'parse_error' }, label)
+    assert.deepEqual(chunks, [], label)
+    assert.deepEqual([rec.usage, rec.infos], [[], []], label)
+    assert.ok(!rec.order.includes('read:pricing'), label)
+  }
+})
+
+// ─── The pricing read failing (FINDING-G2) ───────────────────────────────────
+
+test('a failing pricing read rejects callAi with the database\'s own error — unwrapped, no key added — after the provider was paid, and nothing is logged', async () => {
+  // As is (FINDING-G2): the call already reached the provider, yet no usage row is written.
+  // What this pins for the key: the error that escapes is the very object the database
+  // threw, so the gateway adds nothing to it. KNOWN: an error that itself carried the key
+  // would escape as it is — the gateway does not scrub errors it did not make (a database
+  // driver never sees the key).
+  for (const mode of MODES) {
+    reset()
+    const dbError = new Error('pricing read failed: connection lost')
+    const { db, serviceKey } = setup({ pricingError: dbError })
+    const { seen, transport } = socket(okReplies(mode))
+    let escaped: unknown
+    try {
+      await callAi(serviceKey, {
+        prompt: 'Câu hỏi của khách', db, transport,
+        ...(streams(mode) ? { onChunk: () => {} } : {}),
+        ...(withTools(mode) ? { tools: [{ name: 'tra_cuu', description: 'd', parameters: { type: 'object' }, execute: () => [{ id: 1 }] }] } : {}),
+      })
+    } catch (error: unknown) {
+      escaped = error
+    }
+    assert.equal(escaped, dbError, `${mode}: the database's own error object, not a wrapper`)
+    const err = escaped as Error
+    assert.equal(err.message, 'pricing read failed: connection lost', mode)
+    const text = `${String(err)}\n${err.stack}\n${JSON.stringify(err)}\n${JSON.stringify(Object.getOwnPropertyNames(err).map(name => (err as unknown as Row)[name]))}`
+    assert.ok(!text.includes(SECRET_PIECE), `${mode}: the key in the escaping error`)
+    assert.equal(seen.requests.length, withTools(mode) ? 2 : 1, `${mode}: the provider was called (and billed)`)
+    assert.equal(rec.order.at(-1), 'read:pricing', `${mode}: nothing after the failed read`)
+    assert.deepEqual([rec.usage, rec.infos, rec.warns], [[], [], []], mode)
   }
 })
