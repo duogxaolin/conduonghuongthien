@@ -129,6 +129,14 @@ describe('components/NewsCategoryList.vue over publicFetch', () => {
     assert.ok(sent(ctx.calls).includes('asyncData: GET /api/public/articles?type=news&categorySlug=tin-hoat-dong&limit=4&lang=vi'))
     assert.match(words(ctx.page), /Bài số 4/)
   })
+  it('the list shows EVERY article of the answer, in order (lot H: read as `data.value?.articles`, no cast)', async (t) => {
+    // "Đọc nhiều" titled apart, so a title on screen is the list's own.
+    const mostRead = list(2)
+    const ctx = await open(t, call => json(call.url.searchParams.get('sort') === 'views'
+      ? { ...mostRead, articles: mostRead.articles.map(a => ({ ...a, title: `Đọc nhiều ${a.id}` })) }
+      : list(4)))
+    assert.deepEqual([...new Set(words(ctx.page).match(/Bài số \d/g))], ['Bài số 1', 'Bài số 2', 'Bài số 3', 'Bài số 4'])
+  })
   it('the list failing (503) says so (role=alert), not "no news"', async (t) => {
     const ctx = await open(t, call => (call.url.searchParams.get('sort') === 'views' ? json(list(2)) : unavailable()))
     assert.ok(alerts(ctx.page).length >= 1)
