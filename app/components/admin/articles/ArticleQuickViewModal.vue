@@ -14,7 +14,6 @@
  * không render thành empty-state (modal đóng về table), nên không cần contract.
  */
 import { errorMessage } from '~/utils/errorMessage'
-import { adminFetch } from '~/composables/adminFetch'
 import AdminModal from '~/components/admin/AdminModal.vue'
 import type { ArticleTranslationReadResponse, ArticleTranslationStatusResponse } from '~/types/admin-articles-api'
 

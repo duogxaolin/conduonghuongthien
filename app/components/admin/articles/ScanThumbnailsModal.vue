@@ -11,7 +11,6 @@
  */
 import { computed, ref, watch } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
-import { adminFetch } from '~/composables/adminFetch'
 import type { ArticleScanThumbnailsResponse as ScanResponse } from '~/types/admin-articles-api'
 
 type BrokenArticle = ScanResponse['broken'][number]
