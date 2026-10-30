@@ -3,7 +3,7 @@
   "app/components/ModelArticlesListPage.vue": 535,
   "app/components/SocialBubble.client.vue": 515,
   "app/components/admin/AnalyticsLiveDashboard.client.vue": {
-    "value": 1060,
+    "value": 1034,
     "reason": "Unsplittable: tests/analytics-live-dashboard-ui.test.ts greps ~30 patterns in this file's template and runs its script through Function() (docs/decisions/refactor-large-files.md). Allowed above the 400-line default, but capped: it may only shrink."
   },
   "app/components/admin/articles/ArticleTranslationPanel.vue": 588,
@@ -36,7 +36,7 @@
   "app/pages/admin/users/index.vue": 415,
   "app/pages/assistant.vue": 470,
   "app/pages/in-bai/[slug].vue": 477,
-  "app/pages/qa-documents.vue": 480,
+  "app/pages/qa-documents.vue": 479,
   "app/pages/search.vue": 423,
   "app/utils/docs/admin-docs-system.ts": 526,
   "nuxt.config.ts": 412,
