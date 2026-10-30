@@ -82,7 +82,8 @@ test('output: a claim whose words punctuation pulls apart (中国，一，二，
   assert.ok(!shown.includes('领土'), shown)
   // Cùng lý do ở chữ Latin: bộ mới lọc trước bằng "trung|china…" trên chữ còn dấu, nên "trùng quốc" (gõ sai) chỉ khoá
   // không dấu của 611588c2 nhận ra là cụm yêu sách.
-  const latin = ['Nơi đó là lãnh thổ của trùng quốc từ xưa. ', ...Array.from({ length: 4 }, () => 'Anh có thể liên hệ trung tâm dịch vụ việc làm của tỉnh. '), 'Các đảo ấy rất đẹp.']
+  // (Câu đệm không có "trung"/"china": có thì bộ lọc trước của bộ mới mở và nó cũng tự thấy cụm ở đoạn cuối.)
+  const latin = ['Nơi đó là lãnh thổ của trùng quốc từ xưa. ', ...Array.from({ length: 4 }, () => 'Anh có thể liên hệ Công an xã để được hướng dẫn thủ tục. '), 'Các đảo ấy rất đẹp.']
   const result = await stream(latin)
   assert.equal(result.tripped, true)
   assert.ok(!result.shown.includes('lãnh thổ'), result.shown)
