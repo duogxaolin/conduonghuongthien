@@ -218,6 +218,20 @@ test('refused words longer than a title, with another question left: neither the
   }
 })
 
+test('a question left that starts with the same 40 characters as the refused words gives no title either (its title would be theirs)', async (t) => {
+  const sameStart = `${asTitle(LONG_W)} nhưng phần sau khác hẳn`
+  assert.equal(asTitle(sameStart), asTitle(LONG_W))
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(RATE_LIMITED, answer('Hai.'))
+  await ask(ctx, LONG_W)
+  await ask(ctx, sameStart)
+  const watch = refuseNext(ctx, REFUSED)
+  await click(retryIn(bubbles(ctx.widget)[0]!))
+  await ctx.settle()
+  assert.deepEqual(await assertNeverTitled(t, ctx, watch, LONG_W), [DEFAULT_TITLE])
+})
+
 test('a long question left gives the title cut to 40 characters, like any auto title', async (t) => {
   const longOther = `Câu hai ${'cũng khá là dài '.repeat(6)}`.trim()
   const ctx = await openWidget(t)
