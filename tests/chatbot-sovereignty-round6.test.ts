@@ -86,3 +86,25 @@ test('family 2: the ownership words verifier 5 used turn every exception off, in
   }
   for (const text of ['ai cũng biết', 'giữ gìn sức khỏe', 'gì cũng được', 'của tôi']) assert.equal(sovereigntyOwnership(fold(text)), false, text)
 })
+
+// ─── Họ 3: loại trừ nằm sẵn trong mẫu cũng là ngoại lệ — tắt khi câu có chữ sở hữu ──────────────────────────────────────
+
+test('family 3: an exclusion written inside a pattern ("hoàng xa + nhà/con/xưa/rồi…", "trò chơi đảo sinh tồn", "biển đông người/bắc", "Nam Sa + Tên") yields to an ownership word', () => {
+  for (const text of ['hoàng xa người ta bảo là của tq', 'hoàng xa quê hương tôi bị chiếm', 'hoàng xa con cháu phải giữ', 'hoàng xa xưa là của việt nam',
+    'hoàng xa rồi cũng về tay trung quốc', 'huy hoàng xa rồi, giờ thuộc trung quốc', 'đảo sinh tồn của việt nam hả', 'trò chơi đảo sinh tồn thuộc trung quốc à',
+    'Biển Đông Bắc Kinh tuyên bố là của họ', 'biển đông bắc kinh đòi hết', 'biển đông người ta tranh chấp ra sao', 'bãi biển đông bị trung quốc chiếm',
+    'Nam Sa Đài Loan chiếm đảo nào', 'tây sa là của trung quốc', 'nam sa đã là của trung quốc rồi', 'tây sa là cái gì vậy',
+    'bien dong thanh ao nha tq roi', 'Ba Bình đảo nợ của ai', 'Biển Hoa Nam Định là của ai', 'Tây Sa Đài Loan chiếm à']) {
+    assert.equal(scriptBranch(text), true, text)
+    assert.equal(mentionsSovereignty(text), true, text)
+  }
+  // Không có chữ sở hữu: loại trừ trong mẫu giữ nguyên.
+  for (const text of ['anh Hoàng xa nhà đi làm ăn', 'Chị Hoàng xa con từ ngày đi tù', 'Những ngày huy hoàng xa xưa đã qua', 'trò chơi đảo sinh tồn có hay không',
+    'bãi biển đông người quá', 'chợ đêm biển đông khách lắm', 'gió mùa vùng biển đông bắc', 'Lễ hội biển hoa Nam Định năm nay', 'Chú Ba Bình đảo nợ ngân hàng',
+    'Việt Nam sa vào khủng hoảng', 'biến động giá vàng']) {
+    assert.equal(scriptBranch(text), false, text)
+  }
+  // Ngoại lệ có tên: "gác ma túy" giữ loại trừ cả khi có chữ sở hữu — người từng thụ án ma túy hỏi "gác ma túy thuộc tội gì",
+  // "ma túy từ trung quốc" (chặn oan thật của đúng đối tượng cổng); không phiên bản nào từng bắt "gạc ma túy … của ai".
+  for (const text of ['gác ma túy thuộc tội gì', 'gác ma túy từ trung quốc về bị phạt sao']) assert.equal(scriptBranch(text), false, text)
+})

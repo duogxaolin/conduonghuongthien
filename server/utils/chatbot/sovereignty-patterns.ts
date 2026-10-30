@@ -179,17 +179,25 @@ const LATIN_QUESTION = / (?:cua ai|cua nuoc|thuoc|chu quyen|nuoc nao|la gi|ai qu
 // không gì ("BiểnĐông", kể cả sau khi bỏ ký tự vô hình). Không dấu câu: "đi biển.Đông Anh là quê tôi".
 const JOIN = '(?:[\\s\\-\\u2010-\\u2015]+|[_/·•∙・*+~|])?'
 const DAO_VERB = '(?!\\s+(?:lộn|ngược|nợ|chính|mắt|chiều|điên|ngũ|mạch|hướng|vòng|phách)(?![\\p{L}]))'
+// Loại trừ viết TRONG mẫu (từ đứng trước/sau) cũng là ngoại lệ: vòng 6 giữ cả mẫu trần, dùng khi câu có chữ sở hữu
+// ("hoàng xa rồi cũng về tay trung quốc", "biển đông người ta tranh chấp ra sao"). `[mẫu có loại trừ, mẫu trần]`.
+const excluded = (before: string, core: string, after: string) => [new RegExp(before + core + after, 'u'), new RegExp(core, 'u')] as const
 // "biển đông" bỏ dấu trùng "biến động"/"biển động": chữ còn dấu, trừ "(bãi) biển đông người/khách…", hướng
 // "biển đông bắc/nam". "hoàng xa" (gõ sai "Hoàng Sa") trừ "xa nhà/quê/con/xưa…" và "huy hoàng xa…" (tiếng Việt thường).
+// "Ba Bình" trần là tên người ("anh Ba Bình", "Chú Ba Bình đảo nợ…") và "ba bình oxy": chỉ khi chữ đảo (danh từ) đứng SÁT
+// ("Ba Bình là (một hòn) đảo…"; "đảo Ba Bình" ở khoá Latin).
+const MARKED_EXCLUDED = [
+  excluded('(?<!bãi\\s+)', `(?<![\\p{L}])biển${JOIN}đông(?![\\p{L}])`, '(?!\\s+(?:người|khách|nghịt|vui|đúc|kín|bắc|nam)(?![\\p{L}]))'),
+  excluded('(?<!huy\\s+)', `(?<![\\p{L}])hoàng${JOIN}xa(?![\\p{L}])`,
+    '(?!\\s+(?:nhà|quê|con|xưa|rồi|cách|lạ|xôi|vời|gia|vợ|chồng|mẹ|cha|bố|làng|xứ|lắm|quá|dần|em|anh|chị|bạn|người)(?![\\p{L}]))'),
+  excluded('', '(?<![\\p{L}])ba\\s+bình\\s+(?:(?:là|cũng\\s+là|vốn\\s+là)\\s+)?(?:(?:một|hòn)\\s+)*đảo(?![\\p{L}])', DAO_VERB),
+]
 const MARKED_PATTERNS = [
-  new RegExp(`(?<![\\p{L}])(?<!bãi\\s+)biển${JOIN}đông(?![\\p{L}])(?!\\s+(?:người|khách|nghịt|vui|đúc|kín|bắc|nam)(?![\\p{L}]))`, 'u'),
+  ...MARKED_EXCLUDED.map(([pattern]) => pattern),
   new RegExp(`(?<![\\p{L}])trường${JOIN}sa(?![\\p{L}])`, 'u'),
   new RegExp(`(?<![\\p{L}])biển${JOIN}nam${JOIN}trung${JOIN}hoa(?![\\p{L}])`, 'u'),
-  new RegExp(`(?<![\\p{L}])(?<!huy\\s+)hoàng${JOIN}xa(?![\\p{L}])(?!\\s+(?:nhà|quê|con|xưa|rồi|cách|lạ|xôi|vời|gia|vợ|chồng|mẹ|cha|bố|làng|xứ|lắm|quá|dần|em|anh|chị|bạn|người)(?![\\p{L}]))`, 'u'),
-  // "Ba Bình" trần là tên người ("anh Ba Bình", "Chú Ba Bình đảo nợ…") và "ba bình oxy": chỉ khi chữ đảo (danh từ)
-  // đứng SÁT ("Ba Bình là (một hòn) đảo…"; "đảo Ba Bình" ở FEATURES).
-  new RegExp(`(?<![\\p{L}])ba\\s+bình\\s+(?:(?:là|cũng\\s+là|vốn\\s+là)\\s+)?(?:(?:một|hòn)\\s+)*đảo(?![\\p{L}])${DAO_VERB}`, 'u'),
 ]
+const MARKED_STRICT = MARKED_EXCLUDED.map(([, strict]) => strict)
 // "tây sa"/"nam sa" viết thường: chỉ khi có chữ hỏi chủ quyền ("Việt Nam sa vào khủng hoảng" không phải).
 const MARKED_AMBIGUOUS = new RegExp(`(?<![\\p{L}])(?:tây|nam)${JOIN}sa(?![\\p{L}])`, 'u')
 const MARKED_QUESTION = /(?<![\p{L}])(?:của\s+ai|của\s+nước|thuộc|chủ\s+quyền|nước\s+nào|là\s+gì|ai\s+(?:quản\s+lý|giữ|làm\s+chủ|chiếm)|tranh\s+chấp|khác\s+gì|có\s+phải\s+của)(?![\p{L}])/u
@@ -207,7 +215,8 @@ const lowered = (names: string[]) => spaced(names.map(name => name.toLowerCase()
 const REEF_PREFIX = '(?:[Đđ]á|ĐÁ|[Bb]ãi|BÃI)\\s+'
 const ISLAND_PREFIX = '(?:[Đđ]ảo|ĐẢO)\\s+'
 const FEATURE_TITLE = new RegExp(`(?<![\\p{L}])(?:${REEF_PREFIX}(?:${titleOrUpper(REEF_COMMON)})|${ISLAND_PREFIX}(?:${titleOrUpper(ISLAND_COMMON)}))(?![\\p{L}])`, 'u')
-const FEATURE_COMMON = new RegExp(`(?<![\\p{L}])(?<!(?:chơi|game|show|xếp|vẽ|mua|bán|lát|kiểu|mẫu|hình)\\s+)(?:(?:đá|bãi)\\s+(?:${lowered(REEF_COMMON)})|đảo\\s+(?:${lowered(ISLAND_COMMON)}))(?![\\p{L}])`, 'u')
+const [FEATURE_COMMON, FEATURE_STRICT] = excluded('(?<!(?:chơi|game|show|xếp|vẽ|mua|bán|lát|kiểu|mẫu|hình)\\s+)',
+  `(?<![\\p{L}])(?:(?:đá|bãi)\\s+(?:${lowered(REEF_COMMON)})|đảo\\s+(?:${lowered(ISLAND_COMMON)}))(?![\\p{L}])`, '')
 
 // ─── Viết hoa: tên riêng ──────────────────────────────────────────────────────────────────────────────────────────
 // (Hoàng Sa / Trường Sa ở mọi hoa/thường là khoá Latin ` hoang ?sa `, ` truong ?sa `.) Khớp bất kể từ đứng sau ("Biển
@@ -215,12 +224,14 @@ const FEATURE_COMMON = new RegExp(`(?<![\\p{L}])(?<!(?:chơi|game|show|xếp|v�
 // trừ "Tây Sa Trung Quốc gọi…", "Nam Sa Islands"); trừ hướng "(vùng) biển Đông Bắc/Đông Nam"; "Biển Hoa Nam" chỉ viết
 // hoa "Hoa", trừ "… Nam Định".
 const NOT_SA_PLACE = '(?!\\s+(?!Trung|Island|Archipelago)\\p{Lu}\\p{Ll})'
-const PROPER_NAMES = new RegExp([
+const properNames = (notPlace: string, notDirection: string, notDinh: string) => new RegExp([
   `(?<![\\p{L}])(?:(?:Hoàng|HOÀNG)${JOIN}(?:Xa|XA)`,
-  `|(?:Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)${JOIN}(?:Sa|SA)${NOT_SA_PLACE}`,
-  `|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)${JOIN}(?:Đông|Dong|ĐÔNG|DONG)(?!\\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\\p{L}]))`,
-  `|(?:[Bb]iển|BIỂN)${JOIN}(?:Hoa|HOA)${JOIN}(?:Nam|NAM)(?!\\s+(?:Định|ĐỊNH)(?![\\p{L}])))(?![\\p{L}])`,
+  `|(?:Tây|Tay|TÂY|TAY|Nam|NAM|Tam|TAM)${JOIN}(?:Sa|SA)${notPlace}`,
+  `|(?:[Bb]iển|[Bb]ien|BIỂN|BIEN)${JOIN}(?:Đông|Dong|ĐÔNG|DONG)${notDirection}`,
+  `|(?:[Bb]iển|BIỂN)${JOIN}(?:Hoa|HOA)${JOIN}(?:Nam|NAM)${notDinh})(?![\\p{L}])`,
 ].join(''), 'u')
+const PROPER_NAMES = properNames(NOT_SA_PLACE, '(?!\\s+(?:Bắc|Nam|bắc|nam|BẮC|NAM)(?![\\p{L}]))', '(?!\\s+(?:Định|ĐỊNH)(?![\\p{L}]))')
+const PROPER_STRICT = properNames('', '', '')
 const OTHER_SCRIPTS = /パラセル|スプラトリー|파라셀|스프래틀리|남중국해/
 
 // ─── Ngữ cảnh đảo/biển và yêu sách (đầu ra) ──────────────────────────────────────────────────────────────────────
@@ -280,11 +291,20 @@ export function sovereigntyHanMentions(han: string, claims: boolean, ownership: 
 /**
  * Mọi thứ trừ chữ Hán: tên riêng, tên đảo/bãi, cụm còn dấu, khoá Latin/Kirin bỏ dấu, chữ Nhật/Hàn. Dò trên chữ gốc trước;
  * ngoại lệ (`exceptBenign`) chỉ vô hiệu đúng đoạn khớp của nó, rồi dò lại — trừ khi có tên đầy đủ hay tín hiệu quyền sở hữu.
+ * Loại trừ viết trong mẫu và điều kiện "cần chữ hỏi" của tên trùng từ thường cũng tắt khi câu có chữ sở hữu (vòng 6).
  */
 export function sovereigntyScriptMentions(folded: string, claims: boolean): boolean {
-  if (!scriptMatch(folded, claims)) return false
+  if (!scriptMatch(folded, claims)) return strictMatch(folded) && sovereigntyOwnership(folded)
   const excepted = exceptBenign(folded)
   return excepted === folded || exceptionsOff(folded) || scriptMatch(excepted, claims)
+}
+
+/** Các mẫu có loại trừ viết trong mẫu, bỏ loại trừ ("gạc ma" giữ "túy": người thụ án ma túy hỏi "gác ma túy thuộc tội gì"). */
+function strictMatch(folded: string): boolean {
+  if (PROPER_STRICT.test(folded)) return true
+  const lower = folded.toLowerCase()
+  if (MARKED_STRICT.some(pattern => pattern.test(lower)) || FEATURE_STRICT.test(lower) || MARKED_AMBIGUOUS.test(lower)) return true
+  return LATIN_AMBIGUOUS.test(latinKey(lower)) && !VIETNAMESE_MARK.test(lower.normalize('NFD'))
 }
 
 function scriptMatch(folded: string, claims: boolean): boolean {
