@@ -6,8 +6,8 @@
  *
  * Families today: `ARTICLE_DETAIL_FAMILY`, `ARTICLE_COMMENTS_FAMILY`, `CHAT_WIDGET_FAMILY`,
  * the public pages `NEWS_PAGE_FAMILY` and `READER_PROFILE_FAMILY`, and the admin `AI_PROVIDERS_TAB_FAMILY`,
- * `LANGUAGES_PAGE_FAMILY`, `PAGE_BUILDER_FAMILY` and the shell `ADMIN_LAYOUT_FAMILY`; and one composable
- * split into a directory of modules, `CHATBOT_COMPOSABLE_FAMILY` (`ModuleFamily`, below). The parts are
+ * `LANGUAGES_PAGE_FAMILY`, `PAGE_BUILDER_FAMILY`, `ARTICLE_EDITOR_FAMILY` and the shell `ADMIN_LAYOUT_FAMILY`;
+ * and one composable split into a directory of modules, `CHATBOT_COMPOSABLE_FAMILY` (`ModuleFamily`, below). The parts are
  * DERIVED from the directory, not listed (the design of tests/_moderation-page-parts.ts):
  * a part added later joins every "must appear nowhere" scan without anyone editing this
  * file. The named parts are a subset check, so a renamed/moved part turns the scan red
@@ -102,6 +102,21 @@ export const READER_PROFILE_FAMILY: ComponentFamily = {
     'ReaderProfileNotificationsHeader.vue', 'ReaderProfilePager.vue', 'ReaderProfileSignIn.vue',
   ],
   modules: ['composables/useReaderChatClaim.ts', 'composables/useReaderEmailPreference.ts', 'composables/useReaderNameEdit.ts'],
+}
+
+/**
+ * The article editor (`/admin/content/articles/[id]`, 773 lines before its wave3 split). The load
+ * (`fetchArticle`, its placeholder and `role="alert"`) stays on the page; the writes, TinyMCE and
+ * the unsaved-changes guard went to the composables; the parts render only.
+ */
+export const ARTICLE_EDITOR_FAMILY: ComponentFamily = {
+  parent: 'pages/admin/content/articles/[id].vue',
+  partsDir: 'components/admin/articles/editor',
+  expectedParts: ['ArticleEditorHeader.vue', 'ArticleEditorMainForm.vue', 'ArticleEditorPublishPanel.vue', 'ArticleReTranslateModal.vue'],
+  modules: [
+    'composables/useArticleEditorMedia.ts', 'composables/useArticleEditorSave.ts', 'composables/useArticleEditorTaxonomy.ts',
+    'composables/useArticleEditorTinymce.ts', 'composables/useArticleEditorUnsavedGuard.ts', 'types/admin-article-editor.ts',
+  ],
 }
 
 /** The page builder (`/admin/content/pages/[id]`, 795 lines before its wave3 4.2 split). */
