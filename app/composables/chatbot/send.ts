@@ -23,19 +23,26 @@ import {
  * (see `./state.ts`).
  *
  * The in-flight request is tracked HERE and only here — `chatRequestController`,
- * `botRequestSequence`, `messageSequence` — because every check that a late reply or a
- * late failure belongs to the current request compares against the same counter.
- * `cancelInFlight()` (used by the conversation actions) moves it too.
+ * `botRequestSequence`, `messageSequence`, `awaitedQuestion` — because every check that a
+ * late reply or a late failure belongs to the current request compares against the same
+ * counter. `cancelInFlight()` (used by the conversation actions) moves it too.
  */
 
 let chatRequestController: AbortController | null = null
 let botRequestSequence = 0
 let messageSequence = 0
+/** The question of the request in flight (the transcript's reactive copy). */
+let awaitedQuestion: ChatMessage | null = null
 
 export function cancelInFlight(): void {
   botRequestSequence += 1
   if (chatRequestController) chatRequestController.abort()
   chatRequestController = null
+  // Cancelled before its first word, the question gets no answer now: it stays as asked, no
+  // longer "sending", before the caller's `persist()` — what a cancel after the first word
+  // leaves. It read "Đang gửi…" for as long as the page lived, unsaved (FINDING-C3).
+  if (awaitedQuestion?.status === 'pending') awaitedQuestion.status = undefined
+  awaitedQuestion = null
   stopTypewriter(true)
   isSubmitting.value = false
   botInputError.value = ''
@@ -308,10 +315,12 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   // that was pushed changes the data but schedules no render: a failed send kept "Đang
   // gửi…" and no "Thử lại" until something else repainted the widget (FINDING-C1).
   const question = conversation.messages[conversation.messages.length - 1]!
+  awaitedQuestion = question
   onScroll?.()
 
   const requestSequence = botRequestSequence + 1
   const outcome = await fetchStreamBotReply(question, titleBeforeSend, onScroll)
+  if (awaitedQuestion === question) awaitedQuestion = null
   if (requestSequence !== botRequestSequence) return
   const succeeded = outcome === true
   const failure = outcome === true ? null : outcome
