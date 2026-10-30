@@ -212,6 +212,21 @@ describe('KNOWN 5/6: "Thử lại" after a failed load', () => {
     assert.deepEqual(ctx.confirms, [], '"Rời trang?" with nothing edited')
   })
 
+  it('(5) nor in the moment between the reload and the new editor\'s `init` (TinyMCE comes up later)', async (t) => {
+    const ctx = await openEditor(t, '42', { normalize: serialise, responder: failingOnce() })
+    await click(byText(ctx.page.root, 'button', 'Thử lại'))
+    // The reload is done and the new editor asked for; its `init` has not come yet.
+    assert.equal(titleInput(ctx).model?.value, ARTICLE.title)
+    assert.deepEqual(ctx.tiny.log, ['init', 'remove', 'init'])
+    assert.equal(ctx.tiny.onScreen(), false, 'not yet: the window under test')
+    assert.equal(ctx.beforeUnload(), false, 'the starting editor reads "" — not an edit')
+    assert.equal(await ctx.leave(), true)
+    assert.deepEqual(ctx.confirms, [])
+    await ctx.settle()
+    assert.equal(ctx.tiny.onScreen(), true)
+    assert.equal(ctx.beforeUnload(), false)
+  })
+
   it('(6) the editor is on the page again, with the article\'s body and the same config — and what is typed there is saved', async (t) => {
     const ctx = await openEditor(t, '42', { normalize: serialise, responder: failingOnce() })
     assert.equal(ctx.tiny.onScreen(), true, 'the editor came up over the failed load')

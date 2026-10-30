@@ -65,9 +65,30 @@ test('a failed load, then "Thử lại": the editor is back with the body, nothi
   await expect(page.getByRole('alert')).toContainText('E2E: không đọc được.', { timeout: 20_000 })
   await expect.poll(() => editorOnPage(page), { message: 'the editor comes up over the failed load', timeout: 20_000 }).toBe(true)
 
+  // Every 5 ms from the click until the new editor is up: is the article on screen, is the editor
+  // started, would closing the tab warn? TinyMCE comes up some time after the page asks for it,
+  // and in between it reads back '' — which must not count as an edit (a reordering of the page's
+  // reload once warned in exactly that window).
+  await page.evaluate(({ id, title }) => {
+    const w = window as unknown as { __samples: unknown[], __sampler: ReturnType<typeof setInterval>, tinymce?: { get: (id: string) => { initialized?: boolean } | undefined } }
+    w.__samples = []
+    w.__sampler = setInterval(() => {
+      const input = document.querySelector<HTMLInputElement>('input[placeholder="Nhập tiêu đề hấp dẫn..."]')
+      const event = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(event)
+      w.__samples.push({ loaded: input?.value === title, started: !!w.tinymce?.get(id)?.initialized, warns: event.defaultPrevented })
+    }, 5)
+  }, { id: EDITOR_ID, title })
   await page.getByRole('button', { name: 'Thử lại' }).click()
   await expect(page.getByPlaceholder('Nhập tiêu đề hấp dẫn...')).toHaveValue(title, { timeout: 20_000 })
   await expect.poll(() => editorOnPage(page), { message: 'after "Thử lại" the body is a bare box: no editor on the element on the page', timeout: 20_000 }).toBe(true)
+  const samples = await page.evaluate(() => {
+    const w = window as unknown as { __samples: Array<{ loaded: boolean, started: boolean, warns: boolean }>, __sampler: ReturnType<typeof setInterval> }
+    clearInterval(w.__sampler)
+    return w.__samples
+  })
+  test.info().annotations.push({ type: 'samples', description: `${samples.length} taken, ${samples.filter(s => s.loaded && !s.started).length} between the article and the editor` })
+  expect(samples.filter(s => s.loaded && s.warns), 'the tab warned with nothing edited while the new editor was coming up').toEqual([])
   await expect(page.locator('.tox-tinymce')).toHaveCount(1)
   const body = page.frameLocator('.tox-edit-area iframe').locator('body')
   await expect(body).toContainText('Hai')
