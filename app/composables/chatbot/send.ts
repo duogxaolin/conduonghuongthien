@@ -48,13 +48,28 @@ export function cancelInFlight(): void {
   botInputError.value = ''
 }
 
+const autoTitleOf = (text: string) => text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
+
 /** Titles the conversation from its first real message. No-op afterwards. */
 function applyAutoTitle(text: string): void {
   const conversation = activeConversation.value
   const alreadyTitled = conversation.messages.some(item => item.sender === 'user')
   if (alreadyTitled) return
-  const title = text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
+  const title = autoTitleOf(text)
   if (title) conversation.title = title
+}
+
+/**
+ * The title once a refused question (moderation, 400) has left the conversation: never one
+ * taken from its words. "The title before this send" alone is not enough — a first send that
+ * failed (429, no connection) already titled the conversation with these words, and "Thử lại"
+ * drops that copy and sends them again (FINDING-C2, retry path). With no question of the
+ * visitor's left: the blank title; a title from these words: the next question's; else as before.
+ */
+function titleWithout(conversation: StoredConversation, removedText: string, titleBeforeSend: string): string {
+  const first = conversation.messages.find(item => item.sender === 'user')
+  if (!first) return 'Cuộc trò chuyện mới'
+  return titleBeforeSend === autoTitleOf(removedText) ? autoTitleOf(first.text) : titleBeforeSend
 }
 
 async function ensureSessionToken(conversation: StoredConversation): Promise<string | null> {
@@ -263,7 +278,7 @@ async function fetchStreamBotReply(userMessage: ChatMessage, titleBeforeSend: st
     if (botMessage.kind === 'moderation_blocked') {
       const userIdx = conversation.messages.findIndex(item => item.id === userMessage.id)
       if (userIdx !== -1) conversation.messages.splice(userIdx, 1)
-      conversation.title = titleBeforeSend
+      conversation.title = titleWithout(conversation, userMessage.text, titleBeforeSend)
       persist()
     }
     return true
@@ -335,7 +350,7 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
     // nháp trong ô nhập; lý do đã ở `botInputError` (tests/chatbot-send-rejection.test.ts).
     const index = conversation.messages.findIndex(item => item.id === question.id)
     if (index !== -1) conversation.messages.splice(index, 1)
-    conversation.title = titleBeforeSend
+    conversation.title = titleWithout(conversation, text, titleBeforeSend)
     if (failure.maxChars) inputCharLimit.value = Math.min(inputCharLimit.value, failure.maxChars)
     botInput.value = text
     persist()
