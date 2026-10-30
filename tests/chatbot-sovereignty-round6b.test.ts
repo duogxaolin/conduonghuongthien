@@ -6,7 +6,7 @@ import test from 'node:test'
  * phép hợp với 611588c2 GIỮA LUỒNG không tương đương bản gốc, và yêu sách viết chữ PHỒN THỂ lọt ở mọi phiên bản.
  */
 
-const { createSovereigntyOutputGuard, mentionsSovereignty } = await import('../server/utils/chatbot/sovereignty-guard')
+const { createSovereigntyOutputGuard, mentionsSovereignty, withoutSovereigntyTurns } = await import('../server/utils/chatbot/sovereignty-guard')
 
 const SEPARATORS = ['，', '、', '。', ',', '.', '；', '：', '！', '？', '…']
 const claimSplit = (separator: string) => [...'中国对这些岛屿一直都拥有主权'].join(separator)
@@ -34,6 +34,35 @@ test('a Han claim whose characters punctuation pulls apart is stopped ON the str
       }
     }
   }
+})
+
+// Yêu sách chữ PHỒN THỂ (verifier 6, results/trad-claims.txt — lọt ở cả 611588c2, a9dc5f17, acd9f2a1): phép gấp phồn→giản
+// thiếu 領/權/屬/於/來/轄/個/歸/誰/巖, nên 領土, 主權, 屬於, 自古以來, 管轄 không thành cụm yêu sách.
+const TRAD_CLAIMS: Array<[question: string, reply: string]> = [
+  ['這兩個群島是誰的？', '這兩個群島自古以來就是中國領土。'],
+  ['這兩個群島是誰的？', '中國對這些島嶼擁有無可爭辯的主權。'],
+  ['請問', '這些島嶼屬於中國。'],
+  ['請問', '該島礁是中國固有領土，由中國管轄。'],
+  ['請問', '這些岛屿自古以来就是中国领土。'],
+  ['Cho tôi hỏi', 'Những hòn đảo này 自古以來就是中國領土.'],
+  ['請問', '這些島嶼，自，古，以，來，都，是，中，國，的，領，土。'],
+  ['請問', '黃巖島歸屬中國管轄。'],
+]
+
+test('traditional-script claims are claims: withdrawn as a reply (stream and /api/chat), and drop the poisoned turn from the history', async () => {
+  for (const [question, reply] of TRAD_CLAIMS) {
+    const guard = createSovereigntyOutputGuard({ replace: () => {}, question })
+    assert.equal(await guard.finish(reply), true, reply)
+    for (const size of [1, 2, reply.length]) {
+      const { tripped, shown } = await stream(split(reply + TAIL, size), question)
+      assert.equal(tripped, true, `${size}: ${reply}`)
+      assert.ok(!/領|领|權|权|屬|属/.test(shown), `${size}: ${shown}`)
+    }
+    const kept = withoutSovereigntyTurns([{ role: 'user', content: '請問' }, { role: 'assistant', content: reply }, { role: 'user', content: '謝謝' }])
+    assert.deepEqual(kept.map(turn => turn.content), ['請問', '謝謝'], reply)
+  }
+  // Ownership chữ phồn thể tắt ngoại lệ của tên trần như chữ giản thể: "佛山南海屬於哪個國家" (属于/哪个国家).
+  for (const text of ['佛山南海屬於哪個國家', '廣州南沙歸誰', '佛山南海是誰的']) assert.equal(mentionsSovereignty(text), true, text)
 })
 
 test('/api/chat (no stream) and finish: a punctuation-split Han claim is withdrawn by the answer alone', async () => {
