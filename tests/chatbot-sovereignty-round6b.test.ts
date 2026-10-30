@@ -150,9 +150,10 @@ test('V11/V16: verifier-6 witnesses (confirmation margin, Han lookback window) s
 test('the OR cannot be bypassed: only the sovereignty modules (and chat-policy-answer) reference the internal matchers Nitro auto-imports', () => {
   // Nitro tự import MỌI export của server/utils/**: gọi thẳng `sovereigntyMatcherMentions`, `sovereignty611*` hay hàm khớp
   // của bộ mới từ chỗ khác là đi vòng qua phép hợp với 611588c2 (verifier 6).
-  const internal = /\bsovereignty(?:MatcherMentions|611[A-Za-z]*|HanMentions|ScriptMentions|Ownership|SettledClaim|SettledIslandContext|SettledScriptMentions|IslandContext|QuestionIslandContext|Fold|HanKey|LatinKey)\b/
+  // Vòng 7: ngữ cảnh đảo/biển và cụm yêu sách tách sang sovereignty-claims.ts (HanClaim, TextClaim, WithoutLastWord, DaoVerb).
+  const internal = /\bsovereignty(?:MatcherMentions|611[A-Za-z]*|HanMentions|ScriptMentions|Ownership|SettledClaim|SettledIslandContext|SettledScriptMentions|IslandContext|QuestionIslandContext|Fold|HanKey|LatinKey|HanClaim|TextClaim|WithoutLastWord|DaoVerb)\b/
   const allowed = new Set(['server/utils/chatbot/sovereignty-guard.ts', 'server/utils/chatbot/sovereignty-611.ts', 'server/utils/chatbot/sovereignty-patterns.ts',
-    'server/utils/chatbot/sovereignty-normalize.ts', 'server/services/chat-policy-answer.ts'])
+    'server/utils/chatbot/sovereignty-normalize.ts', 'server/utils/chatbot/sovereignty-claims.ts', 'server/services/chat-policy-answer.ts'])
   const files = execFileSync('git', ['ls-files', 'app', 'server', 'shared', 'scripts', 'nuxt.config.ts'], { cwd: ROOT, encoding: 'utf8' })
     .split('\n').filter(file => /\.(?:ts|vue|js|mjs|cjs)$/.test(file))
   assert.ok(files.length > 300, `${files.length}`)

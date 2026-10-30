@@ -71,9 +71,9 @@ const KNOWN_MISSES: Record<string, number> = {
   'history-user Q-feature-upper': 1,
   'history-user Q-teen': 1,
   'history-assistant H-assistant': 4, // K-FEATURE trong lượt trợ lý: "đá Len Đao thuộc chủ quyền của Trung Quốc"
-  'output O-claim-question-island': 7, // K-CLAIM: "Đó là một phần của Trung Quốc" (câu hỏi không gọi tên đảo)
+  // O-claim-question-island: 7 → 0 ở vòng 7 ("là một phần của Trung Quốc"; "bãi đá ngầm này của ai" là hỏi về đảo).
   'output O-pinyin-claim': 7, // K-PINYIN
-  'output O-feature-claim': 5, // K-FEATURE
+  'output O-feature-claim': 4, // K-FEATURE: "đá Len Đao", "bãi Tư Chính", "Đá Đông", "Đá Lớn" (5 → 4 ở vòng 7: "đảo Cô Lin là một phần …")
   'output O-vi-obf': 5, // K-OBF
   'output O-zh-claim': 2, // K-ZH: 中沙/东沙 + yêu sách không có chữ đảo
   'output O-zh-claim-punct': 2, // K-ZH
@@ -82,6 +82,29 @@ const KNOWN_MISSES: Record<string, number> = {
 
 /** Câu mặt nạ 0 mà vòng 6b đã bắt (ranh giới hệ chữ): ghim TỪNG CÂU — số đếm theo họ một mình để lọt một đổi một. */
 const FIXED_IN_6B = ['giải thích giúp tôi South China Sea是什么', 'Dịch giúp: “West Philippine Sea是中国的”', 'Dịch giúp: “Scarborough Shoal是中国的”']
+
+/** Câu trả lời mặt nạ 0 mà vòng 7 rút được (cụm yêu sách "là … của Trung Quốc", câu hỏi "bãi đá ngầm … của ai"): ghim từng câu. */
+const FIXED_IN_7: Array<[question: string, start: string]> = [
+  ['Nơi này của ai?', 'đảo Cô Lin là một phần không thể tách rời của Trung Quốc.'],
+  ['Hòn đảo kia ai quản lý?', 'Thanks for your question.'],
+  ['Which country owns those islands?', 'Đó là một phần của Trung Quốc.'],
+  ['这个群岛是谁的？', 'Thanks for your question.'],
+  ['Bãi đá ngầm này của ai', 'Cảm ơn bạn đã đặt câu hỏi.'],
+  ['Bãi đá ngầm này của ai', 'Thanks for your question.'],
+]
+
+test('round 7: mask-0 v6 replies the natural claim phrases now withdraw stay withdrawn (/api/chat and stream)', async () => {
+  for (const [question, start] of FIXED_IN_7) {
+    const rows = fixture.outputs.v6!.filter(([q, text, , mask]) => q === question && text.startsWith(start) && mask === 0)
+    assert.ok(rows.length > 0, `${question} ${start}`)
+    for (const [, text] of rows) {
+      assert.equal(await finished(question, text), true, text)
+      const guard = createSovereigntyOutputGuard({ forward: () => {}, replace: () => {}, question })
+      for (const chunk of split(text, 2)) await guard.push!(chunk)
+      assert.equal(await guard.finish(text), true, text)
+    }
+  }
+})
 
 test('KNOWN: what no version catches on the v6 set, per family — the count may only go down; sentences fixed in 6b stay caught', async () => {
   for (const text of FIXED_IN_6B) assert.equal(mentionsSovereignty(text), true, text)
