@@ -36,6 +36,13 @@ test('first load: the list, "Đọc nhiều" and the categories — one request 
   assert.equal(ctx.calls.length, 3)
   // lazy: a client-side navigation paints the skeleton instead of freezing.
   assert.deepEqual(ctx.registrations.map(r => r.lazy), [true, true, true])
+  // …and none of the three opts out of the server render: Nuxt fetches `server !== false`
+  // data during SSR and waits for it (`onServerPrefetch`), so the HTML a visitor first gets
+  // — and the swr cache of the children `/news/**` — carries the list, "Đọc nhiều" and the
+  // category chips. `server: false` would ship the chips as an empty bar until hydration.
+  // The chips in the SSR HTML were read off a production build (test-coverage-baseline § R8).
+  assert.deepEqual(ctx.registrations.filter(r => r.server === false).map(r => r.key), [])
+  assert.equal(ctx.registrations.find(r => r.key.startsWith('news-categories'))?.server, undefined, 'the chips are fetched on the server too')
   assert.deepEqual(ctx.seo(), {
     title: 'Tin Hoạt Động | Con Đường Hướng Thiện',
     description: 'Cập nhật thông tin chỉ đạo điều hành, hoạt động cơ sở và công tác hỗ trợ hoàn lương trên toàn quốc.',
@@ -182,6 +189,22 @@ test('search: the draft goes to the URL on submit; the banner names it and count
   assert.deepEqual(ctx.navigations.at(-1), { path: '/news', query: {} })
   assert.equal(searchInput(ctx.page).model!.value, '')
   assert.equal(buttonsWith(ctx.page, 'Xóa bộ lọc').length, 0)
+})
+
+test('search submit stays in the page: the browser\'s own form submission is prevented', async (t) => {
+  // The form has no `action`/`name`d field: let the browser submit it and it reloads
+  // `/news?` (a full GET, the draft lost, nothing searched) instead of navigating.
+  const ctx = await openNews(t)
+  await input(searchInput(ctx.page), 'hoàn lương')
+  await ctx.settle()
+  const form = searchForm(ctx.page)
+  let prevented = 0
+  const event = { type: 'submit', target: form, currentTarget: form, preventDefault() { prevented += 1 }, stopPropagation() {} }
+  await fire(form, 'submit', event)
+  await ctx.settle()
+  assert.equal(prevented, 1, 'submit.preventDefault() called once')
+  assert.deepEqual(ctx.navigations, [{ path: '/news', query: { q: 'hoàn lương' } }])
+  assert.equal(form.props.action, undefined)
 })
 
 test('search banner: no count while the results are loading', async (t) => {

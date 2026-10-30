@@ -53,6 +53,9 @@ test('while the identity is unknown: one busy placeholder, no sign-in block (no 
   const ctx = await openProfile(t, server)
   assert.deepEqual(busy(ctx.page), ['Đang tải trang cá nhân'])
   assert.equal(signInBlock(ctx), false)
+  // Not loaded yet: no control to write with — no rename form, no email switch.
+  assert.equal(byTag(ctx.page, 'form').length, 0)
+  assert.equal(findAll(ctx.page.root, el => el.props.role === 'switch').length, 0)
   server.answer(held[0]!)
   await ctx.settle()
   assert.deepEqual(busy(ctx.page), [])
@@ -129,6 +132,37 @@ test('rename: PUT the trimmed name, "Đang lưu…" while it travels, then the s
   assert.deepEqual(statuses(identity(ctx.page)), [])
 })
 
+test('rename submitted twice while the first PUT travels (double submit): exactly one request', async (t) => {
+  // "Lưu tên" is disabled while saving (test above), so the browser stops a second click and a
+  // second Enter (implicit submission needs the default button enabled). This pins the second
+  // layer — `saveName` itself refuses while a save is in flight — reached here by submitting
+  // the form directly, as any submit that gets past the button would.
+  const server = readerServer()
+  const held: NetCall[] = []
+  server.state.override = (call) => {
+    if (call.method !== 'PUT') return undefined
+    held.push(call)
+    return HOLD
+  }
+  const ctx = await openProfile(t, server)
+  await input(nameInput(ctx.page), 'Bình Trần')
+  const form = byTag(ctx.page, 'form')[0]!
+  let prevented = 0
+  const submit = () => fire(form, 'submit', { type: 'submit', target: form, currentTarget: form, preventDefault() { prevented += 1 }, stopPropagation() {} })
+  const first = submit()
+  const second = submit()
+  await ctx.settle()
+  const puts = () => ctx.calls.filter(c => c.method === 'PUT').map(wire)
+  assert.deepEqual(puts(), [`PUT ${API}/profile`])
+  assert.equal(prevented, 2, 'each submit is kept from reloading the page')
+  // Answer whatever was sent (one call — or two if the guard is gone) before awaiting.
+  for (const call of held) server.answer(call)
+  await Promise.all([first, second])
+  await ctx.settle()
+  assert.deepEqual(puts(), [`PUT ${API}/profile`])
+  assert.deepEqual(statuses(identity(ctx.page)), ['Đã lưu tên hiển thị mới.'])
+})
+
 test('rename refused (400): the server\'s sentence as an alert, the form stays', async (t) => {
   const server = readerServer()
   server.state.override = call => (call.method === 'PUT' ? h3Error(400, 'Tên hiển thị chứa từ ngữ không phù hợp.') : undefined)
@@ -185,6 +219,36 @@ test('email switch: on by default; a click PUTs the opposite and the switch foll
   await ctx.settle()
   assert.deepEqual(sent(ctx.calls).at(-1), { wire: `PUT ${API}/profile/email-notifications`, body: { enabled: true } })
   assert.equal(emailSwitch(ctx.page).props['aria-checked'], true)
+})
+
+test('email switch while its PUT travels: disabled (no second click), and a click that gets through sends nothing', async (t) => {
+  const server = readerServer()
+  const held: NetCall[] = []
+  server.state.override = (call) => {
+    if (!call.url.pathname.endsWith('/email-notifications')) return undefined
+    held.push(call)
+    return HOLD
+  }
+  const ctx = await openProfile(t, server)
+  const switches = () => ctx.calls.filter(c => c.url.pathname.endsWith('/email-notifications'))
+  const pending = click(emailSwitch(ctx.page))
+  await ctx.settle()
+  assert.equal(switches().length, 1)
+  assert.equal(emailSwitch(ctx.page).props.disabled, true, 'disabled while saving')
+  assert.throws(() => click(emailSwitch(ctx.page)), /is disabled/)
+  // Layer two: the toggle itself refuses while a save is in flight (a click past the button).
+  const forced = fire(emailSwitch(ctx.page), 'click')
+  await ctx.settle()
+  assert.equal(switches().length, 1)
+  for (const call of held) server.answer(call)
+  await Promise.all([pending, forced])
+  await ctx.settle()
+  assert.equal(switches().length, 1)
+  assert.deepEqual(sent(ctx.calls).filter(c => typeof c !== 'string' && c.wire.endsWith('/email-notifications')), [
+    { wire: `PUT ${API}/profile/email-notifications`, body: { enabled: false } },
+  ])
+  assert.equal(emailSwitch(ctx.page).props.disabled, false, 'enabled again once the server answered')
+  assert.equal(emailSwitch(ctx.page).props['aria-checked'], false)
 })
 
 test('email switch refused: an alert under it, the switch stays; 401 → sign-in block', async (t) => {
