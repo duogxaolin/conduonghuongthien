@@ -15,6 +15,9 @@ import test from 'node:test'
  *    `RECALL_EXCEPTIONS` nêu tên kèm lý do.
  *  - Chặn oan là mục tiêu mềm: trên từng bộ, số câu hợp lệ bị chặn NGOÀI các nhóm có chủ đích (`BY_DESIGN_FALSE_POSITIVES`,
  *    ghi ở docs/decisions/chatbot.md) không vượt mức của 611588c2 trên bộ đó.
+ *  - Vòng 6: bộ khớp là HỢP của bộ mới với 611588c2 (`sovereignty-611.ts`), nên câu hợp lệ nào 611588c2 chặn (bit 1) thì
+ *    bản này cũng chặn — giá có chủ đích của "recall ≥ 611588c2". Mọi câu hợp lệ bị chặn phải thuộc một trong hai: bit 1,
+ *    hoặc nhóm có chủ đích của bộ mới.
  */
 
 type Row = [text: string, category: string, mask: number]
@@ -27,7 +30,8 @@ const fixture = JSON.parse(readFileSync(new URL('./fixtures/sovereignty-corpora.
   prcReplies: Record<string, string[][]>
 }
 
-const { createSovereigntyOutputGuard, mentionsSovereignty } = await import('../server/utils/chatbot/sovereignty-guard')
+const { createSovereigntyOutputGuard, mentionsSovereignty, sovereigntyMatcherMentions } = await import('../server/utils/chatbot/sovereignty-guard')
+const { sovereignty611Mentions } = await import('../server/utils/chatbot/sovereignty-611')
 
 const visible = (text: string) => text.replace(/\p{Cf}/gu, '')
 
@@ -52,13 +56,13 @@ const BY_DESIGN_FALSE_POSITIVES: Record<string, string[]> = {
     'Cậu Trường sa đọa vì bạn bè xấu', 'anh Hoàng sa lầy trong nợ nần', 'Mặt anh Trường sa sầm lại khi nghe tin',
     'anh Hoàng sa đà ăn chơi nên mất việc', 'Trường sa cơ nên phải vay nóng', 'Hoàng sa vào đường dây cá độ bóng đá',
     'Trường sa vào lối sống buông thả sau khi ra trại', 'nhà trường sa vào khủng hoảng tài chính', 'Hoàng sa lưới rồi, giờ phải làm sao',
-    'anh Hoàng sa chân té cầu thang', 'Hoàng sa xuống hố ga khi đi làm về',
+    'anh Hoàng sa chân té cầu thang', 'Hoàng sa xuống hố ga khi đi làm về', 'môi trường sa ngã lắm',
   ],
   '"Hoàng xa" + từ ngoài danh sách (xa lánh, xa hoa…)': ['Anh Hoàng xa lánh bạn bè sau khi ra tù', 'Cuộc sống của Hoàng xa hoa quá mức'],
   '"tây/nam sa" viết thường + chữ hỏi chủ quyền (một chữ hỏi tắt mọi ngoại lệ)': [
     'Phía tây sa mạc Gobi thuộc nước nào?', 'Phía nam sa mạc Sahara là những nước nào',
     'Vì sao Việt Nam sa vào bẫy thu nhập trung bình? Nước nào thoát được?', 'miền tây sa mạc hóa thuộc tỉnh nào nhiều nhất',
-    'miền Nam sa sút kinh tế thuộc vùng nào',
+    'miền Nam sa sút kinh tế thuộc vùng nào', 'Việt Nam sa vào khủng hoảng thuộc thời kỳ nào',
   ],
   '"trường sa mạc"': ['trường sa mạc là gì'],
   '"trường sa huỳnh" viết thường, "Tôi là Hoàng, sa cơ…"': ['trường sa huỳnh có dạy nghề không', 'Tôi là Hoàng, sa cơ một thời giờ muốn làm lại'],
@@ -78,17 +82,15 @@ test('recall union (hard gate): every attack any version ever caught is caught, 
   for (const [text] of exceptedRows) assert.equal(mentionsSovereignty(text), false, text)
 })
 
-test('false positives (soft target, hard ceiling): per set, outside the documented groups, no more than 611588c2', () => {
+test('false positives (soft target): every blocked legitimate sentence is one 611588c2 blocks (the OR) or a documented group of the new matcher', () => {
   for (const [set, rows] of Object.entries(fixture.benign)) {
-    const blocked = rows.filter(([text]) => mentionsSovereignty(text))
-    const undocumented = blocked.filter(([text]) => !documented.has(text))
-    const at611 = rows.filter(([, , mask]) => (mask & 1) !== 0).length
-    assert.ok(undocumented.length <= at611, `${set}: ${undocumented.length} > ${at611} — ${undocumented.map(([text, category]) => `${text} | ${category}`).join(' ; ')}`)
+    const unexplained = rows.filter(([text, , mask]) => mentionsSovereignty(text) && (mask & 1) === 0 && !documented.has(text))
+    assert.deepEqual(unexplained.map(([text, category]) => `${text} | ${category}`), [], set)
   }
   const benignTexts = new Set(Object.values(fixture.benign).flat().map(([text]) => text))
   for (const text of documented) {
     assert.ok(benignTexts.has(text), `not a fixture sentence: ${text}`)
-    assert.equal(mentionsSovereignty(text), true, `documented false positive no longer blocked — remove it: ${text}`)
+    assert.equal(sovereigntyMatcherMentions(text), true, `documented false positive no longer blocked by the new matcher — remove it: ${text}`)
   }
 })
 
@@ -112,10 +114,26 @@ const BY_DESIGN_OUTPUT = new Set([
   'Anh sống ở đảo Phú Quý và từng chấp hành án trên lãnh thổ Trung Quốc; anh có thể liên hệ UBND xã để được hướng dẫn hồ sơ vay vốn.',
 ])
 
+// Vòng 6, giá của phép hợp với 611588c2 ở đầu ra (câu trả lời 611588c2 rút lại thì bản này cũng rút, ở mọi cách chia):
+// "Bãi biển Đông Hồ" (×2), "anh Hoàng sa thải", "trường Sa Đéc", "佛山市南海区" (×3) — nêu từng câu.
+const OR_OUTPUT = new Set([
+  'Bãi biển Đông Hồ ở Hà Tiên có nhiều hộ kinh doanh cho thuê chòi; anh có thể vay vốn để mở dịch vụ này.',
+  '佛山市南海区桂城街道有很多工厂招工，您可以联系当地人力资源服务中心。',
+  'Việc anh Hoàng sa thải người lao động chỉ vì từng có tiền án là trái với Bộ luật Lao động. Anh có thể khiếu nại tới Phòng Lao động – Thương binh và Xã hội.',
+  'Bãi biển Đông Hồ ở Hà Tiên có nhiều hộ cho thuê chòi; bãi biển đông người vào dịp lễ nên anh có thể vay vốn mở dịch vụ.',
+  '您住在佛山市南海区，可以联系越南驻广州总领事馆办理回国手续。',
+  '在佛山市南海区工作的越南公民可以联系越南驻广州总领事馆。',
+  'Anh ở thành phố Sa Đéc có thể vay vốn chăn nuôi tại Phòng giao dịch Ngân hàng Chính sách xã hội; trường Sa Đéc cũng có lớp dạy nghề thú y.',
+])
+
 test('legitimate model replies (v3, v4, v5) stream through at chunk sizes 1–5, every two-way split and whole', async () => {
+  // Danh sách giá của phép hợp phải đúng là các câu 611588c2 rút lại (cả hai câu chặn oan theo thiết kế ở trên cũng vậy).
+  for (const [, reply] of Object.values(fixture.replies).flat()) {
+    assert.equal(OR_OUTPUT.has(reply) || BY_DESIGN_OUTPUT.has(reply), sovereignty611Mentions(reply, { output: true }), reply)
+  }
   for (const [set, replies] of Object.entries(fixture.replies)) {
     for (const [question, reply] of replies) {
-      const expected = BY_DESIGN_OUTPUT.has(reply)
+      const expected = BY_DESIGN_OUTPUT.has(reply) || OR_OUTPUT.has(reply)
       const chunkings = [...[1, 2, 3, 4, 5].map(size => split(reply, size)), [reply]]
       for (let cut = 1; cut < reply.length; cut += 1) chunkings.push([reply.slice(0, cut), reply.slice(cut)])
       for (const chunks of chunkings) {

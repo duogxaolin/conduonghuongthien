@@ -1,6 +1,13 @@
 import { chatTurnText, isUserTurn, type ChatTurn } from './chat-turns'
 // Chuẩn hoá (NFKC, bỏ ký tự không hiện, gộp chữ Hán, khoá Latin bỏ dấu…) và phép khớp ở hai tệp thuần riêng.
 import { sovereigntyFold as fold, sovereigntyHanKey as hanKey, sovereigntyLatinKey as latinKey } from './sovereignty-normalize'
+// Vòng 6: HỢP (OR) với bộ khớp đóng băng của 611588c2 ở mọi điểm quyết định — câu nào bản đã merge bắt thì bản này bắt.
+import {
+  sovereignty611HanMentions as han611,
+  sovereignty611Mentions as mentions611,
+  sovereignty611SettledClaim as settledClaim611,
+  sovereignty611SettledScriptMentions as settledScript611,
+} from './sovereignty-611'
 import {
   sovereigntyHanMentions as hanMentions,
   sovereigntyIslandContext as islandContext,
@@ -38,6 +45,11 @@ import {
  * (trong chính đoạn đó, hoặc `island` — đã biết từ câu hỏi/phần trước của luồng).
  */
 export function mentionsSovereignty(text: string, options: { output?: boolean, island?: boolean } = {}): boolean {
+  return mentions611(text, options) || sovereigntyMatcherMentions(text, options)
+}
+
+/** Chỉ bộ khớp mới, KHÔNG hợp 611588c2 — để đo và kiểm phần ngoại lệ chặn oan của riêng nó. */
+export function sovereigntyMatcherMentions(text: string, options: { output?: boolean, island?: boolean } = {}): boolean {
   const folded = fold(text)
   if (!folded.trim()) return false
   const han = hanKey(folded)
@@ -97,12 +109,12 @@ function nextWordStart(text: string, index: number): number {
  * xác nhận sạch ở lượt trước, giờ lại khớp. Nên xét hai vùng: từ từ thứ hai và từ từ thứ ba. Cụm mới thật (nằm sau phần
  * đã xác nhận, cách xa ranh giới) có đủ ngữ cảnh ở cả hai; cụm giả do mất ngữ cảnh chỉ khớp ở vùng mà nó đứng đầu.
  */
-function confirmScript(scope: string, fromStart: boolean, island: boolean): boolean {
-  if (fromStart) return settledScriptMentions(fold(scope), island, false)
+function confirmScript(scope: string, fromStart: boolean, settled: (text: string) => boolean): boolean {
+  if (fromStart) return settled(scope)
   const second = nextWordStart(scope, 0)
-  return settledScriptMentions(fold(scope.slice(second)), island, false)
-    && settledScriptMentions(fold(scope.slice(nextWordStart(scope, second))), island, false)
+  return settled(scope.slice(second)) && settled(scope.slice(nextWordStart(scope, second)))
 }
+const hanJoined = (key: string) => key.replace(/\|/g, '')
 
 /** Đuôi giữ ở dạng chuỗi phẳng: đủ cho cửa sổ, lề xác nhận và phần giữ lại. */
 const TRANSCRIPT_TAIL_CHARS = 4096
@@ -199,7 +211,8 @@ export function createSovereigntyOutputGuard(hooks: {
       const near = seen.from(lead)
       const regionAt = windowStart === 0 ? 0 : previousWordStart(near, windowStart - lead)
       const regionCut = lead + regionAt > 0
-      const region = fold(near.slice(regionAt))
+      const rawRegion = near.slice(regionAt)
+      const region = fold(rawRegion)
       let islandNow = false
       if (!island) {
         islandNow = settledIslandContext(region, hanWindow, regionCut)
@@ -207,17 +220,23 @@ export function createSovereigntyOutputGuard(hooks: {
       }
       // Chữ sở hữu ở đoạn cuối (mọi hệ chữ) tắt ngoại lệ của tên chữ Hán trần; xa hơn thì `finish` xét cả câu.
       const ownership = () => ownershipOf(region)
+      // Mỗi bước hỏi cả hai bộ khớp trên cùng đoạn: bộ mới, rồi 611588c2 (tự gấp chữ thô; khoá chữ Hán không "|").
       const candidate = islandNow
         || hanMentions(hanWindow + HAN_NEXT_PROBE, island, ownership)
         || settledScriptMentions(region, island, regionCut)
+        || han611(hanJoined(hanWindow), island) || settledScript611(rawRegion, island, regionCut)
       if (candidate) {
         const scriptFrom = islandNow ? 0 : marginStart(seen, confirmedTo)
         const hanFrom = islandNow ? 0 : Math.max(0, hanConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
-        if (hanMentions(han.from(hanFrom) + HAN_NEXT_PROBE, island, ownership) || confirmScript(seen.from(scriptFrom), scriptFrom === 0, island)) return trip()
+        const hanScope = han.from(hanFrom)
+        const scope = seen.from(scriptFrom)
+        if (hanMentions(hanScope + HAN_NEXT_PROBE, island, ownership) || han611(hanJoined(hanScope), island)
+          || confirmScript(scope, scriptFrom === 0, text => settledScriptMentions(fold(text), island, false))
+          || confirmScript(scope, scriptFrom === 0, text => settledScript611(text, island, false))) return trip()
         confirmedTo = seen.length
         hanConfirmedTo = han.length
       }
-      if (!island && !claimHeld) claimHeld = settledClaim(region, hanWindow)
+      if (!island && !claimHeld) claimHeld = settledClaim(region, hanWindow) || settledClaim611(rawRegion, hanJoined(hanWindow))
       if (claimHeld) return
       const upTo = seen.length - STREAM_HOLD_CHARS
       if (upTo > released) {

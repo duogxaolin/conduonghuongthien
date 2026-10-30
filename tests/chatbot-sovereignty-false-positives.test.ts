@@ -12,7 +12,7 @@ import test from 'node:test'
  * nối lạ, chữ Kirin trọn từ, chữ lặp).
  */
 
-const { createSovereigntyOutputGuard, mentionsSovereignty } = await import('../server/utils/chatbot/sovereignty-guard')
+const { createSovereigntyOutputGuard, mentionsSovereignty, sovereigntyMatcherMentions } = await import('../server/utils/chatbot/sovereignty-guard')
 
 const cp = (code: number) => String.fromCodePoint(code)
 
@@ -79,8 +79,15 @@ const NEW_CATCHES = [
   '南沙群岛是谁的', '三沙市南沙区', 'Biển Đông của ai', 'Biển_Đông của ai', 'Tây-Sa thuộc ai',
 ]
 
-test('the false positives the second verification found are no longer caught', () => {
-  for (const [text, why] of FALSE_POSITIVES) assert.equal(mentionsSovereignty(text), false, `${text} — ${why}`)
+// Vòng 6: phép hợp với 611588c2 chặn lại đúng các câu 611588c2 đã chặn — bộ khớp mới vẫn để chúng qua (ghim ở đây).
+const OR_BLOCKED = new Set(['Lớp 4A trường Sa Pa có học bổng', 'Tôi học ở trường Sa Pa', 'Học sinh trường Sa Đéc được miễn học phí',
+  'Ông Hoàng. Sa thải tôi là trái luật', 'Giám đốc Hoàng sa thải tôi vì tôi có tiền án', 'Tấm biển Đông Á Bank ở đầu ngõ', '佛山南海区有工作吗', '广州南沙区招工'])
+
+test('the false positives the second verification found are no longer caught by the new matcher; the 611588c2 layer blocks its own again', () => {
+  for (const [text, why] of FALSE_POSITIVES) {
+    assert.equal(sovereigntyMatcherMentions(text), false, `${text} — ${why}`)
+    assert.equal(mentionsSovereignty(text), OR_BLOCKED.has(text), `${text} — OR với 611588c2`)
+  }
 })
 
 test('the mutations the verifier found alive are pinned', () => {

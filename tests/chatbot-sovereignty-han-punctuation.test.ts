@@ -10,7 +10,8 @@ import test from 'node:test'
  * chỉ dùng để xét chữ ĐỨNG TRƯỚC/hậu tố (广州，南沙 — "州" không còn loại "南沙"), không bao giờ cho tên đầy đủ.
  */
 
-const { createSovereigntyOutputGuard, mentionsSovereignty, withoutSovereigntyTurns } = await import('../server/utils/chatbot/sovereignty-guard')
+const { createSovereigntyOutputGuard, mentionsSovereignty, sovereigntyMatcherMentions, withoutSovereigntyTurns } = await import('../server/utils/chatbot/sovereignty-guard')
+const { sovereignty611Mentions } = await import('../server/utils/chatbot/sovereignty-611')
 
 const SEPARATORS = ['.', ',', '、', '。', '!', '?', ';', ':', '…', '，', '．', '！', '？', '；', '：']
 const NAMES = ['南海', '南沙', '西沙', '中沙群岛', '南沙群岛', '西沙群岛']
@@ -69,11 +70,14 @@ test('the preceding-character and district vetoes still hold inside one clause, 
     '越，南中国海是谁的？', '越。南中国海属于谁', '越南中国海是谁的']) {
     assert.equal(mentionsSovereignty(text), true, text)
   }
-  // Không bắt: chữ đứng trước ghép thành từ khác TRONG cùng mệnh đề, hoặc hậu tố hành chính liền sau.
+  // Bộ khớp mới không bắt: chữ đứng trước ghép thành từ khác TRONG cùng mệnh đề, hoặc hậu tố hành chính liền sau. Vòng 6:
+  // phép hợp với 611588c2 (không có ngoại lệ hậu tố, không có 佛山/广州) chặn lại đúng các câu 611588c2 đã chặn.
   for (const text of ['越南。沙坝', '越南，沙坝很美', '越南海防的就业支持', '河南沙县小吃', '佛山南海区有工作吗', '佛山市南海区桂城街道有招工吗',
     '广州市南沙区人民法院在哪', '南沙新区有很多工厂', '我在佛山南海工作了三年', '广州南沙港有招聘吗', '东西沙发很便宜']) {
-    assert.equal(mentionsSovereignty(text), false, text)
+    assert.equal(sovereigntyMatcherMentions(text), false, text)
+    assert.equal(mentionsSovereignty(text), sovereignty611Mentions(text), text)
   }
+  for (const text of ['越南。沙坝', '越南，沙坝很美', '越南海防的就业支持', '河南沙县小吃', '东西沙发很便宜']) assert.equal(mentionsSovereignty(text), false, text)
 })
 
 test('output: an ownership word in another script right after a bare Han name stops the stream there, not at the end', async () => {

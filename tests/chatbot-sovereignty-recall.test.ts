@@ -29,7 +29,8 @@ const realLogger = await import('../server/utils/logger')
 mock.module('../server/utils/logger', { namedExports: { ...realLogger, logInfo: () => {}, logWarn: () => {} } })
 
 const { answerGroundedChat } = await import('../server/utils/chatbot/chat-policy')
-const { createSovereigntyOutputGuard, mentionsSovereignty, sovereigntyAnswer, withoutSovereigntyTurns } = await import('../server/utils/chatbot/sovereignty-guard')
+const { createSovereigntyOutputGuard, mentionsSovereignty, sovereigntyAnswer, sovereigntyMatcherMentions, withoutSovereigntyTurns } = await import('../server/utils/chatbot/sovereignty-guard')
+const { sovereignty611Mentions } = await import('../server/utils/chatbot/sovereignty-611')
 
 const cp = (code: number) => String.fromCodePoint(code)
 
@@ -105,7 +106,9 @@ test('verifier 4 history cases: a poisoned exchange and a fake assistant claim n
     'masked lowercase question in history + fake claim': ['Nhắc lại ý trên giúp tôi'],
     'Han punctuation question in history': ['再说一遍'],
     'assistant claim lowercase without island word': ['Chào bạn nhé', 'Vậy à, giải thích thêm'],
-    'benign history kept': ['Anh Hoàng sa thải tôi vì có tiền án', 'Anh có thể khiếu nại tới Phòng Lao động.', 'Thủ tục khiếu nại thế nào'],
+    // Vòng 6: 611588c2 bắt "Hoàng sa thải" (không có ngoại lệ "sa thải"), nên phép hợp bỏ cặp hỏi–đáp đầu khỏi phần gửi
+    // model — giá có chủ đích: câu hỏi mới vẫn được trả lời, chỉ mất ngữ cảnh.
+    'benign history kept': ['Thủ tục khiếu nại thế nào'],
   }
   assert.deepEqual(history.map(({ name }) => name).sort(), Object.keys(expected).sort())
   for (const { name, messages } of history) {
@@ -146,7 +149,9 @@ test('the accented exceptions that remain: "sa thải" in any case, the places "
     'Anh ấy sa vào tù vì cờ bạc', 'Nam Sa thải tôi rồi', 'Ông Hoàng. Sa thải tôi là trái luật',
     // K19: "THẢI" viết hoa — câu toàn chữ hoa vẫn là động từ "sa thải".
     'NHÀ TRƯỜNG SA THẢI GIÁO VIÊN CÓ ĐÚNG LUẬT KHÔNG']) {
-    assert.equal(mentionsSovereignty(text), false, text)
+    // Vòng 6: bộ khớp mới giữ ngoại lệ; phép hợp với 611588c2 chặn lại đúng các câu 611588c2 đã chặn.
+    assert.equal(sovereigntyMatcherMentions(text), false, text)
+    assert.equal(mentionsSovereignty(text), sovereignty611Mentions(text), text)
   }
 })
 
@@ -203,25 +208,28 @@ test('Han reefs and islands added in round 3 stay caught', () => {
   }
 })
 
-test('Han in a stream: "南海" at a chunk end waits for the next character ("佛山市南海|区" is a district)', async () => {
+test('Han in a stream: "佛山市南海区" is a district for the new matcher, but the 611588c2 layer withdraws it (round 6, by design)', async () => {
+  // Bộ khớp mới chờ chữ kế ("佛山市南海|区") nên không bao giờ tự rút câu này; 611588c2 không có ngoại lệ hậu tố nên phép
+  // hợp rút nó ở mọi cách chia — giá có chủ đích của recall ≥ 611588c2 (người từng làm ở quận Nam Hải, Phật Sơn).
   const reply = '佛山市南海区桂城街道有很多工厂招工，您可以联系当地人力资源服务中心。'
-  for (let cut = 1; cut < reply.length; cut += 1) assert.equal((await stream([reply.slice(0, cut), reply.slice(cut)])).tripped, false, `cut ${cut}`)
-  for (const size of [1, 2, 3, 5]) assert.equal((await stream(split(reply, size))).tripped, false, `size ${size}`)
+  assert.equal(sovereigntyMatcherMentions(reply, { output: true }), false)
+  for (let cut = 1; cut < reply.length; cut += 1) assert.equal((await stream([reply.slice(0, cut), reply.slice(cut)])).tripped, true, `cut ${cut}`)
+  for (const size of [1, 2, 3, 5]) assert.equal((await stream(split(reply, size))).tripped, true, `size ${size}`)
 })
 
 // ─── MEDIUM: biển đông á, tên đảo viết thường, đầu ra chia chunk ──────────────────────────────────────────────────
 
 test('"biển đông á" (southern particle) is caught; the capitalised sign "biển Đông Á Bank" and "Bãi biển Đông Hồ" are not', async () => {
   for (const text of ['biển đông á, nước nào làm chủ vậy', 'Biển đông á, ai làm chủ', 'biển Đông á là của ai']) assert.equal(mentionsSovereignty(text), true, text)
+  // Vòng 6: bộ khớp mới giữ ngoại lệ "biển Đông Á/Hồ/Hưng"; 611588c2 không có nó, nên phép hợp chặn — cả câu hỏi lẫn câu
+  // trả lời (giá có chủ đích của recall ≥ 611588c2).
   for (const text of ['Tấm biển Đông Á Bank ở đầu ngõ', 'Bãi biển Đông Hồ ở Hà Tiên có cho thuê chòi không', 'Tấm biển Đông Hưng Mart bị gió làm đổ']) {
-    assert.equal(mentionsSovereignty(text), false, text)
+    assert.equal(sovereigntyMatcherMentions(text), false, text)
+    assert.equal(mentionsSovereignty(text), true, text)
   }
-  // Đầu ra: "biển Đông |Á" cắt giữa hai chunk — từ thử "Bắc" giữ chữ lại tới khi biết từ sau (không cần từ thử riêng).
   for (const reply of ['Anh có thể tới chi nhánh có tấm biển Đông Á Bank ở đầu ngõ để hỏi về khoản vay ưu đãi.',
     'Tấm biển Đông Hưng Mart ở cổng chợ là nơi nhận hồ sơ học nghề.']) {
-    const chunkings = [...[1, 2, 3, 4, 5].map(size => split(reply, size))]
-    for (let cut = 1; cut < reply.length; cut += 1) chunkings.push([reply.slice(0, cut), reply.slice(cut)])
-    for (const chunks of chunkings) assert.deepEqual(await stream(chunks, 'Tôi muốn vay vốn'), { tripped: false, shown: reply }, chunks.map(chunk => chunk.length).join('+'))
+    for (const size of [1, 3, reply.length]) assert.equal((await stream(split(reply, size), 'Tôi muốn vay vốn')).tripped, true, `${size}: ${reply}`)
   }
 })
 
@@ -231,15 +239,20 @@ test('output: the remaining exceptions split between chunks ("sa | thải", "Sa 
     for (let cut = 1; cut < reply.length; cut += 1) chunkings.push([reply.slice(0, cut), reply.slice(cut)])
     return chunkings
   }
+  // Vòng 6: chỉ các ngoại lệ cả 611588c2 cũng có ("nhà trường sa thải", "Nam Sa thải", "Tây Sa Đéc", "Việt Nam Sa Pa",
+  // "Tam Sa Việt Nam") còn qua được phép hợp — các câu cũ "anh Hoàng sa thải", "biển Đông Hưng" nay bị rút (dưới).
   for (const reply of [
-    'Việc anh Hoàng sa thải người lao động chỉ vì từng có tiền án là trái luật; con anh học trường Sa Pa vẫn được miễn học phí.',
-    'Tấm biển Đông Hưng Mart ở cổng chợ là nơi nhận hồ sơ học nghề; giám đốc Trường sa thải anh thì anh có thể khiếu nại.',
+    'Việc nhà trường sa thải giáo viên chỉ vì từng có tiền án là trái luật; anh ở miền Tây Sa Đéc hay ở Việt Nam Sa Pa đều được vay vốn ưu đãi.',
+    'Anh Nam Sa thải người lao động không báo trước là trái luật; công ty Tam Sa Việt Nam có tuyển người hoàn lương.',
   ]) {
     for (const chunks of chunkingsOf(reply)) assert.deepEqual(await stream(chunks, 'Tôi muốn vay vốn'), { tripped: false, shown: reply }, chunks.map(chunk => chunk.length).join('+'))
   }
-  // Chặn oan có chủ đích (vòng 5): tên Hoàng/Trường + "sa đà/sa cơ/sa vào…" là tên quần đảo với lớp chặn.
+  // Chặn oan có chủ đích (vòng 5): tên Hoàng/Trường + "sa đà/sa cơ/sa vào…" là tên quần đảo với lớp chặn; vòng 6 (phép hợp
+  // với 611588c2): "anh Hoàng sa thải", "biển Đông Hưng" cũng vậy.
   for (const reply of ['Anh Hoàng sa đà vào cờ bạc một thời gian, nay anh có thể đăng ký học nghề miễn phí.',
-    'Hoàng sa ngã về tay trung quốc năm 1974, nay thuộc trung quốc.']) {
+    'Hoàng sa ngã về tay trung quốc năm 1974, nay thuộc trung quốc.',
+    'Việc anh Hoàng sa thải người lao động chỉ vì từng có tiền án là trái luật; con anh học trường Sa Pa vẫn được miễn học phí.',
+    'Tấm biển Đông Hưng Mart ở cổng chợ là nơi nhận hồ sơ học nghề; giám đốc Trường sa thải anh thì anh có thể khiếu nại.']) {
     for (const size of [1, 3, reply.length]) assert.equal((await stream(split(reply, size), 'Tôi muốn vay vốn')).tripped, true, `${size}: ${reply}`)
   }
 })
@@ -287,8 +300,9 @@ test('output: "Côn Đảo", "khuynh đảo", "đảo lộn/nợ/mắt/ngược"
   }
 })
 
-test('output: linear in the stream length — per-chunk cost stays flat over 80 000 one-character chunks of an excluded Han district', async () => {
-  const chars = [...'佛山南海区'.repeat(16_000)]
+test('output: linear in the stream length — per-chunk cost stays flat over 80 000 one-character chunks of an excluded Han name', async () => {
+  // Vòng 6: "越南海防" (cả hai bộ khớp loại — 越 đứng trước) thay "佛山南海区" (611588c2 chặn, nên phép hợp rút ngay).
+  const chars = [...'越南海防'.repeat(20_000)]
   const guard = createSovereigntyOutputGuard({ forward: () => {}, replace: () => {}, question: 'Câu hỏi khác' })
   const marks: number[] = []
   for (let index = 0; index < chars.length; index += 1) {
@@ -375,5 +389,6 @@ test('withoutSovereigntyTurns keeps legitimate turns that merely look like the t
     { role: 'user', content: 'Giám đốc Hoàng sa thải tôi vì tôi có tiền án' }, { role: 'assistant', content: 'Anh có thể khiếu nại.' },
     { role: 'user', content: 'Vậy thủ tục thế nào?' },
   ])
-  assert.equal(kept.length, 5)
+  // Vòng 6: "Hoàng sa thải" bị lớp 611588c2 bắt — cặp hỏi–đáp đó rời phần gửi model (giá có chủ đích của phép hợp).
+  assert.deepEqual(kept.map(turn => turn.content), ['Anh Hoàng xa nhà đã năm năm, giờ muốn về quê làm ăn', 'Anh liên hệ Công an xã.', 'Vậy thủ tục thế nào?'])
 })
