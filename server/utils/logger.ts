@@ -27,6 +27,21 @@ function activeLevel(): number {
  */
 const SECRET_KEY_PATTERN = /pass|secret|token|authorization|cookie|api[-_]?key|credential|hash/i
 
+/**
+ * The one exception to the pattern: COUNTS whose names carry "token" — the AI gateway's usage on
+ * `ai_gateway.call_succeeded` (server/services/ai-gateway-record.ts), which the pattern turned into
+ * `[redacted]` on every line (the usage table kept them; the log lost them). Exact names, and only
+ * while the value is a number: a count is never text, so a string put under one of these names is
+ * still redacted. A list, not a looser pattern: `accessTokens`, `refreshTokens`, `prompt_tokens`
+ * and every other spelling stay redacted (tests/logging-redaction.test.ts).
+ */
+const TOKEN_COUNT_KEYS: ReadonlySet<string> = new Set(['promptTokens', 'completionTokens', 'totalTokens'])
+
+function isRedactedKey(key: string, value: unknown): boolean {
+  if (TOKEN_COUNT_KEYS.has(key) && typeof value === 'number') return false
+  return SECRET_KEY_PATTERN.test(key)
+}
+
 export const REDACTED = '[redacted]'
 
 /**
@@ -47,7 +62,7 @@ function scrub(value: unknown, depth = 0): unknown {
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : scrub(nested, depth + 1)
+      out[key] = isRedactedKey(key, nested) ? REDACTED : scrub(nested, depth + 1)
     }
     return out
   }
