@@ -325,7 +325,7 @@ TRUSTED_PROXY_IPS=172.16.0.0/12
 đúng dòng `CDKT_IMAGE=`, ghi qua tệp tạm rồi `mv` nguyên tử và giữ nguyên chủ sở hữu
 lẫn quyền. `JWT_SECRET`, mật khẩu CSDL và các bí mật khác **ở lại trên VPS** — GitHub
 không biết chúng, và đúng ra là phải vậy: xoay `JWT_SECRET` sẽ vô hiệu hoá **toàn bộ
-secret TOTP đã lưu** (xem runbook trong `CLAUDE.md`), nên nó không được phép là thứ
+secret TOTP đã lưu** (xem runbook ở `docs/decisions/realm-safety.md` § *MFA bắt buộc — khoá ngoài & break-glass*, mục 4; tóm tắt ở `CLAUDE.md` § MFA), nên nó không được phép là thứ
 một pipeline tự sinh ra.
 
 `TRUSTED_PROXY_IPS` sai là một lỗi **im lặng**: giới hạn tần suất theo IP gộp lại
