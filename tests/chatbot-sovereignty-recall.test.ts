@@ -88,9 +88,7 @@ const REPRESENTATIVE = [...new Set([
   ...corpora.attacks.han4!.filter((row, index) => row[2] !== 0 && index % 20 === 0),
 ].map(([text]) => text))].filter(text => text.replace(/\p{Cf}/gu, '') !== 'Biển.Đông')
 
-// Vòng 7: câu chỉ mã vòng 7 bắt (bit 128) nhờ cổng "hỏi chủ quyền của một hòn đảo tên lạ" không có tên cho lớp đầu ra.
-const { sovereigntyIslandOwnershipQuestion: ownershipQuestion } = await import('../server/utils/chatbot/sovereignty-claims')
-const { sovereigntyFold } = await import('../server/utils/chatbot/sovereignty-normalize')
+// Câu chỉ mã vòng 7 bắt (bit 128) — cổng "hỏi chủ quyền đảo tên lạ" chỉ cho câu hỏi; lớp đầu ra của chúng ở round7.test.ts.
 const ROUND7_ONLY = new Set(Object.values(corpora.attacks).flat().filter(([, , mask]) => mask === 128).map(([text]) => text))
 
 test('recall union, three layers: matcher, the policy with a fake AI provider (never called), and the output layer', async () => {
@@ -101,7 +99,7 @@ test('recall union, three layers: matcher, the policy with a fake AI provider (n
     const result = await answerGroundedChat(event(), settingsOf(), [{ role: 'user', content: question }], dependencies)
     assert.equal(ai.calls, 0, question)
     assert.equal(result.answer, sovereigntyAnswer(question), question)
-    if (ROUND7_ONLY.has(question) && ownershipQuestion(sovereigntyFold(question))) continue
+    if (ROUND7_ONLY.has(question)) continue
     for (const size of [3, question.length]) assert.equal((await stream(split(question, size), 'Câu hỏi khác')).tripped, true, `${size}: ${question}`)
   }
 })
