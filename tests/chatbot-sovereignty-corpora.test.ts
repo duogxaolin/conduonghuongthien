@@ -6,7 +6,8 @@ import test from 'node:test'
  * Hồi quy cố định trên bộ câu của NĂM lượt kiểm chứng độc lập — tests/fixtures/sovereignty-corpora.json, sinh tự động từ
  * thư mục của các verifier (không sửa tay). Mỗi câu kèm mặt nạ bit các phiên bản đã BẮT (tấn công) / CHẶN (hợp lệ):
  * 1 = 611588c2 (port trung thành, đã merge vào wave3/integration), 2 = 39045602, 4 = c048cc86, 8 = 09eef836,
- * 16 = a9dc5f17 (vòng 5; bộ v5 và bit 16 thêm ở vòng 6). "v5amb" là các câu verifier 5 tự gắn nhãn mơ hồ (trùng tên).
+ * 16 = a9dc5f17 (vòng 5; bộ v5 và bit 16 thêm ở vòng 6), 32 = acd9f2a1 (vòng 6; bộ v6/v6hu của verifier 6 thêm ở vòng 6b —
+ * lượt trợ lý và câu trả lời của bộ đó ở tests/chatbot-sovereignty-corpus-v6.test.ts). "v5amb": câu verifier 5 gắn nhãn mơ hồ.
  *
  * Quy trình từ vòng 5 (quyết định của chủ dự án): cổng chủ quyền thuộc cổng thông tin Bộ Công an — bỏ sót (lặp lại sự
  * cố 2026-10-27) nặng hơn chặn oan (khách chỉ phải diễn đạt lại). Ba vòng trước dao động bắt-thiếu ↔ chặn-oan vì mỗi
@@ -121,6 +122,7 @@ const OR_OUTPUT = new Set([
   '佛山市南海区桂城街道有很多工厂招工，您可以联系当地人力资源服务中心。',
   'Việc anh Hoàng sa thải người lao động chỉ vì từng có tiền án là trái với Bộ luật Lao động. Anh có thể khiếu nại tới Phòng Lao động – Thương binh và Xã hội.',
   'Bãi biển Đông Hồ ở Hà Tiên có nhiều hộ cho thuê chòi; bãi biển đông người vào dịp lễ nên anh có thể vay vốn mở dịch vụ.',
+  'Bãi biển Đông Hồ và Mũi Nai ở Hà Tiên thu hút nhiều khách du lịch, cần nhiều lao động phục vụ.',
   '您住在佛山市南海区，可以联系越南驻广州总领事馆办理回国手续。',
   '在佛山市南海区工作的越南公民可以联系越南驻广州总领事馆。',
   'Anh ở thành phố Sa Đéc có thể vay vốn chăn nuôi tại Phòng giao dịch Ngân hàng Chính sách xã hội; trường Sa Đéc cũng có lớp dạy nghề thú y.',

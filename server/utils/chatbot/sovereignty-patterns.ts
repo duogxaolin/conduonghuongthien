@@ -205,8 +205,9 @@ const FEATURE_QUESTION = new RegExp(`${MARKED_QUESTION.source}|(?<![\\p{L}])(?:t
 // Tên đảo/đá/bãi lẻ, sau "đảo"/"đá"/"bãi". Tên không trùng từ thường chỉ ở khoá Latin (` dao ba binh `, ` da xu bi `… ở
 // LATIN_PATTERNS): mọi hoa/thường, có dấu hay không, mọi ký tự nối. Tên trùng từ thường ("đảo sinh tồn" — trò chơi,
 // "đá chữ thập" — xếp đá, "bãi cỏ mây", "đá lát") viết hoa (chữ đầu hoặc toàn bộ) như tên riêng, hoặc có chữ hỏi chủ
-// quyền và không đứng sau "trò chơi/xếp/mua…".
-const REEF_COMMON = ['Chữ Thập', 'Vành Khăn', 'Cỏ Mây', 'Lát']
+// quyền và không đứng sau "trò chơi/xếp/mua…". "Thuyền Chài" (gỡ ở vòng 2) trở lại theo recall union: 39045602 bắt "Đá
+// Thuyền Chài" viết hoa trong bộ v6 — "bãi thuyền chài Sầm Sơn" viết thường vẫn không phải.
+const REEF_COMMON = ['Chữ Thập', 'Vành Khăn', 'Cỏ Mây', 'Lát', 'Thuyền Chài']
 const ISLAND_COMMON = ['Sinh Tồn', 'Tiên Nữ']
 const spaced = (names: string[]) => names.map(name => name.replace(/ /g, '\\s+'))
 const titleOrUpper = (names: string[]) => spaced(names.flatMap(name => [name, name.toUpperCase()])).join('|')

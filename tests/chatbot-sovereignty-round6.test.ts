@@ -183,7 +183,8 @@ async function trippedOn(chunks: string[]) {
 
 test('v5: every attack some version caught is stopped at all three layers — matcher, policy (provider never called), output', async () => {
   const caught = fixture.attacks.v5!.filter(([, , mask]) => mask !== 0).map(([text]) => text)
-  assert.equal(caught.length, 179)
+  // 179 câu một trong năm phiên bản đầu từng bắt, 191 khi tính cả acd9f2a1 (bit 32, vòng 6b).
+  assert.equal(caught.length, 191)
   for (const question of caught) {
     ai.calls = 0
     const result = await answerGroundedChat(event(), settingsOf(), [{ role: 'user', content: question }], dependencies)
