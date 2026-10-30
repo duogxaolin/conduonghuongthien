@@ -109,10 +109,14 @@ function nextWordStart(text: string, index: number): number {
  * xác nhận sạch ở lượt trước, giờ lại khớp. Nên xét hai vùng: từ từ thứ hai và từ từ thứ ba. Cụm mới thật (nằm sau phần
  * đã xác nhận, cách xa ranh giới) có đủ ngữ cảnh ở cả hai; cụm giả do mất ngữ cảnh chỉ khớp ở vùng mà nó đứng đầu.
  */
-function confirmScript(scope: string, fromStart: boolean, settled: (text: string) => boolean): boolean {
-  if (fromStart) return settled(scope)
-  const second = nextWordStart(scope, 0)
-  return settled(scope.slice(second)) && settled(scope.slice(nextWordStart(scope, second)))
+function confirmScript(scope: string, fromStart: boolean): (settled: (text: string) => boolean) => boolean {
+  // Ranh giới hai vùng tính lười và dùng chung cho cả hai bộ khớp: một dãy chữ Hán không dấu cách là MỘT từ dài tới 2048
+  // ký tự, quét lại nó cho mỗi bộ khớp từng nhân đôi chi phí xác nhận.
+  let second: number | undefined
+  let third: number | undefined
+  const secondStart = () => (second ??= nextWordStart(scope, 0))
+  const thirdStart = () => (third ??= nextWordStart(scope, secondStart()))
+  return settled => fromStart ? settled(scope) : settled(scope.slice(secondStart())) && settled(scope.slice(thirdStart()))
 }
 const hanJoined = (key: string) => key.replace(/\|/g, '')
 /**
@@ -235,14 +239,15 @@ export function createSovereigntyOutputGuard(hooks: {
         const scriptFrom = islandNow ? 0 : marginStart(seen, confirmedTo)
         const hanFrom = islandNow ? 0 : Math.max(0, hanConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
         const hanScope = han.from(hanFrom)
-        const scope = seen.from(scriptFrom)
+        const confirm = confirmScript(seen.from(scriptFrom), scriptFrom === 0)
         if (hanMentions(hanScope + HAN_NEXT_PROBE, island, ownership) || han611(hanJoined(hanScope), island)
-          || confirmScript(scope, scriptFrom === 0, text => settledScriptMentions(fold(text), island, false))
-          || (SCRIPT_LETTER.test(fold(scope)) && confirmScript(scope, scriptFrom === 0, text => settledScript611(text, island, false)))) return trip()
+          || confirm(text => settledScriptMentions(fold(text), island, false))
+          || confirm(text => SCRIPT_LETTER.test(fold(text)) && settledScript611(text, island, false))) return trip()
         confirmedTo = seen.length
         hanConfirmedTo = han.length
       }
-      if (!island && !claimHeld) claimHeld = settledClaim(region, hanWindow) || settledClaim611(rawRegion, hanJoined(hanWindow))
+      // Cụm yêu sách Latin của 611588c2 cũng cần chữ cái ngoài chữ Hán: đoạn chỉ có chữ Hán chỉ xét khoá chữ Hán.
+      if (!island && !claimHeld) claimHeld = settledClaim(region, hanWindow) || settledClaim611(SCRIPT_LETTER.test(region) ? rawRegion : '', hanJoined(hanWindow))
       if (claimHeld) return
       const upTo = seen.length - STREAM_HOLD_CHARS
       if (upTo > released) {

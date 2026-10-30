@@ -80,6 +80,12 @@ test('output: a claim whose words punctuation pulls apart (中国，一，二，
   const { tripped, shown } = await stream(reply)
   assert.equal(tripped, true)
   assert.ok(!shown.includes('领土'), shown)
+  // Cùng lý do ở chữ Latin: bộ mới lọc trước bằng "trung|china…" trên chữ còn dấu, nên "trùng quốc" (gõ sai) chỉ khoá
+  // không dấu của 611588c2 nhận ra là cụm yêu sách.
+  const latin = ['Nơi đó là lãnh thổ của trùng quốc từ xưa. ', ...Array.from({ length: 4 }, () => 'Anh có thể liên hệ trung tâm dịch vụ việc làm của tỉnh. '), 'Các đảo ấy rất đẹp.']
+  const result = await stream(latin)
+  assert.equal(result.tripped, true)
+  assert.ok(!result.shown.includes('lãnh thổ'), result.shown)
 })
 
 test('output: a reply only the 611588c2 layer catches is stopped ON the stream, not at the end — nothing after the name is shown', async () => {
