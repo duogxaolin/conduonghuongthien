@@ -178,10 +178,11 @@ describe('FINDING-AE1: a real change still asks (verifier probes)', () => {
  *       page and TinyMCE's element with it, and nothing started the editor again: the body was a
  *       bare, empty 700px box — nothing to read or type in — while every save sent the body of
  *       the orphaned editor.
- * Fixed: a reload takes the editor down while its element is still on the page; after it the page
- * does what onMounted does after the first load, on the grid that replaced the placeholder — the
- * baseline (a good load only) and the editor. RED on the base: every test here — the third and
- * the second order of the script race through (5) only (onMounted starts the editor there).
+ * Fixed: after a reload the page does what onMounted does after the first load, on the grid that
+ * replaced the placeholder — the baseline (a good load only) and the editor (`initTinyMCE` removes
+ * the orphaned one first, as it removes one left from an earlier visit). RED on the base: every
+ * test here — the third and the second order of the script race through (5) only (onMounted
+ * starts the editor there).
  */
 describe('KNOWN 5/6: "Thử lại" after a failed load', () => {
   const article = () => json({ ok: true, article: { ...ARTICLE, content: STORED } })
@@ -216,7 +217,7 @@ describe('KNOWN 5/6: "Thử lại" after a failed load', () => {
     assert.equal(ctx.tiny.onScreen(), true, 'the editor came up over the failed load')
     await retry(ctx)
     assert.equal(ctx.tiny.onScreen(), true, 'after "Thử lại" the body box is bare: the editor is attached to the element the placeholder removed')
-    // Taken down while its element was on the page, then started on the new one.
+    // The orphan removed, a new editor started on the element now on the page.
     assert.deepEqual(ctx.tiny.log, ['init', 'remove', 'init'])
     assert.equal(ctx.tiny.editor.html, serialise(STORED))
     assert.equal(ctx.tiny.configs.length, 2)

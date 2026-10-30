@@ -89,23 +89,7 @@ export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
     bodyShownHandlers.push(handler)
   }
 
-  /**
-   * Take the editor down while its element is still on the page. The page's reload ("Thử lại")
-   * swaps the editor grid for its placeholder, and TinyMCE stays bound to the element it started
-   * on: left alone it is orphaned (still answers `get`, nothing on screen — KNOWN 6 of the split,
-   * docs/decisions/refactor-large-files.md). `initTinyMCE` starts it again on the new grid, and
-   * its `init` takes the body from the form, as on the first load.
-   */
-  function removeEditor(): void {
-    tinymceReady.value = false
-    if (typeof window === 'undefined') return
-    (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)?.remove()
-  }
-
-  /**
-   * A (re)loaded article into a live editor; on the first load there is none yet and `init` does
-   * it. The page's reload takes the editor down first (`removeEditor`), so there `init` does it too.
-   */
+  /** A (re)loaded article into a live editor; on the first load there is none yet and `init` does it. */
   function showLoadedContent(): void {
     if (tinymceReady.value) {
       (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)?.setContent(form.content)
@@ -215,6 +199,6 @@ export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
   return {
     editorId: TINYMCE_EDITOR_ID,
     setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent, onBodyShown,
-    insertMediaIntoEditor, initTinyMCE, removeEditor, loadTinyMCEScript,
+    insertMediaIntoEditor, initTinyMCE, loadTinyMCEScript,
   }
 }

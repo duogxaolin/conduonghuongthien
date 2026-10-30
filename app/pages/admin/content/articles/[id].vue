@@ -58,7 +58,7 @@ const { confirm } = useConfirm()
 
 const {
   editorId, setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent, onBodyShown,
-  insertMediaIntoEditor, initTinyMCE, removeEditor, loadTinyMCEScript,
+  insertMediaIntoEditor, initTinyMCE, loadTinyMCEScript,
 } = useArticleEditorTinymce({ form })
 
 // ─── Unsaved-changes guard: route leave here (a Nuxt auto-import), the tab close in the composable ──
@@ -110,13 +110,12 @@ watch(() => form.type, async (newType) => {
 })
 
 // Every load after the first (onMounted's) is a "Thử lại": its placeholder takes the editor grid,
-// and TinyMCE's element with it, off the page (KNOWN 5/6 of the split).
+// and the element TinyMCE is bound to, off the page (KNOWN 5/6 of the split).
 let loads = 0
 const fetchArticle = async () => {
   if (isNew.value || !articleId.value) return
   const reload = loads++ > 0
   suppressTypeReset = true  // block watcher resets during form population
-  if (reload) removeEditor() // while its element is still on the page
   loading.value = true
   loaded.value = false // trước await: "Thử lại" đang bay không được mở lại nút lưu
   errorMsg.value = ''
@@ -148,7 +147,7 @@ const fetchArticle = async () => {
     suppressTypeReset = false
     // A reload, on the grid that replaced the placeholder: what onMounted does after the first
     // load — the baseline (a good load only: after a failed one the form, and anything typed in
-    // it, is as it was), then the editor, whose `init` takes the body baseline.
+    // it, is as it was), then the editor (initTinyMCE removes the orphaned one first).
     if (reload) {
       if (loaded.value) markSaved()
       initTinyMCE()
@@ -204,7 +203,7 @@ onMounted(async () => {
          and #tinymce-content-editor has actually been rendered. Moving
          initTinyMCE() ahead of the fetch would attach the editor to an element
          that is about to be unmounted. "Thử lại" brings this placeholder back,
-         so fetchArticle takes the editor down before and starts it after. -->
+         so fetchArticle starts the editor again after the same nextTick. -->
     <div v-if="loading" class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5" role="status" aria-busy="true">
       <span class="sr-only">Đang tải nội dung bài viết</span>
       <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-5" aria-hidden="true">
