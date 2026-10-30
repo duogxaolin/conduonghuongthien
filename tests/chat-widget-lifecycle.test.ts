@@ -3,6 +3,8 @@
  * tests/chat-widget-behavior.test.ts, on the same harness (tests/_chat-widget-harness.ts):
  *   - every conversation action cancels the request in flight (switch, delete the open
  *     one, clear) and leaves the input usable;
+ *   - the question of a request cancelled before its first word is kept as asked and saved,
+ *     as when the cancel comes after the first word (FINDING-C3, fixed after the split);
  *   - the parent hands focus to the question box and the launcher through the parts'
  *     `focus()` (recorded by `recordFocus`, tests/_sfc-mount.ts);
  *   - the send form and the contact form never let the browser submit (`.prevent`);
@@ -18,7 +20,7 @@ import test from 'node:test'
 import { click, fire, input } from './_sfc-mount.ts'
 import {
   alerts, answer, bubbles, button, byLabel, chatServer, content, findAll, HOLD, isOpen, json, launcher, mainInput, openWidget,
-  QUICK_QUESTIONS, sendForm, sseStream, statuses, transcript, words, type ChatCtx, type NetCall,
+  parsedStorage, QUICK_QUESTIONS, sendForm, sseStream, statuses, transcript, words, type ChatCtx, type NetCall,
 } from './_chat-widget-harness.ts'
 
 const chatCalls = (ctx: ChatCtx) => ctx.calls.filter(call => call.method === 'POST' && call.url.pathname === '/api/public/chatbot')
@@ -115,6 +117,86 @@ test('clearing the conversation mid-answer cancels its request', async (t) => {
   await ctx.settle()
   assert.deepEqual(transcript(ctx.widget), [])
   await assertCancelledAndUsable(ctx, call)
+})
+
+// ─── A question whose request was cancelled (FINDING-C3) ─────────────────────
+
+/** Open the list and pick the conversation titled `title` (or "Tạo mới"). */
+async function pickFromList(ctx: ChatCtx, title: string) {
+  await click(historyButton(ctx))
+  await ctx.settle()
+  await click(button(ctx.widget, title))
+  await ctx.settle()
+}
+
+/** What the visitor sees of conversation B and what is kept for it, once they are back in it. */
+function backInB(ctx: ChatCtx) {
+  const question = bubbles(ctx.widget)[0]!
+  return {
+    transcript: transcript(ctx.widget),
+    question: words(question),
+    questionClass: String(question.props.class),
+    alerts: alerts(ctx.widget),
+    awaiting: awaiting(ctx).length,
+    saved: parsedStorage(ctx)!.sessions.find(s => s.title === 'Câu B')?.messages,
+  }
+}
+
+test('FINDING-C3 (fixed): leaving before the first word and coming back — the question is kept as asked, not "Đang gửi…", and survives a reload', async (t) => {
+  // The bug: a conversation action cancels the request, `submitBotQuestion` then returns
+  // early, and the question's "sending" state was only ever cleared by the first word — so
+  // the question read "Đang gửi…" for as long as the page lived, and was never saved.
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  const call = await waitingInSecondConversation(ctx)
+  assert.match(words(bubbles(ctx.widget)[0]!), /Đang gửi…/, 'B is waiting for its first word')
+  await pickFromList(ctx, 'Câu A')
+  assert.equal(call.signal?.aborted, true)
+  await pickFromList(ctx, 'Câu B')
+  const back = backInB(ctx)
+  assert.deepEqual(back.transcript, [{ who: 'user', text: 'Câu B' }])
+  assert.doesNotMatch(back.question, /Đang gửi…/)
+  assert.doesNotMatch(back.questionClass, /opacity-60/, 'not dimmed as sending')
+  assert.doesNotMatch(back.questionClass, /bg-danger-bg/, 'a cancelled question is not a failed one')
+  assert.deepEqual(back.alerts, [])
+  assert.equal(back.awaiting, 0)
+  assert.deepEqual(back.saved, [{ sender: 'user', text: 'Câu B', sources: [], toolCalls: [], followUps: [] }])
+
+  // A reload brings the conversation back as it was left.
+  const saved = ctx.local.getItem('cdkt_sessions_v1')!
+  ctx.close()
+  const reloaded = await openWidget(t, chatServer(), { local: { cdkt_sessions_v1: saved } })
+  await openDialog(reloaded)
+  assert.deepEqual(transcript(reloaded.widget), [{ who: 'user', text: 'Câu B' }])
+  assert.doesNotMatch(words(bubbles(reloaded.widget)[0]!), /Đang gửi…/)
+})
+
+test('FINDING-C3 (fixed): cancelled before or after the first word, the conversation ends the same — on screen, saved, and in the next request', async (t) => {
+  const ends: unknown[] = []
+  for (const firstWordArrived of [false, true]) {
+    const ctx = await openWidget(t)
+    await openDialog(ctx)
+    const call = await waitingInSecondConversation(ctx)
+    if (firstWordArrived) {
+      const held = ctx.server.state.held.shift()!
+      const stream = sseStream(held.signal)
+      held.respond(stream.response)
+      stream.push(content('Đang trả lời B'))
+      await ctx.settle()
+      assert.doesNotMatch(words(bubbles(ctx.widget)[0]!), /Đang gửi…/, 'the first word ends "sending"')
+    }
+    // Leave through "Tạo mới" this time, then come back.
+    await pickFromList(ctx, 'Tạo mới')
+    assert.equal(call.signal?.aborted, true)
+    await pickFromList(ctx, 'Câu B')
+    const end = backInB(ctx)
+    ctx.server.state.chat.push(answer('Được.'))
+    await ask(ctx, 'Câu tiếp')
+    ends.push({ ...end, nextRequest: (chatCalls(ctx).at(-1)!.body as { messages: unknown }).messages })
+    ctx.close()
+  }
+  assert.deepEqual(ends[0], ends[1])
+  assert.deepEqual((ends[0] as { nextRequest: unknown }).nextRequest, [{ sender: 'user', text: 'Câu B' }, { sender: 'user', text: 'Câu tiếp' }])
 })
 
 // ─── Focus handed to the parts' controls ─────────────────────────────────────
