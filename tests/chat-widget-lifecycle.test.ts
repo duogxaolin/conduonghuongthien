@@ -152,6 +152,8 @@ test('FINDING-C3 (fixed): leaving before the first word and coming back — the 
   assert.match(words(bubbles(ctx.widget)[0]!), /Đang gửi…/, 'B is waiting for its first word')
   await pickFromList(ctx, 'Câu A')
   assert.equal(call.signal?.aborted, true)
+  assert.deepEqual(parsedStorage(ctx)!.sessions.find(s => s.title === 'Câu B')?.messages.map(m => m.text), ['Câu B'],
+    'saved as soon as B is left: a reload from A keeps it')
   await pickFromList(ctx, 'Câu B')
   const back = backInB(ctx)
   assert.deepEqual(back.transcript, [{ who: 'user', text: 'Câu B' }])
@@ -169,6 +171,37 @@ test('FINDING-C3 (fixed): leaving before the first word and coming back — the 
   await openDialog(reloaded)
   assert.deepEqual(transcript(reloaded.widget), [{ who: 'user', text: 'Câu B' }])
   assert.doesNotMatch(words(bubbles(reloaded.widget)[0]!), /Đang gửi…/)
+})
+
+test('FINDING-C3 (fixed): leaving while the chat session is still being opened — the question does not wait on it', async (t) => {
+  // The chat request is not sent until a session token comes back, and that request is not
+  // cancelled with the chat request. A question left in that window must not read "Đang
+  // gửi…" until the session request settles (or forever, if it never does).
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(answer('Trả lời A.'))
+  await ask(ctx, 'Câu A')
+  await pickFromList(ctx, 'Tạo mới')
+  ctx.server.state.session = () => HOLD
+  await ask(ctx, 'Câu B')
+  const session = ctx.server.state.held.shift()!
+  assert.equal(session.url.pathname, '/api/public/chatbot/session', 'B (no token yet) is opening its session')
+  assert.match(words(bubbles(ctx.widget)[0]!), /Đang gửi…/)
+  await pickFromList(ctx, 'Câu A')
+  await pickFromList(ctx, 'Câu B')
+  const back = backInB(ctx)
+  assert.deepEqual(back.transcript, [{ who: 'user', text: 'Câu B' }])
+  assert.equal(back.question, 'Câu B', 'not "Đang gửi…"')
+  assert.doesNotMatch(back.questionClass, /opacity-60|bg-danger-bg/)
+  assert.deepEqual(back.alerts, [])
+  assert.equal(back.awaiting, 0)
+  assert.deepEqual(back.saved, [{ sender: 'user', text: 'Câu B', sources: [], toolCalls: [], followUps: [] }])
+  // The session answers late: B keeps its token, and the cancelled question is not sent.
+  session.respond(json({ ok: true, token: 'tok.late' }))
+  await ctx.settle()
+  assert.equal(chatCalls(ctx).filter(call => !call.signal?.aborted).length, 1, 'only A\'s question ever went out')
+  assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Câu B' }])
+  assert.doesNotMatch(words(bubbles(ctx.widget)[0]!), /Đang gửi…/)
 })
 
 test('FINDING-C3 (fixed): cancelled before or after the first word, the conversation ends the same — on screen, saved, and in the next request', async (t) => {
