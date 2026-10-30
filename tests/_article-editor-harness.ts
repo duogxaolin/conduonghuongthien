@@ -101,8 +101,14 @@ export type FakeEditor = ReturnType<typeof fakeTinymce>['editor']
  * here: `init` binds the editor to the element with the page's id found from the mounted root
  * (none found → no editor, logged `init:no-element`), and starts it empty, as a new editor on an
  * empty `<div>` does; `onScreen()` says whether the live editor's element is still the one on
- * the page. `locateRoot` is set by `openEditor` (the AI panel's stand-in, which sits in the
+ * the page. `page.root` is set by `openEditor` (the AI panel's stand-in, which sits in the
  * editor grid, reports the root the first time it mounts).
+ *
+ * And, as measured on the same build: `tinymce.init()` returns at once, `get()` answers the new
+ * editor straight away, but its `init` event comes later (iframe, theme, plugins) and until then
+ * it reads back '' — a baseline taken in that window is the empty string (the reordering
+ * "markSaved after initTinyMCE" warned on close with nothing edited, in Chromium). So the event
+ * fires on a later turn (`setImmediate`, which `settle()` runs), and `getContent()` is '' before.
  */
 export function fakeTinymce(options: { normalize?: (html: string) => string } = {}) {
   const normalize = options.normalize ?? ((html: string) => html)
@@ -110,6 +116,8 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
   const configs: Record<string, unknown>[] = []
   const log: string[] = []
   let live = false
+  let initialized = false
+  let generation = 0
   const page: { root: MiniElement | null } = { root: null }
   const findBox = () => (page.root ? findAll(page.root, el => el.props.id === EDITOR_ID)[0] : undefined)
   const editor = {
@@ -119,7 +127,7 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
     box: undefined as MiniElement | undefined,
     on(event: string, handler: () => void) { handlers[event] = handler },
     setContent(html: string) { editor.html = normalize(html) },
-    getContent() { return editor.html },
+    getContent() { return initialized ? editor.html : '' },
     insertContent(html: string) { editor.inserted.push(html); editor.html += html },
     remove() { log.push('remove'); live = false },
     destroy() { log.push('destroy'); live = false },
@@ -134,16 +142,22 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
       if (!box) { log.push('init:no-element'); return }
       log.push('init')
       live = true
+      initialized = false
       editor.box = box
       editor.html = ''
       ;(config.setup as (e: typeof editor) => void)(editor)
-      handlers.init?.()
+      const mine = ++generation
+      setImmediate(() => {
+        if (!live || generation !== mine) return // removed, or replaced, before it came up
+        initialized = true
+        handlers.init?.()
+      })
     },
   }
   /** An editor left over from an earlier visit (the page must remove it before init). */
-  const leftover = () => { live = true }
-  /** A live editor whose element is the one on the page now — what a person can see and type in. */
-  const onScreen = () => live && editor.box !== undefined && editor.box === findBox()
+  const leftover = () => { live = true; initialized = true }
+  /** A started editor whose element is the one on the page now — what a person can see and type in. */
+  const onScreen = () => live && initialized && editor.box !== undefined && editor.box === findBox()
   return { tinymce, editor, configs, log, leftover, onScreen, page }
 }
 
