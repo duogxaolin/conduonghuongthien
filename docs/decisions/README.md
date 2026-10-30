@@ -1,6 +1,6 @@
 # Decisions — diễn giải vì-sao & tiền sử bug
 
-Bộ tệp này giữ phần **diễn giải chi tiết** đã được rút khỏi `CLAUDE.md` để tệp đó nằm dưới trần 40k ký tự (cảnh báo `over the 40.0k-char limit`).
+Bộ tệp này giữ phần **diễn giải chi tiết** đã được rút khỏi `CLAUDE.md` để tệp đó gần trần 40k ký tự (cảnh báo `over the 40.0k-char limit`) — sau lượt cắt Wave 3 (2026-10-30) CLAUDE.md ~48k ký tự: phần còn lại là quy tắc chặn + tên guard test, không cắt thêm quy tắc để đạt trần.
 `CLAUDE.md` giữ **quy tắc hành động** (MAI PHẢI/ KHÔNG ĐƯỢC, cờ chặn, vị trí test, thứ tự triển khai);
 tệp ở đây giữ **lý do và lịch sử** — vì sao từng quy tắc tồn tại, bug nào đã trả giá để biết, và kiểm chứng âm tính đã chạy ra sao.
 

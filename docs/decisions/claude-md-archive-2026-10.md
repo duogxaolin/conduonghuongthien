@@ -30,11 +30,19 @@ Heading/mục giữ nguyên tên trừ các dòng dưới đây. Mục in đậm
 | (mới) | Quy ước tầng dữ liệu: **Trong transaction không chạm POOL**, **Deadlock & khoá (bài học R6)** |
 | `### Xử lý lỗi tầng giao diện` (mục **Trang danh sách admin: `useAdminList` + `adminFetch`**) | `### Xử lý lỗi tầng giao diện (và gọi API)` (mục **`adminFetch<T>()` / `publicFetch<T>()`** + **Danh sách admin**) |
 | `### Tệp lớn đã tách (và 1 tệp cố ý KHÔNG tách)` | `### Tệp lớn đã tách (và 2 tệp cố ý KHÔNG tách)` — số dòng cập nhật tới `f3c311a0` |
+| Vận hành: **Backup trong app** › **Từ chối khi đang khôi phục** | mục con **Archive** của **Backup trong app** (câu "Đang khôi phục?") |
+| Tệp lớn đã tách: **Trang admin đã tách (4.1):** (+ ba mục con) · **Component công khai đã tách (4.2):** (+ hai mục con) · mục `server/db/init.ts` · mục `production/manage.sh` · mục `app/composables/useChatbot.ts` | **Luật tách phía app (D-SPLIT)** + **Trang/component** (số dòng hiện hành; số trước tách → CHANGELOG § 52, 59) |
+| Tệp lớn đã tách: **Module máy chủ đã tách = barrel liệt kê tên** (+ bảy mục con) | **Module máy chủ đã tách = barrel liệt kê tên** (một mục, ngoại lệ có tên giữ lại) |
+| Tệp lớn đã tách: mục `AnalyticsLiveDashboard.client.vue` | **Cố ý KHÔNG tách** |
 | Hạn chế đã biết: **`any` đã xoá sạch trong production** | gộp vào Nợ kỹ thuật đã đóng, mục 3 (+ câu `as unknown as` ở **Typecheck**) |
+| Hạn chế đã biết: **i18n** | gộp vào mục **i18n** của "Hai hạn chế có chủ đích" (Nợ kỹ thuật đã đóng) |
+| Kiến trúc Page Builder: **Registry**, **Renderer**, **DB**, **Trang hệ thống**, **Kiểu cây** | hai mục **Registry** (gồm renderer + kiểu cây) và **DB** (gồm API + trang hệ thống) |
 | `### Tóm tắt tính năng đã hoàn thành` | mục **Mặc định cần nhớ** trong Kiến trúc Page Builder; phần còn lại → `docs/CHANGELOG.md` |
-| Deploy: `### 2. Build`, `### 3. Docker / PM2` · `### 3.1. production/` · `### 4. Bảo trì định kỳ` | một câu trong `### 1.` · `### 2.` · `### 3.` |
+| Deploy: `### 2. Build`, `### 3. Docker / PM2` | một câu cuối `### 1. \`.env\` — 3 bí mật BẮT BUỘC` |
+| Deploy: `### 3.1. \`production/\` — toolkit quản trị VPS (aaPanel)` | `### 2. \`production/\` — toolkit quản trị VPS (aaPanel)` |
+| Deploy: `### 4. Bảo trì định kỳ (cron — nay tuỳ chọn)` | `### 3. Bảo trì định kỳ (cron — nay tuỳ chọn)` |
 
-Cỡ theo heading (ký tự, đo bằng `[...text].length`): tổng 109 007 → 46 490 — Tech Stack 12 913 → 6 589 · Cấu Trúc Thư Mục 4 276 → 2 653 · Vận hành & an toàn 53 665 → 17 216 · Quy ước tầng dữ liệu 13 708 → 6 189 · Xử lý lỗi 2 401 → 1 437 · Tệp lớn đã tách 7 966 → 3 236 · Hạn chế đã biết 4 114 → 1 821 · Nợ kỹ thuật đã đóng 1 536 → 1 236 · Page Builder 1 076 → 782 · Tóm tắt tính năng 1 348 → 0 · Deploy 2 752 → 2 032.
+Cỡ theo heading (ký tự, đo bằng `[...text].length`): tổng 109 007 → 48 065 — Tech Stack 12 913 → 6 647 · Cấu Trúc Thư Mục 4 276 → 2 653 · Vận hành & an toàn 53 665 → 18 668 · Quy ước tầng dữ liệu 13 708 → 6 275 · Xử lý lỗi 2 401 → 1 437 · Tệp lớn đã tách 7 966 → 3 269 · Hạn chế đã biết 4 114 → 1 597 · Nợ kỹ thuật đã đóng 1 536 → 1 382 · Page Builder 1 076 → 782 · Tóm tắt tính năng 1 348 → 0 · Deploy 2 752 → 2 032.
 
 ---
 

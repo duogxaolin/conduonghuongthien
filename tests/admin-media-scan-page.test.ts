@@ -11,7 +11,7 @@
  * fails here exactly as a dead button would. Only `setInterval` is faked (node:test mock
  * timers), so the 3-second status polls run on `tick()`.
  *
- * The page drives the jobs of the "Đồng bộ media lên R2" rules (CLAUDE.md): scan of
+ * The page drives the jobs of the "Media R2" rules (CLAUDE.md): scan of
  * orphaned files, local↔R2 sync, "Vá URL", "Đổi domain URL R2" and self-heal. It has no
  * list and no error branch (tests/admin-error-retry-ui.test.ts NO_CONTRACT_NEEDED): every
  * fetch is submit-time, the button is the retry and the result lands in a toast. So the
