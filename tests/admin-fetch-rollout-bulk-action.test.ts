@@ -138,9 +138,11 @@ const appSources = () => new Map(execFileSync('git', ['ls-files', '-z', '--', 'a
   .split('\0').filter(file => /\.(?:ts|vue)$/.test(file)).map(file => [file, readFileSync(`${REPO}${file}`, 'utf8')]))
 
 describe('AdminBulkOutcome covers every URL given to useBulkAction', () => {
-  it('the 16 URLs the pages hand `bulk.run` all answer runBulk(…)', () => {
+  it('every URL the pages hand `bulk.run` (16 today) answers runBulk(…)', () => {
     const urls = bulkRunUrls(appSources())
-    assert.equal(new Set(urls.map(u => u.url)).size, 16, `the scan found ${urls.length} calls — a page added or lost a bulk action: ${JSON.stringify(urls)}`)
+    // The scan is not empty and reaches pages AND components (a broken regex would find nothing and pass).
+    for (const url of ['/api/admin/articles/bulk-delete', '/api/admin/chatbot/small-talk/bulk-enabled'])
+      assert.ok(urls.some(u => u.url === url), `the scan finds ${url}: ${JSON.stringify(urls)}`)
     assert.deepEqual(notRunBulk(urls), [])
   })
 

@@ -756,7 +756,8 @@ không vẽ gì; Fragment vá con như Teleport thật).
   muốn hạ `server/services/readers.ts` 550 → 548 — không thuộc lô này, để nguyên.
 - `hex-colors`: không đổi. `v-html`: không thêm (kiểm kê `security-ai-editorial-html` xanh).
 - Độ phủ: **không đo, không nâng** (máy Node 26; baseline đo bằng Node 24 qua `cdkt-cov:node24`). Thư mục đo bị đụng: `app/composables`
-  (`useBulkSelection.ts` +1 dòng `import type`; tệp này chưa bao giờ được `import` khi test — luôn tính 0 %).
+  (`useBulkSelection.ts` +1 dòng `import type`; tệp này chưa bao giờ được `import` khi test — đã nằm trong danh sách "không nạp" của
+  lần đo lô G, `cdht-wave3-fetch-g-public-proof/coverage-node24.txt`, 87 dòng mã ở 0 %).
 
 ### Đột biến (mỗi cái một chỗ, chạy bộ test nhắm, hoàn nguyên bằng `git checkout HEAD --`; `proof/mutations/M*.{diff,txt}`, `batch*.log`)
 
@@ -778,7 +779,7 @@ phân tích bỏ qua → cùng chiều rộng 1240, tương đương) → M31b (
   (integration không có MySQL) — `proof/full-unit.txt`.
 - Typecheck 0 lỗi (sau commit cuối của mã, `proof/typecheck-final.log`); mỗi bước có typecheck riêng (`proof/typecheck-step*.log`).
 - `npm run docs:facts`: khối CLAUDE.md khớp (không tệp nào của lô H nằm trong khối số liệu).
-- ESLint 22 tệp đổi: 0 lỗi, 2 cảnh báo CÓ TỪ TRƯỚC (`i` không dùng ở bảng trực tiếp, `v-html` của "Xem nhanh" — cùng hai cảnh báo trên base).
+- ESLint 23 tệp đổi (chạy lại ở HEAD): 0 lỗi, 2 cảnh báo CÓ TỪ TRƯỚC (`i` không dùng ở bảng trực tiếp, `v-html` của "Xem nhanh" — cùng hai cảnh báo trên base).
 - Ratchet 42/42.
 
 ### Chưa đo / chỗ yếu
@@ -786,8 +787,9 @@ phân tích bỏ qua → cùng chiều rộng 1240, tương đương) → M31b (
 - **E2E không chạy** (cần bản build + MySQL): `admin-mfa.spec.ts` (tiêu đề khối lịch sử), `analytics-ingestion.spec.ts`,
   `admin-write-paths.spec.ts` là các spec chạm trang của lô này. Hydrate + bấm thật trên nút bị khoá chưa đo trong trình duyệt.
 - `AdminModal` thật chỉ qua render SSR (chân hộp + nút); bẫy focus/`inert` khi mount phía trình duyệt không chạy trong Node.
-- Guard "16 URL → `return runBulk(`" là regex trên nguồn handler: một handler gán `runBulk` vào biến rồi trả nguyên vẫn cùng hình mà guard
-  đỏ (chặt hơn cần, không lỏng hơn).
+- Guard "mọi URL của `bulk.run` → `return runBulk(`" là regex trên nguồn handler: một handler gán `runBulk` vào biến rồi trả nguyên vẫn
+  cùng hình mà guard đỏ (chặt hơn cần, không lỏng hơn). Không chốt số 16 (thêm/bớt một thao tác hàng loạt đúng không làm đỏ); thay vào đó
+  kiểm phép quét thấy một URL ở trang và một ở component.
 - `useBulkSelection.ts` và các composable nạp bằng `new Function` không quy độ phủ về tệp nguồn.
 - Gộp với `wave3/article-editor-split`: cả hai nhánh sửa `tests/ratchets/file-length.baseline.json` (dòng khác nhau) — xung đột dòng JSON
   nếu có thì đơn giản; lô H không chạm tệp của nhánh đó.
