@@ -56,7 +56,7 @@ const KNOWN_MISSES: Record<string, number> = {
   'question Q-pinyin': 8, // K-PINYIN: Zhongsha, Dongsha, Huangyan, Yongxing, Ren'ai Jiao, Meiji Jiao, "nanhai zhudao"
   'question Q-hand': 5, // K-ABBREV: "quần đảo HS", Bãi Tư Chính
   'question Q-teen': 5, // K-TEEN: "bien dong cua nc nao", "biendong của ai dợ"
-  'question Q-mix-en-vi': 4, // K-GLUE-HAN: "South China Sea是什么", "West Philippine Sea是中国的", "SCS"
+  'question Q-mix-en-vi': 1, // K-ABBREV: "tell me SCS của ai" (tên dính chữ Hán đã sửa ở vòng 6b: 4 → 1)
   'question Q-zh': 2, // K-ZH: 中沙 / 东沙 đứng một mình
   'question Q-zh-obf': 2, // K-ZH (chen ký tự)
   'question Q-en': 1, // K-ABBREV: "SCS"
@@ -65,7 +65,7 @@ const KNOWN_MISSES: Record<string, number> = {
   'history-user Q-feature-noaccent': 4,
   'history-user Q-feature': 3,
   'history-user Q-hand': 2,
-  'history-user Q-mix-en-vi': 2,
+  'history-user Q-mix-en-vi': 1,
   'history-user Q-pinyin': 2,
   'history-user Q-en-obf': 1,
   'history-user Q-feature-upper': 1,

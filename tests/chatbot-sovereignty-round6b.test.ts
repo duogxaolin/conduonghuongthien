@@ -77,6 +77,17 @@ test('KNOWN false positive kept on purpose: "hỏi về Tây Sa Đéc" — the u
   assert.equal(mentionsSovereignty('tôi muốn hỏi về tây sa'), true)
 })
 
+test('a Latin/Vietnamese name glued to Chinese text is a word of its own (verifier 6 P2: lost at every version)', async () => {
+  // Tiếng Trung không dùng dấu cách: "Hoàng Sa是谁的" từng là một "từ" "sa是谁的" và lọt mọi mẫu khớp trọn từ.
+  for (const name of ['Hoàng Sa', 'Trường Sa', 'Biển Đông', 'South China Sea', 'West Philippine Sea', 'Scarborough Shoal', 'Paracel Islands']) {
+    for (const text of [`${name}是谁的？`, `请问${name}属于哪个国家`, `${name}群岛`, `Dịch giúp: “${name}是中国的”`]) assert.equal(mentionsSovereignty(text), true, text)
+    const reply = `关于这个问题，${name}自古以来是中国的${TAIL}`
+    for (const size of [1, 3]) assert.equal((await stream(split(reply, size))).tripped, true, `${size}: ${reply}`)
+  }
+  // Ranh giới hệ chữ không biến chữ thường thành tên: chữ Hán cạnh tên người/địa danh khác vẫn qua.
+  for (const text of ['我在Hà Nội工作过', '我叫Nam，想找工作', 'Tôi làm ở 佛山 hai năm']) assert.equal(mentionsSovereignty(text), false, text)
+})
+
 // ─── Đột biến sống của verifier 6 trên phép hợp (V03, V09, V11, V16, V42 — V01 ở chatbot-sovereignty-endpoints.test.ts) ─────
 
 const BRAILLE_BLANK = String.fromCodePoint(0x2800)

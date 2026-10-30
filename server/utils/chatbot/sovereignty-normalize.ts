@@ -33,6 +33,10 @@ const LOOKALIKE_SCRIPT = /[\p{Script=Cyrillic}\p{Script=Greek}]/u
 // Hangul U+115F/U+1160/U+3164/U+FFA0, Khmer U+17B4–17B5, Mông Cổ U+180B–180F, dấu chọn biến thể U+FE00–FE0F và
 // U+E0100–E01EF), cộng ô chữ nổi trống U+2800 (không thuộc nhóm đó nhưng cũng không hiện).
 const INVISIBLE = new RegExp('[\\p{Cf}\\p{Default_Ignorable_Code_Point}\\u2800]', 'gu')
+// Chữ Hán dính liền chữ cái hệ khác là ranh giới từ (vòng 6b, verifier 6): "Hoàng Sa是谁的", "请问Hoàng Sa属于哪个国家",
+// "South China Sea是什么" — tiếng Trung không dùng dấu cách, nên tên Latin/Việt chen vào câu tiếng Trung từng thành một "từ"
+// với chữ Hán bên cạnh và lọt mọi mẫu khớp trọn từ. Khoá chữ Hán bỏ dấu cách nên không đổi.
+const HAN_SCRIPT_BOUNDARY = /(?<=\p{Script=Han})(?=[^\P{L}\p{Script=Han}])|(?<=[^\P{L}\p{Script=Han}])(?=\p{Script=Han})/gu
 
 /**
  * NFKC (chữ toàn độ → thường), bỏ ký tự không hiện (`INVISIBLE` — NFKC không bỏ), gộp chữ Hán,
@@ -43,7 +47,7 @@ const INVISIBLE = new RegExp('[\\p{Cf}\\p{Default_Ignorable_Code_Point}\\u2800]'
  * Bỏ chúng TRƯỚC khi thay chữ giả: "Н<U+200B>oàng" phải thành một từ mới thấy là từ lẫn chữ.
  */
 export function sovereigntyFold(value: string): string {
-  const folded = value.normalize('NFKC').replace(INVISIBLE, '')
+  const folded = value.normalize('NFKC').replace(INVISIBLE, '').replace(HAN_SCRIPT_BOUNDARY, ' ')
     .replace(HAN_FOLD_CHARS, char => HAN_FOLD[char]!)
     .replace(/[ÐƉ]/g, 'Đ').replace(/[ðɖ]/g, 'đ')
   // Lớp đầu ra gọi hàm này mỗi chunk: chỉ duyệt từng từ khi văn bản có chữ Kirin/Hy Lạp.

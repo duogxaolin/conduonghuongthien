@@ -10,9 +10,11 @@
  * `sovereignty611*` trong `sovereignty-guard.ts`, không phải sửa tệp này.
  *
  * KHÔNG SỬA mẫu ở đây: sửa bộ khớp ở `sovereignty-patterns.ts`. `tests/chatbot-sovereignty-611-layer.test.ts` ghim kết
- * quả từng câu của fixture bằng mặt nạ bit 1 (= 611588c2). Khác bản gốc chỉ ở hai chỗ không đổi kết quả: bỏ từ cuối
- * bằng vòng lặp tuyến tính (regex gốc `[\p{L}\p{M}\p{N}]+$` bậc hai trên dãy chữ Hán dài), và đường tắt "không có chữ
- * cái ngoài chữ Hán thì nhánh chữ viết không khớp".
+ * quả từng câu của fixture bằng mặt nạ bit 1 (= 611588c2). Khác bản gốc ở hai chỗ: bỏ từ cuối bằng vòng lặp tuyến tính
+ * (regex gốc `[\p{L}\p{M}\p{N}]+$` bậc hai trên dãy chữ Hán dài) và đường tắt "không có chữ cái ngoài chữ Hán thì nhánh chữ
+ * viết không khớp". Verifier 6 đo vi sai 300 000 mẫu: `sovereignty611Mentions` trùng bản gốc 300 000/300 000;
+ * `sovereignty611SettledScriptMentions` lệch 84/300 000, chỉ khi có chữ Hán NGOÀI mặt phẳng cơ bản (𠀀, 𠮷 — vòng lặp duyệt
+ * đơn vị UTF-16 nên dừng ở chữ đó, bản gốc bỏ cả từ), và luôn theo hướng bản chép CHẶN NHIỀU hơn.
  */
 
 // Phồn thể cần dùng → giản thể; "⻄" (bộ thủ U+2EC4, NFKC không gộp) → "西".
