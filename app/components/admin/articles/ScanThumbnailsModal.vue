@@ -11,24 +11,10 @@
  */
 import { computed, ref, watch } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
+import { adminFetch } from '~/composables/adminFetch'
+import type { ArticleScanThumbnailsResponse as ScanResponse } from '~/types/admin-articles-api'
 
-interface BrokenArticle {
-  id: number
-  title: string
-  thumbnailUrl: string
-  reason: 'r2_404' | 'local_missing'
-}
-
-interface ScanResponse {
-  ok: boolean
-  scanned: number
-  brokenCount: number
-  broken: BrokenArticle[]
-  dryRun: boolean
-  fixedCount?: number
-  defaultCover?: string
-  message?: string
-}
+type BrokenArticle = ScanResponse['broken'][number]
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{
@@ -86,7 +72,7 @@ const runScan = async () => {
   report.value = null
   selectedIds.value = new Set()
   try {
-    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<ScanResponse>)(
+    const res = await adminFetch<ScanResponse>(
       '/api/admin/articles/scan-thumbnails',
       { method: 'POST', body: { dryRun: true } },
     )
@@ -115,7 +101,7 @@ const runFix = async () => {
   fixing.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<ScanResponse>)(
+    const res = await adminFetch<ScanResponse>(
       '/api/admin/articles/scan-thumbnails',
       { method: 'POST', body: { dryRun: false, fixIds: ids, defaultCover: defaultCover.value } },
     )
