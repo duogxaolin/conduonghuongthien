@@ -26,11 +26,14 @@ const HAN_FULL_NAMES = [
   /永兴岛|南威岛|赤瓜礁|永暑礁|华阳礁|东门礁|南薰礁|渚碧礁|美济礁|黄岩岛|仁爱礁|太平岛/,
 ]
 // 南海/南沙/西沙 TRẦN: không tính khi chữ đứng trước TRONG CÙNG MỆNH ĐỀ ghép thành từ khác (越南海防, 河南沙县, 海南海口,
-// 中南海, 东西沙发, 佛山南海, 广州南沙, tên người 张南海…; "越南。沙坝" — chữ 南 vẫn cùng mệnh đề với 越) hoặc khi liền sau là
-// đơn vị hành chính/cơ sở (佛山市南海区, 广州市南沙区人民法院, 南沙新区, 南海观音, 南海電鉄). "广州，南沙" thì bắt.
+// 中南海, 东西沙发; "越南。沙坝" — chữ 南 vẫn cùng mệnh đề với 越), khi địa danh hai chữ đứng trước (佛山南海, 广州南沙) hoặc khi
+// liền sau là đơn vị hành chính/cơ sở (佛山市南海区, 广州市南沙区人民法院, 南沙新区, 南海观音, 南海電鉄). "广州，南沙" thì bắt.
+// Vòng 6 thu hẹp: chữ đứng trước một chữ chỉ còn bộ của 611588c2 — 周/王/张/山/州 lẻ là chữ thường (本周南海, 称王南海, 扩张
+// 南海, 登山南海), họ người (张南海) nhận lập trường như ở 611588c2; hậu tố một chữ không loại khi là đầu từ khác (区域, 县域);
+// 西沙区 là tên đơn vị Trung Quốc đặt cho Hoàng Sa — không có hậu tố 区.
 const HAN_BARE_NAMES = [
-  { name: /南[海沙]/g, before: new Set('越河云湖济海江华西东中岭闽安州山张王李刘陈杨赵周吴'), after: /^(?:[区县镇市港]|新区|街道|法院|观音|[电電][铁鉄])/ },
-  { name: /西沙/g, before: new Set('东广江山陕'), after: /^[区县镇市]/ },
+  { name: /南[海沙]/g, before: new Set('越河云湖济海江华西东中岭闽安'), beforeWords: ['佛山', '广州'], after: /^(?:[区县镇市港](?!域)|新区|街道|法院|观音|[电電][铁鉄])/ },
+  { name: /西沙/g, before: new Set('东广江山陕'), beforeWords: [], after: /^[县镇市](?!域)/ },
 ]
 // Tín hiệu quyền sở hữu trên khoá nối liền ("属，于" vẫn là 属于); chữ sở hữu hệ chữ khác do nơi gọi đưa vào.
 const HAN_OWNERSHIP = /中国|主权|属于|哪个国家|哪国|领土|归属|归谁|谁的/
@@ -57,11 +60,13 @@ function bareHanName(han: string, joined: string, ownership: () => boolean): boo
   if (HAN_OWNERSHIP.test(joined) || ownership()) return true
   // Không có dấu câu thì không có chỗ ngắt nào (đọc ngoài mảng rỗng là undefined — "không ngắt").
   const breakBefore = han === joined ? NO_BREAKS : breaksOf(han)
-  for (const { name, before, after } of HAN_BARE_NAMES) {
+  for (const { name, before, beforeWords, after } of HAN_BARE_NAMES) {
     for (const match of joined.matchAll(name)) {
       const start = match.index
       const end = start + match[0].length
-      const vetoBefore = start > 0 && !breakBefore[start] && before.has(joined[start - 1]!)
+      // Địa danh hai chữ: cả hai chữ cùng mệnh đề với tên ("广，州南沙" không phải 广州).
+      const vetoBefore = start > 0 && !breakBefore[start] && (before.has(joined[start - 1]!)
+        || beforeWords.some(word => joined.endsWith(word, start) && !breakBefore[start - 1]))
       const vetoAfter = !breakBefore[end] && after.test(joined.slice(end, end + 2))
       if (!vetoBefore && !vetoAfter) return true
     }
