@@ -1,7 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 import type {
-  FaviconResetResponse, FaviconUploadResponse, LayoutSettingsResponse, LayoutSettingsSaveResponse, SiteSettingsResponse, SiteSettingsSaveResponse,
+  FaviconResetResponse, FaviconUploadResponse, SiteSettingsResponse, SiteSettingsSaveResponse,
 } from '~/types/admin-settings-api'
 
 const settings = reactive({
@@ -21,6 +21,12 @@ const settings = reactive({
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
+/**
+ * Biểu mẫu đang giữ cài đặt THẬT — một lượt tải đã điền xong. Trước đó (đang tải, tải hỏng)
+ * nó giữ mặc định viết tay ở trên, và "Lưu Cài Đặt" (ở đầu trang, ngoài chuỗi tải/lỗi) từng
+ * PUT đúng mặc định đó đè cài đặt thật (R8-1). Khoá hai lớp: nút và `handleSave`.
+ */
+const loaded = ref(false)
 const toast = useToast()
 const { openPicker } = useImagePicker()
 const { uploading, uploadFile } = useUpload()
@@ -39,6 +45,7 @@ const fetchSettings = async () => {
       for (const k of GENERAL_KEYS) {
         if (res.settings[k] != null) (settings as Record<string, string>)[k] = String(res.settings[k])
       }
+      loaded.value = true
     } else {
       error.value = 'Không tải được cài đặt website.'
     }
@@ -50,6 +57,7 @@ const fetchSettings = async () => {
 }
 
 const handleSave = async () => {
+  if (!loaded.value) return
   saving.value = true
   try {
     const payload: Record<string, string> = {}
@@ -156,14 +164,14 @@ onMounted(() => { fetchSettings() })
 // Riêng biệt với settings chung: lưu bằng PUT /api/admin/settings/layout,
 // audit trong transaction với activityLogs. useState('layout-config') chia sẻ
 // với default.vue / admin.vue nên thay đổi áp dụng ngay cho trang công khai sau
-// khi SWR hết hạn.
-import type { LayoutConfig } from '~/composables/useLayoutConfig'
+// khi SWR hết hạn. Tải/khoá/lưu dùng chung với social-links.vue (cùng một hàng,
+// PUT cả hàng): `useLayoutSettingsForm` — chỉ lưu khi bản nháp giữ cấu hình thật (R8-2).
+import { useLayoutSettingsForm } from '~/composables/useLayoutSettingsForm'
 
-const layoutLoading = ref(true)
-const layoutBusy = ref(false)
-// Bản nháp tách khỏi state chung — chỉ ghi vào useState khi save thành công,
-// tránh vuốt tay làm grid trang công khai đổi trong khi admin chưa bấm Lưu.
-const draft = ref<LayoutConfig>({ ...DEFAULT_LAYOUT_CONFIG })
+const { setConfig } = useLayoutConfig()
+const {
+  draft, loading: layoutLoading, busy: layoutBusy, loaded: layoutLoaded, error: layoutError, load: loadLayout, save: saveLayout,
+} = useLayoutSettingsForm({ toast, setConfig, savedMessage: 'Đã lưu cấu hình bố cục.' })
 
 const PRESET_OPTIONS = [
   { value: 'compact',  label: 'Hẹp (1152px)' },
@@ -172,37 +180,6 @@ const PRESET_OPTIONS = [
   { value: 'custom',   label: 'Tự nhập' },
 ] as const
 const GRID_COLS_OPTIONS = [2, 3, 4] as const
-
-async function loadLayout() {
-  layoutLoading.value = true
-  try {
-    const res = await adminFetch<LayoutSettingsResponse>('/api/admin/settings/layout')
-    if (res?.ok && res.config) draft.value = { ...res.config }
-  } catch {
-    // layout chưa cấu hình → giữ default
-  } finally {
-    layoutLoading.value = false
-  }
-}
-
-async function saveLayout() {
-  layoutBusy.value = true
-  try {
-    const res = await adminFetch<LayoutSettingsSaveResponse>('/api/admin/settings/layout', {
-      method: 'PUT', body: { ...draft.value },
-    })
-    if (res?.ok && res.config) {
-      setConfig(res.config)
-      toast.success('Đã lưu cấu hình bố cục.')
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Lưu cấu hình thất bại.'))
-  } finally {
-    layoutBusy.value = false
-  }
-}
-
-const { setConfig } = useLayoutConfig()
 
 onMounted(() => { loadLayout() })
 </script>
@@ -217,7 +194,7 @@ onMounted(() => { loadLayout() })
       </div>
       <button
         class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
-        :disabled="saving"
+        :disabled="saving || !loaded"
         @click="handleSave"
       >
         <i class="fa-regular" :class="saving ? 'fa-spinner animate-spin' : 'fa-floppy-disk'"></i>
@@ -466,7 +443,7 @@ onMounted(() => { loadLayout() })
           <button
             type="button"
             class="px-4 py-2 rounded-lg bg-brand-700 text-white text-xs font-bold hover:bg-[#245328] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            :disabled="layoutBusy || layoutLoading"
+            :disabled="layoutBusy || !layoutLoaded"
             @click="saveLayout"
           >
             {{ layoutBusy ? 'Đang lưu…' : 'Lưu bố cục' }}
@@ -474,6 +451,11 @@ onMounted(() => { loadLayout() })
         </div>
 
         <div v-if="layoutLoading" class="text-xs text-ink-muted py-2">Đang tải cấu hình…</div>
+        <!-- Tải hỏng: nói ra, không vẽ bản nháp mặc định như thể là cấu hình đang dùng (R8-2). -->
+        <p v-else-if="layoutError" role="alert" class="m-0 text-xs text-danger-soft py-2">
+          <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ layoutError }}
+          <button type="button" class="font-bold text-brand-600 underline" @click="loadLayout()">Thử lại</button>
+        </p>
         <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <!-- Container width -->
           <div class="flex flex-col gap-1.5">

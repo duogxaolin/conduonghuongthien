@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { parse } from '@vue/compiler-sfc'
+import { ADMIN_LAYOUT_FAMILY, familySource } from './_component-family.ts'
 import {
   buildRetentionPolicy,
   parseBooleanSetting,
@@ -342,6 +343,12 @@ test('the page reads and writes only the retention endpoints and confirms the pu
 })
 
 test('the menu entry is hidden without the grant the endpoint requires', () => {
-  const layout = source('../app/layouts/admin.vue')
+  // The admin layout was split (wave3 D-SPLIT): its menu lives in `useAdminLayoutMenu`, so this
+  // reads the layout's whole family (tests/_component-family.ts). Which accounts see the entry
+  // is mounted in tests/admin-layout.test.ts.
+  const layout = familySource(ADMIN_LAYOUT_FAMILY)
   assert.match(layout, /hasPermission\('settings', 'read'\).*\/admin\/settings\/data-retention/s)
+  // Proof: the menu composable gone from the family source turns this red.
+  const withoutMenu = familySource(ADMIN_LAYOUT_FAMILY, { 'composables/useAdminLayoutMenu.ts': '' })
+  assert.doesNotMatch(withoutMenu, /\/admin\/settings\/data-retention/)
 })

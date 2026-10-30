@@ -6,6 +6,7 @@ import { effectScope, nextTick, ref } from 'vue'
 
 import { renderChatMarkdown, renderChatMarkdownBlocks } from '../app/utils/markdown'
 import { CHAT_BOTTOM_THRESHOLD_PX, useChatAutoScroll } from '../app/composables/useChatAutoScroll'
+import { CHATBOT_COMPOSABLE_FAMILY, chatSurfaceSource, chatSurfaceTemplate, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 /**
  * Chatbot trên điện thoại "không mượt" — đo bằng trình duyệt ở 390×844 trước khi
@@ -92,24 +93,52 @@ test('the message body binds one v-html per block', () => {
   assert.doesNotMatch(template, /v-html="renderChatMarkdown\(/, 'one v-html for the whole answer rebuilds every node per chunk')
 })
 
+// `useChatbot` is a facade over `composables/chatbot/*.ts` since its wave3 split: the
+// stream code is read as the composable's family (tests/_component-family.ts).
+const composableSource = (overrides?: Record<string, string>) => moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, overrides)
+
+function streamFlushProblems(source: string): string[] {
+  const problems: string[] = []
+  if (!/scheduleStreamFlush\(streamFlush\)/.test(source)) problems.push('the read loop must queue, not write, each chunk')
+  if (!/requestAnimationFrame\(fire\)/.test(source)) problems.push('the queued copy must wait for a frame')
+  if (!/flushStreamNow\(streamFlush\)\s*\n\s*if \(buffer\)/.test(source)) problems.push('whatever is queued must land before playback reads the transcript')
+  if (!/catch \(error\) \{[\s\S]{0,200}cancelStreamFlush\(streamFlush\)/.test(source)) problems.push('a queued frame must not re-add a removed bot message')
+  return problems
+}
+
+function flushHeightProblems(source: string): string[] {
+  const flush = source.match(/const flushToTranscript = \(\) => \{[\s\S]*?\n {4}\}/)?.[0] ?? ''
+  if (!flush) return ['flushToTranscript not found']
+  const problems: string[] = []
+  // The question's "Đang gửi…" line goes when the reply bubble arrives, in the
+  // same frame — not when the stream closes, under a finished answer.
+  if (!/question\?\.status === 'pending'\) question\.status = undefined/.test(flush)) problems.push('the question stops "sending" with the first word')
+  // The pending indicator goes at the first word, not at the end of the stream.
+  if (!/isReplyStreaming\.value = true/.test(flush)) problems.push('the indicator goes at the first word')
+  if (!/const isAwaitingFirstWord = computed\(\(\) => isSubmitting\.value && !isReplyStreaming\.value\)/.test(source)) problems.push('isAwaitingFirstWord is gated on the first word')
+  return problems
+}
+
 test('stream chunks reach the transcript at most once per frame', () => {
-  const source = read('../app/composables/useChatbot.ts')
-  assert.match(source, /scheduleStreamFlush\(streamFlush\)/, 'the read loop must queue, not write, each chunk')
-  assert.match(source, /requestAnimationFrame\(fire\)/)
-  assert.match(source, /flushStreamNow\(streamFlush\)\s*\n\s*if \(buffer\)/, 'whatever is queued must land before playback reads the transcript')
-  assert.match(source, /catch \(error\) \{[\s\S]{0,200}cancelStreamFlush\(streamFlush\)/, 'a queued frame must not re-add a removed bot message')
+  assert.deepEqual(streamFlushProblems(composableSource()), [])
 })
 
 test('nothing above the reply changes height once the reply has started', () => {
-  const source = read('../app/composables/useChatbot.ts')
-  const flush = source.match(/const flushToTranscript = \(\) => \{[\s\S]*?\n {4}\}/)?.[0] ?? ''
-  assert.ok(flush, 'flushToTranscript not found')
-  // The question's "Đang gửi…" line goes when the reply bubble arrives, in the
-  // same frame — not when the stream closes, under a finished answer.
-  assert.match(flush, /question\?\.status === 'pending'\) question\.status = undefined/)
-  // The pending indicator goes at the first word, not at the end of the stream.
-  assert.match(flush, /isReplyStreaming\.value = true/)
-  assert.match(source, /const isAwaitingFirstWord = computed\(\(\) => isSubmitting\.value && !isReplyStreaming\.value\)/)
+  assert.deepEqual(flushHeightProblems(composableSource()), [])
+})
+
+test('injection proof: the stream checks read the modules that carry the code', () => {
+  const send = 'composables/chatbot/send.ts'
+  const state = 'composables/chatbot/state.ts'
+  const breakIn = (file: string, from: string, to: string) => {
+    const source = readAppFile(file)
+    assert.ok(source.includes(from), `${file} no longer contains ${from}`)
+    return composableSource({ [file]: source.replace(from, to) })
+  }
+  assert.notDeepEqual(streamFlushProblems(breakIn(send, 'scheduleStreamFlush(streamFlush)', 'flushStreamNow(streamFlush)')), [])
+  assert.notDeepEqual(streamFlushProblems(breakIn(send, 'cancelStreamFlush(streamFlush)\n', '\n')), [])
+  assert.notDeepEqual(flushHeightProblems(breakIn(send, "if (question?.status === 'pending') question.status = undefined", '')), [])
+  assert.notDeepEqual(flushHeightProblems(breakIn(state, '&& !isReplyStreaming.value', '')), [])
 })
 
 // ─── 3. Bám đáy theo ý người đọc ─────────────────────────────────────────────
@@ -239,33 +268,49 @@ test('the first scroll by the visitor drops the stop at the question', async () 
   })
 })
 
+// The widget is read as its whole family since its wave3 split (the input row, header and
+// launcher are parts in components/chat-widget/): `chatSurfaceSource/Template`.
 test('both surfaces decide "follow" from the pinned state, not a post-growth measurement', () => {
   for (const file of SURFACES) {
-    const source = read(file)
+    const source = chatSurfaceSource(file)
     assert.match(source, /useChatAutoScroll\(chatContainer, chatContent\)/, `${file} must use the shared follow logic`)
-    for (const send of source.matchAll(/(?:const sendBotMessage|const askBot|function retryMessage)[\s\S]*?submitBotQuestion\(/g)) {
+    const sends = [...source.matchAll(/(?:const sendBotMessage|const askBot|function retryMessage)[\s\S]*?submitBotQuestion\(/g)]
+    assert.equal(sends.length, 3, `${file}: the three ways to send were not all found`)
+    for (const send of sends) {
       assert.match(send[0], /followLatestQuestion\(\)/, `${file}: a send must stop the follow at the new question`)
     }
-    assert.match(templateOf(file), /:data-chat-anchor="msg\.sender === 'user'/, `${file}: questions must be marked as stops`)
+    assert.match(chatSurfaceTemplate(file), /:data-chat-anchor="msg\.sender === 'user'/, `${file}: questions must be marked as stops`)
     assert.match(source, /const wasAtBottom = force \|\| isPinnedToBottom\.value/, file)
     assert.doesNotMatch(source, /el\.scrollHeight - el\.scrollTop - el\.clientHeight < 80/, `${file} still measures after growth`)
-    assert.match(templateOf(file), /ref="chatContent"/, `${file} needs an inner block for the ResizeObserver`)
+    assert.match(chatSurfaceTemplate(file), /ref="chatContent"/, `${file} needs an inner block for the ResizeObserver`)
   }
 })
 
 // ─── Điện thoại: bàn phím, zoom, trình đọc màn hình ──────────────────────────
 
+function smallInputs(template: string): { checked: string[], tooSmall: string[] } {
+  const tags = template.match(/<(input|textarea)\b[^>]*>/g) ?? []
+  const visible = tags.filter(tag => !/name="_h"/.test(tag))
+  // A bare `text-[0.88rem]` (no breakpoint prefix) applies on phones.
+  return { checked: visible, tooSmall: visible.filter(tag => /(?<![:\w-])text-\[0?\.\d+rem\]/.test(tag) || !/\btext-base\b/.test(tag)) }
+}
+
 test('text inputs are 16px on phones so iOS Safari does not zoom on focus', () => {
   for (const file of SURFACES) {
-    const tags = templateOf(file).match(/<(input|textarea)\b[^>]*>/g) ?? []
-    const visible = tags.filter(tag => !/name="_h"/.test(tag))
-    assert.ok(visible.length > 0, `${file} has text inputs`)
-    for (const tag of visible) {
-      // A bare `text-[0.88rem]` (no breakpoint prefix) applies on phones.
-      assert.doesNotMatch(tag, /(?<![:\w-])text-\[0?\.\d+rem\]/, `${file}: below 16px on phones: ${tag.slice(0, 120)}`)
-      assert.match(tag, /\btext-base\b/, `${file}: ${tag.slice(0, 120)}`)
-    }
+    const { checked, tooSmall } = smallInputs(chatSurfaceTemplate(file))
+    assert.ok(checked.length > 0, `${file} has text inputs`)
+    assert.deepEqual(tooSmall.map(tag => tag.slice(0, 120)), [], `${file}: below 16px on phones`)
   }
+  // The question box itself is among what is checked — not only the contact form.
+  assert.ok(smallInputs(chatSurfaceTemplate(SURFACES[0])).checked.some(tag => tag.includes('id="public-chatbot-input"')))
+})
+
+test('injection proof: the 16px rule reaches the input row part of the widget', () => {
+  const composer = 'components/chat-widget/ChatWidgetComposer.vue'
+  const source = readAppFile(composer)
+  assert.ok(source.includes('text-base md:text-[0.88rem]'), `${composer} no longer has the class this proof shrinks`)
+  const broken = chatSurfaceTemplate(SURFACES[0], { [composer]: source.replace('text-base md:text-[0.88rem]', 'text-[0.88rem]') })
+  assert.equal(smallInputs(broken).tooSmall.length, 1)
 })
 
 test('the full-screen widget follows the visible viewport when the keyboard opens', () => {
@@ -287,7 +332,7 @@ test('message bubbles are not alerts', () => {
   // Every streamed chunk changes the bubble's text. As `role="alert"` each change
   // was an assertive interruption, and every past message was an alert too.
   for (const file of SURFACES) {
-    const template = templateOf(file)
+    const template = chatSurfaceTemplate(file)
     const bubble = template.match(/<div\s+class="max-w-\[8\d%\][^>]*>/)?.[0]
     assert.ok(bubble, `${file}: bubble not found`)
     assert.doesNotMatch(bubble, /role="alert"/, file)

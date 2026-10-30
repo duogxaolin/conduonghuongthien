@@ -44,8 +44,8 @@ export interface AdminFetchOptions {
   method?: AdminFetchMethod
   /** `undefined` values are dropped from the query string, as with bare `$fetch`. */
   query?: Record<string, unknown>
-  /** Plain objects and arrays are sent as JSON. */
-  body?: Record<string, unknown> | unknown[] | FormData | Blob | string
+  /** Plain objects and arrays are sent as JSON; the rest as is (an upload chunk is an `ArrayBuffer`). */
+  body?: Record<string, unknown> | unknown[] | FormData | Blob | ArrayBuffer | string
   headers?: Record<string, string>
   signal?: AbortSignal
   /** ofetch's own default applies when omitted: one retry for GET on 408/409/425/429/5xx. */

@@ -58,10 +58,9 @@ async function load() {
   loadError.value = ''
   canUploadDenied.value = false
   try {
-    config.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaConfig>)('/api/admin/media-portal/config')
+    config.value = await adminFetch<AdminMediaConfig>('/api/admin/media-portal/config')
   } catch (err: unknown) {
-    const status = (err as { status?: number, statusCode?: number })?.statusCode || (err as { status?: number })?.status
-    if (status === 403) {
+    if (errorStatus(err) === 403) {
       canUploadDenied.value = true
     } else {
       loadError.value = 'Không kiểm tra được khả năng tải video của máy chủ.'

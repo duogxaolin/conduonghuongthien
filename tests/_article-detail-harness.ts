@@ -50,6 +50,9 @@ export type NetCall = {
   method: string
   url: URL
   body: unknown
+  /** What ofetch handed to `fetch` (D-FETCH lot G pins the view ping's beacon options). */
+  keepalive?: boolean
+  signal?: AbortSignal | null
   respond: (response: Response) => void
   fail: (error: Error) => void
 }
@@ -153,7 +156,16 @@ function phaseNow(): AsyncRegistration['phase'] {
   return !instance ? 'outside' : instance.isMounted ? 'mounted' : 'setup'
 }
 
-function fakeUseAsyncData(keys: string[], registrations: AsyncRegistration[]) {
+/**
+ * A read the SERVER already did, for a hydration mount (R8-6): Nuxt 4.6.1 sets the state from
+ * the payload — `success` with its data, or `error` with `default()` — and does NOT run the
+ * handler (asyncData.js:136-138). Not modelled: `getCachedData` on a later `refresh()` (with
+ * `granularCachedData`, the default, it returns the payload entry without a request — measured
+ * on a production build, docs/test-coverage-baseline-2026-10.md § R8).
+ */
+export type HydratedRead = { data: unknown } | { error: true }
+
+function fakeUseAsyncData(keys: string[], registrations: AsyncRegistration[], hydrated: Record<string, HydratedRead> = {}) {
   return (keyArg: string | (() => string), handler: () => Promise<unknown>, options: AsyncOptions = {}) => {
     const key = typeof keyArg === 'function' ? keyArg : () => keyArg
     registrations.push({ key: key(), phase: phaseNow(), lazy: options.lazy, server: options.server, immediate: options.immediate })
@@ -178,7 +190,14 @@ function fakeUseAsyncData(keys: string[], registrations: AsyncRegistration[]) {
         status.value = 'error'
       }
     }
-    if (options.immediate !== false) void refresh()
+    const fromServer = hydrated[key()]
+    if (fromServer && 'data' in fromServer) {
+      data.value = fromServer.data
+      status.value = 'success'
+    } else if (fromServer) {
+      error.value = new Error('the server-side read failed')
+      status.value = 'error'
+    } else if (options.immediate !== false) void refresh()
     Vue.watch([key, ...(options.watch ?? [])], () => { void refresh() })
     const result = { data, pending, error, status, refresh, execute: refresh }
     return Object.assign(Promise.resolve(result), result)
@@ -206,7 +225,7 @@ function replaceGlobal(name: string, value: unknown): Restore {
 export type DetailProps = Record<string, unknown> & { slug?: string, backTo?: string }
 const MOUNTS = new WeakMap<TestContext, number>()
 
-export async function mountDetail(t: TestContext, server = articleServer(), props: DetailProps = {}, options: { lang?: string, referrer?: string } = {}) {
+export async function mountDetail(t: TestContext, server = articleServer(), props: DetailProps = {}, options: { lang?: string, referrer?: string, hydrated?: Record<string, HydratedRead> } = {}) {
   const calls: NetCall[] = []
   const restore: Restore[] = []
   const fetchImpl = (input: RequestInfo | URL, init: RequestInit = {}) => new Promise<Response>((resolve, reject) => {
@@ -215,10 +234,13 @@ export async function mountDetail(t: TestContext, server = articleServer(), prop
       method: (init.method ?? 'GET').toUpperCase(),
       url: new URL(raw, 'http://portal.test'),
       body: typeof init.body === 'string' ? JSON.parse(init.body) : init.body,
+      keepalive: init.keepalive,
+      signal: init.signal,
       respond: resolve,
       fail: reject,
     }
     calls.push(call)
+    init.signal?.addEventListener('abort', () => reject(init.signal!.reason), { once: true })
     const answer = server.respond(call)
     if (answer === HOLD) return
     if (answer instanceof Error) reject(answer)
@@ -251,7 +273,7 @@ export async function mountDetail(t: TestContext, server = articleServer(), prop
   let seoInput: Record<string, unknown> = {}
   const asyncKeys: string[] = []
   const registrations: AsyncRegistration[] = []
-  const useAsyncData = fakeUseAsyncData(asyncKeys, registrations)
+  const useAsyncData = fakeUseAsyncData(asyncKeys, registrations, options.hydrated)
   // Composables imported by the view (`useArticleRelated`) reach Nuxt's auto-imports as bare
   // globals — the same stand-in, on `globalThis` (the pattern of tests/public-article-list.test.ts).
   restore.push(replaceGlobal('useAsyncData', useAsyncData))

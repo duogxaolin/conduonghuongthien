@@ -352,7 +352,7 @@ const filterTabs = [
 
 const { data: searchData, pending, error, refresh } = await useAsyncData(
   () => `search-${searchQuery.value}-${activeType.value}-${currentPage.value}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: Array<{ id: number | string; title: string; slug?: string; excerpt?: string | null; type?: string | null; thumbnailUrl?: string | null; publishedAt?: string | null; url?: string; categoryName?: string | null; typeBadgeClass?: string; typeIcon?: string; typeLabel?: string }>; counts?: Record<string, number>; pagination?: { page: number; totalPages: number; total: number }; total?: number }>)('/api/public/search', {
+  () => publicFetch<import('~/types/public-content-api').PublicSearchResponse>('/api/public/search', {
     query: {
       q: searchQuery.value,
       type: activeType.value,

@@ -115,6 +115,8 @@
 import { reactive, ref, computed, nextTick, useId } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
 import { useI18n } from '~/composables/useI18n'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicSubmissionResponse } from '~/types/public-site-api'
 import { autocompleteFor, controlId, errorId, validateFormField } from '~/utils/form-a11y'
 
 const { t, currentLang } = useI18n()
@@ -293,7 +295,7 @@ const submitForm = async () => {
       type: field.type,
       required: field.required,
     }))
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/submissions', {
+    await publicFetch<PublicSubmissionResponse>('/api/submissions', {
       method: 'POST',
       body: {
         type: 'support',

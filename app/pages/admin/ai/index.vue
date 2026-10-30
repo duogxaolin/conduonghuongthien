@@ -22,6 +22,7 @@
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 import type { ProviderOption, PricingRow } from '~/utils/ai-service-labels'
+import type { AdminAiPricingResponse, AdminAiProvidersResponse } from '~/types/admin-ai-api'
 import AiDashboardTab from '~/components/admin/ai/AiDashboardTab.vue'
 import AiProvidersTab from '~/components/admin/ai/AiProvidersTab.vue'
 import AiServicesTab from '~/components/admin/ai/AiServicesTab.vue'
@@ -75,8 +76,8 @@ async function ensureProvidersLoaded() {
   if (providers.value.length > 0) return
   try {
     const [pData, prData] = await Promise.all([
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ providers: ProviderOption[] }>)('/api/admin/ai/providers'),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: PricingRow[] }>)('/api/admin/ai/pricing'),
+      adminFetch<AdminAiProvidersResponse>('/api/admin/ai/providers'),
+      adminFetch<AdminAiPricingResponse>('/api/admin/ai/pricing'),
     ])
     providers.value = pData.providers
     pricingRows.value = prData.pricing

@@ -58,11 +58,20 @@ function detach(node: MiniNode): void {
 }
 
 /**
- * `focus()` exists and does nothing — a page calls it on a template ref (login.vue moves
- * focus to the code field). Non-enumerable, so it is not part of the element's data.
+ * `focus()` exists — a page calls it on a template ref (login.vue moves focus to the code
+ * field). It does nothing unless a test installed a recorder with `recordFocus()`, which
+ * then hears every call with the element (it moves no focus: there is no
+ * `document.activeElement` here). Non-enumerable, so it is not part of the element's data.
  */
-const createElement = (tag: string): MiniElement =>
-  Object.defineProperty({ kind: 'element', tag, props: {}, children: [], parent: null } as MiniElement, 'focus', { value: () => {} })
+let focusRecorder: ((el: MiniElement) => void) | null = null
+/** Hear every `focus()` called on a mini element (`null` to stop). One recorder at a time. */
+export function recordFocus(recorder: ((el: MiniElement) => void) | null): void {
+  focusRecorder = recorder
+}
+const createElement = (tag: string): MiniElement => {
+  const el = { kind: 'element', tag, props: {}, children: [], parent: null } as MiniElement
+  return Object.defineProperty(el, 'focus', { value: () => { focusRecorder?.(el) } })
+}
 
 const renderer = Vue.createRenderer<MiniNode, MiniElement>({
   insert(child, parent, anchor) {
@@ -107,8 +116,13 @@ const recordShow: Vue.ObjectDirective<MiniElement> = {
   beforeUpdate(el, { value }) { el.shown = Boolean(value) },
 }
 
-/** The `vue` module as compiled SFCs see it: real, except for the DOM-only `v-model`/`v-show` directives. */
-const VUE_FOR_SFC: Record<string, unknown> = {
+/**
+ * The `vue` module as compiled SFCs see it: real, except for the DOM-only `v-model`/`v-show`
+ * directives. Exported so a harness can hand `modules: { vue: { ...VUE_FOR_SFC, … } }` with
+ * one more stand-in (the admin layout's `<Transition>`, whose real hooks need `classList`
+ * and `requestAnimationFrame`) without losing the two recorders.
+ */
+export const VUE_FOR_SFC: Record<string, unknown> = {
   ...Vue,
   vModelText: recordModel,
   vModelCheckbox: recordModel,
@@ -140,6 +154,14 @@ export interface SfcEnv {
    * Settle (or await) after mounting for the setup to resolve.
    */
   suspense?: boolean
+  /**
+   * What `import.meta.server` / `import.meta.client` / `import.meta.dev` read, as Vite
+   * replaces them at build time — in every compiled file of the tree. Without it a file
+   * that reads `import.meta` cannot compile here (a `new Function` body is not a module);
+   * `{ server: false, client: true }` mounts the browser build, `{ server: true, client:
+   * false }` runs the server branches (D-FETCH lot G: the SSR-only `await` of a lookup).
+   */
+  importMeta?: { server: boolean, client: boolean, dev?: boolean }
 }
 
 const IMPORT_FROM = /^import\s+([^'"]*?)\s*from\s*['"]([^'"]+)['"];?/gm
@@ -185,7 +207,11 @@ async function compileSfc(file: string, env: SfcEnv, loaded: Map<string, Promise
     inlineTemplate: true,
     templateOptions: { compilerOptions: { hoistStatic: false, comments: false } },
   })
-  const code = stripTypeScriptTypes(compiled.content)
+  const stripped = stripTypeScriptTypes(compiled.content)
+  const meta = env.importMeta
+  const code = meta
+    ? stripped.replace(/\bimport\.meta\.(server|client|dev)\b/g, (_m, flag: 'server' | 'client' | 'dev') => String(meta[flag] ?? false))
+    : stripped
 
   const modules: Record<string, unknown> = {}
   const imported = new Set<string>()

@@ -1,13 +1,7 @@
 <template>
   <div v-if="clientMounted">
-    <!-- Chat dialog.
-         `visibility` is in the transition only when CLOSING (hidden after the
-         fade-out). Opening must make it visible at once: during a visibility
-         transition the dialog is still `hidden` at its start, and `focus()` on a
-         hidden tree is silently ignored — focus stayed behind the dialog on
-         phones (design D24, tests/e2e/chat-widget-focus.spec.ts; same rule as
-         DefaultMobileDrawer.vue). Header buttons avoid `transition-all` for the
-         same reason: they would transition their inherited visibility. -->
+    <!-- Chat dialog. `visibility` transitions only when CLOSING: opening must show it
+         at once, or focus() lands on a hidden tree (useChatWidgetDialog, design D24). -->
     <div
       id="public-chatbot-dialog"
       ref="chatbotDialog"
@@ -20,88 +14,31 @@
       :aria-hidden="!isChatbotOpen"
       :inert="!isChatbotOpen"
     >
-      <!-- Header -->
-      <div class="flex-shrink-0 bg-brand-900 px-4 pt-[calc(env(safe-area-inset-top,0px)+12px)] pb-3 md:pt-3 md:rounded-t-2xl">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <button class="md:hidden w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[1rem] border-none cursor-pointer transition-[background-color,transform] active:scale-90" @click="closeChatbot" :aria-label="t('cw_back')">
-              <i class="fa-solid fa-arrow-left"></i>
-            </button>
-            <div class="w-10 h-10 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center flex-shrink-0">
-              <i class="fa-solid fa-robot text-white text-[1.1rem]"></i>
-            </div>
-            <div>
-              <h4 id="public-chatbot-title" class="text-[0.95rem] font-bold text-white m-0 leading-tight">Trợ lý Hướng Thiện</h4>
-              <p class="text-[0.7rem] text-white/60 mt-0.5 mb-0 flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-accent inline-block animate-pulse" aria-hidden="true"></span>
-                Đang hoạt động
-              </p>
-            </div>
-          </div>
-          <div class="flex items-center gap-2 md:gap-1.5">
-            <button
-              class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90"
-              @click="isConversationListOpen = !isConversationListOpen"
-              :aria-expanded="isConversationListOpen"
-              :title="t('cw_history')"
-              :aria-label="t('cw_history')"
-            >
-              <i class="fa-solid fa-clock-rotate-left text-[0.9rem] md:text-[0.8rem]"></i>
-            </button>
-            <button class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90" @click="clearChatHistory" :title="t('cw_clear')" :aria-label="t('cw_clear')">
-              <i class="fa-solid fa-broom text-[0.9rem] md:text-[0.8rem]"></i>
-            </button>
-            <!-- Expand: desktop/iPad only. The full page is a two-column layout
-                 that has no room to be useful on a phone. -->
-            <button class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90" @click="openFullPage" :title="t('cw_expand')" :aria-label="t('cw_expand')">
-              <i class="fa-solid fa-up-right-and-down-left-from-center text-[0.75rem]"></i>
-            </button>
-            <button ref="chatCloseButton" class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="closeChatbot" aria-label="Đóng">
-              <i class="fa-solid fa-xmark text-[0.9rem]"></i>
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- Header (back, history, clear, expand, close) -->
+      <ChatWidgetHeader
+        :is-conversation-list-open="isConversationListOpen"
+        @close="closeChatbot"
+        @toggle-history="isConversationListOpen = !isConversationListOpen"
+        @clear="clearChatHistory"
+        @expand="openFullPage"
+      />
 
       <!-- Conversation list (collapsible drawer) -->
-      <div v-if="isConversationListOpen" class="flex-shrink-0 border-b border-line bg-white max-h-[40%] overflow-y-auto overscroll-contain">
-        <div class="flex items-center justify-between px-3 py-2 border-b border-surface-tint">
-          <span class="text-[0.72rem] font-bold uppercase tracking-wide text-[#6b7280]">Cuộc trò chuyện</span>
-          <button type="button" class="flex items-center gap-1 rounded-full bg-brand-900 px-2.5 py-1 text-[0.7rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317]" @click="onCreateConversation">
-            <i class="fa-solid fa-plus text-[0.6rem]" aria-hidden="true"></i> Tạo mới
-          </button>
-        </div>
-        <ul class="list-none m-0 p-0">
-          <li v-for="conversation in conversations" :key="conversation.id" class="border-b border-surface last:border-b-0">
-            <div class="flex items-center gap-1 px-2 py-1.5" :class="{ 'bg-surface-tint': conversation.id === activeId }">
-              <button
-                type="button"
-                class="flex-1 min-w-0 text-left bg-transparent border-none cursor-pointer px-1 py-0.5"
-                :aria-current="conversation.id === activeId ? 'true' : undefined"
-                @click="onSwitchConversation(conversation.id)"
-              >
-                <span class="block truncate text-[0.78rem] font-semibold" :class="conversation.id === activeId ? 'text-[#1e4620]' : 'text-[#374151]'">{{ conversation.title }}</span>
-                <span class="block text-[0.65rem] text-[#9ca3af]">{{ conversationMeta(conversation) }}</span>
-              </button>
-              <button type="button" class="w-6 h-6 flex-shrink-0 rounded-full bg-transparent border-none text-[#9ca3af] cursor-pointer hover:bg-[#fee2e2] hover:text-[#b42318]" @click="deleteConversation(conversation.id)" :aria-label="`Xóa ${conversation.title}`">
-                <i class="fa-solid fa-trash-can text-[0.65rem]"></i>
-              </button>
-            </div>
-          </li>
-        </ul>
-      </div>
+      <ChatWidgetConversationList
+        v-if="isConversationListOpen"
+        :conversations="conversations"
+        :active-id="activeId"
+        @create="onCreateConversation"
+        @switch="onSwitchConversation"
+        @delete="deleteConversation"
+      />
 
       <!-- Messages -->
       <div ref="chatContainer" class="flex-1 min-h-0 px-4 py-5 overflow-y-auto overscroll-contain" aria-live="polite" aria-relevant="additions text">
         <!-- Khối nội dung tách khỏi khung cuộn để ResizeObserver thấy nó cao lên
              (ảnh tải xong, chi tiết công cụ hiện ra) và giữ khung bám đáy. -->
         <div ref="chatContent" class="flex flex-col gap-4">
-        <div v-if="chatMessages.length <= 1" class="mx-auto mt-4 mb-2 max-w-[280px] text-center">
-          <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-brand-900/10 flex items-center justify-center">
-            <i class="fa-solid fa-shield-halved text-brand-900 text-[1.4rem]"></i>
-          </div>
-          <p class="text-[0.82rem] text-ink-secondary leading-relaxed m-0">Xin chào! Tôi hỗ trợ tra cứu thông tin từ kho dữ liệu đã được <strong class="text-brand-900">Cục C11</strong> phê duyệt.</p>
-        </div>
+        <ChatWidgetWelcome v-if="chatMessages.length <= 1" />
 
         <template v-for="(msg, index) in chatMessages" :key="msg.id || index">
           <div v-if="msg.id !== 'welcome'" class="flex gap-2.5" :class="msg.sender === 'user' ? 'justify-end' : 'justify-start'" :data-chat-anchor="msg.sender === 'user' ? '' : undefined">
@@ -129,22 +66,7 @@
                 {{ msg.error }}
                 <button type="button" class="underline font-semibold text-brand-900 bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">Thử lại</button>
               </div>
-              <div v-if="msg.sender === 'bot' && !msg.isStreaming" class="mt-2 flex items-center justify-between gap-2 border-t border-line pt-1.5 text-[0.7rem]">
-                <span v-if="msg.kind" class="flex items-center gap-1 font-semibold" :class="messageKindClass(msg.kind)" role="status">
-                  <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
-                  {{ messageKindLabel(msg.kind) }}
-                </span>
-                <span v-else></span>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-1 text-[0.7rem] text-[#6b7280] hover:text-brand-900 bg-transparent border-none cursor-pointer p-0.5 rounded transition-colors"
-                  @click="copyMessageText(msg.text, msg.id)"
-                  :title="copiedMsgId === msg.id ? 'Đã sao chép' : 'Sao chép câu trả lời'"
-                >
-                  <i :class="copiedMsgId === msg.id ? 'fa-solid fa-check text-accent' : 'fa-regular fa-copy'" aria-hidden="true"></i>
-                  {{ copiedMsgId === msg.id ? 'Đã chép' : 'Sao chép' }}
-                </button>
-              </div>
+              <ChatWidgetMessageMeta v-if="msg.sender === 'bot' && !msg.isStreaming" :msg="msg" :copied-msg-id="copiedMsgId" @copy="copyMessageText(msg.text, msg.id)" />
               <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 space-y-1 border-t border-line pt-1.5 list-none pl-0" :aria-label="t('cw_sources')">
                 <li v-for="source in msg.sources" :key="source.id" class="text-[0.68rem] leading-snug text-ink-secondary">
                   <i class="fa-solid fa-link text-[0.5rem] text-accent mr-1" aria-hidden="true"></i>
@@ -250,94 +172,72 @@
       <p v-else class="sr-only" role="status" aria-live="polite">{{ quickQuestionStatusText }}</p>
 
       <!-- Quick questions -->
-      <div v-if="quickQuestionState === 'success' && quickQuestions.length" class="flex-shrink-0 border-t border-line">
-        <button type="button" class="w-full px-4 py-2 bg-white text-[0.75rem] font-semibold text-ink-secondary flex items-center justify-between border-none cursor-pointer transition-all hover:bg-surface" @click="isQuickQuestionsExpanded = !isQuickQuestionsExpanded">
-          <span class="flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-accent text-[0.7rem]" aria-hidden="true"></i> Câu hỏi gợi ý</span>
-          <i class="fa-solid fa-chevron-up text-[0.6rem] transition-transform duration-200" :class="{ 'rotate-180': !isQuickQuestionsExpanded }" aria-hidden="true"></i>
-        </button>
-        <div v-show="isQuickQuestionsExpanded" class="px-3.5 pb-2.5 bg-white">
-          <div class="flex flex-wrap gap-1.5 max-h-[68px] overflow-y-auto overscroll-contain lg:max-h-[96px]">
-            <button
-              v-for="question in quickQuestions"
-              :key="question.id"
-              type="button"
-              :disabled="isSubmitting"
-              @click="askBot(question.question)"
-              class="bg-surface-tint border border-[#d4e4d2] text-[#2d4a2d] px-2.5 py-1 rounded-full text-[0.72rem] font-medium whitespace-nowrap cursor-pointer transition-all hover:bg-brand-900 hover:text-white hover:border-brand-900 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-            >{{ question.question }}</button>
-          </div>
-        </div>
-      </div>
+      <ChatWidgetQuickQuestions
+        v-if="quickQuestionState === 'success' && quickQuestions.length"
+        :quick-questions="quickQuestions"
+        :is-quick-questions-expanded="isQuickQuestionsExpanded"
+        :is-submitting="isSubmitting"
+        @toggle="isQuickQuestionsExpanded = !isQuickQuestionsExpanded"
+        @ask="askBot"
+      />
 
-      <!-- Input -->
-      <div class="flex-shrink-0 bg-white border-t border-line px-3 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom,0px))] md:pb-3 md:rounded-b-2xl">
-        <form class="flex items-end gap-2" @submit.prevent="sendBotMessage">
-          <!-- Honeypot: hidden from sight and from the tab order, so only a
-               script that fills every field it finds will write to it. -->
-          <input v-model="honeypot" type="text" name="_h" tabindex="-1" autocomplete="off" aria-hidden="true" class="absolute left-[-9999px] w-px h-px opacity-0 pointer-events-none" />
-          <div class="flex-1 min-w-0">
-            <label for="public-chatbot-input" class="sr-only">{{ t('cw_input_label') }}</label>
-            <input
-              id="public-chatbot-input"
-              ref="botInputRef"
-              type="text"
-              :placeholder="t('cw_input_placeholder')"
-              v-model="botInput"
-              :maxlength="limits.maxMessageChars"
-              :aria-describedby="botInputError ? 'public-chatbot-error public-chatbot-counter' : 'public-chatbot-counter'"
-              :aria-invalid="Boolean(botInputError)"
-              :disabled="isSubmitting"
-              class="w-full px-4 py-3 rounded-full border border-[#d4e4d2] text-base md:text-[0.88rem] outline-none bg-surface transition-all focus:border-brand-900 focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            <div v-if="botInputError" class="mt-1 px-4">
-              <p id="public-chatbot-error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ botInputError }}</p>
-            </div>
-          </div>
-          <button type="submit" :disabled="isSubmitting || !botInput.trim()" class="w-11 h-11 rounded-full bg-brand-900 text-white border-none flex flex-shrink-0 items-center justify-center cursor-pointer transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:bg-[#a0b89e]" :aria-label="t('cw_send_aria')">
-            <i class="fa-solid fa-paper-plane text-[0.85rem]"></i>
-          </button>
-        </form>
-        <p id="public-chatbot-counter" class="m-0 mt-1 text-[0.65rem] text-[#9ca3af] text-right px-2" :class="{ '!text-[#b42318]': botInput.length > limits.maxMessageChars * 0.9 }">{{ botInput.length }}/{{ limits.maxMessageChars }}</p>
-      </div>
+      <!-- Input (honeypot, question box, send, counter); the error line is this
+           component's own alert, rendered right under the box. -->
+      <ChatWidgetComposer
+        ref="botInputRef"
+        v-model:bot-input="botInput"
+        v-model:honeypot="honeypot"
+        :limits="limits"
+        :bot-input-error="botInputError"
+        :is-submitting="isSubmitting"
+        @submit="sendBotMessage"
+      >
+        <template #error>
+          <p id="public-chatbot-error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ botInputError }}</p>
+        </template>
+      </ChatWidgetComposer>
     </div>
 
     <!-- Toggle button + teaser bubble -->
-    <div v-if="showLauncher" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10001] hidden md:flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
-      <div
-        v-if="chatTeaserVisible && !isChatbotOpen"
-        class="hidden xl:block relative max-w-[220px] bg-white text-[#1f2937] text-[0.8rem] leading-snug px-3.5 py-2.5 rounded-[16px_16px_4px_16px] shadow-[0_4px_20px_rgba(0,0,0,0.12)] border border-black/5 animate-fade-slide-up motion-reduce:animate-none cursor-pointer"
-        @click="toggleChatbot"
-      >
-        <p class="m-0">{{ chatTeaserText }}</p>
-        <button type="button" class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#e5e7eb] text-[#6b7280] text-[0.6rem] flex items-center justify-center border-none cursor-pointer hover:bg-[#d1d5db]" @click.stop="dismissTeaser" aria-label="Đóng">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-      <button
-        ref="chatToggleButton"
-        class="chatbot-toggle-btn flex bg-brand-900 text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer items-center gap-2 font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-900 motion-reduce:transition-none"
-        aria-controls="public-chatbot-dialog"
-        :aria-expanded="isChatbotOpen"
-        @click="toggleChatbot"
-      >
-        <div class="flex items-center justify-center">
-          <i class="fa-solid fa-comment-dots text-[1.05rem]" aria-hidden="true"></i>
-        </div>
-        <span class="bot-label">{{ t('ask_ai') || 'Hỏi trợ lý' }}</span>
-      </button>
-    </div>
+    <ChatWidgetLauncher
+      v-if="showLauncher"
+      ref="chatToggleButton"
+      :is-chatbot-open="isChatbotOpen"
+      :chat-teaser-visible="chatTeaserVisible"
+      :chat-teaser-text="chatTeaserText"
+      @toggle="toggleChatbot"
+      @dismiss-teaser="dismissTeaser"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch, useId } from 'vue'
+/**
+ * The public chat widget (dialog, transcript, launcher), driven by the layout through
+ * `defineExpose`. Wave3 split: display parts in `components/chat-widget/`, the modal
+ * mechanics in `useChatWidgetDialog`, the teaser timers in `useChatWidgetTeaser`, the
+ * clipboard in `useChatCopy`, the conversation in `useChatbot`. HERE: the dialog element,
+ * the transcript with every per-message state (sending, send error + "Thử lại", a source's
+ * loading / error / "Thử lại", the contact form and its error), the reply indicator, the
+ * quick-question status line and the input's error line (through the input row's slot).
+ */
+import { ref, onMounted, nextTick, watch, useId } from 'vue'
 import { leadContactInvalid, leadFieldId } from '~/utils/form-a11y'
-import { createFocusReturn, inertOutside, trapTabTarget, visibleTabbables } from '~/utils/focus-return'
-import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
+import { useChatbot, type ChatMessage } from '~/composables/useChatbot'
 import { useChatAutoScroll } from '~/composables/useChatAutoScroll'
+import { useChatCopy } from '~/composables/useChatCopy'
+import { useChatWidgetDialog } from '~/composables/useChatWidgetDialog'
+import { useChatWidgetTeaser } from '~/composables/useChatWidgetTeaser'
 import { useKeyboardViewport } from '~/composables/useKeyboardViewport'
 import { useSlowWait } from '~/composables/useSlowWait'
 import { useI18n } from '~/composables/useI18n'
+import ChatWidgetHeader from '~/components/chat-widget/ChatWidgetHeader.vue'
+import ChatWidgetConversationList from '~/components/chat-widget/ChatWidgetConversationList.vue'
+import ChatWidgetQuickQuestions from '~/components/chat-widget/ChatWidgetQuickQuestions.vue'
+import ChatWidgetComposer from '~/components/chat-widget/ChatWidgetComposer.vue'
+import ChatWidgetLauncher from '~/components/chat-widget/ChatWidgetLauncher.vue'
+import ChatWidgetMessageMeta from '~/components/chat-widget/ChatWidgetMessageMeta.vue'
+import ChatWidgetWelcome from '~/components/chat-widget/ChatWidgetWelcome.vue'
 
 const { t } = useI18n()
 // Tiền tố id cho biểu mẫu để-lại-liên-hệ (lặp theo từng tin nhắn).
@@ -350,7 +250,6 @@ const {
   createConversation, switchConversation, deleteConversation, clearChatHistory,
   submitBotQuestion, submitLead,
   isSourceExpanded, sourceDetailOf, toggleSourceDetail, retrySourceDetail,
-  isProblemKind, messageKindLabel, messageKindClass,
 } = useChatbot()
 
 // Gates every browser-only surface. The composable reads localStorage, so
@@ -370,9 +269,9 @@ const chatContainer = ref<HTMLElement | null>(null)
 const chatContent = ref<HTMLElement | null>(null)
 const { isPinnedToBottom, pinToBottom, followLatestQuestion, releaseAnchor } = useChatAutoScroll(chatContainer, chatContent)
 const chatbotDialog = ref<HTMLElement | null>(null)
-const botInputRef = ref<HTMLInputElement | null>(null)
-const chatCloseButton = ref<HTMLButtonElement | null>(null)
-const chatToggleButton = ref<HTMLButtonElement | null>(null)
+// The input row and the launcher are parts; each exposes `focus()` for its control.
+const botInputRef = ref<{ focus: () => void } | null>(null)
+const chatToggleButton = ref<{ focus: () => void } | null>(null)
 
 /**
  * The launcher is hidden on /assistant: that page *is* the chat, so a floating
@@ -381,62 +280,12 @@ const chatToggleButton = ref<HTMLButtonElement | null>(null)
 const route = useRoute()
 const showLauncher = computed(() => route.path !== '/assistant')
 
-const copiedMsgId = ref<string | null>(null)
-const copyMessageText = async (text: string, id: string | undefined) => {
-  if (!text) return
-  try {
-    await navigator.clipboard.writeText(text)
-    copiedMsgId.value = id || 'copied'
-    setTimeout(() => { copiedMsgId.value = null }, 2000)
-  } catch { /* ignore */ }
-}
-// ─── Teaser bubble ───────────────────────────────────────────────────────────
-const CHAT_TEASER_MESSAGES = [
-  'Bạn cần tìm hiểu về quyền lợi sau khi chấp hành xong án phạt tù?',
-  'Tôi có thể giúp bạn tra cứu thủ tục xóa án tích miễn phí.',
-  'Cần hỗ trợ tìm việc làm sau khi tái hòa nhập cộng đồng?',
-  'Hỏi tôi về chính sách hỗ trợ vay vốn cho người hoàn lương nhé!',
-  'Bạn muốn biết về các mô hình tái hòa nhập thành công?',
-  'Tôi giúp bạn tìm hiểu quy trình đăng ký tạm trú sau mãn hạn tù.',
-  'Cần tư vấn về quyền học nghề, học văn hóa miễn phí?',
-]
-const chatTeaserVisible = ref(false)
-const chatTeaserText = ref('')
-let teaserInterval: ReturnType<typeof setInterval> | null = null
-let teaserInitTimeout: ReturnType<typeof setTimeout> | null = null
-let teaserHideTimeout: ReturnType<typeof setTimeout> | null = null
-let teaserDismissed = false
+const { copiedMsgId, copyMessageText } = useChatCopy()
+// ─── Teaser bubble. Its timers stop on unmount BEFORE the dialog releases the page
+// (each composable's own onUnmounted, in creation order — as the one hook did).
+const { chatTeaserVisible, chatTeaserText, dismissTeaser, startTeaserCycle } = useChatWidgetTeaser(isChatbotOpen, showLauncher)
 
-const showRandomTeaser = () => {
-  if (isChatbotOpen.value || teaserDismissed) return
-  chatTeaserText.value = CHAT_TEASER_MESSAGES[Math.floor(Math.random() * CHAT_TEASER_MESSAGES.length)]!
-  chatTeaserVisible.value = true
-  if (teaserHideTimeout) clearTimeout(teaserHideTimeout)
-  teaserHideTimeout = setTimeout(() => { chatTeaserVisible.value = false }, 6000)
-}
-
-const stopTeaserCycle = () => {
-  if (teaserInterval) { clearInterval(teaserInterval); teaserInterval = null }
-  if (teaserInitTimeout) { clearTimeout(teaserInitTimeout); teaserInitTimeout = null }
-  if (teaserHideTimeout) { clearTimeout(teaserHideTimeout); teaserHideTimeout = null }
-}
-
-const dismissTeaser = () => {
-  chatTeaserVisible.value = false
-  teaserDismissed = true
-  stopTeaserCycle()
-}
-
-const startTeaserCycle = () => {
-  if (teaserInterval || teaserInitTimeout || !showLauncher.value) return
-  teaserInitTimeout = setTimeout(() => {
-    teaserInitTimeout = null
-    showRandomTeaser()
-    teaserInterval = setInterval(showRandomTeaser, 8000)
-  }, 2000)
-}
-
-// ─── Open / close ────────────────────────────────────────────────────────────
+// ─── Following the newest content ────────────────────────────────────────────
 /**
  * Follows the newest content. During playback this runs every frame, and yanking
  * the view down while someone is scrolled up re-reading an earlier answer fights
@@ -468,70 +317,21 @@ watch(isSubmitting, (submitting) => {
   if (submitting) void scrollChatBottom(true)
 })
 
-// ─── Dialog focus (design D24, same helpers as ConfirmModal) ─────────────────
-// Open: remember the opener (the bottom-nav button on phones, the launcher on
-// desktop), make the page behind `inert`, focus the first control that is
-// actually shown at this width. Close: release the page FIRST (focus() on an
-// inert opener does nothing), then return focus to the opener.
-const focusReturn = createFocusReturn((element) => element === document.body)
-let releaseOutside: (() => void) | null = null
-const releasePage = () => {
-  releaseOutside?.()
-  releaseOutside = null
-}
-
-/** Window-level while open: Escape from anywhere, and Tab wraps inside the dialog
- *  even when focus starts outside it. */
-const onWindowKeydown = (event: KeyboardEvent) => {
-  if (!isChatbotOpen.value) return
-  if (event.key === 'Escape') {
-    void closeChatbot()
-    return
-  }
-  if (event.key !== 'Tab' || !chatbotDialog.value) return
-  const focusable = visibleTabbables<HTMLElement>(chatbotDialog.value)
-  const target = trapTabTarget(focusable.length, focusable.indexOf(document.activeElement as HTMLElement), event.shiftKey)
-  if (target === null) return
-  event.preventDefault()
-  focusable[target]?.focus()
-}
-
-const openChatbot = async () => {
-  if (!isChatbotOpen.value) focusReturn.remember(document.activeElement as HTMLElement | null)
-  isChatbotOpen.value = true
-  chatTeaserVisible.value = false
-  teaserDismissed = true
-  stopTeaserCycle()
-  if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
-  await nextTick()
-  if (chatbotDialog.value) {
-    if (!releaseOutside) releaseOutside = inertOutside(chatbotDialog.value)
-    window.removeEventListener('keydown', onWindowKeydown)
-    window.addEventListener('keydown', onWindowKeydown)
-    visibleTabbables<HTMLElement>(chatbotDialog.value)[0]?.focus()
-  }
-  releaseAnchor()
-  scrollChatBottom(true)
-}
-
-const closeChatbot = async () => {
-  const active = document.activeElement
-  // Only take focus back if it is still in the dialog (or nowhere): a visitor who
-  // already moved on is not yanked back.
-  const shouldRestore = !active || active === document.body || !!chatbotDialog.value?.contains(active)
-  isChatbotOpen.value = false
-  isConversationListOpen.value = false
-  window.removeEventListener('keydown', onWindowKeydown)
-  releasePage()
-  await nextTick()
-  // No remembered opener (opened programmatically): the launcher, where shown.
-  if (!focusReturn.restore(shouldRestore) && shouldRestore) chatToggleButton.value?.focus()
-}
-
-const toggleChatbot = () => {
-  if (isChatbotOpen.value) closeChatbot()
-  else openChatbot()
-}
+// ─── Open / close: a modal (focus, inert, Escape/Tab, page scroll) ───────────
+// The mechanics are useChatWidgetDialog (design D24); the widget's own steps run
+// inside them, in their old order.
+const { openChatbot, closeChatbot, toggleChatbot } = useChatWidgetDialog({
+  isChatbotOpen, chatbotDialog, chatToggleButton,
+  onOpen: () => {
+    dismissTeaser()
+    if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
+  },
+  onOpened: () => {
+    releaseAnchor()
+    scrollChatBottom(true)
+  },
+  onClose: () => { isConversationListOpen.value = false },
+})
 
 // Exposed so the layout's bottom nav and Escape handler can drive the widget
 // without owning any of its state.
@@ -543,12 +343,6 @@ const openFullPage = async () => {
   await closeChatbot()
   navigateTo('/assistant')
 }
-
-// The dialog is full-screen on mobile; leaving the page scrollable behind it
-// lets a swipe move the page instead of the transcript.
-watch(isChatbotOpen, (open) => {
-  if (typeof document !== 'undefined') document.body.style.overflow = open ? 'hidden' : ''
-})
 
 // ─── Conversations ───────────────────────────────────────────────────────────
 const onCreateConversation = () => {
@@ -562,13 +356,6 @@ const onSwitchConversation = (id: string) => {
   isConversationListOpen.value = false
   releaseAnchor()
   scrollChatBottom(true)
-}
-
-const conversationMeta = (conversation: StoredConversation) => {
-  const count = conversation.messages.filter(item => item.id !== 'welcome').length
-  const when = new Date(conversation.createdAt)
-  const stamp = Number.isNaN(when.getTime()) ? '' : when.toLocaleDateString('vi-VN')
-  return count ? `${count} tin nhắn · ${stamp}` : `Chưa có tin nhắn · ${stamp}`
 }
 
 // ─── Sending ─────────────────────────────────────────────────────────────────
@@ -609,12 +396,5 @@ onMounted(() => {
   hydrate()
   loadQuickQuestions()
   startTeaserCycle()
-})
-
-onUnmounted(() => {
-  stopTeaserCycle()
-  window.removeEventListener('keydown', onWindowKeydown)
-  releasePage()
-  if (typeof document !== 'undefined') document.body.style.overflow = ''
 })
 </script>

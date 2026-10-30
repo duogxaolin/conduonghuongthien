@@ -143,8 +143,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { browserPollerEnv, createVisiblePoller, type VisiblePoller } from '~/utils/visible-poller'
 import { attachHlsStream, detachHlsStream, type HlsInstance } from '~/composables/useHlsVideo'
+import { publicFetch } from '~/composables/publicFetch'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
+import type { LivestreamActiveResponse } from '~/types/public-site-api'
 
 const { t } = useI18n()
 
@@ -202,7 +204,7 @@ const autoplayEmbedUrl = computed(() => {
  */
 async function loadActive() {
   try {
-    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, active: boolean, session: ActiveSession | null }>)(
+    const response = await publicFetch<LivestreamActiveResponse>(
       '/api/public/livestream/active',
       { retry: 0, timeout: 4000 },
     )

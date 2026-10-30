@@ -13,6 +13,7 @@
 import type { Payload } from './handler-payload'
 
 type KnowledgeListHandler = typeof import('~~/server/api/admin/chatbot/knowledge/index.get').default
+type KnowledgeCreateHandler = typeof import('~~/server/api/admin/chatbot/knowledge/index.post').default
 type KnowledgeUpdateHandler = typeof import('~~/server/api/admin/chatbot/knowledge/[id].put').default
 type KnowledgeDeleteHandler = typeof import('~~/server/api/admin/chatbot/knowledge/[id].delete').default
 type KnowledgePublishHandler = typeof import('~~/server/api/admin/chatbot/knowledge/[id]/publish.post').default
@@ -26,8 +27,10 @@ type SmallTalkToggleHandler = typeof import('~~/server/api/admin/chatbot/small-t
 // ─── Knowledge ───────────────────────────────────────────────────────────────
 /** `GET /api/admin/chatbot/knowledge`. */
 export type AdminKnowledgeListResponse = Payload<KnowledgeListHandler>
-/** `PUT /api/admin/chatbot/knowledge/:id` — the list's quick-question checkbox. */
+/** `PUT /api/admin/chatbot/knowledge/:id` — the list's quick-question checkbox and the editor's save. */
 export type AdminKnowledgeUpdateResponse = Payload<KnowledgeUpdateHandler>
+/** `POST /api/admin/chatbot/knowledge` — the editor's save of a new entry (batch E). */
+export type AdminKnowledgeCreateResponse = Payload<KnowledgeCreateHandler>
 /** `POST /api/admin/chatbot/knowledge/:id/{publish,archive}`. */
 export type AdminKnowledgeTransitionResponse = Payload<KnowledgePublishHandler> | Payload<KnowledgeArchiveHandler>
 export type AdminKnowledgeDeleteResponse = Payload<KnowledgeDeleteHandler>
@@ -39,3 +42,8 @@ export type AdminSmallTalkSaveResponse = Payload<SmallTalkCreateHandler> | Paylo
 export type AdminSmallTalkDeleteResponse = Payload<SmallTalkDeleteHandler>
 /** `PATCH /api/admin/chatbot/small-talk/:id/toggle`. */
 export type AdminSmallTalkToggleResponse = Payload<SmallTalkToggleHandler>
+
+// ─── One chat session (`/admin/chatbot/sessions/[id]`, batch F) ───────────────
+type SessionDetailHandler = typeof import('~~/server/api/admin/chatbot/sessions/[id].get').default
+/** `GET /api/admin/chatbot/sessions/:id` — the session, its transcript and the forms filed from it. */
+export type AdminChatSessionResponse = Payload<SessionDetailHandler>

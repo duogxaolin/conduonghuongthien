@@ -2,20 +2,10 @@
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 import { defineAsyncComponent } from 'vue'
+import type { AnalyticsDrillDownResponse as DrillDown, AnalyticsSummaryResponse as Summary } from '~/types/admin-dashboard-api'
 
 const AnalyticsTrafficChart = defineAsyncComponent(() => import('~/components/admin/AnalyticsTrafficChart.client.vue'))
 const AnalyticsLiveDashboard = defineAsyncComponent(() => import('~/components/admin/AnalyticsLiveDashboard.client.vue'))
-type Range = { start: string; end: string; days: number }
-type MetricRow = { value: string; pageViews: number; summedDailyUniqueVisitors: number }
-type Summary = {
-  ok: boolean
-  range: Range
-  totals: { pageViews: number; summedDailyUniqueVisitors: number; uniqueVisitorSemantics: 'summed_daily_uniques' }
-  traffic: Array<{ day: string; pageViews: number; dailyUniqueVisitors: number }>
-  adminUsers: { snapshotDay: string; totalUsers: number; activeUsers: number } | null
-  freshness: { lastAggregatedDay: string | null; stale: boolean }
-}
-type DrillDown = { ok: boolean; range: Range; items: MetricRow[]; pagination: { page: number; perPage: number; total: number; totalPages: number } }
 type Dimension = 'source_category' | 'device_class' | 'country_code' | 'region_code'
 type DrillType = 'pages' | Dimension
 
@@ -114,7 +104,7 @@ const loadSummary = async () => {
   initialLoading.value = summary.value === null
   summaryError.value = ''
   try {
-    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<Summary>)('/api/admin/analytics/summary', { query: queryRange(), signal: summaryController.signal })
+    const response = await adminFetch<Summary>('/api/admin/analytics/summary', { query: queryRange(), signal: summaryController.signal })
     if (request === summaryRequest) summary.value = response
   } catch (error: unknown) {
     if (request !== summaryRequest || isAbortError(error)) return
@@ -135,7 +125,7 @@ const loadDrill = async () => {
   const query: Record<string, string | number> = { ...queryRange(), perPage: 10 }
   if (selectedValue.value) query[selectedDrill.value === 'pages' ? 'path' : 'filter'] = selectedValue.value
   try {
-    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<DrillDown>)(endpoint, { query, signal: drillController.signal })
+    const response = await adminFetch<DrillDown>(endpoint, { query, signal: drillController.signal })
     if (request === drillRequest) drill.value = response
   } catch (error: unknown) {
     if (request !== drillRequest || isAbortError(error)) return

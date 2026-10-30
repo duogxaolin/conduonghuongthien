@@ -51,6 +51,13 @@ export const EXPECTED_AI_GATEWAY_FAMILY: readonly string[] = [
   'ai-gateway-call.ts',
   'ai-gateway-config.ts',
   'ai-gateway-types.ts',
+  // The split of `callAi` itself (after 4.3).
+  'ai-gateway-no-tools.ts',
+  'ai-gateway-record.ts',
+  'ai-gateway-send.ts',
+  'ai-gateway-tokens.ts',
+  'ai-gateway-tool-loop.ts',
+  'ai-gateway-tools.ts',
 ]
 
 const escape = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

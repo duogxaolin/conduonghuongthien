@@ -28,12 +28,13 @@ const { createSqliteMysqlDb } = await import('./_sqlite-mysql-db')
 const { roles, permissions, users, settings, userMfaFactors, activityLogs } = await import('../server/db/schema')
 const harness = createSqliteMysqlDb([roles, permissions, users, settings, userMfaFactors, activityLogs])
 
+const logged: Array<Record<string, unknown>> = []
 mock.module('../server/utils/logger', {
   namedExports: {
     log: () => {},
     logInfo: () => {},
     logWarn: () => {},
-    logError: () => {},
+    logError: (fields: Record<string, unknown>) => { logged.push(fields) },
     SECURITY_EVENTS: new Proxy({}, { get: (_target, key) => `event.${String(key)}` }),
   },
 })
@@ -105,6 +106,34 @@ test('nothing stored, or a stored value that no longer parses or validates, read
   harness.sqlite.prepare('DELETE FROM settings').run()
   await harness.db.insert(settings).values({ key: 'layout_config', value: JSON.stringify(VALID), type: 'json', group: 'layout' })
   assert.deepEqual((await read()).body, { ok: true, config: VALID })
+})
+
+test('FINDING-R8-4: a database failure reading the layout is a 500 — never the defaults with `ok: true`', async () => {
+  // The admin forms (settings/general.vue, settings/social-links.vue) PUT back the WHOLE row
+  // they loaded: defaults read as "the stored layout" were one click from overwriting it.
+  await harness.db.insert(settings).values({ key: 'layout_config', value: JSON.stringify(VALID), type: 'json', group: 'layout' })
+  assert.deepEqual((await read()).body, { ok: true, config: VALID })
+  harness.failNext(/`settings`\.`key` = \?/)
+  const failed = await read()
+  assert.equal(failed.status, 500)
+  assert.ok(!JSON.stringify(failed.body).includes('containerWidth'), 'no layout in a failed answer')
+  assert.deepEqual((await read()).body, { ok: true, config: VALID }, 'the failure was that one read')
+})
+
+test('a failed layout read answers a classified Vietnamese sentence — no SQL, no bound values — and logs only the driver message', async () => {
+  // Nitro's default for an uncaught error is `{ statusMessage: "Server Error" }`: the two admin
+  // pages print the server's sentence in their `role="alert"`, so the officer read English.
+  logged.length = 0
+  harness.failNext(/`settings`\.`key` = \?/)
+  const failed = await read()
+  assert.equal(failed.status, 500)
+  assert.equal(failed.body.statusMessage, 'Không đọc được cấu hình bố cục. Vui lòng thử lại.')
+  const answer = JSON.stringify(failed.body)
+  for (const leak of ['select', 'layout_config', 'params', 'injected', 'Failed query']) assert.ok(!answer.includes(leak), `answer leaks "${leak}": ${answer}`)
+  assert.deepEqual(logged.map(entry => entry.event), ['admin_settings.layout_read_failed'])
+  const message = String(logged[0]!.error)
+  assert.match(message, /injected failure/, 'the driver\'s own message is logged')
+  for (const leak of ['params:', 'Failed query']) assert.ok(!message.includes(leak), `log leaks "${leak}": ${message}`)
 })
 
 test('every field is checked against its closed set or range: a bad value is a 400 and nothing is written', async () => {

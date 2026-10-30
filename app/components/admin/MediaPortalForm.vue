@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminMediaItem } from '~/types/admin-api'
+import type { MediaYoutubeMetaResponse } from '~/types/admin-media-portal-api'
 import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
@@ -39,11 +40,13 @@ async function fetchMeta() {
   if (!youtubeVideoId.value.trim() || fetchingMeta.value) return
   fetchingMeta.value = true
   metaError.value = ''
+  // The link field stays editable while YouTube answers (seconds): an answer for a link the
+  // officer has since replaced wrote ITS video id back into the field — the draft then saved
+  // the old video. It is dropped now; "Lấy thông tin" asks for the link on screen.
+  const asked = youtubeVideoId.value.trim()
   try {
-    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, reason?: string, title?: string, authorName?: string, thumbnailUrl?: string, videoId?: string }>)(
-      '/api/admin/media-portal/youtube-meta',
-      { method: 'POST', body: { url: youtubeVideoId.value.trim() } },
-    )
+    const res = await adminFetch<MediaYoutubeMetaResponse>('/api/admin/media-portal/youtube-meta', { method: 'POST', body: { url: asked } })
+    if (youtubeVideoId.value.trim() !== asked) return
     if (!res.ok) {
       metaError.value = res.reason === 'invalid'
         ? 'Địa chỉ video không hợp lệ hoặc không được hỗ trợ.'
@@ -61,6 +64,7 @@ async function fetchMeta() {
     // Chuẩn hoá thẳng từ URL sang ID — tránh paste lại.
     if (res.videoId) youtubeVideoId.value = res.videoId
   } catch (err: unknown) {
+    if (youtubeVideoId.value.trim() !== asked) return
     metaError.value = errorMessage(err, 'Không lấy được thông tin từ YouTube.')
     previewTitle.value = ''
     previewAuthor.value = ''

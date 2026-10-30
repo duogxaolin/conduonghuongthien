@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import type { AdminMediaRow } from '~/types/admin-api'
-definePageMeta({
-  layout: 'admin',
-  middleware: 'admin-auth'
-})
+import type { AdminMediaDeleteResponse, AdminMediaListResponse, AdminMediaStorageSize } from '~/types/admin-media-api'
+import { formatByteSize } from '~/utils/byte-size'
+definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const mediaItems = ref<AdminMediaRow[]>([])
 const loading = ref(true)
@@ -17,13 +16,21 @@ const toast = useToast()
 const { confirm } = useConfirm()
 const { uploading, uploadBatch, tasks, uploadingBatch } = useUpload()
 
-const fetchMedia = async (page = 1) => {
+// Only the latest load writes (ticket, docs/decisions/fetch-rollout-d-fetch.md); a page past the end
+// (last tile deleted) asks ONCE for the last page, not "Chưa có file nào" (tests/admin-fetch-rollout-media-library.test.ts).
+// Leaving the page refuses new loads: a late answer's last-page follow-up, a delete/upload reload — nothing is sent.
+let listRequest = 0, disposed = false
+onBeforeUnmount(() => { disposed = true })
+const fetchMedia = async (page = 1, mayAskForLastPage = true): Promise<void> => {
+  if (disposed) return
+  const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminMediaRow[]; pagination: typeof pagination.value }>)(`/api/admin/media`, {
-      params: { page, search: search.value, type: filterType.value, perPage: 24 }
-    })
+    const res = await adminFetch<AdminMediaListResponse>(`/api/admin/media`, { query: { page, search: search.value, type: filterType.value, perPage: 24 } })
+    if (ticket !== listRequest) return
+    const last = Math.max(1, res.pagination.totalPages)
+    if (mayAskForLastPage && page > last && res.pagination.total > 0) return await fetchMedia(last, false)
     if (res.ok) {
       mediaItems.value = res.items
       pagination.value = res.pagination
@@ -31,10 +38,11 @@ const fetchMedia = async (page = 1) => {
       selection.keepOnly(visibleIds.value)
     }
   } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Lỗi tải thư viện media'))
+    if (ticket !== listRequest) return
     loadError.value = errorMessage(err, 'Lỗi tải thư viện media')
+    toast.error(loadError.value)
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
@@ -84,7 +92,7 @@ const deleteMedia = async (item: AdminMediaRow) => {
   const ok = await confirm({ title: 'Xóa tệp', message: `Bạn có chắc muốn xóa file ${item.originalName}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/${item.id}`, { method: 'DELETE' })
+    await adminFetch<AdminMediaDeleteResponse>(`/api/admin/media/${item.id}`, { method: 'DELETE' })
     toast.success('Đã xóa tệp media thành công!')
     await fetchMedia(pagination.value.page)
   } catch (err: unknown) {
@@ -125,26 +133,17 @@ const isBatching = computed(() => uploadingBatch.value && totalCount.value > 0)
 // Quét 3212 file mồ côi có thể treo trang grid, nên tách ra trang riêng chạy nền.
 
 // ─── Dung lượng storage (local + R2) ────────────────────────────────────────
-interface StorageSize {
-  local: { dbCount: number; dbBytes: number; diskCount: number; diskBytes: number }
-  r2: { configured: boolean; dbCount: number; dbBytes: number; bucketCount: number | null; bucketBytes: number | null }
-}
-const storageSize = ref<StorageSize | null>(null)
+const storageSize = ref<AdminMediaStorageSize | null>(null)
 const storageLoading = ref(false)
 const storageError = ref('')
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-}
+// Tệp trên đĩa chưa có hàng `media`. Đĩa không đọc được (`null`, R8-5) → không suy ra gì.
+const orphanCount = computed(() => { const l = storageSize.value?.local; return l?.diskCount != null ? l.diskCount - l.dbCount : 0 })
 
 async function fetchStorageSize() {
   storageLoading.value = true
   storageError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean } & StorageSize>)('/api/admin/media/storage-size')
+    const res = await adminFetch<AdminMediaStorageSize>('/api/admin/media/storage-size')
     if (res.ok) storageSize.value = res
   } catch (err: unknown) {
     storageError.value = errorMessage(err, 'Không thể lấy dung lượng storage.')
@@ -153,10 +152,7 @@ async function fetchStorageSize() {
   }
 }
 
-onMounted(() => {
-  fetchMedia()
-  void fetchStorageSize()
-})
+onMounted(() => { void fetchMedia(); void fetchStorageSize() })
 </script>
 
 <template>
@@ -214,24 +210,25 @@ onMounted(() => {
               </span>
               <span class="text-sm font-bold text-brand-950">Local /uploads</span>
             </div>
-            <span class="text-base font-extrabold text-brand-700">{{ formatBytes(storageSize.local.diskBytes) }}</span>
+            <span class="text-base font-extrabold text-brand-700">{{ formatByteSize(storageSize.local.diskBytes) }}</span>
           </div>
           <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-ink-muted">
-            <li class="flex justify-between gap-2">
+            <li v-if="storageSize.local.diskCount == null" class="text-danger-soft">Không đọc được thư mục uploads (sai quyền truy cập hoặc lỗi ổ đĩa) — chưa biết dung lượng thật.</li>
+            <li v-else class="flex justify-between gap-2">
               <span>File trên đĩa</span>
               <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.diskCount.toLocaleString('vi-VN') }} tệp</span>
             </li>
             <li class="flex justify-between gap-2">
               <span>Đã ghi DB (local)</span>
-              <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatBytes(storageSize.local.dbBytes) }}</span>
+              <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatByteSize(storageSize.local.dbBytes) }}</span>
             </li>
-            <li v-if="storageSize.local.diskCount > storageSize.local.dbCount" class="flex justify-between gap-2 text-[#765b00]">
+            <li v-if="orphanCount > 0" class="flex justify-between gap-2 text-[#765b00]">
               <span>Mồ côi (chưa có DB)</span>
-              <span class="font-semibold">{{ (storageSize.local.diskCount - storageSize.local.dbCount).toLocaleString('vi-VN') }} tệp</span>
+              <span class="font-semibold">{{ orphanCount.toLocaleString('vi-VN') }} tệp</span>
             </li>
           </ul>
           <NuxtLink
-            v-if="storageSize.local.diskCount > storageSize.local.dbCount"
+            v-if="orphanCount > 0"
             to="/admin/media/scan"
             class="mt-2 inline-flex items-center gap-1.5 text-[0.72rem] font-semibold text-brand-700 no-underline hover:underline"
           >
@@ -249,7 +246,7 @@ onMounted(() => {
               </span>
               <span class="text-sm font-bold text-brand-950">R2 Bucket</span>
             </div>
-            <span v-if="storageSize.r2.bucketBytes != null" class="text-base font-extrabold text-[#7c4a00]">{{ formatBytes(storageSize.r2.bucketBytes) }}</span>
+            <span v-if="storageSize.r2.bucketBytes != null" class="text-base font-extrabold text-[#7c4a00]">{{ formatByteSize(storageSize.r2.bucketBytes) }}</span>
             <span v-else class="text-base font-extrabold text-[#9ca3af]">—</span>
           </div>
           <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-ink-muted">
@@ -266,7 +263,7 @@ onMounted(() => {
               </li>
               <li class="flex justify-between gap-2">
                 <span>Đã ghi DB (r2)</span>
-                <span class="font-semibold text-[#3d4f3f]">{{ storageSize.r2.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatBytes(storageSize.r2.dbBytes) }}</span>
+                <span class="font-semibold text-[#3d4f3f]">{{ storageSize.r2.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatByteSize(storageSize.r2.dbBytes) }}</span>
               </li>
             </template>
           </ul>

@@ -382,30 +382,47 @@ test('the AI gateway, read as one family: it decrypts the key and sends it only 
 })
 
 test('proof: the family key-path check goes red where the per-file text check stays green', () => {
-  const call = 'server/services/ai-gateway-call.ts'
-  const real = aiGatewaySourcesWith().get(call)!
-  const mutate = (from: string | RegExp, to: string) => {
-    assert.ok(typeof from === 'string' ? real.includes(from) : from.test(real), `${call} no longer has ${String(from)} to mutate`)
-    return aiGatewaySourcesWith({ [call]: real.replace(from as never, to) })
+  // Since `callAi` was split, the key is decrypted in one part and sent from another: each
+  // mutation goes to the ONE family file that holds its code — found, not named, so moving
+  // that code again cannot leave the proof mutating nothing.
+  const family = aiGatewaySourcesWith()
+  const holderOf = (code: string | RegExp): string => {
+    const holders = [...family].filter(([, source]) => typeof code === 'string' ? source.includes(code) : code.test(source)).map(([file]) => file)
+    assert.equal(holders.length, 1, `${String(code)} must be in exactly one file of the AI gateway: ${JSON.stringify(holders)}`)
+    return holders[0]!
+  }
+  const mutate = (from: string | RegExp, to: string, file = holderOf(from)) => {
+    const source = family.get(file)!
+    assert.ok(typeof from === 'string' ? source.includes(from) : from.test(source), `${file} no longer has ${String(from)} to mutate`)
+    return { file, sources: aiGatewaySourcesWith({ [file]: source.replace(from as never, to) }) }
   }
   const perFileRegex = /safeProviderRequest|safeProviderStream|fetchDelifyUsage|callAi\b/
+  // The decrypting file and the sending file are different parts now — the very case the
+  // per-file regex cannot see. Both must still exist for the proof to mean something.
+  const decrypter = holderOf('secret = decryptAiSecret(')
+  const sender = holderOf(/\bsafeProviderStream\(/)
+  assert.notEqual(decrypter, sender)
+  assert.equal(holderOf(/\bsafeProviderRequest\(/), sender, 'both senders live in one file')
 
   // A bare fetch in place of the stream sender.
-  const bare = gatewayKeyPathProblems(mutate('=> safeProviderStream({', '=> fetch(providerCall.url as never, {'))
-  assert.ok(bare.some(problem => problem.startsWith(`${call}:`) && problem.endsWith('a generic client in the AI gateway')), JSON.stringify(bare))
+  const bareFetch = mutate('=> safeProviderStream({', '=> fetch(providerCall.url as never, {')
+  const bare = gatewayKeyPathProblems(bareFetch.sources)
+  assert.ok(bare.some(problem => problem.startsWith(`${bareFetch.file}:`) && problem.endsWith('a generic client in the AI gateway')), JSON.stringify(bare))
   assert.ok(bare.includes('the AI gateway never calls safeProviderStream imported from outbound.ts — where does the decrypted key go?'), JSON.stringify(bare))
 
   // Both senders gone, named only in a comment: the per-file regex is fooled, the family check is not.
-  const commentOnly = real.replace(/safeProvider(Request|Stream)\(/g, 'send$1(') + '\n// sent via safeProviderRequest / safeProviderStream\n'
+  const commentOnly = family.get(sender)!.replace(/safeProvider(Request|Stream)\(/g, 'send$1(') + '\n// sent via safeProviderRequest / safeProviderStream\n'
   assert.match(commentOnly, perFileRegex)
-  assert.deepEqual(gatewayKeyPathProblems(aiGatewaySourcesWith({ [call]: commentOnly })), SANCTIONED_SENDERS.map(name =>
+  assert.deepEqual(gatewayKeyPathProblems(aiGatewaySourcesWith({ [sender]: commentOnly })), SANCTIONED_SENDERS.map(name =>
     `the AI gateway never calls ${name} imported from outbound.ts — where does the decrypted key go?`))
 
-  // Senders taken from a look-alike module instead of outbound.ts.
-  assert.equal(gatewayKeyPathProblems(mutate("from '../utils/chatbot/outbound'", "from './ai-gateway-transport'")).length, 2)
+  // Senders taken from a look-alike module instead of outbound.ts (a name no part has).
+  assert.ok(!family.has('server/services/ai-gateway-transport.ts'), 'the look-alike module must not be a real part')
+  // (The types part imports outbound's TYPES from the same path: the sender's import is the one that counts.)
+  assert.equal(gatewayKeyPathProblems(mutate("from '../utils/chatbot/outbound'", "from './ai-gateway-transport'", sender).sources).length, 2)
 
   // Nothing decrypts any more: the check must say it reads nothing, not pass.
-  assert.deepEqual(gatewayKeyPathProblems(mutate('secret = decryptAiSecret(', 'secret = String(')), [
+  assert.deepEqual(gatewayKeyPathProblems(mutate('secret = decryptAiSecret(', 'secret = String(').sources), [
     'no file of the AI gateway decrypts a key — this check reads nothing',
   ])
 

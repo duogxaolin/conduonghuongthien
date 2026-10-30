@@ -15,12 +15,13 @@
  */
 import { errorMessage } from '~/utils/errorMessage'
 import AdminModal from '~/components/admin/AdminModal.vue'
+import type { ArticleTranslationReadResponse, ArticleTranslationStatusResponse } from '~/types/admin-articles-api'
 
 interface QuickViewTranslation {
   articleId: number
   articleTitle: string
   langCode: string
-  title: string
+  title: string | null
   excerpt: string | null
   content: string | null
   status: string
@@ -42,6 +43,14 @@ const emit = defineEmits<{
 
 const quickViewLoading = ref(false)
 const quickViewData = ref<QuickViewTranslation | null>(null)
+/**
+ * Cờ DƯƠNG: true chỉ khi `quickViewData` giữ bản dịch thật của lượt mở này. Trước đó nó là chỗ
+ * giữ "Đang tải..." (status 'loading', không bao giờ 'published'), và "Xuất bản ngay" trên đó
+ * xuất bản một bản dịch AI chưa ai đọc. Khoá cả nút lẫn `toggleStatus`.
+ */
+const loaded = ref(false)
+/** Mỗi lần mở / đóng / đổi bài lấy một mã: chỉ câu trả lời của lượt mới nhất được ghi. */
+let quickViewRequest = 0
 const toast = useToast()
 
 /** Cờ + tên ngôn ngữ của bản dịch đang xem — tiêu đề hộp (tên truy cập) dùng tên. */
@@ -52,7 +61,9 @@ const langMeta = computed(() => props.bulkLangs.find(l => l.code === quickViewDa
 watch(
   () => [props.show, props.articleId, props.langCode] as const,
   async ([show, id, lang]) => {
+    const request = ++quickViewRequest
     if (!show || id === null) return
+    loaded.value = false
     quickViewData.value = {
       articleId: id,
       articleTitle: props.articleTitle,
@@ -65,9 +76,9 @@ watch(
     }
     quickViewLoading.value = true
     try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; translation: QuickViewTranslation }>)(
-        `/api/admin/articles/${id}/translations/${lang}`,
-      )
+      const res = await adminFetch<ArticleTranslationReadResponse>(`/api/admin/articles/${id}/translations/${lang}`)
+      // Đóng rồi mở bài khác khi lượt này còn bay: câu trả lời của bài trước không vào đây.
+      if (request !== quickViewRequest) return
       if (res.ok && res.translation) {
         quickViewData.value = {
           articleId: id,
@@ -79,29 +90,32 @@ watch(
           status: res.translation.status,
           translatedBy: res.translation.translatedBy,
         }
+        loaded.value = true
       }
     } catch (err: unknown) {
+      if (request !== quickViewRequest) return
       toast.error(errorMessage(err, 'Không thể tải bản dịch.'))
       emit('close')
     } finally {
-      quickViewLoading.value = false
+      if (request === quickViewRequest) quickViewLoading.value = false
     }
   },
   { immediate: true },
 )
 
 async function toggleStatus() {
-  if (!quickViewData.value) return
-  const current = quickViewData.value.status
-  const next = current === 'published' ? 'reviewed' : 'published'
+  // Bản dịch của CHÍNH lượt bấm: câu trả lời về khi hộp đã mở bản dịch khác thì ghi vào bản này.
+  const view = quickViewData.value
+  if (!view || !loaded.value) return
+  const next = view.status === 'published' ? 'reviewed' : 'published'
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
-      `/api/admin/articles/${quickViewData.value.articleId}/translations/${quickViewData.value.langCode}/status`,
+    await adminFetch<ArticleTranslationStatusResponse>(
+      `/api/admin/articles/${view.articleId}/translations/${view.langCode}/status`,
       { method: 'PATCH', body: { status: next } },
     )
-    quickViewData.value.status = next
+    view.status = next
     toast.success(next === 'published' ? 'Đã xuất bản bản dịch!' : 'Đã gỡ xuất bản.')
-    emit('status-toggled', quickViewData.value.articleId, quickViewData.value.langCode, next)
+    emit('status-toggled', view.articleId, view.langCode, next)
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể đổi trạng thái.'))
   }
@@ -163,10 +177,11 @@ async function toggleStatus() {
         </nuxt-link>
           <button
             type="button"
-            class="px-4 py-2 rounded-lg text-xs font-bold cursor-pointer border transition-colors"
+            class="px-4 py-2 rounded-lg text-xs font-bold cursor-pointer border transition-colors disabled:opacity-60 disabled:cursor-wait"
             :class="quickViewData.status === 'published'
               ? 'border-line-strong bg-white text-danger hover:bg-[#fff5f4]'
               : 'border-brand-700 bg-[#e4f2e5] text-brand-900 hover:bg-[#d4ebd6]'"
+            :disabled="!loaded"
             @click="toggleStatus"
           >
             {{ quickViewData.status === 'published' ? 'Gỡ xuất bản' : 'Xuất bản ngay' }}

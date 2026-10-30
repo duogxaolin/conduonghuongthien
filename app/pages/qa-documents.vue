@@ -398,7 +398,6 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from '~/composables/useI18n'
-import type { PublicQaDocument, PublicQaTopic, PublicQaPagination } from '~/utils/public-types'
 
 const { t } = useI18n()
 useSeoMeta({
@@ -433,7 +432,7 @@ const listQuery = computed(() => {
 
 const { data, pending, error, refresh } = useAsyncData(
   () => `qa-documents-${JSON.stringify(listQuery.value)}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: Array<{ id: number; question: string; answer: string; topic?: string | null }>; topics: Array<{ slug: string; name: string; count?: number }>; pagination: { page: number; perPage: number; total: number; totalPages: number } }>)('/api/public/chatbot/knowledge', { query: listQuery.value }),
+  () => publicFetch<import('~/types/public-content-api').PublicKnowledgeResponse>('/api/public/chatbot/knowledge', { query: listQuery.value }),
   {
     lazy: true,
     default: () => ({ ok: true, items: [], topics: [], pagination: { page: 1, perPage: 20, total: 0, totalPages: 0 } }),
@@ -441,10 +440,10 @@ const { data, pending, error, refresh } = useAsyncData(
   },
 )
 
-const entries = computed(() => (data.value as { items?: PublicQaDocument[] })?.items || [])
-const topics = computed(() => (data.value as { topics?: PublicQaTopic[] })?.topics || [])
-const pagination = computed(() => (data.value as { pagination?: PublicQaPagination })?.pagination || { page: 1, perPage: 20, total: 0, totalPages: 0 })
-const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
+const entries = computed(() => data.value?.items || [])
+const topics = computed(() => data.value?.topics || [])
+const pagination = computed(() => data.value?.pagination || { page: 1, perPage: 20, total: 0, totalPages: 0 })
+const loadError = computed(() => !!error.value || data.value?.ok === false)
 
 const highlightId = computed(() => {
   const raw = Number(String(route.hash || '').replace('#qa-', ''))

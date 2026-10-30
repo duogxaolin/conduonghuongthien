@@ -39,7 +39,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
-import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+import { fetchesData } from './_admin-fetch-call.ts'
 
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
@@ -80,7 +80,10 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   // rendered trong `role="alert"` + nút "Thử lại" gọi lại `fetchTypes` (cùng file).
   { file: 'components/admin/ContentTypePicker.vue', refs: ['error'], retries: ['fetchTypes'] },
   { file: 'pages/admin/content/pages/index.vue', refs: ['loadError'], retries: ['fetchPages'] },
-  { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError'], retries: ['fetchPage'] },
+  // The builder's versions drawer (a wave3 4.2 part) shows a failed list read in the page's
+  // `#error` slot — the load and its error branch stay in the page (FINDING-B1: it used to
+  // read as "no versions").
+  { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError', 'versionsError'], retries: ['fetchPage', 'loadVersions'] },
   { file: 'pages/admin/content/navigation/navbar.vue', refs: ['error'], retries: ['loadMenu'] },
   { file: 'pages/admin/content/navigation/mobile.vue', refs: ['error'], retries: ['loadMenu'] },
 
@@ -387,8 +390,9 @@ test('no admin view reaches for a full page reload as its retry', async () => {
  * and tests/client-ip.test.ts, and for the same reason.
  */
 // Shared with tests/skeleton-loading-ui.test.ts — includes adminFetch/useAdminList,
-// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan.
-const FETCH_CALL = ADMIN_FETCH_CALL
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan;
+// decided on code with comments dropped (`fetchesData`, tests/_admin-fetch-call.ts).
+const FETCH_CALL = { test: fetchesData }
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const roots = ['pages/admin', 'components/admin']

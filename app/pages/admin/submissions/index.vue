@@ -29,7 +29,16 @@ const initialViewed = route.query.viewed === 'yes' || route.query.viewed === 'no
 const statusFilter = ref<'' | SubmissionStatus>(initialStatus)
 const viewedFilter = ref<'' | 'yes' | 'no'>(initialViewed)
 
+/**
+ * Only the LATEST load writes rows, counts, error and loading (the ticket of
+ * docs/decisions/fetch-rollout-d-fetch.md): a filter change, a bulk action and the detail
+ * dialog all reload, and an older answer landing last showed the previous filter's rows
+ * (tests/admin-fetch-rollout-submissions-list.test.ts). `$fetch` stays bare: its type is
+ * inferred from the Nitro route, which `adminFetch<T>` would replace with an unchecked one.
+ */
+let listRequest = 0
 const fetchSubmissions = async () => {
+  const ticket = ++listRequest
   loading.value = true
   error.value = ''
   try {
@@ -39,6 +48,7 @@ const fetchSubmissions = async () => {
         viewed: viewedFilter.value || undefined,
       },
     })
+    if (ticket !== listRequest) return
     if (res.ok) {
       submissions.value = res.submissions
       counts.value = res.counts
@@ -46,9 +56,10 @@ const fetchSubmissions = async () => {
       error.value = 'Không tải được danh sách đơn đăng ký.'
     }
   } catch (err: unknown) {
+    if (ticket !== listRequest) return
     error.value = errorMessage(err, 'Không tải được danh sách đơn đăng ký.')
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 

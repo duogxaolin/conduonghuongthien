@@ -13,6 +13,7 @@ import {
 } from '../server/utils/chatbot/follow-ups'
 import type { RetrievalEntry } from '../server/utils/chatbot/retrieval'
 import { normalizeFollowUps, normalizeStoredMessage } from '../app/utils/chatbot-storage'
+import { CHATBOT_COMPOSABLE_FAMILY, chatSurfaceTemplate, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 /**
  * Câu hỏi gợi ý tiếp theo = AI đề xuất + kho tri thức xác nhận.
@@ -228,17 +229,29 @@ test('client keeps only short, distinct string suggestions', () => {
   assert.deepEqual(stored?.followUps, ['Hỏi tiếp?'], 'a reload must restore the chips, filtered the same way')
 })
 
+// The stream reader and `persist()` live in two modules of `useChatbot` since its wave3
+// split; the composable is read as its family (tests/_component-family.ts).
+const CARRIES_FOLLOW_UPS = [/target\.message\.followUps = normalizeFollowUps\(chatbot\.followUps\)/, /followUps: followUps \?\? \[\]/]
+
 test('the stream payload and the saved transcript both carry the suggestions', () => {
-  const composable = read('../app/composables/useChatbot.ts')
-  assert.match(composable, /target\.message\.followUps = normalizeFollowUps\(chatbot\.followUps\)/)
-  assert.match(composable, /followUps: followUps \?\? \[\]/)
+  const composable = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY)
+  for (const pattern of CARRIES_FOLLOW_UPS) assert.match(composable, pattern)
   const endpoint = read('../server/api/public/chatbot/index.post.ts')
   assert.match(endpoint, /followUps: result\.followUps \?\? \[\]/)
 })
 
+test('injection proof: dropping the suggestions from the stream reader or from persist() turns the check red', () => {
+  for (const [file, pattern] of [['composables/chatbot/sse.ts', CARRIES_FOLLOW_UPS[0]!], ['composables/chatbot/persistence.ts', CARRIES_FOLLOW_UPS[1]!]] as const) {
+    const source = readAppFile(file)
+    assert.match(source, pattern, `${file} no longer carries the line this proof removes`)
+    assert.doesNotMatch(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [file]: source.replace(pattern, '') }), pattern, file)
+  }
+})
+
 test('both surfaces show chips under the latest finished answer only', () => {
+  // The widget is read as its whole family since its wave3 split (tests/_component-family.ts).
   for (const file of ['../app/components/ChatWidget.vue', '../app/pages/assistant.vue']) {
-    const template = parse(read(file), { filename: file }).descriptor.template?.content ?? ''
+    const template = chatSurfaceTemplate(file)
     const chips = template.match(/<ChatFollowUps[\s\S]*?\/>/)?.[0] ?? ''
     assert.ok(chips, `${file} must render the chips`)
     assert.match(chips, /!msg\.isStreaming/, `${file}: not while the answer is still arriving`)

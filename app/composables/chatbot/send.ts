@@ -1,0 +1,335 @@
+import {
+  CHATBOT_CLIENT_LIMITS,
+  CHATBOT_SEND_FAILURE_MESSAGES,
+  CHATBOT_WELCOME_MESSAGE,
+  chatInputTooLongText,
+  describeChatSendFailure,
+  type ChatMessage,
+  type ChatSendFailure,
+  type StoredConversation,
+} from '../../utils/chatbot-storage'
+// The typewriter module owns these exports.  Do not re-export them here: Nuxt
+// auto-imports both composables and otherwise has to choose one silently.
+// Import the two operations this composable actually invokes.
+import { playTypewriter, stopTypewriter } from '../useChatbotTypewriter'
+import { persist } from './persistence'
+import { parseSseLine } from './sse'
+import {
+  activeConversation, botInput, botInputError, inputCharLimit, isReplyStreaming, isSubmitting,
+} from './state'
+
+/**
+ * Sending a question and streaming the reply into the transcript. Part of `useChatbot`
+ * (see `./state.ts`).
+ *
+ * The in-flight request is tracked HERE and only here — `chatRequestController`,
+ * `botRequestSequence`, `messageSequence` — because every check that a late reply or a
+ * late failure belongs to the current request compares against the same counter.
+ * `cancelInFlight()` (used by the conversation actions) moves it too.
+ */
+
+let chatRequestController: AbortController | null = null
+let botRequestSequence = 0
+let messageSequence = 0
+
+export function cancelInFlight(): void {
+  botRequestSequence += 1
+  if (chatRequestController) chatRequestController.abort()
+  chatRequestController = null
+  stopTypewriter(true)
+  isSubmitting.value = false
+  botInputError.value = ''
+}
+
+/** Titles the conversation from its first real message. No-op afterwards. */
+function applyAutoTitle(text: string): void {
+  const conversation = activeConversation.value
+  const alreadyTitled = conversation.messages.some(item => item.sender === 'user')
+  if (alreadyTitled) return
+  const title = text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
+  if (title) conversation.title = title
+}
+
+async function ensureSessionToken(conversation: StoredConversation): Promise<string | null> {
+  if (conversation.token) return conversation.token
+  try {
+    const response = await fetch('/api/public/chatbot/session', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) return null
+    const data = await response.json() as { token?: unknown }
+    if (typeof data?.token !== 'string' || !data.token) return null
+    conversation.token = data.token
+    persist()
+    return conversation.token
+  } catch {
+    return null
+  }
+}
+
+// ─── Sending ─────────────────────────────────────────────────────────────────
+
+function boundedUserHistory(): { sender: 'user' | 'bot', text: string }[] {
+  const messages = activeConversation.value.messages
+    .filter(item => (item.sender === 'user' || item.sender === 'bot') && !item.isStreaming && typeof item.text === 'string')
+    .map(item => ({
+      sender: item.sender as 'user' | 'bot',
+      // Trần theo `inputCharLimit` (không phải hằng 2000): máy chủ kiểm độ dài TỪNG tin
+      // trong lịch sử — một câu cũ dài hơn trần máy chủ vừa báo sẽ làm mọi lượt sau 400.
+      text: item.text.normalize('NFKC').trim().slice(0, item.sender === 'bot' ? 1200 : inputCharLimit.value),
+    }))
+    .filter(item => item.text && item.text !== CHATBOT_WELCOME_MESSAGE.text)
+    .slice(-CHATBOT_CLIENT_LIMITS.maxHistoryMessages)
+  let total = 0
+  return messages.reverse().filter((item) => {
+    if (total + item.text.length > CHATBOT_CLIENT_LIMITS.maxTotalUserChars) return false
+    total += item.text.length
+    return true
+  }).reverse()
+}
+
+// ─── Stream → transcript, once per frame ─────────────────────────────────────
+
+/** One per request, so an aborted request can never cancel the next one's frame. */
+type StreamFlush = { run: () => void, handle: number | null, closed: boolean }
+
+const canUseFrames = () => import.meta.client && typeof requestAnimationFrame === 'function'
+
+function scheduleStreamFlush(pending: StreamFlush): void {
+  if (pending.closed || pending.handle !== null) return
+  const fire = () => {
+    pending.handle = null
+    if (!pending.closed) pending.run()
+  }
+  pending.handle = canUseFrames() ? requestAnimationFrame(fire) : setTimeout(fire, 16) as unknown as number
+}
+
+function cancelStreamFlush(pending: StreamFlush): void {
+  pending.closed = true
+  if (pending.handle === null) return
+  if (canUseFrames()) cancelAnimationFrame(pending.handle)
+  else clearTimeout(pending.handle)
+  pending.handle = null
+}
+
+/** Runs the queued copy immediately — a background tab paints no frames. */
+function flushStreamNow(pending: StreamFlush): void {
+  if (pending.closed) return
+  cancelStreamFlush(pending)
+  pending.run()
+}
+
+/** Phản hồi không-ok của endpoint chat, đã phân loại (`describeChatSendFailure`). */
+class ChatSendRejected extends Error {
+  failure: ChatSendFailure
+  constructor(failure: ChatSendFailure) {
+    super('CHATBOT_SEND_REJECTED')
+    this.failure = failure
+  }
+}
+
+/**
+ * `true` = câu trả lời đã về. Còn lại là lượt hỏng: `ChatSendFailure` khi máy chủ trả
+ * một mã không-ok (đã phân loại), `null` khi hỏng không mang mã (mạng, luồng rỗng, huỷ).
+ */
+async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => void): Promise<true | ChatSendFailure | null> {
+  if (isSubmitting.value) return null
+  const requestSequence = ++botRequestSequence
+  const conversation = activeConversation.value
+  isSubmitting.value = true
+  isReplyStreaming.value = false
+  botInputError.value = ''
+  chatRequestController = new AbortController()
+  const requestController = chatRequestController
+
+  const botMessage: ChatMessage = {
+    id: `bot-${++messageSequence}`,
+    sender: 'bot',
+    text: '',
+    kind: undefined,
+    sources: [],
+    toolCalls: [],
+    askContact: false,
+    lead: null,
+  }
+  // Deliberately not pushed yet. Pushing it here rendered an empty bubble holding
+  // nothing but the streaming cursor *alongside* the typing indicator, for the
+  // whole network wait — two indicators for one pending reply. It joins the
+  // transcript once there is text to show.
+  onScroll?.()
+
+  const accumulator = { text: '', message: botMessage }
+  const streamFlush: StreamFlush = { run: () => {}, handle: null, closed: false }
+
+  try {
+    const token = await ensureSessionToken(conversation)
+    const headers: Record<string, string> = { Accept: 'text/event-stream', 'Content-Type': 'application/json' }
+    if (token) headers['X-Chat-Session'] = token
+
+    const response = await fetch('/api/public/chatbot', {
+      method: 'POST',
+      headers,
+      // `_h` is the honeypot. A real browser leaves it empty; only a script that
+      // fills every field it finds writes to it.
+      body: JSON.stringify({ messages: boundedUserHistory(), _h: '' }),
+      signal: requestController.signal,
+    })
+    if (!response.ok) {
+      // Thân lỗi JSON của Nitro: `{ statusCode, message, data }`. Proxy có thể trả HTML.
+      const errorBody: unknown = await response.json().catch(() => null)
+      throw new ChatSendRejected(describeChatSendFailure(response.status, errorBody))
+    }
+    if (!response.body) throw new Error('CHATBOT_UNAVAILABLE')
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+    let doneEvent = false
+    let isStreamPushed = false
+
+    // Copies what has arrived so far onto the transcript. Every copy re-renders
+    // the whole transcript and re-reads its height, so it runs at most once per
+    // painted frame however many SSE events landed in between — a provider that
+    // streams token by token would otherwise cost one full render per token,
+    // which is what made long answers stutter on phones.
+    const flushToTranscript = () => {
+      const hasContentOrTools = Boolean(accumulator.text || (botMessage.toolCalls && botMessage.toolCalls.length > 0))
+      if (!hasContentOrTools) return
+      if (!isStreamPushed) {
+        isStreamPushed = true
+        botMessage.isStreaming = true
+        conversation.messages.push(botMessage)
+        if (requestSequence === botRequestSequence) isReplyStreaming.value = true
+        // The server has answered, so the question is no longer "sending". Clearing
+        // it here lands in the same frame as the reply bubble; clearing it when the
+        // stream closes shrank the question under a finished answer and pulled the
+        // whole answer up by that line's height.
+        const question = conversation.messages.find(item => item.id === userMessage.id)
+        if (question?.status === 'pending') question.status = undefined
+      }
+      const liveTracked = conversation.messages[conversation.messages.length - 1]!
+      liveTracked.text = accumulator.text
+      liveTracked.toolCalls = botMessage.toolCalls
+      onScroll?.()
+    }
+    streamFlush.run = flushToTranscript
+
+    while (!doneEvent) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+      const lines = buffer.split('\n')
+      buffer = done ? '' : lines.pop() || ''
+      for (const line of lines) {
+        if (line.trim() === 'data: [DONE]') { doneEvent = true; break }
+        parseSseLine(line, accumulator)
+      }
+      scheduleStreamFlush(streamFlush)
+      if (done) break
+    }
+    // Whatever is still queued lands now, before playback and persistence read
+    // the transcript.
+    flushStreamNow(streamFlush)
+    if (buffer) parseSseLine(buffer, accumulator)
+    if (!accumulator.text.trim()) throw new Error('EMPTY_CHATBOT_RESPONSE')
+    if (!botMessage.kind) botMessage.kind = 'unavailable'
+
+    // The reply joins the transcript only now that it has content if not pushed during stream
+    if (!isStreamPushed) {
+      conversation.messages.push(botMessage)
+    }
+
+    const tracked = conversation.messages[conversation.messages.length - 1]!
+
+    isSubmitting.value = false
+    chatRequestController = null
+    void playTypewriter(tracked, accumulator.text, { onTick: onScroll, delayMs: isStreamPushed ? 0 : undefined }).then(persist)
+
+    // Moderation gate rejected the user turn before any AI call. Drop the
+    // offending user message from the transcript so boundedUserHistory() never
+    // sends it to the model on the next request — otherwise a user could smuggle
+    // disallowed content past the gate by relying on conversation history. The
+    // bot's refusal bubble stays so the user sees why their turn was rejected.
+    if (botMessage.kind === 'moderation_blocked') {
+      const userIdx = conversation.messages.findIndex(item => item.id === userMessage.id)
+      if (userIdx !== -1) conversation.messages.splice(userIdx, 1)
+      persist()
+    }
+    return true
+  } catch (error) {
+    // A frame still queued would push the bot message back in after it is removed.
+    cancelStreamFlush(streamFlush)
+    // The bot message is only in the transcript if the reply arrived, so a failure
+    // before that point has nothing to remove. Removing it unconditionally would
+    // have deleted whichever message happened to be last.
+    const index = conversation.messages.findIndex(item => item.id === botMessage.id)
+    if (index !== -1) conversation.messages.splice(index, 1)
+    const failure = error instanceof ChatSendRejected ? error.failure : null
+    if ((error as Error)?.name !== 'AbortError' && requestSequence === botRequestSequence) {
+      botInputError.value = failure?.message ?? CHATBOT_SEND_FAILURE_MESSAGES.unavailable
+    }
+    return failure
+  } finally {
+    if (requestSequence === botRequestSequence) {
+      isSubmitting.value = false
+      isReplyStreaming.value = false
+      chatRequestController = null
+    }
+    onScroll?.()
+  }
+}
+
+export async function submitBotQuestion(rawText: string, onScroll?: () => void): Promise<void> {
+  // A send during playback finishes the previous message instantly rather than
+  // leaving it frozen half-typed.
+  stopTypewriter(true)
+  if (isSubmitting.value) return
+
+  const text = typeof rawText === 'string' ? rawText.normalize('NFKC').trim() : ''
+  if (!text) {
+    botInputError.value = 'Vui lòng nhập câu hỏi.'
+    return
+  }
+  if (text.length > inputCharLimit.value) {
+    botInputError.value = chatInputTooLongText(inputCharLimit.value)
+    return
+  }
+
+  const conversation = activeConversation.value
+  const titleBeforeSend = conversation.title
+  applyAutoTitle(text)
+  const userMessage: ChatMessage = { id: `user-${++messageSequence}`, sender: 'user', text }
+  conversation.messages.push(userMessage)
+  onScroll?.()
+
+  // Mark the user message as pending — dimmed while awaiting server response
+  userMessage.status = 'pending'
+
+  const requestSequence = botRequestSequence + 1
+  const outcome = await fetchStreamBotReply(userMessage, onScroll)
+  if (requestSequence !== botRequestSequence) return
+  const succeeded = outcome === true
+  const failure = outcome === true ? null : outcome
+  if (succeeded) {
+    botInput.value = ''
+    userMessage.status = undefined
+    persist()
+  } else if (failure?.kind === 'rejected') {
+    // Máy chủ từ chối CHÍNH câu này (quá dài / không hợp lệ): gửi lại y nguyên vẫn
+    // bị từ chối, và để nó trong hội thoại thì lịch sử của mọi lượt sau mang nó theo
+    // → cũng bị từ chối. Bỏ khỏi hội thoại (kể cả tiêu đề tự đặt từ nó), giữ bản
+    // nháp trong ô nhập; lý do đã ở `botInputError` (tests/chatbot-send-rejection.test.ts).
+    const index = conversation.messages.findIndex(item => item.id === userMessage.id)
+    if (index !== -1) conversation.messages.splice(index, 1)
+    conversation.title = titleBeforeSend
+    if (failure.maxChars) inputCharLimit.value = Math.min(inputCharLimit.value, failure.maxChars)
+    botInput.value = text
+    persist()
+  } else {
+    // Don't pop the message — mark as error and allow retry.
+    // Restore the text to the input so the user can edit and resubmit.
+    userMessage.status = 'error'
+    userMessage.error = failure?.kind === 'rate_limited' ? failure.message : 'Không thể gửi câu hỏi. Vui lòng thử lại.'
+    botInput.value = text
+  }
+}

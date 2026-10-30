@@ -148,6 +148,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicArticlesResponse } from '~/types/public-content-api'
 import BlockLoadError from './BlockLoadError.vue'
 import { createCarouselAutoplay } from '~/utils/carousel-autoplay'
 
@@ -162,7 +164,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, pending, error, refresh } = await useAsyncData(
   `block-role-models-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
+  () => publicFetch<PublicArticlesResponse>('/api/public/articles', {
     params: {
       type: 'role_model',
       limit: maxItems.value,
@@ -185,7 +187,9 @@ const list = computed(() =>
   (data.value?.articles || []).map(a => ({
     id: a.slug,
     name: a.title,
-    location: a.category?.name || '',
+    // FINDING G-1 (D-FETCH lô G): `categoryName` của API, như bản đầu của khối (20073b4d). Từ
+    // 30b87195 dòng này đọc `a.category?.name` (kiểu ép viết tay) — nhãn chuyên mục không bao giờ hiện.
+    location: a.categoryName || '',
     image: a.thumbnailUrl || '/assets/guong_sang_1.jpg',
   }))
 )

@@ -12,15 +12,12 @@
  * Cha truyền `show` + `bulkLangs`. Con emit `close` (đóng) + `started` (khi đã
  * xếp lịch dịch xong, cha refresh bảng + poll).
  */
-import type { AdminArticleRow } from '~/types/admin-api'
+import type { AdminArticleListResponse, BulkTranslateResponse, TranslationStatsResponse } from '~/types/admin-articles-api'
 import { errorMessage } from '~/utils/errorMessage'
 import AdminModal from '~/components/admin/AdminModal.vue'
 
-interface GlobalStats {
-  totalArticles: number
-  aiPendingTranslations: number
-  languages: Array<{ code: string; name: string; nativeName: string; translated: number; missing: number }>
-}
+/** Derived from the handler (was hand-written): `GET /api/admin/articles/translation-stats`. */
+type GlobalStats = Pick<TranslationStatsResponse, 'totalArticles' | 'aiPendingTranslations' | 'languages'>
 
 const props = defineProps<{
   show: boolean
@@ -38,15 +35,29 @@ const selectedGlobalTargetLangs = ref<string[]>(['en'])
 const globalTargetStatus = ref<'ai_draft' | 'published'>('ai_draft')
 const globalTranslating = ref(false)
 const toast = useToast()
+const { confirm } = useConfirm()
+// Leaving the page stops the queueing loop: nothing is POSTed for a page that is gone.
+let disposed = false
+onBeforeUnmount(() => { disposed = true })
+
+/**
+ * At most this many articles per language per click — the list endpoint's page, and the
+ * spending decision of the batch-E verify: one click never queues more than 100 paid AI
+ * translations per language without the officer clicking again (docs/decisions/fetch-rollout-d-fetch.md).
+ */
+const PER_CLICK = 100
 
 // Watch: khi `show` true → fetch stats (cha bật modal bằng prop, con tự load).
 watch(
   () => props.show,
   async (show) => {
     if (!show) return
+    // Never the previous opening's numbers: after a failed load they stayed on screen with
+    // "Bắt đầu dịch hàng loạt" enabled.
+    globalStats.value = null
     globalStatsLoading.value = true
     try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean } & GlobalStats>)('/api/admin/articles/translation-stats')
+      const res = await adminFetch<TranslationStatsResponse>('/api/admin/articles/translation-stats')
       if (res.ok) {
         globalStats.value = {
           totalArticles: res.totalArticles,
@@ -68,41 +79,73 @@ watch(
   { immediate: true },
 )
 
+/** "en: 100/120" — what this click queues of what is missing, per language. */
+const share = (lang: { code: string, queued: number, missing: number }) => `${lang.code}: ${lang.queued}/${lang.missing}`
+
 async function startGlobalTranslation() {
   if (selectedGlobalTargetLangs.value.length === 0) {
     toast.warning('Vui lòng chọn ít nhất một ngôn ngữ.')
     return
   }
+  // Ask first, with the numbers: every article is paid AI calls. The counts come from the stats
+  // on screen (an upper bound — the list read next is what is actually sent).
+  const planned = selectedGlobalTargetLangs.value.map((code) => {
+    const missing = globalStats.value?.languages.find(l => l.code === code)?.missing ?? 0
+    return { code, queued: Math.min(PER_CLICK, missing), missing }
+  })
+  const plannedCount = planned.reduce((sum, lang) => sum + lang.queued, 0)
+  if (!await confirm({
+    title: 'Xếp lịch dịch AI',
+    message: `Xếp lịch dịch tối đa ${plannedCount} bài sang ${planned.length} ngôn ngữ (${planned.map(share).join(', ')})? Mỗi bài là các lượt gọi AI có tính phí; mỗi lượt bấm xếp tối đa ${PER_CLICK} bài cho mỗi ngôn ngữ.`,
+    confirmLabel: 'Xếp lịch dịch',
+  })) return
 
   globalTranslating.value = true
   let totalQueuedLangs = 0
   let totalQueuedArticles = 0
+  const left: Array<{ code: string, queued: number, missing: number }> = []
 
   try {
     for (const langCode of selectedGlobalTargetLangs.value) {
-      const listRes = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminArticleRow[] }>)('/api/admin/articles', {
-        params: { translation: `missing_${langCode}`, perPage: 100, status: 'published' },
+      // One page of missing published articles: the per-click cap (no paging past it).
+      const listRes = await adminFetch<AdminArticleListResponse>('/api/admin/articles', {
+        query: { translation: `missing_${langCode}`, perPage: PER_CLICK, status: 'published' },
       })
-      const targetArticles = listRes.items || []
-      if (targetArticles.length > 0) {
-        const ids = targetArticles.map(a => Number(a.id))
-        await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/articles/bulk-translate', {
+      if (disposed) return
+      const ids = (listRes.items || []).map(a => Number(a.id))
+      if (ids.length > 0) {
+        await adminFetch<BulkTranslateResponse>('/api/admin/articles/bulk-translate', {
           method: 'POST',
           body: { ids, langCode, targetStatus: globalTargetStatus.value },
         })
         totalQueuedLangs++
         totalQueuedArticles += ids.length
+        const missing = Math.max(ids.length, listRes.pagination?.total ?? ids.length)
+        if (missing > ids.length) left.push({ code: langCode, queued: ids.length, missing })
       }
+      if (disposed) return
     }
 
     if (totalQueuedArticles === 0) {
       toast.info('Tất cả các bài viết đã có bản dịch cho các ngôn ngữ đã chọn!')
+    } else if (left.length > 0) {
+      // Never "done" while articles are left: say how many, and that another click queues them.
+      toast.success(`Đã xếp lịch dịch ${totalQueuedArticles} lượt bài viết sang ${totalQueuedLangs} ngôn ngữ (${left.map(share).join(', ')}). Còn bài chưa xếp — bấm lại sau khi lượt dịch đang chạy xong để xếp tiếp.`)
+      emit('started')
     } else {
       toast.success(`Đã xếp lịch dịch ${totalQueuedArticles} lượt bài viết sang ${totalQueuedLangs} ngôn ngữ! Hệ thống đang xử lý trong nền.`)
       emit('started')
     }
   } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể bắt đầu dịch toàn bộ.'))
+    const reason = errorMessage(err, 'Không thể bắt đầu dịch toàn bộ.')
+    if (totalQueuedArticles === 0) {
+      toast.error(reason)
+    } else {
+      // The languages queued before the failure ARE translating in the background: say so and
+      // let the page follow them — otherwise pressing again queues them a second time.
+      toast.error(`${reason} Đã xếp lịch dịch ${totalQueuedArticles} lượt bài viết sang ${totalQueuedLangs} ngôn ngữ trước khi lỗi; các ngôn ngữ còn lại chưa được xếp.`)
+      emit('started')
+    }
   } finally {
     globalTranslating.value = false
   }

@@ -114,21 +114,21 @@ async function loadStatus() {
   } catch { /* ignore */ }
 }
 
+let listRequest = 0 // Only the latest load writes: filter, page, 4 s poll, reloads overlap (docs/decisions/fetch-rollout-d-fetch.md, lô F).
 async function loadBackups() {
-  loading.value = true
-  error.value = ''
+  const ticket = ++listRequest
+  loading.value = true; error.value = ''
   try {
     const res = await adminFetch<BackupListResponse>(`/api/admin/backup`, {
       query: { page: page.value, pageSize: 20, ...(filterType.value ? { type: filterType.value } : {}) },
     })
-    items.value = res.items || []
-    total.value = res.total || 0
-    totalPages.value = res.totalPages || 1
+    if (ticket !== listRequest) return
+    items.value = res.items || []; total.value = res.total || 0; totalPages.value = res.totalPages || 1
   } catch (err: unknown) {
-    error.value = errorMessage(err, 'Không tải được danh sách backup.')
-    items.value = []
+    if (ticket !== listRequest) return
+    error.value = errorMessage(err, 'Không tải được danh sách backup.'); items.value = []
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 

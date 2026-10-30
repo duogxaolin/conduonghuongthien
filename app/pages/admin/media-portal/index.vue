@@ -26,11 +26,9 @@
  * `NaN` lọt qua mọi so sánh.
  */
 import type { AdminMediaItem, AdminMediaPage, AdminMediaConfig } from '~/types/admin-api'
+import type { MediaDeleteResponse } from '~/types/admin-media-portal-api'
 
-definePageMeta({
-  layout: 'admin',
-  middleware: 'admin-auth'
-})
+definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const route = useRoute()
 const router = useRouter()
@@ -42,16 +40,11 @@ type MediaStatus = 'draft' | 'published' | 'archived'
 type MediaSource = 'upload' | 'youtube'
 
 const STATUS_OPTIONS: { value: '' | MediaStatus; label: string }[] = [
-  { value: '',          label: 'Tất cả trạng thái' },
-  { value: 'draft',     label: 'Bản nháp' },
-  { value: 'published', label: 'Đã xuất bản' },
-  { value: 'archived',   label: 'Đã lưu trữ' },
+  { value: '', label: 'Tất cả trạng thái' }, { value: 'draft', label: 'Bản nháp' }, { value: 'published', label: 'Đã xuất bản' }, { value: 'archived', label: 'Đã lưu trữ' },
 ]
 
 const SOURCE_OPTIONS: { value: '' | MediaSource; label: string }[] = [
-  { value: '',       label: 'Tất cả nguồn' },
-  { value: 'upload', label: 'Tải lên' },
-  { value: 'youtube',label: 'YouTube' },
+  { value: '', label: 'Tất cả nguồn' }, { value: 'upload', label: 'Tải lên' }, { value: 'youtube', label: 'YouTube' },
 ]
 
 const items = ref<AdminMediaItem[]>([])
@@ -78,32 +71,50 @@ const canCreate = hasPermission('media_portal', 'create')
 const canUpdate = hasPermission('media_portal', 'update')
 const canDelete = hasPermission('media_portal', 'delete')
 
-async function fetchMedia() {
+// Only the latest load writes (ticket, docs/decisions/fetch-rollout-d-fetch.md); a page past the end (the service does
+// not clamp) asks ONCE for the last page — the pager lives in the data branch (tests/admin-fetch-rollout-media-portal-list.test.ts).
+// Leaving the page retires every load in flight and refuses new ones: a late answer neither rewrites the URL
+// (of whatever page the officer went to) nor asks again.
+let listRequest = 0
+let disposed = false
+onBeforeUnmount(() => { disposed = true; listRequest++ })
+async function fetchMedia(mayAskForLastPage = true) {
+  if (disposed) return
+  const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
   try {
-    const [res, capabilities] = await Promise.all([($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaPage>)(`/api/admin/media-portal`, {
-      params: {
-        page:   currentPage.value,
-        limit:  PER_PAGE,
-        search: search.value || undefined,
-        status: statusFilter.value || undefined,
-        source: sourceFilter.value || undefined,
-      },
-    }), ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaConfig>)(`/api/admin/media-portal/config`)])
-    mediaConfig.value = capabilities
+    const listing = adminFetch<AdminMediaPage>(`/api/admin/media-portal`, { query: {
+      page: currentPage.value, limit: PER_PAGE, search: search.value || undefined, status: statusFilter.value || undefined, source: sourceFilter.value || undefined,
+    } })
+    if (!mediaConfig.value) void fetchConfig()
+    const res = await listing
+    if (ticket !== listRequest) return
+    const last = Math.max(1, Math.ceil(res.total / PER_PAGE))
+    if (mayAskForLastPage && res.page > last && res.total > 0) {
+      currentPage.value = last
+      syncQuery()
+      return await fetchMedia(false)
+    }
     items.value = res.items
     total.value = res.total
     currentPage.value = res.page
   } catch (err: unknown) {
+    if (ticket !== listRequest) return
     loadError.value = errorMessage(err, 'Không tải được danh sách video.')
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
-function applyFilters() {
-  currentPage.value = 1
+// The upload button's capabilities, on their own (failing hides the button, never the list); read again
+// with the next load while missing, so a passing failure is not kept until F5.
+async function fetchConfig() {
+  try { mediaConfig.value = await adminFetch<AdminMediaConfig>(`/api/admin/media-portal/config`) } catch { mediaConfig.value = null }
+}
+
+/** Filters AND page live in the URL (shareable, survive F5) — the pager used to skip this. */
+function syncQuery() {
   void router.replace({
     query: {
       ...(search.value ? { search: search.value } : {}),
@@ -112,12 +123,18 @@ function applyFilters() {
       ...(currentPage.value !== 1 ? { page: currentPage.value } : {}),
     }
   })
+}
+
+function applyFilters() {
+  currentPage.value = 1
+  syncQuery()
   void fetchMedia()
 }
 
 function changePage(page: number) {
   if (!Number.isFinite(page) || page < 1 || page > totalPages.value) return
   currentPage.value = page
+  syncQuery()
   void fetchMedia()
 }
 
@@ -128,7 +145,7 @@ async function deleteItem(id: number, title: string) {
     danger: true,
   })) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${id}`, { method: 'DELETE' })
+    await adminFetch<MediaDeleteResponse>(`/api/admin/media-portal/${id}`, { method: 'DELETE' })
     toast.success('Đã xoá video.')
     await fetchMedia()
   } catch (err: unknown) {
@@ -136,10 +153,7 @@ async function deleteItem(id: number, title: string) {
   }
 }
 
-function statusLabel(s: string): string {
-  const opt = STATUS_OPTIONS.find(o => o.value === s)
-  return opt ? opt.label : s
-}
+const statusLabel = (s: string): string => STATUS_OPTIONS.find(o => o.value === s)?.label ?? s
 
 function statusBadgeClass(s: string): string {
   if (s === 'published') return 'bg-[#e6f4ea] text-brand-700'
@@ -147,13 +161,8 @@ function statusBadgeClass(s: string): string {
   return 'bg-[#fff3cd] text-[#856404]'
 }
 
-function processingLabel(status: string): string {
-  if (status === 'pending') return 'Đang chờ xử lý'
-  if (status === 'ready') return 'Sẵn sàng'
-  if (status === 'processing') return 'Đang xử lý'
-  if (status === 'failed') return 'Lỗi xử lý'
-  return status
-}
+const PROCESSING_LABELS: Record<string, string> = { pending: 'Đang chờ xử lý', ready: 'Sẵn sàng', processing: 'Đang xử lý', failed: 'Lỗi xử lý' }
+const processingLabel = (status: string): string => PROCESSING_LABELS[status] ?? status
 
 function fmtDuration(secs: number | null): string {
   if (!secs || secs <= 0) return '—'
@@ -162,10 +171,7 @@ function fmtDuration(secs: number | null): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function fmtDate(v: string | null): string {
-  if (!v) return '—'
-  return new Date(v).toLocaleDateString('vi-VN')
-}
+const fmtDate = (v: string | null): string => (v ? new Date(v).toLocaleDateString('vi-VN') : '—')
 
 onMounted(() => { void fetchMedia() })
 </script>

@@ -172,8 +172,8 @@
  * crumb and the badge can never disagree.
  *
  * Split in wave3 4.2 (730 lines → this file + `components/article/*` + three composables).
- * Kept here: every request (article, related list, settings, view ping — the `$fetch` casts
- * stay here: there is no public typed fetch helper; the composables get them as functions),
+ * Kept here: every request (article, related list, settings, view ping — `publicFetch<T>()`
+ * calls since D-FETCH lot G; the composables get them as functions),
  * the SSR status decision, the loading / error + retry / not-found branches of the page AND
  * of the related column, SEO, the TOC's open state. The parts render only: header, outline,
  * body (`ArticleBody` — the `v-html` and its `:deep()` rules; used nowhere else), share/print
@@ -187,7 +187,9 @@ import { useArticleRelated, type ArticleRelatedResponse } from '~/composables/us
 import { useArticleReadTracking } from '~/composables/useArticleReadTracking'
 import { useSiteSettings, type PublicSettingsResponse } from '~/composables/useSiteSettings'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
+import { publicFetch } from '~/composables/publicFetch'
 import { resolveDetailFetch } from '~/utils/ssr-failure-response'
+import type { PublicArticleDetailResponse, PublicArticleViewResponse } from '~/types/public-content-api'
 import ArticleMetaHeader from '~/components/article/ArticleMetaHeader.vue'
 import ArticleToc from '~/components/article/ArticleToc.vue'
 import ArticleBody from '~/components/article/ArticleBody.vue'
@@ -232,30 +234,12 @@ const {
   seoFallbackTitleValue, seoFallbackDescriptionValue,
 } = useArticleDetailLabels(props, t)
 
-type ArticleDetailResponse = {
-  ok: boolean
-  article: {
-    id: number
-    title: string
-    slug: string
-    excerpt: string | null
-    content: string
-    featuredImage: string | null
-    thumbnailUrl?: string | null
-    publishedAt: string | null
-    createdAt?: string | null
-    type?: string
-    categoryName?: string | null
-    authorName?: string | null
-    viewTotal?: number
-    category?: { name: string; slug: string } | null
-    [key: string]: unknown
-  } | null
-}
+// Suy từ handler (`types/public-content-api.ts`) — bản viết tay cũ khai `featuredImage` không có thật.
+type ArticleDetailResponse = PublicArticleDetailResponse
 
 const articleAsync = useAsyncData(
   () => `article-detail-${props.slug}-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleDetailResponse>)(`/api/public/articles/${props.slug}?lang=${currentLang.value}`),
+  () => publicFetch<ArticleDetailResponse>(`/api/public/articles/${props.slug}?lang=${currentLang.value}`),
   {
     lazy: true,
     watch: [() => props.slug, currentLang],
@@ -288,11 +272,14 @@ watch(currentLang, () => {
 })
 
 onMounted(() => {
-  // Nếu hydrate từ SSR mà chưa có bài viết (hoặc lệch cache), fetch ngay lập tức
-  if (!article.value) {
+  // Nếu hydrate từ SSR mà chưa có bài viết (hoặc lệch cache), fetch ngay lập tức. Lượt đọc
+  // ĐANG BAY thì không: điều hướng phía client đã bắt đầu nó (lazy, trước mount) — gọi lại là
+  // Nuxt huỷ rồi gửi lại, hai GET bài + hai GET liên quan mỗi lần bấm vào bài (đo trên bản
+  // build, R8-6). Danh sách liên quan rỗng sau hydrate thì refresh lấy lại payload, không gửi gì.
+  if (!article.value && !pending.value) {
     void refresh()
   }
-  if (!relatedArticles.value.length) {
+  if (!relatedArticles.value.length && !relatedPending.value) {
     void refreshRelated()
   }
 })
@@ -320,7 +307,7 @@ const { relatedPending, relatedError, relatedArticles, relatedTopics, showTopics
   props,
   article,
   currentLang,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleRelatedResponse>)(`/api/public/articles/${props.slug}/related?lang=${currentLang.value}`),
+  () => publicFetch<ArticleRelatedResponse>(`/api/public/articles/${props.slug}/related?lang=${currentLang.value}`),
 )
 
 // Ảnh chia sẻ: thumbnail bài viết > ảnh OG mặc định từ settings > hero_banner cứng.
@@ -335,7 +322,7 @@ const { relatedPending, relatedError, relatedArticles, relatedTopics, showTopics
 // request. Component (page) có async context nên `useAsyncData` tự await.
 const { data: settingsData } = useAsyncData<PublicSettingsResponse | null>(
   'public-settings-nav',
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  () => publicFetch<PublicSettingsResponse>('/api/public/settings'),
   { default: () => null },
 )
 const { sitePublicSettings } = useSiteSettings(settingsData)
@@ -356,7 +343,7 @@ useArticleReadTracking({
   slug: () => props.slug,
   article,
   record: recordRead,
-  sendView: (slug, body) => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/public/articles/${encodeURIComponent(slug)}/view`, {
+  sendView: (slug, body) => publicFetch<PublicArticleViewResponse>(`/api/public/articles/${encodeURIComponent(slug)}/view`, {
     method: 'POST',
     body,
     keepalive: true,

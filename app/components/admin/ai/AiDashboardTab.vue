@@ -16,30 +16,20 @@ import {
   formatVnd,
 } from '~/utils/ai-service-labels'
 
-interface UsageSummary {
-  monthlyCostVnd: number
-  totalPromptTokens: number
-  totalCompletionTokens: number
-  totalRequests: number
-  successRate: number
-}
-interface ByServiceRow {
-  serviceKey: string
-  costVnd: number
-  promptTokens: number
-  completionTokens: number
-  requests: number
-}
-interface DailyRow { day: string; costVnd: number; requests: number }
-interface BudgetInfo { monthlyBudgetVnd: number; warningThresholdPct: number; usagePercent: number }
+import type { AdminAiUsageResponse } from '~/types/admin-ai-api'
 
 const usageError = ref(null as string | null)
 const usageLoading = ref(false)
-const usageSummary = ref<UsageSummary | null>(null)
-const byService = ref<ByServiceRow[]>([])
-const dailyData = ref<DailyRow[]>([])
-const budgetInfo = ref<BudgetInfo | null>(null)
+const usageSummary = ref<AdminAiUsageResponse['usage'] | null>(null)
+const byService = ref<AdminAiUsageResponse['byService']>([])
+const dailyData = ref<AdminAiUsageResponse['daily']>([])
+const budgetInfo = ref<AdminAiUsageResponse['budget'] | null>(null)
 
+/**
+ * `GET /api/admin/ai/delify/status` — stated here, not derived: the router's own fields are
+ * picked by `plainFields` as "any plain value" (string | number | boolean), so their types are
+ * the router's, which the handler does not know (named gap, docs/decisions/fetch-rollout-d-fetch.md).
+ */
 interface DelifyStatusResponse {
   ok: boolean
   configured: boolean
@@ -79,9 +69,7 @@ async function loadDelifyStatus(period: '1h' | '24h' | '7d' | '30d' | 'all' = de
   delifyStatusLoading.value = true
   delifyStatusError.value = null
   try {
-    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<DelifyStatusResponse>)('/api/admin/ai/delify/status', {
-      params: { period },
-    })
+    const data = await adminFetch<DelifyStatusResponse>('/api/admin/ai/delify/status', { query: { period } })
     delifyStatus.value = data
     if (!data.ok && data.error) {
       delifyStatusError.value = data.error
@@ -148,12 +136,7 @@ async function loadUsage() {
   usageError.value = null
   usageLoading.value = true
   try {
-    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      usage: UsageSummary
-      byService: ByServiceRow[]
-      daily: DailyRow[]
-      budget: BudgetInfo
-    }>)('/api/admin/ai/usage')
+    const data = await adminFetch<AdminAiUsageResponse>('/api/admin/ai/usage')
     usageSummary.value = data.usage
     byService.value = data.byService
     dailyData.value = data.daily

@@ -14,9 +14,12 @@
  * — comes out of `Serialize` as `never`, so it reads as "never present" rather than "anything".
  * Give the column a `.$type<…>()` in schema.ts (as `published_blocks` has) before relying on it.
  *
- * One definition for every `app/types/*-api.ts` file (wave3 D-DUP: it had been copied
- * into eight files). `adminFetch<T>()`'s `T` is still an unchecked assertion — see
- * app/composables/adminFetch.ts — but with this it is the right one.
+ * One definition for every `app/types/*` file (wave3 D-DUP: it had been copied into eight
+ * files; the last five copies — admin-api, admin-profile, media-scan, moderation, public-api —
+ * now import it). `tests/handler-payload-single-definition.test.ts` keeps it one: a second
+ * `Payload`, the same shape under another name, or `Serialize` imported anywhere else is red.
+ * `adminFetch<T>()`'s `T` is still an unchecked assertion — see app/composables/adminFetch.ts
+ * — but with this it is the right one.
  */
 import type { Serialize } from 'nitropack/types'
 

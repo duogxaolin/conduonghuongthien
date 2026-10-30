@@ -67,6 +67,8 @@ async function addBan() {
     await load()
   } catch (err: unknown) {
     formError.value = errorMessage(err, 'Không thêm được mục chặn.')
+    // 409: already listed — perhaps by another officer a moment ago: show the list as it is now.
+    if (errorStatus(err) === 409) await load()
   } finally {
     busy.value = false
   }
@@ -85,6 +87,8 @@ async function liftBan(ban: AdminIpBan) {
     await load()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không bỏ chặn được địa chỉ này.'))
+    // 404: already lifted (another officer, a second click): the row on screen is stale.
+    if (errorStatus(err) === 404) await load()
   } finally {
     busy.value = false
   }

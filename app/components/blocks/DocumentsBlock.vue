@@ -134,7 +134,8 @@
 import { computed, onMounted, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
-import type { PublicArticleListItem } from '~/utils/public-types'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicArticlesResponse } from '~/types/public-content-api'
 import BlockLoadError from './BlockLoadError.vue'
 
 const { t, currentLang } = useI18n()
@@ -147,7 +148,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, pending, error, refresh } = await useAsyncData(
   `block-documents-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
+  () => publicFetch<PublicArticlesResponse>('/api/public/articles', {
     params: {
       type: 'document',
       limit: maxItems.value,
@@ -175,7 +176,7 @@ onMounted(() => {
 const loadError = computed(() => !!error.value)
 
 const docs = computed(() =>
-  ((data.value as { articles?: PublicArticleListItem[] })?.articles || []).map(a => ({
+  (data.value?.articles || []).map(a => ({
     id: a.id,
     slug: a.slug,
     title: a.title,

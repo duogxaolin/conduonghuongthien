@@ -11,22 +11,10 @@
 import { errorMessage } from '~/utils/errorMessage'
 import { SERVICE_LABELS, formatNum, formatTime, formatVnd, type ProviderOption } from '~/utils/ai-service-labels'
 
-interface LogRow {
-  id: number
-  serviceKey: string
-  provider: string
-  model: string | null
-  promptTokens: number
-  completionTokens: number
-  totalTokens: number
-  costUsd: string
-  costVnd: string
-  executionMs: number
-  userId: number | null
-  success: boolean
-  errorMessage: string | null
-  createdAt: string | null
-}
+import type { AdminAiLogsResponse } from '~/types/admin-ai-api'
+
+// Derived from the handler (the hand-written row said `costUsd`/`costVnd: string`; the handler sends numbers).
+type LogRow = AdminAiLogsResponse['logs'][number]
 
 const props = defineProps<{ providers: ProviderOption[] }>()
 
@@ -42,7 +30,10 @@ function toggleRowExpand(id: number) {
   else expandedRows.value.add(id)
 }
 
+// Only the latest load writes (filters or a page, then another before the first answer).
+let logsRequest = 0
 async function loadLogs() {
+  const ticket = ++logsRequest
   logsError.value = null
   logsLoading.value = true
   try {
@@ -53,13 +44,15 @@ async function loadLogs() {
     if (logsFilters.value.endDate) params.endDate = logsFilters.value.endDate
     if (logsFilters.value.success) params.success = logsFilters.value.success
 
-    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ logs: LogRow[]; pagination: { page: number; perPage: number; total: number; totalPages: number } }>)('/api/admin/ai/logs', { params })
+    const data = await adminFetch<AdminAiLogsResponse>('/api/admin/ai/logs', { query: params })
+    if (ticket !== logsRequest) return
     logs.value = data.logs
     logsPagination.value = data.pagination
   } catch (err: unknown) {
+    if (ticket !== logsRequest) return
     logsError.value = errorMessage(err, 'Không thể tải nhật ký.')
   } finally {
-    logsLoading.value = false
+    if (ticket === logsRequest) logsLoading.value = false
   }
 }
 

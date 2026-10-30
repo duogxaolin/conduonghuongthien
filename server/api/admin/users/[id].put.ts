@@ -5,6 +5,8 @@ import { assertRoleAssignable, assertRoleWithinActor, requireResourcePermission 
 import { passwordRejectionMessage } from '../../../utils/password-policy'
 import { isValidEmail } from '../../../utils/submission-recipient'
 import { assertUserManageable, loadRolePermissions } from '../../../services/users'
+import { driverMessage, isDuplicateEntry } from '../../../utils/mysql-errors'
+import { logError } from '../../../utils/logger'
 import { eq, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -92,17 +94,28 @@ export default defineEventHandler(async (event) => {
    * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
    * commit độc lập trên pool.
    */
-  await db.transaction(async (tx) => {
-    await tx.update(users).set(updateData).where(eq(users.id, id))
+  try {
+    await db.transaction(async (tx) => {
+      await tx.update(users).set(updateData).where(eq(users.id, id))
 
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'update',
-      resource: 'users',
-      resourceId: id,
-      meta: { fieldsUpdated: Object.keys(updateData) },
+      await tx.insert(activityLogs).values({
+        userId: adminUser.id,
+        action: 'update',
+        resource: 'users',
+        resourceId: id,
+        meta: { fieldsUpdated: Object.keys(updateData) },
+      })
     })
-  })
+  } catch (err: unknown) {
+    // `email` is the only unique column this route writes. Before: a 500, and the unhandled
+    // DrizzleQueryError — "Failed query: … params: <email>,<password hash>…" — went to the server
+    // log whole (FINDING-R7-10, the update twin). The log gets the driver's message only.
+    if (isDuplicateEntry(err)) {
+      throw createError({ statusCode: 400, statusMessage: 'Email đã được dùng cho tài khoản khác.' })
+    }
+    logError({ event: 'admin_users.update_failed', userId: id, error: driverMessage(err) })
+    throw createError({ statusCode: 500, statusMessage: 'Lỗi hệ thống' })
+  }
 
   return { ok: true }
 })

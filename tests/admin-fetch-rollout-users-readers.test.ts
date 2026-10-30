@@ -348,6 +348,54 @@ describe('pages/admin/readers/[id].vue', () => {
     opened.page.unmount()
   })
 
+  it('delete account refused: 404 (already deleted by someone else) leaves for the list with the sentence; another refusal stays', async () => {
+    const gone = await openReader({ banned: false }, { 'DELETE /api/admin/readers/7': () => h3Error(404, 'Không tìm thấy tài khoản người đọc.') })
+    await click(byText(gone.page.root, 'button', 'Xoá tài khoản'))
+    await settle()
+    assert.equal(gone.lastToast('error'), 'Không tìm thấy tài khoản người đọc.')
+    // Before (verifier round 3): the page stayed on an account that no longer exists.
+    assert.deepEqual(gone.pushes, ['/admin/readers'])
+    gone.page.unmount()
+
+    const refused = await openReader({ banned: false }, { 'DELETE /api/admin/readers/7': () => h3Error(403, 'Forbidden: Insufficient permissions') })
+    await click(byText(refused.page.root, 'button', 'Xoá tài khoản'))
+    await settle()
+    assert.deepEqual(refused.pushes, [])
+    // The page stays usable: `busy` is cleared (verifier V3-21).
+    assert.equal(byText(refused.page.root, 'button', 'Xoá tài khoản').props.disabled, false)
+    refused.page.unmount()
+  })
+
+  it('ban, unban or purge refused with 404 (the account was deleted meanwhile): the sentence, then back to the list; any other refusal stays', async () => {
+    const sentence = 'Không tìm thấy tài khoản người đọc.'
+    for (const [route, button, banned] of [
+      ['POST /api/admin/readers/7/ban', 'Chặn tài khoản', false],
+      ['DELETE /api/admin/readers/7/comments', 'Xoá toàn bộ bình luận', false],
+      // Verifier round 4, L-4: unban was the one action that still stayed on a deleted account.
+      ['POST /api/admin/readers/7/unban', 'Bỏ chặn', true],
+    ] as const) {
+      const gone = await openReader({ banned }, { [route]: () => h3Error(404, sentence) })
+      gone.answers.prompt = ''
+      await click(byText(gone.page.root, 'button', button))
+      await settle()
+      // Before (verifier round 4, L1): the page stayed on an account that no longer exists.
+      assert.deepEqual([gone.lastToast('error'), gone.pushes], [sentence, ['/admin/readers']], route)
+      gone.page.unmount()
+    }
+    for (const [route, button, refusal, banned] of [
+      ['POST /api/admin/readers/7/ban', 'Chặn tài khoản', () => h3Error(409, 'Tài khoản này đã bị chặn.'), false],
+      ['DELETE /api/admin/readers/7/comments', 'Xoá toàn bộ bình luận', () => h3Error(403, 'Bạn không có quyền thực hiện thao tác này.'), false],
+      ['POST /api/admin/readers/7/unban', 'Bỏ chặn', () => h3Error(500, 'Lỗi máy chủ.'), true],
+    ] as const) {
+      const refused = await openReader({ banned }, { [route]: refusal })
+      refused.answers.prompt = ''
+      await click(byText(refused.page.root, 'button', button))
+      await settle()
+      assert.deepEqual(refused.pushes, [], route)
+      refused.page.unmount()
+    }
+  })
+
   it('delete one comment: the confirm warns about the replies under a top-level comment; delete then reload', async () => {
     const opened = await openReader()
     const before = opened.calls.length

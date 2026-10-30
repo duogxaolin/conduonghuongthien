@@ -18,6 +18,7 @@ import type { Payload } from './handler-payload'
 
 type DetailHandler = typeof import('~~/server/api/admin/media-portal/[id].get').default
 type UpdateHandler = typeof import('~~/server/api/admin/media-portal/[id].put').default
+type DeleteHandler = typeof import('~~/server/api/admin/media-portal/[id].delete').default
 type ProcessHandler = typeof import('~~/server/api/admin/media-portal/[id]/process.post').default
 type ThumbnailSetHandler = typeof import('~~/server/api/admin/media-portal/[id]/thumbnail.post').default
 type ThumbnailClearHandler = typeof import('~~/server/api/admin/media-portal/[id]/thumbnail.delete').default
@@ -25,11 +26,24 @@ type CategoriesHandler = typeof import('~~/server/api/admin/media-portal/categor
 type CategoryCreateHandler = typeof import('~~/server/api/admin/media-portal/categories/index.post').default
 type CategoryUpdateHandler = typeof import('~~/server/api/admin/media-portal/categories/[id].put').default
 type CategoryDeleteHandler = typeof import('~~/server/api/admin/media-portal/categories/[id].delete').default
+type ExternalCreateHandler = typeof import('~~/server/api/admin/media-portal/external.post').default
+type YoutubeMetaHandler = typeof import('~~/server/api/admin/media-portal/youtube-meta.post').default
+
+// ─── A YouTube video (`/admin/media-portal/external`, batch F) ────────────────
+/** `POST /api/admin/media-portal/external` — the new draft's `id` (plus `slug`/`shortId`, unused). */
+export type MediaExternalCreateResponse = Payload<ExternalCreateHandler>
+/**
+ * `POST /api/admin/media-portal/youtube-meta` — "Lấy thông tin" of the video form: `ok: false`
+ * with `reason: 'invalid' | 'fetch_failed'`, or the oEmbed title/author/thumbnail and the id.
+ */
+export type MediaYoutubeMetaResponse = Payload<YoutubeMetaHandler>
 
 // ─── One video ───────────────────────────────────────────────────────────────
 /** `GET /api/admin/media-portal/:id`. */
 export type MediaDetailResponse = Payload<DetailHandler>
 export type MediaUpdateResponse = Payload<UpdateHandler>
+/** `DELETE /api/admin/media-portal/:id` — the list's delete (`pages/admin/media-portal/index.vue`, batch E). */
+export type MediaDeleteResponse = Payload<DeleteHandler>
 /** "Xử lý lại video" and "Chuyển mã" both post to `/process`. */
 export type MediaProcessResponse = Payload<ProcessHandler>
 export type MediaThumbnailSetResponse = Payload<ThumbnailSetHandler>

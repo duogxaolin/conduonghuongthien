@@ -68,6 +68,8 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicArticlesResponse } from '~/types/public-content-api'
 import BlockLoadError from './BlockLoadError.vue'
 
 const { t, currentLang } = useI18n()
@@ -79,7 +81,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, pending, error, refresh } = await useAsyncData(
   `block-reintegration-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
+  () => publicFetch<PublicArticlesResponse>('/api/public/articles', {
     params: {
       type: 'reintegration',
       limit: maxItems.value,
@@ -110,7 +112,9 @@ const list = computed(() =>
   (data.value?.articles || []).map(a => ({
     id: a.slug,
     name: a.title,
-    location: a.category?.name || '',
+    // FINDING G-1 (D-FETCH lô G): tên chuyên mục là `categoryName` của API. Từ 30b87195 dòng này đọc
+    // `a.category?.name` theo một kiểu ép viết tay — `category` là cột văn bản cũ, nên nhãn không bao giờ hiện.
+    location: a.categoryName || '',
     desc: a.excerpt || '',
     image: a.thumbnailUrl || '/assets/hero_banner.jpg',
   }))

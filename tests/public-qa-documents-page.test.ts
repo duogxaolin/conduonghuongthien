@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { chatSurfaceTemplate } from './_component-family.ts'
 
 /**
  * The approved knowledge bank as a page a visitor can browse.
@@ -211,7 +212,8 @@ test('both chat surfaces link a citation to the full page', () => {
   // throwing the visitor out of their conversation. This link answers the next
   // question — the surrounding topic — and it is the reason the page exists.
   for (const file of CHAT_SURFACES) {
-    const source = template(file)
+    // The widget as its whole family since its wave3 split (tests/_component-family.ts).
+    const source = chatSurfaceTemplate(file)
     assert.match(
       source,
       /:to="`\/qa-documents#qa-\$\{source\.entryId\}`"/,

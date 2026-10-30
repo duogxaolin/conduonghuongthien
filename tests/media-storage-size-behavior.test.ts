@@ -72,11 +72,12 @@ const { createSqliteMysqlDb } = await import('./_sqlite-mysql-db')
 const { roles, permissions, users, settings, userMfaFactors, media } = await import('../server/db/schema')
 const harness = createSqliteMysqlDb([roles, permissions, users, settings, userMfaFactors, media])
 
+const warned: Array<Record<string, unknown>> = []
 mock.module('../server/utils/logger', {
   namedExports: {
     log: () => {},
     logInfo: () => {},
-    logWarn: () => {},
+    logWarn: (fields: Record<string, unknown>) => { warned.push(fields) },
     logError: () => {},
     SECURITY_EVENTS: new Proxy({}, { get: (_target, key) => `event.${String(key)}` }),
   },
@@ -130,6 +131,7 @@ beforeEach(async () => {
   policy.clearMfaFactorCache()
   s3.endpoints.length = 0
   s3.listed.length = 0
+  warned.length = 0
   s3.pages = []
   s3.fail = null
   rmSync(join(workdir, 'public'), { recursive: true, force: true })
@@ -206,6 +208,23 @@ test('a directory that cannot be read is skipped, the rest is still counted; a m
   const missing = await measure()
   assert.equal(missing.status, 200)
   assert.deepEqual(missing.body.local, { dbCount: 0, dbBytes: 0, diskCount: 0, diskBytes: 0 })
+  assert.deepEqual(warned, [], 'a missing tree is not a failure (and a skipped sub-directory is not logged)')
+})
+
+test('FINDING-R8-5: the uploads root ITSELF unreadable is null on disk — not 0, which reads as an empty tree — and is logged', { skip: process.getuid?.() === 0 ? 'root reads through mode 000' : false }, async (t) => {
+  // The incident this guards (test-coverage-baseline R4 "Ghi nhận"): `public/uploads` owned by
+  // the wrong user. The walk swallowed the root's EACCES and answered `0 B, 0 tệp`; the page
+  // showed that as the real size (and no orphans).
+  writeBytes(join(uploadsRoot, '2026', 'a.jpg'), 7)
+  await addMedia('local', 7)
+  chmodSync(uploadsRoot, 0o000)
+  t.after(() => { if (existsSync(uploadsRoot)) chmodSync(uploadsRoot, 0o755) })
+  const response = await measure()
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body.local, { dbCount: 1, dbBytes: 7, diskCount: null, diskBytes: null })
+  assert.deepEqual(warned.map(w => [w.event, w.code]), [['media.storage_size_disk_unreadable', 'EACCES']])
+  chmodSync(uploadsRoot, 0o755)
+  assert.deepEqual((await measure()).body.local, { dbCount: 1, dbBytes: 7, diskCount: 1, diskBytes: 7 }, 'readable again: the real numbers')
 })
 
 test('R2 fully configured: every page of the listing is summed, against the configured account and bucket', async () => {
