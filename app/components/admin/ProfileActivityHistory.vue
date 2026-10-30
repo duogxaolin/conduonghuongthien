@@ -18,16 +18,8 @@
  * thấy bộ chọn) — một nhật ký quét được trong im lặng là công cụ theo dõi, nên
  * hành vi xem cũng phải để lại dấu vết.
  */
-interface HistoryItem {
-  id: number
-  action: string
-  resource: string | null
-  resourceId: number | null
-  createdAt: string
-  ip: string | null
-  userAgent: string | null
-  mfaMethod: string | null
-}
+import type { ProfileHistoryItem, ProfileHistoryResponse } from '~/types/admin-profile'
+import type { AdminUsersResponse } from '~/types/admin-users-api'
 
 const { user } = useAdminAuth()
 
@@ -47,7 +39,7 @@ const MFA_METHOD_LABELS: Record<string, string> = {
   second_password: 'mật khẩu cấp 2', recovery_code: 'mã dự phòng',
 }
 
-const history = ref<HistoryItem[]>([])
+const history = ref<ProfileHistoryItem[]>([])
 const historyLoading = ref(true)
 const historyError = ref('')
 const historyPage = ref(1)
@@ -59,35 +51,40 @@ const historyTargetId = ref<string>('')
 const historyTargetName = ref<string | null>(null)
 const otherUsers = ref<Array<{ id: number; username: string }>>([])
 
+// Bộ chọn tài khoản vẫn đổi được khi đang tải: mỗi lượt tải lấy một mã, chỉ lượt mới
+// nhất được ghi — câu trả lời muộn của tài khoản B không hiện dưới "Tài khoản của tôi".
+let historyRequest = 0
+
 async function loadHistory() {
+  const request = ++historyRequest
   historyLoading.value = true
   historyError.value = ''
   try {
-    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{
-      ok: boolean; items: HistoryItem[]; total: number; totalPages: number; targetUsername: string | null
-    }>)('/api/admin/profile/history', {
+    const res = await adminFetch<ProfileHistoryResponse>('/api/admin/profile/history', {
       query: {
         page: historyPage.value,
         pageSize: historyPageSize,
         ...(historyTargetId.value ? { userId: historyTargetId.value } : {}),
       },
     })
+    if (request !== historyRequest) return
     history.value = res.items ?? []
     historyTotal.value = res.total ?? 0
     historyTotalPages.value = res.totalPages ?? 1
     historyTargetName.value = res.targetUsername
   } catch (err: unknown) {
+    if (request !== historyRequest) return
     historyError.value = errorMessage(err, 'Không tải được lịch sử.')
     history.value = []
   } finally {
-    historyLoading.value = false
+    if (request === historyRequest) historyLoading.value = false
   }
 }
 
 async function loadOtherUsers() {
   if (!user.value?.isSuperAdmin) return
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; users: Array<{ id: number; username: string }> }>)('/api/admin/users')
+    const res = await adminFetch<AdminUsersResponse>('/api/admin/users')
     otherUsers.value = (res.users ?? []).filter(u => u.id !== user.value?.id)
   } catch {
     // Không chặn trang: bộ chọn tài khoản khác chỉ là tiện ích.
@@ -105,7 +102,7 @@ function goHistoryPage(page: number) {
   loadHistory()
 }
 
-function actionLabel(item: HistoryItem) {
+function actionLabel(item: ProfileHistoryItem) {
   const action = ACTION_LABELS[item.action] ?? item.action
   const resource = item.resource ? (RESOURCE_LABELS[item.resource] ?? item.resource) : ''
   return resource ? `${action} · ${resource}` : action

@@ -27,6 +27,7 @@ type ConfirmHandler = typeof import('~~/server/api/admin/profile/mfa/confirm.pos
 type DisableHandler = typeof import('~~/server/api/admin/profile/mfa/disable.post').default
 type RecoveryCreateHandler = typeof import('~~/server/api/admin/profile/mfa/recovery-codes.post').default
 type RecoveryDeleteHandler = typeof import('~~/server/api/admin/profile/mfa/recovery-codes.delete').default
+type HistoryHandler = typeof import('~~/server/api/admin/profile/history.get').default
 
 // ─── Factor state ────────────────────────────────────────────────────────────
 /** `GET /api/admin/profile/mfa`. */
@@ -41,6 +42,16 @@ export type MfaConfirmResponse = Payload<ConfirmHandler>
 export type MfaDisableResponse = Payload<DisableHandler>
 export type RecoveryCodesCreateResponse = Payload<RecoveryCreateHandler>
 export type RecoveryCodesDeleteResponse = Payload<RecoveryDeleteHandler>
+
+// ─── Activity history (`ProfileActivityHistory.vue`, D-FETCH lot H) ──────────
+/**
+ * `GET /api/admin/profile/history?page&pageSize[&userId]`. The hand-written shape it replaces
+ * said `createdAt: string`; the column is nullable (`formatDateTimeVN` prints "—"). The answer
+ * also carries `page`/`pageSize` (and a `userId` Serialize drops: it comes from the untyped
+ * `event.context.adminUser`); the block reads neither.
+ */
+export type ProfileHistoryResponse = Payload<HistoryHandler>
+export type ProfileHistoryItem = ProfileHistoryResponse['items'][number]
 
 /** What the factor cards and the dialogs say about each factor. */
 export interface MfaFactorMeta {
