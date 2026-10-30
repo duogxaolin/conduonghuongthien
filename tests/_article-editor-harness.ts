@@ -105,10 +105,12 @@ export type FakeEditor = ReturnType<typeof fakeTinymce>['editor']
  * editor grid, reports the root the first time it mounts).
  *
  * And, as measured on the same build: `tinymce.init()` returns at once, `get()` answers the new
- * editor straight away, but its `init` event comes later (iframe, theme, plugins) and until then
- * it reads back '' — a baseline taken in that window is the empty string (the reordering
- * "markSaved after initTinyMCE" warned on close with nothing edited, in Chromium). So the event
- * fires on a later turn (`setImmediate`, which `settle()` runs), and `getContent()` is '' before.
+ * editor straight away, but its `init` event comes later (iframe, theme, plugins). Before it, in
+ * two phases: first `getContent()` THROWS (`TypeError: Cannot read properties of undefined
+ * (reading 'serialize')` — the independent verifier's probe: a save clicked then was dropped, no
+ * PUT), then it reads back '' (the reordering "markSaved after initTinyMCE" took '' as the
+ * baseline and warned on close with nothing edited). So here: `created` (throws) → one
+ * `setImmediate` → `rendered` ('') → one more → `init` fires. `settle()` runs both.
  */
 export function fakeTinymce(options: { normalize?: (html: string) => string } = {}) {
   const normalize = options.normalize ?? ((html: string) => html)
@@ -116,7 +118,7 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
   const configs: Record<string, unknown>[] = []
   const log: string[] = []
   let live = false
-  let initialized = false
+  let phase: 'created' | 'rendered' | 'initialized' = 'initialized'
   let generation = 0
   const page: { root: MiniElement | null } = { root: null }
   const findBox = () => (page.root ? findAll(page.root, el => el.props.id === EDITOR_ID)[0] : undefined)
@@ -127,7 +129,10 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
     box: undefined as MiniElement | undefined,
     on(event: string, handler: () => void) { handlers[event] = handler },
     setContent(html: string) { editor.html = normalize(html) },
-    getContent() { return initialized ? editor.html : '' },
+    getContent() {
+      if (phase === 'created') throw new TypeError("Cannot read properties of undefined (reading 'serialize')")
+      return phase === 'initialized' ? editor.html : ''
+    },
     insertContent(html: string) { editor.inserted.push(html); editor.html += html },
     remove() { log.push('remove'); live = false },
     destroy() { log.push('destroy'); live = false },
@@ -142,23 +147,30 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
       if (!box) { log.push('init:no-element'); return }
       log.push('init')
       live = true
-      initialized = false
+      phase = 'created'
       editor.box = box
       editor.html = ''
       ;(config.setup as (e: typeof editor) => void)(editor)
       const mine = ++generation
+      const current = () => live && generation === mine // not removed, nor replaced, since
       setImmediate(() => {
-        if (!live || generation !== mine) return // removed, or replaced, before it came up
-        initialized = true
-        handlers.init?.()
+        if (!current()) return
+        phase = 'rendered'
+        setImmediate(() => {
+          if (!current()) return
+          phase = 'initialized'
+          handlers.init?.()
+        })
       })
     },
   }
   /** An editor left over from an earlier visit (the page must remove it before init). */
-  const leftover = () => { live = true; initialized = true }
+  const leftover = () => { live = true; phase = 'initialized' }
   /** A started editor whose element is the one on the page now — what a person can see and type in. */
-  const onScreen = () => live && initialized && editor.box !== undefined && editor.box === findBox()
-  return { tinymce, editor, configs, log, leftover, onScreen, page }
+  const onScreen = () => live && phase === 'initialized' && editor.box !== undefined && editor.box === findBox()
+  /** Where the newest editor is in its start-up. */
+  const startup = () => phase
+  return { tinymce, editor, configs, log, leftover, onScreen, startup, page }
 }
 
 // ─── Stand-ins for the children ──────────────────────────────────────────────

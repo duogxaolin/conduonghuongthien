@@ -54,8 +54,11 @@ export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
     }
   }
 
+  // Before the editor's `init` the body is the form's: a started-but-not-initialised editor
+  // throws from `getContent()` (TypeError … 'serialize'), which dropped a save clicked in that
+  // moment without a word (verifier Low 1, tests/admin-article-editor-findings.test.ts).
   function getEditorContent(): string {
-    if (typeof window !== 'undefined' && (window as WindowWithTinyMce).tinymce) {
+    if (tinymceReady.value && typeof window !== 'undefined' && (window as WindowWithTinyMce).tinymce) {
       const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
       if (ed) {
         const c = ed.getContent()
