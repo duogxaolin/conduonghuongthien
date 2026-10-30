@@ -82,18 +82,19 @@ function refuseNext(ctx: ChatCtx, refusal: () => Response | ((call: NetCall) => 
  * `refused` is no title anywhere: the list, the store, every save after the refusal arrived, and
  * after a reload. Closes `ctx`; returns the titles after the reload.
  */
-async function assertNeverTitled(t: Parameters<typeof openWidget>[0], ctx: ChatCtx, watch: { answered: boolean, saves: string[] }, refused: string) {
-  const bad = asTitle(refused)
+async function assertNeverTitled(t: Parameters<typeof openWidget>[0], ctx: ChatCtx, watch: { answered: boolean, saves: string[] }, refused: string | string[]) {
+  const bad = [refused].flat().map(asTitle)
+  const anyBad = (titles: string[]) => titles.some(title => bad.includes(title))
   assert.equal(watch.answered, true, 'the refusal was answered')
   assert.ok(watch.saves.length > 0, 'the refusal was saved')
   for (const save of watch.saves) {
     const titles = (JSON.parse(save) as { sessions: Array<{ title: string }> }).sessions.map(s => s.title)
-    assert.ok(!titles.includes(bad), `a save after the refusal carries it as a title: ${JSON.stringify(titles)}`)
+    assert.ok(!anyBad(titles), `a save after the refusal carries it as a title: ${JSON.stringify(titles)}`)
   }
-  assert.ok(!storedTitles(ctx).includes(bad), `stored as a title: ${JSON.stringify(storedTitles(ctx))}`)
+  assert.ok(!anyBad(storedTitles(ctx)), `stored as a title: ${JSON.stringify(storedTitles(ctx))}`)
   await click(historyButton(ctx))
   await ctx.settle()
-  assert.ok(!listTitles(ctx).includes(bad), `listed as a title: ${JSON.stringify(listTitles(ctx))}`)
+  assert.ok(!anyBad(listTitles(ctx)), `listed as a title: ${JSON.stringify(listTitles(ctx))}`)
   const saved = ctx.local.getItem('cdkt_sessions_v1')!
   ctx.close()
   const reloaded = await openWidget(t, chatServer(), { local: { cdkt_sessions_v1: saved } })
@@ -101,7 +102,7 @@ async function assertNeverTitled(t: Parameters<typeof openWidget>[0], ctx: ChatC
   await click(historyButton(reloaded))
   await reloaded.settle()
   const after = listTitles(reloaded)
-  assert.ok(!after.includes(bad), `a title after a reload: ${JSON.stringify(after)}`)
+  assert.ok(!anyBad(after), `a title after a reload: ${JSON.stringify(after)}`)
   reloaded.close()
   return after
 }
@@ -164,6 +165,109 @@ test('a quick question that failed, chosen again and refused: the same path, no 
   await click(button(ctx.widget, chip))
   await ctx.settle()
   assert.deepEqual(await assertNeverTitled(t, ctx, watch, chip), [DEFAULT_TITLE])
+})
+
+// ─── Refused words sent again: the auto title must not take them back ────────
+// `applyAutoTitle` titles a conversation that holds no question of the visitor's. After a
+// refusal that is often the case, and a re-send of the same words that then fails (429, no
+// connection) would title it with them again — saved at the next save, kept after a reload.
+
+/** Any save (here "Tạo mới"), then hand over to `assertNeverTitled`. */
+async function saveThenAssert(t: Parameters<typeof openWidget>[0], ctx: ChatCtx, watch: { answered: boolean, saves: string[] }, refused: string) {
+  await pick(ctx, 'Tạo mới')
+  return assertNeverTitled(t, ctx, watch, refused)
+}
+
+/** A 400 that does not lower the input limit (a 400 `input_too_long` would stop the same words in the browser). */
+const INVALID = () => json({ statusCode: 400, message: 'Invalid chat messages' }, 400)
+for (const [refusal, refuse] of [['moderation', REFUSED], ['400', INVALID]] as const) {
+  for (const [failure, fail] of FAILURES) {
+    test(`refused (${refusal}), then the same words sent again and failing (${failure}): they do not become the title again`, async (t) => {
+      const ctx = await openWidget(t)
+      await openDialog(ctx)
+      const watch = refuseNext(ctx, refuse)
+      await ask(ctx, W)
+      ctx.server.state.chat.push(fail)
+      await ask(ctx, W) // typed again (after a 400 the draft is still there — the same words)
+      assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1, 'the new copy failed and waits for "Thử lại"')
+      assert.deepEqual(await saveThenAssert(t, ctx, watch, W), [DEFAULT_TITLE, DEFAULT_TITLE])
+    })
+  }
+}
+
+test('Enter again refused, then "Thử lại" on the failed copy fails again: the words do not become the title again', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(RATE_LIMITED)
+  await ask(ctx, W)
+  const watch = refuseNext(ctx, REFUSED)
+  await enterAgain(ctx)
+  ctx.server.state.chat.push(() => dropped())
+  await click(retryIn(bubbles(ctx.widget)[0]!)) // drops that copy: the conversation holds no question for a moment
+  await ctx.settle()
+  assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1)
+  assert.deepEqual(await saveThenAssert(t, ctx, watch, W), [DEFAULT_TITLE, DEFAULT_TITLE])
+})
+
+test('a quick question refused, chosen again and failing: it does not become the title again', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  const chip = QUICK_QUESTIONS[0]!.question
+  const watch = refuseNext(ctx, REFUSED)
+  await click(button(ctx.widget, chip))
+  await ctx.settle()
+  ctx.server.state.chat.push(RATE_LIMITED)
+  await click(button(ctx.widget, chip))
+  await ctx.settle()
+  assert.deepEqual(await saveThenAssert(t, ctx, watch, chip), [DEFAULT_TITLE, DEFAULT_TITLE])
+})
+
+test('long refused words sent again and failing: neither the words nor their first 40 characters become the title again', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  const watch = refuseNext(ctx, REFUSED)
+  await ask(ctx, LONG_W)
+  ctx.server.state.chat.push(RATE_LIMITED)
+  await ask(ctx, LONG_W)
+  assert.deepEqual(await saveThenAssert(t, ctx, watch, LONG_W), [DEFAULT_TITLE, DEFAULT_TITLE])
+})
+
+test('two different words refused in turn: the title falls back to neither', async (t) => {
+  const W1 = 'câu vi phạm thứ nhất'
+  const W2 = 'câu vi phạm thứ hai'
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(RATE_LIMITED, RATE_LIMITED)
+  await ask(ctx, W2) // titles the conversation, fails, stays with "Thử lại"
+  await ask(ctx, W1) // fails too, back in the input
+  ctx.server.state.chat.push(REFUSED())
+  await enterAgain(ctx) // W1 refused; its failed copy stays (the title is still W2's, not yet judged)
+  const watch = refuseNext(ctx, REFUSED) // from W2's refusal on, neither may be a title
+  await click(retryIn(bubbles(ctx.widget)[0]!)) // W2 refused: the copy left is W1's
+  await ctx.settle()
+  assert.deepEqual(transcript(ctx.widget).filter(m => m.who === 'user').map(m => m.text), [W1])
+  assert.deepEqual(await assertNeverTitled(t, ctx, watch, [W1, W2]), [DEFAULT_TITLE])
+})
+
+test('refused in one conversation, sent in a NEW one and failing: no title there either', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  const watch = refuseNext(ctx, REFUSED)
+  await ask(ctx, W)
+  await pick(ctx, 'Tạo mới')
+  ctx.server.state.chat.push(RATE_LIMITED)
+  await ask(ctx, W)
+  assert.deepEqual(await saveThenAssert(t, ctx, watch, W), [DEFAULT_TITLE, DEFAULT_TITLE, DEFAULT_TITLE])
+})
+
+test('the carried-over history with only words of the bot: a refused first question leaves the blank title', async (t) => {
+  const legacy = JSON.stringify([{ sender: 'bot', text: 'Lời bot cũ', kind: 'curated' }])
+  const ctx = await openWidget(t, chatServer(), { local: { cdkt_chat_history_v2: legacy } })
+  await openDialog(ctx)
+  assert.deepEqual(storedTitles(ctx), ['Cuộc trò chuyện trước'])
+  const watch = refuseNext(ctx, REFUSED)
+  await ask(ctx, W)
+  assert.deepEqual(await assertNeverTitled(t, ctx, watch, W), [DEFAULT_TITLE], 'accepted trade-off: not "Cuộc trò chuyện trước"')
 })
 
 // ─── Copies of the words that the conversation keeps ─────────────────────────
