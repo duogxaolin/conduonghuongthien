@@ -91,15 +91,32 @@ export { h3Error, json }
 
 export type FakeEditor = ReturnType<typeof fakeTinymce>['editor']
 
+/**
+ * TinyMCE attaches to the element its `selector` finds IN THE PAGE when `init` runs, and stays
+ * with that element. Measured with TinyMCE 6 in Chromium on the real build (the "Thử lại" of a
+ * failed load, docs/decisions/refactor-large-files.md): when the page then swaps that element
+ * out, the editor is orphaned — `get()` still returns it, it is not `removed`, `getContent()`/
+ * `setContent()` still work on its detached body — but nothing of it is on screen: the new
+ * element is a bare, empty `<div>`. And `init` with no matching element creates no editor. So
+ * here: `init` binds the editor to the element with the page's id found from the mounted root
+ * (none found → no editor, logged `init:no-element`), and starts it empty, as a new editor on an
+ * empty `<div>` does; `onScreen()` says whether the live editor's element is still the one on
+ * the page. `locateRoot` is set by `openEditor` (the AI panel's stand-in, which sits in the
+ * editor grid, reports the root the first time it mounts).
+ */
 export function fakeTinymce(options: { normalize?: (html: string) => string } = {}) {
   const normalize = options.normalize ?? ((html: string) => html)
   const handlers: Record<string, () => void> = {}
   const configs: Record<string, unknown>[] = []
   const log: string[] = []
   let live = false
+  const page: { root: MiniElement | null } = { root: null }
+  const findBox = () => (page.root ? findAll(page.root, el => el.props.id === EDITOR_ID)[0] : undefined)
   const editor = {
     html: '',
     inserted: [] as string[],
+    /** The element `init` attached this editor to. */
+    box: undefined as MiniElement | undefined,
     on(event: string, handler: () => void) { handlers[event] = handler },
     setContent(html: string) { editor.html = normalize(html) },
     getContent() { return editor.html },
@@ -113,15 +130,21 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
     get: (id: string) => (live && id === EDITOR_ID ? editor : undefined),
     init(config: Record<string, unknown>) {
       configs.push(config)
+      const box = findBox()
+      if (!box) { log.push('init:no-element'); return }
       log.push('init')
       live = true
+      editor.box = box
+      editor.html = ''
       ;(config.setup as (e: typeof editor) => void)(editor)
       handlers.init?.()
     },
   }
   /** An editor left over from an earlier visit (the page must remove it before init). */
   const leftover = () => { live = true }
-  return { tinymce, editor, configs, log, leftover }
+  /** A live editor whose element is the one on the page now — what a person can see and type in. */
+  const onScreen = () => live && editor.box !== undefined && editor.box === findBox()
+  return { tinymce, editor, configs, log, leftover, onScreen, page }
 }
 
 // ─── Stand-ins for the children ──────────────────────────────────────────────
@@ -129,14 +152,21 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
 type AiProps = { formTitle: string, getEditorContent: () => string, setEditorContent: (html: string) => void }
 export type AiPanel = { props: AiProps | null, emit: ((event: 'update:title' | 'update:excerpt', value: string) => void) | null }
 
-function aiPanelStandIn(record: AiPanel) {
+function aiPanelStandIn(record: AiPanel, onRoot: (root: MiniElement) => void) {
   return Vue.defineComponent({
     props: { formTitle: { type: String, required: true }, getEditorContent: { type: Function, required: true }, setEditorContent: { type: Function, required: true } },
     emits: ['update:title', 'update:excerpt'],
     setup(props, { emit }) {
       record.props = props as unknown as AiProps
       record.emit = (event, value) => emit(event, value)
-      return () => Vue.h('div', { 'data-stub': 'ArticleAIPanel', 'data-form-title': props.formTitle })
+      const el = Vue.ref<MiniElement | null>(null)
+      // In the editor grid, beside the box TinyMCE attaches to: from here, the page's root.
+      Vue.onMounted(() => {
+        let top = el.value
+        while (top?.parent) top = top.parent
+        if (top?.tag === '#root') onRoot(top)
+      })
+      return () => Vue.h('div', { ref: el, 'data-stub': 'ArticleAIPanel', 'data-form-title': props.formTitle })
     },
   })
 }
@@ -219,7 +249,7 @@ export async function openEditor(t: TestContext, id: string, options: OpenOption
       '~/components/admin/TinyMceEditor.vue': { default: Stub },
       '~/components/admin/AdminModal.vue': { default: AdminModalStandIn },
       '~/components/admin/articles/ArticleTranslationPanel.vue': { default: translationPanelStandIn(panel) },
-      '~/components/admin/articles/ArticleAIPanel.vue': { default: aiPanelStandIn(ai) },
+      '~/components/admin/articles/ArticleAIPanel.vue': { default: aiPanelStandIn(ai, (root) => { tiny.page.root = root }) },
     },
     auto: {
       window: win,
