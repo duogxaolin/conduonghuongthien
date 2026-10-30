@@ -106,8 +106,9 @@ export async function settle(): Promise<void> {
 const BULK_SOURCE = stripTypeScriptTypes(readFileSync(new URL('../app/composables/useBulkSelection.ts', import.meta.url), 'utf8'))
   .replace(/export function (\w+)/g, 'function $1')
 type Bulk = { useBulkSelection: () => unknown, useBulkAction: (selection: unknown) => unknown }
-function loadBulk(auto: Record<string, unknown>): Bulk {
-  const names = ['ref', 'computed', 'useToast', 'useConfirm', 'errorMessage']
+/** Exported for tests/admin-fetch-rollout-bulk-action.test.ts, which drives the composable without a page. */
+export function loadBulk(auto: Record<string, unknown>): Bulk {
+  const names = ['ref', 'computed', 'useToast', 'useConfirm', 'errorMessage', 'adminFetch']
   return new Function(...names, `${BULK_SOURCE}\nreturn { useBulkSelection, useBulkAction }`)(...names.map(name => auto[name])) as Bulk
 }
 

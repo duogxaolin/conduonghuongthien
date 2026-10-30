@@ -79,6 +79,15 @@ export type AdminPageDetail = Payload<PageDetailHandler>
 type PageUpdateHandler = typeof import('~~/server/api/admin/pages/[id].put').default
 export type AdminPageUpdateResult = Payload<PageUpdateHandler>
 
+// ─── Thao tác hàng loạt ──────────────────────────────────────────────────────
+/**
+ * Câu trả lời của mọi endpoint mà `useBulkAction` (composables/useBulkSelection.ts) gọi: cả 16
+ * URL các trang trao cho nó là handler `return runBulk(…)` (server/utils/bulk.ts), nên một kiểu
+ * suy từ `runBulk` đúng cho mọi URL đó. Ba lượt xoá hàng loạt KHÁC (phiên chat, giá AI, nhà cung
+ * cấp AI) không đi qua composable này. tests/admin-fetch-rollout-bulk-action.test.ts giữ điều đó.
+ */
+export type AdminBulkOutcome = Payload<typeof import('~~/server/utils/bulk').runBulk>
+
 // ─── Người đọc ───────────────────────────────────────────────────────────────
 type ReaderDetailHandler = typeof import('~~/server/api/admin/readers/[id].get').default
 export type AdminReaderDetail = Payload<ReaderDetailHandler>
