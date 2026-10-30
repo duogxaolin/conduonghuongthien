@@ -106,6 +106,19 @@ async function assertNeverTitled(t: Parameters<typeof openWidget>[0], ctx: ChatC
   return after
 }
 
+// ─── Refused directly (round 1) ──────────────────────────────────────────────
+
+for (const [refusal, refuse] of REFUSALS) {
+  test(`a first question refused directly (${refusal}): no title`, async (t) => {
+    const ctx = await openWidget(t)
+    await openDialog(ctx)
+    const watch = refuseNext(ctx, refuse)
+    await ask(ctx, W)
+    assert.ok(!transcript(ctx.widget).some(m => m.who === 'user'))
+    assert.deepEqual(await assertNeverTitled(t, ctx, watch, W), [DEFAULT_TITLE])
+  })
+}
+
 // ─── Enter again (verifier F5) ───────────────────────────────────────────────
 
 for (const [failure, fail] of FAILURES) {
