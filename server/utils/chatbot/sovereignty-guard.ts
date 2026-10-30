@@ -115,6 +115,12 @@ function confirmScript(scope: string, fromStart: boolean, settled: (text: string
   return settled(scope.slice(second)) && settled(scope.slice(nextWordStart(scope, second)))
 }
 const hanJoined = (key: string) => key.replace(/\|/g, '')
+/**
+ * Chữ cái ngoài chữ Hán, trên chữ ĐÃ gấp: không có thì nhánh chữ viết của 611588c2 không khớp được (mẫu của nó cần chữ
+ * Latin/Kirin/Nhật/Hàn; phép gấp mới chỉ bỏ thêm ký tự không hiện và đổi chữ giả thành chữ Latin) — khỏi gấp lại chữ thô
+ * mỗi chunk của câu trả lời tiếng Trung.
+ */
+const SCRIPT_LETTER = /[^\p{Script=Han}\P{L}]/u
 
 /** Đuôi giữ ở dạng chuỗi phẳng: đủ cho cửa sổ, lề xác nhận và phần giữ lại. */
 const TRANSCRIPT_TAIL_CHARS = 4096
@@ -224,7 +230,7 @@ export function createSovereigntyOutputGuard(hooks: {
       const candidate = islandNow
         || hanMentions(hanWindow + HAN_NEXT_PROBE, island, ownership)
         || settledScriptMentions(region, island, regionCut)
-        || han611(hanJoined(hanWindow), island) || settledScript611(rawRegion, island, regionCut)
+        || han611(hanJoined(hanWindow), island) || (SCRIPT_LETTER.test(region) && settledScript611(rawRegion, island, regionCut))
       if (candidate) {
         const scriptFrom = islandNow ? 0 : marginStart(seen, confirmedTo)
         const hanFrom = islandNow ? 0 : Math.max(0, hanConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
@@ -232,7 +238,7 @@ export function createSovereigntyOutputGuard(hooks: {
         const scope = seen.from(scriptFrom)
         if (hanMentions(hanScope + HAN_NEXT_PROBE, island, ownership) || han611(hanJoined(hanScope), island)
           || confirmScript(scope, scriptFrom === 0, text => settledScriptMentions(fold(text), island, false))
-          || confirmScript(scope, scriptFrom === 0, text => settledScript611(text, island, false))) return trip()
+          || (SCRIPT_LETTER.test(fold(scope)) && confirmScript(scope, scriptFrom === 0, text => settledScript611(text, island, false)))) return trip()
         confirmedTo = seen.length
         hanConfirmedTo = han.length
       }

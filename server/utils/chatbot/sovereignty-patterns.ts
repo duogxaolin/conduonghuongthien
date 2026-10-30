@@ -31,7 +31,7 @@ const HAN_FULL_NAMES = [
 // Vòng 6 thu hẹp: chữ đứng trước một chữ chỉ còn bộ của 611588c2 — 周/王/张/山/州 lẻ là chữ thường (本周南海, 称王南海, 扩张
 // 南海, 登山南海), họ người (张南海) nhận lập trường như ở 611588c2; hậu tố một chữ không loại khi là đầu từ khác (区域, 县域);
 // 西沙区 là tên đơn vị Trung Quốc đặt cho Hoàng Sa — không có hậu tố 区.
-const HAN_BARE_NAMES = [
+const HAN_BARE_NAMES: Array<{ name: RegExp, before: Set<string>, beforeWords: string[], after: RegExp }> = [
   { name: /南[海沙]/g, before: new Set('越河云湖济海江华西东中岭闽安'), beforeWords: ['佛山', '广州'], after: /^(?:[区县镇市港](?!域)|新区|街道|法院|观音|[电電][铁鉄])/ },
   { name: /西沙/g, before: new Set('东广江山陕'), beforeWords: [], after: /^[县镇市](?!域)/ },
 ]
@@ -106,13 +106,12 @@ const FULL_NAME_DONG = /(?<![\p{L}])(?:Biển|BIỂN)\s+(?:Đông|ĐÔNG)(?![\p{
 // Chữ sở hữu xét trên CẢ câu, mọi hệ chữ: "广州南沙 thuộc nước nào?", "Who owns 佛山南海?", "Trường Sa Pa belongs to which
 // country?" — chữ hỏi tiếng Việt/Anh tắt cả ngoại lệ chữ Hán và ngược lại.
 // Vòng 6 thêm chữ hỏi/khẳng định sở hữu verifier 5 dùng ("ai đang giữ", "là gì", "ai làm chủ/quản lý", "khác gì", "có phải
-// của", "phải ko", "là của", "của việt nam/vn/mình/ta/họ", "lấy lại"): chữ sở hữu chỉ TẮT ngoại lệ của một tên đã khớp,
-// nên rộng tay không chặn oan câu không có tên.
+// của", "phải ko", "là của", "của việt nam/vn/mình/ta/họ", "lấy lại") — ở khoá Latin (`OWNERSHIP_LATIN`), đủ cho cả chữ có
+// dấu (khoá bỏ dấu); chỉ chữ mà bản không dấu trùng từ khác ("thuộc" = thuốc, "chiếm") mới cần mẫu có dấu ở đây. Chữ sở hữu
+// chỉ TẮT ngoại lệ của một tên đã khớp, nên rộng tay không chặn oan câu không có tên.
 const OWNERSHIP = new RegExp([
   '(?<![\\p{L}])(?:về\\s+tay|vào\\s+tay|của\\s+ai|của\\s+nước|thuộc|nước\\s+nào|kiểm\\s+soát|tranh\\s+chấp|chủ\\s+quyền|lãnh\\s+thổ',
   '|trung\\s+quốc|tq|china|chinese|bắc\\s+kinh|chiếm',
-  '|là\\s+của|của\\s+(?:việt\\s+nam|vn|mình|ta|họ)|(?:ai|phải)(?:\\s+đang)?\\s+giữ|ai(?:\\s+đang)?\\s+(?:làm\\s+chủ|quản\\s+lý)',
-  '|là\\s+(?:cái\\s+)?gì|khác\\s+gì|có\\s+phải\\s+của|phải\\s+(?:ko|không|hông|k)|lấy\\s+lại',
   '|belongs?|owns?|owned|owner|whose|which\\s+country|sovereign(?:ty)?|territor(?:y|ial)|disputed?|control(?:s|led)?)(?![\\p{L}])',
   '|中国|主权|属于|哪个国家|哪国|领土|归属|归谁|谁的',
 ].join(''), 'u')

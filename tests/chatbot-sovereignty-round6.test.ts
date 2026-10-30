@@ -146,6 +146,14 @@ test('verifier-5 survivors pinned on the new matcher (Q02, Q04, Q08, Q11, Q13, Q
   assert.equal(hanBranch('中西沙现在怎么样'), true)
 })
 
+test('round-6 self-check: an exception is undone only AFTER detection — masking first would let a sentence with an ownership word through', () => {
+  // Đột biến "che rồi mới dò" (đổi đoạn khớp trước, dò trên chữ đã đổi): tên chỉ khớp qua khoá Latin/tên riêng (không có
+  // mẫu trần) mất luôn khi bị che, nên chữ sở hữu không còn gì để tắt. 611588c2 bắt các câu này, nên ghim ở tầng bộ mới.
+  for (const text of ['Trường Sa Pa thuộc tỉnh nào', 'Hoàng Sa thải dầu là của ai', 'trường Sa Vĩ độ thuộc nước nào', 'hoàng sà vào tay ai rồi']) {
+    assert.equal(scriptBranch(text), true, text)
+  }
+})
+
 // ─── Bộ v5 qua ba lớp: bộ khớp, chính sách với AI giả (provider 0 lượt), lớp đầu ra; sáu ca lịch sử ──────────────────────
 
 type Row = [string, string, number]

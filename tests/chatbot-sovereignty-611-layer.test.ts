@@ -66,6 +66,22 @@ async function stream(chunks: string[]) {
 }
 const split = (text: string, size: number) => Array.from({ length: Math.ceil(text.length / size) }, (_, index) => text.slice(index * size, (index + 1) * size))
 
+test('names only the new matcher knows still go through its own fold: traditional 黃岩島/仁愛礁 are caught though 611588c2 has no such name', () => {
+  for (const text of ['黃岩島是誰的', '黃岩島現況', '仁愛礁補給']) {
+    assert.equal(sovereignty611Mentions(text), false, text)
+    assert.equal(mentionsSovereignty(text), true, text)
+  }
+})
+
+test('output: a claim whose words punctuation pulls apart (中国，一，二，三，领土) holds the reply back through the 611588c2 key', async () => {
+  // Khoá có ngắt của bộ mới tính dấu câu vào khoảng cách của cụm yêu sách (中国|一|二|三|领土 — 7 chữ), khoá nối liền của
+  // 611588c2 thì không (中国一二三领土): yêu sách chưa có đảo/biển phải giữ chữ lại tới khi biết, không lọt ra trước.
+  const reply = ['他们说这里是中国，一，二，三，领土。', ...Array.from({ length: 8 }, () => '请联系当地人力资源服务中心。'), '那些岛屿很美。']
+  const { tripped, shown } = await stream(reply)
+  assert.equal(tripped, true)
+  assert.ok(!shown.includes('领土'), shown)
+})
+
 test('output: a reply only the 611588c2 layer catches is stopped ON the stream, not at the end — nothing after the name is shown', async () => {
   const tail = ' Anh có thể đăng ký học nghề miễn phí tại trung tâm dịch vụ việc làm của tỉnh và vay vốn ưu đãi.'.repeat(3)
   for (const [name, reply] of [['biển Đông Á', `Tình hình biển Đông Á hiện nay khá phức tạp.${tail}`], ['南海港', `南海港口军事化问题很复杂。${'请联系当地人力资源服务中心。'.repeat(6)}`],

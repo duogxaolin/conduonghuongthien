@@ -4,10 +4,10 @@
  * (`tests/server-utils-unique-exports.test.ts`), nên `fold`/`latinKey` trần sẽ thành tên toàn cục dễ trùng.
  */
 
-// Phồn thể cần dùng → giản thể; "⻄" (bộ thủ U+2EC4, NFKC không gộp) → "西".
+// Phồn thể cần dùng → giản thể; "⻄" (bộ thủ U+2EC4, NFKC không gộp) → "西". 愛 (vòng 6): 仁愛礁 phồn thể từng lọt.
 const HAN_FOLD: Record<string, string> = {
   黃: '黄', 長: '长', 東: '东', 羣: '群', 島: '岛', 諸: '诸', 線: '线', 國: '国', 興: '兴', 濟: '济',
-  門: '门', 華: '华', 陽: '阳', 雲: '云', 廣: '广', 陝: '陕', 閩: '闽', 嶺: '岭', '⻄': '西',
+  門: '门', 華: '华', 陽: '阳', 雲: '云', 廣: '广', 陝: '陕', 閩: '闽', 嶺: '岭', '⻄': '西', 愛: '爱',
 }
 const HAN_FOLD_CHARS = new RegExp(`[${Object.keys(HAN_FOLD).join('')}]`, 'g')
 

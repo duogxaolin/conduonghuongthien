@@ -300,22 +300,24 @@ test('output: "Côn Đảo", "khuynh đảo", "đảo lộn/nợ/mắt/ngược"
   }
 })
 
-test('output: linear in the stream length — per-chunk cost stays flat over 80 000 one-character chunks of an excluded Han name', async () => {
-  // Vòng 6: "越南海防" (cả hai bộ khớp loại — 越 đứng trước) thay "佛山南海区" (611588c2 chặn, nên phép hợp rút ngay).
-  const chars = [...'越南海防'.repeat(20_000)]
+test('output: linear in the stream length — per-chunk cost stays flat over 40 000 one-character chunks of an excluded Han name', async () => {
+  // Vòng 6: "越南海防" (cả hai bộ khớp loại — 越 đứng trước) thay "佛山南海区" (611588c2 chặn, nên phép hợp rút ngay). Chữ này
+  // nặng hơn (cửa sổ bắt đầu ở 南 thành ứng viên mỗi 4 chunk, phải xác nhận) và phép hợp hỏi hai bộ khớp: 80 000 chunk ~4,5–
+  // 10 s tuỳ tải máy, nên dùng 40 000 chunk, tám cửa sổ 5 000.
+  const chars = [...'越南海防'.repeat(10_000)]
   const guard = createSovereigntyOutputGuard({ forward: () => {}, replace: () => {}, question: 'Câu hỏi khác' })
   const marks: number[] = []
   for (let index = 0; index < chars.length; index += 1) {
-    if (index % 10_000 === 0) marks.push(performance.now())
+    if (index % 5_000 === 0) marks.push(performance.now())
     await guard.push!(chars[index]!)
   }
   marks.push(performance.now())
   assert.equal(await guard.finish(chars.join('')), false)
   const windows = marks.slice(1).map((mark, index) => mark - marks[index]!)
   const total = windows.reduce((sum, ms) => sum + ms, 0)
-  // Bậc hai từng mất 14,8 s cho độ dài này; tuyến tính ~1–2 s.
+  // Bậc hai từng mất 14,8 s cho 80 000 chunk "佛山南海区"; tuyến tính ở đây ~2–3 s.
   assert.ok(total < 6_000, `${total.toFixed(0)} ms`)
-  // So với chính nó, không phụ thuộc tốc độ máy: 10 000 chunk cuối tốn như 10 000 chunk đầu (đo ~0,85–1,15). Nối lại cả
+  // So với chính nó, không phụ thuộc tốc độ máy: 5 000 chunk cuối tốn như 5 000 chunk đầu (đo ~0,85–1,15). Nối lại cả
   // văn bản mỗi chunk (bỏ đuôi phẳng của bản ghi) cho ~2,7–3,1 dù tổng vẫn dưới trần. Lấy min hai cửa sổ: một lần GC
   // không làm đỏ; cửa sổ đầu có JIT khởi động nên bỏ.
   const early = Math.min(windows[1]!, windows[2]!)
