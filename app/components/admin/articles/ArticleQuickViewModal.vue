@@ -177,7 +177,7 @@ async function toggleStatus() {
         </nuxt-link>
           <button
             type="button"
-            class="px-4 py-2 rounded-lg text-xs font-bold cursor-pointer border transition-colors"
+            class="px-4 py-2 rounded-lg text-xs font-bold cursor-pointer border transition-colors disabled:opacity-60 disabled:cursor-wait"
             :class="quickViewData.status === 'published'
               ? 'border-line-strong bg-white text-danger hover:bg-[#fff5f4]'
               : 'border-brand-700 bg-[#e4f2e5] text-brand-900 hover:bg-[#d4ebd6]'"

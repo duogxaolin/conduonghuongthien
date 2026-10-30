@@ -247,6 +247,8 @@ describe('components/admin/articles/ArticleQuickViewModal.vue (through the artic
   it('FINDING H-3 (button): while the translation loads, "Xuất bản ngay" is disabled; enabled once it is shown', async () => {
     const { opened, held } = await loading()
     assert.equal(quickButton(opened, 'Xuất bản ngay')!.props.disabled, true)
+    // Looks locked too (the admin convention `disabled:opacity-*`), not merely unresponsive.
+    assert.match(String(quickButton(opened, 'Xuất bản ngay')!.props.class), /(?:^| )disabled:opacity-60 disabled:cursor-wait(?: |$)/)
     held[0]!.respond(translation(3, 'en', 'ai_draft'))
     await settle()
     assert.equal(quickButton(opened, 'Xuất bản ngay')!.props.disabled, false)
@@ -274,6 +276,23 @@ describe('components/admin/articles/ArticleQuickViewModal.vue (through the artic
     await fire(quickButton(opened, 'Xuất bản ngay')!, 'click')
     await settle()
     assert.deepEqual(quickCalls(opened, before), [], 'nothing published while Bài 4 loads')
+  })
+
+  it('FINDING H-3 (late answer): Bài 3\'s answer landing while Bài 4 loads does not unlock "Xuất bản ngay"; a click sends nothing', async () => {
+    // W-1 (verify): the gate must follow the answer of the CURRENT opening — an unlock in `finally`
+    // for every answer (mutation V01) would enable the button on Bài 4's placeholder.
+    const { opened, held } = await racing()
+    held[0]!.respond(translation(3, 'en', 'ai_draft'))
+    await settle()
+    assert.match(quickText(opened), /Đang tải bản dịch\.\.\./)
+    assert.equal(quickButton(opened, 'Xuất bản ngay')!.props.disabled, true)
+    const before = opened.calls.length
+    await fire(quickButton(opened, 'Xuất bản ngay')!, 'click')
+    await settle()
+    assert.deepEqual(quickCalls(opened, before), [], 'nothing published while Bài 4 loads')
+    held[1]!.respond(translation(4, 'fr', 'reviewed'))
+    await settle()
+    assert.equal(quickButton(opened, 'Xuất bản ngay')!.props.disabled, false, 'Bài 4 shown: unlocked')
   })
 
   it('FINDING H-3, with the REAL AdminModal (SSR): its footer offers "Xuất bản ngay" while the translation loads — disabled', async () => {
