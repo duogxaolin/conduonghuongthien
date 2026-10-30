@@ -11,6 +11,13 @@
  * each must still be redacted wherever it sits (top level, nested, in an array, deep), whatever
  * its value — a numeric OTP under `token` included.
  *
+ * Names that plainly hold a credential but matched nothing before are added (`bearer`, then
+ * `jwt`, private keys, one-time / recovery / MFA codes, access key ids — the verifier's Low 6),
+ * and a second table pins what must stay READABLE: the error codes, storage object keys, ids and
+ * counters the logs really carry (`code`, `r2Key`, `sessionId`, `retryCount`…), and words with
+ * "otp" inside (`footprint`). Across the 195 keys of every real log call, the only change from the
+ * base is the three counts becoming readable (`compare-redaction` in the proof directory).
+ *
  * Only by key name: the logger does not look inside strings (a credential under an innocent key,
  * `note: "Bearer …"`, is written as is — truncated past 512 characters, tests/logging.test.ts).
  * Nothing here changes that; it is listed as KNOWN in the docs.
@@ -41,6 +48,21 @@ const SECRET_KEYS = [
   'authorization', 'Authorization', 'proxy-authorization', 'cookie', 'Cookie', 'set-cookie', 'cookies',
   // bearer — not in the pattern before; added with this table
   'bearer', 'Bearer', 'BEARER',
+  // plainly a credential, matched nothing before (verifier Low 6)
+  'jwt', 'JWT', 'Jwt', 'idJwt', 'jwt_payload', 'privateKey', 'private_key', 'PRIVATE_KEY', 'private-key', 'sshPrivateKey',
+  'otp', 'OTP', 'otpCode', 'otp_code', 'OTPCode', 'emailOtp', 'EMAIL_OTP', 'x-otp', 'totp', 'totpCode',
+  'recoveryCode', 'recovery_code', 'recoveryCodes', 'RECOVERY_CODE', 'mfaCode', 'mfa_code', 'MFA-CODE', 'emailMfaCode',
+  'accessKeyId', 'access_key_id', 'ACCESS_KEY_ID', 'awsAccessKeyId', 'r2AccessKeyId',
+] as const
+
+/**
+ * Keys the logs really carry (or plain words) that must stay READABLE — a wider pattern would
+ * have taken them: error codes, storage object keys, ids, counters; and words with "otp" inside.
+ * `code`, `key`, `session`, `sid`, `salt`, `nonce` are left out of the pattern on purpose.
+ */
+const READABLE_KEYS = [
+  'code', 'errorCode', 'statusCode', 'key', 'r2Key', 'objectKey', 'cacheKey', 'keyCount', 'sessionId', 'chatSessionId',
+  'retryCount', 'mfaEnabled', 'factor', 'footprint', 'hotpath', 'FOOTPRINT', 'event_code', 'reason',
 ] as const
 
 /** The counts the AI gateway logs: never a credential, always a number. */
@@ -77,6 +99,12 @@ describe('logger redaction: every credential key stays hidden', () => {
     })
   }
 
+  for (const key of READABLE_KEYS) {
+    it(`"${key}" is NOT a credential: written as is, wherever it sits`, () => {
+      for (const value of ['E_TIMEOUT', 3]) assert.deepEqual(placed(key, value).at, [value, value, value, value], `${key} = ${value}`)
+    })
+  }
+
   it('a count under a credential is hidden with it', () => {
     const line = record({ apiKey: { totalTokens: 5 }, authorization: [{ promptTokens: 3 }], token: { completionTokens: 1 } })
     assert.deepEqual([line.apiKey, line.authorization, line.token], [REDACTED, REDACTED, REDACTED])
@@ -85,15 +113,15 @@ describe('logger redaction: every credential key stays hidden', () => {
 
 describe('logger redaction: the AI token counts are written', () => {
   for (const key of COUNT_KEYS) {
-    it(`"${key}" with a number is written as the number, wherever it sits`, () => {
-      for (const value of [0, 1, 120, 1_000_000, 2.5]) {
+    it(`"${key}" with a finite number is written as the number, wherever it sits`, () => {
+      for (const value of [0, 1, 120, 1_000_000, 2.5, -1]) {
         assert.deepEqual(placed(key, value).at, [value, value, value, value], `${key} = ${value}`)
       }
     })
 
-    it(`"${key}" with anything but a number is still redacted (a count is never text)`, () => {
-      for (const value of ['sk-live-Zq81', '120', '', { n: 1 }, [1], true, null, undefined]) {
-        assert.deepEqual(placed(key, value).at, [REDACTED, REDACTED, REDACTED, REDACTED], `${key} = ${JSON.stringify(value)}`)
+    it(`"${key}" with anything but a finite number is still redacted (a count is never text)`, () => {
+      for (const value of ['sk-live-Zq81', '120', '', { n: 1 }, [1], true, null, undefined, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 10n]) {
+        assert.deepEqual(placed(key, value).at, [REDACTED, REDACTED, REDACTED, REDACTED], `${key} = ${String(value)}`)
       }
     })
   }
