@@ -279,12 +279,13 @@ const VIETNAMESE_MARK = /[\p{M}đĐ]/u
 
 /**
  * Câu có nói tới chủ đề, theo chữ Hán. `han` là khoá có ngắt (`sovereigntyHanKey`): tên khớp trên khoá nối liền, ngắt chỉ
- * dùng cho ngoại lệ của tên trần. `claims`: tính cả yêu sách — đầu ra có đảo/biển (trên khoá có ngắt, như trước).
- * `ownership`: câu (cả phần không phải chữ Hán) có chữ sở hữu — chỉ gọi khi có tên trần cần xét ngoại lệ.
+ * dùng cho ngoại lệ của tên trần. `claims`: tính cả yêu sách — đầu ra có đảo/biển, trên khoá NỐI LIỀN như 611588c2
+ * (vòng 6b: "中，国，…，主，权" và chữ phồn thể chen dấu câu là yêu sách). `ownership`: câu (cả phần không phải chữ Hán) có chữ
+ * sở hữu — chỉ gọi khi có tên trần cần xét ngoại lệ.
  */
 export function sovereigntyHanMentions(han: string, claims: boolean, ownership: () => boolean = () => false): boolean {
   const joined = han.includes('|') ? han.replace(/\|/g, '') : han
-  return HAN_FULL_NAMES.some(pattern => pattern.test(joined)) || bareHanName(han, joined, ownership) || (claims && HAN_CLAIMS.test(han))
+  return HAN_FULL_NAMES.some(pattern => pattern.test(joined)) || bareHanName(han, joined, ownership) || (claims && HAN_CLAIMS.test(joined))
 }
 
 /**
@@ -341,9 +342,9 @@ export function sovereigntyQuestionIslandContext(question: string): boolean {
   return QUESTION_ISLAND_HAN.test(hanKey(folded)) || QUESTION_ISLAND_WORDS.test(folded.toLowerCase())
 }
 
-/** Chỉ cụm yêu sách, trên phần đã chốt (bỏ từ cuối chưa viết xong) — để biết khi nào phải giữ chữ lại. */
+/** Chỉ cụm yêu sách, trên phần đã chốt (bỏ từ cuối chưa viết xong) — để biết khi nào phải giữ chữ lại. `han`: khoá nối liền. */
 export function sovereigntySettledClaim(folded: string, han: string): boolean {
-  if (HAN_CLAIMS.test(han)) return true
+  if (HAN_CLAIMS.test(han.includes('|') ? han.replace(/\|/g, '') : han)) return true
   // Mọi mẫu yêu sách Latin đều cần một trong các chữ này: không có thì khỏi dựng khoá Latin (mỗi chunk).
   if (!CLAIM_PREFILTER.test(folded)) return false
   const latin = latinKey(withoutLastWord(folded).toLowerCase())

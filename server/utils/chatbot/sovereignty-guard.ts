@@ -192,6 +192,9 @@ export function createSovereigntyOutputGuard(hooks: {
   const forward = hooks.forward
   const seen = createTranscript()
   const han = createTranscript()
+  // Khoá chữ Hán NỐI LIỀN (bỏ "|") cho lớp 611588c2 và cụm yêu sách: cửa sổ đếm chữ Hán như bản gốc. Cắt cửa sổ trên khoá
+  // có "|" rồi mới nối làm "中，国，对，…，主，权" chỉ còn ~12 chữ — yêu sách tới khách, `finish` mới thay (verifier 6).
+  const joined = createTranscript()
   let released = 0
   let tripped = false
   let island = questionIslandContext(hooks.question ?? '')
@@ -200,6 +203,7 @@ export function createSovereigntyOutputGuard(hooks: {
   // Phần đầu luồng đã xác nhận là sạch (với cờ `island` hiện tại).
   let confirmedTo = 0
   let hanConfirmedTo = 0
+  let joinedConfirmedTo = 0
 
   const trip = async () => {
     tripped = true
@@ -214,6 +218,9 @@ export function createSovereigntyOutputGuard(hooks: {
       const addedHan = hanKey(fold(chunk))
       han.append(addedHan)
       const hanWindow = han.from(han.length - addedHan.length - HAN_LOOKBACK_CHARS)
+      const addedJoined = hanJoined(addedHan)
+      joined.append(addedJoined)
+      const joinedWindow = joined.from(joined.length - addedJoined.length - HAN_LOOKBACK_CHARS)
       // Đoạn xét: cửa sổ cuối, mở rộng thêm một từ về trái — từ đó chỉ làm ngữ cảnh ("Côn" của "Côn Đảo"), không
       // được tính. Fold một lần cho cả cờ "có đảo", ứng viên và yêu sách.
       const windowStart = Math.max(0, seen.length - chunk.length - STREAM_LOOKBACK_CHARS)
@@ -234,20 +241,21 @@ export function createSovereigntyOutputGuard(hooks: {
       const candidate = islandNow
         || hanMentions(hanWindow + HAN_NEXT_PROBE, island, ownership)
         || settledScriptMentions(region, island, regionCut)
-        || han611(hanJoined(hanWindow), island) || (SCRIPT_LETTER.test(region) && settledScript611(rawRegion, island, regionCut))
+        || han611(joinedWindow, island) || (SCRIPT_LETTER.test(region) && settledScript611(rawRegion, island, regionCut))
       if (candidate) {
         const scriptFrom = islandNow ? 0 : marginStart(seen, confirmedTo)
         const hanFrom = islandNow ? 0 : Math.max(0, hanConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
-        const hanScope = han.from(hanFrom)
+        const joinedFrom = islandNow ? 0 : Math.max(0, joinedConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
         const confirm = confirmScript(seen.from(scriptFrom), scriptFrom === 0)
-        if (hanMentions(hanScope + HAN_NEXT_PROBE, island, ownership) || han611(hanJoined(hanScope), island)
+        if (hanMentions(han.from(hanFrom) + HAN_NEXT_PROBE, island, ownership) || han611(joined.from(joinedFrom), island)
           || confirm(text => settledScriptMentions(fold(text), island, false))
           || confirm(text => SCRIPT_LETTER.test(fold(text)) && settledScript611(text, island, false))) return trip()
         confirmedTo = seen.length
         hanConfirmedTo = han.length
+        joinedConfirmedTo = joined.length
       }
       // Cụm yêu sách Latin của 611588c2 cũng cần chữ cái ngoài chữ Hán: đoạn chỉ có chữ Hán chỉ xét khoá chữ Hán.
-      if (!island && !claimHeld) claimHeld = settledClaim(region, hanWindow) || settledClaim611(SCRIPT_LETTER.test(region) ? rawRegion : '', hanJoined(hanWindow))
+      if (!island && !claimHeld) claimHeld = settledClaim(region, joinedWindow) || settledClaim611(SCRIPT_LETTER.test(region) ? rawRegion : '', joinedWindow)
       if (claimHeld) return
       const upTo = seen.length - STREAM_HOLD_CHARS
       if (upTo > released) {
