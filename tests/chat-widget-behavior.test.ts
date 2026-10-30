@@ -523,9 +523,18 @@ test('FINDING-C2 (fixed): a refused first question does not title the conversati
   // title back; a refused question now does the same.
   const ctx = await openWidget(t)
   await openDialog(ctx)
-  ctx.server.state.chat.push(answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] }))
+  // Every save from the moment the server answers. (While it has not, the title set from
+  // the question is saved like any first question's — the session token is saved then.)
+  let answered = false
+  const writesAfterAnswer: string[] = []
+  const setItem = ctx.local.setItem
+  ctx.local.setItem = (key: string, value: string) => { if (answered) writesAfterAnswer.push(String(value)); setItem(key, value) }
+  const refusal = answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] })
+  ctx.server.state.chat.push((call) => { answered = true; return refusal(call) })
   await ask(ctx, 'câu vi phạm')
   assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Cuộc trò chuyện mới')
+  assert.ok(writesAfterAnswer.length > 0)
+  assert.ok(!writesAfterAnswer.some(value => value.includes('câu vi phạm')), 'once refused, no save carries the question, not even as the title')
   await click(historyButton(ctx))
   await ctx.settle()
   assert.match(words(ctx.widget), /Cuộc trò chuyện mới 1 tin nhắn/)

@@ -132,8 +132,9 @@ class ChatSendRejected extends Error {
 /**
  * `true` = câu trả lời đã về. Còn lại là lượt hỏng: `ChatSendFailure` khi máy chủ trả
  * một mã không-ok (đã phân loại), `null` khi hỏng không mang mã (mạng, luồng rỗng, huỷ).
+ * `titleBeforeSend`: tiêu đề hội thoại trước khi câu này tự đặt tiêu đề — trả lại nếu câu bị chặn.
  */
-async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => void): Promise<true | ChatSendFailure | null> {
+async function fetchStreamBotReply(userMessage: ChatMessage, titleBeforeSend: string, onScroll?: () => void): Promise<true | ChatSendFailure | null> {
   if (isSubmitting.value) return null
   const requestSequence = ++botRequestSequence
   const conversation = activeConversation.value
@@ -250,9 +251,12 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
     // sends it to the model on the next request — otherwise a user could smuggle
     // disallowed content past the gate by relying on conversation history. The
     // bot's refusal bubble stays so the user sees why their turn was rejected.
+    // The title it gave the conversation goes too, as on the 400 path, here before any
+    // `persist` (the playback's included) can save it (FINDING-C2).
     if (botMessage.kind === 'moderation_blocked') {
       const userIdx = conversation.messages.findIndex(item => item.id === userMessage.id)
       if (userIdx !== -1) conversation.messages.splice(userIdx, 1)
+      conversation.title = titleBeforeSend
       persist()
     }
     return true
@@ -307,7 +311,7 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   onScroll?.()
 
   const requestSequence = botRequestSequence + 1
-  const outcome = await fetchStreamBotReply(question, onScroll)
+  const outcome = await fetchStreamBotReply(question, titleBeforeSend, onScroll)
   if (requestSequence !== botRequestSequence) return
   const succeeded = outcome === true
   const failure = outcome === true ? null : outcome
