@@ -80,18 +80,23 @@ function bareHanName(han: string, joined: string, ownership: () => boolean): boo
 // "quần đảo hoàng sa vào vòng kiểm soát…". Người tên Hoàng/Trường + "sa ngã/sa đà/sa vào…" là chặn oan có chủ đích.
 // "sa thải" là động từ cố định, cả khi gõ hoa "Sa" ("Nam Sa thải tôi rồi", "Ông Hoàng. Sa thải tôi…") — mọi hoa/thường.
 const SA_FIRE = /(?<![\p{L}])([Ss])([aA])(?=\s+(?:thải|THẢI)(?![\p{L}]))/gu
-// Địa danh "Sa Pa/Đéc/Huỳnh/Thầy/Rài/Vĩ": "trường Sa Pa", "Trường Sa Đéc tuyển giáo viên", "TÂY SA PA". "Pa"/"Đéc" không
-// có nghĩa thường nên mọi hoa/thường ("Việt Nam Sa pa"); "Huỳnh/Thầy/Rài/Vĩ" có ("Trường Sa thầy giáo nào dạy", "Hoàng Sa
-// vĩ độ") nên chỉ khi viết hoa.
-const SA_PLACE = /(?<![\p{L}])([Ss])([aA])(?=\s+(?:[Pp][Aa]|[Đđ][ÉéEe][Cc]|Huỳnh|HUỲNH|Thầy|THẦY|Rài|RÀI|Vĩ|VĨ|Vỹ|VỸ)(?![\p{L}])(?!-\p{L}))/gu
-// "sà/sá/sả/sã/sạ" viết thường (có thanh) không phải "Sa": "Bé Hoàng sà vào lòng mẹ". "Hoàng Sá" viết hoa vẫn là tên.
-const TONED_SA = /(?<![\p{L}])(s[àáảãạ])(?![\p{L}])/gu
+// Địa danh "Sa Pa/Đéc": "trường Sa Pa", "Trường Sa Đéc tuyển giáo viên", "TÂY SA PA" — không có nghĩa thường nên mọi
+// hoa/thường ("Việt Nam Sa pa"). "Sa Huỳnh/Thầy/Rài/Vĩ" có nghĩa thường ("vĩ độ/vĩ đại", "huỳnh đệ", "thầy tôi") nên vòng 6
+// thu hẹp: chỉ là TRƯỜNG HỌC — sau "trường", địa danh viết hoa chữ đầu, trong câu có chữ viết thường (câu IN HOA TOÀN BỘ
+// hay Viết Hoa Mọi Chữ không cho biết đâu là tên riêng: "HOÀNG SA VĨ…", "Trường Sa Vĩ Đại", "Hoàng Sa Vĩ Tuyến" là quần đảo).
+const SA_PLACE = /(?<![\p{L}])([Ss])([aA])(?=\s+(?:[Pp][Aa]|[Đđ][ÉéEe][Cc])(?![\p{L}])(?!-\p{L}))/gu
+const SA_SCHOOL = /(?<=(?<![\p{L}])[Tt]rường\s+)([Ss])([aA])(?=\s+(?:Huỳnh|Thầy|Rài|Vĩ|Vỹ)(?![\p{L}])(?!-\p{L}))/gu
+const LOWERCASE_WORD = /(?<![\p{L}\p{M}])\p{Ll}/u
+// "sà vào/xuống" viết thường là động từ ("Bé Hoàng sà vào lòng mẹ"). Vòng 6 thu hẹp: "sà/sá/sả/sã/sạ" khác là tên gõ vội
+// ("hoàng sà ai đang giữ", "trường sạ ai làm chủ" — 611588c2 bắt). "Hoàng Sà vào…" viết hoa vẫn là tên.
+const TONED_SA = /(?<![\p{L}])(sà)(?=\s+(?:vào|xuống)(?![\p{L}]))/gu
 // "biển Đông Á/Hồ/Hưng" VIẾT HOA là tấm biển, địa danh: "Đông Á Bank", "Bãi biển Đông Hồ". Viết thường "biển đông á,"
 // (trợ từ miền Nam) vẫn bắt.
 const DONG_PLACE = /(?<=[Bb]iển\s+)Đông(?=\s+(?:Á|Hồ|Hưng)(?![\p{L}]))/gu
 
 function exceptBenign(folded: string): string {
-  return folded.replace(SA_FIRE, '$1$2h').replace(SA_PLACE, '$1$2h').replace(TONED_SA, '$1h').replace(DONG_PLACE, 'Đôngh')
+  const schools = LOWERCASE_WORD.test(folded) ? folded.replace(SA_SCHOOL, '$1$2h') : folded
+  return schools.replace(SA_FIRE, '$1$2h').replace(SA_PLACE, '$1$2h').replace(TONED_SA, '$1h').replace(DONG_PLACE, 'Đôngh')
 }
 
 // Ngoại lệ không bao giờ áp cho tên đầy đủ ("quần đảo Hoàng Sa/Trường Sa", "Biển Đông" viết hoa) và tắt hết khi câu có tín
@@ -100,13 +105,22 @@ const FULL_NAME = /(?<![\p{L}])(?:quần\s+đảo\s+(?:hoàng|trường)\s*sa|qu
 const FULL_NAME_DONG = /(?<![\p{L}])(?:Biển|BIỂN)\s+(?:Đông|ĐÔNG)(?![\p{L}])/u
 // Chữ sở hữu xét trên CẢ câu, mọi hệ chữ: "广州南沙 thuộc nước nào?", "Who owns 佛山南海?", "Trường Sa Pa belongs to which
 // country?" — chữ hỏi tiếng Việt/Anh tắt cả ngoại lệ chữ Hán và ngược lại.
+// Vòng 6 thêm chữ hỏi/khẳng định sở hữu verifier 5 dùng ("ai đang giữ", "là gì", "ai làm chủ/quản lý", "khác gì", "có phải
+// của", "phải ko", "là của", "của việt nam/vn/mình/ta/họ", "lấy lại"): chữ sở hữu chỉ TẮT ngoại lệ của một tên đã khớp,
+// nên rộng tay không chặn oan câu không có tên.
 const OWNERSHIP = new RegExp([
   '(?<![\\p{L}])(?:về\\s+tay|vào\\s+tay|của\\s+ai|của\\s+nước|thuộc|nước\\s+nào|kiểm\\s+soát|tranh\\s+chấp|chủ\\s+quyền|lãnh\\s+thổ',
   '|trung\\s+quốc|tq|china|chinese|bắc\\s+kinh|chiếm',
+  '|là\\s+của|của\\s+(?:việt\\s+nam|vn|mình|ta|họ)|(?:ai|phải)(?:\\s+đang)?\\s+giữ|ai(?:\\s+đang)?\\s+(?:làm\\s+chủ|quản\\s+lý)',
+  '|là\\s+(?:cái\\s+)?gì|khác\\s+gì|có\\s+phải\\s+của|phải\\s+(?:ko|không|hông|k)|lấy\\s+lại',
   '|belongs?|owns?|owned|owner|whose|which\\s+country|sovereign(?:ty)?|territor(?:y|ial)|disputed?|control(?:s|led)?)(?![\\p{L}])',
   '|中国|主权|属于|哪个国家|哪国|领土|归属|归谁|谁的',
 ].join(''), 'u')
-const OWNERSHIP_LATIN = / (?:ve tay|vao tay|cua ai|cua nuoc|nuoc nao|kiem soat|tranh chap|chu quyen|lanh tho|trung quoc|tq|china|bac kinh) /
+const OWNERSHIP_LATIN = new RegExp([
+  ' (?:ve tay|vao tay|cua ai|cua nuoc|nuoc nao|kiem soat|tranh chap|chu quyen|lanh tho|trung quoc|tq|china|bac kinh',
+  '|la cua|cua (?:viet nam|vn|minh|ta|ho)|(?:ai|phai)(?: dang)? giu|ai(?: dang)? (?:lam chu|quan ly)|la (?:cai )?gi|khac gi',
+  '|co phai cua|phai (?:ko|khong|hong|k)|lay lai) ',
+].join(''))
 
 /** Câu có chữ sở hữu (quyền sở hữu/chủ quyền) — tắt mọi ngoại lệ chặn oan. */
 export function sovereigntyOwnership(folded: string): boolean {

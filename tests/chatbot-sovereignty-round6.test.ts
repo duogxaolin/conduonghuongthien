@@ -11,7 +11,7 @@ import test from 'node:test'
 
 const { mentionsSovereignty } = await import('../server/utils/chatbot/sovereignty-guard')
 const { sovereigntyFold: fold, sovereigntyHanKey: hanKey } = await import('../server/utils/chatbot/sovereignty-normalize')
-const { sovereigntyHanMentions, sovereigntyOwnership } = await import('../server/utils/chatbot/sovereignty-patterns')
+const { sovereigntyHanMentions, sovereigntyOwnership, sovereigntyScriptMentions } = await import('../server/utils/chatbot/sovereignty-patterns')
 
 /** Chỉ nhánh chữ Hán của bộ khớp mới (chữ sở hữu xét trên cả câu, như `mentionsSovereignty`). */
 const hanBranch = (text: string) => sovereigntyHanMentions(hanKey(fold(text)), false, () => sovereigntyOwnership(fold(text)))
@@ -46,4 +46,43 @@ test('family 1: a preceding character only vetoes when it ends a place word — 
   // Hai chữ của địa danh phải cùng mệnh đề: "广，州南沙" không phải 广州.
   assert.equal(hanBranch('我去过广，州南沙现在怎样'), true)
   assert.equal(hanBranch('我来自广州，南沙现在怎么样'), true)
+})
+
+// ─── Họ 2: ngoại lệ "sa" ────────────────────────────────────────────────────────────────────────────────────────────
+
+const scriptBranch = (text: string) => sovereigntyScriptMentions(fold(text), false)
+
+test('family 2: a toned "sa" is the name typed in a hurry — only "sà vào/xuống" (the verb) is excepted', () => {
+  for (const text of ['hoàng sà ai đang giữ', 'trường sá có phải của mình không', 'hoàng sả là gì vậy ad', 'trường sạ ai làm chủ',
+    'hoàng sã với trường sá khác gì nhau', 'hoàng sá của vn phải ko', 'bao giờ lấy lại hoàng sà', 'trường sà giờ ai quản lý',
+    'hoàng sà giờ ra sao', 'trường sá bây giờ thế nào', 'Hoàng Sà vào thời Nguyễn đã có người ở']) {
+    assert.equal(scriptBranch(text), true, text)
+    assert.equal(mentionsSovereignty(text), true, text)
+  }
+  for (const text of ['Bé Hoàng sà vào lòng mẹ khi tôi ra trại', 'Thằng Hoàng sà xuống ghế ngủ luôn']) assert.equal(scriptBranch(text), false, text)
+})
+
+test('family 2: a place word after "Sa" is only a place in Title case after "trường" and before a lowercase word — never in ALL CAPS', () => {
+  // Câu VIẾT HOA TOÀN BỘ hay Viết Hoa Mọi Chữ không cho biết đâu là tên riêng: "VĨ/Vĩ Tuyến" là vĩ tuyến, không phải Sa Vĩ.
+  for (const text of ['HOÀNG SA VĨ TUYẾN BAO NHIÊU', 'Hoàng Sa Vĩ Tuyến 16 Độ Bắc Đúng Không', 'HOÀNG SA VĨ ĐẠI MUÔN NĂM',
+    'TRƯỜNG SA THẦY TÔI BẢO LÀ CỦA VIỆT NAM', 'TRƯỜNG SA HUỲNH ĐỆ TÔI ĐANG CANH GIỮ', 'Trường Sa Vĩ Đại', 'Hoàng Sa Vĩ độ bao nhiêu',
+    'Hoàng Sa Huỳnh đệ canh giữ', 'TRƯỜNG SA RÀI RÁC ĐẢO NHỎ']) {
+    assert.equal(scriptBranch(text), true, text)
+    assert.equal(mentionsSovereignty(text), true, text)
+  }
+  for (const text of ['học sinh trường Sa Thầy Kon Tum được hỗ trợ gì', 'Trường Sa Rài ở Đồng Tháp có lớp xóa mù không',
+    'trường Sa Huỳnh tuyển giáo viên', 'Bé nhà tôi học lớp 3 Trường Sa Pa', 'Trường Sa Đéc tuyển giáo viên hợp đồng', 'TRƯỜNG SA PA TUYỂN SINH']) {
+    assert.equal(scriptBranch(text), false, text)
+  }
+})
+
+test('family 2: the ownership words verifier 5 used turn every exception off, in every script', () => {
+  for (const text of ['ai giữ', 'ai đang giữ', 'phải giữ', 'là gì', 'là cái gì', 'ai làm chủ', 'ai quản lý', 'ai đang quản lý', 'khác gì',
+    'có phải của', 'phải ko', 'phải không', 'là của', 'của việt nam', 'của vn', 'của mình', 'của ta', 'của họ', 'lấy lại',
+    'ai giu', 'ai dang giu', 'la gi', 'ai lam chu', 'ai quan ly', 'khac gi', 'co phai cua', 'phai ko', 'la cua', 'cua viet nam', 'lay lai',
+    // Đã có từ vòng 5 — ghim lại (đột biến Q08: bỏ "whose"; Q20: bỏ nhánh chữ Hán khỏi danh sách chung).
+    'whose', 'belongs', 'which country', '属于', '哪国', '谁的', '中国', '主权']) {
+    assert.equal(sovereigntyOwnership(fold(`X ${text} Y`)), true, text)
+  }
+  for (const text of ['ai cũng biết', 'giữ gìn sức khỏe', 'gì cũng được', 'của tôi']) assert.equal(sovereigntyOwnership(fold(text)), false, text)
 })
