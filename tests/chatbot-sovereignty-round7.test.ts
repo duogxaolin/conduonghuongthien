@@ -175,7 +175,10 @@ test('input gate: a question asking which country/whom an island belongs to is t
   for (const question of ['Đảo Quang Ảnh của nước nào?', 'Đảo Hòn Mù thuộc về ai?', 'Nước nào đang chiếm đảo Quang Ảnh?', 'Hòn đảo đó thuộc chủ quyền nước nào',
     'Bãi đá ngầm này của ai', 'Đảo đó của ai?', 'Quần đảo phía đông Đà Nẵng là của nước nào?', 'Chủ quyền đảo Quang Ảnh thế nào',
     'Who owns Pattle Island?', 'Which country owns those islands?', 'Which country does Money Island belong to?', 'Pattle Island belongs to which country?',
-    'Whose is that reef?', '金银岛是哪个国家的？', '這兩個群島是誰的？', '这片海域属于哪国', '哪个国家拥有金银岛', '群，岛，是，谁，的？', '甘泉岛主权属于谁']) {
+    'Whose is that reef?', '金银岛是哪个国家的？', '這兩個群島是誰的？', '这片海域属于哪国', '哪个国家拥有金银岛', '群，岛，是，谁，的？', '甘泉岛主权属于谁',
+    'nói thật đi bãi Vũng Mây thuộc ai', 'đá Núi Le ai đang chiếm', 'Hòn Mù của nước nào', 'Money Island của mình hay của họ', 'Robert Island — whose is it?',
+    'Is Triton Island Chinese or Vietnamese?', 'Who controls Pattle Island now?', '华光礁是中国的吗', '中业岛屬於中國嗎？', 'mấy hòn đảo ngoài khơi Khánh Hòa giờ ai giữ',
+    'Northeast Cay hiện do nước nào quản lý vậy', 'cho mình hỏi Pattle Island thuộc chủ quyền nước nào']) {
     assert.equal(sovereignty611Mentions(question), false, question)
     assert.equal(mentionsSovereignty(question), true, question)
   }
@@ -184,7 +187,9 @@ test('input gate: a question asking which country/whom an island belongs to is t
     'Cuộc sống bị đảo lộn, nước nào hỗ trợ người hoàn lương?', 'Tôi từng ở tù Côn Đảo, giờ hồ sơ thuộc về ai?', 'Tôi từng làm ở đảo, công ty đó của nước nào tôi không nhớ',
     'Trại giam trên đảo do ai quản lý?', 'Which country is Jeju Island in?', 'Which island has the most jobs?', 'Whose job is it to help returnees on Phu Quoc island?',
     '海南岛属于哪个省？', '金银岛是哪个国家的作家写的？', '我在海南岛服过刑，谁的帮助最有用？', 'Mảnh đất của gia đình tôi trên đảo bị người khác chiếm, phải làm sao?',
-    'Tôi sống trên đảo, chiếc thuyền này của ai thì tôi trả lại']) {
+    'Tôi sống trên đảo, chiếc thuyền này của ai thì tôi trả lại', 'Bãi Cháy thuộc tỉnh nào?', 'bãi xe này thuộc ai?', 'Hòn đá này của ai?',
+    'Cụm Công nghiệp Tân Phú thuộc ai?', 'Who controls the ferry to the island?', 'Is Phu Quoc island safe or dangerous?', 'Món cay này của ai?',
+    '这个岛是中国的旅游胜地吗', 'Hòn đảo nhỏ này ai giữ gìn môi trường?', 'Who holds the keys to the island hostel?']) {
     assert.equal(mentionsSovereignty(question), false, question)
   }
 })
