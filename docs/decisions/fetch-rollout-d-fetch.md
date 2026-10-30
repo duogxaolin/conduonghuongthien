@@ -702,7 +702,8 @@ từ trước, và gộp `ItemOf<T>`. Kiểu phản hồi suy từ handler qua `
 - Ba ép kiểu dữ liệu công khai: chỉ đổi kiểu. **Mã JS biên dịch (script + template inline, đã bỏ kiểu) giống hệt base**, so sau khi bỏ
   khoảng trắng và ngoặc của phép ép; kiểm âm tính (so với `5f1bb07d`, khác thật) phát hiện khác (`proof/public-casts-identity.txt`,
   `proof/compiled-identity.ts`). `?.ok === false` giữ (nhánh chết: handler trả `ok:false` kèm 503, `$fetch` ném — không bỏ ở lô kiểu).
-  `PublicQaDocument`/`PublicQaTopic`/`PublicQaPagination` (`utils/public-types.ts`) nay KHÔNG còn ai dùng — để nguyên (xoá cần người quyết).
+  `PublicQaDocument`/`PublicQaTopic`/`PublicQaPagination` (`utils/public-types.ts`) nay không còn ai dùng (grep `app/ server/ shared/
+  tests/ scripts/`, CLAUDE.md) — **đã xoá** sau kiểm chứng độc lập (typecheck 0 lỗi).
 - `adminFetch` tự import trong component quản trị, như 16 component khác (layout là ngoại lệ ở trên).
 
 **Kiểu viết tay bị thay lộ sai lệch** (không lỗi hiển thị): bản dịch `title: string` (cột nullable — `null` in chuỗi rỗng như cũ); lịch
@@ -723,7 +724,8 @@ sử `createdAt: string` (nullable; `formatDateTimeVN` in "—"); quét ảnh `m
   chân hộp đã có "Xuất bản ngay" — một lần bấm xuất bản bản dịch AI chưa ai đọc. Kiểm bằng **`AdminModal` THẬT** (render SSR, Teleport tới
   body: nút ở chân hộp, không `disabled`), không chỉ bằng `OpenModal` của harness (bài học lô G). Nay cờ dương `loaded` (false từ đầu mỗi
   lượt mở, true chỉ khi bản dịch của lượt này đã điền), hai lớp, mỗi lớp một test: nút `:disabled="!loaded"` và `toggleStatus` tự trả về;
-  thêm test mở lại (khoá lại tới khi bản dịch kế hiện).
+  thêm test mở lại (khoá lại tới khi bản dịch kế hiện) và test W-1 của kiểm chứng độc lập (câu trả lời muộn của bài trước không mở khoá
+  nút của bài đang tải — giết đột biến V01: dời `loaded.value = true` xuống `finally`).
 - **H-4 PATCH muộn** (cùng hộp): bấm "Xuất bản ngay" ở Bài 3, đóng trước khi trả lời, mở Bài 4 — câu trả lời ghi "đã xuất bản" lên bản
   dịch Bài 4 trên màn hình. Nay ghi vào bản dịch của chính lượt bấm (toast vẫn báo Bài 3 đã xuất bản — đúng sự thật).
 - **Không lỗi**: `analytics.vue` (mã lượt + `AbortController` đã có — test ghim huỷ lượt cũ / khi rời trang), bảng trực tiếp (poller có
@@ -732,19 +734,28 @@ sử `createdAt: string` (nullable; `formatDateTimeVN` in "—"); quét ảnh `m
 
 Không sửa nào đổi trạng thái BÌNH THƯỜNG: DOM của 5 view đã đổi (mount thật, `html()`) giống hệt base ở trạng thái bình thường
 (`proof/dom-identity.test.ts` + `.txt`) — riêng "Xem nhanh" khác đúng `disabled=false` trên nút (trình duyệt không vẽ thuộc tính đó);
-nhật ký DOM 126 bước của `admin-layout.test.ts` giống từng byte. Nút bị khoá không thêm lớp `disabled:` (giữ class y hệt) — lúc tải nó
-trông như cũ nhưng không phản hồi; không nháy, không đổi bộ đệm (toàn trang quản trị, không SWR).
+nhật ký DOM 126 bước của `admin-layout.test.ts` giống từng byte. Không nháy, không đổi bộ đệm (toàn trang quản trị, không SWR).
+**Sửa sau kiểm chứng độc lập:** bản đầu không thêm lớp `disabled:` cho nút bị khoá (để giữ class y hệt) — lúc tải nút trông như bật mà
+không phản hồi. Vì DOM của nút đã đổi sẵn (thuộc tính `disabled`), nay thêm `disabled:opacity-60 disabled:cursor-wait` theo quy ước
+quản trị (~180 chỗ `disabled:opacity-*`; `LiveChat`/`BlockLoadError` dùng đúng cặp này): ở trạng thái bình thường lớp `disabled:` không
+áp dụng (khác biệt DOM duy nhất là chuỗi class + `disabled=false`); test H-3 (nút) ghim lớp đó.
 
 ### Test
 
 Mới: `tests/admin-fetch-rollout-{analytics,profile-history,article-modals,bulk-action}.test.ts`, `tests/item-of-single-definition.test.ts`;
-thêm 1 test vào `public-fetch-rollout-blocks` (NewsCategoryList hiện mọi bài — đột biến M27 sống qua bộ cũ). **Mọi test không mang nhãn
+thêm 1 test vào `public-fetch-rollout-blocks` (NewsCategoryList hiện mọi bài — đột biến M27 sống qua bộ cũ).
+Sau kiểm chứng độc lập: test W-1 (ở trên); **ngữ nghĩa `ItemOf` kiểm kiểu thật** — `tests/` nằm ngoài typecheck của app
+(`.nuxt/tsconfig.json` chỉ gồm `tests/nuxt/**`), nên test dựng một chương trình TypeScript trong bộ nhớ (tệp chung NGUYÊN VĂN + probe
+`Equal<…> = true`): phần tử mảng, `readonly`, tuple, danh sách nullable, và `never` (không `unknown`) cho thứ không phải mảng; chứng
+minh đỏ ĐÚNG lý do (chỉ dòng probe, không lỗi phân giải) khi `: never` → `: unknown` hoặc bỏ `readonly`. **Guard URL hàng loạt** nay đi
+từ chính lời gọi: mọi `useBulkAction(` phải giữ trong `const <tên>`, mọi `<tên>.run(` được đọc; nháy đơn/kép/template không `${…}` là chuỗi
+cố định; `url` là biến hoặc template động, options truyền gián tiếp, `run` phân rã, kết quả không giữ trong `const` → LỖI (không bỏ qua). **Mọi test không mang nhãn
 FINDING xanh trên base** (chạy trong worktree base `proof/wt-base`, đúng bộ test + harness lô H): lịch sử 5/5, hai hộp bài viết 8/8,
 analytics 8/8, hàng loạt 6/6, blocks 25/25; FINDING đỏ trên base: 3 + 9. Hai tệp chưa từng có test hành vi (`analytics.vue`, bảng trực
 tiếp) nay mount thật — bảng trực tiếp là bản build trình duyệt (`import.meta.client`), ba poller thật.
 
 Harness (`_admin-page-harness.ts`, cộng thêm): `NetCall.signal` (đọc `.aborted` để thấy huỷ), tuỳ chọn `importMeta`, `loadBulk` export
-và cấp `adminFetch`. 399 test dùng harness xanh. `<Teleport>` thô của hộp quét đứng thay bằng `Fragment` (một component đứng thay
+và cấp `adminFetch`. 401 test dùng harness xanh (30 tệp; 399 lúc đo, +2 test ở `f17a8f0c`). `<Teleport>` thô của hộp quét đứng thay bằng `Fragment` (một component đứng thay
 KHÔNG vẽ lại: trình biên dịch giao con của Teleport dạng block, patch tối ưu bỏ qua component không đổi props — `open` false → true
 không vẽ gì; Fragment vá con như Teleport thật).
 
@@ -773,6 +784,10 @@ phân tích bỏ qua → cùng chiều rộng 1240, tương đương) → M31b (
 - quét ảnh: `dryRun` của lượt sửa → true (M21), bỏ `defaultCover` (M22), thân quét rỗng (M30); lịch sử luôn gửi `userId` (M32);
 - `ItemOf`: chép lại vào `admin-api.ts` (M23); công khai: `topics` ← `items` (M24), bỏ bài đầu của DocumentsBlock (M26) / NewsCategoryList (M27).
 
+Sau kiểm chứng độc lập (`proof/mutations/verify-round.log`): **V01** của verifier (dời `loaded.value = true` xuống `finally`) — bị bắt bởi
+test W-1; **M35** (`ItemOf` trên tệp thật: `: never` → `: unknown`) — bị bắt bởi test kiểm kiểu; **M36** (một trang đổi URL sang
+template `${…}`) — bị bắt bởi guard URL; **M25** chạy lại trên guard mới — bị bắt. 4/4.
+
 ### Cổng cuối
 
 - Unit đầy đủ (`TZ=Asia/Ho_Chi_Minh npm test`, Node 26, mã ứng dụng ở `a26f2749`): **7814 test, 7760 pass, 0 fail, 54 skip**
@@ -781,15 +796,27 @@ phân tích bỏ qua → cùng chiều rộng 1240, tương đương) → M31b (
 - `npm run docs:facts`: khối CLAUDE.md khớp (không tệp nào của lô H nằm trong khối số liệu).
 - ESLint 23 tệp đổi (chạy lại ở HEAD): 0 lỗi, 2 cảnh báo CÓ TỪ TRƯỚC (`i` không dùng ở bảng trực tiếp, `v-html` của "Xem nhanh" — cùng hai cảnh báo trên base).
 - Ratchet 42/42.
+- Vòng sau kiểm chứng độc lập (HEAD mã `c477ad11`): unit đầy đủ **7818 test, 7764 pass, 0 fail, 54 skip** (`proof/full-unit-r2.txt`);
+  typecheck 0 lỗi (`proof/typecheck-r2.log`); docs:facts khớp; ESLint 24 tệp đổi: 0 lỗi, cùng 2 cảnh báo có từ trước; ratchet 42/42
+  (`--update` vẫn chỉ muốn hạ `readers.ts` — để nguyên).
+
+### Đo phía trình duyệt (kiểm chứng độc lập, Chromium, component thật — `cdht-wave3-fetch-h-verify/browser/evidence/`)
+
+- H-1…H-4 tái hiện trên base bằng component thật.
+- `AdminModal` thật: `inert` bật cho phần ngoài khi mở, gỡ khi đóng.
+- Focus ban đầu lúc bản dịch đang tải rơi vào liên kết "Mở trong trang soạn thảo" (nút "Xuất bản ngay" bị khoá) — Enter không xuất bản;
+  H-3 chỉ xảy ra khi BẤM CHUỘT lúc lượt GET còn chạy.
+- Bấm đúp "Xuất bản ngay" gửi 2 PATCH ở cả base và HEAD — CÓ TỪ TRƯỚC, không thuộc lô này (không có cờ đang gửi; PATCH cùng trạng thái
+  là idempotent ở máy chủ).
 
 ### Chưa đo / chỗ yếu
 
-- **E2E không chạy** (cần bản build + MySQL): `admin-mfa.spec.ts` (tiêu đề khối lịch sử), `analytics-ingestion.spec.ts`,
-  `admin-write-paths.spec.ts` là các spec chạm trang của lô này. Hydrate + bấm thật trên nút bị khoá chưa đo trong trình duyệt.
-- `AdminModal` thật chỉ qua render SSR (chân hộp + nút); bẫy focus/`inert` khi mount phía trình duyệt không chạy trong Node.
+- **E2E không chạy** (cần `E2E_DB_PASSWORD` + bản build): `admin-mfa.spec.ts` (tiêu đề khối lịch sử), `analytics-ingestion.spec.ts`,
+  `admin-write-paths.spec.ts` là các spec chạm trang của lô này.
+- SSR + hydrate trong Nuxt THẬT (bản build) chưa đo; integration MySQL chưa chạy (suite integration tự bỏ qua khi thiếu MySQL).
 - Guard "mọi URL của `bulk.run` → `return runBulk(`" là regex trên nguồn handler: một handler gán `runBulk` vào biến rồi trả nguyên vẫn
   cùng hình mà guard đỏ (chặt hơn cần, không lỏng hơn). Không chốt số 16 (thêm/bớt một thao tác hàng loạt đúng không làm đỏ); thay vào đó
-  kiểm phép quét thấy một URL ở trang và một ở component.
+  kiểm phép quét thấy một URL ở trang và một ở component. Verifier đã tự mở cả 16 handler: mỗi cái đúng một `return runBulk(`.
 - `useBulkSelection.ts` và các composable nạp bằng `new Function` không quy độ phủ về tệp nguồn.
 - Gộp với `wave3/article-editor-split`: cả hai nhánh sửa `tests/ratchets/file-length.baseline.json` (dòng khác nhau) — xung đột dòng JSON
   nếu có thì đơn giản; lô H không chạm tệp của nhánh đó.
