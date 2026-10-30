@@ -17,6 +17,7 @@ type UsageHandler = typeof import('~~/server/api/admin/ai/usage.get').default
 type LogsHandler = typeof import('~~/server/api/admin/ai/logs/index.get').default
 type ProvidersHandler = typeof import('~~/server/api/admin/ai/providers/index.get').default
 type PricingHandler = typeof import('~~/server/api/admin/ai/pricing/index.get').default
+type EditorialHandler = typeof import('~~/server/api/admin/ai/editorial.post').default
 
 /** `GET /api/admin/ai/usage` — the dashboard's month: totals, per service, per day, the budget. */
 export type AdminAiUsageResponse = Payload<UsageHandler>
@@ -25,6 +26,12 @@ export type AdminAiLogsResponse = Payload<LogsHandler>
 /** `GET /api/admin/ai/providers` and `/pricing` — the parent's fallback read for the Services/Logs tabs. */
 export type AdminAiProvidersResponse = Payload<ProvidersHandler>
 export type AdminAiPricingResponse = Payload<PricingHandler>
+
+/**
+ * `POST /api/admin/ai/editorial` — the article editor's AI panel (`ArticleAIPanel.vue`): titles,
+ * summaries, or the polish (`polishedContent` and `changes[].suggested` sanitised by the handler).
+ */
+export type AdminAiEditorialResponse = Payload<EditorialHandler>
 
 /** `GET /api/admin/ai/services` — one row per AI service, plus its `defaultSystemPrompt`. */
 export type AdminAiServicesResponse = Payload<ServicesHandler>

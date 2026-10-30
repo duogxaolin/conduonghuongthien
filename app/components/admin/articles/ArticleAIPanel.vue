@@ -12,6 +12,8 @@
  * TinyMCE editor state sống ở cha — `TINYMCE_EDITOR_ID` + `tinymceReady`). Con
  * emit `update:title` / `update:excerpt` khi áp dụng gợi ý.
  */
+import type { AdminAiEditorialResponse } from '~/types/admin-ai-api'
+
 interface PolishChangeItem {
   original: string
   suggested: string
@@ -113,17 +115,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
   else aiLoadingText.value = 'Trợ lý AI đang rà soát chính tả và văn phong...'
 
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      action: string
-      options?: string[]
-      titles?: string[]
-      polishedContent?: string
-      notes?: string[]
-      rawText?: string
-      changes?: PolishChangeItem[]
-      summaryNotes?: string
-    }>)('/api/admin/ai/editorial', {
+    const res = await adminFetch<AdminAiEditorialResponse>('/api/admin/ai/editorial', {
       method: 'POST',
       body: { action, title: props.formTitle, content },
     })
