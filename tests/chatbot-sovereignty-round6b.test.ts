@@ -150,6 +150,19 @@ test('the OR cannot be bypassed: only the sovereignty modules (and chat-policy-a
   assert.deepEqual(offenders, [])
 })
 
+test('a punctuation-split Han claim BEFORE any island word holds the reply back (claim hold on the joined key) until the island word trips it', async () => {
+  // Không có chữ 岛/礁 trong cụm: chưa có cờ "có đảo" nên chỉ bước giữ chữ khi có yêu sách ngăn nó ra — cửa sổ phải đếm chữ Hán.
+  for (const separator of SEPARATORS) {
+    const claim = [...'中国对这些地方一直都拥有主权'].join(separator)
+    const reply = `关于这个问题：${claim}。${'请联系当地人力资源服务中心办理相关手续。'.repeat(4)}那些岛屿很美。`
+    for (const size of [1, 3]) {
+      const { tripped, shown } = await stream(split(reply, size))
+      assert.equal(tripped, true, `${size}: ${reply}`)
+      assert.ok(!shown.includes('中'), `${size}: ${shown}`)
+    }
+  }
+})
+
 test('/api/chat (no stream) and finish: a punctuation-split Han claim is withdrawn by the answer alone', async () => {
   for (const separator of SEPARATORS) {
     const guard = createSovereigntyOutputGuard({ replace: () => {}, question: '请问一下' })
