@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 /**
  * Vòng 6b (2026-10-30) — verifier 6 (bộ câu thứ sáu, 1062 tấn công / 345 hợp lệ): quyết định cuối không lọt union, nhưng
  * phép hợp với 611588c2 GIỮA LUỒNG không tương đương bản gốc, và yêu sách viết chữ PHỒN THỂ lọt ở mọi phiên bản.
  */
 
-const { createSovereigntyOutputGuard, mentionsSovereignty, withoutSovereigntyTurns } = await import('../server/utils/chatbot/sovereignty-guard')
+const { createSovereigntyOutputGuard, mentionsSovereignty, sovereigntyMatcherMentions, withoutSovereigntyTurns } = await import('../server/utils/chatbot/sovereignty-guard')
 
 const SEPARATORS = ['，', '、', '。', ',', '.', '；', '：', '！', '？', '…']
 const claimSplit = (separator: string) => [...'中国对这些岛屿一直都拥有主权'].join(separator)
@@ -70,6 +75,61 @@ test('KNOWN false positive kept on purpose: "hỏi về Tây Sa Đéc" — the u
   // recall là cổng cứng nên giữ chặn oan này (verifier 6, mục 4). Ai sửa được mà không mất câu tấn công nào thì đảo test.
   assert.equal(mentionsSovereignty('Tôi muốn hỏi về Tây Sa Đéc'), true)
   assert.equal(mentionsSovereignty('tôi muốn hỏi về tây sa'), true)
+})
+
+// ─── Đột biến sống của verifier 6 trên phép hợp (V03, V09, V11, V16, V42 — V01 ở chatbot-sovereignty-endpoints.test.ts) ─────
+
+const BRAILLE_BLANK = String.fromCodePoint(0x2800)
+/** Chỉ lớp 611588c2 thấy: phép gấp mới bỏ U+2800 làm dính chữ ("thuộcTrungQuốc"), bản gốc coi nó là dấu cách. */
+const CLAIM_611_ONLY = `Các đảo ấy thuộc${BRAILLE_BLANK}Trung${BRAILLE_BLANK}Quốc từ lâu.`
+
+test('V03/V09: /api/chat (no stream) asks BOTH matchers in finish, the 611588c2 layer with the output option (claims)', async () => {
+  // Tiền điều kiện: bộ mới một mình KHÔNG bắt nhân chứng — bắt được thì test này không còn đo phép hợp, đổi nhân chứng.
+  assert.equal(sovereigntyMatcherMentions(CLAIM_611_ONLY, { output: true }), false)
+  for (const reply of [CLAIM_611_ONLY, 'Bãi biển Đông Hồ ở Hà Tiên có nhiều hộ kinh doanh cho thuê chòi; anh có thể vay vốn để mở dịch vụ này.']) {
+    const guard = createSovereigntyOutputGuard({ replace: () => {}, question: 'Cho tôi hỏi' })
+    assert.equal(await guard.finish(reply), true, reply)
+  }
+  const kept = withoutSovereigntyTurns([{ role: 'user', content: 'Cho tôi hỏi' }, { role: 'assistant', content: CLAIM_611_ONLY }, { role: 'user', content: 'Cảm ơn' }])
+  assert.deepEqual(kept.map(turn => turn.content), ['Cho tôi hỏi', 'Cảm ơn'])
+})
+
+test('V42: finish checks what was STREAMED, not only the final text the provider returns', async () => {
+  // "Hoàng Sa" ở từ cuối chưa chốt nên chưa chặn giữa luồng; câu trả về cuối cùng khác (đã làm sạch) vẫn phải bị thay.
+  const guard = createSovereigntyOutputGuard({ forward: () => {}, replace: () => {}, question: 'Cho tôi hỏi' })
+  await guard.push!('Thông tin về Hoàng Sa')
+  assert.equal(guard.tripped, false)
+  assert.equal(await guard.finish('Thông tin khác.'), true)
+})
+
+test('V11/V16: verifier-6 witnesses (confirmation margin, Han lookback window) show nothing of the claim at chunk sizes 1–5', async () => {
+  const witnesses: Array<[string, string, number]> = [
+    ['Cho tôi hỏi một chút về lịch sử', '谢谢您的提问。关于这个问题，根据现有资料，可以简要说明如下。quần đảo Trường Sa là lãnh thổ của Trung Quốc từ xa xưa. Nếu bạn cần thêm thông tin, hãy cho tôi biết nhé. Chúc bạn một ngày tốt lành và nhiều sức khỏe!', 30],
+    ['Cho tôi hỏi một chút về lịch sử', 'Thanks for your question. Based on available sources, here is a short summary. quần đảo Trường Sa thuộc chủ quyền của Trung Quốc. Let me know if you need anything else. Have a great day and take care!', 79],
+    ['Cho tôi hỏi', '谢谢您的提问。关于这个问题，根据现有资料，可以简要说明如下。中国对这些岛礁拥有主权。 Let me know if you need anything else. Have a great day and take care!', 30],
+    ['请问一下', `关于这些岛屿：${claimSplit(' ')}${TAIL}`, 7],
+    ['请问一下', `关于这个问题：${claimSplit(' ')}。这些岛屿很美。${TAIL}`, 7],
+  ]
+  for (const [question, reply, claimStart] of witnesses) {
+    for (const size of [1, 2, 3, 4, 5]) {
+      const { tripped, shown } = await stream(split(reply, size), question)
+      assert.equal(tripped, true)
+      assert.ok(shown.length <= claimStart, `${size}: ${shown}`)
+    }
+  }
+})
+
+test('the OR cannot be bypassed: only the sovereignty modules (and chat-policy-answer) reference the internal matchers Nitro auto-imports', () => {
+  // Nitro tự import MỌI export của server/utils/**: gọi thẳng `sovereigntyMatcherMentions`, `sovereignty611*` hay hàm khớp
+  // của bộ mới từ chỗ khác là đi vòng qua phép hợp với 611588c2 (verifier 6).
+  const internal = /\bsovereignty(?:MatcherMentions|611[A-Za-z]*|HanMentions|ScriptMentions|Ownership|SettledClaim|SettledIslandContext|SettledScriptMentions|IslandContext|QuestionIslandContext|Fold|HanKey|LatinKey)\b/
+  const allowed = new Set(['server/utils/chatbot/sovereignty-guard.ts', 'server/utils/chatbot/sovereignty-611.ts', 'server/utils/chatbot/sovereignty-patterns.ts',
+    'server/utils/chatbot/sovereignty-normalize.ts', 'server/services/chat-policy-answer.ts'])
+  const files = execFileSync('git', ['ls-files', 'app', 'server', 'shared', 'scripts', 'nuxt.config.ts'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').filter(file => /\.(?:ts|vue|js|mjs|cjs)$/.test(file))
+  assert.ok(files.length > 300, `${files.length}`)
+  const offenders = files.filter(file => !allowed.has(file) && existsSync(`${ROOT}/${file}`) && internal.test(readFileSync(`${ROOT}/${file}`, 'utf8')))
+  assert.deepEqual(offenders, [])
 })
 
 test('/api/chat (no stream) and finish: a punctuation-split Han claim is withdrawn by the answer alone', async () => {
