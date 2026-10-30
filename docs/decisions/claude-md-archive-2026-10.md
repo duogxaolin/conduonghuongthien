@@ -6,6 +6,36 @@
 > - Khi `CLAUDE.md` và tệp này khác nhau, **`CLAUDE.md` thắng**. Đừng sửa nội dung bên dưới cho "đúng lại" — tệp này là bằng chứng của điều đã được ghi; nội dung mới đặt ở `CLAUDE.md`, `docs/decisions/*.md` theo chủ đề hoặc `docs/CHANGELOG.md`.
 > - Heading bên dưới giữ đúng như trong `CLAUDE.md` cũ để con trỏ `§ <heading>` tìm được bằng chuỗi.
 
+## Bản đồ cũ → mới (CLAUDE.md sau lượt cắt gọn)
+
+Heading/mục giữ nguyên tên trừ các dòng dưới đây. Mục in đậm là tên mục (bullet) trong CLAUDE.md.
+
+| Cũ (tệp này) | Mới (`CLAUDE.md`) |
+|---|---|
+| Tech Stack: **Frontend**, **Webfont & Icon** | **Frontend** (+ mục mới **Màu = token**, tách từ Frontend) |
+| Tech Stack: **Backend**, **DB**, **Schema tooling** | **Backend/DB** |
+| Tech Stack: **Hiệu năng trang công khai** · **Trợ năng công khai — checklist** | **Trang công khai** · **Trợ năng công khai** |
+| Cấu Trúc Thư Mục: cây + đoạn **`server/` không bao giờ import `app/`** | cùng heading; cây cập nhật Đợt 3 (`chat-widget/`, `composables/chatbot/`, `admin/layout/`, `admin/articles/editor/`, `adminFetch`/`publicFetch`, `app/types/handler-payload.ts`/`item-of.ts`, họ `server/services/*-*`, `deadlock-retry.ts`/`mysql-errors.ts`) |
+| Vận hành: **MFA & `/admin/profile`** + **Chính sách bắt buộc MFA** | **MFA** |
+| Vận hành: **Chặn yêu cầu ghi khác site** · **Một chính sách liên kết cho block + điều hướng** | **Chặn ghi khác site** · **Chính sách liên kết** |
+| Vận hành: **Đọc cài đặt không trả bí mật** + **Bí mật trong `settings` lưu dạng envelope** | **Bí mật trong `settings`** |
+| Vận hành: **Client IP sau proxy** + **Cờ `Secure` của cookie** + **App bind loopback** | **Client IP** (một mục) |
+| Vận hành: **Reader: đăng xuất thu hồi phiên** | **Reader** |
+| Vận hành: **Ghi lượt xem analytics** + **Dọn analytics** + **Activity toàn hệ thống** | **Analytics** |
+| Vận hành: **Sao lưu** | **Sao lưu bằng script** |
+| Vận hành: **CI** + **Deploy — checklist** (5 mục con) | **CI/Deploy** |
+| Quy ước tầng dữ liệu: **Query string số** + **Đầu vào của endpoint MỚI** | **Đầu vào** |
+| Quy ước tầng dữ liệu: **Đồng bộ media lên R2** + **Đổi domain R2** + **Quét thư mục ảnh** | **Media R2** |
+| Quy ước tầng dữ liệu: **Lượt chuyển danh mục video lúc khởi động** | câu cuối của **Default seed một lần** |
+| (mới) | Quy ước tầng dữ liệu: **Trong transaction không chạm POOL**, **Deadlock & khoá (bài học R6)** |
+| `### Xử lý lỗi tầng giao diện` (mục **Trang danh sách admin: `useAdminList` + `adminFetch`**) | `### Xử lý lỗi tầng giao diện (và gọi API)` (mục **`adminFetch<T>()` / `publicFetch<T>()`** + **Danh sách admin**) |
+| `### Tệp lớn đã tách (và 1 tệp cố ý KHÔNG tách)` | `### Tệp lớn đã tách (và 2 tệp cố ý KHÔNG tách)` — số dòng cập nhật tới `f3c311a0` |
+| Hạn chế đã biết: **`any` đã xoá sạch trong production** | gộp vào Nợ kỹ thuật đã đóng, mục 3 (+ câu `as unknown as` ở **Typecheck**) |
+| `### Tóm tắt tính năng đã hoàn thành` | mục **Mặc định cần nhớ** trong Kiến trúc Page Builder; phần còn lại → `docs/CHANGELOG.md` |
+| Deploy: `### 2. Build`, `### 3. Docker / PM2` · `### 3.1. production/` · `### 4. Bảo trì định kỳ` | một câu trong `### 1.` · `### 2.` · `### 3.` |
+
+Cỡ theo heading (ký tự, đo bằng `[...text].length`): tổng 109 007 → 46 490 — Tech Stack 12 913 → 6 589 · Cấu Trúc Thư Mục 4 276 → 2 653 · Vận hành & an toàn 53 665 → 17 216 · Quy ước tầng dữ liệu 13 708 → 6 189 · Xử lý lỗi 2 401 → 1 437 · Tệp lớn đã tách 7 966 → 3 236 · Hạn chế đã biết 4 114 → 1 821 · Nợ kỹ thuật đã đóng 1 536 → 1 236 · Page Builder 1 076 → 782 · Tóm tắt tính năng 1 348 → 0 · Deploy 2 752 → 2 032.
+
 ---
 
 # Con Đường Hướng Thiện (CDKT) - System Documentation
