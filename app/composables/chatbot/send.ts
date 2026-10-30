@@ -23,19 +23,26 @@ import {
  * (see `./state.ts`).
  *
  * The in-flight request is tracked HERE and only here — `chatRequestController`,
- * `botRequestSequence`, `messageSequence` — because every check that a late reply or a
- * late failure belongs to the current request compares against the same counter.
- * `cancelInFlight()` (used by the conversation actions) moves it too.
+ * `botRequestSequence`, `messageSequence`, `awaitedQuestion` — because every check that a
+ * late reply or a late failure belongs to the current request compares against the same
+ * counter. `cancelInFlight()` (used by the conversation actions) moves it too.
  */
 
 let chatRequestController: AbortController | null = null
 let botRequestSequence = 0
 let messageSequence = 0
+/** The question of the request in flight (the transcript's reactive copy). */
+let awaitedQuestion: ChatMessage | null = null
 
 export function cancelInFlight(): void {
   botRequestSequence += 1
   if (chatRequestController) chatRequestController.abort()
   chatRequestController = null
+  // Cancelled before its first word, the question gets no answer now: it stays as asked, no
+  // longer "sending", before the caller's `persist()` — what a cancel after the first word
+  // leaves. It read "Đang gửi…" for as long as the page lived, unsaved (FINDING-C3).
+  if (awaitedQuestion?.status === 'pending') awaitedQuestion.status = undefined
+  awaitedQuestion = null
   stopTypewriter(true)
   isSubmitting.value = false
   botInputError.value = ''
@@ -298,28 +305,31 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   const conversation = activeConversation.value
   const titleBeforeSend = conversation.title
   applyAutoTitle(text)
-  const userMessage: ChatMessage = { id: `user-${++messageSequence}`, sender: 'user', text }
-  conversation.messages.push(userMessage)
+  // Pending — dimmed, "Đang gửi…" — while awaiting the server's response.
+  conversation.messages.push({ id: `user-${++messageSequence}`, sender: 'user', text, status: 'pending' })
+  // Every later write goes through the transcript's reactive copy. A write on the object
+  // that was pushed changes the data but schedules no render: a failed send kept "Đang
+  // gửi…" and no "Thử lại" until something else repainted the widget (FINDING-C1).
+  const question = conversation.messages[conversation.messages.length - 1]!
+  awaitedQuestion = question
   onScroll?.()
 
-  // Mark the user message as pending — dimmed while awaiting server response
-  userMessage.status = 'pending'
-
   const requestSequence = botRequestSequence + 1
-  const outcome = await fetchStreamBotReply(userMessage, onScroll)
+  const outcome = await fetchStreamBotReply(question, onScroll)
+  if (awaitedQuestion === question) awaitedQuestion = null
   if (requestSequence !== botRequestSequence) return
   const succeeded = outcome === true
   const failure = outcome === true ? null : outcome
   if (succeeded) {
     botInput.value = ''
-    userMessage.status = undefined
+    question.status = undefined
     persist()
   } else if (failure?.kind === 'rejected') {
     // Máy chủ từ chối CHÍNH câu này (quá dài / không hợp lệ): gửi lại y nguyên vẫn
     // bị từ chối, và để nó trong hội thoại thì lịch sử của mọi lượt sau mang nó theo
     // → cũng bị từ chối. Bỏ khỏi hội thoại (kể cả tiêu đề tự đặt từ nó), giữ bản
     // nháp trong ô nhập; lý do đã ở `botInputError` (tests/chatbot-send-rejection.test.ts).
-    const index = conversation.messages.findIndex(item => item.id === userMessage.id)
+    const index = conversation.messages.findIndex(item => item.id === question.id)
     if (index !== -1) conversation.messages.splice(index, 1)
     conversation.title = titleBeforeSend
     if (failure.maxChars) inputCharLimit.value = Math.min(inputCharLimit.value, failure.maxChars)
@@ -328,8 +338,8 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   } else {
     // Don't pop the message — mark as error and allow retry.
     // Restore the text to the input so the user can edit and resubmit.
-    userMessage.status = 'error'
-    userMessage.error = failure?.kind === 'rate_limited' ? failure.message : 'Không thể gửi câu hỏi. Vui lòng thử lại.'
+    question.status = 'error'
+    question.error = failure?.kind === 'rate_limited' ? failure.message : 'Không thể gửi câu hỏi. Vui lòng thử lại.'
     botInput.value = text
   }
 }
