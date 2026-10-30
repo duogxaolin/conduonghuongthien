@@ -154,6 +154,22 @@ describe(PAGE, () => {
     assert.deepEqual(names(opened), ['anh-hoi-nghi.jpg', 'bao-cao.pdf'])
   })
 
+  it('FINDING-R8-5: an uploads tree the server could not read (disk null) reads "—" and says so — never "0 B"', async () => {
+    const unreadable = { ...STORAGE, local: { dbCount: 10, dbBytes: 1048576, diskCount: null, diskBytes: null } }
+    const opened = await open(server({ [`GET ${URL}/storage-size`]: () => json(unreadable) }))
+    assert.equal(alertText(opened.page), '')
+    assert.deepEqual(opened.page.errors, [])
+    assert.match(screen(opened), /Local \/uploads\s*—/)
+    assert.doesNotMatch(screen(opened), /Local \/uploads\s*0 B/)
+    assert.match(screen(opened), /Không đọc được thư mục uploads/)
+    assert.match(screen(opened), /Đã ghi DB \(local\)\s*10 tệp · 1\.0 MB/, 'the database numbers still show')
+    assert.doesNotMatch(screen(opened), /Mồ côi|Quét & nhập tệp mồ côi/, 'no orphan count is inferred from an unknown disk')
+    // A readable but EMPTY tree is a real 0 — shown as such.
+    const empty = await open(server({ [`GET ${URL}/storage-size`]: () => json({ ...STORAGE, local: { dbCount: 0, dbBytes: 0, diskCount: 0, diskBytes: 0 } }) }))
+    assert.match(screen(empty), /Local \/uploads\s*0 B/)
+    assert.doesNotMatch(screen(empty), /Không đọc được thư mục uploads/)
+  })
+
   it('a failed storage scan is its own alert; the grid stays', async () => {
     const opened = await open(server({ [`GET ${URL}/storage-size`]: () => h3Error(403, 'Không có quyền quét dung lượng.') }))
     assert.equal(alertText(opened.page), 'Không có quyền quét dung lượng.')
