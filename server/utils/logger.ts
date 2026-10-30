@@ -24,8 +24,10 @@ function activeLevel(): number {
 /**
  * Keys whose values must never reach a log file. Matched case-insensitively on
  * substrings, so `passwordHash`, `x-api-key` and `Authorization` are all caught.
+ * `bearer` too (a `bearer: '…'` field carried the credential unredacted; no log key
+ * in the repo contains it, so nothing that was readable becomes redacted).
  */
-const SECRET_KEY_PATTERN = /pass|secret|token|authorization|cookie|api[-_]?key|credential|hash/i
+const SECRET_KEY_PATTERN = /pass|secret|token|bearer|authorization|cookie|api[-_]?key|credential|hash/i
 
 /**
  * The one exception to the pattern: COUNTS whose names carry "token" — the AI gateway's usage on

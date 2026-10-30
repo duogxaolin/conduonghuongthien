@@ -39,6 +39,8 @@ const SECRET_KEYS = [
   'x-api-key', 'X-Api-Key', 'credential', 'credentials', 'dbCredential', 'hash', 'Hash',
   // headers
   'authorization', 'Authorization', 'proxy-authorization', 'cookie', 'Cookie', 'set-cookie', 'cookies',
+  // bearer — not in the pattern before; added with this table
+  'bearer', 'Bearer', 'BEARER',
 ] as const
 
 /** The counts the AI gateway logs: never a credential, always a number. */
