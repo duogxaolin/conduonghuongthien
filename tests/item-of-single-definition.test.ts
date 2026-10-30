@@ -17,6 +17,10 @@
  *     `Array<infer U>` / `ReadonlyArray<infer U>` spellings.
  * Left alone: a plain indexed access (`X[number]`), and a conditional that infers an array
  * element but answers something else (`… ? Wrapper<U> : …`). Each rule has a proof below.
+ *
+ * And its MEANING, type-checked with the real compiler (tests/ are outside the app typecheck): an
+ * array's element, readonly arrays and tuples included, a nullable list's element, and `never` — not
+ * `unknown` — for anything that is not an array.
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -113,6 +117,55 @@ test('the scan is not empty: it reads the shared definition and the files that i
   const importers = [...REAL].filter(([, source]) => /import type \{ ItemOf \} from '\.\/item-of'/.test(source)).map(([file]) => file)
   assert.deepEqual(importers.sort(), ['app/types/admin-api.ts', 'app/types/moderation.ts'])
   assert.ok([...REAL.keys()].some(file => file.endsWith('.vue')), '.vue files are scanned')
+})
+
+// ─── Its meaning, type-checked ───────────────────────────────────────────────
+//
+// `tests/` is not in the app typecheck (`.nuxt/tsconfig.json` includes only `tests/nuxt/**`), so the
+// meaning of the one definition — in particular the `: never` branch — is checked here with the real
+// compiler on an in-memory program: the shared file AS WRITTEN plus a probe of `Equal<…> = true` lines.
+
+function typeErrors(definition: string, probe: string): string[] {
+  const files = new Map([['/virtual/item-of.ts', definition], ['/virtual/probe.ts', probe]])
+  const options: ts.CompilerOptions = {
+    strict: true, noEmit: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Node10, lib: ['lib.es2022.d.ts'], types: [],
+  }
+  const host = ts.createCompilerHost(options)
+  const { getSourceFile, fileExists, readFile, directoryExists } = host
+  host.getSourceFile = (name, language, onError, fresh) => (files.has(name)
+    ? ts.createSourceFile(name, files.get(name)!, language)
+    : getSourceFile.call(host, name, language, onError, fresh))
+  host.fileExists = name => files.has(name) || fileExists.call(host, name)
+  host.readFile = name => files.get(name) ?? readFile.call(host, name)
+  host.directoryExists = dir => dir === '/virtual' || (directoryExists?.call(host, dir) ?? true)
+  const program = ts.createProgram(['/virtual/probe.ts'], options, host)
+  return ts.getPreEmitDiagnostics(program).map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))
+}
+
+const PROBE = [
+  "import type { ItemOf } from './item-of'",
+  'type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false',
+  'export const element: Equal<ItemOf<string[]>, string> = true',
+  'export const readonlyArray: Equal<ItemOf<readonly number[]>, number> = true',
+  "export const tuple: Equal<ItemOf<[1, 'x']>, 1 | 'x'> = true",
+  'export const objectIsNever: Equal<ItemOf<{ items: string[] }>, never> = true',
+  'export const stringIsNever: Equal<ItemOf<string>, never> = true',
+  'export const nullableList: Equal<ItemOf<string[] | null>, string> = true',
+].join('\n')
+
+test('meaning (type-checked): an array\'s element; readonly arrays and tuples too; anything else is `never`, not unknown/any', () => {
+  assert.deepEqual(typeErrors(REAL.get(SHARED_DEFINITION)!, PROBE), [])
+})
+
+test('proof: the type check goes red when the `: never` branch changes, or `readonly` is dropped', () => {
+  const definition = REAL.get(SHARED_DEFINITION)!
+  for (const mutated of [definition.replace('? U : never', '? U : unknown'), definition.replace('readonly (infer U)[]', '(infer U)[]')]) {
+    assert.notEqual(mutated, definition, 'the mutation applies to the shared definition as written')
+    const errors = typeErrors(mutated, PROBE)
+    // Red for the RIGHT reason: a probe line fails, not the import (a resolution error would fail every line).
+    assert.ok(errors.length > 0 && errors.every(e => e === "Type 'true' is not assignable to type 'false'."), `${mutated}\n${errors.join('\n')}`)
+  }
 })
 
 // ─── Injection proofs ────────────────────────────────────────────────────────

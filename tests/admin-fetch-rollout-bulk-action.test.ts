@@ -115,16 +115,42 @@ describe('useBulkAction (composables/useBulkSelection.ts)', () => {
 
 const REPO = fileURLToPath(new URL('../', import.meta.url))
 
-/** Every `url: '…'` inside a `.run({ … })` call — the URLs the pages hand `useBulkAction`. */
-function bulkRunUrls(sources: Map<string, string>): Array<{ file: string, url: string }> {
-  const found: Array<{ file: string, url: string }> = []
+type BulkScan = { urls: Array<{ file: string, url: string }>, problems: string[] }
+const DEFINITION = 'app/composables/useBulkSelection.ts'
+
+/**
+ * The URLs the views hand `useBulkAction`, followed from the call itself: every `useBulkAction(` is
+ * kept in a `const <name>`, and every `<name>.run(` is read. A URL the guard cannot read as one fixed
+ * string — options passed as a variable, `url` a variable or a template with `${…}`, `run` destructured,
+ * the composable's result not kept in a `const` — is a PROBLEM, not skipped: the type the composable
+ * asserts is only checked for URLs this scan can name. Quotes `'…'`, `"…"` and a template without `${`
+ * are fixed strings.
+ */
+function bulkRunUrls(sources: Map<string, string>): BulkScan {
+  const scan: BulkScan = { urls: [], problems: [] }
   for (const [file, source] of sources) {
-    for (const call of source.matchAll(/\.run\(\{([\s\S]*?)\}\)/g)) {
-      const url = /\burl:\s*'([^']+)'/.exec(call[1]!)?.[1]
-      if (url) found.push({ file, url })
+    if (file === DEFINITION || !source.includes('useBulkAction(')) continue
+    const receivers: string[] = []
+    const kept = [...source.matchAll(/\b(?:const|let|var)\s+(\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*useBulkAction\(/g)]
+    for (const [, binding] of kept) {
+      if (binding!.startsWith('{')) scan.problems.push(`${file}: useBulkAction destructured (${binding}) — keep it as \`const bulk = useBulkAction(…)\``)
+      else receivers.push(binding!)
+    }
+    if (source.split('useBulkAction(').length - 1 !== kept.length)
+      scan.problems.push(`${file}: a useBulkAction(…) result not kept in a const — the guard cannot follow its run(…)`)
+    for (const name of receivers) {
+      for (const call of source.matchAll(new RegExp(`\\b${name.replace(/\$/g, '\\$')}\\.run\\(`, 'g'))) {
+        const rest = source.slice(call.index! + call[0].length)
+        if (!/^\s*\{/.test(rest)) { scan.problems.push(`${file}: ${name}.run(…) given its options indirectly — write them inline`); continue }
+        const options = rest.slice(0, rest.indexOf('})') + 1)
+        const quoted = /\burl:\s*(?:'([^'\n]*)'|"([^"\n]*)"|`([^`]*)`)/.exec(options)
+        const url = quoted && (quoted[1] ?? quoted[2] ?? quoted[3])
+        if (url === null || url === undefined || url.includes('${')) scan.problems.push(`${file}: ${name}.run(…) has a url that is not one fixed string`)
+        else scan.urls.push({ file, url })
+      }
     }
   }
-  return found
+  return scan
 }
 /** The URLs whose handler does not answer `runBulk(…)` — the one shape `AdminBulkOutcome` describes. */
 function notRunBulk(urls: Array<{ file: string, url: string }>): string[] {
@@ -138,18 +164,38 @@ const appSources = () => new Map(execFileSync('git', ['ls-files', '-z', '--', 'a
   .split('\0').filter(file => /\.(?:ts|vue)$/.test(file)).map(file => [file, readFileSync(`${REPO}${file}`, 'utf8')]))
 
 describe('AdminBulkOutcome covers every URL given to useBulkAction', () => {
-  it('every URL the pages hand `bulk.run` (16 today) answers runBulk(…)', () => {
-    const urls = bulkRunUrls(appSources())
+  it('every URL the views hand `bulk.run` (16 today, all fixed strings) answers runBulk(…)', () => {
+    const { urls, problems } = bulkRunUrls(appSources())
+    assert.deepEqual(problems, [])
     // The scan is not empty and reaches pages AND components (a broken regex would find nothing and pass).
     for (const url of ['/api/admin/articles/bulk-delete', '/api/admin/chatbot/small-talk/bulk-enabled'])
       assert.ok(urls.some(u => u.url === url), `the scan finds ${url}: ${JSON.stringify(urls)}`)
     assert.deepEqual(notRunBulk(urls), [])
   })
 
-  it('proof: a bulk action pointed at a route with another answer goes red', () => {
-    const page = "const bulkDelete = () => bulk.run({\n  url: '/api/admin/chatbot/sessions/bulk-delete',\n  noun: 'phiên',\n})"
-    assert.deepEqual(notRunBulk(bulkRunUrls(new Map([['app/pages/admin/x.vue', page]]))), [
-      'app/pages/admin/x.vue: /api/admin/chatbot/sessions/bulk-delete — server/api/admin/chatbot/sessions/bulk-delete.post.ts does not return runBulk(…)',
-    ])
+  const page = (body: string) => new Map([['app/pages/admin/x.vue', `const selection = useBulkSelection()\n${body}`]])
+
+  it('proof: a bulk action pointed at a route with another answer goes red — in quotes, double quotes or a plain template', () => {
+    for (const url of ["'/api/admin/chatbot/sessions/bulk-delete'", '"/api/admin/chatbot/sessions/bulk-delete"', '`/api/admin/chatbot/sessions/bulk-delete`']) {
+      const scan = bulkRunUrls(page(`const bulk = useBulkAction(selection)\nconst bulkDelete = () => bulk.run({\n  url: ${url},\n  noun: 'phiên',\n})`))
+      assert.deepEqual(scan.problems, [])
+      assert.deepEqual(notRunBulk(scan.urls), [
+        'app/pages/admin/x.vue: /api/admin/chatbot/sessions/bulk-delete — server/api/admin/chatbot/sessions/bulk-delete.post.ts does not return runBulk(…)',
+      ])
+    }
+  })
+
+  it('proof: a URL the guard cannot read as one fixed string is a problem, never skipped', () => {
+    const cases: Array<[string, RegExp]> = [
+      ['const bulk = useBulkAction(selection)\nbulk.run({ url: `/api/admin/${kind}/bulk-delete`, noun: \'x\' })', /url that is not one fixed string/],
+      ['const bulk = useBulkAction(selection)\nconst URL_X = \'/api/admin/pages/bulk-delete\'\nbulk.run({ url: URL_X, noun: \'x\' })', /url that is not one fixed string/],
+      ['const bulk = useBulkAction(selection)\nconst options = { url: \'/api/admin/pages/bulk-delete\' }\nbulk.run(options)', /given its options indirectly/],
+      ['const { run } = useBulkAction(selection)\nrun({ url: \'/api/admin/pages/bulk-delete\' })', /useBulkAction destructured/],
+      ['useBulkAction(selection).run({ url: \'/api/admin/pages/bulk-delete\' })', /not kept in a const/],
+    ]
+    for (const [body, problem] of cases) {
+      const scan = bulkRunUrls(page(body))
+      assert.ok(scan.problems.some(p => problem.test(p)), `${body}\n→ ${JSON.stringify(scan)}`)
+    }
   })
 })
