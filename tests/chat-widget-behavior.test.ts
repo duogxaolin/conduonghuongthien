@@ -448,6 +448,19 @@ test('FINDING-C1 (fixed): a failed send — no connection, 429, empty stream —
     assert.equal(alerts(ctx.widget)[0], `${bubble} Thử lại`, `${label}: the question's own error`)
     ctx.close()
   }
+  // A later question in the conversation: that one is marked failed, the answered one is not.
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(answer('Trả lời một.'), () => dropped())
+  await ask(ctx, 'Câu một')
+  await ask(ctx, 'Câu hai')
+  assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Câu một' }, { who: 'bot', text: 'Trả lời một.' }, { who: 'user', text: 'Câu hai' }])
+  const [first, , second] = bubbles(ctx.widget)
+  assert.doesNotMatch(words(second!), /Đang gửi…/)
+  assert.match(String(second!.props.class), /bg-danger-bg/)
+  assert.match(words(second!), /Không thể gửi câu hỏi\. Vui lòng thử lại\. Thử lại$/)
+  assert.equal(words(first!), 'Câu một', 'the answered question is untouched')
+  assert.doesNotMatch(String(first!.props.class), /bg-danger-bg|opacity-60/)
 })
 
 test('400 input_too_long: the question leaves the transcript, the draft stays, and the input adopts the server limit', async (t) => {
