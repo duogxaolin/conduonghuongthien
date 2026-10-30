@@ -180,9 +180,11 @@ describe('FINDING-AE1: a real change still asks (verifier probes)', () => {
  *       the orphaned editor.
  * Fixed: after a reload the page does what onMounted does after the first load, on the grid that
  * replaced the placeholder — the baseline (a good load only) and the editor (`initTinyMCE` removes
- * the orphaned one first, as it removes one left from an earlier visit). RED on the base: every
- * test here — the third and the second order of the script race through (5) only (onMounted
- * starts the editor there).
+ * the orphaned one first, as it removes one left from an earlier visit), and the new editor is not
+ * "ready" before its own `init` (else, in between, its '' read as an edit). RED on the base: every
+ * test here — "an edit after" and the second order of the script race through (5) only
+ * (onMounted starts the editor there); the moment-before-`init` test was also red on this fix
+ * before `initTinyMCE` reset `tinymceReady`.
  */
 describe('KNOWN 5/6: "Thử lại" after a failed load', () => {
   const article = () => json({ ok: true, article: { ...ARTICLE, content: STORED } })
