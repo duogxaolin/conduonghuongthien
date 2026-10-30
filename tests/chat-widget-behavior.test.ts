@@ -21,7 +21,7 @@ import { click, fire, input, isShown } from './_sfc-mount.ts'
 import {
   alerts, answer, bubbles, button, buttonsWith, byId, byLabel, byTag, chatServer, content, dialogOf, dropped, findAll, HOLD,
   isOpen, json, launcher, mainInput, meta, mountChat, openWidget, parsedStorage, QUICK_QUESTIONS, sendForm, sseStream,
-  statuses, transcript, words, type ChatCtx, type SseStream,
+  statuses, transcript, words, type ChatCtx, type NetCall, type SseStream,
 } from './_chat-widget-harness.ts'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -389,21 +389,17 @@ test('a dropped connection keeps the question with "Thử lại"; retrying sends
   await openDialog(ctx)
   ctx.server.state.chat.push(() => dropped())
   await ask(ctx, 'Hỏi lúc mất mạng')
-  assert.deepEqual(alerts(ctx.widget), ['Không thể nhận phản hồi lúc này. Nội dung câu hỏi đã được giữ lại để bạn thử lại.'])
+  // The question's own error and "Thử lại" show at once, beside the line under the input
+  // (FINDING-C1, fixed: they used to wait for the next repaint — the visitor typing).
+  assert.deepEqual(alerts(ctx.widget), [
+    'Không thể gửi câu hỏi. Vui lòng thử lại. Thử lại',
+    'Không thể nhận phản hồi lúc này. Nội dung câu hỏi đã được giữ lại để bạn thử lại.',
+  ])
   assert.equal(mainInput(ctx.widget).model?.value, 'Hỏi lúc mất mạng', 'the question is back in the input')
   assert.equal(mainInput(ctx.widget).props['aria-invalid'], true)
   assert.equal(mainInput(ctx.widget).props['aria-describedby'], 'public-chatbot-error public-chatbot-counter')
   assert.deepEqual(parsedStorage(ctx)!.sessions[0]!.messages, [], 'a failed question is not saved (its title is)')
   assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Hỏi lúc mất mạng')
-
-  // The question's own error and "Thử lại" show from the next repaint (FINDING-C1 below):
-  // here, the visitor touching the input.
-  await input(mainInput(ctx.widget), 'Hỏi lúc mất mạng ')
-  await ctx.settle()
-  assert.deepEqual(alerts(ctx.widget), [
-    'Không thể gửi câu hỏi. Vui lòng thử lại. Thử lại',
-    'Không thể nhận phản hồi lúc này. Nội dung câu hỏi đã được giữ lại để bạn thử lại.',
-  ])
   assert.match(String(bubbles(ctx.widget)[0]!.props.class), /bg-danger-bg/)
 
   ctx.server.state.chat.push(answer('Đã nhận.'))
@@ -419,31 +415,52 @@ test('429: the server sentence is shown in the bubble and under the input; the q
   await openDialog(ctx)
   ctx.server.state.chat.push(() => json({ statusCode: 429, message: 'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.' }, 429))
   await ask(ctx, 'Hỏi nhanh')
-  assert.deepEqual(alerts(ctx.widget), ['Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.'])
-  assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Hỏi nhanh' }])
-  assert.equal(mainInput(ctx.widget).model?.value, 'Hỏi nhanh')
-  await input(mainInput(ctx.widget), 'Hỏi nhanh?')
-  await ctx.settle()
+  // At once, without a repaint from the visitor typing (FINDING-C1, fixed).
   assert.deepEqual(alerts(ctx.widget), [
     'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau. Thử lại',
     'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.',
   ])
+  assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Hỏi nhanh' }])
+  assert.equal(mainInput(ctx.widget).model?.value, 'Hỏi nhanh')
 })
 
-test('FINDING-C1 (current behaviour, NOT a contract): a failed question keeps "Đang gửi…" and no "Thử lại" until the widget repaints', async (t) => {
-  // `submitBotQuestion` sets `status = 'error'` on the raw message object it pushed into
-  // the reactive transcript, not on the reactive copy — so the change schedules no render.
-  // The last render ran when `botInputError` was set, a moment earlier, while the question
-  // was still 'pending'. The data is right; the screen catches up on the next repaint.
-  // Pinned so a split cannot change it silently; a fix flips this test.
+test('FINDING-C1 (fixed): a failed send — no connection, 429, empty stream — stops "Đang gửi…" and offers "Thử lại" with no repaint from the visitor', async (t) => {
+  // The bug: `submitBotQuestion` wrote `status = 'error'` on the raw object it had pushed
+  // into the reactive transcript, so the change scheduled no render; the last render had run
+  // while the question was still 'pending'. The screen only caught up when something else
+  // repainted the widget (the visitor typing). Each case below reads the widget right after
+  // the send settles, touching nothing.
+  const cases: Array<{ label: string, reply: (call: NetCall) => Response | Error, bubble: string }> = [
+    { label: 'no connection', reply: () => dropped(), bubble: 'Không thể gửi câu hỏi. Vui lòng thử lại.' },
+    { label: '429', reply: () => json({ statusCode: 429, message: 'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.' }, 429), bubble: 'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.' },
+    { label: 'empty stream', reply: (call) => { const s = sseStream(call.signal); s.done(); return s.response }, bubble: 'Không thể gửi câu hỏi. Vui lòng thử lại.' },
+  ]
+  for (const { label, reply, bubble } of cases) {
+    const ctx = await openWidget(t)
+    await openDialog(ctx)
+    ctx.server.state.chat.push(reply)
+    await ask(ctx, `Hỏi (${label})`)
+    const question = bubbles(ctx.widget)[0]!
+    assert.doesNotMatch(words(question), /Đang gửi…/, `${label}: the question still reads "Đang gửi…"`)
+    assert.doesNotMatch(String(question.props.class), /opacity-60/, `${label}: the question is still dimmed as sending`)
+    assert.match(String(question.props.class), /bg-danger-bg/, `${label}: the question is not marked failed`)
+    assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1, `${label}: no "Thử lại"`)
+    assert.equal(alerts(ctx.widget)[0], `${bubble} Thử lại`, `${label}: the question's own error`)
+    ctx.close()
+  }
+  // A later question in the conversation: that one is marked failed, the answered one is not.
   const ctx = await openWidget(t)
   await openDialog(ctx)
-  ctx.server.state.chat.push(() => dropped())
-  await ask(ctx, 'Hỏi lúc mất mạng')
-  assert.match(words(bubbles(ctx.widget)[0]!), /Đang gửi…/)
-  assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 0)
-  const api = (ctx.composable.useChatbot as () => { chatMessages: { value: Array<{ text: string, status?: string }> } })()
-  assert.equal(api.chatMessages.value.find(m => m.text === 'Hỏi lúc mất mạng')?.status, 'error', 'the data already says error')
+  ctx.server.state.chat.push(answer('Trả lời một.'), () => dropped())
+  await ask(ctx, 'Câu một')
+  await ask(ctx, 'Câu hai')
+  assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Câu một' }, { who: 'bot', text: 'Trả lời một.' }, { who: 'user', text: 'Câu hai' }])
+  const [first, , second] = bubbles(ctx.widget)
+  assert.doesNotMatch(words(second!), /Đang gửi…/)
+  assert.match(String(second!.props.class), /bg-danger-bg/)
+  assert.match(words(second!), /Không thể gửi câu hỏi\. Vui lòng thử lại\. Thử lại$/)
+  assert.equal(words(first!), 'Câu một', 'the answered question is untouched')
+  assert.doesNotMatch(String(first!.props.class), /bg-danger-bg|opacity-60/)
 })
 
 test('400 input_too_long: the question leaves the transcript, the draft stays, and the input adopts the server limit', async (t) => {
@@ -493,7 +510,10 @@ test('an empty stream is a failure, not a blank answer', async (t) => {
   ctx.server.state.chat.push((call) => { const s = sseStream(call.signal); s.done(); return s.response })
   await ask(ctx, 'Có ai không?')
   assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Có ai không?' }])
-  assert.deepEqual(alerts(ctx.widget), ['Không thể nhận phản hồi lúc này. Nội dung câu hỏi đã được giữ lại để bạn thử lại.'])
+  assert.deepEqual(alerts(ctx.widget), [
+    'Không thể gửi câu hỏi. Vui lòng thử lại. Thử lại',
+    'Không thể nhận phản hồi lúc này. Nội dung câu hỏi đã được giữ lại để bạn thử lại.',
+  ], 'the question\'s own error shows at once (FINDING-C1, fixed)')
   assert.equal(mainInput(ctx.widget).model?.value, 'Có ai không?')
 })
 
@@ -522,6 +542,72 @@ test('FINDING-C2 (current behaviour, NOT a contract): a refused first question s
   await click(historyButton(ctx))
   await ctx.settle()
   assert.match(words(ctx.widget), /câu vi phạm 1 tin nhắn/)
+})
+
+// ─── What the verifier's probes caught that this suite did not (F3) ──────────
+
+const REFUSED = () => answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] })
+/** The "Thử lại" inside one question's bubble. */
+const retryIn = (bubble: Parameters<typeof words>[0]) => findAll(bubble, el => el.tag === 'button' && words(el) === 'Thử lại')[0]!
+
+test('a failed question keeps the title it gave, shown in the list; a question refused after it leaves that title', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(() => dropped(), REFUSED())
+  await ask(ctx, 'Câu một')
+  await click(historyButton(ctx))
+  await ctx.settle()
+  assert.match(words(ctx.widget), /Câu một 1 tin nhắn/, 'the failed question is still there, and titles the conversation')
+  await click(historyButton(ctx))
+  await ctx.settle()
+  await ask(ctx, 'câu vi phạm')
+  assert.deepEqual(transcript(ctx.widget).map(m => m.text), ['Câu một', 'Nội dung không phù hợp.'])
+  assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1, '"Câu một" can still be retried')
+  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu một')
+})
+
+test('the same words asked twice: the second, failed one is the one marked; the answered one is untouched', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(answer('Một.'), () => dropped())
+  await ask(ctx, 'Giống nhau')
+  await ask(ctx, 'Giống nhau')
+  const [first, , second] = bubbles(ctx.widget)
+  assert.equal(words(first!), 'Giống nhau')
+  assert.doesNotMatch(String(first!.props.class), /bg-danger-bg|opacity-60/)
+  assert.match(String(second!.props.class), /bg-danger-bg/)
+  assert.match(words(second!), /Thử lại$/)
+})
+
+test('a second submit while the first question waits sends nothing and adds no question', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  const held = holdChat(ctx)
+  await ask(ctx, 'Câu một')
+  await input(mainInput(ctx.widget), 'Câu hai')
+  await fire(sendForm(ctx.widget), 'submit')
+  await ctx.settle()
+  assert.equal(chatCalls(ctx).length, 1)
+  assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Câu một' }])
+  const stream = held.release()
+  stream.push(content('Trả lời.'))
+  stream.done()
+  await ctx.settle()
+  assert.deepEqual(transcript(ctx.widget).map(m => m.text), ['Câu một', 'Trả lời.'], 'no question left waiting')
+  assert.ok(!bubbles(ctx.widget).some(bubble => /Đang gửi…/.test(words(bubble))))
+})
+
+test('"Thử lại" sends the failed question as asked, not what the input holds by then', async (t) => {
+  const ctx = await openWidget(t)
+  await openDialog(ctx)
+  ctx.server.state.chat.push(() => dropped(), answer('Đã nhận.'))
+  await ask(ctx, 'Câu gốc')
+  await input(mainInput(ctx.widget), 'Câu khác đang soạn')
+  await ctx.settle()
+  await click(retryIn(bubbles(ctx.widget)[0]!))
+  await ctx.settle()
+  assert.deepEqual(lastChatBody(ctx).messages, [{ sender: 'user', text: 'Câu gốc' }])
+  assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Câu gốc' }, { who: 'bot', text: 'Đã nhận.' }])
 })
 
 test('waiting 20 s for the first word says so inside the status region; the first word clears it', async (t) => {
