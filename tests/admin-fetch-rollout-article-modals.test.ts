@@ -22,7 +22,8 @@
  *   - H-2: open Bài 3's translation on a slow connection, close, open Bài 4's — Bài 3's answer
  *     landing later was shown under Bài 4 ("Bài viết gốc: Bài 4", Bài 3's text, the EN label),
  *     and "Xuất bản ngay" then PATCHed Bài 3; landing before Bài 4's answer it ended Bài 4's
- *     loading with Bài 3's text; its late FAILURE toasted and closed Bài 4's dialog;
+ *     loading with Bài 3's text; its late FAILURE toasted and closed Bài 4's dialog (and toasted
+ *     after the officer had simply closed the dialog);
  *   - H-3: while a translation loads the footer already offers "Xuất bản ngay" (the placeholder's
  *     status is "loading", never "published") — one click published an AI draft nobody had read.
  *     Now a positive `loaded` flag gates the button AND the handler, each with its own test;
@@ -223,6 +224,16 @@ describe('components/admin/articles/ArticleQuickViewModal.vue (through the artic
     assert.match(quickText(opened), /Article 4 fr/)
   })
 
+  it('FINDING H-2: closed while it loads — its late failure neither toasts nor closes anything', async () => {
+    const held: NetCall[] = []
+    const opened = await open(server({ 'GET /api/admin/articles/3/translations/en': (call) => { held.push(call); return undefined } }))
+    await openBadge(opened, 'en')
+    await closeQuick(opened)
+    held[0]!.respond(h3Error(404, 'Bản dịch không tồn tại.'))
+    await settle()
+    assert.equal(opened.lastToast('error'), undefined, 'no toast for a dialog the officer already closed')
+  })
+
   // ─── FINDING H-3: publishing a translation nobody has read ─────────────────
 
   async function loading() {
@@ -248,6 +259,21 @@ describe('components/admin/articles/ArticleQuickViewModal.vue (through the artic
     await settle()
     assert.deepEqual(quickCalls(opened, before), [])
     assert.equal(opened.lastToast('success'), undefined)
+  })
+
+  it('FINDING H-3 (reopening): after one translation was shown, the NEXT one is locked again until it is shown', async () => {
+    const held: NetCall[] = []
+    const opened = await open(server({ 'GET /api/admin/articles/4/translations/fr': (call) => { held.push(call); return undefined } }))
+    await openBadge(opened, 'en')
+    assert.equal(quickButton(opened, 'Xuất bản ngay')!.props.disabled, false, 'Bài 3 shown: unlocked')
+    await closeQuick(opened)
+    await openBadge(opened, 'fr')
+    assert.match(quickText(opened), /Đang tải bản dịch\.\.\./)
+    assert.equal(quickButton(opened, 'Xuất bản ngay')!.props.disabled, true)
+    const before = opened.calls.length
+    await fire(quickButton(opened, 'Xuất bản ngay')!, 'click')
+    await settle()
+    assert.deepEqual(quickCalls(opened, before), [], 'nothing published while Bài 4 loads')
   })
 
   it('FINDING H-3, with the REAL AdminModal (SSR): its footer offers "Xuất bản ngay" while the translation loads — disabled', async () => {
