@@ -128,6 +128,24 @@ test('family 3: an exclusion written inside a pattern ("hoàng xa + nhà/con/xư
   for (const text of ['gác ma túy thuộc tội gì', 'gác ma túy từ trung quốc về bị phạt sao']) assert.equal(scriptBranch(text), false, text)
 })
 
+// ─── Đột biến sống của verifier 5 có ảnh hưởng recall (mutations/survivor-behaviour.log) ─────────────────────────────────
+
+test('verifier-5 survivors pinned on the new matcher (Q02, Q04, Q08, Q11, Q13, Q19, Q20 — Q08/Q20 in the ownership test above)', () => {
+  // Q02: "、" ngắt mệnh đề — "越、南海" không còn là 越南海 (611588c2 không bắt, nên tầng hành vi cũng đỏ khi đột biến).
+  assert.equal(hanBranch('他是越、南海的问题专家'), true)
+  assert.equal(mentionsSovereignty('他是越、南海的问题专家'), true)
+  // Q04: chữ sở hữu chữ Hán xét trên khoá NỐI LIỀN ("属，于" là 属于).
+  assert.equal(hanBranch('越南海防属，于哪个国，家'), true)
+  assert.equal(mentionsSovereignty('越南海防属，于哪个国，家'), true)
+  // Q11: chỉ "sà" viết thường là động từ — "Hoàng Sà vào…" viết hoa vẫn là tên.
+  assert.equal(scriptBranch('Hoàng Sà vào mùa nào có bão'), true)
+  // Q13: chỉ "biển Đông Á" VIẾT HOA "Đông" là tấm biển; "biển đông Á" là tên + trợ từ.
+  assert.equal(scriptBranch('biển đông Á, tình hình sao rồi'), true)
+  // Q19: 西沙 không có 中 trong chữ đứng trước ("其中西沙…" = "trong đó Tây Sa…").
+  assert.equal(hanBranch('其中西沙最大的岛是哪个'), true)
+  assert.equal(hanBranch('中西沙现在怎么样'), true)
+})
+
 // ─── Bộ v5 qua ba lớp: bộ khớp, chính sách với AI giả (provider 0 lượt), lớp đầu ra; sáu ca lịch sử ──────────────────────
 
 type Row = [string, string, number]
