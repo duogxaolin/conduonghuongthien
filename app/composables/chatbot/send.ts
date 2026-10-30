@@ -50,29 +50,35 @@ export function cancelInFlight(): void {
 
 const autoTitleOf = (text: string) => text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
 
-/** Titles the conversation from its first real message. No-op afterwards. */
+/**
+ * The words the server refused (moderation, 400) while this page lives, as titles
+ * (`autoTitleOf`). No conversation takes one as its title again (FINDING-C2). In memory only:
+ * after a reload, the same words sent again and failing before the server judges them title the
+ * conversation like any first question (KNOWN F2).
+ */
+const refusedTitles = new Set<string>()
+
+/** Titles the conversation from its first real message — never with refused words. No-op afterwards. */
 function applyAutoTitle(text: string): void {
   const conversation = activeConversation.value
   const alreadyTitled = conversation.messages.some(item => item.sender === 'user')
   if (alreadyTitled) return
   const title = autoTitleOf(text)
-  if (title) conversation.title = title
+  if (title && !refusedTitles.has(title)) conversation.title = title
 }
 
 /**
- * The title once a refused question (moderation, 400) has left the conversation. It is never
- * the refused words as a title (`autoTitleOf`, the cut `applyAutoTitle` makes), whatever else
- * holds them: a failed send of the same words already titled the conversation, and stays —
- * unsaved — beside "Thử lại" or is resent with Enter; a copy cancelled before its first word
- * (or answered earlier) stays too (FINDING-C2: direct, "Thử lại", Enter again). The first
- * question in other words gives the title (the one before this send, unless that was the
- * refused words); with none, the blank title. Each branch returns something else than them.
+ * The title once a refused question has left the conversation (its words already in
+ * `refusedTitles`). Never refused words, whatever else holds them: a failed send of the same
+ * words titled the conversation and stays — unsaved — beside "Thử lại" or is resent with Enter;
+ * a copy cancelled before its first word, or answered earlier, stays too (FINDING-C2: direct,
+ * "Thử lại", Enter again). The first question in other words gives the title (the one before
+ * this send, unless that was refused words); with none, the blank title.
  */
-function titleWithout(conversation: StoredConversation, removedText: string, titleBeforeSend: string): string {
-  const refused = autoTitleOf(removedText)
-  const first = conversation.messages.find(item => item.sender === 'user' && autoTitleOf(item.text) !== refused)
+function titleWithout(conversation: StoredConversation, titleBeforeSend: string): string {
+  const first = conversation.messages.find(item => item.sender === 'user' && !refusedTitles.has(autoTitleOf(item.text)))
   if (!first) return 'Cuộc trò chuyện mới'
-  return titleBeforeSend === refused ? autoTitleOf(first.text) : titleBeforeSend
+  return refusedTitles.has(titleBeforeSend) ? autoTitleOf(first.text) : titleBeforeSend
 }
 
 async function ensureSessionToken(conversation: StoredConversation): Promise<string | null> {
@@ -281,7 +287,8 @@ async function fetchStreamBotReply(userMessage: ChatMessage, titleBeforeSend: st
     if (botMessage.kind === 'moderation_blocked') {
       const userIdx = conversation.messages.findIndex(item => item.id === userMessage.id)
       if (userIdx !== -1) conversation.messages.splice(userIdx, 1)
-      conversation.title = titleWithout(conversation, userMessage.text, titleBeforeSend)
+      refusedTitles.add(autoTitleOf(userMessage.text))
+      conversation.title = titleWithout(conversation, titleBeforeSend)
       persist()
     }
     return true
@@ -353,7 +360,8 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
     // nháp trong ô nhập; lý do đã ở `botInputError` (tests/chatbot-send-rejection.test.ts).
     const index = conversation.messages.findIndex(item => item.id === question.id)
     if (index !== -1) conversation.messages.splice(index, 1)
-    conversation.title = titleWithout(conversation, text, titleBeforeSend)
+    refusedTitles.add(autoTitleOf(text))
+    conversation.title = titleWithout(conversation, titleBeforeSend)
     if (failure.maxChars) inputCharLimit.value = Math.min(inputCharLimit.value, failure.maxChars)
     botInput.value = text
     persist()
