@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { useLayoutConfig } from '~/composables/useLayoutConfig'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicSocialLinksResponse } from '~/types/public-site-api'
 
-interface SocialLink {
-  id: number
-  platform: string
-  label: string
-  url: string
-  icon: string
-  iconType: 'fontawesome' | 'image' | 'svg'
-  color: string
-  sortOrder: number
-}
+/**
+ * Suy từ handler (D-FETCH lô G). Bản viết tay cũ khai `iconType` là union ba giá trị; cột là
+ * `varchar(16)` — template so sánh từng giá trị, giá trị lạ không vẽ biểu tượng nào.
+ */
+type SocialLink = PublicSocialLinksResponse['items'][number]
 
 const props = withDefaults(defineProps<{
   isHidden?: boolean
@@ -42,7 +39,7 @@ function toggleExpand() {
 
 async function load() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: SocialLink[] }>)('/api/public/social-links')
+    const res = await publicFetch<PublicSocialLinksResponse>('/api/public/social-links')
     if (res.ok) items.value = res.items || []
   } catch {
     // Nuốt lỗi — widget MXH không làm gián đoạn trải nghiệm người dùng

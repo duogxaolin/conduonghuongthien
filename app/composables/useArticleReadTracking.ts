@@ -7,7 +7,7 @@ import { classifySource, type ClientPageView } from '../utils/analytics-collecto
  * Hai dấu vết của việc đọc một bài trên trang chi tiết (`components/ArticleDetail.vue`, tách ở
  * wave3 4.2): lượt xem (đếm ở máy chủ) và lịch sử đọc (chỉ trên thiết bị này). Gọi trong
  * `setup` của ArticleDetail.vue ở đúng chỗ hai khối này đứng trước khi tách, nên thứ tự các
- * hook (`onMounted`, `watch`) không đổi. Request lượt xem (`sendView`, một `$fetch` ép kiểu)
+ * hook (`onMounted`, `watch`) không đổi. Request lượt xem (`sendView`, một lượt `publicFetch<T>()`)
  * do ArticleDetail.vue truyền vào.
  */
 export function useArticleReadTracking(options: {

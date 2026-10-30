@@ -3,7 +3,8 @@ import { computed, ref, shallowRef, toValue, watch, type MaybeRefOrGetter, type 
 // Đường dẫn tương đối, KHÔNG alias `~/`: bộ nạp test (`scripts/ts-resolver.mjs`)
 // không biết alias của Nuxt. `useRoute` / `useAsyncData` / `navigateTo` / `$fetch`
 // là auto-import của Nuxt — để trần cho test thay bằng bản giả trên `globalThis`
-// (`tests/public-article-list.test.ts`, phần 2).
+// (`tests/public-article-list.test.ts`, phần 2; `publicFetch` gọi `$fetch` toàn cục).
+import type { PublicArticlesResponse } from '../types/public-content-api'
 import { pageRange as buildPageRange } from '../utils/pagination'
 import {
   ALL_CATEGORIES,
@@ -14,14 +15,12 @@ import {
   listDataKey,
   listLocation,
   readListRouteState,
-  type ArticleListResponse,
 } from '../utils/public-article-list'
+import { publicFetch } from './publicFetch'
 import { useSsrFailureStatus } from './useSsrFailureStatus'
 
-type ArticleFetch = (url: string, options: { query: object }) => Promise<ArticleListResponse>
-
-/** `$fetch` có kiểu theo route Nitro — suy kiểu cho cả cây route rất đắt, ép về đúng hình dạng cần. */
-const fetchArticles: ArticleFetch = (url, options) => ($fetch as unknown as ArticleFetch)(url, options)
+/** `/api/public/articles` — kiểu suy từ handler (`articles.get.ts`, D-FETCH lô G). */
+const fetchArticles = (url: string, options: { query: object }) => publicFetch<PublicArticlesResponse>(url, options)
 
 /**
  * Ảnh chụp các tham số của MỘT lượt điều hướng, đổi đúng một lần mỗi nhịp.

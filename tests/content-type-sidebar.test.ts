@@ -30,7 +30,10 @@ test('the parent no longer holds the rail and passes the sidebar everything it s
 test('the sidebar is stateless: props in, one event out, no data fetching of its own', () => {
   const script = childSfc.descriptor.scriptSetup?.content ?? ''
   assert.match(script, /defineEmits<\{ 'select-category': \[slug: string\] \}>\(\)/)
-  assert.doesNotMatch(script, /useAsyncData|\$fetch|useRoute|navigateTo|ref\(|watch\(/, 'the rail must not grow state or navigation')
+  // `publicFetch` (D-FETCH lot G) is the public site's typed `$fetch`: a rail calling it fetches.
+  const STATE_OR_FETCH = /useAsyncData|\$fetch|\bpublicFetch\b|useRoute|navigateTo|ref\(|watch\(/
+  assert.doesNotMatch(script, STATE_OR_FETCH, 'the rail must not grow state or navigation')
+  assert.match(`${script}\nconst r = await publicFetch<unknown>('/api/public/categories')`, STATE_OR_FETCH, 'proof: a planted publicFetch is caught')
   const template = childSfc.descriptor.template?.content ?? ''
   assert.match(template, /<aside\b/)
   assert.equal((template.match(/\$emit\('select-category'/g) ?? []).length, 2, '"all" and each category')

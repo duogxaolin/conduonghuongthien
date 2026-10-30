@@ -259,6 +259,8 @@ import { computed } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 import { useLayoutConfig } from '~/composables/useLayoutConfig'
 import { usePublicArticleList, usePublicMostRead } from '~/composables/usePublicArticleList'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicCategoriesResponse } from '~/types/public-content-api'
 import NewsListHero from '~/components/news/NewsListHero.vue'
 import NewsSearchBox from '~/components/news/NewsSearchBox.vue'
 import NewsCategoryPills from '~/components/news/NewsCategoryPills.vue'
@@ -317,7 +319,7 @@ const { mostRead, mostReadPending, mostReadFailed, retryMostRead } = usePublicMo
 // máy chủ không mang cookie `cdkt_lang`, máy chủ chỉ biết qua tham số — và có trong khoá,
 // nên đổi ngôn ngữ là đọc lại (cùng cách ContentTypeListSection và "Đọc nhiều").
 const { data: catData, pending: catPending } = useAsyncData(() => `news-categories-${currentLang.value}`, () =>
-  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ id: number; name: string; slug: string; parentId: number | null }> }>)('/api/public/categories', { query: { type: 'news', lang: currentLang.value } }),
+  publicFetch<PublicCategoriesResponse>('/api/public/categories', { query: { type: 'news', lang: currentLang.value } }),
   {
     lazy: true,
     default: () => ({ ok: true, items: [] })

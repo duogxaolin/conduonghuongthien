@@ -90,7 +90,8 @@ function relatedCallProblems(parent: string): string[] {
   if (!atTopLevel) problems.push('useArticleRelated is not called at the top level of setup')
   else if (!(articleAt !== -1 && articleAt < callAt && callAt < settingsAt)) problems.push('not between the article read and the settings read')
   const call = callAt === -1 ? '' : script.slice(callAt, script.indexOf('\n)', callAt))
-  if (!/\n\s*\(\) => \(\$fetch as [^\n]*\)\(`\/api\/public\/articles\/\$\{props\.slug\}\/related/.test(call)) problems.push('the fetcher does not request at once')
+  // D-FETCH lot G: the fetcher is `() => publicFetch<…>(\`…/related…\`)` (was a `$fetch` cast).
+  if (!/\n\s*\(\) => publicFetch<[^>\n]+>\(`\/api\/public\/articles\/\$\{props\.slug\}\/related/.test(call)) problems.push('the fetcher does not request at once')
   if (/\bawait\b|\.then\(|article\.value/.test(call.slice(call.indexOf('() =>')))) problems.push('the fetcher waits for the article')
   return problems
 }
@@ -548,7 +549,7 @@ test('lượt fetch liên quan có key riêng và lazy', () => {
   //
   // Từ wave3 4.2: `useAsyncData` ở `useArticleRelated` (gọi tại cùng chỗ trong setup của
   // ArticleDetail.vue — hai lượt fetch vẫn song song), URL ở ArticleDetail.vue (lượt
-  // `$fetch` ép kiểu ở lại cha). Đọc cả họ tệp.
+  // `$fetch` ép kiểu ở lại cha; từ D-FETCH lô G là `publicFetch<…>(…)`). Đọc cả họ tệp.
   assert.deepEqual(relatedFetchShape(familySource(ARTICLE_DETAIL_FAMILY)), [])
   assert.deepEqual(relatedCallProblems(read(COMPONENT)), [], 'cha gọi composable ngay trong setup, song song với lượt đọc bài')
 })
@@ -603,6 +604,6 @@ test('guard họ tệp: vi phạm cấy vào phần tách ra làm guard đỏ (w
   const moved = parent.slice(0, callStart) + parent.slice(callEnd, settingsStart) + parent.slice(settingsStart).replace("useSiteSettings(settingsData)\n", `useSiteSettings(settingsData)\n${call}`)
   assert.deepEqual(relatedCallProblems(moved), ['not between the article read and the settings read'])
   assert.deepEqual(relatedCallProblems(swap(parent, call, `onMounted(() => {\n${call}})\n`)), ['useArticleRelated is not called at the top level of setup'])
-  const fetcher = '  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleRelatedResponse>)'
-  assert.deepEqual(relatedCallProblems(swap(parent, fetcher, fetcher.replace('  () => (', '  async () => { await until(article); return ('))), ['the fetcher does not request at once', 'the fetcher waits for the article'])
+  const fetcher = '  () => publicFetch<ArticleRelatedResponse>'
+  assert.deepEqual(relatedCallProblems(swap(parent, fetcher, fetcher.replace('  () => ', '  async () => { await until(article); return '))), ['the fetcher does not request at once', 'the fetcher waits for the article'])
 })

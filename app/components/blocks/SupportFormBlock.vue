@@ -52,6 +52,8 @@
 import { reactive, ref, computed, useId } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
 import { useI18n } from '~/composables/useI18n'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicSubmissionResponse } from '~/types/public-site-api'
 
 const { t, currentLang } = useI18n()
 // id/for duy nhất theo thể hiện (hai block cùng trang không đụng id), ổn định SSR↔hydrate.
@@ -76,7 +78,7 @@ const submitForm = async () => {
     // đơn, người dân vẫn thấy lời cảm ơn, và không cán bộ nào được báo. Máy chủ
     // nay có nhánh dự phòng (`settings.email`) nhưng vẫn tôn trọng email nhận
     // cấu hình trên block — nên trường này vẫn phải đi cùng.
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/submissions', {
+    await publicFetch<PublicSubmissionResponse>('/api/submissions', {
       method: 'POST',
       body: {
         type: 'support',

@@ -260,7 +260,8 @@ import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { formatMediaDuration } from '~/utils/media-duration'
 import { useI18n } from '~/composables/useI18n'
-import type { PublicMediaItem, PublicMediaListItem } from '~/types/public-api'
+import { publicFetch } from '~/composables/publicFetch'
+import type { MediaDetailPayload, MediaListPayload, PublicMediaItem, PublicMediaListItem } from '~/types/public-api'
 
 const { t } = useI18n()
 
@@ -273,8 +274,7 @@ const shortId = computed(() => String(route.params.shortId || ''))
  */
 const { data, pending, error, refresh } = useAsyncData(
   () => `media-detail-${shortId.value}`,
-  () =>
-    ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; item: PublicMediaItem | null }>)(`/api/public/media/${encodeURIComponent(shortId.value)}`),
+  () => publicFetch<MediaDetailPayload>(`/api/public/media/${encodeURIComponent(shortId.value)}`),
   {
     lazy: true,
     default: () => ({ ok: false, item: null }),
@@ -336,7 +336,7 @@ async function loadRelated() {
   relatedError.value = false
   try {
     const query = current.categorySlug ? { category: current.categorySlug, limit: 6 } : { limit: 6 }
-    const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicMediaListItem[] }>)(
+    const response = await publicFetch<MediaListPayload>(
       '/api/public/media',
       { query, retry: 0 },
     )
@@ -366,7 +366,7 @@ const countedSlug = ref('')
 function pingView(target: string) {
   if (!target || countedSlug.value === target) return
   countedSlug.value = target
-  void ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/public/media/${encodeURIComponent(target)}/view`, {
+  void publicFetch<import('~/types/public-content-api').PublicMediaViewResponse>(`/api/public/media/${encodeURIComponent(target)}/view`, {
     method: 'POST',
     keepalive: true,
     retry: 0,

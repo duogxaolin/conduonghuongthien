@@ -16,8 +16,11 @@ import { describe, it } from 'node:test'
 
 import { NEWS_PAGE_FAMILY, READER_PROFILE_FAMILY, familyFiles, familyVueFiles, readAppFile } from './_component-family.ts'
 
-/** A request or a navigation. */
-const SIDE_EFFECT = /\$fetch\b|\buseFetch\b|\buseAsyncData\b|\bnavigateTo\b|\buseRoute\b|\buseRouter\b|\busePublicArticleList\b|\busePublicMostRead\b/
+/**
+ * A request or a navigation. `publicFetch` (D-FETCH lot G) is the typed `$fetch` of the
+ * public site: a part calling it requests exactly as one calling `$fetch` would.
+ */
+const SIDE_EFFECT = /\$fetch\b|\bpublicFetch\b|\buseFetch\b|\buseAsyncData\b|\bnavigateTo\b|\buseRoute\b|\buseRouter\b|\busePublicArticleList\b|\busePublicMostRead\b/
 
 const templateOf = (source: string) => source.slice(source.indexOf('<template>'), source.lastIndexOf('</template>'))
 
@@ -63,6 +66,7 @@ describe('/news — the wave3 4.2 parts', () => {
     const part = 'components/news/NewsCategoryPills.vue'
     for (const planted of [
       "const r = await $fetch('/api/public/categories')",
+      "const r = await publicFetch<unknown>('/api/public/categories')",
       "const { data } = useAsyncData('x', () => Promise.resolve(1))",
       "navigateTo('/news/x')",
       'const route = useRoute()',
@@ -92,7 +96,7 @@ describe('/profile — the wave3 4.2 parts and write composables', () => {
   const family = READER_PROFILE_FAMILY
   // The stores by CALL: a part imports their types (`import type { NotificationItem } from
   // '~/composables/useReaderNotifications'`), which reads nothing.
-  const READER_STATE = /\$fetch\b|\buseFetch\b|\buseAsyncData\b|\bnavigateTo\b|\buseReaderAuth\(|\buseReaderNotifications\(|\buseReadingHistory\(|\blocalStorage\b|\bsessionStorage\b/
+  const READER_STATE = /\$fetch\b|\bpublicFetch\b|\buseFetch\b|\buseAsyncData\b|\bnavigateTo\b|\buseReaderAuth\(|\buseReaderNotifications\(|\buseReadingHistory\(|\blocalStorage\b|\bsessionStorage\b/
   const offenders = (overrides?: Record<string, string>) =>
     familyFiles(family, overrides).filter(f => f.file !== family.parent && READER_STATE.test(code(f.source))).map(f => f.file)
 
@@ -106,13 +110,15 @@ describe('/profile — the wave3 4.2 parts and write composables', () => {
     assert.match(page, /useReaderAuth\(\)/)
     assert.match(page, /useReaderNotifications\(\)/)
     assert.match(page, /useReadingHistory\(\)/)
-    assert.equal(page.match(/\(\$fetch as\b/g)?.length, 4, 'the four casts (two loads, two writes handed to the composables) stay on the page')
+    // D-FETCH lot G: the four requests became `publicFetch<…>(…)` calls; they stay on the page.
+    assert.equal(page.match(/\bpublicFetch<[^>]+>\(/g)?.length, 4, 'the four requests (two loads, two writes handed to the composables) stay on the page')
+    assert.equal(page.match(/\$fetch\b/g), null, 'no bare or cast $fetch left on the page')
     assert.equal(template.match(/role="alert"/g)?.length, 3, 'notifications, comments and chats: every load error branch stays in the page')
   })
 
   it('proof: a request or a store read planted in a part, in a composable or in a new part is caught', () => {
     const part = 'components/reader-profile/ReaderProfileChatClaim.vue'
-    for (const planted of ["void $fetch('/api/public/reader/chats')", 'const { reader } = useReaderAuth()', "localStorage.getItem('cdkt_sessions_v1')"]) {
+    for (const planted of ["void $fetch('/api/public/reader/chats')", "void publicFetch<unknown>('/api/public/reader/chats')", 'const { reader } = useReaderAuth()', "localStorage.getItem('cdkt_sessions_v1')"]) {
       assert.deepEqual(offenders({ [part]: readAppFile(part).replace('</script>', `${planted}\n</script>`) }), [part], planted)
     }
     const composable = 'composables/useReaderNameEdit.ts'

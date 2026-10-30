@@ -90,6 +90,9 @@
  * lọt chỉ mục tìm kiếm. Tuyến chỉ phục vụ nút "In bài" ở `ArticleDetail.vue`.
  */
 import { safeInternalPath } from '~/utils/safe-path'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicArticleDetailResponse } from '~/types/public-content-api'
+import type { PublicSettingsPayload } from '~/types/public-site-api'
 
 definePageMeta({ layout: false })
 
@@ -118,31 +121,10 @@ const pageUrl = computed(() => {
   return ''
 })
 
-type ArticleDetailResponse = {
-  ok: boolean
-  article: {
-    id: number
-    title: string
-    slug: string
-    excerpt: string | null
-    content: string
-    featuredImage: string | null
-    thumbnailUrl?: string | null
-    publishedAt: string | null
-    createdAt?: string | null
-    type?: string
-    categoryName?: string | null
-    authorName?: string | null
-    viewTotal?: number
-    category?: { name: string; slug: string } | null
-    [key: string]: unknown
-  } | null
-}
-
-// SSR fetch để HTML có sẵn khi in — không lazy.
+// SSR fetch để HTML có sẵn khi in — không lazy. Kiểu suy từ handler (D-FETCH lô G).
 const { data, pending, error } = useAsyncData(
   () => `article-print-${slug.value}-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleDetailResponse>)(`/api/public/articles/${slug.value}?lang=${currentLang.value}`),
+  () => publicFetch<PublicArticleDetailResponse>(`/api/public/articles/${slug.value}?lang=${currentLang.value}`),
   { watch: [slug, currentLang] },
 )
 
@@ -150,10 +132,9 @@ const article = computed(() => data.value?.article || null)
 const loadError = computed(() => !!error.value)
 
 // Site settings để masthead/logo + footer liên hệ — chung with default.vue.
-type PublicSettingsResponse = { settings?: Record<string, string | null>; faviconUrl?: string | null }
-const { data: settingsData } = useAsyncData<PublicSettingsResponse | null>(
+const { data: settingsData } = useAsyncData<PublicSettingsPayload | null>(
   'article-print-settings',
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  () => publicFetch<PublicSettingsPayload>('/api/public/settings'),
   { default: () => null },
 )
 const sitePublicSettings = computed(() => settingsData.value?.settings || {})

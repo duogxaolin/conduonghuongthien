@@ -17,7 +17,7 @@
      đều là văn bản do người dùng hoặc cán bộ gõ, hiện qua `{{ }}`.
 
   Tách ở wave3 4.2 → `components/reader-profile/*` (chỉ vẽ) + ba composable ghi. Ở lại
-  đây: danh tính, mọi lượt nạp + bốn ép kiểu `$fetch`, khung chờ / lỗi `role="alert"` +
+  đây: danh tính, mọi lượt nạp + bốn lượt `publicFetch`, khung chờ / lỗi `role="alert"` +
   "Thử lại" / rỗng của ba danh sách, phân trang.
 -->
 <template>
@@ -197,12 +197,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useReaderAuth } from '~/composables/useReaderAuth'
 import { useReaderNotifications } from '~/composables/useReaderNotifications'
 import { useReadingHistory } from '~/composables/useReadingHistory'
-import { useReaderNameEdit, type SavedReaderName } from '~/composables/useReaderNameEdit'
+import { useReaderNameEdit } from '~/composables/useReaderNameEdit'
 import { useReaderEmailPreference } from '~/composables/useReaderEmailPreference'
 import { useReaderChatClaim } from '~/composables/useReaderChatClaim'
+import { publicFetch } from '~/composables/publicFetch'
 import { errorStatus } from '~/utils/errorMessage'
 import type { NotificationItem } from '~/composables/useReaderNotifications'
 import type { ReaderChatsPayload, ReaderCommentsPayload } from '~/types/public-api'
+import type { ReaderEmailPreferenceResponse, ReaderProfileUpdateResponse } from '~/types/public-reader-api'
 import ReaderProfileHero from '~/components/reader-profile/ReaderProfileHero.vue'
 import ReaderProfileSignIn from '~/components/reader-profile/ReaderProfileSignIn.vue'
 import ReaderProfileIdentity from '~/components/reader-profile/ReaderProfileIdentity.vue'
@@ -240,7 +242,7 @@ const { entries: history, load: loadHistory, clear: clearHistory, remove: remove
 // ─── Đổi tên ────────────────────────────────────────────────────────────────
 const { nameDraft, savingName, nameError, nameSaved, saveName } = useReaderNameEdit({
   reader,
-  save: displayName => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; reader?: SavedReaderName }>)(`/api/public/reader/profile`, {
+  save: displayName => publicFetch<ReaderProfileUpdateResponse>(`/api/public/reader/profile`, {
     method: 'PUT',
     body: { displayName },
   }),
@@ -291,7 +293,7 @@ function onNotificationClick(item: NotificationItem) {
 // ─── Công tắc nhận email ────────────────────────────────────────────────────
 const { savingEmailPref, emailPrefError, emailNotificationsOn, toggleEmailNotifications } = useReaderEmailPreference({
   reader,
-  save: enabled => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<unknown>)('/api/public/reader/profile/email-notifications', {
+  save: enabled => publicFetch<ReaderEmailPreferenceResponse>('/api/public/reader/profile/email-notifications', {
     method: 'PUT',
     body: { enabled },
   }),
@@ -319,7 +321,7 @@ async function loadComments() {
   commentsPending.value = true
   commentsError.value = false
   try {
-    commentsData.value = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<ReaderCommentsPayload>)('/api/public/reader/comments', {
+    commentsData.value = await publicFetch<ReaderCommentsPayload>('/api/public/reader/comments', {
       query: { page: commentsPage.value },
     })
   } catch (err) {
@@ -346,7 +348,7 @@ async function loadChats() {
   chatsPending.value = true
   chatsError.value = false
   try {
-    chatsData.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ReaderChatsPayload>)('/api/public/reader/chats')
+    chatsData.value = await publicFetch<ReaderChatsPayload>('/api/public/reader/chats')
   } catch (err) {
     chatsError.value = true
     if (errorStatus(err) === 401) forgetReader()
