@@ -24,8 +24,41 @@ function activeLevel(): number {
 /**
  * Keys whose values must never reach a log file. Matched case-insensitively on
  * substrings, so `passwordHash`, `x-api-key` and `Authorization` are all caught.
+ * `bearer` too (a `bearer: '…'` field carried the credential unredacted; no log key
+ * in the repo contains it, so nothing that was readable becomes redacted). And the
+ * names that plainly hold a credential but matched nothing (verifier Low 6, 2026-10-30):
+ * `jwt`, a private key, a recovery or MFA code, an access key id — no log key in the
+ * repo contains them either. Deliberately NOT here, being ambiguous in this code base:
+ * `code` (error codes), `key` (`r2Key` and other storage object keys), `session`/`sid`
+ * (`sessionId` is an id), `salt`, `nonce` (tests/logging-redaction.test.ts).
  */
-const SECRET_KEY_PATTERN = /pass|secret|token|authorization|cookie|api[-_]?key|credential|hash/i
+const SECRET_KEY_PATTERN = /pass|secret|token|bearer|authorization|cookie|api[-_]?key|credential|hash|jwt|private[-_]?key|recovery[-_]?code|mfa[-_]?code|access[-_]?key[-_]?id/i
+
+/**
+ * One-time codes as a WORD of the key (`otp`, `otpCode`, `emailOtp`, `EMAIL_OTP`, `x-otp`,
+ * `totp`): as a substring "otp" is inside ordinary words (`footprint`, `hotpath`).
+ */
+const SECRET_KEY_WORDS: ReadonlySet<string> = new Set(['otp', 'totp'])
+
+function keyWords(key: string): string[] {
+  return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/)
+}
+
+/**
+ * The one exception to the pattern: COUNTS whose names carry "token" — the AI gateway's usage on
+ * `ai_gateway.call_succeeded` (server/services/ai-gateway-record.ts), which the pattern turned into
+ * `[redacted]` on every line (the usage table kept them; the log lost them). Exact names, and only
+ * while the value is a finite number: a count is never text, so a string — or a bigint, NaN or
+ * Infinity — put under one of these names is still redacted. A list, not a looser pattern:
+ * `accessTokens`, `refreshTokens`, `prompt_tokens` and every other spelling stay redacted
+ * (tests/logging-redaction.test.ts).
+ */
+const TOKEN_COUNT_KEYS: ReadonlySet<string> = new Set(['promptTokens', 'completionTokens', 'totalTokens'])
+
+function isRedactedKey(key: string, value: unknown): boolean {
+  if (TOKEN_COUNT_KEYS.has(key) && Number.isFinite(value)) return false
+  return SECRET_KEY_PATTERN.test(key) || keyWords(key).some(word => SECRET_KEY_WORDS.has(word))
+}
 
 export const REDACTED = '[redacted]'
 
@@ -47,7 +80,7 @@ function scrub(value: unknown, depth = 0): unknown {
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : scrub(nested, depth + 1)
+      out[key] = isRedactedKey(key, nested) ? REDACTED : scrub(nested, depth + 1)
     }
     return out
   }

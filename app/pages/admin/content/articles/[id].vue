@@ -109,8 +109,12 @@ watch(() => form.type, async (newType) => {
   await fetchCategories(newType)
 })
 
+// Every load after the first (onMounted's) is a "Thử lại": its placeholder takes the editor grid,
+// and the element TinyMCE is bound to, off the page (KNOWN 5/6 of the split).
+let loads = 0
 const fetchArticle = async () => {
   if (isNew.value || !articleId.value) return
+  const reload = loads++ > 0
   suppressTypeReset = true  // block watcher resets during form population
   loading.value = true
   loaded.value = false // trước await: "Thử lại" đang bay không được mở lại nút lưu
@@ -141,6 +145,13 @@ const fetchArticle = async () => {
     // above) so it runs — and is suppressed — before we release the guard.
     await nextTick()
     suppressTypeReset = false
+    // A reload, on the grid that replaced the placeholder: what onMounted does after the first
+    // load — the baseline (a good load only: after a failed one the form, and anything typed in
+    // it, is as it was), then the editor (initTinyMCE removes the orphaned one first).
+    if (reload) {
+      if (loaded.value) markSaved()
+      initTinyMCE()
+    }
   }
 }
 
@@ -191,7 +202,8 @@ onMounted(async () => {
          `await fetchArticle()` and a nextTick(), i.e. after the flag has flipped
          and #tinymce-content-editor has actually been rendered. Moving
          initTinyMCE() ahead of the fetch would attach the editor to an element
-         that is about to be unmounted. -->
+         that is about to be unmounted. "Thử lại" brings this placeholder back,
+         so fetchArticle starts the editor again after the same nextTick. -->
     <div v-if="loading" class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5" role="status" aria-busy="true">
       <span class="sr-only">Đang tải nội dung bài viết</span>
       <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-5" aria-hidden="true">

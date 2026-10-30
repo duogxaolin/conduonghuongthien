@@ -1,5 +1,4 @@
 {
-  "app/components/admin/articles/ArticleAIPanel.vue": 1,
   "app/composables/adminFetch.ts": {
     "value": 2,
     "reason": "The one sanctioned cast (design D-FETCH): every admin call site goes through adminFetch<T>(). The second match is the doc comment quoting the pattern it replaces."

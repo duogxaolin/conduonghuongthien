@@ -19,6 +19,10 @@
 > ba ép kiểu DỮ LIỆU công khai có từ trước bỏ (JS biên dịch giống hệt); `ItemOf` một định nghĩa + guard AST; 4 lỗi
 > (H-1 lịch sử hoạt động không có lượt mới nhất; H-2/H-3/H-4 hộp "Xem nhanh" — câu trả lời muộn của bản dịch khác,
 > "Xuất bản ngay" khi bản dịch chưa hiện, PATCH muộn ghi lên bản dịch khác); 35 đột biến.
+> 2026-10-30 (nhánh `wave3/small-fixes-editor-logger`): ép kiểu quản trị cuối — `ArticleAIPanel.vue` — sang
+> `adminFetch<AdminAiEditorialResponse>` (kiểu suy từ `editorial.post.ts`, `app/types/admin-ai-api.ts`) → baseline 7 → 6,
+> phía quản trị 0. Bộ mount thật `tests/admin-article-ai-panel.test.ts` (16 test) viết TRƯỚC, xanh trên bản ép kiểu và
+> sau khi đổi; nhật ký DOM 38 dòng giống từng byte (chi tiết: `refactor-large-files.md`, mục 2026-10-30).
 
 Lô B bỏ 56 ép kiểu `$fetch` ở 7 tệp bằng `adminFetch<T>()` (kiểu suy từ handler qua
 `Payload<…>`, `app/types/handler-payload.ts`), nhưng **không tệp nào** chuyển sang
@@ -763,6 +767,7 @@ không vẽ gì; Fragment vá con như Teleport thật).
 
 - `fetch-casts`: **20 → 7** (13 → 6 tệp). Còn lại: `ArticleAIPanel.vue` 1 (nhánh `wave3/article-editor-split` chờ gộp), `useChatbot.ts` 1
   (ngoại lệ lô G), `adminFetch.ts` 2 + `publicFetch.ts` 1 (có tên), hai callback Google ở `server/` 2. Phía quản trị còn đúng 1.
+  **Cập nhật 2026-10-30:** `ArticleAIPanel.vue` 1 → 0 (`adminFetch<AdminAiEditorialResponse>`); baseline 7 → 6, phía quản trị 0.
 - `file-length`: hạ `AnalyticsLiveDashboard.client.vue` 1060 → 1034, `qa-documents.vue` 480 → 479; không tệp nào tăng. `--update` còn
   muốn hạ `server/services/readers.ts` 550 → 548 — không thuộc lô này, để nguyên.
 - `hex-colors`: không đổi. `v-html`: không thêm (kiểm kê `security-ai-editorial-html` xanh).

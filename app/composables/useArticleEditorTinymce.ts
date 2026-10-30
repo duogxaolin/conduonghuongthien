@@ -54,8 +54,11 @@ export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
     }
   }
 
+  // Before the editor's `init` the body is the form's: a started-but-not-initialised editor
+  // throws from `getContent()` (TypeError … 'serialize'), which dropped a save clicked in that
+  // moment without a word (verifier Low 1, tests/admin-article-editor-findings.test.ts).
   function getEditorContent(): string {
-    if (typeof window !== 'undefined' && (window as WindowWithTinyMce).tinymce) {
+    if (tinymceReady.value && typeof window !== 'undefined' && (window as WindowWithTinyMce).tinymce) {
       const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
       if (ed) {
         const c = ed.getContent()
@@ -110,6 +113,10 @@ export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
     if (typeof window === 'undefined') return
     const win = window as WindowWithTinyMce
     if (!win.tinymce) return
+    // Not ready until the new editor's `init`: in between `get()` already answers it and it
+    // reads back '' — a "Thử lại" (the page starts the editor again) would otherwise see the
+    // body as changed and warn on leaving with nothing edited (KNOWN 5 of the split).
+    tinymceReady.value = false
     // Lấy một lần rồi dùng: gọi `.get()` hai lần thì lời gọi thứ hai có thể trả
     // `undefined` khi trình soạn thảo bị gỡ giữa hai lần — và `.remove()` trên
     // undefined là một lỗi lúc chạy ngay giữa lượt điều hướng.

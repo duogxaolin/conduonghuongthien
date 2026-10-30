@@ -22,13 +22,14 @@
  *
  * RED on the base (551651c7) and on the split before the fix: the first two tests. The rest of
  * the first block and the verifier's probes below are green on both — they pin that the fix does
- * not hide a real change. The last test is a KNOWN pre-existing bug, run as `todo`.
+ * not hide a real change. The last block is KNOWN 5/6 of the split ("Thử lại"), fixed since.
  */
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import { byText, click, input } from './_sfc-mount.ts'
-import { ARTICLE, dialogs, h3Error, json, openEditor, server, textOf, titleInput, type Editor } from './_article-editor-harness.ts'
+import type { NetCall } from './_admin-page-harness.ts'
+import { ARTICLE, dialogs, h3Error, isDisabled, json, openEditor, server, textOf, titleInput, type Editor } from './_article-editor-harness.ts'
 
 const STORED = '<p>Một</p><p>Hai</p>'
 /** What TinyMCE does to it: every block on its own line. */
@@ -166,19 +167,203 @@ describe('FINDING-AE1: a real change still asks (verifier probes)', () => {
 })
 
 /**
- * KNOWN, pre-existing, NOT fixed (docs/decisions/refactor-large-files.md, item 5 of the article
- * editor's entry): the fields baseline of the unsaved-changes guard is taken ONCE, in `onMounted`
- * after the first `fetchArticle`. After a failed load it is the empty form; a good "Thử lại" then
- * fills the form and the tab warns about changes nobody made. Red on the base (551651c7) and on
- * HEAD — kept as `todo` so it runs and shows, without failing the suite, until it is fixed.
+ * KNOWN 5 and 6 of the split (docs/decisions/refactor-large-files.md), both pre-existing, both
+ * measured on the base build in Chromium with TinyMCE 6 before the fix (first read answered 403,
+ * then "Thử lại"):
+ *   (5) the unsaved-changes baseline was taken ONCE, in onMounted after the first load. After a
+ *       failed load that is the empty form, so after a good "Thử lại" the page asked "Rời trang?"
+ *       on every route leave and the browser warned on every tab close, with nothing edited (the
+ *       verifier's probe P7, kept here as a `todo` until now);
+ *   (6) "Thử lại" shows the placeholder (`v-if="loading"`), which takes the editor grid off the
+ *       page and TinyMCE's element with it, and nothing started the editor again: the body was a
+ *       bare, empty 700px box — nothing to read or type in — while every save sent the body of
+ *       the orphaned editor.
+ * Fixed: after a reload the page does what onMounted does after the first load, on the grid that
+ * replaced the placeholder — the baseline (a good load only) and the editor (`initTinyMCE` removes
+ * the orphaned one first, as it removes one left from an earlier visit), and the new editor is not
+ * "ready" before its own `init` (else, in between, its '' read as an edit). RED on the base: every
+ * test here — "an edit after" and the second order of the script race through (5) only
+ * (onMounted starts the editor there); the moment-before-`init` test was also red on this fix
+ * before `initTinyMCE` reset `tinymceReady`.
  */
-it('KNOWN (P7): after a failed load and a good "Thử lại", closing the tab with no edit warns about nothing', { todo: 'pre-existing: markSaved() runs once, before a retry' }, async (t) => {
-  let reads = 0
-  const ctx = await openEditor(t, '42', {
-    normalize: serialise,
-    responder: stored({ 'GET /api/admin/articles/42': () => (++reads === 1 ? h3Error(403, 'Không đọc được.') : json({ ok: true, article: { ...ARTICLE, content: STORED } })) }),
+describe('KNOWN 5/6: "Thử lại" after a failed load', () => {
+  const article = () => json({ ok: true, article: { ...ARTICLE, content: STORED } })
+  /** First read refused, then `then` (a good read by default; `undefined` leaves it pending). */
+  const failingOnce = (then: (call: NetCall) => Response | undefined = article) => {
+    let reads = 0
+    // 403, not 5xx: ofetch retries a GET once on 5xx, which would hide the failed first read.
+    return stored({ 'GET /api/admin/articles/42': (call: NetCall) => (++reads === 1 ? h3Error(403, 'Không đọc được.') : then(call)) })
+  }
+  const retry = async (ctx: Editor) => {
+    await click(byText(ctx.page.root, 'button', 'Thử lại'))
+    await ctx.settle()
+  }
+  const puts = (ctx: Editor) => ctx.calls.filter(call => call.method === 'PUT')
+  /** The config minus its two functions (a new closure on every init). */
+  const settings = (config: Record<string, unknown>) => {
+    const { setup: _setup, images_upload_handler: _upload, ...rest } = config
+    return rest
+  }
+
+  it('(5) P7: with no edit, neither a route leave nor closing the tab asks anything', async (t) => {
+    const ctx = await openEditor(t, '42', { normalize: serialise, responder: failingOnce() })
+    await retry(ctx)
+    assert.equal(titleInput(ctx).model?.value, ARTICLE.title)
+    assert.equal(ctx.beforeUnload(), false, 'the tab warns about unsaved changes that do not exist')
+    assert.equal(await ctx.leave(), true)
+    assert.deepEqual(ctx.confirms, [], '"Rời trang?" with nothing edited')
   })
-  await click(byText(ctx.page.root, 'button', 'Thử lại'))
-  await ctx.settle()
-  assert.equal(ctx.beforeUnload(), false, 'the tab warns about unsaved changes that do not exist')
+
+  it('(5) nor in the moment between the reload and the new editor\'s `init` (TinyMCE comes up later)', async (t) => {
+    const ctx = await openEditor(t, '42', { normalize: serialise, responder: failingOnce() })
+    await click(byText(ctx.page.root, 'button', 'Thử lại'))
+    // The reload is done and the new editor asked for; its `init` has not come yet.
+    assert.equal(titleInput(ctx).model?.value, ARTICLE.title)
+    assert.deepEqual(ctx.tiny.log, ['init', 'remove', 'init'])
+    assert.equal(ctx.tiny.onScreen(), false, 'not yet: the window under test')
+    assert.equal(ctx.beforeUnload(), false, 'the starting editor reads "" — not an edit')
+    assert.equal(await ctx.leave(), true)
+    assert.deepEqual(ctx.confirms, [])
+    await ctx.settle()
+    assert.equal(ctx.tiny.onScreen(), true)
+    assert.equal(ctx.beforeUnload(), false)
+  })
+
+  it('(6) the editor is on the page again, with the article\'s body and the same config — and what is typed there is saved', async (t) => {
+    const ctx = await openEditor(t, '42', { normalize: serialise, responder: failingOnce() })
+    assert.equal(ctx.tiny.onScreen(), true, 'the editor came up over the failed load')
+    await retry(ctx)
+    assert.equal(ctx.tiny.onScreen(), true, 'after "Thử lại" the body box is bare: the editor is attached to the element the placeholder removed')
+    // The orphan removed, a new editor started on the element now on the page.
+    assert.deepEqual(ctx.tiny.log, ['init', 'remove', 'init'])
+    assert.equal(ctx.tiny.editor.html, serialise(STORED))
+    assert.equal(ctx.tiny.configs.length, 2)
+    assert.deepEqual(settings(ctx.tiny.configs[1]!), settings(ctx.tiny.configs[0]!), 'the second init is the same editor (height 700, content_style)')
+
+    ctx.tiny.editor.html = '<p>Một</p>\n<p>Hai đã sửa</p>'
+    ctx.tiny.editor.fire('change')
+    await click(byText(ctx.page.root, 'button', 'Cập Nhật Bài Viết'))
+    await ctx.settle()
+    assert.deepEqual(puts(ctx).map(call => (call.body as { content: string }).content), ['<p>Một</p>\n<p>Hai đã sửa</p>'])
+  })
+
+  it('an edit after "Thử lại" still asks — the body in the editor, a field; a save clears it', async (t) => {
+    const ctx = await openEditor(t, '42', { normalize: serialise, responder: failingOnce() })
+    await retry(ctx)
+    ctx.tiny.editor.html = '<p>Một</p>\n<p>Ba</p>'
+    assert.equal(ctx.beforeUnload(), true, 'a body edit after the retry')
+    ctx.tiny.editor.html = serialise(STORED)
+    assert.equal(ctx.beforeUnload(), false, 'undone')
+    await input(titleInput(ctx), 'Tiêu đề sửa sau khi thử lại')
+    assert.equal(ctx.beforeUnload(), true, 'a title edit after the retry')
+    await save(ctx)
+    assert.equal(ctx.beforeUnload(), false, 'saved')
+    // AE1 still holds on the re-started editor: the edit is a change.
+    assert.equal(prompted(ctx), true)
+  })
+
+  it('"Thử lại" that fails again: the editor is back over the empty form, and what was typed before it still asks', async (t) => {
+    const ctx = await openEditor(t, '42', { normalize: serialise, responder: failingOnce(() => h3Error(403, 'Vẫn không đọc được.')) })
+    await input(titleInput(ctx), 'Gõ vào biểu mẫu trống')
+    await retry(ctx)
+    assert.match(textOf(ctx.page.root), /Vẫn không đọc được\./)
+    assert.equal(ctx.tiny.onScreen(), true)
+    assert.equal(titleInput(ctx).model?.value, 'Gõ vào biểu mẫu trống')
+    assert.equal(ctx.beforeUnload(), true, 'a failed reload must not take what was typed as saved')
+    assert.equal(isDisabled(byText(ctx.page.root, 'button', 'Cập Nhật Bài Viết')), true, 'nothing loaded: no save')
+  })
+
+  it('a BODY typed over the failed load, then "Thử lại" that fails again: the new editor shows it, and leaving still asks', async (t) => {
+    const ctx = await openEditor(t, '42', { normalize: serialise, responder: failingOnce(() => h3Error(403, 'Vẫn không đọc được.')) })
+    ctx.tiny.editor.html = '<p>Gõ vào thân bài trống</p>'
+    ctx.tiny.editor.fire('change') // the blur of the click on "Thử lại"
+    assert.equal(ctx.beforeUnload(), true)
+    await retry(ctx)
+    assert.match(textOf(ctx.page.root), /Vẫn không đọc được\./)
+    assert.equal(ctx.tiny.onScreen(), true)
+    assert.equal(ctx.tiny.editor.html, '<p>Gõ vào thân bài trống</p>')
+    assert.equal(ctx.beforeUnload(), true, 'the new editor took the typed body as its baseline')
+    await ctx.leave()
+    assert.deepEqual(ctx.confirms.map(c => c.title), ['Rời trang?'])
+  })
+
+  for (const order of ['the script loads while "Thử lại" is in flight', '"Thử lại" lands before the script loads'] as const) {
+    it(`TinyMCE still loading when "Thử lại" is pressed (${order}): one editor, on the page, with the body`, async (t) => {
+      const pending: NetCall[] = []
+      const ctx = await openEditor(t, '42', { normalize: serialise, tinymceLoaded: false, responder: failingOnce((call) => { pending.push(call); return undefined }) })
+      void click(byText(ctx.page.root, 'button', 'Thử lại'))
+      await ctx.settle()
+      const loadScript = async () => {
+        ctx.win.tinymce = ctx.tiny.tinymce
+        ctx.scripts[0]!.onload!()
+        await ctx.settle()
+      }
+      if (order === 'the script loads while "Thử lại" is in flight') await loadScript()
+      pending[0]!.respond(article())
+      await ctx.settle()
+      if (order === '"Thử lại" lands before the script loads') await loadScript()
+      assert.equal(ctx.tiny.onScreen(), true)
+      assert.equal(ctx.tiny.editor.html, serialise(STORED))
+      assert.equal(ctx.tiny.log.filter(entry => entry === 'init').length - ctx.tiny.log.filter(entry => entry === 'remove').length, 1, ctx.tiny.log.join(' → '))
+      assert.equal(ctx.beforeUnload(), false)
+    })
+  }
+})
+
+/**
+ * The independent verifier's Low 1 (2026-10-30): a save clicked while TinyMCE is still starting
+ * was DROPPED without a word. `handleSave` reads the body through `getEditorContent()`, which
+ * asked `tinymce.get()` — and a started-but-not-initialised editor throws from `getContent()`
+ * (`TypeError … 'serialize'`, measured in Chromium: no PUT, no toast). On the first load that
+ * window is ~0.1 s after the article shows (base and the retry fix alike); the retry fix opened a
+ * second one after "Thử lại". The AI panel reads the body the same way. Fixed in one place:
+ * before the editor's `init`, the body is the form's (`getEditorContent`, as `editorHtml` does).
+ */
+describe('a save while TinyMCE is starting is not dropped (verifier Low 1)', () => {
+  const putBodies = (ctx: Editor) => ctx.calls.filter(call => call.method === 'PUT').map(call => (call.body as { content: string }).content)
+  /** Only microtasks: let onMounted reach `initTinyMCE`, but not the editor's `init`. */
+  async function untilEditorAskedFor(ctx: Editor, inits: number) {
+    for (let i = 0; i < 200 && ctx.tiny.log.filter(entry => entry === 'init').length < inits; i++) await Promise.resolve()
+    assert.equal(ctx.tiny.log.filter(entry => entry === 'init').length, inits, ctx.tiny.log.join(' → '))
+    assert.equal(ctx.tiny.startup(), 'created', 'the window under test: asked for, not yet initialised')
+  }
+
+  it('first load: "Cập Nhật Bài Viết" in the moment TinyMCE starts PUTs the loaded body, says so, asks nothing', async (t) => {
+    const ctx = await openEditor(t, '42', { normalize: serialise, responder: stored(), tinymceLoaded: false })
+    ctx.win.tinymce = ctx.tiny.tinymce
+    ctx.scripts[0]!.onload!()
+    await untilEditorAskedFor(ctx, 1)
+    await click(byText(ctx.page.root, 'button', 'Cập Nhật Bài Viết'))
+    await ctx.settle()
+    assert.deepEqual(ctx.page.errors, [], 'the click threw')
+    assert.deepEqual(putBodies(ctx).map(serialise), [serialise(STORED)], 'the save was dropped')
+    assert.equal(ctx.lastToast('success'), 'Đã cập nhật bài viết thành công!')
+    assert.equal(prompted(ctx), false)
+    assert.equal(ctx.tiny.onScreen(), true)
+    assert.equal(ctx.beforeUnload(), false)
+  })
+
+  it('after "Thử lại": the same, in the moment the new editor starts', async (t) => {
+    let reads = 0
+    const ctx = await openEditor(t, '42', {
+      normalize: serialise,
+      responder: stored({ 'GET /api/admin/articles/42': () => (++reads === 1 ? h3Error(403, 'Không đọc được.') : json({ ok: true, article: { ...ARTICLE, content: STORED } })) }),
+    })
+    await click(byText(ctx.page.root, 'button', 'Thử lại'))
+    await untilEditorAskedFor(ctx, 2)
+    await click(byText(ctx.page.root, 'button', 'Cập Nhật Bài Viết'))
+    await ctx.settle()
+    assert.deepEqual(ctx.page.errors, [], 'the click threw')
+    assert.deepEqual(putBodies(ctx).map(serialise), [serialise(STORED)], 'the save was dropped')
+    assert.equal(ctx.lastToast('success'), 'Đã cập nhật bài viết thành công!')
+    assert.equal(ctx.beforeUnload(), false)
+  })
+
+  it('the AI panel reading the body in that moment gets the form\'s body, not an exception', async (t) => {
+    const ctx = await openEditor(t, '42', { normalize: serialise, responder: stored(), tinymceLoaded: false })
+    ctx.win.tinymce = ctx.tiny.tinymce
+    ctx.scripts[0]!.onload!()
+    await untilEditorAskedFor(ctx, 1)
+    assert.equal(ctx.ai.props!.getEditorContent(), STORED)
+  })
 })
