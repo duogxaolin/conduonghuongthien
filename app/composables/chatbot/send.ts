@@ -298,28 +298,29 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   const conversation = activeConversation.value
   const titleBeforeSend = conversation.title
   applyAutoTitle(text)
-  const userMessage: ChatMessage = { id: `user-${++messageSequence}`, sender: 'user', text }
-  conversation.messages.push(userMessage)
+  // Pending — dimmed, "Đang gửi…" — while awaiting the server's response.
+  conversation.messages.push({ id: `user-${++messageSequence}`, sender: 'user', text, status: 'pending' })
+  // Every later write goes through the transcript's reactive copy. A write on the object
+  // that was pushed changes the data but schedules no render: a failed send kept "Đang
+  // gửi…" and no "Thử lại" until something else repainted the widget (FINDING-C1).
+  const question = conversation.messages[conversation.messages.length - 1]!
   onScroll?.()
 
-  // Mark the user message as pending — dimmed while awaiting server response
-  userMessage.status = 'pending'
-
   const requestSequence = botRequestSequence + 1
-  const outcome = await fetchStreamBotReply(userMessage, onScroll)
+  const outcome = await fetchStreamBotReply(question, onScroll)
   if (requestSequence !== botRequestSequence) return
   const succeeded = outcome === true
   const failure = outcome === true ? null : outcome
   if (succeeded) {
     botInput.value = ''
-    userMessage.status = undefined
+    question.status = undefined
     persist()
   } else if (failure?.kind === 'rejected') {
     // Máy chủ từ chối CHÍNH câu này (quá dài / không hợp lệ): gửi lại y nguyên vẫn
     // bị từ chối, và để nó trong hội thoại thì lịch sử của mọi lượt sau mang nó theo
     // → cũng bị từ chối. Bỏ khỏi hội thoại (kể cả tiêu đề tự đặt từ nó), giữ bản
     // nháp trong ô nhập; lý do đã ở `botInputError` (tests/chatbot-send-rejection.test.ts).
-    const index = conversation.messages.findIndex(item => item.id === userMessage.id)
+    const index = conversation.messages.findIndex(item => item.id === question.id)
     if (index !== -1) conversation.messages.splice(index, 1)
     conversation.title = titleBeforeSend
     if (failure.maxChars) inputCharLimit.value = Math.min(inputCharLimit.value, failure.maxChars)
@@ -328,8 +329,8 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   } else {
     // Don't pop the message — mark as error and allow retry.
     // Restore the text to the input so the user can edit and resubmit.
-    userMessage.status = 'error'
-    userMessage.error = failure?.kind === 'rate_limited' ? failure.message : 'Không thể gửi câu hỏi. Vui lòng thử lại.'
+    question.status = 'error'
+    question.error = failure?.kind === 'rate_limited' ? failure.message : 'Không thể gửi câu hỏi. Vui lòng thử lại.'
     botInput.value = text
   }
 }
