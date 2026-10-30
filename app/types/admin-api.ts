@@ -29,9 +29,8 @@
  * của Nitro, nên kiểu ở đây khớp với **thứ trình duyệt thật sự cầm trên tay**.
  */
 import type { Payload } from './handler-payload'
-
-/** Lấy phần tử của một mảng nằm trong phản hồi, ví dụ `{ ok, users: [...] }`. */
-type ItemOf<T> = T extends readonly (infer U)[] ? U : never
+/** Lấy phần tử của một mảng nằm trong phản hồi, ví dụ `{ ok, users: [...] }` (một định nghĩa: item-of.ts). */
+import type { ItemOf } from './item-of'
 
 // ─── Người dùng & phân quyền ─────────────────────────────────────────────────
 type UsersHandler = typeof import('~~/server/api/admin/users/index.get').default

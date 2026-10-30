@@ -16,8 +16,8 @@
  */
 /** What the browser holds after JSON, not what the handler returned (one definition: handler-payload.ts). */
 import type { Payload } from './handler-payload'
-
-type ItemOf<T> = T extends readonly (infer U)[] ? U : never
+/** One element of an array in an answer (one definition: item-of.ts). */
+import type { ItemOf } from './item-of'
 
 type SettingsGetHandler = typeof import('~~/server/api/admin/ai/moderation/settings.get').default
 type SettingsPutHandler = typeof import('~~/server/api/admin/ai/moderation/settings.put').default
