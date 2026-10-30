@@ -40,7 +40,7 @@ async function diskUsage(dir: string): Promise<{ count: number; totalBytes: numb
       entries = await fs.readdir(cur, { withFileTypes: true })
     } catch (error: unknown) {
       if (cur !== dir) continue
-      const code = (error as NodeJS.ErrnoException).code
+      const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : undefined
       if (code === 'ENOENT') return { count: 0, totalBytes: 0 }
       logWarn({ event: 'media.storage_size_disk_unreadable', code: code ?? 'unknown' })
       return null

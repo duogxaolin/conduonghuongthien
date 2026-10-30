@@ -221,3 +221,37 @@ describe(SOCIAL, () => {
     assert.equal(disabled(button(opened, SAVE_SOCIAL)), false)
   })
 })
+
+// ─── Both pages: the layout load's other failure shapes (useLayoutSettingsForm) ──
+
+const PAGES = [
+  { name: GENERAL, open: general, save: SAVE_LAYOUT },
+  { name: SOCIAL, open: social, save: SAVE_SOCIAL },
+]
+
+for (const { name, open: openPage, save } of PAGES) {
+  describe(`${name} — layout load`, () => {
+    it('a 200 answer that is not a layout (`ok: false`) is a failed load: save locked, a click PUTs nothing, alert + "Thử lại"', async () => {
+      // Verifier R8 V01: nothing pinned this branch — `loaded = true` there survived every test.
+      let answer = () => json({ ok: false })
+      const opened = await openPage({ 'GET /api/admin/settings/layout': () => answer() })
+      assert.match(alertText(opened.page), /Không tải được cấu hình bố cục\./)
+      assert.equal(disabled(button(opened, save)), true)
+      await fire(button(opened, save), 'click')
+      await settle()
+      assert.deepEqual(puts(opened).map(wire), [], 'no PUT of the default layout')
+      answer = () => json({ ok: true, config: LAYOUT })
+      await fire(findAll(opened.page.root, el => el.tag === 'button' && textOf(el) === 'Thử lại')[0]!, 'click')
+      await settle()
+      assert.equal(alertText(opened.page), '')
+      assert.equal(disabled(button(opened, save)), false)
+    })
+
+    it('the layout GET\'s 500 (layout.get.ts, a failed database read) shows its Vietnamese sentence with "Thử lại"', async () => {
+      const opened = await openPage({ 'GET /api/admin/settings/layout': () => h3Error(500, 'Không đọc được cấu hình bố cục. Vui lòng thử lại.') })
+      assert.match(alertText(opened.page), /^Không đọc được cấu hình bố cục\. Vui lòng thử lại\. Thử lại$/)
+      assert.equal(findAll(opened.page.root, el => el.props.role === 'alert' && findAll(el, b => b.tag === 'button' && textOf(b) === 'Thử lại').length === 1).length, 1)
+      assert.equal(disabled(button(opened, save)), true)
+    })
+  })
+}
