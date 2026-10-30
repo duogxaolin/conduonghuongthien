@@ -97,7 +97,8 @@ test('a Latin/Vietnamese name glued to Chinese text is a word of its own (verifi
     `${String.fromCodePoint(0x41d)}oàng Sa Pa`, `${String.fromCodePoint(0x41d)}oàng Sa thải`, 'Biển Hoa Nam Định']) {
     for (const tail of ['是什么', '现在怎么样']) {
       assert.equal(mentionsSovereignty(name + tail), true, name + tail)
-      for (const size of [1, 3]) assert.equal((await stream(split(`${name}${tail}${TAIL}`, size))).tripped, true, `${size}: ${name}${tail}`)
+      // Trên luồng: chặn ngay giữa luồng (ứng viên cũng hỏi phép gấp không ranh giới), không đợi `finish`.
+      for (const size of [1, 3]) assert.equal((await stream(split(`${name}${tail}${TAIL}`, size))).midStream, true, `${size}: ${name}${tail}`)
     }
   }
   // Ranh giới hệ chữ không biến chữ thường thành tên: chữ Hán cạnh tên người/địa danh khác vẫn qua.
