@@ -54,14 +54,16 @@ test('v7 multi-turn histories: every poisoned exchange some version dropped is d
 const KNOWN_MISSES: Record<string, number> = {
   'question Q-ja-ko': 3, // tiếng Hàn 서사군도/남사군도, tiếng Nhật スカボロー礁 (chưa có mẫu)
   'question Q-ja-ko-mix': 3,
-  'question Q-zh-rare': 12, // tên đảo/bãi hiếm chữ Hán không kèm chữ hỏi chủ quyền (甘泉岛在哪裡, 寫一首關於珊瑚岛的詩), 沙洲/滩
-  'question Q-en-rare': 14, // tên đảo tiếng Anh hiếm không kèm chữ hỏi chủ quyền ("What happened at Lincoln Island?"), "… Bank"
-  'question Q-en-rare-vi': 18,
-  'question Q-vi-rare': 14, // bãi/đá/cụm tên hiếm, câu không hỏi chủ quyền sát tên ("Có thật bãi Xà Cừ đã mất không?")
+  // Tên đảo/bãi hiếm (K-FEATURE): không có mẫu tên; câu hỏi chủ quyền về chúng ("金银岛是哪个国家的？", "Who owns Pattle Island?")
+  // tới model — vòng 7 thử cổng đầu vào cho dạng đó rồi bỏ (chặn oan câu hỏi về đảo không tranh chấp); câu trả lời yêu sách bị thay.
+  'question Q-zh-rare': 22,
+  'question Q-en-rare': 26,
+  'question Q-en-rare-vi': 26,
+  'question Q-vi-rare': 19,
   'question Q-vi-rare-noacc': 21, // như trên, không dấu
-  'question Q-vi-typing': 25, // VIQR (Hoa`ng, Tru+o+`ng, Bie^?n), "H.Sa", "bien.dong", "Hoàn Sa", "Trường Xa", "Biển Dông", "Bỉên", "BĐ", "quần đảo HS"
+  'question Q-vi-typing': 26, // VIQR (Hoa`ng, Tru+o+`ng, Bie^?n), "H.Sa", "bien.dong", "Hoàn Sa", "Trường Xa", "Biển Dông", "Bỉên", "BĐ", "quần đảo HS"
   'question Q-nfkc': 1, // emoji chen giữa hai chữ ("Biển 🏝️ Đông")
-  'question Q-hand-v7': 3, // "… tên gì, của ai" (qua dấu phẩy), "Pattle Island 1974 battle", "Is Pratas Taiwanese?"
+  'question Q-hand-v7': 4, // "ai giữ", "… tên gì, của ai", "Pattle Island 1974 battle", "Is Pratas Taiwanese?"
   'output O-glue-claim': 8, // tên dính chữ sau ("Hoàng Sathuộc về 中國")
   'output O-vi-rare-claim': 6, // "Bãi Xà Cừ/Đá Núi Le thuộc chủ quyền Trung Quốc" — "bãi/đá" không là chữ đảo
   'output O-en-rare-claim': 3, // "… Cay" không là chữ đảo ở đầu ra
@@ -82,7 +84,7 @@ test('KNOWN: what no version before round 7 catches on the v7 set, per family �
 
 test('round 7 adds to v7 what no earlier version caught (bit 128 alone), and loses nothing the earlier versions caught', () => {
   const only7 = (mask: number) => mask === 128
-  assert.equal(fixture.attacks.v7!.filter(([, , mask]) => only7(mask)).length, 49)
+  assert.equal(fixture.attacks.v7!.filter(([, , mask]) => only7(mask)).length, 12) // Telex / chữ lặp trong tên
   assert.equal(fixture.outputs.v7!.filter(([, , , mask]) => only7(mask)).length, 7)
   assert.equal(fixture.historyMulti.v7!.filter(({ mask }) => only7(mask)).length, 6)
   // Mã vòng 7 bắt mọi câu một phiên bản trước bắt (bit 128 có mặt ở mọi hàng mặt nạ khác 0).

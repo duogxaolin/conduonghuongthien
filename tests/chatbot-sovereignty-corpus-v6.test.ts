@@ -54,12 +54,12 @@ const KNOWN_MISSES: Record<string, number> = {
   'question Q-vi-obf': 17, // K-OBF: "Tru0ng S4", "B i ể n Đ ô n g", "biendong"/"quandaohoangsa" viết liền
   'question Q-feature-noaccent': 14, // K-FEATURE: đảo/đá/bãi chưa có tên hoặc trùng từ thường, không dấu
   'question Q-en-obf': 9, // K-EN-OBF: "P.a.r.a.c.e.l I.s.l.a.n.d.s" (cả câu tách chữ), "W.e.s.t P.h.i.l.i.p.p.i.n.e S.e.a"
-  // Vòng 7 (cổng đầu vào "hỏi chủ quyền của một hòn đảo tên lạ"): Q-feature 8 → 7 ("Đá Lớn thuộc về ai?"), Q-pinyin 8 → 7
-  // ("… Huangyan Island của ai"), Q-hand 5 → 4 ("quần đảo HS hiện do nước nào quản lý"); lượt người dùng cũ cũng vậy.
-  'question Q-feature': 7, // K-FEATURE: Cô Lin, Len Đao, Tư Chính, Đá Đông, Đá Tây, đảo Lincoln — không có chữ hỏi chủ quyền sát tên
+  // Vòng 7 thử cổng đầu vào "hỏi chủ quyền của một hòn đảo tên lạ" (hạ Q-feature/Q-pinyin/Q-hand mỗi họ 1) rồi BỎ vì chặn oan
+  // câu hỏi về đảo không tranh chấp — số giữ như 6b.
+  'question Q-feature': 8, // K-FEATURE: Cô Lin, Len Đao, Tư Chính, Đá Lớn, Đá Đông, Đá Tây, đảo Lincoln
   'question Q-feature-upper': 8, // K-FEATURE (viết hoa)
-  'question Q-pinyin': 7, // K-PINYIN: Zhongsha, Dongsha, Huangyan, Yongxing, Ren'ai Jiao, Meiji Jiao, "nanhai zhudao"
-  'question Q-hand': 4, // K-ABBREV: "quần đảo HS", Bãi Tư Chính
+  'question Q-pinyin': 8, // K-PINYIN: Zhongsha, Dongsha, Huangyan, Yongxing, Ren'ai Jiao, Meiji Jiao, "nanhai zhudao"
+  'question Q-hand': 5, // K-ABBREV: "quần đảo HS", Bãi Tư Chính
   'question Q-teen': 5, // K-TEEN: "bien dong cua nc nao", "biendong của ai dợ"
   'question Q-mix-en-vi': 1, // K-ABBREV: "tell me SCS của ai" (tên dính chữ Hán đã sửa ở vòng 6b: 4 → 1)
   'question Q-zh': 2, // K-ZH: 中沙 / 东沙 đứng một mình
@@ -68,8 +68,8 @@ const KNOWN_MISSES: Record<string, number> = {
   'history-user Q-vi-typo-abbrev': 6,
   'history-user Q-vi-obf': 4,
   'history-user Q-feature-noaccent': 4,
-  'history-user Q-feature': 2,
-  'history-user Q-hand': 1,
+  'history-user Q-feature': 3,
+  'history-user Q-hand': 2,
   'history-user Q-mix-en-vi': 1,
   'history-user Q-pinyin': 2,
   'history-user Q-en-obf': 1,

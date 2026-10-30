@@ -18,7 +18,6 @@ import {
   SOVEREIGNTY_HAN_CLAIM_MAX,
   sovereigntyHanClaim as hanClaim,
   sovereigntyIslandContext as islandContext,
-  sovereigntyIslandOwnershipQuestion as islandOwnershipQuestion,
   sovereigntyQuestionIslandContext as questionIslandContext,
   sovereigntySettledClaim as settledClaim,
   sovereigntySettledIslandContext as settledIslandContext,
@@ -63,8 +62,6 @@ export function sovereigntyMatcherMentions(text: string, options: { output?: boo
 
 function matcherOn(folded: string, options: { output?: boolean, island?: boolean }): boolean {
   if (!folded.trim()) return false
-  // Câu hỏi (không phải chữ do model viết): hỏi chủ quyền của một hòn đảo tên lạ cũng là chủ đề (vòng 7).
-  if (options.output !== true && islandOwnershipQuestion(folded)) return true
   const han = hanKey(folded)
   const claims = options.output === true && (options.island === true || islandContext(folded, han))
   return hanMentions(han, claims, () => ownershipOf(folded)) || scriptMentions(folded, claims)
