@@ -206,7 +206,7 @@ export function aiServer() {
     if (at === `POST ${API}/delify/sync`) {
       if (!state.providers.some(p => p.provider === 'delify')) return h3Error(404, 'Nhà cung cấp "delify" chưa được tạo. Vui lòng thêm Delify Router trong tab Nhà cung cấp trước.')
       state.models.push({ model: 'claude-opus-5', provider: 'delify', label: 'Claude Opus 5', isActive: true, promptCostPerMillion: 15, completionCostPerMillion: 75 })
-      return json({ ok: true, upserted: 3, skipped: 0, syncedLogs: 2, totalFromApi: 3, delifyUsage: { windowCostUsd: 0.5, windowRequests: 7, allowedModels: null } })
+      return json({ ok: true, upserted: 3, skipped: 0, totalFromApi: 3, delifyUsage: { windowCostUsd: 0.5, windowRequests: 7, allowedModels: null } })
     }
     throw new Error(`unexpected request ${wire(call)}`)
   }

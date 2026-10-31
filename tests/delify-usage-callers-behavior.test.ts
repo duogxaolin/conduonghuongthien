@@ -142,7 +142,10 @@ test('sync: the receipts call goes through outbound.ts to the base URL\'s host, 
     assert.ok(s.maxResponseBytes && s.maxResponseBytes <= 1024 * 1024, 'a byte cap')
   }
   assert.equal(result.upserted, 1)
-  assert.equal(result.syncedLogs, 1)
+  // The history in the answer is not written: every delify call is logged by the gateway (no double count).
+  assert.equal('syncedLogs' in result, false)
+  assert.deepEqual(writes.filter(write => write.endsWith(' ai_usage_logs')), [])
+  assert.ok(writes.includes('insert ai_model_pricing'), writes.join(', '))
   assert.deepEqual(result.delifyUsage, { windowCostUsd: 0.5, windowRequests: 3, allowedModels: ['flash'] })
 })
 

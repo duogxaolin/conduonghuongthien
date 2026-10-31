@@ -744,7 +744,7 @@ describe('calling a model, syncing Delify', () => {
     await pending
     await settle()
     assert.deepEqual(sent(calls, 2), ['POST /api/admin/ai/delify/sync', ...RELOAD])
-    assert.equal(lastToast(toasts, 'success'), 'Đã đồng bộ 3 model và 2 cuộc gọi từ Delify Router.')
+    assert.equal(lastToast(toasts, 'success'), 'Đã đồng bộ giá 3 model từ Delify Router.')
     assert.ok(row(page, 'claude-opus-5'))
     assert.equal(invalidates.count, 1)
 

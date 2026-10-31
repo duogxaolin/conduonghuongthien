@@ -18,7 +18,10 @@
  *   - the API key goes in the auth header to the provider and nowhere else — not in a
  *     result, a log line, a usage row, a chunk, a tool event, a request body or path —
  *     whatever fails;
- *   - provider 4xx/5xx on any request of any path → `provider_error`, nothing logged;
+ *   - provider 4xx/5xx on any request of any path → `provider_error` and ONE usage row
+ *     marking the failure (0 tokens, 0 cost, the classified code — never the provider's
+ *     text), however many requests the path made; no pricing read, no success line. A
+ *     refusal before any request (URL policy, …) writes no row;
  *   - cost: VND = USD × rate on the billed (post-overhead) tokens; a model with no price
  *     costs 0 on every path (recorded as is: unpriced = 0, one warning, the call succeeds);
  *   - `onToolCall` throwing, and step-1/step-2 bodies of the buffered tool loop that are
@@ -253,6 +256,17 @@ async function run(mode: Mode, replies: Reply[], options: RunOptions = {}) {
 /** Consecutive `chunk`s count once: how a stream is cut into pieces is the cleaner's business. */
 const squash = (order: string[]) => order.filter((step, i) => step !== 'chunk' || order[i - 1] !== 'chunk')
 
+/**
+ * The ONE row a call that reached the provider and failed writes (decided 2026-10-31): the
+ * provider and model, no tokens, no cost, the classified code — never the provider's text.
+ * `executionMs` is wall clock, compared by type.
+ */
+const failureRow = (run: { serviceKey: string, provider: string }, error: string): Row => ({
+  serviceKey: run.serviceKey, provider: run.provider, model: MODEL, promptTokens: 0, completionTokens: 0, totalTokens: 0,
+  costUsd: 0, costVnd: 0, executionMs: 'number', userId: 7, success: false, errorMessage: error,
+})
+const usageRows = () => rec.usage.map(row => ({ ...row, executionMs: typeof row.executionMs }))
+
 const PRELUDE = ['read:config', 'budget', 'read:provider', 'decrypt']
 const EPILOGUE = ['read:pricing', 'usage', 'info:ai_gateway.call_succeeded']
 const PATH_STEPS: Record<Mode, string[]> = {
@@ -278,6 +292,17 @@ for (const mode of MODES) {
     assert.equal(result.ok, true)
     assert.deepEqual(squash(rec.order), [...PRELUDE, ...PATH_STEPS[mode], 'read:pricing', 'warn:ai_usage.no_pricing', 'usage', 'info:ai_gateway.call_succeeded'])
   })
+
+  test(`order (${mode}): a failed last request → the failure row right after the provider work, no pricing read, no success line`, async () => {
+    reset()
+    const replies = okReplies(mode)
+    const ran = await run(mode, [...replies.slice(0, -1), { status: 503, body: '{"error":"down"}' }])
+    assert.deepEqual(ran.result, { ok: false, error: 'provider_error' })
+    // The failed stream relays nothing: the path's steps without its last chunk.
+    const steps = PATH_STEPS[mode].at(-1) === 'chunk' ? PATH_STEPS[mode].slice(0, -1) : PATH_STEPS[mode]
+    assert.deepEqual(squash(rec.order), [...PRELUDE, ...steps, 'usage'])
+    assert.deepEqual(usageRows(), [failureRow(ran, 'provider_error')])
+  })
 }
 
 test('executionMs is the provider work only: not the budget check, not the pricing read', async () => {
@@ -291,6 +316,11 @@ test('executionMs is the provider work only: not the budget check, not the prici
       const requests = withTools(mode) ? 2 : 1
       assert.equal(rec.usage[0]!.executionMs, 1_000 * requests, mode)
       assert.equal(rec.infos[0]!.executionMs, 1_000 * requests, mode)
+      // A failed call's row measures the same span: every request it made, nothing else.
+      reset()
+      const failed = await run(mode, [...okReplies(mode).slice(0, -1), { status: 500, body: 'x' }])
+      assert.equal(failed.result.ok, false, mode)
+      assert.deepEqual(rec.usage.map(row => row.executionMs), [1_000 * requests], mode)
     } finally {
       Object.assign(clock, { on: false, budget: 0, socket: 0, pricing: 0 })
       mock.timers.reset()
@@ -330,8 +360,9 @@ test('byte caps on real bodies: 256 KiB plain buffered, 1 MiB per buffered tool 
   reset()
   assert.equal((await run('buffered', [{ body: sized(262_144, answer) }])).result.ok, true, 'exactly 256 KiB is allowed')
   reset()
-  assert.deepEqual((await run('buffered', [{ body: sized(262_145, answer) }])).result, { ok: false, error: 'provider_error' })
-  assert.deepEqual(rec.usage, [])
+  const overCap = await run('buffered', [{ body: sized(262_145, answer) }])
+  assert.deepEqual(overCap.result, { ok: false, error: 'provider_error' })
+  assert.deepEqual(usageRows(), [failureRow(overCap, 'provider_error')])
   // The same 300 kB answer is fine for a tool-loop step (the model answered without a tool).
   reset()
   assert.equal((await run('tools-buffered', [{ body: sized(300_000, answer) }])).result.ok, true)
@@ -394,7 +425,8 @@ for (const scenario of KEY_SCENARIOS) {
       if (scenario.label.startsWith('step 2') && !withTools(mode)) continue
       reset()
       const { result, seen, chunks, toolEvents } = await run(mode, scenario.replies(mode), { address: scenario.address, setup: { baseUrl: scenario.baseUrl } })
-      if (scenario.baseUrl) assert.deepEqual([result.error, seen.requests.length, rec.warns.map(w => w.event)], ['provider_url_rejected', 0, ['ai_gateway.provider_url_rejected']], mode)
+      // A refusal before any request is not a failed call: no usage row.
+      if (scenario.baseUrl) assert.deepEqual([result.error, seen.requests.length, rec.warns.map(w => w.event), rec.usage], ['provider_url_rejected', 0, ['ai_gateway.provider_url_rejected'], []], mode)
       const observable = JSON.stringify({ result, warns: rec.warns, infos: rec.infos, usage: rec.usage, chunks, toolEvents })
       assert.ok(!observable.includes(SECRET_PIECE), `${mode}: ${observable.slice(0, 300)}`)
       for (const { raw, options } of seen.requests) {
@@ -411,24 +443,26 @@ for (const scenario of KEY_SCENARIOS) {
 const STATUSES = [400, 401, 403, 404, 408, 429, 500, 502, 503, 504]
 
 for (const mode of MODES) {
-  test(`provider errors (${mode}): any 4xx/5xx on any request → provider_error, no pricing read, no usage log, no success line`, async () => {
+  test(`provider errors (${mode}): any 4xx/5xx on any request → provider_error, ONE failure row, no pricing read, no success line`, async () => {
     for (const status of STATUSES) {
       for (const failing of withTools(mode) ? [0, 1] : [0]) {
         reset()
-        const replies = [...okReplies(mode).slice(0, failing), { status, body: '{"error":"x"}' }]
-        const { result, seen, executed } = await run(mode, replies)
+        const replies = [...okReplies(mode).slice(0, failing), { status, body: `{"error":"${echo}"}` }]
+        const ran = await run(mode, replies)
+        const { result, seen, executed } = ran
         const label = `${mode} HTTP ${status} on request ${failing + 1}`
         assert.deepEqual(result, { ok: false, error: 'provider_error' }, label)
         assert.equal(seen.requests.length, failing + 1, label)
         assert.equal(executed.length, failing, `${label}: the tool runs only after a good step 1`)
         assert.ok(!rec.order.includes('read:pricing'), label)
-        assert.deepEqual([rec.usage, rec.infos, rec.warns], [[], [], []], label)
+        // One row however many requests the path made (step 1 paid and step 2 failed: still one).
+        assert.deepEqual([usageRows(), rec.infos, rec.warns], [[failureRow(ran, 'provider_error')], [], []], label)
       }
     }
   })
 }
 
-test('tool loop (buffered): a step-1 or step-2 body that is not a JSON object → provider_error, nothing logged', async () => {
+test('tool loop (buffered): a step-1 or step-2 body that is not a JSON object → provider_error, one failure row', async () => {
   for (const [label, replies, ran] of [
     ['step 1 not JSON', [{ status: 200, body: 'upstream says hi' }], 0],
     ['step 1 is JSON null', [{ status: 200, body: 'null' }], 0],
@@ -436,10 +470,10 @@ test('tool loop (buffered): a step-1 or step-2 body that is not a JSON object �
     ['step 2 is JSON null', [okReplies('tools-buffered')[0]!, { status: 200, body: 'null' }], 1],
   ] as Array<[string, Reply[], number]>) {
     reset()
-    const { result, executed } = await run('tools-buffered', replies)
-    assert.deepEqual(result, { ok: false, error: 'provider_error' }, label)
-    assert.equal(executed.length, ran, label)
-    assert.deepEqual(rec.usage, [], label)
+    const call = await run('tools-buffered', replies)
+    assert.deepEqual(call.result, { ok: false, error: 'provider_error' }, label)
+    assert.equal(call.executed.length, ran, label)
+    assert.deepEqual(usageRows(), [failureRow(call, 'provider_error')], label)
   }
 })
 
@@ -455,11 +489,12 @@ test('tool loop: an onToolCall that throws ends the call as provider_error — b
   for (const mode of ['tools-buffered', 'tools-stream'] as const) {
     for (const when of ['calling', 'done']) {
       reset()
-      const { result, seen, executed } = await run(mode, okReplies(mode), { onToolCall: (evt) => { if (evt.status === when) throw new Error('visitor gone') } })
-      assert.deepEqual(result, { ok: false, error: 'provider_error' }, `${mode} ${when}`)
-      assert.equal(executed.length, when === 'calling' ? 0 : 1, `${mode} ${when}`)
-      assert.equal(seen.requests.length, 1, `${mode} ${when}: no step 2`)
-      assert.deepEqual(rec.usage, [], `${mode} ${when}`)
+      const call = await run(mode, okReplies(mode), { onToolCall: (evt) => { if (evt.status === when) throw new Error('visitor gone') } })
+      assert.deepEqual(call.result, { ok: false, error: 'provider_error' }, `${mode} ${when}`)
+      assert.equal(call.executed.length, when === 'calling' ? 0 : 1, `${mode} ${when}`)
+      assert.equal(call.seen.requests.length, 1, `${mode} ${when}: no step 2`)
+      // Step 1 reached (and was paid by) the provider: the call is recorded as failed, at 0 tokens.
+      assert.deepEqual(usageRows(), [failureRow(call, 'provider_error')], `${mode} ${when}`)
     }
   }
 })
@@ -555,17 +590,17 @@ test('as is: a caller\'s EMPTY systemPrompt is sent as is — `??`, not `||`: no
   }
 })
 
-test('plain stream: a stream with nothing visible is parse_error — not provider_error — and nothing is logged', async () => {
+test('plain stream: a stream with nothing visible is parse_error — not provider_error — one failure row, 0 tokens even when usage was reported', async () => {
   for (const [label, body] of [
     ['only [DONE]', DONE],
     ['only reasoning', content('<think>chỉ nghĩ</think>') + usage(40, 8) + DONE],
     ['no events at all', ': keep-alive\n\n'],
   ] as const) {
     reset()
-    const { result, chunks } = await run('stream', [sse(body)])
-    assert.deepEqual(result, { ok: false, error: 'parse_error' }, label)
-    assert.deepEqual(chunks, [], label)
-    assert.deepEqual([rec.usage, rec.infos], [[], []], label)
+    const call = await run('stream', [sse(body)])
+    assert.deepEqual(call.result, { ok: false, error: 'parse_error' }, label)
+    assert.deepEqual(call.chunks, [], label)
+    assert.deepEqual([usageRows(), rec.infos], [[failureRow(call, 'parse_error')], []], label)
     assert.ok(!rec.order.includes('read:pricing'), label)
   }
 })
@@ -573,7 +608,8 @@ test('plain stream: a stream with nothing visible is parse_error — not provide
 // ─── The pricing read failing (FINDING-G2) ───────────────────────────────────
 
 test('a failing pricing read rejects callAi with the database\'s own error — unwrapped, no key added — after the provider was paid, and nothing is logged', async () => {
-  // As is (FINDING-G2): the call already reached the provider, yet no usage row is written.
+  // As is (FINDING-G2): the call already reached the provider, yet no usage row is written —
+  // the provider ANSWERED, so it is not a failed call, and no failure row stands in for it.
   // What this pins for the key: the error that escapes is the very object the database
   // threw, so the gateway adds nothing to it. KNOWN: an error that itself carried the key
   // would escape as it is — the gateway does not scrub errors it did not make (a database

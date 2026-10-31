@@ -22,7 +22,8 @@
  *          (`ai-gateway-no-tools.ts`).
  *      Usage tokens per path: `ai-gateway-tokens.ts`.
  *   7. Calculate cost, log to `ai_usage_logs` (awaited, errors caught), log the success
- *      line — `ai-gateway-record.ts`.
+ *      line — `ai-gateway-record.ts`. A path that failed writes its one row there too
+ *      (`success: false`, the code, 0 tokens); a refusal in steps 1–5 writes none.
  *   8. Return `{ ok: true, text }` or `{ ok: false, error }`.
  *
  * Part of the `ai-gateway.ts` family (wave3-long-term 4.3, D-SPLIT): callers import the
@@ -46,7 +47,7 @@ import { loadProvider, loadServiceConfig, policyForProvider, substituteVariables
 import { providerSender } from './ai-gateway-send'
 import { runToolLoop } from './ai-gateway-tool-loop'
 import { runBufferedAnswer, runStreamedAnswer } from './ai-gateway-no-tools'
-import { recordAiCall } from './ai-gateway-record'
+import { recordAiCall, recordAiFailure } from './ai-gateway-record'
 
 /**
  * Call an AI service. This is the single entry point for all AI calls (spec R10.1).
@@ -78,9 +79,10 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
   } else {
     outcome = await runBufferedAnswer(call, sender, input)
   }
-  if (!outcome.ok) return { ok: false, error: outcome.error }
   const executionMs = Date.now() - startTime
 
+  // One usage row per call that went past the refusals — answered or failed (`ai-gateway-record.ts`).
+  if (!outcome.ok) return recordAiFailure(db, serviceKey, call, outcome, executionMs, input.userId ?? null)
   return recordAiCall(db, serviceKey, call, outcome, executionMs, input.userId ?? null)
 }
 

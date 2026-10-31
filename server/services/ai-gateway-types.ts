@@ -92,8 +92,9 @@ export interface PreparedAiCall {
 }
 
 /**
- * A path that failed. No usage row is written for it: every failure returns before the
- * epilogue (recorded as is — see the split's notes in docs/decisions/refactor-large-files.md).
+ * A path that failed (an error status, nothing readable, a connection or address refused at
+ * send time). Its call writes ONE usage row marking the failure (`recordAiFailure`,
+ * `ai-gateway-record.ts`) — until 2026-10-31 it wrote none.
  */
 export interface AiPathFailure {
   ok: false

@@ -406,6 +406,45 @@ Sau khi ghi, các khoá đó hiện "(chưa dịch)" trong admin: dịch lại b
 
 ---
 
+## Xoá hàng chi phí AI bị đếm hai lần do "Đồng bộ" Delify (làm một lần, `db:repair-ai-usage-duplicates`)
+
+Trước bản vá 2026-10-31, nút "Đồng bộ" Delify (tab AI → Nhà cung cấp) nhập lịch sử của router vào nhật ký AI thành hàng `delify_router` — trong khi mỗi lượt gọi đó **đã có** một hàng do cổng AI ghi. Chi phí bị cộng hai lần: ngân sách AI (khi ngân sách tháng = 0, giới hạn là ngân sách khoá Delify và máy chủ cộng **mọi** hàng từ trước tới nay), dashboard, thẻ khoá Delify; trước bản vá R5-8 mỗi lần bấm còn chèn lại cả lịch sử. Bản vá đã ngừng nhập; lệnh này xoá các hàng `delify_router` mà phép ghép bên dưới coi là bản chép. Phép ghép **không chắc chắn tuyệt đối** — hai hàng không có mã chung (xem "Rủi ro còn lại"). Nó **không bao giờ** xoá hàng do cổng AI hay "Gọi thử" ghi.
+
+**Chỉ chạy SAU khi CI đã deploy bản có `db:repair-ai-usage-duplicates`** — bản cũ còn nhập lịch sử: một lần bấm "Đồng bộ" trên bản cũ sẽ nhập lại đúng các hàng vừa xoá.
+
+```bash
+cd /www/wwwroot/conduonghuongthien
+docker exec -it cdkt_app npm run db:repair-ai-usage-duplicates                                # 1. xem trước: liệt kê, KHÔNG ghi
+./scripts/backup-db.sh                                                                         # 2. sao lưu (chỉ hoàn tác được bằng bản này)
+docker exec -it cdkt_app npm run db:repair-ai-usage-duplicates -- --apply                     # 3. xoá nhóm `exact`
+docker exec -it cdkt_app npm run db:repair-ai-usage-duplicates                                # 3b. xem trước LẠI: đọc lại danh sách `review`
+docker exec -it cdkt_app npm run db:repair-ai-usage-duplicates -- --apply --include-review    # 4. (tuỳ) xoá cả nhóm `review` — chỉ sau bước 3b
+```
+
+**Bắt buộc chạy lại xem trước (3b) giữa bước 3 và bước 4:** bước 3 xoá hàng router, nên các hàng cổng AI được "giải phóng" và danh sách `review` ở lượt sau có thể **khác** danh sách đã đọc ở bước 1 (thêm hàng mới chưa ai xem — verifier A29). Bước 4 xoá đúng danh sách của lượt chạy bước 4, không phải danh sách đã đọc trước đó. `--include-review` không kèm `--apply` chỉ là xem trước.
+
+Một hàng router và hàng cổng AI của cùng lượt gọi không có mã chung, nên phép ghép dựa trên: cùng model, cùng số token vào **và** ra (hoặc token vào của hàng cổng AI = của router + 2000 — chỉ với hàng cổng ghi trước thời điểm commit `5adab79a`, 2026-09-24 10:51:36 UTC, khi cổng còn giữ phần phụ phí của Delify; hàng sau mốc không bao giờ ghép theo luật này — kể cả hàng cổng ghi **sau commit nhưng trước khi bản đó được deploy** mà vẫn còn phụ phí +2000: hàng router tương ứng **không** được ghép, được giữ lại (an toàn — bản chép thật đó chỉ tiếp tục bị đếm hai lần, nằm trong `kept`); trên CSDL dev không có hàng như vậy), cả hai thành công, độ lệch giờ nằm trong **dải lệch đồng hồ** router ↔ máy chủ, và ghép **một-một**. Dải lệch đọc từ dữ liệu: trung vị độ lệch của các cặp "neo" (mỗi bên chỉ có đúng một ứng viên trong ±15 phút) ± 30 giây; cần ít nhất 3 cặp neo và quá nửa số neo nằm trong dải, không thì không ghép gì (CSDL dev: hàng cổng AI ghi sau mốc giờ của router 137–152 giây). Bước 3 ghi dải vào nhật ký hoạt động và các lượt sau (bước 4, chạy lại) **dùng lại dải đó** (`bandSource: previous_run`) — các cặp neo đã bị xoá ở bước 3.
+
+Đọc báo cáo bước 1 trước khi ghi:
+- `band` + `bandSource` + `anchorHistogram`: **đọc trước tiên**. Dải lệch dùng lần này, lấy từ đâu (`anchors` / `previous_run`), và độ lệch của mọi cặp neo (nhóm 10 giây). Dải đúng khi phần lớn cặp neo dồn vào một nhóm hẹp và `anchors` đủ lớn (dev: 76 neo, cùng 130–159 s). Ít neo, hay neo rải nhiều nhóm xa nhau → dải có thể sai (xem rủi ro bên dưới): đừng `--apply`, gửi báo cáo cho người phát triển. `band: null` = không ghép được gì — đừng ép.
+- `exact` (bước 3 xoá): hàng router có đúng một hàng cổng AI trong dải (`gateway_twin`, `gateway_twin_overhead` — kèm `twinId` và `offsetSeconds`), và bản sao y hệt của chính hàng đó do các lần đồng bộ sau chèn lại (`repeat_import`, `copyOf`).
+- `review` (chỉ bước 4 xoá): `near_twin` — không có hàng cổng AI cùng token, nhưng có đúng một hàng trong dải cùng model, cùng token ra, token vào **ít hơn** của router 1–256 token (`promptDelta`; cổng AI trừ cố định 2000 token phụ phí, router có lúc tính phụ phí thấp hơn — CSDL dev: 77 hàng lệch đúng 96 hoặc 128), ghép một-một; và bản sao y hệt của một hàng không nằm trong `exact` (`repeat_import`). Gần như chắc là bản chép, nhưng đọc danh sách trước.
+- `kept`: **không bao giờ xoá**, kèm lý do — `no_twin` (không hàng cổng AI nào cùng token: lượt vòng công cụ là hai request router nhưng một hàng cổng; lượt từ nơi khác dùng chung khoá), `ambiguous` (nhiều ứng viên trong dải), `outside_band`, `no_band`, `failed_request` (router từ chối). Mỗi hàng kèm tối đa 5 ứng viên. Các hàng này vẫn được cộng vào chi phí — số tiền ở dòng cuối của báo cáo (`kept … VND`).
+- `costVnd`: tổng tiền của từng nhóm.
+
+Bước 3/4 xoá và ghi một dòng nhật ký hoạt động (`repair-ai-usage-duplicates`, danh sách id) trong **một** transaction, dưới khoá `cdkt:ai:usage-duplicates-repair` (đang có lượt khác → từ chối, không ghi gì). Sau khi xoá, chi phí tháng 9–10/2026 trên dashboard và "đã dùng" của thẻ khoá giảm đúng bằng `costVnd` đã xoá. Chạy lại được: lượt sau không còn gì trong `exact`.
+
+**Rủi ro còn lại (đo bằng kịch bản đối kháng của verifier độc lập — nhóm `exact` không phải "chắc chắn"):**
+- Một request **ngoài app** (cùng khoá Delify, hoặc lượt cổng hỏng trước bản vá nên không có hàng) nằm cạnh một hàng cổng **cùng model, cùng token vào/ra** trong dải: nó có thể được ghép thay cho bản chép thật (A03 — bản chép thật của hàng cổng đó không được nhập; A05 — bản chép thật lệch ngoài dải vì lượt gọi chậm, hàng ngoài app lọt vào dải) hoặc hai request trùng đúng giây, đúng token, cùng thời gian chạy bị coi là bản sao y hệt (A13). Khi đó một chi phí thật bị xoá. Xác suất thấp (phải trùng cả model + hai số token + độ lệch ±30 s), không loại trừ được.
+- Dải lệch sai khi ít neo: 3 neo trong đó 2 cặp trùng hợp → dải đặt ở chỗ trùng hợp (A06); dải của lượt `--apply` đầu được dùng lại cho mọi lượt sau, kể cả khi nó sai (A11). Vì vậy: đọc `band`/`bandSource`/`anchorHistogram` ở bước 1 **trước** khi `--apply`.
+- Danh sách `review` có thể trôi sau bước 3 (A29) — vì thế có bước 3b.
+
+**Tác dụng phụ đã biết của bản vá (không do lệnh dọn):**
+- Chi tiêu của **request ngoài app** dùng chung khoá Delify không còn được nhập, nên không vào tổng `loadTotalSpend` (giới hạn ngân sách khi ngân sách tháng = 0) và "đã dùng"/"còn lại" của thẻ khoá: số "còn lại" có thể **cao hơn** thực tế. Router vẫn tự chặn khi khoá hết ngân sách (cổng AI đọc `active` của khoá).
+- Chatbot: khi `callAi` lỗi (`provider_error`/`parse_error`), `chat-policy-provider.ts` rơi xuống đường gọi thẳng cũ (nếu còn cấu hình khoá trong cài đặt chatbot). Lượt đó vẫn ghi **một hàng lỗi** dù khách nhận được câu trả lời từ đường cũ, và lượt gọi đường cũ không ghi hàng nào.
+
+---
+
 ## Sao lưu tự động trong ứng dụng (scheduler)
 
 Từ đợt wave1 1B, ở production scheduler sao lưu **tự khởi động** (trước đây chỉ khởi động khi `.env` có `BACKUP_SCHEDULER=1`, nên công tắc trong admin bật mà không bao giờ chạy). Có bản sao lưu hay không vẫn do công tắc **"Backup tự động theo lịch"** ở `/admin/settings/backup` quyết định. Công tắc mặc định tắt, nên bản cập nhật này không tự sinh bản sao lưu nào.

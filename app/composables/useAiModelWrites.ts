@@ -291,15 +291,16 @@ export function useAiModelWrites({ toast, confirm, pricingRows, reload, onInvali
     syncingDelify.value = true
     try {
       const result = await adminFetch<{
-        ok: true; upserted: number; skipped: number; syncedLogs: number; totalFromApi: number; delifyUsage: DelifyUsage | null
+        ok: true; upserted: number; skipped: number; totalFromApi: number; delifyUsage: DelifyUsage | null
       }>('/api/admin/ai/delify/sync', {
         method: 'POST',
       })
       if (result.delifyUsage) {
         delifyUsage.value = result.delifyUsage
       }
-      const logMsg = result.syncedLogs > 0 ? ` và ${result.syncedLogs} cuộc gọi` : ''
-      toast.success(`Đã đồng bộ ${result.upserted} model${logMsg} từ Delify Router.`)
+      // Giá model thôi: lịch sử cuộc gọi của router không còn ghi vào nhật ký AI (mỗi
+      // cuộc gọi đã có hàng do cổng AI ghi — nhập lại là đếm hai lần).
+      toast.success(`Đã đồng bộ giá ${result.upserted} model từ Delify Router.`)
       await reload()
       onInvalidate()
     } catch (err: unknown) {
