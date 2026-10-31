@@ -28,6 +28,7 @@
     "db:sanitize-html": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/sanitize-stored-html.ts",
     "db:decode-excerpts": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/decode-stored-excerpts.ts",
     "db:repair-null-translations": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/repair-null-translations.ts",
+    "db:repair-ai-usage-duplicates": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/repair-ai-usage-duplicates.ts",
     "db:drift": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/check-schema-drift.ts",
     "docs:facts": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/docs-facts.ts"
   },
