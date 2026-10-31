@@ -49,6 +49,13 @@ export const quickQuestions = ref<{ id: string, question: string }[]>([])
 export const quickQuestionState = ref<'loading' | 'success' | 'empty' | 'error'>('loading')
 export const hydrated = ref(false)
 
+/**
+ * The title of a conversation in which the server has accepted no question yet. A conversation
+ * leaves it only through the accepted-question gate in `./send.ts` (FINDING-C2), and comes back
+ * to it when cleared.
+ */
+export const CHATBOT_UNTITLED = 'Cuộc trò chuyện mới'
+
 export function newLocalId(): string {
   if (import.meta.client && typeof crypto?.randomUUID === 'function') return crypto.randomUUID()
   return `c-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -58,7 +65,7 @@ export function blankConversation(): StoredConversation {
   return {
     id: newLocalId(),
     token: null,
-    title: 'Cuộc trò chuyện mới',
+    title: CHATBOT_UNTITLED,
     createdAt: Date.now(),
     messages: [{ ...CHATBOT_WELCOME_MESSAGE }],
   }

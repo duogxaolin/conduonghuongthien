@@ -1,7 +1,7 @@
 import { CHATBOT_CLIENT_LIMITS, CHATBOT_WELCOME_MESSAGE } from '../../utils/chatbot-storage'
 import { persist } from './persistence'
 import { cancelInFlight } from './send'
-import { activeConversation, activeId, blankConversation, conversations } from './state'
+import { activeConversation, activeId, blankConversation, CHATBOT_UNTITLED, conversations } from './state'
 
 /**
  * The visitor's conversations: start one, switch, delete, clear. Each first cancels a
@@ -56,6 +56,6 @@ export function clearChatHistory(): void {
   cancelInFlight()
   const conversation = activeConversation.value
   conversation.messages = [{ ...CHATBOT_WELCOME_MESSAGE }]
-  conversation.title = 'Cuộc trò chuyện mới'
+  conversation.title = CHATBOT_UNTITLED
   persist()
 }

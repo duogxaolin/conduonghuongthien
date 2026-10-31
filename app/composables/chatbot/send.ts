@@ -15,7 +15,7 @@ import { playTypewriter, stopTypewriter } from '../useChatbotTypewriter'
 import { persist } from './persistence'
 import { parseSseLine } from './sse'
 import {
-  activeConversation, botInput, botInputError, inputCharLimit, isReplyStreaming, isSubmitting,
+  activeConversation, botInput, botInputError, CHATBOT_UNTITLED, inputCharLimit, isReplyStreaming, isSubmitting,
 } from './state'
 
 /**
@@ -48,13 +48,25 @@ export function cancelInFlight(): void {
   botInputError.value = ''
 }
 
-/** Titles the conversation from its first real message. No-op afterwards. */
-function applyAutoTitle(text: string): void {
-  const conversation = activeConversation.value
-  const alreadyTitled = conversation.messages.some(item => item.sender === 'user')
-  if (alreadyTitled) return
-  const title = text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
-  if (title) conversation.title = title
+/**
+ * The server's verdicts — the `kind` of a reply's metadata frame — that mean it screened the
+ * question and took it. Not here: `moderation_blocked` (refused); `rate_limited` (the endpoint
+ * charges its rate limit BEFORE moderation, so that question was never screened; the AI quota's
+ * `rate_limited`, which comes after, looks the same); and no metadata frame at all (a cut stream:
+ * a refusal writes its text before its kind).
+ */
+const QUESTION_ACCEPTED: ReadonlySet<string> = new Set(['curated', 'provider', 'small_talk', 'not_found', 'unavailable'])
+
+/**
+ * FINDING-C2: the title a question gives its conversation — only if the server accepted it —
+ * or `null`. Read in ONE place, once the reply is in (`submitBotQuestion`). The title used to
+ * be set as the question was sent, before the server judged it, and was saved from then on:
+ * refused, failed, cancelled or unscreened words stayed as the title, in memory, in saves made
+ * while waiting (a reload, another tab) and after.
+ */
+function acceptedQuestionTitle(question: string, verdict: string | undefined): string | null {
+  if (!verdict || !QUESTION_ACCEPTED.has(verdict)) return null
+  return question.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars) || null
 }
 
 async function ensureSessionToken(conversation: StoredConversation): Promise<string | null> {
@@ -137,10 +149,16 @@ class ChatSendRejected extends Error {
 }
 
 /**
- * `true` = câu trả lời đã về. Còn lại là lượt hỏng: `ChatSendFailure` khi máy chủ trả
+ * Câu trả lời đã về; `verdict` = `kind` ở khung metadata (lời phán của máy chủ về câu hỏi),
+ * `undefined` khi không có khung đó.
+ */
+type ChatReplied = { replied: true, verdict: string | undefined }
+
+/**
+ * `ChatReplied` = câu trả lời đã về. Còn lại là lượt hỏng: `ChatSendFailure` khi máy chủ trả
  * một mã không-ok (đã phân loại), `null` khi hỏng không mang mã (mạng, luồng rỗng, huỷ).
  */
-async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => void): Promise<true | ChatSendFailure | null> {
+async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => void): Promise<ChatReplied | ChatSendFailure | null> {
   if (isSubmitting.value) return null
   const requestSequence = ++botRequestSequence
   const conversation = activeConversation.value
@@ -239,6 +257,9 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
     flushStreamNow(streamFlush)
     if (buffer) parseSseLine(buffer, accumulator)
     if (!accumulator.text.trim()) throw new Error('EMPTY_CHATBOT_RESPONSE')
+    // Only what the metadata frame said (`parseSseLine` keeps a known kind only) — read before the
+    // fallback below, which labels the bubble and is no verdict.
+    const verdict = botMessage.kind
     if (!botMessage.kind) botMessage.kind = 'unavailable'
 
     // The reply joins the transcript only now that it has content if not pushed during stream
@@ -262,7 +283,7 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
       if (userIdx !== -1) conversation.messages.splice(userIdx, 1)
       persist()
     }
-    return true
+    return { replied: true, verdict }
   } catch (error) {
     // A frame still queued would push the bot message back in after it is removed.
     cancelStreamFlush(streamFlush)
@@ -303,8 +324,6 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   }
 
   const conversation = activeConversation.value
-  const titleBeforeSend = conversation.title
-  applyAutoTitle(text)
   // Pending — dimmed, "Đang gửi…" — while awaiting the server's response.
   conversation.messages.push({ id: `user-${++messageSequence}`, sender: 'user', text, status: 'pending' })
   // Every later write goes through the transcript's reactive copy. A write on the object
@@ -318,20 +337,23 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   const outcome = await fetchStreamBotReply(question, onScroll)
   if (awaitedQuestion === question) awaitedQuestion = null
   if (requestSequence !== botRequestSequence) return
-  const succeeded = outcome === true
-  const failure = outcome === true ? null : outcome
+  const succeeded = outcome !== null && 'replied' in outcome
+  const failure = succeeded ? null : outcome
   if (succeeded) {
     botInput.value = ''
     question.status = undefined
+    // The ONE place a conversation gets its title: its first question the server accepted
+    // (tests/chat-widget-title.test.ts). A refusal answers too, and gives none.
+    const title = acceptedQuestionTitle(question.text, outcome.verdict)
+    if (title && conversation.title === CHATBOT_UNTITLED) conversation.title = title
     persist()
   } else if (failure?.kind === 'rejected') {
     // Máy chủ từ chối CHÍNH câu này (quá dài / không hợp lệ): gửi lại y nguyên vẫn
     // bị từ chối, và để nó trong hội thoại thì lịch sử của mọi lượt sau mang nó theo
-    // → cũng bị từ chối. Bỏ khỏi hội thoại (kể cả tiêu đề tự đặt từ nó), giữ bản
-    // nháp trong ô nhập; lý do đã ở `botInputError` (tests/chatbot-send-rejection.test.ts).
+    // → cũng bị từ chối. Bỏ khỏi hội thoại, giữ bản nháp trong ô nhập; lý do đã ở
+    // `botInputError` (tests/chatbot-send-rejection.test.ts).
     const index = conversation.messages.findIndex(item => item.id === question.id)
     if (index !== -1) conversation.messages.splice(index, 1)
-    conversation.title = titleBeforeSend
     if (failure.maxChars) inputCharLimit.value = Math.min(inputCharLimit.value, failure.maxChars)
     botInput.value = text
     persist()
