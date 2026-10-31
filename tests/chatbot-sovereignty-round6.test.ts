@@ -182,8 +182,10 @@ async function trippedOn(chunks: string[]) {
 }
 
 test('v5: every attack some version caught is stopped at all three layers — matcher, policy (provider never called), output', async () => {
-  const caught = fixture.attacks.v5!.filter(([, , mask]) => mask !== 0).map(([text]) => text)
-  // 179 câu một trong năm phiên bản đầu từng bắt, 191 khi tính cả acd9f2a1 (bit 32, vòng 6b).
+  // 179 câu một trong năm phiên bản đầu từng bắt, 191 khi tính cả acd9f2a1 (bit 32, vòng 6b). Bit 64/128 (vòng 7) thêm câu
+  // chỉ cổng đầu vào bắt (hỏi chủ quyền của một hòn đảo tên lạ) — cổng đó không xét chữ do model viết, nên không vào lớp đầu
+  // ra ở đây (recall union của chúng: tests/chatbot-sovereignty-corpora.test.ts, round7.test.ts).
+  const caught = fixture.attacks.v5!.filter(([, , mask]) => (mask & 63) !== 0).map(([text]) => text)
   assert.equal(caught.length, 191)
   for (const question of caught) {
     ai.calls = 0

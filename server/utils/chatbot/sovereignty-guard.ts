@@ -10,14 +10,18 @@ import {
 } from './sovereignty-611'
 import {
   sovereigntyHanMentions as hanMentions,
-  sovereigntyIslandContext as islandContext,
   sovereigntyOwnership as ownershipOf,
-  sovereigntyQuestionIslandContext as questionIslandContext,
   sovereigntyScriptMentions as scriptMentions,
-  sovereigntySettledClaim as settledClaim,
-  sovereigntySettledIslandContext as settledIslandContext,
   sovereigntySettledScriptMentions as settledScriptMentions,
 } from './sovereignty-patterns'
+import {
+  SOVEREIGNTY_HAN_CLAIM_MAX,
+  sovereigntyHanClaim as hanClaim,
+  sovereigntyIslandContext as islandContext,
+  sovereigntyQuestionIslandContext as questionIslandContext,
+  sovereigntySettledClaim as settledClaim,
+  sovereigntySettledIslandContext as settledIslandContext,
+} from './sovereignty-claims'
 
 /**
  * Chủ quyền biển, đảo — câu trả lời do máy chủ viết, không bao giờ do model.
@@ -67,8 +71,8 @@ const HAN_CHAR = /\p{Script=Han}/u
 /** Dài hơn các cụm Latin thực tế ("thuộc quyền quản lý của Trung Quốc") cộng chữ đầu của từ theo sau. */
 const STREAM_HOLD_CHARS = 48
 const STREAM_LOOKBACK_CHARS = 96
-/** Dài hơn mẫu chữ Hán dài nhất (`中国.{0,15}主权`). */
-const HAN_LOOKBACK_CHARS = 24
+/** Dài hơn mẫu chữ Hán dài nhất (`中华人民共和国.{0,15}主权`, vòng 7). */
+const HAN_LOOKBACK_CHARS = SOVEREIGNTY_HAN_CLAIM_MAX + 8
 /**
  * Bước xác nhận chỉ xét phần chưa xác nhận cộng một lề — lề dài hơn ngữ cảnh trái của mọi mẫu ("bãi" + khoảng trắng
  * trước "biển đông", "越" trước "南海防", yêu sách nhiều chữ). Xét lại CẢ luồng mỗi lần (như trước) là bậc hai: chuỗi
@@ -247,8 +251,10 @@ export function createSovereigntyOutputGuard(hooks: {
       // Chữ sở hữu ở đoạn cuối (mọi hệ chữ) tắt ngoại lệ của tên chữ Hán trần; xa hơn thì `finish` xét cả câu.
       const ownership = () => ownershipOf(region) || (plain !== null && ownershipOf(plain))
       // Mỗi bước hỏi cả hai bộ khớp trên cùng đoạn: bộ mới, rồi 611588c2 (tự gấp chữ thô; khoá chữ Hán không "|").
+      // Yêu sách chữ Hán của bộ mới cũng xét trên cửa sổ NỐI LIỀN (vòng 7): cửa sổ khoá có ngắt chỉ chứa nửa số chữ của
+      // một cụm chen dấu câu ("中，华，人，民，共，和，国，…，主，权").
       const candidate = islandNow
-        || hanMentions(hanWindow + HAN_NEXT_PROBE, island, ownership)
+        || hanMentions(hanWindow + HAN_NEXT_PROBE, island, ownership) || (island && hanClaim(joinedWindow + HAN_NEXT_PROBE))
         || settledScriptMentions(region, island, regionCut) || (plain !== null && settledScriptMentions(plain, island, regionCut))
         || han611(joinedWindow, island) || (SCRIPT_LETTER.test(region) && settledScript611(rawRegion, island, regionCut))
       if (candidate) {
@@ -256,17 +262,20 @@ export function createSovereigntyOutputGuard(hooks: {
         const hanFrom = islandNow ? 0 : Math.max(0, hanConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
         const joinedFrom = islandNow ? 0 : Math.max(0, joinedConfirmedTo - HAN_CONFIRM_MARGIN_CHARS)
         const confirm = confirmScript(seen.from(scriptFrom), scriptFrom === 0)
-        if (hanMentions(han.from(hanFrom) + HAN_NEXT_PROBE, island, ownership) || han611(joined.from(joinedFrom), island)
+        const joinedScope = joined.from(joinedFrom)
+        if (hanMentions(han.from(hanFrom) + HAN_NEXT_PROBE, island, ownership) || han611(joinedScope, island)
+          || (island && hanClaim(joinedScope + HAN_NEXT_PROBE))
           || confirm(text => settledScriptMentions(fold(text), island, false) || (HAN_CHAR.test(text) && settledScriptMentions(fold(text, false), island, false)))
           || confirm(text => SCRIPT_LETTER.test(fold(text)) && settledScript611(text, island, false))) return trip()
         confirmedTo = seen.length
         hanConfirmedTo = han.length
         joinedConfirmedTo = joined.length
       }
-      // Cụm yêu sách Latin của 611588c2 cũng cần chữ cái ngoài chữ Hán: đoạn chỉ có chữ Hán chỉ xét khoá chữ Hán.
+      // Cụm yêu sách Latin của 611588c2 cũng cần chữ cái ngoài chữ Hán: đoạn chỉ có chữ Hán chỉ xét khoá chữ Hán. "是中国的"
+      // hết mệnh đề chỉ thấy trên khoá có ngắt (vòng 7).
       if (!island && !claimHeld) {
         claimHeld = settledClaim(region, joinedWindow) || (plain !== null && settledClaim(plain, joinedWindow))
-          || settledClaim611(SCRIPT_LETTER.test(region) ? rawRegion : '', joinedWindow)
+          || hanClaim(hanWindow + HAN_NEXT_PROBE) || settledClaim611(SCRIPT_LETTER.test(region) ? rawRegion : '', joinedWindow)
       }
       if (claimHeld) return
       const upTo = seen.length - STREAM_HOLD_CHARS
@@ -321,12 +330,16 @@ export function sovereigntyAnswer(query: string): string {
  */
 export function withoutSovereigntyTurns(history: ChatTurn[]): ChatTurn[] {
   let afterDroppedQuestion = false
+  // Lượt trợ lý được xét như câu trả lời cho câu hỏi đứng trước nó (vòng 7): "這兩個群島是誰的？" → "它們是中國的。".
+  let askedAboutIsland = false
   return history.filter((turn, index) => {
     if (index === history.length - 1) return true
     const fromUser = isUserTurn(turn)
-    const mentions = mentionsSovereignty(chatTurnText(turn), { output: !fromUser })
+    const text = chatTurnText(turn)
+    const mentions = mentionsSovereignty(text, fromUser ? {} : { output: true, island: askedAboutIsland })
     if (fromUser) {
       afterDroppedQuestion = mentions
+      askedAboutIsland = questionIslandContext(text)
       return !mentions
     }
     return !mentions && !afterDroppedQuestion

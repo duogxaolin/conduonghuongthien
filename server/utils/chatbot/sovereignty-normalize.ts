@@ -102,7 +102,26 @@ function nearMissName(word: string): string | null {
   return null
 }
 
+// Vòng 7 (verifier 6b): gõ Telex chưa thành dấu ("Hoangf", "Hoafng", "Truowng", "Truwowngf", "DDaor") và chữ lặp ("Hoàngg",
+// "Saa") trong âm tiết của TÊN — chỉ thành tên khi, sau nguyên âm đầu, bỏ chữ dấu thanh (s f r x j) và chữ móc "w", rồi bỏ
+// chữ lặp, thì còn ĐÚNG âm tiết đó. Phần sau nguyên âm đầu của các âm tiết này không có chữ nào trong số đó ("tr" của
+// "truong" đứng trước), nên từ thật không đổi trừ khi chỉ khác tên ở các chữ ấy. "sa" chỉ bỏ chữ lặp: "Hoang saw/sax/sas"
+// (tiếng Anh, tên riêng) không thành "hoang sa". VIQR ("Hoa`ng", "Tru+o+`ng") — dấu là ký tự ngắt từ của khoá — KNOWN.
+const TELEX_SYLLABLES = new Set(['hoang', 'truong', 'dao', 'quan'])
+const TELEX_HINT = /^[htdqs][a-z]{2,10}$/
+const FIRST_VOWEL = /[aeiouy]/
+function telexSyllable(word: string): string | null {
+  if (!TELEX_HINT.test(word) || TELEX_SYLLABLES.has(word) || word === 'sa') return null
+  if (word.replace(/(.)\1+/g, '$1') === 'sa') return 'sa'
+  const vowel = word.search(FIRST_VOWEL)
+  if (vowel < 0) return null
+  const bare = (word.slice(0, vowel) + word.slice(vowel).replace(/[sfrxjw]/g, '')).replace(/(.)\1+/g, '$1')
+  return TELEX_SYLLABLES.has(bare) ? bare : null
+}
+
 function readableWord(word: string): string {
+  const telex = telexSyllable(word)
+  if (telex) return telex
   // Đường tắt (lớp đầu ra gọi hàm này cho mọi từ, mỗi chunk): từ ngắn không có chữ số thì không đổi.
   if (word.length < 7 && !/\d/.test(word)) return word
   const letters = word.match(/[a-z]/g)?.length ?? 0

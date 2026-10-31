@@ -8,6 +8,9 @@ import test from 'node:test'
  * 1 = 611588c2 (port trung thành, đã merge vào wave3/integration), 2 = 39045602, 4 = c048cc86, 8 = 09eef836,
  * 16 = a9dc5f17 (vòng 5; bộ v5 và bit 16 thêm ở vòng 6), 32 = acd9f2a1 (vòng 6; bộ v6/v6hu của verifier 6 thêm ở vòng 6b —
  * lượt trợ lý và câu trả lời của bộ đó ở tests/chatbot-sovereignty-corpus-v6.test.ts). "v5amb": câu verifier 5 gắn nhãn mơ hồ.
+ * Vòng 7: 64 = b85a618b (bản 6b đã gộp wave3/integration), 128 = mã vòng 7 (câu nó bắt được ghim luôn); bộ v7 của verifier
+ * "6b" (corpus-v7.json) vào `attacks.v7`/`benign.v7`, câu trả lời và lịch sử nhiều lượt ở tests/chatbot-sovereignty-corpus-v7.test.ts
+ * — từ đó KHÔNG còn là tập giữ lại.
  *
  * Quy trình từ vòng 5 (quyết định của chủ dự án): cổng chủ quyền thuộc cổng thông tin Bộ Công an — bỏ sót (lặp lại sự
  * cố 2026-10-27) nặng hơn chặn oan (khách chỉ phải diễn đạt lại). Ba vòng trước dao động bắt-thiếu ↔ chặn-oan vì mỗi
@@ -113,6 +116,8 @@ const split = (text: string, size: number) => Array.from({ length: Math.ceil(tex
 const BY_DESIGN_OUTPUT = new Set([
   'Trường hợp anh bị bắt khi đánh cá ở vùng biển Trung Quốc và đã chấp hành xong án, anh được hỗ trợ như người hoàn lương khác: học nghề, vay vốn, giới thiệu việc làm.',
   'Anh sống ở đảo Phú Quý và từng chấp hành án trên lãnh thổ Trung Quốc; anh có thể liên hệ UBND xã để được hướng dẫn hồ sơ vay vốn.',
+  // v7 (B-out-bydesign của verifier 6b): cùng câu, gọn hơn.
+  'Anh sống ở đảo Phú Quý và từng chấp hành án trên lãnh thổ Trung Quốc; anh có thể vay vốn.',
 ])
 
 // Vòng 6, giá của phép hợp với 611588c2 ở đầu ra (câu trả lời 611588c2 rút lại thì bản này cũng rút, ở mọi cách chia):
