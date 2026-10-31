@@ -67,10 +67,12 @@ test('the name of the claimant in a claim phrase: Trung Quốc / Trung Hoa / Tru
     }
   }
   for (const reply of ['These islands belong to the PRC.', "The islands are China's territory.", 'The reef is owned by China.', 'The islands are now Chinese.',
-    'The islands are Chinese territory.', 'Đảo ấy do Trung Quốc kiểm soát.', 'Những hòn đảo này là một phần không thể tách rời của Trung Quốc.']) {
+    'The islands are Chinese territory.', 'Đảo ấy do Trung Quốc kiểm soát.', 'Những hòn đảo này là một phần không thể tách rời của Trung Quốc.',
+    // Đột biến sống của lượt A11 (X02, X15, X16): hết chuỗi không dấu câu; "controlled by"; "Chinese islands/property".
+    'Those islands are Chinese', 'The reef is controlled by China.', 'These reefs are Chinese islands.', 'The atoll is Chinese property.']) {
     assert.equal(sovereigntyMatcherMentions(reply, { output: true }), true, reply)
   }
-  for (const reply of ['这些岛屿归属于中国。', '该岛礁归中国所有。', '这些岛屿属中国。', '中国一直拥有这些岛屿。', '这些岛屿是中国的一部分。', '这些岛屿是中华人民共和国的。']) {
+  for (const reply of ['这些岛屿归属于中国。', '该岛礁归中国所有。', '这些岛礁为中国所有。', '这些岛屿属中国。', '中国一直拥有这些岛屿。', '这些岛屿是中国的一部分。', '这些岛屿是中华人民共和国的。']) {
     assert.equal(sovereigntyMatcherMentions(reply, { output: true }), true, reply)
   }
 })
