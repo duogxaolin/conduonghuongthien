@@ -249,7 +249,7 @@ function aiServer(override: Responder = () => undefined): Responder {
       return json({ ok: true, model: 'org/flash', provider: 'delify', reply: 'Xin chào.', durationMs: 420, usage: { promptTokens: 9, completionTokens: 3, totalTokens: 12 }, costVnd: 2 })
     }
     if (route === 'POST /api/admin/ai/delify/sync') {
-      return json({ ok: true, upserted: 3, skipped: 0, syncedLogs: 2, totalFromApi: 3, delifyUsage: { windowCostUsd: 0.5, windowRequests: 7, allowedModels: null } })
+      return json({ ok: true, upserted: 3, skipped: 0, totalFromApi: 3, delifyUsage: { windowCostUsd: 0.5, windowRequests: 7, allowedModels: null } })
     }
     return json({ ok: true })
   }
@@ -406,7 +406,7 @@ describe(`${PROVIDERS_TAB} — actions`, () => {
 
     assert.deepEqual(await sent(page.syncDelifyPricing), [{ wire: 'POST /api/admin/ai/delify/sync', body: undefined }, ...reload])
     assert.equal(page.delifyUsage?.windowCostUsd, 0.5)
-    assert.equal(lastToast(toasts, 'success'), 'Đã đồng bộ 3 model và 2 cuộc gọi từ Delify Router.')
+    assert.equal(lastToast(toasts, 'success'), 'Đã đồng bộ giá 3 model từ Delify Router.')
   })
 
   it('pricing is loaded with the providers only — the uncalled `loadPricing` is gone (no caller: not in the template, not exposed)', async () => {
