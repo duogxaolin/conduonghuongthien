@@ -8,11 +8,13 @@
 // Vòng 6b: mọi chữ của mẫu yêu sách, chữ sở hữu và tên có dạng phồn thể (và dạng Nhật 権/帰/嶋) — 領土, 主權, 屬於, 自古以來,
 // 管轄, 哪個國家, 歸屬, 誰的, 黃巖島 từng lọt ở mọi phiên bản. CỐ Ý không gộp chữ chỉ dùng để LOẠI TRỪ (hậu tố 區/縣/鎮/觀/電/鐵):
 // gộp chúng chỉ làm ngoại lệ ăn thêm câu, không thêm recall.
+// Đợt 3 (2026-10-31): cụm vòng 7 (归/为…所有, 中国…拥有 + 这/该) thiếu dạng phồn thể — "中國擁有這些島嶼" lọt trong khi bản giản
+// thể bị thay; thêm 擁/這/為/爲/該. Chữ mới trong mẫu yêu sách phải được xếp nhóm (`tests/chatbot-sovereignty-traditional-fold.test.ts`).
 const HAN_FOLD: Record<string, string> = {
   黃: '黄', 長: '长', 東: '东', 羣: '群', 島: '岛', 諸: '诸', 線: '线', 國: '国', 興: '兴', 濟: '济',
   門: '门', 華: '华', 陽: '阳', 雲: '云', 廣: '广', 陝: '陕', 閩: '闽', 嶺: '岭', '⻄': '西', 愛: '爱',
   領: '领', 權: '权', 権: '权', 屬: '属', 於: '于', 來: '来', 轄: '辖', 個: '个', 歸: '归', 帰: '归', 誰: '谁',
-  巖: '岩', 嶋: '岛', 嶌: '岛', 囯: '国',
+  巖: '岩', 嶋: '岛', 嶌: '岛', 囯: '国', 擁: '拥', 這: '这', 為: '为', 爲: '为', 該: '该',
 }
 const HAN_FOLD_CHARS = new RegExp(`[${Object.keys(HAN_FOLD).join('')}]`, 'g')
 
