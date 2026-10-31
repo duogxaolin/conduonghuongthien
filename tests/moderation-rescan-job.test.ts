@@ -68,9 +68,12 @@ function cursorOf(cond: unknown): number | null {
   const q = dialect.sqlToQuery(cond as Parameters<typeof dialect.sqlToQuery>[0])
   return /<\s*\?/.test(q.sql) ? Number(q.params[q.params.length - 1]) : null
 }
+/** The bound of `id = ?` — the hide's WHERE also names the flag (it writes only a row still showing). */
 function idOf(cond: unknown): number {
   const q = dialect.sqlToQuery(cond as Parameters<typeof dialect.sqlToQuery>[0])
-  return Number(q.params[q.params.length - 1])
+  const at = q.sql.search(/`id` = \?/)
+  assert.ok(at >= 0, `a hide addresses its row by id: ${q.sql}`)
+  return Number(q.params[(q.sql.slice(0, at).match(/\?/g) ?? []).length])
 }
 
 function visible(table: unknown, before: number | null): Array<Comment | Message> {

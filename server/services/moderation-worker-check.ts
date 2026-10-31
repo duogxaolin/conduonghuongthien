@@ -41,10 +41,12 @@ export async function checkAndModerateContent(
   const regexBudget = options.regexBudget ?? createModerationRegexBudget()
   const fast = await fastPreModerate(content, { ...input, regexBudget })
   if (fast.blocked) {
-    // Already flagged by pre-moderator, auto-hide database target row if targetId provided
+    // Already flagged by pre-moderator, auto-hide database target row if targetId provided.
+    // The queue row `recordInstantBlock` filed (with this targetId) carries `matchedRule` as its
+    // reason — the hide writes that same text, so "Bỏ ẩn" on the row recognises its own hide.
     const failures: ModerationPersistFailure[] = []
     const hidden = input.targetId
-      ? await applyAutoHide(input.targetType, input.targetId, fast.reason, failures)
+      ? await applyAutoHide(input.targetType, input.targetId, fast.matchedRule, failures)
       : false
 
     return {

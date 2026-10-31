@@ -19,6 +19,12 @@ export interface InstantBlockContext {
   authorName?: string
   authorIp?: string
   targetType?: 'comment' | 'chat' | 'livestream_chat' | 'article'
+  /**
+   * The stored row being screened, when there is one (`checkAndModerateContent` after a comment or
+   * a livestream message is saved, the rescan). Filed on the queue row, so "Bỏ ẩn" on it can find
+   * and show again the row the instant block hid. Absent on the gates BEFORE a save (nothing stored).
+   */
+  targetId?: number
   sessionId?: string
   contextTitle?: string
   contextUrl?: string
@@ -174,7 +180,7 @@ export async function recordInstantBlock(
     const db = getDb()
     await db.insert(aiModerationQueue).values({
       targetType: context?.targetType || 'chat',
-      targetId: null,
+      targetId: context?.targetId || null,
       authorName: context?.authorName || 'Khách',
       authorIp: context?.authorIp || null,
       contextTitle: context?.contextTitle || null,

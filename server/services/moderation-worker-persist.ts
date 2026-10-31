@@ -8,7 +8,7 @@
  * Mỗi lệnh ghi hỏng đều được ghi log (sự kiện ổn định + loại + id) và báo cho nơi gọi
  * qua `failures` — không bao giờ nuốt im lặng (CLAUDE.md: "lỗi ẩn/ghi hàng duyệt phải log").
  */
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import {
@@ -18,6 +18,7 @@ import {
   livestreamMessages,
 } from '../db/schema'
 import { logError } from '../utils/logger'
+import { autoHideFlagReason } from '../utils/moderation-flag-reason'
 import { workerStats } from './moderation-stats'
 import type { ModerationCheckInput, ModerationPersistFailure } from './moderation-worker-types'
 
@@ -73,6 +74,16 @@ async function insertQueueRowOnce(row: QueueRow): Promise<boolean> {
  * Ẩn bình luận / gắn cờ tin chatbot / xoá tin livestream. Trả `true` chỉ khi lệnh
  * ghi chạy xong; lỗi được ghi log với sự kiện ổn định `ai_moderation.hide_failed`
  * kèm loại + id, và thêm `'hide'` vào `failures` — không bao giờ nuốt im lặng.
+ *
+ * `reason` là đúng `flagged_reason` của hàng chờ duyệt cho mục này: `flag_reason` ghi
+ * xuống là dấu "ẩn bởi kiểm duyệt tự động" mà lượt duyệt an toàn đối chiếu trước khi
+ * hiện lại (`autoHideFlagReason`, `restoreAutoHidden`). Tin livestream có cột riêng từ
+ * khi có lượt hiện lại — ẩn tay của cán bộ (`removeChatMessage`) không ghi gì vào đó.
+ *
+ * Chỉ ghi lên hàng còn đang hiện (`is_hidden = 0` / `is_flagged = 0` / `is_deleted = 0`):
+ * lượt AI chạy nền vài giây, cán bộ có thể đã ẩn/gỡ tay trong lúc đó — ghi đè là thay lý do
+ * của cán bộ bằng dấu tự động, và "Bỏ ẩn" trên hàng chờ sẽ hiện lại thứ cán bộ đã ẩn. Hàng
+ * đã ẩn thì giữ nguyên dấu của lần ẩn đó; vẫn trả `true` (nội dung đang ẩn) như trước.
  */
 async function applyAutoHide(
   targetType: ModerationCheckInput['targetType'],
@@ -81,22 +92,23 @@ async function applyAutoHide(
   failures: ModerationPersistFailure[],
 ): Promise<boolean> {
   const db = getDb()
+  const flagReason = autoHideFlagReason(reason)
   try {
     if (targetType === 'comment') {
       await db
         .update(articleComments)
-        .set({ isHidden: true, flagReason: reason.slice(0, 255) })
-        .where(eq(articleComments.id, targetId))
+        .set({ isHidden: true, flagReason })
+        .where(and(eq(articleComments.id, targetId), eq(articleComments.isHidden, false)))
     } else if (targetType === 'chat') {
       await db
         .update(chatMessages)
-        .set({ isFlagged: true, flagReason: reason.slice(0, 255) })
-        .where(eq(chatMessages.id, targetId))
+        .set({ isFlagged: true, flagReason })
+        .where(and(eq(chatMessages.id, targetId), eq(chatMessages.isFlagged, false)))
     } else if (targetType === 'livestream_chat') {
       await db
         .update(livestreamMessages)
-        .set({ isDeleted: true })
-        .where(eq(livestreamMessages.id, targetId))
+        .set({ isDeleted: true, flagReason })
+        .where(and(eq(livestreamMessages.id, targetId), eq(livestreamMessages.isDeleted, false)))
     } else {
       return false // 'article': không có cột ẩn nào để đặt
     }
