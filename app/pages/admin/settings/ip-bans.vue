@@ -102,7 +102,7 @@ onMounted(load)
     <div>
       <h1 class="m-0 text-[1.35rem] font-extrabold text-brand-950">Chặn địa chỉ IP</h1>
       <p class="m-0 mt-1 text-sm text-ink-muted">
-        Áp dụng cho cả lượt đăng nhập Google và lượt gửi bình luận. Chấp nhận một địa chỉ IPv4, một dải IPv4 (ví dụ <code class="rounded bg-surface-tint px-1">203.0.113.0/24</code>), hoặc một địa chỉ IPv6 đầy đủ.
+        Áp dụng cho cả lượt đăng nhập Google và lượt gửi bình luận. Chấp nhận một địa chỉ IPv4, một dải IPv4 từ <code class="rounded bg-surface-tint px-1">/8</code> đến <code class="rounded bg-surface-tint px-1">/32</code> (ví dụ <code class="rounded bg-surface-tint px-1">203.0.113.0/24</code>; dải rộng hơn /8 bị từ chối), hoặc một địa chỉ IPv6 đầy đủ.
       </p>
     </div>
 
