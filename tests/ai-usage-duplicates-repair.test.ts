@@ -222,6 +222,30 @@ test('the lock held by another run → refused before any read or write', async 
   assert.equal(ids().length, FIXTURE.length)
 })
 
+test('--include-review WITHOUT --apply is a preview: nothing deleted, no audit row, reads only (verifier N16)', async () => {
+  const before = harness.statements.length
+  const report = await runAiUsageDuplicateRepair({ includeReview: true, db, pool: fakePool().pool })
+  assert.deepEqual([report.applied, report.includeReview, report.written, report.skipped], [false, true, 0, 0])
+  assert.deepEqual(report.review.map(p => p.id), [105, 111])
+  assert.equal(ids().length, FIXTURE.length)
+  assert.deepEqual(audits(), [])
+  assert.ok(harness.statements.slice(before).every(sql => /^\s*select/i.test(sql)), harness.statements.slice(before).join('\n'))
+})
+
+test('a planned row that is no longer a delify_router/delify row at the DELETE is not deleted (verifier N19, by behaviour)', async () => {
+  // Between the plan and the DELETE, 101 turns into a gateway row and 102 into another
+  // provider's: every other condition (its id is in the list) still matches.
+  harness.beforeNext(/^delete from `ai_usage_logs`/, () => {
+    harness.sqlite.prepare('UPDATE `ai_usage_logs` SET `service_key` = ? WHERE `id` = ?').run('translation_article', 101)
+    harness.sqlite.prepare('UPDATE `ai_usage_logs` SET `provider` = ? WHERE `id` = ?').run('openai', 102)
+  })
+  const report = await runAiUsageDuplicateRepair({ apply: true, db, pool: fakePool().pool })
+  assert.deepEqual([report.written, report.skipped], [4, 2])
+  assert.ok(ids().includes(101) && ids().includes(102), String(ids()))
+  for (const id of [100, 103, 104, 114]) assert.ok(!ids().includes(id), `router row ${id}`)
+  assert.deepEqual([(audits()[0]!.meta as Json).deleted, (audits()[0]!.meta as Json).skipped], [4, 2])
+})
+
 const asUsage = (r: ReturnType<typeof row>) => ({ ...r, serviceKey: r.serviceKey, createdAt: r.createdAt })
 /** Three anchors at +150 s far from the rows under test — enough for a band of 150 ± 30. */
 const anchorPairs = (from: number) => [0, 1, 2].flatMap(i => [
@@ -243,6 +267,38 @@ test('the +2000 overhead pairs only a gateway row logged BEFORE 5adab79a — one
     row({ id: 3, at: cut + 86_400 - SKEW, prompt: 700, completion: 100 }), gw({ id: 13, at: cut + 86_400, prompt: 2700, completion: 100 }),
   ])
   assert.deepEqual([1, 2, 3].map(id => reasonOf(plan, id)), ['gateway_twin_overhead', 'no_twin', 'no_twin'])
+})
+
+test('identical copies mean identical in cost and execution time too — otherwise two requests sharing one twin (verifier N9, N10)', () => {
+  const pair = (other: Partial<ReturnType<typeof row>>) => planOf([
+    ...anchorPairs(10_000),
+    row({ id: 1, at: 0, prompt: 10, completion: 1 }), { ...row({ id: 2, at: 0, prompt: 10, completion: 1 }), ...other },
+    gw({ id: 11, at: SKEW, prompt: 10, completion: 1 }),
+  ])
+  // Each differs from row 1 in ONE stored value only.
+  for (const other of [{ costUsd: '0.001001' }, { costVnd: '25.51' }, { executionMs: 4321 }]) {
+    const plan = pair(other)
+    assert.deepEqual([reasonOf(plan, 1), reasonOf(plan, 2)], ['ambiguous', 'ambiguous'], JSON.stringify(other))
+    assert.ok(!plan.exact.some(p => p.id === 1 || p.id === 2), JSON.stringify(other))
+  }
+  // The same row twice IS a copy: the first pairs, the second follows it.
+  const same = pair({ userId: 5 })
+  assert.deepEqual([reasonOf(same, 1), reasonOf(same, 2)], ['gateway_twin', 'repeat_import'])
+})
+
+test('a near twin is one to one too: one gateway row near two router rows, or two near one router row → kept (verifier N15)', () => {
+  const plan = planOf([
+    ...anchorPairs(10_000),
+    // Two router rows, both 1–256 above the same gateway row.
+    row({ id: 1, at: 0, prompt: 1128, completion: 9 }), row({ id: 2, at: 5, prompt: 1100, completion: 9 }),
+    gw({ id: 11, at: SKEW, prompt: 1000, completion: 9 }),
+    // One router row near two gateway rows.
+    row({ id: 3, at: 2000, prompt: 1300, completion: 11 }),
+    gw({ id: 12, at: 2000 + SKEW, prompt: 1200, completion: 11 }), gw({ id: 13, at: 2000 + SKEW + 2, prompt: 1250, completion: 11 }),
+    // Control: one router row, one gateway row 96 below → the near twin.
+    row({ id: 4, at: 4000, prompt: 1096, completion: 13 }), gw({ id: 14, at: 4000 + SKEW, prompt: 1000, completion: 13 }),
+  ])
+  assert.deepEqual([1, 2, 3, 4].map(id => reasonOf(plan, id)), ['no_twin', 'no_twin', 'no_twin', 'near_twin'])
 })
 
 test('pure planner: no anchor at all → no band, nothing deleted; a twin with success = false is not a twin', () => {
