@@ -9,16 +9,20 @@ import { closeDb } from '../server/utils/db'
  * AI hay "Gọi thử" ghi.
  *
  *   npm run db:repair-ai-usage-duplicates                                 # xem trước: liệt kê, KHÔNG ghi
- *   npm run db:repair-ai-usage-duplicates -- --apply                      # xoá nhóm chắc chắn (`exact`)
+ *   npm run db:repair-ai-usage-duplicates -- --apply                      # xoá nhóm ghép chặt (`exact`)
+ *   npm run db:repair-ai-usage-duplicates                                 # xem trước LẠI, đọc lại `review`
  *   npm run db:repair-ai-usage-duplicates -- --apply --include-review     # xoá cả nhóm cần xem (`review`)
  *
  * `exact`: hàng có đúng MỘT hàng cổng AI cùng model, cùng số token vào/ra (hoặc token vào
- * + 2000 với hàng ghi trước 24/9/2026), lệch giờ nằm trong dải lệch đồng hồ router — và
- * bản sao y hệt của chính hàng đó. `review`: hàng cổng AI cùng token ra, token vào ít hơn
- * của router 1–256 (`near_twin`), và bản sao y hệt của hàng ngoài `exact`. `kept`: không
- * bao giờ xoá (kèm lý do). Chạy SAU khi bản vá đã deploy (bản cũ bấm "Đồng
- * bộ" sẽ nhập lại). Chạy lại được. Chỉ hoàn tác được bằng bản sao lưu — sao lưu DB trước
- * khi `--apply` (`scripts/backup-db.sh`). Trên VPS Docker:
+ * + 2000 với hàng cổng ghi trước commit 5adab79a, 2026-09-24 10:51:36 UTC), lệch giờ nằm
+ * trong dải lệch đồng hồ router — và bản sao y hệt của chính hàng đó. Là suy luận, không
+ * chắc chắn tuyệt đối (rủi ro còn lại: production/README.md). `review`: hàng cổng AI cùng
+ * token ra, token vào ít hơn của router 1–256 (`near_twin`), và bản sao y hệt của hàng
+ * ngoài `exact`; danh sách có thể đổi sau `--apply` nên phải xem trước lại. `kept`: không
+ * bao giờ xoá (kèm lý do). `--include-review` không kèm `--apply` chỉ là xem trước. Chạy
+ * SAU khi bản vá đã deploy (bản cũ bấm "Đồng bộ" sẽ nhập lại). Chạy lại được. Chỉ hoàn tác
+ * được bằng bản sao lưu — sao lưu DB trước khi `--apply` (`scripts/backup-db.sh`). Trên
+ * VPS Docker:
  *   docker exec -it cdkt_app npm run db:repair-ai-usage-duplicates -- --apply
  */
 const apply = process.argv.includes('--apply')
@@ -32,7 +36,7 @@ try {
   } else {
     console.log(`Đã xoá ${report.written} hàng (${report.skipped} hàng đã không còn). ${counts}.`)
     if (!includeReview && report.review.length) {
-      console.log(`Còn ${report.review.length} hàng trong \`review\` chưa xoá — xem danh sách, rồi chạy lại với --apply --include-review nếu đúng.`)
+      console.log(`Còn ${report.review.length} hàng trong \`review\` chưa xoá — danh sách có thể đã đổi sau lượt xoá này: chạy lại XEM TRƯỚC (không --apply), đọc lại \`review\`, rồi mới --apply --include-review nếu đúng.`)
     }
   }
 } catch (error) {

@@ -12,7 +12,12 @@ import { withNamedLock } from '../utils/named-lock'
  * twice — by `checkBudget` (`loadTotalSpend` sums every row when the key's budget is the
  * cap), the dashboard and the key card — and, before R5-8 (0e1e9158), every sync on MySQL
  * inserted the whole history again. The sync no longer imports (`delify/sync.post.ts`);
- * this removes what it wrote, only where the pairing is certain.
+ * this removes what it wrote where the pairing below holds. It is an inference, never a
+ * certainty — the two rows share no id: an outside request next to a gateway row with the
+ * same model and tokens can be taken for the copy (verifier A03/A05/A13), a band read from
+ * few anchors can be wrong (A06) and is reused by every later run (A11), and the `review`
+ * list can change after `--apply` (A29). The operator reads `band`/`anchorHistogram` and
+ * previews again before `--include-review` (`production/README.md`).
  *
  * Only rows with `service_key = 'delify_router'` and `provider = 'delify'` are ever deleted —
  * never a gateway or test-call row (every DELETE says so again). A router row and the
