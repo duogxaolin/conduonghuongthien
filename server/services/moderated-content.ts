@@ -19,10 +19,17 @@
  *     automatic hide filed under another reason hid it again: `not_restored`. (A hide that finds
  *     a row about the target still pending files none, and writes THAT row's reason as its mark —
  *     `pendingQueueReason` — so approving that row shows the content: B01);
- *   - (livestream) its author is not banned — a ban does not touch livestream messages, so the
- *     restore itself must not put a banned reader's words back on screen.
+ *   - (livestream) its author's ACCOUNT is not banned — a ban does not touch livestream messages,
+ *     so the restore itself must not put a banned reader's words back on screen. (Checked at the
+ *     read only; an address ban in `reader_ip_bans` is not checked at all.)
  * The target is read first with a plain (non-locking) read, then changed by a conditional UPDATE
- * on its primary key that re-checks the same state: the read only classifies, the UPDATE decides.
+ * on its primary key. The UPDATE re-checks only part of the read's state — hidden/removed, and
+ * `flag_reason = <mark>` — not all of it (KNOWN, docs/decisions/realm-safety.md § "Bỏ ẩn"):
+ *   - the author ban is not in it: a ban that commits between the read and the UPDATE (M5) does
+ *     not stop the restore — the banned author's message is shown again;
+ *   - its `=` compares under the column's `utf8mb4_unicode_ci`, the read with JS `!==`: an
+ *     officer's reason written in between that differs from the mark only by case, trailing
+ *     spaces or accents (M1) passes the UPDATE, and the officer's hide is undone.
  *
  * Not restorable, by construction: chatbot turns (a refused question is answered with a refusal
  * and stored as such, nothing is hidden — `recordInstantBlock` files no target), the gates that
