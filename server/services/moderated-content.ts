@@ -14,8 +14,9 @@
  *     accepts it, owner's call) never shows anything;
  *   - the target still exists — a reject, a ban (it deletes the reader's comments), a purge or
  *     retention took it: `gone`;
- *   - it is hidden, and its `flag_reason` is exactly this row's — an officer hid it since, or a
- *     later automatic hide filed under another reason: `not_restored`;
+ *   - it is hidden, and its `flag_reason` is exactly this row's — an officer hid it (before the
+ *     automatic hide, which then writes nothing, or since), or an officer showed it and another
+ *     automatic hide filed under another reason hid it again: `not_restored`;
  *   - (livestream) its author is not banned — a ban does not touch livestream messages, so the
  *     restore itself must not put a banned reader's words back on screen.
  * The target is read first with a plain (non-locking) read, then changed by a conditional UPDATE
