@@ -141,6 +141,14 @@ test('livestream: approve shows the message again and, after the commit, sends i
   assert.deepEqual(audits().map(meta => meta.restore), ['restored'])
 })
 
+test('livestream: the restored message goes out as the history serves it — a reserved name snapshot ("Admin") reads "Bạn đọc"', async () => {
+  const { RESERVED_PROVIDER_NAME_FALLBACK } = await import('../server/utils/display-name')
+  const id = await message({ displayName: 'Admin' })
+  assert.equal((await resolve(await queued({ targetType: 'livestream_chat', targetId: id }), 'approve')).body.restore, 'restored')
+  assert.deepEqual(events().map(e => e.data.displayName), [RESERVED_PROVIDER_NAME_FALLBACK])
+  assert.notEqual(RESERVED_PROVIDER_NAME_FALLBACK, 'Admin')
+})
+
 test('livestream: removed by an officer (no mark), re-hidden under another reason, or its author banned — kept removed, nothing broadcast', async () => {
   for (const [label, fields, banned] of [
     ['officer removal', { flagReason: null }, false],

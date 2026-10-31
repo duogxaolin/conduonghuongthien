@@ -46,7 +46,7 @@ import { readAffectedRows } from '../utils/affected-rows'
 import type { Database } from '../utils/db'
 import { autoHideFlagReason } from '../utils/moderation-flag-reason'
 import { broadcastToSession, SSE_EVENT_MESSAGE, SSE_EVENT_REMOVAL } from '../utils/sse-manager'
-import { serializeChatMessage, type ChatMessage } from './livestream-chat'
+import { CHAT_MESSAGE_COLUMNS, serializeChatMessage, type ChatMessage } from './livestream-chat'
 
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0]
 type QueueTarget = Pick<AiModerationQueueItem, 'targetType' | 'targetId' | 'flaggedReason' | 'status'>
@@ -107,10 +107,9 @@ export async function restoreAutoHidden(tx: Tx, item: QueueTarget): Promise<Rest
   if (item.targetType === 'livestream_chat') {
     const [row] = await tx
       .select({
+        // The columns the message goes out with — its name resolved by `serializeChatMessage`.
+        ...CHAT_MESSAGE_COLUMNS,
         sessionId: livestreamMessages.sessionId,
-        displayName: livestreamMessages.displayName,
-        content: livestreamMessages.content,
-        createdAt: livestreamMessages.createdAt,
         isDeleted: livestreamMessages.isDeleted,
         flagReason: livestreamMessages.flagReason,
         authorBanned: readerAccounts.isBanned,
@@ -127,8 +126,7 @@ export async function restoreAutoHidden(tx: Tx, item: QueueTarget): Promise<Rest
       .set({ isDeleted: false, flagReason: null })
       .where(and(eq(livestreamMessages.id, targetId), eq(livestreamMessages.isDeleted, true), eq(livestreamMessages.flagReason, mark))), 'livestream message')
     if (changed !== 1) return none('not_restored')
-    const message = serializeChatMessage({ id: targetId, displayName: row.displayName, content: row.content, createdAt: row.createdAt })
-    return { outcome: 'restored', announce: { kind: 'shown', sessionId: row.sessionId, message } }
+    return { outcome: 'restored', announce: { kind: 'shown', sessionId: row.sessionId, message: serializeChatMessage(row) } }
   }
 
   // 'chat' (a refused chatbot turn: stored as asked, nothing hidden), 'article', anything else.
