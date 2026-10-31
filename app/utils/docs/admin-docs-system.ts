@@ -271,10 +271,10 @@ export const SYSTEM_DOCS: AdminDoc[] = [
     category: 'system',
     icon: 'fa-solid fa-ban',
     summary: 'Chặn IP độc hại — ngăn truy cập từ địa chỉ IP cụ thể.',
-    description: 'Chặn địa chỉ IP cho phép admin chặn IP độc hại, spam, bot. 2 điểm chặn: API và reader. Admin thêm IP/CIDR vào danh sách chặn. get-ClientIp(event) đọc IP sau proxy (TRUSTED_PROXY_IPS). CIDR IPv4, IPv6 hỗ trợ.',
+    description: 'Chặn địa chỉ IP cho phép admin chặn IP độc hại, spam, bot. 2 điểm chặn: API và reader. Admin thêm IP/CIDR vào danh sách chặn. get-ClientIp(event) đọc IP sau proxy (TRUSTED_PROXY_IPS). Dải CIDR IPv4 từ /8 đến /32 (rộng hơn /8 bị từ chối khi lưu); IPv6 chỉ nhận địa chỉ đầy đủ, không nhận dải.',
     workflow: [
       { title: 'Vào chặn IP', detail: 'Mở /admin/settings/ip-bans', link: '/admin/settings/ip-bans' },
-      { title: 'Thêm IP/CIDR', detail: 'Nhập địa chỉ IP hoặc CIDR (vd: 192.168.1.0/24).' },
+      { title: 'Thêm IP/CIDR', detail: 'Nhập địa chỉ IP hoặc CIDR IPv4 từ /8 đến /32 (vd: 192.168.1.0/24).' },
       { title: 'Lý do', detail: 'Nhập lý do chặn (audit trail).' },
       { title: 'Lưu', detail: 'Bấm "Thêm". IP bị chặn ngay từ request tiếp theo.' },
     ],

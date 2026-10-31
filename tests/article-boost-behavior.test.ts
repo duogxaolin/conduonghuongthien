@@ -19,8 +19,8 @@ import test, { after, afterEach, beforeEach, mock } from 'node:test'
  *   - a cancel that loses the race with the scheduler (the job completed between the
  *     read and the guarded update) is a 409 with nothing recorded — it used to log and
  *     answer a cancellation of a job that had run to the end (FINDING-R6-15).
- *   - the day of a boost row is the UTC day (`viewDay`), whatever the process time
- *     zone — the same day the visitor token of real views is derived under.
+ *   - the day of a boost row is the Việt Nam calendar day (`viewDay`, UTC+7), whatever
+ *     the process time zone — the same day the visitor token of real views is derived under.
  *
  * Real h3 app + `admin-auth`, SQL on SQLite (`_ai-route-harness.ts`): the
  * `ON DUPLICATE KEY UPDATE … = col + ?` of the daily row runs as SQLite's upsert; the
@@ -147,7 +147,7 @@ test('every field is checked before anything is written: a malformed id, mode, a
 // ─── Instant ─────────────────────────────────────────────────────────────────
 
 for (const zone of ['UTC', 'Asia/Ho_Chi_Minh']) {
-  test(`instant (TZ=${zone}): only the fabricated half and the day's boost row move, on the UTC day; audited in the same transaction`, async () => {
+  test(`instant (TZ=${zone}): only the fabricated half and the day's boost row move, on the Việt Nam day; audited in the same transaction`, async () => {
     const before = process.env.TZ
     process.env.TZ = zone
     try {
@@ -156,8 +156,8 @@ for (const zone of ['UTC', 'Asia/Ho_Chi_Minh']) {
       const response = await boost(id, { mode: ' instant ', amount: 100 })
       assert.deepEqual([response.status, response.body], [200, { ok: true, mode: 'instant', amount: 100 }])
       assert.deepEqual(totals(id), [10, 105, 115])
-      // 03:00 on the 29th in Hà Nội is still the 28th in UTC — the day `viewDay` keys on.
-      assert.deepEqual(h.harness.rows(articleViewDaily).map(row => [row.day, row.articleId, row.sourceCategory, row.realViews, row.fabricatedViews]), [['2026-10-28', id, 'boost', 0, 100]])
+      // 03:00 on the 29th in Hà Nội is still the 28th in UTC — the row is the 29th, the day `viewDay` keys on.
+      assert.deepEqual(h.harness.rows(articleViewDaily).map(row => [row.day, row.articleId, row.sourceCategory, row.realViews, row.fabricatedViews]), [['2026-10-29', id, 'boost', 0, 100]])
       assert.deepEqual(audits(), [{ userId: editor.id, action: 'boost', resource: 'articles', resourceId: id, meta: { mode: 'instant', amount: 100, minutes: null, title: 'Bài ' + (seq) } }])
     } finally {
       process.env.TZ = before

@@ -312,7 +312,12 @@ test('ip-bans: a valid address or IPv4 range is stored as normalised, with its a
     [{ value: '203.0.113.0/24' }, 409, 'Địa chỉ này đã có trong danh sách chặn.'],
     [{ value: '2001:db8::/32' }, 400, 'Chưa hỗ trợ dải IPv6, hãy nhập địa chỉ đầy đủ.'],
     [{ value: '999.1.1.1' }, 400, 'Địa chỉ IP không hợp lệ.'],
-    [{ value: '10.0.0.0/33' }, 400, 'Độ dài dải (prefix) phải là số từ 0 đến 32.'],
+    [{ value: '10.0.0.0/33' }, 400, 'Độ dài dải (prefix) phải là số từ 8 đến 32.'],
+    // A range wider than /8 is refused at save time — `0.0.0.0/0` would ban every visitor.
+    [{ value: '0.0.0.0/0' }, 400, 'Dải /0 quá rộng (4.294.967.296 địa chỉ). Chỉ nhận dải IPv4 từ /8 đến /32.'],
+    [{ value: ' 10.0.0.0/7 ' }, 400, 'Dải /7 quá rộng (33.554.432 địa chỉ). Chỉ nhận dải IPv4 từ /8 đến /32.'],
+    [{ value: '::ffff:0.0.0.0/0' }, 400, 'Dải /0 quá rộng (4.294.967.296 địa chỉ). Chỉ nhận dải IPv4 từ /8 đến /32.'],
+    [{ value: '::/0' }, 400, 'Dải /0 quá rộng. Chỉ nhận dải IPv6 từ /32 trở lên — và hiện chưa hỗ trợ dải IPv6, hãy nhập địa chỉ đầy đủ.'],
     [{ value: 42 }, 400, 'Hãy nhập địa chỉ IP cần chặn.'],
     [['198.51.100.1'], 400, 'Dữ liệu không hợp lệ.'],
   ]

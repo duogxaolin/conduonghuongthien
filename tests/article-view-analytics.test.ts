@@ -106,11 +106,33 @@ describe('buildViewDedupeKey', () => {
 })
 
 describe('viewDay', () => {
-  it('is the UTC day, matching the day the visitor token is derived under', () => {
-    // Local-day would put the token and the row on different days for part of
-    // every evening in UTC+7, splitting one visit into two.
-    assert.equal(viewDay(new Date('2026-08-01T23:30:00Z')), '2026-08-01')
-    assert.equal(viewDay(new Date('2026-08-02T00:30:00Z')), '2026-08-02')
+  // The calendar day in Việt Nam (UTC+7 all year), from 2026-10-31 — the editors read the
+  // per-day series as Hà Nội days. It used to be the UTC day: 00:00–07:00 in Hà Nội counted
+  // on the day before. Rows written before the change keep their UTC day (no backfill).
+  // Both view handlers derive the visitor token and the row from this one value, so the
+  // two never fall on different days.
+  for (const zone of ['UTC', 'Asia/Ho_Chi_Minh', 'America/Los_Angeles']) {
+    it(`is the Việt Nam calendar day, whatever the process time zone (TZ=${zone})`, () => {
+      const before = process.env.TZ
+      process.env.TZ = zone
+      try {
+        assert.equal(viewDay(new Date('2026-08-01T16:59:59.999Z')), '2026-08-01') // 23:59:59.999 in Hà Nội
+        assert.equal(viewDay(new Date('2026-08-01T17:00:00.000Z')), '2026-08-02') // 00:00 in Hà Nội
+        assert.equal(viewDay(new Date('2026-08-01T23:30:00Z')), '2026-08-02')
+        assert.equal(viewDay(new Date('2026-08-02T00:30:00Z')), '2026-08-02')
+        assert.equal(viewDay(new Date('2026-12-31T17:00:00Z')), '2027-01-01') // year rolls over in Hà Nội first
+        assert.equal(viewDay(new Date('2028-02-28T17:30:00Z')), '2028-02-29') // leap day
+      } finally {
+        if (before === undefined) delete process.env.TZ
+        else process.env.TZ = before
+      }
+    })
+  }
+
+  it('defaults to now', () => {
+    const before = Date.now()
+    const day = viewDay()
+    assert.ok([viewDay(new Date(before)), viewDay(new Date())].includes(day))
   })
 })
 

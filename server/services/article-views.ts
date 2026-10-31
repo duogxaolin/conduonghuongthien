@@ -24,6 +24,7 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { articles, articleViewDaily } from '../db/schema'
 import { SOURCE_CATEGORIES, type SourceCategory } from '../utils/analytics-collection'
+import { vietnamDateString } from '../utils/vn-day-range'
 
 /**
  * The source category reserved for fabrication. Nothing arriving from a public
@@ -89,9 +90,18 @@ export function buildViewDedupeKey(articleId: number, visitorToken: string): str
   return key
 }
 
-/** UTC day, matching the day the visitor token was derived under. */
+/**
+ * The Việt Nam calendar day (UTC+7, whatever the process `TZ`) — the day editors read the
+ * per-day series in. Both view handlers compute it once and use it for the visitor token
+ * (the reload dedupe) and the `article_view_daily` row, so the two never disagree.
+ *
+ * It was the UTC day until 2026-10-31: 00:00–07:00 in Hà Nội counted on the day before.
+ * Rows written before keep their UTC day (no backfill) — the day of the switch is the one
+ * shorter or longer day in the series. The analytics tables stay on UTC on purpose
+ * (`server/utils/utc-query.ts`); they are never joined with these rows.
+ */
 export function viewDay(at: Date = new Date()): string {
-  return at.toISOString().slice(0, 10)
+  return vietnamDateString(at)
 }
 
 /**
