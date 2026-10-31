@@ -51,7 +51,7 @@
           <i class="fa-regular fa-clock text-[0.6rem]" aria-hidden="true"></i>
           {{ startedLabel }}
         </span>
-        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#7CB342] text-[#122815] text-[0.68rem] font-bold transition-colors group-hover:bg-[#8BC34A]">
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-brand-950 text-[0.68rem] font-bold transition-colors group-hover:bg-[#8BC34A]">
           Xem ngay
           <i class="fa-solid fa-arrow-right text-[0.55rem]" aria-hidden="true"></i>
         </span>
@@ -64,6 +64,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { browserPollerEnv, createVisiblePoller, type VisiblePoller } from '~/utils/visible-poller'
+import { publicFetch } from '~/composables/publicFetch'
+import type { LivestreamActiveResponse } from '~/types/public-site-api'
 
 const route = useRoute()
 /** Ẩn ticker khi đang ở chính trang /media — ở đó LiveHero đã hiển thị buổi phát. */
@@ -92,7 +94,7 @@ const startedLabel = computed(() => {
 
 async function loadActive() {
   try {
-    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, active: boolean, session: ActiveSession | null }>)(
+    const response = await publicFetch<LivestreamActiveResponse>(
       '/api/public/livestream/active',
       { retry: 0, timeout: 4000 },
     )

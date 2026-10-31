@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { useLayoutConfig } from '~/composables/useLayoutConfig'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicSocialLinksResponse } from '~/types/public-site-api'
 
-interface SocialLink {
-  id: number
-  platform: string
-  label: string
-  url: string
-  icon: string
-  iconType: 'fontawesome' | 'image' | 'svg'
-  color: string
-  sortOrder: number
-}
+/**
+ * Suy từ handler (D-FETCH lô G). Bản viết tay cũ khai `iconType` là union ba giá trị; cột là
+ * `varchar(16)` — template so sánh từng giá trị, giá trị lạ không vẽ biểu tượng nào.
+ */
+type SocialLink = PublicSocialLinksResponse['items'][number]
 
 const props = withDefaults(defineProps<{
   isHidden?: boolean
@@ -42,7 +39,7 @@ function toggleExpand() {
 
 async function load() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: SocialLink[] }>)('/api/public/social-links')
+    const res = await publicFetch<PublicSocialLinksResponse>('/api/public/social-links')
     if (res.ok) items.value = res.items || []
   } catch {
     // Nuốt lỗi — widget MXH không làm gián đoạn trải nghiệm người dùng
@@ -223,14 +220,14 @@ function getIconStyle(item: SocialLink) {
         <div class="hidden md:flex items-center gap-2.5 group">
           <button
             type="button"
-            class="w-12 h-12 rounded-full bg-white/95 text-[#4a5545] hover:text-[#b42318] hover:bg-[#fee4e2] border border-[#dce6dc] shadow-[0_4px_10px_rgba(0,0,0,0.15)] flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]"
+            class="w-12 h-12 rounded-full bg-white/95 text-ink-secondary hover:text-[#b42318] hover:bg-[#fee4e2] border border-line shadow-[0_4px_10px_rgba(0,0,0,0.15)] flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700"
             :title="t('social_collapse')"
             :aria-label="t('social_collapse_aria')"
             @click.stop="toggleExpand"
           >
             <i class="fa-solid fa-xmark text-lg transition-transform duration-200 group-hover:rotate-90" aria-hidden="true"></i>
           </button>
-          <div class="zalo-text-label text-[#667768] opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <div class="zalo-text-label text-ink-muted opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             {{ t('social_collapse') }}
           </div>
         </div>
@@ -238,7 +235,7 @@ function getIconStyle(item: SocialLink) {
         <!-- Mobile (<md): Nút [ ✕ Thu gọn ] dạng pill viên nang nhỏ gọn -->
         <button
           type="button"
-          class="flex md:hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#d2e3d3] shadow-[0_4px_14px_rgba(15,35,18,0.12)] text-[#153317] active:scale-95 transition-all duration-150 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]"
+          class="flex md:hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#d2e3d3] shadow-[0_4px_14px_rgba(15,35,18,0.12)] text-[#153317] active:scale-95 transition-all duration-150 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700"
           :aria-label="t('social_collapse_aria')"
           :aria-expanded="isExpanded"
           @click.stop="toggleExpand"
@@ -261,7 +258,7 @@ function getIconStyle(item: SocialLink) {
     >
       <button
         type="button"
-        class="zalo-pulse-btn zalo-pulse-active w-12 h-12 bg-gradient-to-br from-[#2c6e33] to-[#153317] text-white border border-white/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#2c6e33]"
+        class="zalo-pulse-btn zalo-pulse-active w-12 h-12 bg-gradient-to-br from-brand-700 to-[#153317] text-white border border-white/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-brand-700"
         style="--pulse-color: rgba(44, 110, 51, 0.75)"
         :aria-label="t('social_expand_aria')"
         :aria-expanded="isExpanded"
@@ -279,17 +276,17 @@ function getIconStyle(item: SocialLink) {
     <button
       v-if="!isExpanded"
       type="button"
-      class="flex md:hidden items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#d2e3d3] shadow-[0_6px_20px_rgba(15,35,18,0.16)] active:scale-95 transition-all duration-200 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]"
+      class="flex md:hidden items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#d2e3d3] shadow-[0_6px_20px_rgba(15,35,18,0.16)] active:scale-95 transition-all duration-200 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700"
       :aria-label="`${t('social_support')}. ${t('social_expand_aria')}`"
       :aria-expanded="isExpanded"
       @click.stop="toggleExpand"
     >
       <span class="flex items-center gap-1.5">
-        <span class="w-2 h-2 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+        <span class="w-2 h-2 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
         <span class="text-[0.76rem] font-bold text-[#153317] tracking-tight">{{ t('social_support') }}</span>
       </span>
       <span
-        class="w-7 h-7 rounded-full bg-gradient-to-br from-[#2c6e33] to-[#153317] text-white flex items-center justify-center zalo-pulse-btn zalo-pulse-active shrink-0 shadow-xs"
+        class="w-7 h-7 rounded-full bg-gradient-to-br from-brand-700 to-[#153317] text-white flex items-center justify-center zalo-pulse-btn zalo-pulse-active shrink-0 shadow-xs"
         style="--pulse-color: rgba(44, 110, 51, 0.75)"
         aria-hidden="true"
       >
@@ -316,12 +313,12 @@ function getIconStyle(item: SocialLink) {
     >
       <div
         v-if="open"
-        class="w-[285px] sm:w-[315px] max-h-[350px] sm:max-h-[410px] bg-white rounded-2xl border border-[#dce6dc] shadow-[0_20px_50px_-12px_rgba(20,50,25,0.25),0_4px_16px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col motion-reduce:transition-none"
+        class="w-[285px] sm:w-[315px] max-h-[350px] sm:max-h-[410px] bg-white rounded-2xl border border-line shadow-[0_20px_50px_-12px_rgba(20,50,25,0.25),0_4px_16px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col motion-reduce:transition-none"
         role="dialog"
         :aria-label="t('social_panel_aria')"
       >
         <!-- Header: Gradient xanh C11 uy tín + thông tin nhận diện (shrink-0 không bao giờ bị bóp méo) -->
-        <div class="shrink-0 bg-gradient-to-r from-[#1e4620] via-[#245328] to-[#1e4620] px-3.5 py-3 flex items-center justify-between text-white border-b border-white/10">
+        <div class="shrink-0 bg-gradient-to-r from-brand-900 via-[#245328] to-brand-900 px-3.5 py-3 flex items-center justify-between text-white border-b border-white/10">
           <div class="flex items-center gap-2.5 min-w-0">
             <div class="w-8 h-8 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center text-white shrink-0 shadow-inner">
               <i class="fa-solid fa-share-nodes text-[0.85rem]" aria-hidden="true"></i>
@@ -354,7 +351,7 @@ function getIconStyle(item: SocialLink) {
             :href="item.url"
             target="_blank"
             rel="noopener noreferrer"
-            class="group flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-[#f2f7f2] border border-transparent hover:border-[#dce6dc] transition-all duration-150 no-underline"
+            class="group flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-surface-tint border border-transparent hover:border-line transition-all duration-150 no-underline"
             :aria-label="openLinkAria(item)"
           >
             <!-- Khung icon squircle chuẩn hóa 36x36px -->
@@ -385,27 +382,27 @@ function getIconStyle(item: SocialLink) {
             <!-- Thông tin tên nền tảng & nhãn hiển thị -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5">
-                <span class="text-[0.82rem] font-bold text-[#1E251C] group-hover:text-[#1e4620] transition-colors leading-snug truncate">
+                <span class="text-[0.82rem] font-bold text-ink group-hover:text-brand-900 transition-colors leading-snug truncate">
                   {{ item.platform }}
                 </span>
-                <i class="fa-solid fa-circle-check text-[0.65rem] text-[#2c6e33] shrink-0" title="Kênh chính thức" aria-hidden="true"></i>
+                <i class="fa-solid fa-circle-check text-[0.65rem] text-brand-700 shrink-0" title="Kênh chính thức" aria-hidden="true"></i>
               </div>
-              <span class="text-[0.68rem] text-[#667768] block truncate leading-tight mt-0.5">
+              <span class="text-[0.68rem] text-ink-muted block truncate leading-tight mt-0.5">
                 {{ item.label || item.platform }}
               </span>
             </div>
 
             <!-- Mũi tên liên kết ra ngoài -->
-            <span class="w-6 h-6 rounded-full bg-transparent group-hover:bg-white text-[#9ca3af] group-hover:text-[#1e4620] flex items-center justify-center transition-all shrink-0">
+            <span class="w-6 h-6 rounded-full bg-transparent group-hover:bg-white text-[#9ca3af] group-hover:text-brand-900 flex items-center justify-center transition-all shrink-0">
               <i class="fa-solid fa-arrow-up-right-from-square text-[0.65rem] transition-transform duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" aria-hidden="true"></i>
             </span>
           </a>
         </div>
 
         <!-- Footer chứng nhận uy tín C11 (shrink-0 cố định đáy) -->
-        <div class="shrink-0 px-3.5 py-2 bg-[#F8FAF7] border-t border-[#e2ece3] flex items-center justify-between text-[0.68rem] text-[#556655]">
+        <div class="shrink-0 px-3.5 py-2 bg-surface border-t border-line flex items-center justify-between text-[0.68rem] text-ink-soft">
           <span class="flex items-center gap-1.5 font-medium">
-            <i class="fa-solid fa-shield-check text-[#385130] text-[0.75rem]" aria-hidden="true"></i>
+            <i class="fa-solid fa-shield-check text-brand-800 text-[0.75rem]" aria-hidden="true"></i>
             C11 - BCA
           </span>
         </div>
@@ -415,7 +412,7 @@ function getIconStyle(item: SocialLink) {
     <!-- Nút launcher kích hoạt dạng viên nang hoàn mỹ (Nhỏ gọn, tinh tế, không méo tròn) -->
     <button
       type="button"
-      class="group flex items-center gap-2 bg-gradient-to-r from-[#1e4620] to-[#153317] hover:from-[#153317] hover:to-[#0f2311] text-white px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-full border border-white/20 shadow-[0_8px_24px_rgba(30,70,32,0.28)] hover:shadow-[0_12px_28px_rgba(30,70,32,0.38)] hover:-translate-y-0.5 cursor-pointer transition-all duration-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#1e4620] motion-reduce:transition-none"
+      class="group flex items-center gap-2 bg-gradient-to-r from-brand-900 to-[#153317] hover:from-[#153317] hover:to-brand-950 text-white px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-full border border-white/20 shadow-[0_8px_24px_rgba(30,70,32,0.28)] hover:shadow-[0_12px_28px_rgba(30,70,32,0.38)] hover:-translate-y-0.5 cursor-pointer transition-all duration-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-900 motion-reduce:transition-none"
       :class="{ 'ring-2 ring-[#7CB342] shadow-[0_12px_28px_rgba(30,70,32,0.45)]': open }"
       :aria-expanded="open"
       aria-haspopup="dialog"

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AdminIpBan, IpBanCreateResponse, IpBanDeleteResponse, IpBansResponse } from '~/types/admin-settings-api'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -14,22 +16,13 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  * they retype the address.
  */
 
-type Ban = {
-  id: number
-  value: string
-  reason: string | null
-  createdAt: string | null
-  createdBy: number | null
-  createdByName: string | null
-}
-
 const toast = useToast()
 const { confirm } = useConfirm()
 
 const loading = ref(true)
 const error = ref('')
 const busy = ref(false)
-const bans = ref<Ban[]>([])
+const bans = ref<AdminIpBan[]>([])
 
 const newValue = ref('')
 const newReason = ref('')
@@ -46,7 +39,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; bans: Ban[] }>)(`/api/admin/ip-bans`)
+    const res = await adminFetch<IpBansResponse>(`/api/admin/ip-bans`)
     if (!res?.ok) {
       error.value = 'Không tải được danh sách chặn.'
       return
@@ -64,7 +57,7 @@ async function addBan() {
   busy.value = true
   formError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ip-bans`, {
+    await adminFetch<IpBanCreateResponse>(`/api/admin/ip-bans`, {
       method: 'POST',
       body: { value: newValue.value, reason: newReason.value },
     })
@@ -74,12 +67,14 @@ async function addBan() {
     await load()
   } catch (err: unknown) {
     formError.value = errorMessage(err, 'Không thêm được mục chặn.')
+    // 409: already listed — perhaps by another officer a moment ago: show the list as it is now.
+    if (errorStatus(err) === 409) await load()
   } finally {
     busy.value = false
   }
 }
 
-async function liftBan(ban: Ban) {
+async function liftBan(ban: AdminIpBan) {
   if (!await confirm({
     message: `Bỏ chặn ${ban.value}? Địa chỉ này sẽ đăng nhập và bình luận được ngay.`,
     confirmLabel: 'Bỏ chặn',
@@ -87,11 +82,13 @@ async function liftBan(ban: Ban) {
   })) return
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ip-bans/${ban.id}`, { method: 'DELETE' })
+    await adminFetch<IpBanDeleteResponse>(`/api/admin/ip-bans/${ban.id}`, { method: 'DELETE' })
     toast.success('Đã bỏ chặn địa chỉ.')
     await load()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không bỏ chặn được địa chỉ này.'))
+    // 404: already lifted (another officer, a second click): the row on screen is stale.
+    if (errorStatus(err) === 404) await load()
   } finally {
     busy.value = false
   }
@@ -103,13 +100,13 @@ onMounted(load)
 <template>
   <div class="flex flex-col gap-5">
     <div>
-      <h1 class="m-0 text-[1.35rem] font-extrabold text-[#122815]">Chặn địa chỉ IP</h1>
-      <p class="m-0 mt-1 text-sm text-[#667768]">
-        Áp dụng cho cả lượt đăng nhập Google và lượt gửi bình luận. Chấp nhận một địa chỉ IPv4, một dải IPv4 (ví dụ <code class="rounded bg-[#f0f7f1] px-1">203.0.113.0/24</code>), hoặc một địa chỉ IPv6 đầy đủ.
+      <h1 class="m-0 text-[1.35rem] font-extrabold text-brand-950">Chặn địa chỉ IP</h1>
+      <p class="m-0 mt-1 text-sm text-ink-muted">
+        Áp dụng cho cả lượt đăng nhập Google và lượt gửi bình luận. Chấp nhận một địa chỉ IPv4, một dải IPv4 từ <code class="rounded bg-surface-tint px-1">/8</code> đến <code class="rounded bg-surface-tint px-1">/32</code> (ví dụ <code class="rounded bg-surface-tint px-1">203.0.113.0/24</code>; dải rộng hơn /8 bị từ chối), hoặc một địa chỉ IPv6 đầy đủ.
       </p>
     </div>
 
-    <form class="flex flex-col gap-3 rounded-xl border border-[#e2ece3] bg-white p-4" @submit.prevent="addBan">
+    <form class="flex flex-col gap-3 rounded-xl border border-line bg-white p-4" @submit.prevent="addBan">
       <div class="flex flex-wrap items-end gap-3">
         <label class="flex min-w-[200px] flex-col gap-1.5 text-sm font-bold">
           Địa chỉ hoặc dải
@@ -117,7 +114,7 @@ onMounted(load)
             v-model="newValue"
             autocomplete="off"
             placeholder="203.0.113.45 hoặc 203.0.113.0/24"
-            class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+            class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"
           />
         </label>
         <label class="flex min-w-[240px] flex-1 flex-col gap-1.5 text-sm font-bold">
@@ -126,13 +123,13 @@ onMounted(load)
             v-model="newReason"
             maxlength="500"
             autocomplete="off"
-            class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+            class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"
           />
         </label>
         <button
           type="submit"
           :disabled="busy || !newValue.trim()"
-          class="rounded-lg bg-[#1e4620] px-4 py-2.5 font-bold text-white hover:bg-[#2c6e33] disabled:opacity-60"
+          class="rounded-lg bg-brand-900 px-4 py-2.5 font-bold text-white hover:bg-brand-700 disabled:opacity-60"
         >Thêm</button>
       </div>
       <p v-if="formError" role="alert" class="m-0 text-sm text-[#b0403c]">
@@ -141,13 +138,13 @@ onMounted(load)
     </form>
 
     <!-- Đang tải -->
-    <div v-if="loading" role="status" aria-busy="true" class="rounded-xl border border-[#e2ece3] bg-white p-4">
+    <div v-if="loading" role="status" aria-busy="true" class="rounded-xl border border-line bg-white p-4">
       <span class="sr-only">Đang tải danh sách chặn</span>
       <div
         v-for="n in 4"
         :key="n"
         aria-hidden="true"
-        class="mb-2 h-11 rounded-lg bg-[#eef3ee] animate-pulse motion-reduce:animate-none"
+        class="mb-2 h-11 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"
       ></div>
     </div>
 
@@ -159,24 +156,24 @@ onMounted(load)
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="load">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="load">Thử lại</button>
     </div>
 
     <template v-else>
       <!-- Rỗng -->
-      <p v-if="!bans.length" class="rounded-xl border border-[#e2ece3] bg-white px-5 py-8 text-center text-sm text-[#667768]">
+      <p v-if="!bans.length" class="rounded-xl border border-line bg-white px-5 py-8 text-center text-sm text-ink-muted">
         Chưa chặn địa chỉ nào.
       </p>
 
       <!-- Mobile Card View: Tối ưu dạng thẻ cho điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef3ee] rounded-xl border border-[#e2ece3] bg-white overflow-hidden shadow-xs">
+      <div class="md:hidden divide-y divide-surface-tint rounded-xl border border-line bg-white overflow-hidden shadow-xs">
         <div
           v-for="ban in bans"
           :key="'m-'+ban.id"
           class="p-4 flex flex-col gap-2.5"
         >
           <div class="flex items-center justify-between gap-2">
-            <code class="font-mono font-bold text-[#122815] bg-[#f4f7f4] px-2 py-1 rounded text-sm">{{ ban.value }}</code>
+            <code class="font-mono font-bold text-brand-950 bg-surface px-2 py-1 rounded text-sm">{{ ban.value }}</code>
             <button
               type="button"
               :disabled="busy"
@@ -188,10 +185,10 @@ onMounted(load)
           </div>
 
           <p class="m-0 text-xs text-[#3d4f3f]">
-            <span class="font-semibold text-[#667768]">Lý do:</span> {{ ban.reason || '—' }}
+            <span class="font-semibold text-ink-muted">Lý do:</span> {{ ban.reason || '—' }}
           </p>
 
-          <div class="flex items-center justify-between text-[0.75rem] text-[#8a9a8c] pt-2 border-t border-[#f4f7f4]">
+          <div class="flex items-center justify-between text-[0.75rem] text-ink-faint pt-2 border-t border-surface">
             <span><i class="fa-regular fa-user mr-1"></i>{{ ban.createdByName || 'Tài khoản đã xoá' }}</span>
             <span>{{ formatMoment(ban.createdAt) }}</span>
           </div>
@@ -199,10 +196,10 @@ onMounted(load)
       </div>
 
       <!-- Desktop Table View: Bảng đầy đủ trên máy tính -->
-      <div class="hidden md:block overflow-x-auto rounded-xl border border-[#e2ece3] bg-white">
+      <div class="hidden md:block overflow-x-auto rounded-xl border border-line bg-white">
         <table class="w-full min-w-[640px] border-collapse text-sm">
           <thead>
-            <tr class="bg-[#f8faf8] text-left text-[0.78rem] uppercase tracking-wide text-[#667768]">
+            <tr class="bg-surface text-left text-[0.78rem] uppercase tracking-wide text-ink-muted">
               <th class="px-4 py-3 font-bold">Địa chỉ / dải</th>
               <th class="px-4 py-3 font-bold">Lý do</th>
               <th class="px-4 py-3 font-bold">Người thêm</th>
@@ -211,8 +208,8 @@ onMounted(load)
             </tr>
           </thead>
           <tbody>
-            <tr v-for="ban in bans" :key="ban.id" class="border-t border-[#eef3ee]">
-              <td class="px-4 py-3 font-mono font-semibold text-[#122815]">{{ ban.value }}</td>
+            <tr v-for="ban in bans" :key="ban.id" class="border-t border-surface-tint">
+              <td class="px-4 py-3 font-mono font-semibold text-brand-950">{{ ban.value }}</td>
               <td class="px-4 py-3 text-[#3d4f3f]">{{ ban.reason || '—' }}</td>
               <td class="px-4 py-3 text-[#3d4f3f]">{{ ban.createdByName || 'Tài khoản đã xoá' }}</td>
               <td class="px-4 py-3 text-[#3d4f3f]">{{ formatMoment(ban.createdAt) }}</td>

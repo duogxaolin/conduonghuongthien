@@ -1,9 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { media, settings, activityLogs } from '../../../db/schema'
-import { uploadLocalFile } from '../../../utils/media-local'
-import { uploadR2File, type R2Config } from '../../../utils/media-r2'
+import { deleteLocalFile, uploadLocalFile } from '../../../utils/media-local'
+import { deleteR2File, uploadR2File, type R2Config } from '../../../utils/media-r2'
 import sharp from 'sharp'
 import path from 'node:path'
+import { randomBytes } from 'node:crypto'
+import { logWarn } from '../../../utils/logger'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { loadR2Config } from '../../../services/media'
 import {
@@ -141,7 +143,11 @@ export default defineEventHandler(async (event) => {
     }
   }
   const safeBasename = path.basename(originalName, path.extname(originalName)).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'file'
-  const uniqueFilename = `${Date.now()}_${safeBasename}${ext}`
+  // `Date.now()` alone collided: two uploads of one name in the same millisecond got ONE
+  // filename — two rows sharing one file, and deleting either deleted the other's file too.
+  // The random part keeps them apart; the local write is also exclusive (`wx`), so a
+  // collision that still happens fails this upload instead of overwriting another row's file.
+  const uniqueFilename = `${Date.now()}_${randomBytes(4).toString('hex')}_${safeBasename}${ext}`
 
   const db = getDb()
 
@@ -151,17 +157,18 @@ export default defineEventHandler(async (event) => {
   const provider = settingsMap.get('media_provider') || 'local'
 
   let uploadResult: { url: string; storagePath: string }
+  let r2Config: R2Config | null = null
 
   if (provider === 'r2') {
     // Secret Key lưu dạng envelope — đọc qua `loadR2Config`, nơi duy nhất giải mã nó.
-    const r2Config: R2Config = await loadR2Config()
+    r2Config = await loadR2Config()
     if (!r2Config.accountId || !r2Config.accessKeyId || !r2Config.secretAccessKey || !r2Config.bucket) {
       throw createError({ statusCode: 400, statusMessage: 'Cấu hình Cloudflare R2 chưa đầy đủ. Hãy kiểm tra lại Cài đặt.' })
     }
     uploadResult = await uploadR2File(buffer, uniqueFilename, effectiveMime, r2Config)
   } else {
     try {
-      uploadResult = await uploadLocalFile(buffer, uniqueFilename)
+      uploadResult = await uploadLocalFile(buffer, uniqueFilename, new Date(), { exclusive: true })
     } catch (err) {
       // Writing to the uploads volume fails as a bare 500 "Server error" when the
       // container runs as user `node` but the named volume still belongs to root
@@ -191,6 +198,11 @@ export default defineEventHandler(async (event) => {
    * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
    * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
    * commit độc lập trên pool.
+   *
+   * Tệp đã ghi TRƯỚC hàng (hàng lưu URL của nó), nên transaction hỏng từng để lại một tệp
+   * trong thư mục công khai hay bucket mà không hàng `media` nào trỏ tới: không hiện trong
+   * thư viện, không ai xoá được, vẫn được phục vụ. Nay gỡ nó trên đường ra (cố gắng hết sức
+   * — lượt gỡ hỏng chỉ ghi log), và nơi gọi vẫn nhận lỗi GỐC.
    */
   const newMediaId = await db.transaction(async (tx) => {
     const [insertRes] = await tx.insert(media).values({
@@ -217,6 +229,9 @@ export default defineEventHandler(async (event) => {
     })
 
     return created
+  }).catch(async (error: unknown) => {
+    await removeUnrecordedUpload(provider, uploadResult.storagePath, r2Config)
+    throw error
   })
 
   return {
@@ -234,3 +249,20 @@ export default defineEventHandler(async (event) => {
     }
   }
 })
+
+/**
+ * Gỡ tệp vừa ghi mà không hàng `media` nào trỏ tới (transaction ghi hàng đã hỏng). Không bao
+ * giờ ném: lỗi ở đây không được thay lỗi gốc mà nơi gọi phải nhận — chỉ ghi log, kèm đường
+ * dẫn/khoá của tệp mồ côi để vận hành gỡ tay.
+ */
+async function removeUnrecordedUpload(provider: string, storagePath: string, r2Config: R2Config | null): Promise<void> {
+  let removed: boolean
+  let error: string | undefined
+  try {
+    removed = provider === 'r2' && r2Config ? await deleteR2File(storagePath, r2Config) : await deleteLocalFile(storagePath)
+  } catch (cleanupError: unknown) {
+    removed = false
+    error = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+  }
+  if (!removed) logWarn({ event: 'media.upload_orphan_cleanup_failed', provider, storagePath, ...(error ? { error } : {}) })
+}

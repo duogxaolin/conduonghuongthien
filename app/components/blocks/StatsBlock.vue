@@ -2,19 +2,19 @@
   <section class="relative z-10 -mt-10 px-4 sm:-mt-7 sm:px-0" :aria-label="t('block_stats_aria')">
     <div class="container">
       <div class="relative overflow-hidden rounded-2xl border border-[#dce7d9] bg-white shadow-[0_18px_50px_rgba(35,67,31,0.12)]">
-        <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#315c35] via-[#7CB342] to-[#315c35]"></div>
-        <div class="grid grid-cols-1 divide-y divide-[#e5ede2] sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+        <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#315c35] via-accent to-[#315c35]"></div>
+        <div class="grid grid-cols-1 divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
           <div
             v-for="(stat, i) in stats"
             :key="i"
-            class="group flex items-center gap-4 px-5 py-6 transition-colors duration-200 hover:bg-[#f7faf5] sm:px-6 lg:flex-col lg:items-start lg:gap-5 lg:px-7 lg:py-8"
+            class="group flex items-center gap-4 px-5 py-6 transition-colors duration-200 hover:bg-surface sm:px-6 lg:flex-col lg:items-start lg:gap-5 lg:px-7 lg:py-8"
           >
             <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#edf5e8] text-[#416b3b] ring-1 ring-[#d7e7d0] transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:scale-105" aria-hidden="true">
               <i :class="[stat.icon || fallbackIcons[i % fallbackIcons.length], 'text-xl']"></i>
             </div>
             <div class="min-w-0">
               <span class="block text-[2rem] font-black leading-none tracking-tight text-[#244829] lg:text-[2.25rem]" v-html="formatValue(stat.value)"></span>
-              <span class="mt-2 block text-[0.84rem] font-semibold leading-[1.45] text-[#5d6d59]">{{ stat.label }}</span>
+              <span class="mt-2 block text-[0.84rem] font-semibold leading-[1.45] text-ink-soft">{{ stat.label }}</span>
             </div>
           </div>
         </div>

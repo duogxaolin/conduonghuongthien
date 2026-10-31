@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminKnowledgeImportError, AdminKnowledgeImportResult } from '~/types/admin-api'
 import type { AdminKnowledgeRow } from '~/types/admin-api'
+import type { AdminKnowledgeDeleteResponse, AdminKnowledgeListResponse, AdminKnowledgeTransitionResponse, AdminKnowledgeUpdateResponse } from '~/types/admin-chatbot-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 const route = useRoute(); const router = useRouter()
 const activeTab = computed(() => route.query.tab === 'small-talk' ? 'small-talk' : 'knowledge')
@@ -8,7 +9,17 @@ function selectTab(tab: 'knowledge' | 'small-talk') { return router.replace({ qu
 const toast = useToast(); const { confirm } = useConfirm(); const items = ref<AdminKnowledgeRow[]>([]); const loading = ref(true); const error = ref(''); const search = ref(''); const topic = ref(''); const status = ref(''); const quick = ref(''); const pagination = ref({ page: 1, totalPages: 1, total: 0 }); const page = ref(1)
 const statusLabel: Record<string, string> = { draft: 'Bản nháp', published: 'Đã xuất bản', archived: 'Đã lưu trữ' }
 const statusTone: Record<string, string> = { draft: 'border-[#d8c99a] bg-[#fffaf0] text-[#765b00]', published: 'border-[#8ed694] bg-[#f0f7f1] text-[#1e4620]', archived: 'border-[#c8d6c9] bg-[#f4f7f4] text-[#667768]' }
-async function load(next = 1) { loading.value = true; error.value = ''; page.value = next; try { const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ items: AdminKnowledgeRow[]; pagination: { page: number; perPage: number; total: number; totalPages: number } }>)('/api/admin/chatbot/knowledge', { params: { page: next, perPage: 15, search: search.value, topic: topic.value, status: status.value, quick: quick.value } }); items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value) } catch (err: unknown) { error.value = errorMessage(err, 'Không thể tải kho kiến thức.') } finally { loading.value = false } }
+/** Only the LATEST list request writes: "Chủ đề" reloads per keystroke, and an older answer landing last replaced the
+ *  newer filter's rows. Not `useAdminList` — rows are edited in place (docs/decisions/fetch-rollout-d-fetch.md). */
+let listRequest = 0
+async function load(next = 1) {
+  const ticket = ++listRequest
+  loading.value = true; error.value = ''; page.value = next
+  try {
+    const res = await adminFetch<AdminKnowledgeListResponse>('/api/admin/chatbot/knowledge', { query: { page: next, perPage: 15, search: search.value, topic: topic.value, status: status.value, quick: quick.value } })
+    if (ticket === listRequest) { items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value) }
+  } catch (err: unknown) { if (ticket === listRequest) error.value = errorMessage(err, 'Không thể tải kho kiến thức.') } finally { if (ticket === listRequest) loading.value = false }
+}
 
 // ── Bulk selection ──
 const selection = useBulkSelection()
@@ -51,15 +62,15 @@ async function toggleQuickQuestion(item: AdminKnowledgeRow) {
   const target = !(item.isQuickQuestion === true)
   item.isQuickQuestion = target
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'PUT', body: { isQuickQuestion: target } })
+    await adminFetch<AdminKnowledgeUpdateResponse>(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'PUT', body: { isQuickQuestion: target } })
     toast.success(target ? 'Đã đưa vào câu hỏi nhanh.' : 'Đã bỏ khỏi câu hỏi nhanh.')
   } catch (err: unknown) {
     item.isQuickQuestion = !target
     toast.error(errorMessage(err, 'Không thể cập nhật câu hỏi nhanh.'))
   }
 }
-async function transition(item: AdminKnowledgeRow, action: 'publish' | 'archive') { const verb = action === 'publish' ? 'xuất bản' : 'lưu trữ'; const ok = await confirm({ message: `Bạn có chắc muốn ${verb} mục này?`, confirmLabel: verb === 'xuất bản' ? 'Xuất bản' : 'Lưu trữ' }); if (!ok) return; try { await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/knowledge/${item.id}/${action}`, { method: "POST" }); toast.success(`Đã ${verb} mục kiến thức.`); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Đã xảy ra lỗi.') || `Không thể ${verb} mục kiến thức.`) } }
-async function remove(item: AdminKnowledgeRow) { const ok = await confirm({ title: 'Xóa mục kiến thức', message: 'Xóa mục kiến thức này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return; try { await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/knowledge/${item.id}`, { method: "DELETE" }); toast.success('Đã xóa mục kiến thức.'); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa mục kiến thức.')) } }
+async function transition(item: AdminKnowledgeRow, action: 'publish' | 'archive') { const verb = action === 'publish' ? 'xuất bản' : 'lưu trữ'; const ok = await confirm({ message: `Bạn có chắc muốn ${verb} mục này?`, confirmLabel: verb === 'xuất bản' ? 'Xuất bản' : 'Lưu trữ' }); if (!ok) return; try { await adminFetch<AdminKnowledgeTransitionResponse>(`/api/admin/chatbot/knowledge/${item.id}/${action}`, { method: "POST" }); toast.success(`Đã ${verb} mục kiến thức.`); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, `Không thể ${verb} mục kiến thức.`)) } }
+async function remove(item: AdminKnowledgeRow) { const ok = await confirm({ title: 'Xóa mục kiến thức', message: 'Xóa mục kiến thức này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return; try { await adminFetch<AdminKnowledgeDeleteResponse>(`/api/admin/chatbot/knowledge/${item.id}`, { method: "DELETE" }); toast.success('Đã xóa mục kiến thức.'); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa mục kiến thức.')) } }
 // ── Excel/CSV import ──
 const showImport = ref(false); const importFile = ref<File | null>(null); const importPublish = ref(false); const importTopic = ref(''); const importing = ref(false); const importResult = ref<AdminKnowledgeImportResult | null>(null)
 const importStageLabel: Record<string, string> = { parse: 'Đọc tệp', save: 'Lưu dữ liệu', publish: 'Xuất bản' }
@@ -93,7 +104,7 @@ const downloadingTemplate = ref(false)
 async function downloadTemplate() {
   downloadingTemplate.value = true
   try {
-    const blob = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<Blob>)("/api/admin/chatbot/knowledge/template", { responseType: "blob" })
+    const blob = await adminFetch<Blob>("/api/admin/chatbot/knowledge/template", { responseType: "blob" })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -110,7 +121,7 @@ async function runImport() {
   importing.value = true; importResult.value = null
   try {
     const fd = new FormData(); fd.append('file', importFile.value); fd.append('publish', importPublish.value ? '1' : '0'); if (importTopic.value.trim()) fd.append('topic', importTopic.value.trim())
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminKnowledgeImportResult>)("/api/admin/chatbot/knowledge/import", { method: "POST", body: fd })
+    const res = await adminFetch<AdminKnowledgeImportResult>("/api/admin/chatbot/knowledge/import", { method: "POST", body: fd })
     importResult.value = res
     const message = `Đã nhập ${res.imported}/${res.total} mục${res.published ? `, xuất bản ${res.published}` : ''}.`
     if (res.errors?.length) toast.warning(message, 'Nhập tệp chưa hoàn tất')
@@ -122,44 +133,44 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
 </script>
 <template>
   <div class="flex flex-col gap-5">
-    <header><h1 class="m-0 text-[1.3rem] font-extrabold text-[#122815]">Kho nội dung Chatbot</h1><p class="m-0 mt-1 text-sm text-[#667768]">Quản lý riêng kho nghiệp vụ đã duyệt và kho trả lời thường nhật trên cùng một màn hình.</p></header>
+    <header><h1 class="m-0 text-[1.3rem] font-extrabold text-brand-950">Kho nội dung Chatbot</h1><p class="m-0 mt-1 text-sm text-ink-muted">Quản lý riêng kho nghiệp vụ đã duyệt và kho trả lời thường nhật trên cùng một màn hình.</p></header>
     <div class="flex overflow-x-auto rounded-xl border border-[#d7e5d8] bg-white p-1" role="tablist" aria-label="Chọn kho nội dung chatbot">
-      <button id="knowledge-tab" type="button" role="tab" :aria-selected="activeTab === 'knowledge'" aria-controls="knowledge-panel" class="min-w-max flex-1 rounded-lg px-4 py-3 text-sm font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30" :class="activeTab === 'knowledge' ? 'bg-[#1e4620] text-white' : 'text-[#38553b] hover:bg-[#f0f7f1]'" @click="selectTab('knowledge')"><i class="fa-solid fa-book-open mr-2" aria-hidden="true"></i>Kho nghiệp vụ</button>
-      <button id="small-talk-tab" type="button" role="tab" :aria-selected="activeTab === 'small-talk'" aria-controls="small-talk-panel" class="min-w-max flex-1 rounded-lg px-4 py-3 text-sm font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30" :class="activeTab === 'small-talk' ? 'bg-[#1e4620] text-white' : 'text-[#38553b] hover:bg-[#f0f7f1]'" @click="selectTab('small-talk')"><i class="fa-solid fa-comment-dots mr-2" aria-hidden="true"></i>Trả lời thường nhật</button>
+      <button id="knowledge-tab" type="button" role="tab" :aria-selected="activeTab === 'knowledge'" aria-controls="knowledge-panel" class="min-w-max flex-1 rounded-lg px-4 py-3 text-sm font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-brand-700/30" :class="activeTab === 'knowledge' ? 'bg-brand-900 text-white' : 'text-[#38553b] hover:bg-surface-tint'" @click="selectTab('knowledge')"><i class="fa-solid fa-book-open mr-2" aria-hidden="true"></i>Kho nghiệp vụ</button>
+      <button id="small-talk-tab" type="button" role="tab" :aria-selected="activeTab === 'small-talk'" aria-controls="small-talk-panel" class="min-w-max flex-1 rounded-lg px-4 py-3 text-sm font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-brand-700/30" :class="activeTab === 'small-talk' ? 'bg-brand-900 text-white' : 'text-[#38553b] hover:bg-surface-tint'" @click="selectTab('small-talk')"><i class="fa-solid fa-comment-dots mr-2" aria-hidden="true"></i>Trả lời thường nhật</button>
     </div>
     <section v-if="activeTab === 'knowledge'" id="knowledge-panel" role="tabpanel" aria-labelledby="knowledge-tab" class="flex flex-col gap-5">
-    <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 class="m-0 text-lg font-extrabold text-[#122815]">Kho nghiệp vụ</h2><p class="m-0 mt-1 text-sm text-[#667768]">Biên tập câu hỏi, câu trả lời và nguồn tham khảo theo quy trình nháp, duyệt và xuất bản.</p></div><div class="flex flex-wrap gap-2"><button type="button" @click="showImport = true" class="inline-flex items-center justify-center gap-2 rounded-lg border border-[#2c6e33] px-4 py-2.5 font-bold text-[#2c6e33] hover:bg-[#f0f7f1]"><i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i> Nhập từ Excel</button><nuxt-link to="/admin/chatbot/knowledge/new" class="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2.5 font-bold text-white no-underline hover:bg-[#2c6e33]">Tạo mục mới</nuxt-link></div></header>
-    <div class="flex flex-col gap-3 rounded-xl border border-[#e2ece3] bg-white p-4 sm:flex-row sm:flex-wrap"><label class="min-w-[220px] flex-1 text-sm font-bold">Tìm kiếm<input v-model="search" @keyup.enter="load(1)" type="search" placeholder="Câu hỏi, câu trả lời, từ khóa" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" /></label><label class="text-sm font-bold">Chủ đề<input v-model="topic" @keyup.enter="load(1)" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]" /></label><label class="text-sm font-bold">Trạng thái<select v-model="status" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]"><option value="">Tất cả</option><option value="draft">Bản nháp</option><option value="published">Đã xuất bản</option><option value="archived">Đã lưu trữ</option></select></label><label class="text-sm font-bold">Câu hỏi nhanh<select v-model="quick" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]"><option value="">Tất cả</option><option value="yes">Đang hiển thị</option><option value="no">Chưa hiển thị</option></select></label><button type="button" class="self-end rounded-lg border border-[#c8d6c9] px-4 py-2.5 font-bold text-[#2c6e33]" @click="load(1)">Lọc</button></div>
+    <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 class="m-0 text-lg font-extrabold text-brand-950">Kho nghiệp vụ</h2><p class="m-0 mt-1 text-sm text-ink-muted">Biên tập câu hỏi, câu trả lời và nguồn tham khảo theo quy trình nháp, duyệt và xuất bản.</p></div><div class="flex flex-wrap gap-2"><button type="button" @click="showImport = true" class="inline-flex items-center justify-center gap-2 rounded-lg border border-brand-700 px-4 py-2.5 font-bold text-brand-700 hover:bg-surface-tint"><i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i> Nhập từ Excel</button><nuxt-link to="/admin/chatbot/knowledge/new" class="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-900 px-4 py-2.5 font-bold text-white no-underline hover:bg-brand-700">Tạo mục mới</nuxt-link></div></header>
+    <div class="flex flex-col gap-3 rounded-xl border border-line bg-white p-4 sm:flex-row sm:flex-wrap"><label class="min-w-[220px] flex-1 text-sm font-bold">Tìm kiếm<input v-model="search" @keyup.enter="load(1)" type="search" placeholder="Câu hỏi, câu trả lời, từ khóa" class="mt-1 w-full rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20" /></label><label class="text-sm font-bold">Chủ đề<input v-model="topic" @keyup.enter="load(1)" class="mt-1 w-full rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700" /></label><label class="text-sm font-bold">Trạng thái<select v-model="status" class="mt-1 w-full rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700"><option value="">Tất cả</option><option value="draft">Bản nháp</option><option value="published">Đã xuất bản</option><option value="archived">Đã lưu trữ</option></select></label><label class="text-sm font-bold">Câu hỏi nhanh<select v-model="quick" class="mt-1 w-full rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700"><option value="">Tất cả</option><option value="yes">Đang hiển thị</option><option value="no">Chưa hiển thị</option></select></label><button type="button" class="self-end rounded-lg border border-line-strong px-4 py-2.5 font-bold text-brand-700" @click="load(1)">Lọc</button></div>
     <AdminBulkActionBar v-if="selection.count.value" :count="selection.count.value" :busy="bulk.busy.value" noun="mục kiến thức" @clear="selection.clear()">
-      <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="bulkStatus('published')">Xuất bản</button>
+      <button type="button" class="rounded-lg border border-brand-700 bg-white px-3 py-2 text-sm font-bold text-brand-700 hover:bg-white/70" @click="bulkStatus('published')">Xuất bản</button>
       <button type="button" class="rounded-lg border border-[#b78103] bg-white px-3 py-2 text-sm font-bold text-[#765b00] hover:bg-white/70" @click="bulkStatus('archived')">Lưu trữ (ẩn)</button>
-      <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="bulkQuickQuestion(true)">Đưa vào câu hỏi nhanh</button>
-      <button type="button" class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2 text-sm font-bold text-[#667768] hover:bg-white/70" @click="bulkQuickQuestion(false)">Bỏ khỏi câu hỏi nhanh</button>
-      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+      <button type="button" class="rounded-lg border border-brand-700 bg-white px-3 py-2 text-sm font-bold text-brand-700 hover:bg-white/70" @click="bulkQuickQuestion(true)">Đưa vào câu hỏi nhanh</button>
+      <button type="button" class="rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-bold text-ink-muted hover:bg-white/70" @click="bulkQuickQuestion(false)">Bỏ khỏi câu hỏi nhanh</button>
+      <button type="button" class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-[#4A6741]" @click="load(1)">thử lại</button>.</div><SkeletonTable v-if="loading" label="Đang tải kho kiến thức" :rows="6" :cols="7" /><div v-else-if="!items.length" class="rounded-xl border border-[#e2ece3] bg-white p-12 text-center"><i class="fa-solid fa-book-open mb-3 text-3xl text-[#c8d6c9]" aria-hidden="true"></i><p class="m-0 font-semibold text-[#667768]">{{ search || topic || status || quick ? 'Không có kết quả phù hợp.' : 'Chưa có mục kiến thức nào.' }}</p></div>
-    <div v-else class="overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs">
+    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load(1)">thử lại</button>.</div><SkeletonTable v-if="loading" label="Đang tải kho kiến thức" :rows="6" :cols="7" /><template v-else-if="!items.length"><!-- After a failed load the list was never read: the alert alone, no "empty" claim. --><div v-if="!error" class="rounded-xl border border-line bg-white p-12 text-center"><i class="fa-solid fa-book-open mb-3 text-3xl text-line-strong" aria-hidden="true"></i><p class="m-0 font-semibold text-ink-muted">{{ search || topic || status || quick ? 'Không có kết quả phù hợp.' : 'Chưa có mục kiến thức nào.' }}</p></div></template>
+    <div v-else class="overflow-hidden rounded-xl border border-line bg-white shadow-xs">
       <!-- Mobile Card View: Tối ưu hiển thị dạng thẻ trên điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <div
           v-for="item in items"
           :key="'m-'+item.id"
           class="p-4 flex flex-col gap-2.5 transition-colors"
-          :class="selection.isSelected(Number(item.id)) ? 'bg-[#f0f7f1]' : ''"
+          :class="selection.isSelected(Number(item.id)) ? 'bg-surface-tint' : ''"
         >
           <div class="flex items-start gap-2.5">
             <input
               type="checkbox"
-              class="mt-1 h-4 w-4 shrink-0 accent-[#2c6e33]"
+              class="mt-1 h-4 w-4 shrink-0 accent-brand-700"
               :checked="selection.isSelected(Number(item.id))"
               :aria-label="`Chọn mục: ${item.canonicalQuestion}`"
               @change="selection.toggle(Number(item.id))"
             />
             <div class="min-w-0 flex-1">
-              <p class="m-0 font-bold text-[#122815] text-[0.92rem] leading-snug">{{ item.canonicalQuestion }}</p>
+              <p class="m-0 font-bold text-brand-950 text-[0.92rem] leading-snug">{{ item.canonicalQuestion }}</p>
               <div class="flex flex-wrap items-center gap-2 mt-2">
-                <span class="inline-flex items-center gap-1 rounded-md bg-[#f4f7f4] px-2 py-0.5 text-xs text-[#445546]">
-                  <i class="fa-solid fa-tag text-[0.65rem] text-[#667768]" aria-hidden="true"></i>
+                <span class="inline-flex items-center gap-1 rounded-md bg-surface px-2 py-0.5 text-xs text-[#445546]">
+                  <i class="fa-solid fa-tag text-[0.65rem] text-ink-muted" aria-hidden="true"></i>
                   {{ item.topic }}
                 </span>
                 <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.7rem] font-bold" :class="statusTone[item.status]">
@@ -170,34 +181,34 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
             </div>
           </div>
 
-          <div class="flex items-center justify-between text-xs text-[#667768] pt-2 border-t border-[#f4f7f4]">
-            <label class="inline-flex items-center gap-1.5 font-semibold text-[#2c3e2e] cursor-pointer">
+          <div class="flex items-center justify-between text-xs text-ink-muted pt-2 border-t border-surface">
+            <label class="inline-flex items-center gap-1.5 font-semibold text-ink-admin cursor-pointer">
               <input
                 type="checkbox"
-                class="h-3.5 w-3.5 accent-[#2c6e33]"
+                class="h-3.5 w-3.5 accent-brand-700"
                 :checked="item.isQuickQuestion === true"
                 :aria-label="`Bật/tắt câu hỏi nhanh: ${item.canonicalQuestion}`"
                 @change="toggleQuickQuestion(item)"
               />
               <span>{{ item.isQuickQuestion ? 'Câu hỏi nhanh' : 'Bình thường' }}</span>
             </label>
-            <span class="text-[0.72rem] text-[#8a9a8c]">
+            <span class="text-[0.72rem] text-ink-faint">
               {{ item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('vi-VN') : '—' }}
             </span>
           </div>
 
           <!-- Thao tác nhanh -->
-          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-surface">
             <nuxt-link
               :to="`/admin/chatbot/knowledge/${item.id}`"
-              class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-[#f0f7f1] hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg no-underline"
+              class="inline-flex items-center gap-1 text-xs font-bold text-brand-700 bg-surface-tint hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg no-underline"
             >
               <i class="fa-solid fa-pen text-[0.65rem]" aria-hidden="true"></i> Sửa
             </nuxt-link>
             <button
               v-if="item.status === 'draft'"
               type="button"
-              class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-[#f0f7f1] hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg cursor-pointer border-0"
+              class="inline-flex items-center gap-1 text-xs font-bold text-brand-700 bg-surface-tint hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg cursor-pointer border-0"
               @click="transition(item, 'publish')"
             >
               <i class="fa-solid fa-check text-[0.65rem]" aria-hidden="true"></i> Xuất bản
@@ -212,7 +223,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1 text-xs font-bold text-[#d12420] bg-[#fff4f3] hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg cursor-pointer border-0"
+              class="inline-flex items-center gap-1 text-xs font-bold text-danger bg-[#fff4f3] hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg cursor-pointer border-0"
               @click="remove(item)"
             >
               <i class="fa-solid fa-trash text-[0.65rem]" aria-hidden="true"></i> Xóa
@@ -225,12 +236,12 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
       <div class="hidden md:block overflow-x-auto">
         <table class="w-full min-w-[820px] border-collapse text-left text-sm">
           <caption class="sr-only">Danh sách kho kiến thức chatbot</caption>
-          <thead class="bg-[#f4f7f4] text-xs uppercase tracking-wide text-[#667768]">
+          <thead class="bg-surface text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th class="w-10 px-4 py-3">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.allSelected(visibleIds)"
                   :indeterminate="selection.someSelected(visibleIds)"
                   aria-label="Chọn tất cả mục trên trang"
@@ -249,20 +260,20 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
             <tr
               v-for="item in items"
               :key="item.id"
-              class="border-t border-[#eef2ee] align-top"
-              :class="selection.isSelected(Number(item.id)) ? 'bg-[#f0f7f1]' : ''"
+              class="border-t border-surface-tint align-top"
+              :class="selection.isSelected(Number(item.id)) ? 'bg-surface-tint' : ''"
             >
               <td class="px-4 py-3">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.isSelected(Number(item.id))"
                   :aria-label="`Chọn mục: ${item.canonicalQuestion}`"
                   @change="selection.toggle(Number(item.id))"
                 />
               </td>
-              <td class="max-w-[360px] px-4 py-3 font-semibold text-[#2c3e2e]">{{ item.canonicalQuestion }}</td>
-              <td class="px-4 py-3 text-[#667768]">{{ item.topic }}</td>
+              <td class="max-w-[360px] px-4 py-3 font-semibold text-ink-admin">{{ item.canonicalQuestion }}</td>
+              <td class="px-4 py-3 text-ink-muted">{{ item.topic }}</td>
               <td class="px-4 py-3">
                 <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-bold" :class="statusTone[item.status]">
                   <span aria-hidden="true">{{ item.status === 'published' ? '●' : item.status === 'draft' ? '◐' : '○' }}</span>
@@ -270,10 +281,10 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
                 </span>
               </td>
               <td class="px-4 py-3">
-                <label class="inline-flex items-center gap-2 text-xs font-semibold text-[#2c3e2e]">
+                <label class="inline-flex items-center gap-2 text-xs font-semibold text-ink-admin">
                   <input
                     type="checkbox"
-                    class="h-4 w-4 accent-[#2c6e33]"
+                    class="h-4 w-4 accent-brand-700"
                     :checked="item.isQuickQuestion === true"
                     :aria-label="`Bật/tắt câu hỏi nhanh: ${item.canonicalQuestion}`"
                     @change="toggleQuickQuestion(item)"
@@ -281,20 +292,20 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
                   {{ item.isQuickQuestion ? 'Đang hiển thị' : 'Chưa hiển thị' }}
                 </label>
               </td>
-              <td class="whitespace-nowrap px-4 py-3 text-[#667768]">{{ item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('vi-VN') : '—' }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-ink-muted">{{ item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('vi-VN') : '—' }}</td>
               <td class="px-4 py-3">
                 <div class="flex flex-wrap gap-3">
-                  <nuxt-link :to="`/admin/chatbot/knowledge/${item.id}`" class="font-bold text-[#2c6e33]">Sửa</nuxt-link>
-                  <button v-if="item.status === 'draft'" type="button" class="font-bold text-[#2c6e33]" @click="transition(item, 'publish')">Xuất bản</button>
+                  <nuxt-link :to="`/admin/chatbot/knowledge/${item.id}`" class="font-bold text-brand-700">Sửa</nuxt-link>
+                  <button v-if="item.status === 'draft'" type="button" class="font-bold text-brand-700" @click="transition(item, 'publish')">Xuất bản</button>
                   <button v-if="item.status === 'published'" type="button" class="font-bold text-[#765b00]" @click="transition(item, 'archive')">Lưu trữ</button>
-                  <button type="button" class="font-bold text-[#d12420]" @click="remove(item)">Xóa</button>
+                  <button type="button" class="font-bold text-danger" @click="remove(item)">Xóa</button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <nav v-if="pagination.totalPages > 1" class="border-t border-[#eef2ee] p-4">
+      <nav v-if="pagination.totalPages > 1" class="border-t border-surface-tint p-4">
         <AdminPagination :page="page" :total-pages="pagination.totalPages" :total="pagination.total" item-label="mục" @update:page="load" />
       </nav>
     </div>
@@ -302,20 +313,20 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
     <!-- Import Excel modal -->
     <div v-if="showImport" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4" @click.self="closeImport">
       <div class="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white p-5 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
-        <h2 id="import-dialog-title" class="m-0 text-lg font-extrabold text-[#122815]">Nhập câu hỏi từ Excel</h2>
-        <p class="m-0 mt-1 text-sm text-[#667768]">Tệp <strong>.xlsx</strong> hoặc <strong>.csv</strong> với các cột: <strong>STT · Câu hỏi · Trả lời · Ghi chú</strong>. Hệ thống tự tách từ khoá để khớp câu hỏi đời thường.</p>
-        <p class="m-0 mt-1 text-sm text-[#667768]">Câu trả lời dài giữ nguyên định dạng xuống dòng. Có thể xuống dòng trong ô (Alt + Enter) hoặc viết tiếp ở dòng dưới và để trống ô Câu hỏi.</p>
-        <button type="button" :disabled="downloadingTemplate" class="mt-3 inline-flex items-center gap-2 self-start rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30 disabled:cursor-not-allowed disabled:opacity-60" @click="downloadTemplate">
+        <h2 id="import-dialog-title" class="m-0 text-lg font-extrabold text-brand-950">Nhập câu hỏi từ Excel</h2>
+        <p class="m-0 mt-1 text-sm text-ink-muted">Tệp <strong>.xlsx</strong> hoặc <strong>.csv</strong> với các cột: <strong>STT · Câu hỏi · Trả lời · Ghi chú</strong>. Hệ thống tự tách từ khoá để khớp câu hỏi đời thường.</p>
+        <p class="m-0 mt-1 text-sm text-ink-muted">Câu trả lời dài giữ nguyên định dạng xuống dòng. Có thể xuống dòng trong ô (Alt + Enter) hoặc viết tiếp ở dòng dưới và để trống ô Câu hỏi.</p>
+        <button type="button" :disabled="downloadingTemplate" class="mt-3 inline-flex items-center gap-2 self-start rounded-lg border border-brand-700 bg-white px-3 py-2 text-sm font-bold text-brand-700 hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700/30 disabled:cursor-not-allowed disabled:opacity-60" @click="downloadTemplate">
           <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> {{ downloadingTemplate ? 'Đang tạo tệp...' : 'Tải file mẫu (.xlsx)' }}
         </button>
         <div class="mt-4 flex flex-col gap-3">
           <label class="flex flex-col gap-1.5 text-sm font-bold">Chọn tệp
-            <input type="file" accept=".xlsx,.csv,.xls" @change="onImportFile" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal file:mr-3 file:rounded file:border-0 file:bg-[#f0f7f1] file:px-3 file:py-1.5 file:font-semibold file:text-[#2c6e33]" />
+            <input type="file" accept=".xlsx,.csv,.xls" @change="onImportFile" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal file:mr-3 file:rounded file:border-0 file:bg-surface-tint file:px-3 file:py-1.5 file:font-semibold file:text-brand-700" />
           </label>
           <label class="flex flex-col gap-1.5 text-sm font-bold">Chủ đề (topic)
-            <input v-model="importTopic" placeholder="general" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]" />
+            <input v-model="importTopic" placeholder="general" class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700" />
           </label>
-          <label class="flex items-start gap-2 text-sm font-semibold"><input v-model="importPublish" type="checkbox" class="mt-0.5 h-4 w-4 accent-[#2c6e33]" /><span>Xuất bản ngay<br /><span class="font-normal text-[#667768]">Bỏ chọn để lưu Bản nháp chờ duyệt (khuyến nghị). Cần quyền “Xuất bản”.</span></span></label>
+          <label class="flex items-start gap-2 text-sm font-semibold"><input v-model="importPublish" type="checkbox" class="mt-0.5 h-4 w-4 accent-brand-700" /><span>Xuất bản ngay<br /><span class="font-normal text-ink-muted">Bỏ chọn để lưu Bản nháp chờ duyệt (khuyến nghị). Cần quyền “Xuất bản”.</span></span></label>
         </div>
         <section
           v-if="importResult"
@@ -339,7 +350,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
                 <div v-for="([field, value]) in importRawFields(e)" :key="field">
                   <dt class="font-bold">
                     {{ importRawLabels[field] || field }}
-                    <span v-if="importFieldTruncated(e, field)" class="ml-1 rounded bg-[#fbe5e3] px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
+                    <span v-if="importFieldTruncated(e, field)" class="ml-1 rounded bg-danger-bg px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
                   </dt>
                   <dd class="m-0 mt-0.5 whitespace-pre-wrap break-words rounded bg-[#fff8f7] px-2 py-1.5 font-mono text-xs text-[#6f1b18]">{{ value }}</dd>
                 </div>
@@ -350,7 +361,7 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
                   <div v-for="(entry, index) in importExtraColumns(e)" :key="`${entry.column}-${index}`">
                     <dt class="font-bold">
                       {{ importExtraColumnLabel(entry) }}
-                      <span v-if="importExtraColumnTruncated(e, index)" class="ml-1 rounded bg-[#fbe5e3] px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
+                      <span v-if="importExtraColumnTruncated(e, index)" class="ml-1 rounded bg-danger-bg px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
                     </dt>
                     <dd class="m-0 mt-0.5 whitespace-pre-wrap break-words rounded bg-[#fff8f7] px-2 py-1.5 font-mono text-xs text-[#6f1b18]">{{ entry.value }}</dd>
                   </div>
@@ -361,8 +372,8 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
           </div>
         </section>
         <div class="mt-5 flex justify-end gap-2">
-          <button type="button" class="rounded-lg border border-[#c8d6c9] bg-white px-4 py-2.5 font-bold text-[#2c3e2e] hover:bg-[#f0f7f1]" @click="closeImport">Đóng</button>
-          <button type="button" :disabled="importing || !importFile" class="rounded-lg bg-[#1e4620] px-5 py-2.5 font-bold text-white hover:bg-[#2c6e33] disabled:cursor-not-allowed disabled:opacity-60" @click="runImport">{{ importing ? 'Đang nhập...' : 'Nhập' }}</button>
+          <button type="button" class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-bold text-ink-admin hover:bg-surface-tint" @click="closeImport">Đóng</button>
+          <button type="button" :disabled="importing || !importFile" class="rounded-lg bg-brand-900 px-5 py-2.5 font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60" @click="runImport">{{ importing ? 'Đang nhập...' : 'Nhập' }}</button>
         </div>
       </div>
     </div>

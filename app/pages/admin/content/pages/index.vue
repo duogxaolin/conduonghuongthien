@@ -38,7 +38,7 @@
       class="mb-4"
       @clear="selection.clear()"
     >
-      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+      <button type="button" class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
 
     <!-- List. Condition spelled out rather than chained with v-else: the bulk bar
@@ -50,14 +50,14 @@
           v-for="p in pages"
           :key="'m-'+p.id"
           class="p-4 flex flex-col gap-2.5 transition active:bg-gray-50"
-          :class="selection.isSelected(Number(p.id)) ? 'bg-[#f0f7f1]' : ''"
+          :class="selection.isSelected(Number(p.id)) ? 'bg-surface-tint' : ''"
         >
           <div class="flex items-start justify-between gap-2.5">
             <div class="flex items-center gap-2.5 min-w-0">
               <input
                 v-if="!p.isSystem"
                 type="checkbox"
-                class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                class="h-4 w-4 shrink-0 accent-brand-700"
                 :checked="selection.isSelected(Number(p.id))"
                 :aria-label="`Chọn trang ${p.title}`"
                 @change="selection.toggle(Number(p.id))"
@@ -99,7 +99,7 @@
               <th class="w-10 px-5 py-3">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.allSelected(visibleIds)"
                   :indeterminate="selection.someSelected(visibleIds)"
                   aria-label="Chọn tất cả trang có thể xóa"
@@ -118,13 +118,13 @@
               v-for="p in pages"
               :key="p.id"
               class="transition hover:bg-gray-50"
-              :class="selection.isSelected(Number(p.id)) ? 'bg-[#f0f7f1]' : ''"
+              :class="selection.isSelected(Number(p.id)) ? 'bg-surface-tint' : ''"
             >
               <td class="px-5 py-3.5">
                 <input
                   v-if="!p.isSystem"
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.isSelected(Number(p.id))"
                   :aria-label="`Chọn trang ${p.title}`"
                   @change="selection.toggle(Number(p.id))"
@@ -189,6 +189,7 @@
 
 <script setup lang="ts">
 import type { AdminPageRow } from '~/types/admin-api'
+import type { AdminPagesListResponse, PageCreateResponse, PageDeleteResponse } from '~/types/admin-pages-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -207,7 +208,7 @@ const fetchPages = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminPageRow[] }>)(`/api/admin/pages`)
+    const res = await adminFetch<AdminPagesListResponse>(`/api/admin/pages`)
     if (res.ok) {
       pages.value = res.items
       selection.keepOnly(visibleIds.value)
@@ -251,7 +252,7 @@ const createPage = async () => {
   if (!createForm.title.trim()) return
   creating.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; id: number }>)(`/api/admin/pages`, {
+    const res = await adminFetch<PageCreateResponse>(`/api/admin/pages`, {
       method: 'POST',
       body: { title: createForm.title.trim(), slug: createForm.slug.trim() || undefined },
     })
@@ -276,7 +277,7 @@ const removePage = async (p: AdminPageRow) => {
   })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/pages/${p.id}`, { method: 'DELETE' })
+    await adminFetch<PageDeleteResponse>(`/api/admin/pages/${p.id}`, { method: 'DELETE' })
     toast.success('Đã xóa trang.')
     await fetchPages()
   } catch (err: unknown) {

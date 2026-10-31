@@ -47,3 +47,39 @@ export function vietnamDayEndExclusive(value: unknown): Date | null {
   const start = vietnamDayStart(value)
   return start ? new Date(start.getTime() + DAY_MS) : null
 }
+
+/**
+ * 00:00 giờ Việt Nam của ngày (theo lịch VN) chứa thời điểm `at` — không phụ thuộc
+ * `TZ` của tiến trình (cùng lý do như trên).
+ */
+export function vietnamDayStartOf(at: Date): Date {
+  return new Date(Math.floor((at.getTime() + VIETNAM_OFFSET_MS) / DAY_MS) * DAY_MS - VIETNAM_OFFSET_MS)
+}
+
+/**
+ * `YYYY-MM-DD` của ngày theo lịch VN chứa thời điểm `at` — không phụ thuộc `TZ` của
+ * tiến trình. Bốn đường xuất bài (HTML, ZIP, CSV, Google Docs) từng in "Ngày" bằng
+ * `getFullYear/getMonth/getDate` theo `TZ` tiến trình: tiến trình UTC (đường PM2) in bài
+ * đăng 03:00 ngày 29 (giờ VN) thành ngày 28 (FINDING-R6-17).
+ */
+export function vietnamDateString(at: Date): string {
+  const time = at.getTime()
+  // Một cột ngày giữ `0000-00-00` (MySQL không bật NO_ZERO_DATE) đọc ra Invalid Date: trả
+  // chuỗi rỗng — `toISOString()` ném RangeError và làm hỏng CẢ lượt xuất (verifier L1).
+  if (Number.isNaN(time)) return ''
+  return new Date(time + VIETNAM_OFFSET_MS).toISOString().slice(0, 10)
+}
+
+/**
+ * 00:00 giờ Việt Nam ngày 1 của tháng (theo lịch VN) chứa thời điểm `at`.
+ *
+ * `new Date(now.getFullYear(), now.getMonth(), 1)` từng được dùng cho "tháng này" của
+ * hạn mức AI: nó theo `TZ` của tiến trình. Image Docker đặt `Asia/Ho_Chi_Minh`, đường
+ * PM2 (`ecosystem.config.cjs`) thì không — với tiến trình chạy UTC, từ 00:00 tới 07:00
+ * ngày 1 (giờ VN) "tháng này" vẫn là tháng trước, và cả tháng trước bị tính vào hạn
+ * mức tháng mới.
+ */
+export function vietnamMonthStart(at: Date): Date {
+  const local = new Date(at.getTime() + VIETNAM_OFFSET_MS)
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - VIETNAM_OFFSET_MS)
+}

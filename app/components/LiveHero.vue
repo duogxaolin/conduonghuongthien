@@ -109,11 +109,11 @@
             <aside class="bg-[#111a11] border-t lg:border-t-0 lg:border-l border-[#1f2a1c] flex flex-col min-h-[280px] lg:h-full lg:min-h-0 lg:overflow-hidden">
               <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-[#1f2a1c] shrink-0 bg-[#0e170e]">
                 <div class="flex items-center gap-2 text-white/90">
-                  <i class="fa-solid fa-comments text-sm text-[#7CB342]" aria-hidden="true"></i>
+                  <i class="fa-solid fa-comments text-sm text-accent" aria-hidden="true"></i>
                   <span class="text-xs sm:text-sm font-bold">{{ t('m_chat_title') }}</span>
                 </div>
-                <span class="inline-flex items-center gap-1.5 text-[0.7rem] text-[#7CB342] font-semibold bg-[#7CB342]/10 px-2.5 py-0.5 rounded-full border border-[#7CB342]/20">
-                  <span class="w-1.5 h-1.5 rounded-full bg-[#7CB342] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+                <span class="inline-flex items-center gap-1.5 text-[0.7rem] text-accent font-semibold bg-accent/10 px-2.5 py-0.5 rounded-full border border-accent/20">
+                  <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
                   {{ t('m_live_label') }}
                 </span>
               </div>
@@ -143,8 +143,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { browserPollerEnv, createVisiblePoller, type VisiblePoller } from '~/utils/visible-poller'
 import { attachHlsStream, detachHlsStream, type HlsInstance } from '~/composables/useHlsVideo'
+import { publicFetch } from '~/composables/publicFetch'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
+import type { LivestreamActiveResponse } from '~/types/public-site-api'
 
 const { t } = useI18n()
 
@@ -202,7 +204,7 @@ const autoplayEmbedUrl = computed(() => {
  */
 async function loadActive() {
   try {
-    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, active: boolean, session: ActiveSession | null }>)(
+    const response = await publicFetch<LivestreamActiveResponse>(
       '/api/public/livestream/active',
       { retry: 0, timeout: 4000 },
     )

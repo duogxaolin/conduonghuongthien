@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { inArray } from 'drizzle-orm'
 
 import { getDb } from '../../../../utils/db'
 import { settings } from '../../../../db/schema'
@@ -19,10 +19,13 @@ export default defineEventHandler(async (event) => {
   requireResourcePermission(adminUser, 'settings', 'read')
 
   const db = getDb()
+  // Both rows `index.put.ts` writes. Selecting `sitemap_xml` alone left `tsRow` always
+  // undefined, so "Lần lưu cuối" vanished on every reload
+  // (tests/admin-sitemap-updated-at-behavior.test.ts).
   const rows = await db
     .select({ key: settings.key, value: settings.value })
     .from(settings)
-    .where(eq(settings.key, 'sitemap_xml'))
+    .where(inArray(settings.key, ['sitemap_xml', 'sitemap_updated_at']))
 
   const xmlRow = rows.find((r) => r.key === 'sitemap_xml')
   const tsRow = rows.find((r) => r.key === 'sitemap_updated_at')

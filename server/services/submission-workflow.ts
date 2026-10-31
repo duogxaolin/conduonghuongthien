@@ -344,14 +344,18 @@ export async function logSubmissionContact(actor: ActorLike, id: number, input: 
   })
 }
 
-/** Đếm đơn theo trạng thái, cho dải ô tổng trên trang quản trị. */
-export async function countSubmissionsByStatus(): Promise<Record<string, number>> {
+/**
+ * Đếm đơn theo trạng thái, cho dải ô tổng trên trang quản trị. `Partial`: trạng thái
+ * không có đơn nào thì KHÔNG có khoá — nơi đọc phải `?? 0` (ô "Chờ xử lý" ở bảng điều
+ * khiển từng lùi về tổng mọi đơn khi thiếu khoá `new`).
+ */
+export async function countSubmissionsByStatus(): Promise<Partial<Record<SubmissionStatus, number>>> {
   const db = getDb()
   const rows = await db
     .select({ status: submissions.status, total: sql<number>`COUNT(*)` })
     .from(submissions)
     .groupBy(submissions.status)
-  const out: Record<string, number> = {}
+  const out: Partial<Record<SubmissionStatus, number>> = {}
   for (const row of rows) {
     const key = isSubmissionStatus(row.status) ? row.status : DEFAULT_SUBMISSION_STATUS
     out[key] = (out[key] ?? 0) + Number(row.total ?? 0)

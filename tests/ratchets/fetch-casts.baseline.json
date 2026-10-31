@@ -1,0 +1,13 @@
+{
+  "app/composables/adminFetch.ts": {
+    "value": 2,
+    "reason": "The one sanctioned cast (design D-FETCH): every admin call site goes through adminFetch<T>(). The second match is the doc comment quoting the pattern it replaces."
+  },
+  "app/composables/publicFetch.ts": {
+    "value": 1,
+    "reason": "The public site's one sanctioned cast (design D-FETCH, lot G): every public call site goes through publicFetch<T>(), a bare call of the global $fetch (no header forwarding: the SWR cache invariant). Kept apart from adminFetch so a public page never inherits admin-only behaviour."
+  },
+  "app/composables/useChatbot.ts": 1,
+  "server/api/admin/backup/drive/callback.get.ts": 1,
+  "server/api/auth/google/callback.get.ts": 1
+}

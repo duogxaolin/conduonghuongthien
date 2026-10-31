@@ -116,11 +116,7 @@ export async function peekRateLimit(key: string, rule: RateLimitRule, deps: Rate
     )
     return stateFromRow(firstRow(result), rule, now)
   } catch (error) {
-    logWarn({
-      event: 'rate_limit.database_read_failed',
-      error,
-      consequence: 'falling back to in-process counter for this request',
-    })
+    logStoreFailure('read', error, now)
     return readMemory(deps, key, rule, now)
   }
 }
@@ -133,24 +129,33 @@ export async function peekRateLimit(key: string, rule: RateLimitRule, deps: Rate
  * does get written carries how many were skipped (`suppressed`). Only the log is
  * throttled: every request still falls back to the memory counter.
  *
+ * Reads (`peekRateLimit`, which login, MFA, captcha and password change call before
+ * they record) failed the same way and logged `rate_limit.database_read_failed` with a
+ * stack on every request; they now go through the same throttle. Reads and writes keep
+ * separate state, so a read failure just logged never mutes the first write failure.
+ *
  * Clock is the caller's `now` (same clock as the counters, so tests drive it). A
  * clock that went backwards counts as "interval elapsed" — otherwise one far-future
  * timestamp would mute the line for good.
  */
-export const RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS = 60_000
-const writeFailureLog = { lastLoggedAt: null as number | null, suppressed: 0 }
+export const RATE_LIMIT_FAILURE_LOG_INTERVAL_MS = 60_000
+const failureLogs = {
+  read: { lastLoggedAt: null as number | null, suppressed: 0 },
+  write: { lastLoggedAt: null as number | null, suppressed: 0 },
+}
 
-function logWriteFailure(error: unknown, now: number): void {
-  const last = writeFailureLog.lastLoggedAt
-  if (last !== null && now >= last && now - last < RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS) {
-    writeFailureLog.suppressed += 1
+function logStoreFailure(kind: 'read' | 'write', error: unknown, now: number): void {
+  const state = failureLogs[kind]
+  const last = state.lastLoggedAt
+  if (last !== null && now >= last && now - last < RATE_LIMIT_FAILURE_LOG_INTERVAL_MS) {
+    state.suppressed += 1
     return
   }
-  const suppressed = writeFailureLog.suppressed
-  writeFailureLog.lastLoggedAt = now
-  writeFailureLog.suppressed = 0
+  const suppressed = state.suppressed
+  state.lastLoggedAt = now
+  state.suppressed = 0
   logWarn({
-    event: 'rate_limit.database_write_failed',
+    event: kind === 'read' ? 'rate_limit.database_read_failed' : 'rate_limit.database_write_failed',
     error,
     consequence: 'falling back to in-process counter for this request',
     ...(suppressed > 0 ? { suppressed } : {}),
@@ -182,7 +187,7 @@ export async function recordRateLimitHit(key: string, rule: RateLimitRule, deps:
     )
     return stateFromRow(firstRow(result), rule, now)
   } catch (error) {
-    logWriteFailure(error, now)
+    logStoreFailure('write', error, now)
     return bumpMemory(deps, key, rule, now)
   }
 }

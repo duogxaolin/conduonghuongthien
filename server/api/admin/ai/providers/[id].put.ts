@@ -100,11 +100,11 @@ export default defineEventHandler(async (event) => {
       action: 'update',
       resource: 'ai',
       resourceId: id,
-      meta: JSON.stringify({
+      meta: {
         provider: existing.provider,
         changedFields: Object.keys(patch),
         apiKeyChanged: apiKey !== '',
-      }),
+      },
     })
   })
 

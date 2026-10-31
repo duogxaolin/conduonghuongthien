@@ -5,6 +5,8 @@ import { hashPassword } from '../../../utils/auth'
 import { assertRoleAssignable, assertRoleWithinActor, requireResourcePermission } from '../../../utils/permissions'
 import { loadRolePermissions } from '../../../services/users'
 import { isValidEmail } from '../../../utils/submission-recipient'
+import { driverMessage, isDuplicateEntry } from '../../../utils/mysql-errors'
+import { logError } from '../../../utils/logger'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -76,9 +78,15 @@ export default defineEventHandler(async (event) => {
 
     return { ok: true, id: newUserId }
   } catch (err: unknown) {
-    if ((err as { code?: string })?.code === 'ER_DUP_ENTRY') {
+    // Down the `cause` chain: Drizzle wraps the driver's error, so the top-level `code` read here
+    // before was never ER_DUP_ENTRY — an existing username fell to the branch below (FINDING-R7-10).
+    if (isDuplicateEntry(err)) {
       throw createError({ statusCode: 400, statusMessage: 'Tên đăng nhập hoặc Email đã tồn tại.' })
     }
-    throw createError({ statusCode: 500, statusMessage: (err instanceof Error ? err.message : undefined) || 'Lỗi hệ thống' })
+    // Never the error's own message: Drizzle's is "Failed query: <SQL> params: …" — the new
+    // account's e-mail and password hash, shown to the officer as a toast (FINDING-R7-10). The
+    // driver's message (no parameters) goes to the log.
+    logError({ event: 'admin_users.create_failed', error: driverMessage(err) })
+    throw createError({ statusCode: 500, statusMessage: 'Lỗi hệ thống' })
   }
 })

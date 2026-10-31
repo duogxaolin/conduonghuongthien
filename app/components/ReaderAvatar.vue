@@ -48,6 +48,6 @@ const sizeClass = computed(() => {
 // reply has to be distinguishable at a glance, and the "Ban quản trị" label
 // alone does not survive being skimmed.
 const toneClass = computed(() => (props.isAdmin
-  ? 'bg-[#4A6741] text-white'
-  : 'bg-[#EEF2EC] text-[#385130] border border-[#E2E8DF]'))
+  ? 'bg-brand-600 text-white'
+  : 'bg-surface-tint text-brand-800 border border-line'))
 </script>

@@ -63,9 +63,9 @@
         này nói ra.
       -->
       <div v-else role="alert" class="bg-white border border-dashed border-[#E2A0A0] rounded-xl px-6 py-10 text-center">
-        <i class="fa-solid fa-triangle-exclamation text-[#B04A4A] text-2xl mb-3" aria-hidden="true"></i>
-        <p class="m-0 text-[0.95rem] text-[#B04A4A] font-semibold">Video này chưa phát được.</p>
-        <p class="m-0 mt-1 text-sm text-[#667768]">Đường dẫn video nguồn không hợp lệ. Vui lòng báo cho ban quản trị cổng.</p>
+        <i class="fa-solid fa-triangle-exclamation text-danger-soft text-2xl mb-3" aria-hidden="true"></i>
+        <p class="m-0 text-[0.95rem] text-danger-soft font-semibold">Video này chưa phát được.</p>
+        <p class="m-0 mt-1 text-sm text-ink-muted">Đường dẫn video nguồn không hợp lệ. Vui lòng báo cho ban quản trị cổng.</p>
       </div>
     </template>
 
@@ -107,7 +107,7 @@
       <div
         v-if="playerError"
         role="alert"
-        class="mt-3 bg-white border border-dashed border-[#E2A0A0] rounded-xl px-5 py-4 text-[#B04A4A] text-sm flex items-start gap-3"
+        class="mt-3 bg-white border border-dashed border-[#E2A0A0] rounded-xl px-5 py-4 text-danger-soft text-sm flex items-start gap-3"
       >
         <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
         <span>{{ playerError }}</span>
@@ -116,10 +116,10 @@
 
     <!-- ── Chưa có bản nào sẵn sàng: nói ra, không dựng một trình phát sẽ hỏng ── -->
     <div v-else class="bg-white border border-dashed border-[#D5E1D3] rounded-xl px-6 py-12 text-center">
-      <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-xl">
+      <div class="w-14 h-14 rounded-full bg-surface-tint text-brand-600 flex items-center justify-center mx-auto mb-4 text-xl">
         <i class="fa-solid fa-film" aria-hidden="true"></i>
       </div>
-      <p class="m-0 text-base font-extrabold text-[#1E251C]">Video đang được xử lý</p>
+      <p class="m-0 text-base font-extrabold text-ink">Video đang được xử lý</p>
       <p class="m-0 mt-2 text-sm text-[#5A6655] leading-relaxed max-w-md mx-auto">
         Video này đã được đăng nhưng chưa xử lý xong. Vui lòng quay lại sau ít phút.
       </p>

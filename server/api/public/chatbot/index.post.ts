@@ -7,7 +7,8 @@ import { verifySessionToken } from '../../../utils/chatbot/session-token'
 import { persistChatTurn } from '../../../utils/chatbot/session-db'
 import { getClientIp } from '../../../utils/client-ip'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
-import { fastPreModerate, matchInstantRule } from '../../../services/moderation-worker'
+import { earlierTurnsToWithhold, fastPreModerate } from '../../../services/moderation-worker'
+import { createModerationRegexBudget } from '../../../services/moderation-regex'
 import { chatHistoryShapeOk, chatTextsToScreen, lastUserTurnText, withoutUserTurns } from '../../../utils/chatbot/chat-turns'
 import { createSseHeartbeat } from '../../../utils/chatbot/sse-heartbeat'
 
@@ -84,6 +85,10 @@ export default defineEventHandler(async (event) => {
   // Lượt người dùng CŨ trong lịch sử (do trình duyệt gửi lên) cũng được quét, nhưng lượt
   // vi phạm chỉ bị bỏ khỏi lịch sử gửi model: từ chối vì nó làm kẹt cả cuộc trò chuyện
   // (widget chỉ bỏ lượt mới nhất) và ghi lại câu cũ vào hàng chờ ở mỗi tin nhắn.
+  // Một hạn mức thời gian regex cho cả request (moderation-regex-runtime.ts), câu mới quét
+  // trước để lịch sử không tiêu hết; các lượt cũ quét trong một lượt gộp — lượt cũ mà hạn mức
+  // không tới được cũng bị giữ khỏi model, không bao giờ gửi đi khi chưa quét.
+  const regexBudget = createModerationRegexBudget()
   const [latest, ...earlier] = screenedTexts
   let blocked: string | null = null
   if (latest) {
@@ -94,15 +99,13 @@ export default defineEventHandler(async (event) => {
       contextUrl: sessionId ? `/admin/chatbot/sessions?search=${encodeURIComponent(sessionId)}` : '/admin/chatbot/sessions',
       authorIp: getClientIp(event) || undefined,
       capQueuePerSource: true,
+      regexBudget,
     }).catch(() => null)
     if (fastCheck?.blocked) blocked = latest
   }
-  const withheld = new Set<string>()
-  if (blocked === null) {
-    for (const turn of earlier) {
-      if (await matchInstantRule(turn).catch(() => null)) withheld.add(turn)
-    }
-  }
+  const withheld = blocked === null
+    ? await earlierTurnsToWithhold(earlier, { regexBudget }).catch(() => new Set(earlier))
+    : new Set<string>()
   const answerMessages = withoutUserTurns(messages, withheld)
 
   if (blocked !== null) {
@@ -165,8 +168,9 @@ export default defineEventHandler(async (event) => {
   if (res && typeof res.write === 'function') {
     let streamed = false
     let result
-    // Một dòng `: ping` mỗi 15 giây cho tới chữ đầu tiên, để proxy không cắt kết nối
-    // trong lúc provider AI còn đang nghĩ (xem sse-heartbeat.ts).
+    // Một dòng `: ping` sau mỗi 15 giây không có gì trên đường truyền, để proxy không cắt kết nối:
+    // lúc provider AI còn đang nghĩ, và lúc lớp chặn chủ quyền giữ chữ hoặc đã thay câu trả lời mà
+    // model vẫn đang viết (xem sse-heartbeat.ts). Mỗi lần ghi đếm lại từ đầu.
     const heartbeat = createSseHeartbeat(frame => { res.write(frame) })
     heartbeat.start()
     try {
@@ -183,10 +187,21 @@ export default defineEventHandler(async (event) => {
           // nhiều write thành 1 segment. X-Accel-Buffering:no (ở header) bảo
           // nginx không buffer; đây là phần đối ứng phía Node.
           if (typeof res.uncork === 'function') { res.cork(); res.uncork() }
+          heartbeat.start()
         },
         (toolEvt: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => {
           res.write(`data: ${JSON.stringify({ chatbot: { toolEvent: toolEvt } })}\n\n`)
-        }
+        },
+        // Lớp chặn chủ quyền rút lại câu trả lời đang stream (sovereignty-guard.ts): `replace` cho widget
+        // hiện tại (thay hẳn), `content` cho tab đang mở bản widget cũ (chỉ biết nối thêm).
+        (answer: string) => {
+          heartbeat.stop()
+          streamed = true
+          res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: `\n\n${answer}` } }], chatbot: { replace: answer } })}\n\n`)
+          if (typeof res.uncork === 'function') { res.cork(); res.uncork() }
+          // Model vẫn viết tiếp (không dừng được) và không chữ nào của nó được gửi nữa: giữ nhịp tim tới hết.
+          heartbeat.start()
+        },
       )
     } catch (error) {
       if ((error as Error).message === 'INVALID_MESSAGES') throw createError({ statusCode: 400, statusMessage: 'Invalid chat messages' })

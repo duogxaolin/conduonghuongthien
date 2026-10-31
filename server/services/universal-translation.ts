@@ -1,11 +1,12 @@
-import { and, asc, count, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
 import { articles, articleTranslations, languages, langTranslations, pageBlocks } from '../db/schema'
 import { callAi } from './ai-gateway'
 import { upsertTranslations } from './languages'
+import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../utils/ai/model-translations'
 import { runTranslationWorker } from './article-translations'
+import { blockNeedsTranslation, blockTranslationParts, hasBlockTranslation, translatePageBlock } from './universal-translation-blocks'
 import type { ActorLike } from '../utils/permissions'
-import type { BlockData } from '../../shared/blocks/types'
 import { logInfo, logWarn } from '../utils/logger'
 export interface UniversalCoverageStats {
   totalArticles: number
@@ -59,203 +60,35 @@ export function cancelUniversalAutoTranslate() {
   }
   return { ok: false, message: 'Không có tác vụ nào đang chạy.' }
 }
-function extractJsonFromAi(text: string): Record<string, unknown> | null {
-  if (!text) return null
-  const cleaned = text
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*$/g, '')
-    .trim()
-  try {
-    return JSON.parse(cleaned)
-  } catch {}
-
-  const match = cleaned.match(/\{[\s\S]*\}/)
-  if (match) {
-    try {
-      return JSON.parse(match[0])
-    } catch {}
-    try {
-      const noTrailing = match[0].replace(/,\s*([}\]])/g, '$1')
-      return JSON.parse(noTrailing)
-    } catch {}
-  }
-  return null
-}
-
-const BLOCK_STRING_KEYS = [
-  'title', 'subtitle', 'heading', 'text', 'description',
-  'asideTitle', 'asideSubtitle', 'asideNote', 'asideLabel',
-  'badge', 'btnText', 'buttonText', 'quote', 'cite',
-  'infoTitle', 'noteTitle', 'noteText', 'highlightLabel', 'highlightValue'
-]
-
-async function translateSinglePageBlock(
-  b: { id: number; blockType: string; data: unknown },
-  lang: { code: string; name: string },
-  actorId: number | null,
-  db: Database,
-): Promise<boolean> {
-  // Always query fresh row from DB to avoid stale data race conditions
-  const [fresh] = await db.select().from(pageBlocks).where(eq(pageBlocks.id, b.id)).limit(1)
-  const rawData = (fresh?.data as Record<string, unknown>) || (b.data as Record<string, unknown>) || {}
-  const translations = (rawData.translations as Record<string, Record<string, unknown>> | undefined) || {}
-
-  if (translations[lang.code] && Object.keys(translations[lang.code]!).length > 0) {
-    return true
-  }
-  const fieldsToTranslate: Record<string, string> = {}
-  for (const k of BLOCK_STRING_KEYS) {
-    if (typeof rawData[k] === 'string' && (rawData[k] as string).trim()) {
-      fieldsToTranslate[k] = (rawData[k] as string).trim()
-    }
-  }
-
-  // Handle stats array
-  if (Array.isArray(rawData.stats)) {
-    rawData.stats.forEach((st: { label?: unknown }, idx: number) => {
-      if (typeof st?.label === 'string' && st.label.trim()) {
-        fieldsToTranslate['__stat_label_' + idx] = st.label.trim()
-      }
-    })
-  }
-
-  // Handle infoRows array
-  if (Array.isArray(rawData.infoRows)) {
-    rawData.infoRows.forEach((row: { label?: unknown; value?: unknown }, idx: number) => {
-      if (typeof row?.label === 'string' && row.label.trim()) {
-        fieldsToTranslate['__inforow_label_' + idx] = row.label.trim()
-      }
-      if (typeof row?.value === 'string' && row.value.trim() && !row.value.includes('@') && !/^[0-9.+ -]+$/.test(row.value.trim())) {
-        fieldsToTranslate['__inforow_value_' + idx] = row.value.trim()
-      }
-    })
-  }
-
-  if (Object.keys(fieldsToTranslate).length === 0 && !rawData.bodyHtml) {
-    return true
-  }
-
-  const resultTranslated: Record<string, unknown> = {}
-
-  // 1. Translate string & structured fields via JSON
-  if (Object.keys(fieldsToTranslate).length > 0) {
-    const prompt = `You are a professional translator. Translate the following UI/CMS texts from Vietnamese into ${lang.name}.
-Return ONLY a valid JSON object with the exact same keys and translated text values (no markdown formatting, no codeblock, no explanation):
-${JSON.stringify(fieldsToTranslate)}`
-
-    let parsed: Record<string, unknown> | null = null
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await callAi('translation_article', { prompt, userId: actorId })
-      if (res.ok && res.text) {
-        parsed = extractJsonFromAi(res.text)
-        if (parsed && typeof parsed === 'object') break
-      }
-    }
-
-    if (parsed) {
-      // Reconstruct regular keys
-      for (const k of BLOCK_STRING_KEYS) {
-        if (parsed[k] !== undefined) {
-          resultTranslated[k] = parsed[k]
-        }
-      }
-
-      // Reconstruct stats array
-      if (Array.isArray(rawData.stats)) {
-        resultTranslated.stats = rawData.stats.map((st: { label?: unknown; value?: unknown }, idx: number) => ({
-          ...st,
-          label: parsed!['__stat_label_' + idx] ? String(parsed!['__stat_label_' + idx]) : st.label,
-        }))
-      }
-
-      // Reconstruct infoRows array
-      if (Array.isArray(rawData.infoRows)) {
-        resultTranslated.infoRows = rawData.infoRows.map((row: { label?: unknown; value?: unknown }, idx: number) => ({
-          ...row,
-          label: parsed!['__inforow_label_' + idx] ? String(parsed!['__inforow_label_' + idx]) : row.label,
-          value: parsed!['__inforow_value_' + idx] ? String(parsed!['__inforow_value_' + idx]) : row.value,
-        }))
-      }
-    } else {
-      logWarn({ event: 'universal_translate.block_json_parse_failed', blockId: b.id, langCode: lang.code })
-    }
-  }
-
-  // 2. Translate bodyHtml separately as clean HTML (avoiding JSON escape issues)
-  if (typeof rawData.bodyHtml === 'string' && (rawData.bodyHtml as string).trim()) {
-    const htmlPrompt = `You are a professional translator. Translate the following HTML content from Vietnamese into ${lang.name}.
-CRITICAL RULES:
-1. Preserve 100% of HTML tags (<h3>, <p>, <strong>, <em>, <a>, <img>, <ul>, <ol>, <li>...) exactly as they are.
-2. Only translate the human-readable text inside the tags.
-3. Return ONLY the translated HTML content without markdown formatting:
-
-${rawData.bodyHtml}`
-
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await callAi('translation_article', { prompt: htmlPrompt, userId: actorId })
-      if (res.ok && res.text) {
-        const cleanHtml = res.text
-          .replace(/```html\s*/gi, '')
-          .replace(/```\s*$/g, '')
-          .trim()
-        if (cleanHtml) {
-          resultTranslated.bodyHtml = cleanHtml
-          break
-        }
-      }
-    }
-  }
-
-  if (Object.keys(resultTranslated).length > 0) {
-    // Re-fetch right before update to guarantee atomicity of translations map
-    const [latest] = await db.select().from(pageBlocks).where(eq(pageBlocks.id, b.id)).limit(1)
-    const latestRaw = (latest?.data as Record<string, unknown>) || rawData
-    const latestTrans = (latestRaw.translations as Record<string, Record<string, unknown>> | undefined) || {}
-
-    const updatedData = {
-      ...latestRaw,
-      translations: {
-        ...latestTrans,
-        [lang.code]: {
-          ...(latestTrans[lang.code] || {}),
-          ...resultTranslated,
-        },
-      },
-    }
-    await db.update(pageBlocks).set({ data: updatedData as BlockData }).where(eq(pageBlocks.id, b.id))
-    ;(b as Record<string, unknown>).data = updatedData
-    return true
-  }
-
-  return false
-}
 
 export function getUniversalTaskState(): UniversalTaskState {
   return { ...universalTaskState }
 }
+
+/** The languages the job and the scan work on: active, vi excluded (it is the source). */
+const isTargetLanguage = and(eq(languages.isActive, true), ne(languages.code, 'vi'))
 
 /**
  * Scan translation coverage across all 3 pillars:
  * 1. UI translation keys (lang_translations)
  * 2. Page Builder blocks (page_blocks)
  * 3. Published Articles (articles & article_translations)
+ *
+ * Each pillar counts the work the job does (FINDING-R6-1): a translation of a draft, or
+ * a key vi does not have (a deleted category's), is not progress — subtracting every
+ * row showed 100 % while nothing published was translated.
  */
 export async function scanUniversalCoverage(db: Database = getDb()): Promise<UniversalCoverageStats> {
-  const allLangs = await db.select().from(languages).where(and(eq(languages.isActive, true), sql`${languages.code} != 'vi'`)).orderBy(asc(languages.displayOrder), asc(languages.id))
+  const allLangs = await db.select().from(languages).where(isTargetLanguage).orderBy(asc(languages.displayOrder), asc(languages.id))
 
-  // 1. Total UI keys in default language
-  const [viKeyRow] = await db.select({ count: count() }).from(langTranslations).where(eq(langTranslations.langCode, 'vi'))
-  const totalUiKeys = Number(viKeyRow?.count || 0)
+  // 1. UI keys of the default language
+  const viKeys = await db.select({ group: langTranslations.group, key: langTranslations.key }).from(langTranslations).where(eq(langTranslations.langCode, 'vi'))
+  const viKeySet = new Set(viKeys.map(row => `${row.group}::${row.key}`))
+  const totalUiKeys = viKeys.length
 
-  // 2. Total Page blocks
-  const allBlocks = await db.select({ id: pageBlocks.id, data: pageBlocks.data, blockType: pageBlocks.blockType }).from(pageBlocks).where(eq(pageBlocks.isVisible, true))
-  const translatableBlocks = allBlocks.filter((b) => {
-    const d = (b.data as Record<string, unknown>) || {}
-    return Boolean(
-      d.text || d.title || d.heading || d.subtitle || d.bodyHtml || d.description ||
-      d.quote || d.cite || (Array.isArray(d.stats) && d.stats.length > 0) || (Array.isArray(d.infoRows) && d.infoRows.length > 0)
-    )
-  })
+  // 2. Page blocks with something to translate (the job's own reading — FINDING-R6-2)
+  const allBlocks = await db.select({ id: pageBlocks.id, data: pageBlocks.data }).from(pageBlocks).where(eq(pageBlocks.isVisible, true))
+  const translatableBlocks = allBlocks.filter(b => blockTranslationParts(b.data) !== null)
   const totalBlocks = translatableBlocks.length
 
   // 3. Total published articles
@@ -265,28 +98,20 @@ export async function scanUniversalCoverage(db: Database = getDb()): Promise<Uni
   const langStats: UniversalCoverageStats['languages'] = []
 
   for (const lang of allLangs) {
-    // Missing UI keys
-    const translatedUi = await db
-      .select({ count: count() })
-      .from(langTranslations)
-      .where(and(eq(langTranslations.langCode, lang.code), sql`${langTranslations.value} IS NOT NULL AND TRIM(${langTranslations.value}) != ''`))
-    const uiMissing = Math.max(0, totalUiKeys - Number(translatedUi[0]?.count || 0))
+    // Missing UI keys: vi keys without text in this language
+    const targetRows = await db.select({ group: langTranslations.group, key: langTranslations.key, value: langTranslations.value }).from(langTranslations).where(eq(langTranslations.langCode, lang.code))
+    const translatedUi = new Set(targetRows.filter(row => row.value?.trim() && viKeySet.has(`${row.group}::${row.key}`)).map(row => `${row.group}::${row.key}`))
+    const uiMissing = Math.max(0, totalUiKeys - translatedUi.size)
 
     // Missing Blocks
-    let blocksMissing = 0
-    for (const b of translatableBlocks) {
-      const d = (b.data as Record<string, unknown>) || {}
-      const translations = (d.translations as Record<string, Record<string, unknown>> | undefined)?.[lang.code]
-      if (!translations || Object.keys(translations).length === 0) {
-        blocksMissing++
-      }
-    }
+    const blocksMissing = translatableBlocks.filter(b => !hasBlockTranslation(b.data, lang.code)).length
 
-    // Missing Articles
+    // Missing Articles: published ones without a translation that did not fail
     const translatedArticles = await db
-      .select({ count: count() })
+      .select({ count: sql<number>`COUNT(DISTINCT ${articleTranslations.articleId})` })
       .from(articleTranslations)
-      .where(and(eq(articleTranslations.langCode, lang.code), sql`${articleTranslations.status} != 'failed'`))
+      .innerJoin(articles, eq(articles.id, articleTranslations.articleId))
+      .where(and(eq(articleTranslations.langCode, lang.code), sql`${articleTranslations.status} != 'failed'`, eq(articles.status, 'published')))
     const articlesMissing = Math.max(0, totalArticles - Number(translatedArticles[0]?.count || 0))
 
     const totalItems = totalUiKeys + totalBlocks + totalArticles
@@ -315,6 +140,11 @@ export async function scanUniversalCoverage(db: Database = getDb()): Promise<Uni
 
 /**
  * Execute non-blocking Universal AI translation across all selected pillars.
+ *
+ * Only active languages other than vi are targets, whatever the request names
+ * (FINDING-R6-6: vi was "translated" into Vietnamese, and a switched-off language was
+ * paid for). `articlesLimit` is a whole number ≥ 0 checked by the route; 0 = every
+ * published article.
  */
 export async function startUniversalAutoTranslate(
   actor: ActorLike,
@@ -353,7 +183,7 @@ export async function startUniversalAutoTranslate(
   // Run in background
   setTimeout(async () => {
     try {
-      const allLangs = await db.select().from(languages).where(inArray(languages.code, targetLangs))
+      const allLangs = await db.select().from(languages).where(and(inArray(languages.code, targetLangs), isTargetLanguage))
 
       // ── Step 0: Pre-calculate total items ──────────────────────────────
       let totalUiWork = 0
@@ -378,13 +208,7 @@ export async function startUniversalAutoTranslate(
         : []
       if (includeBlocks) {
         for (const lang of allLangs) {
-          for (const b of blocks) {
-            const rawData = (b.data as Record<string, unknown>) || {}
-            const translations = (rawData.translations as Record<string, Record<string, unknown>> | undefined) || {}
-            if (!translations[lang.code] || Object.keys(translations[lang.code]!).length === 0) {
-              totalBlocksWork++
-            }
-          }
+          totalBlocksWork += blocks.filter(b => blockNeedsTranslation(b.data, lang.code)).length
         }
       }
 
@@ -443,21 +267,14 @@ export async function startUniversalAutoTranslate(
             universalTaskState.currentItem = `Dịch UI ${lang.name}: ${chunk.map(c => c.key).slice(0, 3).join(', ')}...`
 
             const promptLines = chunk.map((item, idx) => `[${idx + 1}] key="${item.key}" group="${item.group}" text="${item.value || item.key}"`)
-            const prompt = `Translate software UI strings to ${lang.name}. Return ONLY valid JSON array [{"key":"...", "value":"..."}]:\n${promptLines.join('\n')}`
+            const prompt = `Translate software UI strings to ${lang.name}. Return ONLY valid JSON array [${MODEL_TRANSLATION_ANSWER_FORMAT}] — n is the line's [n] number (a key can be in several groups):\n${promptLines.join('\n')}`
 
             const res = await callAi('translation_ui', { prompt, userId: actor.id ?? null })
-            if (res.ok && res.text) {
-              try {
-                const raw = res.text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '').trim()
-                const parsed = JSON.parse(raw) as Array<{ key: string; value: string }>
-                const itemsToSave = parsed.map((p) => {
-                  const m = chunk.find(c => c.key === p.key)
-                  return { group: m?.group || 'general', key: p.key, value: String(p.value).trim() }
-                })
-                if (itemsToSave.length > 0) {
-                  await upsertTranslations(actor, lang.code, itemsToSave, true)
-                }
-              } catch {}
+            // Only text for keys in this chunk: stringifying the model's value stored
+            // "null"/"undefined", and a key the model invented became a row under "general".
+            const itemsToSave = res.ok && res.text ? readModelTranslations(res.text, chunk) : []
+            if (itemsToSave.length > 0) {
+              await upsertTranslations(actor, lang.code, itemsToSave, true)
             }
             universalTaskState.processedItems++
             universalTaskState.percent = Math.min(99, Math.round((universalTaskState.processedItems / universalTaskState.totalItems) * 100))
@@ -473,16 +290,12 @@ export async function startUniversalAutoTranslate(
           if (cancelRequested) break
           for (const b of blocks) {
             if (cancelRequested) break
-            const rawData = (b.data as Record<string, unknown>) || {}
-            const translations = (rawData.translations as Record<string, Record<string, unknown>> | undefined) || {}
-            if (translations[lang.code] && Object.keys(translations[lang.code]!).length > 0) {
-              continue // Already translated
-            }
+            if (!blockNeedsTranslation(b.data, lang.code)) continue // Already translated, or nothing to translate
 
             universalTaskState.currentItem = `Dịch khối ${b.blockType} (#${b.id}) sang ${lang.name}...`
 
             try {
-              await translateSinglePageBlock(b, lang, actor.id ?? null, db)
+              await translatePageBlock(b.id, lang, actor.id ?? null, db)
             } catch (err) {
               logWarn({ event: 'universal_translate.block_failed', blockId: b.id, langCode: lang.code, error: String(err) })
             }
@@ -529,7 +342,7 @@ export async function startUniversalAutoTranslate(
       }
 
       universalTaskState.phase = 'Hoàn tất'
-      universalTaskState.currentItem = `Đã hoàn tất dịch thành công ${universalTaskState.processedItems} mục sang ${targetLangs.length} ngôn ngữ!`
+      universalTaskState.currentItem = `Đã hoàn tất dịch thành công ${universalTaskState.processedItems} mục sang ${allLangs.length} ngôn ngữ!`
       universalTaskState.percent = 100
       universalTaskState.completedAt = new Date().toISOString()
       logInfo({ event: 'universal_translate.completed', targetLangs })

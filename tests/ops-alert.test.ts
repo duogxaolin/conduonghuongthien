@@ -126,6 +126,9 @@ const logged = (event: string) => lines.filter(line => line.event === event)
 // ─── The allowlist ────────────────────────────────────────────────────────────
 test('the alert list is the D-ALERT subset, and nothing else alerts', () => {
   assert.deepEqual([...ALERT_EVENTS].sort(), [
+    // Verify of wave3 4.3c follow-up (W8b): a moderation rule turned off for running slow judges
+    // nothing for 10 minutes — someone must look at the rule (crafted input may be what slowed it).
+    'ai_moderation.rule_slow_disabled',
     'auth.mfa_challenge_locked',
     'backup.restore_failed',
     'backup.restore_refused',
@@ -138,6 +141,9 @@ test('the alert list is the D-ALERT subset, and nothing else alerts', () => {
   assert.ok(ALERT_EVENTS.includes(SECURITY_EVENTS.backupRestoreFailed))
   // wave2 integration (2A × ops): the origin gate's refusal is on the D-ALERT list.
   assert.ok(ALERT_EVENTS.includes(SECURITY_EVENTS.crossSiteRefused))
+  assert.ok(ALERT_EVENTS.includes(SECURITY_EVENTS.moderationRuleSlowDisabled))
+  // Once per request and anyone can trigger it: an alert rule may watch the log line, no e-mail.
+  assert.ok(!ALERT_EVENTS.includes(SECURITY_EVENTS.moderationRequestBudgetExhausted))
   assert.ok(ALERT_EVENTS.includes(BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked))
   assert.ok(!ALERT_EVENTS.includes(SECURITY_EVENTS.loginFailed), 'routine noise is not paged')
 })

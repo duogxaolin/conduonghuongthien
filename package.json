@@ -13,9 +13,9 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "typecheck": "nuxt typecheck",
-    "test": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test tests/*.test.ts",
-    "test:coverage": "node -e \"require('node:fs').mkdirSync('node_modules/.cache/cdkt-coverage', { recursive: true })\" && node --experimental-strip-types --experimental-test-module-mocks --experimental-test-coverage --test-coverage-exclude=\"tests/**\" --import ./scripts/ts-resolver.mjs --test-reporter=dot --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=node_modules/.cache/cdkt-coverage/lcov.info --test tests/*.test.ts && node --experimental-strip-types scripts/coverage-summary.ts node_modules/.cache/cdkt-coverage/lcov.info",
-    "test:watch": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test --watch tests/*.test.ts",
+    "test": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test tests/*.test.ts tests/ratchets/*.test.ts",
+    "test:coverage": "node -e \"require('node:fs').mkdirSync('node_modules/.cache/cdkt-coverage', { recursive: true })\" && node --experimental-strip-types --experimental-test-module-mocks --experimental-test-coverage --test-coverage-exclude=\"tests/**\" --import ./scripts/ts-resolver.mjs --test-reporter=dot --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=node_modules/.cache/cdkt-coverage/lcov.info --test \"tests/!(*-integration).test.ts\" \"tests/ratchets/*.test.ts\" && node --experimental-strip-types scripts/coverage-summary.ts node_modules/.cache/cdkt-coverage/lcov.info && node --experimental-strip-types scripts/coverage-ratchet.ts node_modules/.cache/cdkt-coverage/lcov.info",
+    "test:watch": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test --watch tests/*.test.ts tests/ratchets/*.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
     "analytics:maintenance": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/analytics-maintenance.ts",
@@ -27,7 +27,10 @@
     "db:check": "drizzle-kit check",
     "db:sanitize-html": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/sanitize-stored-html.ts",
     "db:decode-excerpts": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/decode-stored-excerpts.ts",
-    "db:drift": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/check-schema-drift.ts"
+    "db:repair-null-translations": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/repair-null-translations.ts",
+    "db:repair-ai-usage-duplicates": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/repair-ai-usage-duplicates.ts",
+    "db:drift": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/check-schema-drift.ts",
+    "docs:facts": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/docs-facts.ts"
   },
   "engines": {
     "node": "^22.19.0 || ^24.11.0 || >=26.0.0"

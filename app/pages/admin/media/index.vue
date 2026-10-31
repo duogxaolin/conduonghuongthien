@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import type { AdminMediaRow } from '~/types/admin-api'
-definePageMeta({
-  layout: 'admin',
-  middleware: 'admin-auth'
-})
+import type { AdminMediaDeleteResponse, AdminMediaListResponse, AdminMediaStorageSize } from '~/types/admin-media-api'
+import { formatByteSize } from '~/utils/byte-size'
+definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const mediaItems = ref<AdminMediaRow[]>([])
 const loading = ref(true)
@@ -17,13 +16,21 @@ const toast = useToast()
 const { confirm } = useConfirm()
 const { uploading, uploadBatch, tasks, uploadingBatch } = useUpload()
 
-const fetchMedia = async (page = 1) => {
+// Only the latest load writes (ticket, docs/decisions/fetch-rollout-d-fetch.md); a page past the end
+// (last tile deleted) asks ONCE for the last page, not "Chưa có file nào" (tests/admin-fetch-rollout-media-library.test.ts).
+// Leaving the page refuses new loads: a late answer's last-page follow-up, a delete/upload reload — nothing is sent.
+let listRequest = 0, disposed = false
+onBeforeUnmount(() => { disposed = true })
+const fetchMedia = async (page = 1, mayAskForLastPage = true): Promise<void> => {
+  if (disposed) return
+  const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminMediaRow[]; pagination: typeof pagination.value }>)(`/api/admin/media`, {
-      params: { page, search: search.value, type: filterType.value, perPage: 24 }
-    })
+    const res = await adminFetch<AdminMediaListResponse>(`/api/admin/media`, { query: { page, search: search.value, type: filterType.value, perPage: 24 } })
+    if (ticket !== listRequest) return
+    const last = Math.max(1, res.pagination.totalPages)
+    if (mayAskForLastPage && page > last && res.pagination.total > 0) return await fetchMedia(last, false)
     if (res.ok) {
       mediaItems.value = res.items
       pagination.value = res.pagination
@@ -31,10 +38,11 @@ const fetchMedia = async (page = 1) => {
       selection.keepOnly(visibleIds.value)
     }
   } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Lỗi tải thư viện media'))
+    if (ticket !== listRequest) return
     loadError.value = errorMessage(err, 'Lỗi tải thư viện media')
+    toast.error(loadError.value)
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
@@ -84,7 +92,7 @@ const deleteMedia = async (item: AdminMediaRow) => {
   const ok = await confirm({ title: 'Xóa tệp', message: `Bạn có chắc muốn xóa file ${item.originalName}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/${item.id}`, { method: 'DELETE' })
+    await adminFetch<AdminMediaDeleteResponse>(`/api/admin/media/${item.id}`, { method: 'DELETE' })
     toast.success('Đã xóa tệp media thành công!')
     await fetchMedia(pagination.value.page)
   } catch (err: unknown) {
@@ -125,26 +133,17 @@ const isBatching = computed(() => uploadingBatch.value && totalCount.value > 0)
 // Quét 3212 file mồ côi có thể treo trang grid, nên tách ra trang riêng chạy nền.
 
 // ─── Dung lượng storage (local + R2) ────────────────────────────────────────
-interface StorageSize {
-  local: { dbCount: number; dbBytes: number; diskCount: number; diskBytes: number }
-  r2: { configured: boolean; dbCount: number; dbBytes: number; bucketCount: number | null; bucketBytes: number | null }
-}
-const storageSize = ref<StorageSize | null>(null)
+const storageSize = ref<AdminMediaStorageSize | null>(null)
 const storageLoading = ref(false)
 const storageError = ref('')
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-}
+// Tệp trên đĩa chưa có hàng `media`. Đĩa không đọc được (`null`, R8-5) → không suy ra gì.
+const orphanCount = computed(() => { const l = storageSize.value?.local; return l?.diskCount != null ? l.diskCount - l.dbCount : 0 })
 
 async function fetchStorageSize() {
   storageLoading.value = true
   storageError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean } & StorageSize>)('/api/admin/media/storage-size')
+    const res = await adminFetch<AdminMediaStorageSize>('/api/admin/media/storage-size')
     if (res.ok) storageSize.value = res
   } catch (err: unknown) {
     storageError.value = errorMessage(err, 'Không thể lấy dung lượng storage.')
@@ -153,10 +152,7 @@ async function fetchStorageSize() {
   }
 }
 
-onMounted(() => {
-  fetchMedia()
-  void fetchStorageSize()
-})
+onMounted(() => { void fetchMedia(); void fetchStorageSize() })
 </script>
 
 <template>
@@ -164,12 +160,12 @@ onMounted(() => {
     <!-- Page Header -->
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Thư viện Media & Tải lên</h1>
-        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Quản lý toàn bộ hình ảnh, tài liệu và video được tải lên website</p>
+        <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">Thư viện Media & Tải lên</h1>
+        <p class="text-[0.85rem] text-ink-muted mt-1 mb-0">Quản lý toàn bộ hình ảnh, tài liệu và video được tải lên website</p>
       </div>
       <NuxtLink
         to="/admin/media/scan"
-        class="flex items-center gap-2 rounded-lg border border-[#c8d6c9] bg-white px-3.5 py-2 text-sm font-semibold text-[#2c6e33] no-underline transition-colors hover:bg-[#f0f7f1]"
+        class="flex items-center gap-2 rounded-lg border border-line-strong bg-white px-3.5 py-2 text-sm font-semibold text-brand-700 no-underline transition-colors hover:bg-surface-tint"
       >
         <i class="fa-solid fa-folder-tree" aria-hidden="true"></i>
         Quét & Đồng bộ
@@ -177,15 +173,15 @@ onMounted(() => {
     </div>
 
     <!-- Storage Usage Card -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] p-4">
+    <div class="bg-white rounded-xl border border-line p-4">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
         <div class="flex items-center gap-2">
-          <i class="fa-solid fa-database text-[#2c6e33]" aria-hidden="true"></i>
-          <h2 class="m-0 text-sm font-extrabold text-[#122815]">Dung lượng đã sử dụng</h2>
+          <i class="fa-solid fa-database text-brand-700" aria-hidden="true"></i>
+          <h2 class="m-0 text-sm font-extrabold text-brand-950">Dung lượng đã sử dụng</h2>
         </div>
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border border-[#c8d6c9] bg-white px-3 py-1.5 text-xs font-semibold text-[#2c6e33] hover:bg-[#f0f7f1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-line-strong bg-white px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-surface-tint transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="storageLoading"
           @click="fetchStorageSize"
         >
@@ -194,46 +190,47 @@ onMounted(() => {
         </button>
       </div>
 
-      <div v-if="storageError" role="alert" class="flex items-center gap-2 text-xs text-[#b04a4a] py-2">
+      <div v-if="storageError" role="alert" class="flex items-center gap-2 text-xs text-danger-soft py-2">
         <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
         <span>{{ storageError }}</span>
       </div>
 
-      <div v-else-if="storageLoading && !storageSize" class="flex items-center gap-2 text-xs text-[#667768] py-3" role="status" aria-busy="true">
+      <div v-else-if="storageLoading && !storageSize" class="flex items-center gap-2 text-xs text-ink-muted py-3" role="status" aria-busy="true">
         <i class="fa-solid fa-spinner animate-spin motion-reduce:animate-none" aria-hidden="true"></i>
         <span>Đang quét thư mục uploads và bucket R2...</span>
       </div>
 
       <div v-else-if="storageSize" class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <!-- Local -->
-        <div class="rounded-lg border border-[#e2ece3] bg-[#f8fbf8] p-3.5">
+        <div class="rounded-lg border border-line bg-surface p-3.5">
           <div class="flex items-center justify-between gap-2 mb-2">
             <div class="flex items-center gap-2">
-              <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-[#2c6e33] text-white text-xs">
+              <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-brand-700 text-white text-xs">
                 <i class="fa-solid fa-hard-drive" aria-hidden="true"></i>
               </span>
-              <span class="text-sm font-bold text-[#122815]">Local /uploads</span>
+              <span class="text-sm font-bold text-brand-950">Local /uploads</span>
             </div>
-            <span class="text-base font-extrabold text-[#2c6e33]">{{ formatBytes(storageSize.local.diskBytes) }}</span>
+            <span class="text-base font-extrabold text-brand-700">{{ formatByteSize(storageSize.local.diskBytes) }}</span>
           </div>
-          <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-[#667768]">
-            <li class="flex justify-between gap-2">
+          <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-ink-muted">
+            <li v-if="storageSize.local.diskCount == null" class="text-danger-soft">Không đọc được thư mục uploads (sai quyền truy cập hoặc lỗi ổ đĩa) — chưa biết dung lượng thật.</li>
+            <li v-else class="flex justify-between gap-2">
               <span>File trên đĩa</span>
               <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.diskCount.toLocaleString('vi-VN') }} tệp</span>
             </li>
             <li class="flex justify-between gap-2">
               <span>Đã ghi DB (local)</span>
-              <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatBytes(storageSize.local.dbBytes) }}</span>
+              <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatByteSize(storageSize.local.dbBytes) }}</span>
             </li>
-            <li v-if="storageSize.local.diskCount > storageSize.local.dbCount" class="flex justify-between gap-2 text-[#765b00]">
+            <li v-if="orphanCount > 0" class="flex justify-between gap-2 text-[#765b00]">
               <span>Mồ côi (chưa có DB)</span>
-              <span class="font-semibold">{{ (storageSize.local.diskCount - storageSize.local.dbCount).toLocaleString('vi-VN') }} tệp</span>
+              <span class="font-semibold">{{ orphanCount.toLocaleString('vi-VN') }} tệp</span>
             </li>
           </ul>
           <NuxtLink
-            v-if="storageSize.local.diskCount > storageSize.local.dbCount"
+            v-if="orphanCount > 0"
             to="/admin/media/scan"
-            class="mt-2 inline-flex items-center gap-1.5 text-[0.72rem] font-semibold text-[#2c6e33] no-underline hover:underline"
+            class="mt-2 inline-flex items-center gap-1.5 text-[0.72rem] font-semibold text-brand-700 no-underline hover:underline"
           >
             <i class="fa-solid fa-arrow-right text-[0.6rem]" aria-hidden="true"></i>
             Quét & nhập tệp mồ côi
@@ -241,22 +238,22 @@ onMounted(() => {
         </div>
 
         <!-- R2 -->
-        <div class="rounded-lg border border-[#e2ece3] bg-[#fffdf7] p-3.5">
+        <div class="rounded-lg border border-line bg-[#fffdf7] p-3.5">
           <div class="flex items-center justify-between gap-2 mb-2">
             <div class="flex items-center gap-2">
               <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-orange-500 text-white text-xs">
                 <i class="fa-solid fa-cloud" aria-hidden="true"></i>
               </span>
-              <span class="text-sm font-bold text-[#122815]">R2 Bucket</span>
+              <span class="text-sm font-bold text-brand-950">R2 Bucket</span>
             </div>
-            <span v-if="storageSize.r2.bucketBytes != null" class="text-base font-extrabold text-[#7c4a00]">{{ formatBytes(storageSize.r2.bucketBytes) }}</span>
+            <span v-if="storageSize.r2.bucketBytes != null" class="text-base font-extrabold text-[#7c4a00]">{{ formatByteSize(storageSize.r2.bucketBytes) }}</span>
             <span v-else class="text-base font-extrabold text-[#9ca3af]">—</span>
           </div>
-          <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-[#667768]">
+          <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-ink-muted">
             <li v-if="!storageSize.r2.configured" class="text-[#9ca3af]">
               R2 chưa cấu hình — nhập credential ở Cài đặt.
             </li>
-            <li v-else-if="storageSize.r2.bucketBytes == null" class="text-[#b04a4a]">
+            <li v-else-if="storageSize.r2.bucketBytes == null" class="text-danger-soft">
               Không đọc được bucket R2 (credential hỏng hoặc lỗi mạng).
             </li>
             <template v-else>
@@ -266,43 +263,43 @@ onMounted(() => {
               </li>
               <li class="flex justify-between gap-2">
                 <span>Đã ghi DB (r2)</span>
-                <span class="font-semibold text-[#3d4f3f]">{{ storageSize.r2.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatBytes(storageSize.r2.dbBytes) }}</span>
+                <span class="font-semibold text-[#3d4f3f]">{{ storageSize.r2.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatByteSize(storageSize.r2.dbBytes) }}</span>
               </li>
             </template>
           </ul>
         </div>
       </div>
 
-      <p v-else class="m-0 text-xs text-[#667768] py-3">
+      <p v-else class="m-0 text-xs text-ink-muted py-3">
         Chưa có thông tin dung lượng. Bấm “Quét lại dung lượng” để quét thư mục uploads và bucket R2.
       </p>
     </div>
 
     <!-- Upload Zone -->
     <label
-      class="flex flex-col items-center justify-content-center gap-1.5 border-2 border-dashed border-[#c8d6c9] rounded-2xl py-9 px-6 bg-[#f8fbf8] cursor-pointer text-center transition-all duration-150"
-      :class="{ 'border-[#2c6e33] bg-[#edf7ed]': isDragOver, 'opacity-70 cursor-not-allowed pointer-events-none': uploading }"
+      class="flex flex-col items-center justify-content-center gap-1.5 border-2 border-dashed border-line-strong rounded-2xl py-9 px-6 bg-surface cursor-pointer text-center transition-all duration-150"
+      :class="{ 'border-brand-700 bg-[#edf7ed]': isDragOver, 'opacity-70 cursor-not-allowed pointer-events-none': uploading }"
       @dragover.prevent="isDragOver = true"
       @dragleave="isDragOver = false"
       @drop.prevent="onDrop"
     >
       <input type="file" accept="image/*,application/pdf" multiple class="sr-only" :disabled="uploading" @change="onFileInput" />
-      <i class="fa-regular text-4xl" :class="uploading ? 'fa-spinner animate-spin text-[#2c6e33]' : 'fa-cloud-arrow-up text-[#2c6e33]'"></i>
+      <i class="fa-regular text-4xl" :class="uploading ? 'fa-spinner animate-spin text-brand-700' : 'fa-cloud-arrow-up text-brand-700'"></i>
       <strong class="mt-2 text-base text-[#1a2e1c]">{{ uploading ? (isBatching ? `Đang tải lên ${completedCount}/${totalCount}...` : 'Đang tải lên...') : 'Kéo thả file vào đây hoặc bấm để chọn' }}</strong>
-      <span class="text-sm text-[#667768]">Hỗ trợ JPEG, PNG, WebP, GIF, PDF — tối đa 20MB mỗi file</span>
+      <span class="text-sm text-ink-muted">Hỗ trợ JPEG, PNG, WebP, GIF, PDF — tối đa 20MB mỗi file</span>
     </label>
 
     <!-- Per-file upload progress — parallel uploads, one row per file with its own state. -->
-    <div v-if="tasks.length" class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col gap-2.5" role="status" :aria-busy="isBatching">
+    <div v-if="tasks.length" class="bg-white rounded-xl border border-line p-4 flex flex-col gap-2.5" role="status" :aria-busy="isBatching">
       <div class="flex items-center justify-between gap-2">
-        <strong class="text-sm text-[#122815] m-0">
+        <strong class="text-sm text-brand-950 m-0">
           Đang tải lên {{ completedCount }}/{{ totalCount }} file{{ isBatching ? '' : ' — xong' }}
         </strong>
-        <span class="text-[0.72rem] text-[#667768]">{{ batchPercent }}%</span>
+        <span class="text-[0.72rem] text-ink-muted">{{ batchPercent }}%</span>
       </div>
       <!-- Overall bar: aggregate of all rows below it. -->
-      <div class="h-1.5 w-full overflow-hidden rounded-full bg-[#e2ece3]">
-        <div class="h-full rounded-full bg-[#2c6e33] transition-[width] duration-200 motion-reduce:transition-none" :style="{ width: batchPercent + '%' }"></div>
+      <div class="h-1.5 w-full overflow-hidden rounded-full bg-line">
+        <div class="h-full rounded-full bg-brand-700 transition-[width] duration-200 motion-reduce:transition-none" :style="{ width: batchPercent + '%' }"></div>
       </div>
       <ul class="flex flex-col gap-2 m-0 p-0 list-none">
         <li
@@ -313,43 +310,43 @@ onMounted(() => {
           <i
             class="fa-regular w-4 text-center"
             :class="{
-              'fa-spinner animate-spin text-[#2c6e33]': t.status === 'pending' || t.status === 'uploading',
-              'fa-circle-check text-[#2c6e33]': t.status === 'success',
-              'fa-circle-xmark text-[#d12420]': t.status === 'error',
+              'fa-spinner animate-spin text-brand-700': t.status === 'pending' || t.status === 'uploading',
+              'fa-circle-check text-brand-700': t.status === 'success',
+              'fa-circle-xmark text-danger': t.status === 'error',
             }"
             :aria-hidden="true"
           ></i>
-          <span class="flex-1 truncate text-[#122815]" :title="t.file.name">{{ t.file.name }}</span>
+          <span class="flex-1 truncate text-brand-950" :title="t.file.name">{{ t.file.name }}</span>
           <span
             v-if="t.status === 'uploading' || t.status === 'pending'"
-            class="w-9 text-right text-[#667768]"
+            class="w-9 text-right text-ink-muted"
           >{{ t.progress }}%</span>
-          <span v-else-if="t.status === 'success'" class="w-9 text-right text-[#2c6e33] font-semibold">OK</span>
-          <span v-else-if="t.status === 'error'" class="w-9 text-right text-[#d12420] font-semibold" :title="t.error">Lỗi</span>
+          <span v-else-if="t.status === 'success'" class="w-9 text-right text-brand-700 font-semibold">OK</span>
+          <span v-else-if="t.status === 'error'" class="w-9 text-right text-danger font-semibold" :title="t.error">Lỗi</span>
         </li>
       </ul>
     </div>
 
     <!-- Filter Bar -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row gap-3">
+    <div class="bg-white rounded-xl border border-line p-4 flex flex-col sm:flex-row gap-3">
       <input
         type="text"
         v-model="search"
         placeholder="Tìm kiếm file..."
         @keyup.enter="fetchMedia(1)"
-        class="flex-1 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+        class="flex-1 px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
       />
       <select
         v-model="filterType"
         @change="fetchMedia(1)"
-        class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
+        class="px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700"
       >
         <option value="">Tất cả định dạng</option>
         <option value="image">Chỉ Ảnh (Image)</option>
         <option value="video">Chỉ Video</option>
       </select>
       <button
-        class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
+        class="inline-flex items-center gap-2 bg-brand-700 hover:bg-brand-900 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
         @click="fetchMedia(1)"
       >
         <i class="fa-regular fa-magnifying-glass"></i> Tìm kiếm
@@ -359,10 +356,10 @@ onMounted(() => {
     <!-- Media Grid -->
     <SkeletonCards v-if="loading" label="Đang tải danh sách media" :count="12" />
 
-    <div v-else-if="loadError" role="alert" class="flex flex-col items-center gap-3 py-16 text-[#b04a4a]">
+    <div v-else-if="loadError" role="alert" class="flex flex-col items-center gap-3 py-16 text-danger-soft">
       <i class="fa-solid fa-triangle-exclamation text-4xl text-[#e2a0a0]" aria-hidden="true"></i>
       <p class="m-0 text-[0.9rem]">{{ loadError }}</p>
-      <button type="button" class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2 rounded-lg cursor-pointer border-0 transition-colors text-sm" @click="fetchMedia(1)">
+      <button type="button" class="inline-flex items-center gap-2 bg-brand-700 hover:bg-brand-900 text-white font-bold px-4 py-2 rounded-lg cursor-pointer border-0 transition-colors text-sm" @click="fetchMedia(1)">
         <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Thử lại
       </button>
     </div>
@@ -380,17 +377,17 @@ onMounted(() => {
       noun="tệp"
       @clear="selection.clear()"
     >
-      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+      <button type="button" class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
 
     <!-- A grid has no header row to hang "select all" off, so it gets its own control.
          !loadError is part of the condition, not decoration: a failed reload keeps
          the previous page's items in mediaItems, so without it the alert appears
          above a grid of stale tiles that look current. -->
-    <label v-if="!loading && !loadError && mediaItems.length" class="flex w-fit items-center gap-2 text-sm font-semibold text-[#2c3e2e]">
+    <label v-if="!loading && !loadError && mediaItems.length" class="flex w-fit items-center gap-2 text-sm font-semibold text-ink-admin">
       <input
         type="checkbox"
-        class="h-4 w-4 accent-[#2c6e33]"
+        class="h-4 w-4 accent-brand-700"
         :checked="selection.allSelected(visibleIds)"
         :indeterminate="selection.someSelected(visibleIds)"
         @change="selection.toggleAll(visibleIds)"
@@ -403,9 +400,9 @@ onMounted(() => {
         v-for="m in mediaItems"
         :key="m.id"
         class="bg-white border rounded-xl overflow-hidden flex flex-col"
-        :class="selection.isSelected(Number(m.id)) ? 'border-[#2c6e33] ring-2 ring-[#2c6e33]/25' : 'border-[#e2ece3]'"
+        :class="selection.isSelected(Number(m.id)) ? 'border-brand-700 ring-2 ring-brand-700/25' : 'border-line'"
       >
-        <div class="h-[140px] bg-[#f8faf8] relative flex items-center justify-center">
+        <div class="h-[140px] bg-surface relative flex items-center justify-center">
           <img v-if="m.mimeType?.startsWith('image/')" :src="m.url" :alt="m.originalName" loading="lazy" class="w-full h-full object-cover" />
           <div v-else class="flex items-center justify-center">
             <i class="fa-regular fa-file-lines text-4xl text-[#9ca3af]"></i>
@@ -415,7 +412,7 @@ onMounted(() => {
           <label class="absolute top-2 left-2 flex h-6 w-6 cursor-pointer items-center justify-center rounded bg-white/90 shadow">
             <input
               type="checkbox"
-              class="h-4 w-4 accent-[#2c6e33]"
+              class="h-4 w-4 accent-brand-700"
               :checked="selection.isSelected(Number(m.id))"
               :aria-label="`Chọn tệp ${m.originalName}`"
               @change="selection.toggle(Number(m.id))"
@@ -427,16 +424,16 @@ onMounted(() => {
           >{{ m.provider?.toUpperCase() }}</span>
         </div>
         <div class="p-3 flex flex-col gap-1 flex-1">
-          <span class="text-[0.82rem] font-bold text-[#122815] truncate" :title="m.originalName">{{ m.originalName }}</span>
+          <span class="text-[0.82rem] font-bold text-brand-950 truncate" :title="m.originalName">{{ m.originalName }}</span>
           <span class="text-[0.72rem] text-[#9ca3af]">{{ (m.sizeBytes / 1024).toFixed(1) }} KB</span>
           <div class="flex gap-2 mt-1">
             <button
               type="button"
-              class="flex-1 text-center text-[0.75rem] py-1 rounded-md bg-[#f0f7f1] text-[#2c6e33] border-0 cursor-pointer hover:bg-[#e4f2e5] transition-colors font-medium"
+              class="flex-1 text-center text-[0.75rem] py-1 rounded-md bg-surface-tint text-brand-700 border-0 cursor-pointer hover:bg-[#e4f2e5] transition-colors font-medium"
               @click="copyLink(m.url)"
             ><i class="fa-regular fa-link"></i> Link</button>
             <button
-              class="flex-1 text-[0.75rem] py-1 rounded-md bg-[#ffebe9] text-[#d12420] border-0 cursor-pointer hover:bg-red-200 transition-colors font-medium"
+              class="flex-1 text-[0.75rem] py-1 rounded-md bg-danger-bg text-danger border-0 cursor-pointer hover:bg-red-200 transition-colors font-medium"
               @click="deleteMedia(m)"
             ><i class="fa-regular fa-trash"></i> Xóa</button>
           </div>

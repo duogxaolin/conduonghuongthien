@@ -3,19 +3,7 @@ import { getDb } from '../../../utils/db'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { checkBudget } from '../../../utils/ai-budget'
 import { callAi } from '../../../services/ai-gateway'
-
-const LANGUAGE_NAMES: Record<string, string> = {
-  en: 'Tiếng Anh (English)',
-  zh: 'Tiếng Trung (Chinese - 中文)',
-  fr: 'Tiếng Pháp (French - Français)',
-  ru: 'Tiếng Nga (Russian - Русский)',
-  ja: 'Tiếng Nhật (Japanese - 日本語)',
-  ko: 'Tiếng Hàn (Korean - 한국어)',
-  es: 'Tiếng Tây Ban Nha (Spanish - Español)',
-  de: 'Tiếng Đức (German - Deutsch)',
-  lo: 'Tiếng Lào (Lao)',
-  km: 'Tiếng Campuchia (Khmer)',
-}
+import { resolveTargetLanguage, TARGET_LANGUAGE_INVALID_MESSAGE } from '../../../utils/ai/target-language'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -26,8 +14,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Dữ liệu không hợp lệ.' })
   }
 
-  const targetLang = String(body.targetLanguage || 'en').trim().toLowerCase()
-  const targetLangName = LANGUAGE_NAMES[targetLang] || targetLang
+  const target = resolveTargetLanguage(body.targetLanguage)
+  if (!target) throw createError({ statusCode: 400, statusMessage: TARGET_LANGUAGE_INVALID_MESSAGE })
+  const { code: targetLang, name: targetLangName } = target
 
   const keys = body.keys && typeof body.keys === 'object' ? (body.keys as Record<string, string>) : {}
   const keyEntries = Object.entries(keys).filter(([k, v]) => typeof k === 'string' && typeof v === 'string' && v.trim()).slice(0, 100)
@@ -69,13 +58,19 @@ ${JSON.stringify(dictToTranslate, null, 2)}`
     throw createError({ statusCode: 502, statusMessage: aiResult.errorMessage || 'Không thể dịch giao diện.' })
   }
 
-  let translations: Record<string, string> = {}
+  // Only the labels asked for, with a string value: the model's answer used to be
+  // returned whole — keys nobody asked for, objects and numbers as "translations".
+  // `fromEntries` defines own properties, so a label named `__proto__` stays a label.
+  const requested = new Set(keyEntries.map(([key]) => key))
+  let parsed: unknown = null
   try {
-    const raw = aiResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
-    translations = JSON.parse(raw) as Record<string, string>
+    parsed = JSON.parse(aiResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim())
   } catch {
-    translations = {}
+    parsed = null
   }
+  const translations: Record<string, string> = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => requested.has(entry[0]) && typeof entry[1] === 'string'))
+    : {}
 
   return {
     ok: true,

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { parse } from '@vue/compiler-sfc'
 import { nextTick, ref, watchEffect } from 'vue'
 
 import { normalizeSource, type ChatMessage } from '../app/composables/useChatbot'
 import { playTypewriter, TYPEWRITER_MAX_MS, TYPEWRITER_WORD_DELAY_MS } from '../app/composables/useChatbotTypewriter'
+import { CHATBOT_COMPOSABLE_FAMILY, chatSurfaceSource, chatSurfaceTemplate, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 /**
  * The waiting/typing indicator and the reveal animation, tested by *running*
@@ -154,7 +154,7 @@ test('both surfaces follow the transcript without seizing the scrollbar', () => 
   // would drag the view down repeatedly while the visitor is scrolled up reading
   // an earlier answer — they would physically be unable to stay there.
   for (const file of SURFACES) {
-    const source = read(file)
+    const source = chatSurfaceSource(file)
     assert.match(source, /const wasAtBottom = force \|\|/, `${file} must check position before scrolling`)
     assert.match(source, /const followChatBottom = \(\) =>/, `${file} needs a follow-only wrapper for onTick`)
     // Playback and sends follow conditionally; opening/switching/mounting land at
@@ -209,8 +209,9 @@ test('playback drives a re-render on every word, not just on the first', async (
 test('the composable hands playback the array element, never the local literal', () => {
   // Guards the fix at its one call site. `playTypewriter(botMessage, ...)` reads
   // as correct and is the version that shipped broken, so the distinction needs
-  // to be asserted rather than left to reviewer memory.
-  const source = read('../app/composables/useChatbot.ts')
+  // to be asserted rather than left to reviewer memory. The call site is in a module of
+  // `useChatbot` since its wave3 split (`composables/chatbot/send.ts`): read the family.
+  const source = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY)
   const call = source.match(/playTypewriter\((\w+), accumulator\.text/)
   assert.ok(call, 'the playback call site moved; re-check that it passes a tracked element')
   assert.notEqual(
@@ -223,6 +224,25 @@ test('the composable hands playback the array element, never the local literal',
     /const tracked = conversation\.messages\[conversation\.messages\.length - 1\]!/,
     'the tracked element must come from the array Vue is observing',
   )
+})
+
+test('injection proof: the surface checks read every part of the widget', () => {
+  // A part with a scoped <style> keyframe, or with a second pending indicator, is in what
+  // the per-surface checks read — whether it exists today or is added later.
+  const widget = '../app/components/ChatWidget.vue'
+  const later = 'components/chat-widget/ChatWidgetLater.vue'
+  assert.ok(chatSurfaceSource(widget, { [later]: '<template><i /></template><style scoped>@keyframes x {}</style>' }).includes('<style'))
+  assert.equal((chatSurfaceTemplate(widget, { [later]: '<template><div v-if="isAwaitingFirstWord" /></template>' }).match(/v-if="isAwaitingFirstWord"/g) ?? []).length, 2)
+  const launcher = 'components/chat-widget/ChatWidgetLauncher.vue'
+  assert.match(chatSurfaceSource(widget, { [launcher]: readAppFile(launcher).replace('animate-fade-slide-up', 'animate-fadeIn') }), /\banimate-fadeIn\b/)
+})
+
+test('injection proof: the playback call-site check reads the module that makes the call', () => {
+  const send = 'composables/chatbot/send.ts'
+  const source = readAppFile(send)
+  assert.match(source, /playTypewriter\(tracked, accumulator\.text/)
+  const broken = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [send]: source.replace('playTypewriter(tracked, accumulator.text', 'playTypewriter(botMessage, accumulator.text') })
+  assert.equal(broken.match(/playTypewriter\((\w+), accumulator\.text/)?.[1], 'botMessage', 'the guard above would see the literal and fail')
 })
 
 // ─── Reference identity ──────────────────────────────────────────────────────
@@ -256,7 +276,7 @@ test('a reference without a usable numeric id offers no detail affordance', () =
 
 test('each surface renders exactly one pending indicator', () => {
   for (const file of SURFACES) {
-    const template = parse(read(file), { filename: file }).descriptor.template?.content ?? ''
+    const template = chatSurfaceTemplate(file)
     assert.equal(
       (template.match(/v-if="isAwaitingFirstWord"/g) ?? []).length,
       1,
@@ -280,7 +300,7 @@ test('no surface animates a keyframe that a scoped style block would rename', ()
   // `animate-[name_...]` utility resolves to nothing, with no error anywhere.
   const config = read('../tailwind.config.js')
   for (const file of SURFACES) {
-    const source = read(file)
+    const source = chatSurfaceSource(file)
     assert.ok(!source.includes('<style'), `${file} must not declare a <style> block`)
     for (const [, name] of source.matchAll(/animate-\[([A-Za-z][\w-]*)_/g)) {
       assert.fail(`${file} uses animate-[${name}_...]; register ${name} in tailwind.config.js instead`)
@@ -299,7 +319,7 @@ test('every animated dot in the indicator honours prefers-reduced-motion', () =>
   // A row of dots jumping forever is the kind of motion that setting exists to
   // turn off, and these two files are not on the decorative-pulse allowlist.
   for (const file of SURFACES) {
-    const template = parse(read(file), { filename: file }).descriptor.template?.content ?? ''
+    const template = chatSurfaceTemplate(file)
     const animated = (template.match(/<[^>]*\banimate-typing-dot[^>]*>/g) ?? [])
     assert.ok(animated.length >= 3, `${file} must render the three-dot indicator`)
     for (const tag of animated) {
@@ -315,7 +335,7 @@ test('the indicator announces itself to assistive technology', () => {
   // Dots convey "wait" only to someone who can see them. Without the label, a
   // screen-reader user gets silence between sending and the answer arriving.
   for (const file of SURFACES) {
-    const template = parse(read(file), { filename: file }).descriptor.template?.content ?? ''
+    const template = chatSurfaceTemplate(file)
     const block = template.match(/v-if="isAwaitingFirstWord"[\s\S]{0,900}/)?.[0] ?? ''
     assert.match(block, /role="status"/, `${file} indicator needs role="status"`)
     assert.match(block, /sr-only/, `${file} indicator needs a text label`)
@@ -327,7 +347,7 @@ test('the indicator announces itself to assistive technology', () => {
 
 test('both surfaces offer the full approved answer with load, error and retry', () => {
   for (const file of SURFACES) {
-    const template = parse(read(file), { filename: file }).descriptor.template?.content ?? ''
+    const template = chatSurfaceTemplate(file)
     assert.match(template, /source\.entryId !== null/, `${file} must gate the affordance on a real row id`)
     assert.match(template, /toggleSourceDetail\(source\.entryId\)/, `${file} must open the detail`)
     assert.match(template, /:aria-expanded="isSourceExpanded\(source\.entryId\)"/, `${file} must announce expansion`)

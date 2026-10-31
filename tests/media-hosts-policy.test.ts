@@ -32,12 +32,19 @@ test('mediaHostProblem: ngoài img-src → csp; trong img-src mà ngoài image.d
   for (const domain of IMAGE_PROXY_DOMAINS) assert.equal(mediaHostProblem(domain), null, `${domain}: image.domains must also be inside img-src`)
 })
 
-test('nuxt.config.ts dựng img-src và image.domains từ shared/media-hosts.ts — không chép danh sách', () => {
+test('nuxt.config.ts dựng image.domains từ shared/media-hosts.ts, CSP img-src đi qua shared/csp-policy.ts — không chép danh sách', () => {
   const config = readFileSync(new URL('../nuxt.config.ts', import.meta.url), 'utf8')
+  // Chuỗi CSP (cả hai header) dựng ở `shared/csp-policy.ts` (wave3 D-CSP giai đoạn 1);
+  // img-src trong đó vẫn đến từ `cspImgSrcDirective()`.
+  const policy = readFileSync(new URL('../shared/csp-policy.ts', import.meta.url), 'utf8')
   assert.match(config, /from '\.\/shared\/media-hosts'/)
   assert.match(config, /domains: \[\.\.\.IMAGE_PROXY_DOMAINS\]/)
-  assert.match(config, /cspImgSrcDirective\(\)/)
-  assert.doesNotMatch(config, /"img-src /, 'img-src must not be written out by hand again')
+  assert.match(config, /from '\.\/shared\/csp-policy'/)
+  assert.match(policy, /from '\.\/media-hosts'/)
+  assert.match(policy, /cspImgSrcDirective\(\)/)
+  for (const [name, source] of [['nuxt.config.ts', config], ['shared/csp-policy.ts', policy]]) {
+    assert.doesNotMatch(source, /["'`]img-src /, `${name}: img-src must not be written out by hand again`)
+  }
   // Cùng header như trước khi tách (không đổi hành vi).
   assert.equal(
     cspImgSrcDirective(),

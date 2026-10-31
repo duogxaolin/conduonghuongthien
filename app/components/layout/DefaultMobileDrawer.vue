@@ -35,7 +35,7 @@
     @click="onNavClick" @keydown.escape="$emit('toggle-mobile-menu')" @keydown.tab="onTrapTab"
   >
     <!-- Drawer Header -->
-    <div class="flex items-center justify-between px-5 py-[18px] bg-gradient-to-br from-[#1e4620] to-[#133215] text-white border-b border-white/10 z-[2] flex-shrink-0">
+    <div class="flex items-center justify-between px-5 py-[18px] bg-gradient-to-br from-brand-900 to-[#133215] text-white border-b border-white/10 z-[2] flex-shrink-0">
       <div class="flex items-center gap-2.5 min-w-0">
         <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 shrink-0">
           <NuxtImg             v-if="siteMainLogo"             :src="siteMainLogo"             alt="Logo cơ quan chủ quản"             class="w-auto object-contain drop-shadow-md"             :class="siteLogo ? 'h-10' : 'h-9'"             sizes="64px sm:96px"            format="webp" />
@@ -55,13 +55,13 @@
     </div>
 
     <!-- Drawer Locale Switcher (Grid layout for many languages) -->
-    <div class="px-4 py-2.5 bg-[#f0f6ef] border-b border-[#e1e8e0] flex-shrink-0">
-      <div class="text-[0.68rem] font-bold text-[#667768] uppercase mb-1.5">{{ t('language_switcher') }}</div>
+    <div class="px-4 py-2.5 bg-surface-tint border-b border-line flex-shrink-0">
+      <div class="text-[0.68rem] font-bold text-ink-muted uppercase mb-1.5">{{ t('language_switcher') }}</div>
       <div class="grid grid-cols-2 gap-1.5" role="group" :aria-label="t('language_switcher')">
         <button
           v-for="locale in locales"
           :key="`drawer-${locale.code}`"
-          :class="currentLang === locale.code ? 'text-white bg-[#2c6e33] shadow-xs' : 'text-[#1e4620] bg-white border border-[#c8d6c9] hover:bg-[#e4ece4]'"
+          :class="currentLang === locale.code ? 'text-white bg-brand-700 shadow-xs' : 'text-brand-900 bg-white border border-line-strong hover:bg-line'"
           class="border-none font-bold cursor-pointer text-xs px-2.5 py-1.5 rounded-lg transition-all flex items-center justify-between"
           :aria-label="locale.name"
           :aria-pressed="currentLang === locale.code"
@@ -78,7 +78,7 @@
     <!-- Drawer Search -->
     <div class="px-4 pt-3 pb-2 bg-[#fcfdfe] border-b border-[rgba(30,70,32,0.06)] flex-shrink-0">
       <form @submit.prevent="$emit('handle-search')" class="flex items-center bg-[rgba(30,70,32,0.05)] border border-[rgba(30,70,32,0.12)] rounded-[10px] px-3 py-2 gap-2">
-        <span class="text-[0.85rem] text-[#4A6741]">
+        <span class="text-[0.85rem] text-brand-600">
           <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
         </span>
         <input
@@ -87,7 +87,7 @@
           :aria-label="t('site_search_aria')"
           :value="searchQuery"
           @input="$emit('search-input', ($event.target as HTMLInputElement).value)"
-          class="border-none bg-transparent w-full text-[0.88rem] text-[#1E251C] outline-none"
+          class="border-none bg-transparent w-full text-[0.88rem] text-ink outline-none"
         />
         <button
           v-if="searchQuery"
@@ -109,7 +109,7 @@
           <!-- Has children: accordion -->
           <template v-if="item.children && item.children.length">
             <div
-              class="no-underline text-[#1E251C] font-semibold text-[0.95rem] px-4 py-3 rounded-[10px] flex justify-between items-center cursor-pointer transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
+              class="no-underline text-ink font-semibold text-[0.95rem] px-4 py-3 rounded-[10px] flex justify-between items-center cursor-pointer transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-brand-600"
               :role="item.url === '#' ? 'button' : undefined"
               :tabindex="item.url === '#' ? 0 : undefined"
               :aria-label="item.url === '#' ? navItemLabel(item) : undefined"
@@ -123,12 +123,12 @@
               >{{ navItemLabel(item) }}</component>
               <i class="fa-solid fa-chevron-down text-[0.65rem] opacity-70 transition-transform duration-200" :class="{ 'rotate-180': mobileOpenSubmenu === item.id }" aria-hidden="true"></i>
             </div>
-            <ul v-if="mobileOpenSubmenu === item.id" class="list-none static opacity-100 pointer-events-auto transform-none shadow-none p-1.5 pl-3.5 bg-[rgba(30,70,32,0.04)] border-l-[3px] border-[#4A6741] rounded-[0_10px_10px_0] my-1 ml-3">
+            <ul v-if="mobileOpenSubmenu === item.id" class="list-none static opacity-100 pointer-events-auto transform-none shadow-none p-1.5 pl-3.5 bg-[rgba(30,70,32,0.04)] border-l-[3px] border-brand-600 rounded-[0_10px_10px_0] my-1 ml-3">
               <li v-for="child in item.children" :key="child.id">
                 <component
                   :is="shouldOpenNewTab(child) ? 'a' : NuxtLink"
                   v-bind="shouldOpenNewTab(child) ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'aria-current-value': 'page' }"
-                  class="block px-3.5 py-2.5 text-[0.88rem] font-medium text-[#4A5545] rounded-lg no-underline transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
+                  class="block px-3.5 py-2.5 text-[0.88rem] font-medium text-ink-secondary rounded-lg no-underline transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-brand-600"
                 >{{ navItemLabel(child) }}</component>
               </li>
             </ul>
@@ -138,7 +138,7 @@
             <component
               :is="shouldOpenNewTab(item) ? 'a' : NuxtLink"
               v-bind="shouldOpenNewTab(item) ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'bg-[rgba(30,70,32,0.08)] text-[#4A6741] font-extrabold', 'aria-current-value': 'page' }"
-              class="no-underline text-[#1E251C] font-semibold text-[0.95rem] px-4 py-3 rounded-[10px] flex justify-between items-center transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
+              class="no-underline text-[#1E251C] font-semibold text-[0.95rem] px-4 py-3 rounded-[10px] flex justify-between items-center transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-brand-600"
             >{{ navItemLabel(item) }}</component>
           </template>
         </li>
@@ -146,7 +146,7 @@
       </nav>
 
       <!-- Drawer Footer -->
-      <div class="px-4 py-4 bg-[#f8faf7] border-t border-black/[0.06] flex flex-col gap-2.5 flex-shrink-0">
+      <div class="px-4 py-4 bg-surface border-t border-black/[0.06] flex flex-col gap-2.5 flex-shrink-0">
         <!-- Khối danh tính người đọc trên điện thoại.
 
              Đây là phần VÁ LỖI, không phải trang trí: khối ở header mang
@@ -168,21 +168,21 @@
               <div class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] shadow-sm">
                 <ReaderAvatar :initials="reader.initials" />
                 <div class="flex flex-col min-w-0">
-                  <span class="text-[0.9rem] font-extrabold text-[#1E251C] truncate">{{ reader.displayName }}</span>
-                  <span v-if="reader.email" class="text-[0.72rem] text-[#5A6C58] truncate">{{ reader.email }}</span>
+                  <span class="text-[0.9rem] font-extrabold text-ink truncate">{{ reader.displayName }}</span>
+                  <span v-if="reader.email" class="text-[0.72rem] text-ink-soft truncate">{{ reader.email }}</span>
                 </div>
               </div>
               <div class="flex gap-2">
                 <nuxt-link
                   to="/profile"
-                  class="flex-1 flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3 py-2.5 text-[0.85rem] font-bold text-[#385130] no-underline transition-colors active:bg-[#EEF2EC]"
+                  class="flex-1 flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3 py-2.5 text-[0.85rem] font-bold text-brand-800 no-underline transition-colors active:bg-surface-tint"
                   @click="$emit('toggle-mobile-menu')"
                 >
-                  <i class="fa-solid fa-user text-[#7CB342]" aria-hidden="true"></i> Trang cá nhân
+                  <i class="fa-solid fa-user text-accent" aria-hidden="true"></i> Trang cá nhân
                 </nuxt-link>
                 <button
                   type="button"
-                  class="flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-[#5A6C58] transition-colors active:bg-[#EEF2EC]"
+                  class="flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-ink-soft transition-colors active:bg-surface-tint"
                   @click="onReaderSignOut"
                 >
                   <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Đăng xuất
@@ -202,15 +202,15 @@
               -->
               <nuxt-link
                 to="/profile#notifications"
-                class="flex items-center justify-between gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-[#385130] no-underline transition-colors active:bg-[#EEF2EC]"
+                class="flex items-center justify-between gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-brand-800 no-underline transition-colors active:bg-surface-tint"
                 @click="$emit('toggle-mobile-menu')"
               >
                 <span class="flex items-center gap-2">
-                  <i class="fa-solid fa-bell text-[#7CB342]" aria-hidden="true"></i> {{ t('notifications') }}
+                  <i class="fa-solid fa-bell text-accent" aria-hidden="true"></i> {{ t('notifications') }}
                 </span>
                 <span
                   v-if="unreadCount > 0"
-                  class="min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-[#B04A4A] text-white text-[0.7rem] font-bold leading-none"
+                  class="min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-danger-soft text-white text-[0.7rem] font-bold leading-none"
                 >{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
               </nuxt-link>
             </div>
@@ -218,10 +218,10 @@
             <button
               v-else
               type="button"
-              class="w-full flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-4 py-3 text-[0.88rem] font-bold text-[#385130] shadow-sm transition-colors active:bg-[#EEF2EC]"
+              class="w-full flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-4 py-3 text-[0.88rem] font-bold text-brand-800 shadow-sm transition-colors active:bg-surface-tint"
               @click="readerSignIn()"
             >
-              <i class="fa-solid fa-right-to-bracket text-[#7CB342]" aria-hidden="true"></i> {{ t('login_to_comment') }}
+              <i class="fa-solid fa-right-to-bracket text-accent" aria-hidden="true"></i> {{ t('login_to_comment') }}
             </button>
           </div>
         </client-only>
@@ -229,12 +229,12 @@
         <a :href="siteHotlineTel" class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] no-underline shadow-sm">
           <span class="text-xl">📞</span>
           <div class="flex flex-col">
-            <span class="text-[0.72rem] text-[#5A6C58] font-semibold">{{ t('hotline_lbl') }}</span>
-            <span class="text-[0.95rem] font-extrabold text-[#4A6741]">{{ siteHotline }}</span>
+            <span class="text-[0.72rem] text-ink-soft font-semibold">{{ t('hotline_lbl') }}</span>
+            <span class="text-[0.95rem] font-extrabold text-brand-600">{{ siteHotline }}</span>
           </div>
         </a>
         <nuxt-link to="/contact" class="btn btn-primary w-full flex items-center justify-center gap-2 px-4 py-3 text-[0.88rem] font-bold rounded-xl" @click="$emit('toggle-mobile-menu')">
-          <span class="w-1.5 h-1.5 bg-[#7CB342] rounded-full inline-block animate-pulse motion-reduce:animate-none" aria-hidden="true"></span> {{ t('register_help') }}
+          <span class="w-1.5 h-1.5 bg-accent rounded-full inline-block animate-pulse motion-reduce:animate-none" aria-hidden="true"></span> {{ t('register_help') }}
         </nuxt-link>
       </div>
     </div>

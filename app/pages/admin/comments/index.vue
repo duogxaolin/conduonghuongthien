@@ -212,8 +212,8 @@ onMounted(reload)
 <template>
   <div class="flex flex-col gap-5">
     <div>
-      <h1 class="m-0 text-[1.35rem] font-extrabold text-[#122815]">Kiểm duyệt bình luận</h1>
-      <p class="m-0 mt-1 text-sm text-[#667768]">
+      <h1 class="m-0 text-[1.35rem] font-extrabold text-brand-950">Kiểm duyệt bình luận</h1>
+      <p class="m-0 mt-1 text-sm text-ink-muted">
         Bình luận công khai trên bài viết và video, mới nhất trước. Mỗi lượt xem được ghi vào lịch sử hoạt động.
       </p>
     </div>
@@ -224,7 +224,7 @@ onMounted(reload)
         role="tab"
         :aria-selected="filters.visibility === 'visible'"
         class="rounded-lg px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
-        :class="filters.visibility === 'visible' ? 'bg-[#1e4620] text-white' : 'bg-white border border-[#c8d6c9] text-[#2c3e2e] hover:bg-[#f0f7f1]'"
+        :class="filters.visibility === 'visible' ? 'bg-brand-900 text-white' : 'bg-white border border-line-strong text-ink-admin hover:bg-surface-tint'"
         @click="switchVisibility('visible')"
       >
         Bình luận hiện
@@ -234,15 +234,15 @@ onMounted(reload)
         role="tab"
         :aria-selected="filters.visibility === 'hidden'"
         class="rounded-lg px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
-        :class="filters.visibility === 'hidden' ? 'bg-[#7a3520] text-white' : 'bg-white border border-[#c8d6c9] text-[#2c3e2e] hover:bg-[#f0f7f1]'"
+        :class="filters.visibility === 'hidden' ? 'bg-[#7a3520] text-white' : 'bg-white border border-line-strong text-ink-admin hover:bg-surface-tint'"
         @click="switchVisibility('hidden')"
       >
         Đã ẩn
-        <span v-if="hiddenCount > 0" class="ml-1.5 rounded-full bg-[#fef2f2] px-1.5 py-0.5 text-[0.7rem] font-bold text-[#991b1b]">{{ hiddenCount }}</span>
+        <span v-if="hiddenCount > 0" class="ml-1.5 rounded-full bg-danger-bg px-1.5 py-0.5 text-[0.7rem] font-bold text-[#991b1b]">{{ hiddenCount }}</span>
       </button>
     </div>
 
-    <form class="flex flex-wrap items-end gap-3 rounded-xl border border-[#e2ece3] bg-white p-4" @submit.prevent="applyFilters">
+    <form class="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-white p-4" @submit.prevent="applyFilters">
       <label class="flex flex-col gap-1.5 text-sm font-bold">
         Lọc theo mã bài viết
         <input
@@ -250,14 +250,14 @@ onMounted(reload)
           type="number"
           min="1"
           placeholder="Để trống để xem tất cả"
-          class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+          class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"
         />
       </label>
       <label class="flex flex-col gap-1.5 text-sm font-bold">
         Nguồn bình luận
         <select
           v-model="filters.source"
-          class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+          class="rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"
         >
           <option value="">Tất cả</option>
           <option value="article">Bài viết</option>
@@ -266,19 +266,19 @@ onMounted(reload)
       </label>
       <button
         type="submit"
-        class="rounded-lg bg-[#1e4620] px-4 py-2.5 font-bold text-white hover:bg-[#2c6e33] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/40"
+        class="rounded-lg bg-brand-900 px-4 py-2.5 font-bold text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-700/40"
       >Áp dụng</button>
       <nuxt-link
         to="/admin/readers"
-        class="rounded-lg border border-[#c8d6c9] bg-white px-4 py-2.5 font-semibold text-[#2c3e2e] no-underline hover:bg-[#f0f7f1]"
+        class="rounded-lg border border-line-strong bg-white px-4 py-2.5 font-semibold text-ink-admin no-underline hover:bg-surface-tint"
       >Danh sách người đọc</nuxt-link>
       <button
         type="button"
-        class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#a2cca4] bg-[#f0f7f1] px-4 py-2.5 font-bold text-[#1e4620] hover:bg-[#e4ece4] transition-all disabled:opacity-50 cursor-pointer shadow-2xs"
+        class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#a2cca4] bg-surface-tint px-4 py-2.5 font-bold text-brand-900 hover:bg-line transition-all disabled:opacity-50 cursor-pointer shadow-2xs"
         :disabled="moderating || !comments.length"
         @click="runAiModerationScan"
       >
-        <i class="fa-solid" :class="moderating ? 'fa-circle-notch fa-spin text-xs' : 'fa-shield-halved text-xs text-[#2c6e33]'"></i>
+        <i class="fa-solid" :class="moderating ? 'fa-circle-notch fa-spin text-xs' : 'fa-shield-halved text-xs text-brand-700'"></i>
         <span>{{ moderating ? 'AI đang quét...' : '🛡️ AI Quét kiểm duyệt' }}</span>
       </button>
     </form>
@@ -290,7 +290,7 @@ onMounted(reload)
         v-for="n in 5"
         :key="n"
         aria-hidden="true"
-        class="h-20 rounded-lg bg-[#eef3ee] animate-pulse motion-reduce:animate-none"
+        class="h-20 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"
       ></div>
     </div>
 
@@ -302,28 +302,28 @@ onMounted(reload)
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="reload">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="reload">Thử lại</button>
     </div>
 
     <template v-else>
       <!-- Rỗng -->
-      <p v-if="!comments.length" class="rounded-xl border border-[#e2ece3] bg-white px-5 py-8 text-center text-sm text-[#667768]">
+      <p v-if="!comments.length" class="rounded-xl border border-line bg-white px-5 py-8 text-center text-sm text-ink-muted">
         Chưa có bình luận nào khớp bộ lọc hiện tại.
       </p>
 
       <ul v-else class="m-0 flex list-none flex-col gap-3 p-0">
-        <li v-for="comment in comments" :key="comment.id" class="rounded-xl border border-[#e2ece3] bg-white p-4">
+        <li v-for="comment in comments" :key="comment.id" class="rounded-xl border border-line bg-white p-4">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
-                <span v-if="comment.adminUserId !== null" class="rounded-full bg-[#1e4620] px-2 py-0.5 text-[0.7rem] font-bold uppercase tracking-wide text-white">Ban quản trị</span>
-                <span v-if="comment.parentId !== null" class="rounded-full bg-[#eef3ee] px-2 py-0.5 text-[0.72rem] font-bold text-[#3d4f3f]">Phản hồi</span>
-                <span class="font-bold text-[#122815]">
+                <span v-if="comment.adminUserId !== null" class="rounded-full bg-brand-900 px-2 py-0.5 text-[0.7rem] font-bold uppercase tracking-wide text-white">Ban quản trị</span>
+                <span v-if="comment.parentId !== null" class="rounded-full bg-surface-tint px-2 py-0.5 text-[0.72rem] font-bold text-[#3d4f3f]">Phản hồi</span>
+                <span class="font-bold text-brand-950">
                   {{ comment.adminUserId !== null ? (comment.adminName || 'Tài khoản đã xoá') : (comment.readerName || 'Người dùng') }}
                 </span>
-                <span v-if="comment.readerEmail" class="text-[0.8rem] text-[#667768]">{{ comment.readerEmail }}</span>
+                <span v-if="comment.readerEmail" class="text-[0.8rem] text-ink-muted">{{ comment.readerEmail }}</span>
               </div>
-              <p class="m-0 mt-1 text-[0.8rem] text-[#667768]">
+              <p class="m-0 mt-1 text-[0.8rem] text-ink-muted">
                 {{ formatMoment(comment.createdAt) }}
                 <span v-if="comment.articleTitle"> — Bài viết: {{ comment.articleTitle }}</span>
                 <span v-else-if="comment.mediaItemTitle"> — Video: {{ comment.mediaItemTitle }}</span>
@@ -336,13 +336,13 @@ onMounted(reload)
                 v-if="comment.parentId === null"
                 type="button"
                 :disabled="busy"
-                class="text-[0.82rem] font-semibold text-[#2c6e33] hover:underline disabled:opacity-60"
+                class="text-[0.82rem] font-semibold text-brand-700 hover:underline disabled:opacity-60"
                 @click="toggleReply(comment)"
               >Trả lời</button>
               <nuxt-link
                 v-if="comment.readerId"
                 :to="`/admin/readers/${comment.readerId}`"
-                class="text-[0.82rem] font-semibold text-[#2c6e33] no-underline hover:underline"
+                class="text-[0.82rem] font-semibold text-brand-700 no-underline hover:underline"
               >Người đọc</nuxt-link>
               <button
                 type="button"
@@ -364,7 +364,7 @@ onMounted(reload)
           <div v-if="comment.isHidden" class="mt-1.5 flex items-center gap-1.5 text-[0.75rem] text-[#7a3520]">
             <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
             <span class="font-semibold">Đã ẩn</span>
-            <span v-if="comment.flagReason" class="text-[#667768] font-normal">— {{ comment.flagReason }}</span>
+            <span v-if="comment.flagReason" class="text-ink-muted font-normal">— {{ comment.flagReason }}</span>
           </div>
 
           <p class="m-0 mt-2.5 whitespace-pre-line break-words text-sm" :class="comment.isHidden ? 'text-[#9a9a9a] line-through' : 'text-[#2c3529]'">{{ comment.body }}</p>
@@ -396,25 +396,25 @@ onMounted(reload)
             </span>
           </div>
 
-          <form v-if="replyTo === comment.id" class="mt-3 border-t border-[#eef3ee] pt-3" @submit.prevent="submitReply(comment)">
-            <label :for="`reply-${comment.id}`" class="mb-1.5 block text-sm font-bold text-[#2c3e2e]">Phản hồi của Ban quản trị</label>
+          <form v-if="replyTo === comment.id" class="mt-3 border-t border-surface-tint pt-3" @submit.prevent="submitReply(comment)">
+            <label :for="`reply-${comment.id}`" class="mb-1.5 block text-sm font-bold text-ink-admin">Phản hồi của Ban quản trị</label>
             <textarea
               :id="`reply-${comment.id}`"
               v-model="replyBody"
               rows="3"
               maxlength="2000"
               :disabled="replying"
-              class="w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+              class="w-full rounded-lg border border-line-strong px-3 py-2.5 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/20"
             ></textarea>
             <p class="m-0 mt-1.5 text-[0.75rem] text-[#8a7320]">
               Phản hồi này bị xoá theo nếu bình luận gốc bị xoá. Câu trả lời cần giữ lâu dài nên đặt ở
-              <nuxt-link to="/admin/chatbot/knowledge" class="font-semibold text-[#2c6e33] underline">Kho kiến thức</nuxt-link>.
+              <nuxt-link to="/admin/chatbot/knowledge" class="font-semibold text-brand-700 underline">Kho kiến thức</nuxt-link>.
             </p>
             <div class="mt-2 flex flex-wrap gap-2">
               <button
                 type="submit"
                 :disabled="replying || !replyBody.trim()"
-                class="rounded-lg bg-[#1e4620] px-4 py-2 text-sm font-bold text-white hover:bg-[#2c6e33] disabled:opacity-60"
+                class="rounded-lg bg-brand-900 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-60"
               >{{ replying ? 'Đang gửi…' : 'Gửi phản hồi' }}</button>
               <button
                 type="button"

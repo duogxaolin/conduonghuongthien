@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test, { mock } from 'node:test'
-import { parse } from '@vue/compiler-sfc'
 import { effectScope, nextTick, ref } from 'vue'
 import { createSseHeartbeat, SSE_HEARTBEAT_FRAME, SSE_HEARTBEAT_INTERVAL_MS } from '../server/utils/chatbot/sse-heartbeat'
 import { SLOW_WAIT_THRESHOLD_MS, useSlowWait } from '../app/composables/useSlowWait'
 import { parseSseLine } from '../app/composables/useChatbot'
+import { chatSurfaceSource, chatSurfaceTemplate } from './_component-family.ts'
 
 /**
  * The AI provider can take 40–200 seconds for one answer. Two things go wrong while
@@ -85,12 +85,13 @@ test('the interval is well under a 60s proxy read timeout', () => {
   assert.ok(SSE_HEARTBEAT_INTERVAL_MS <= 20_000)
 })
 
-test('the endpoint heartbeats until the first text and always stops it', () => {
+test('the endpoint heartbeats through every silence and always stops it', () => {
   const source = read('../server/api/public/chatbot/index.post.ts')
   assert.match(source, /createSseHeartbeat\(/)
   assert.match(source, /heartbeat\.start\(\)/)
-  // Stopped at the first chunk of text…
-  assert.match(source, /\(delta: string\) => \{\s*heartbeat\.stop\(\)/)
+  // Each chunk of text resets the count (stop, write, start) — a ping goes only after 15 s of silence…
+  // (inside the chunk callback itself: the match may not run on past its closing `},` into the next callback)
+  assert.match(source, /\(delta: string\) => \{\s*heartbeat\.stop\(\)(?:(?!\},)[\s\S])*?heartbeat\.start\(\)\s*\},/)
   // …and on every other way out (error, empty answer), before the stream ends.
   assert.match(source, /finally \{\s*heartbeat\.stop\(\)/)
 })
@@ -146,9 +147,10 @@ test('disposing the scope cancels the pending timer', async () => {
 })
 
 test('both surfaces say so inside the existing status region, without losing the screen-reader label', () => {
+  // The widget is read as its whole family since its wave3 split (tests/_component-family.ts).
   for (const file of ['../app/components/ChatWidget.vue', '../app/pages/assistant.vue']) {
-    const source = read(file)
-    const template = parse(source, { filename: file }).descriptor.template?.content ?? ''
+    const source = chatSurfaceSource(file)
+    const template = chatSurfaceTemplate(file)
     assert.match(source, /useSlowWait\(isAwaitingFirstWord\)/, `${file} must track the wait`)
     const block = template.match(/v-if="isAwaitingFirstWord"[\s\S]{0,3500}/)?.[0] ?? ''
     assert.match(block, /role="status"/, `${file}: the indicator must stay a status region`)

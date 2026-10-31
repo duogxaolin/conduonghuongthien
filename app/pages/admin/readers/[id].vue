@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { AdminReaderBanResult, AdminReaderCommentsDeleteResult } from '~/types/admin-api'
 import type { AdminReaderDetail, AdminReaderImpact } from '~/types/admin-api'
+import type {
+  AdminCommentDeleteResponse, AdminReader as Reader, AdminReaderComment as Comment, AdminReaderDeleteResponse, AdminReaderUnbanResponse,
+} from '~/types/admin-readers-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -12,35 +15,10 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  * happens — the portal's own published answers go too, because the parent_id
  * foreign key cascades (design.md D8). That is also why the dialog says the
  * portal's durable answers belong in the approved knowledge store instead.
+ *
+ * `Reader`/`Comment` are `getReaderDetail`'s projection (app/types/admin-readers-api.ts): a
+ * comment's `articleId` is null when it was made on a video (`mediaItemId`) instead.
  */
-
-type Comment = {
-  id: number
-  body: string
-  createdAt: string | null
-  parentId: number | null
-  /** Null when the comment was made on a media item rather than an article. */
-  articleId: number | null
-  articleTitle: string | null
-  articleSlug: string | null
-  mediaItemId: number | null
-  mediaItemTitle: string | null
-  mediaItemSlug: string | null
-}
-
-type Reader = {
-  id: number
-  displayName: string | null
-  email: string | null
-  isBanned: boolean
-  banReason: string | null
-  bannedAt: string | null
-  bannedByName: string | null
-  createdAt: string | null
-  lastSeenAt: string | null
-  lastIp: string | null
-  lastUserAgent: string | null
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -66,7 +44,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderDetail>)(`/api/admin/readers/${readerId.value}`)
+    const res = await adminFetch<AdminReaderDetail>(`/api/admin/readers/${readerId.value}`)
     if (!res?.ok) {
       error.value = 'Không tải được thông tin người đọc.'
       return
@@ -85,7 +63,7 @@ async function load() {
  *  may have arrived while the officer was reading. */
 async function currentImpact() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderImpact>)(`/api/admin/readers/${readerId.value}/impact`)
+    const res = await adminFetch<AdminReaderImpact>(`/api/admin/readers/${readerId.value}/impact`)
     return res?.impact || impact.value
   } catch {
     return impact.value
@@ -138,11 +116,13 @@ async function banReader() {
 
   busy.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderBanResult>)(`/api/admin/readers/${readerId.value}/ban`, { method: 'POST', body: { reason } })
+    const res = await adminFetch<AdminReaderBanResult>(`/api/admin/readers/${readerId.value}/ban`, { method: 'POST', body: { reason } })
     toast.success(`Đã chặn tài khoản và xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không chặn được tài khoản này.'))
+    // 404: the account was deleted meanwhile (another officer, retention) — as for its deletion.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   } finally {
     busy.value = false
   }
@@ -156,11 +136,13 @@ async function unbanReader() {
   })) return
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/readers/${readerId.value}/unban`, { method: 'POST' })
+    await adminFetch<AdminReaderUnbanResponse>(`/api/admin/readers/${readerId.value}/unban`, { method: 'POST' })
     toast.success('Đã bỏ chặn tài khoản.')
     await load()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không bỏ chặn được tài khoản này.'))
+    // 404: the account was deleted meanwhile (another officer, retention) — as for the other actions.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   } finally {
     busy.value = false
   }
@@ -181,11 +163,13 @@ async function purgeComments() {
 
   busy.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderCommentsDeleteResult>)(`/api/admin/readers/${readerId.value}/comments`, { method: 'DELETE' })
+    const res = await adminFetch<AdminReaderCommentsDeleteResult>(`/api/admin/readers/${readerId.value}/comments`, { method: 'DELETE' })
     toast.success(`Đã xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không xoá được bình luận.'))
+    // 404: the account was deleted meanwhile — nothing left to show here.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   } finally {
     busy.value = false
   }
@@ -202,12 +186,14 @@ async function deleteAccount() {
 
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/readers/${readerId.value}`, { method: 'DELETE' })
+    await adminFetch<AdminReaderDeleteResponse>(`/api/admin/readers/${readerId.value}`, { method: 'DELETE' })
     toast.success('Đã xoá tài khoản người đọc.')
     router.push('/admin/readers')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không xoá được tài khoản này.'))
     busy.value = false
+    // 404: the account is already gone (another officer, retention): nothing left to show here.
+    if (errorStatus(err) === 404) router.push('/admin/readers')
   }
 }
 
@@ -222,7 +208,7 @@ async function deleteOneComment(comment: Comment) {
 
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
+    await adminFetch<AdminCommentDeleteResponse>(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
     toast.success('Đã xoá bình luận.')
     await load()
   } catch (err: unknown) {
@@ -237,7 +223,7 @@ onMounted(load)
 
 <template>
   <div class="flex flex-col gap-5">
-    <nuxt-link to="/admin/readers" class="text-sm font-semibold text-[#2c6e33] no-underline hover:underline">&larr; Danh sách người đọc</nuxt-link>
+    <nuxt-link to="/admin/readers" class="text-sm font-semibold text-brand-700 no-underline hover:underline">&larr; Danh sách người đọc</nuxt-link>
 
     <!-- Đang tải -->
     <div v-if="loading" role="status" aria-busy="true" class="flex flex-col gap-3">
@@ -246,7 +232,7 @@ onMounted(load)
         v-for="n in 5"
         :key="n"
         aria-hidden="true"
-        class="h-14 rounded-lg bg-[#eef3ee] animate-pulse motion-reduce:animate-none"
+        class="h-14 rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"
       ></div>
     </div>
 
@@ -258,69 +244,69 @@ onMounted(load)
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="load">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="load">Thử lại</button>
     </div>
 
     <template v-else-if="reader">
-      <section class="rounded-xl border border-[#e2ece3] bg-white p-5">
+      <section class="rounded-xl border border-line bg-white p-5">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="flex items-center gap-3">
             <ReaderAvatar :initials="(reader.displayName || '?').slice(0, 1)" />
             <div>
-              <h1 class="m-0 text-[1.2rem] font-extrabold text-[#122815]">{{ reader.displayName || 'Chưa có tên' }}</h1>
-              <p class="m-0 text-sm text-[#667768]">{{ reader.email || '—' }}</p>
+              <h1 class="m-0 text-[1.2rem] font-extrabold text-brand-950">{{ reader.displayName || 'Chưa có tên' }}</h1>
+              <p class="m-0 text-sm text-ink-muted">{{ reader.email || '—' }}</p>
             </div>
           </div>
           <span
             v-if="reader.isBanned"
-            class="rounded-full bg-[#fdecec] px-3 py-1 text-[0.8rem] font-bold text-[#b0403c]"
+            class="rounded-full bg-danger-bg px-3 py-1 text-[0.8rem] font-bold text-[#b0403c]"
           >Đã chặn</span>
-          <span v-else class="rounded-full bg-[#eef7ef] px-3 py-1 text-[0.8rem] font-bold text-[#2c6e33]">Hoạt động</span>
+          <span v-else class="rounded-full bg-surface-tint px-3 py-1 text-[0.8rem] font-bold text-brand-700">Hoạt động</span>
         </div>
 
         <dl class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-          <div><dt class="font-bold text-[#2c3e2e]">Đăng nhập lần đầu</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.createdAt) }}</dd></div>
-          <div><dt class="font-bold text-[#2c3e2e]">Truy cập gần nhất</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.lastSeenAt) }}</dd></div>
-          <div><dt class="font-bold text-[#2c3e2e]">Địa chỉ gần nhất</dt><dd class="m-0 text-[#3d4f3f]">{{ reader.lastIp || '—' }}</dd></div>
-          <div><dt class="font-bold text-[#2c3e2e]">Trình duyệt gần nhất</dt><dd class="m-0 break-all text-[#3d4f3f]">{{ reader.lastUserAgent || '—' }}</dd></div>
-          <div v-if="reader.isBanned"><dt class="font-bold text-[#2c3e2e]">Bị chặn lúc</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.bannedAt) }}<span v-if="reader.bannedByName"> — bởi {{ reader.bannedByName }}</span></dd></div>
-          <div v-if="reader.isBanned && reader.banReason"><dt class="font-bold text-[#2c3e2e]">Lý do</dt><dd class="m-0 whitespace-pre-line text-[#3d4f3f]">{{ reader.banReason }}</dd></div>
+          <div><dt class="font-bold text-ink-admin">Đăng nhập lần đầu</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.createdAt) }}</dd></div>
+          <div><dt class="font-bold text-ink-admin">Truy cập gần nhất</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.lastSeenAt) }}</dd></div>
+          <div><dt class="font-bold text-ink-admin">Địa chỉ gần nhất</dt><dd class="m-0 text-[#3d4f3f]">{{ reader.lastIp || '—' }}</dd></div>
+          <div><dt class="font-bold text-ink-admin">Trình duyệt gần nhất</dt><dd class="m-0 break-all text-[#3d4f3f]">{{ reader.lastUserAgent || '—' }}</dd></div>
+          <div v-if="reader.isBanned"><dt class="font-bold text-ink-admin">Bị chặn lúc</dt><dd class="m-0 text-[#3d4f3f]">{{ formatMoment(reader.bannedAt) }}<span v-if="reader.bannedByName"> — bởi {{ reader.bannedByName }}</span></dd></div>
+          <div v-if="reader.isBanned && reader.banReason"><dt class="font-bold text-ink-admin">Lý do</dt><dd class="m-0 whitespace-pre-line text-[#3d4f3f]">{{ reader.banReason }}</dd></div>
         </dl>
 
-        <div class="mt-4 flex flex-wrap gap-2 border-t border-[#e2ece3] pt-4">
+        <div class="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
           <button
             v-if="!reader.isBanned"
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-[#d12420] px-3 py-2 text-sm font-bold text-[#d12420] hover:bg-[#fff4f3] disabled:opacity-60"
+            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] disabled:opacity-60"
             @click="banReader"
           >Chặn tài khoản</button>
           <button
             v-else
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2 text-sm font-bold text-[#2c3e2e] hover:bg-[#f0f7f1] disabled:opacity-60"
+            class="rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-bold text-ink-admin hover:bg-surface-tint disabled:opacity-60"
             @click="unbanReader"
           >Bỏ chặn</button>
           <button
             type="button"
             :disabled="busy"
-            class="rounded-lg border border-[#d12420] px-3 py-2 text-sm font-bold text-[#d12420] hover:bg-[#fff4f3] disabled:opacity-60"
+            class="rounded-lg border border-danger px-3 py-2 text-sm font-bold text-danger hover:bg-[#fff4f3] disabled:opacity-60"
             @click="purgeComments"
           >Xoá toàn bộ bình luận</button>
           <button
             type="button"
             :disabled="busy"
-            class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b] disabled:opacity-60"
+            class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b] disabled:opacity-60"
             @click="deleteAccount"
           >Xoá tài khoản</button>
         </div>
       </section>
 
-      <section class="rounded-xl border border-[#e2ece3] bg-white p-5">
-        <h2 class="m-0 text-[1rem] font-extrabold text-[#122815]">
+      <section class="rounded-xl border border-line bg-white p-5">
+        <h2 class="m-0 text-[1rem] font-extrabold text-brand-950">
           Bình luận đã viết
-          <span class="ml-1 text-sm font-semibold text-[#667768]">({{ impact.comments }})</span>
+          <span class="ml-1 text-sm font-semibold text-ink-muted">({{ impact.comments }})</span>
         </h2>
         <p v-if="impact.adminReplies > 0 || impact.otherReaderReplies > 0" class="m-0 mt-1 text-sm text-[#8a7320]">
           <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
@@ -331,15 +317,15 @@ onMounted(load)
           — tất cả sẽ bị xoá theo nếu bạn chặn hoặc xoá tài khoản này.
         </p>
 
-        <p v-if="!comments.length" class="m-0 mt-4 rounded-lg bg-[#f8faf8] px-4 py-6 text-center text-sm text-[#667768]">
+        <p v-if="!comments.length" class="m-0 mt-4 rounded-lg bg-surface px-4 py-6 text-center text-sm text-ink-muted">
           Người đọc này chưa viết bình luận nào.
         </p>
 
         <ul v-else class="m-0 mt-4 flex list-none flex-col gap-3 p-0">
-          <li v-for="comment in comments" :key="comment.id" class="rounded-lg border border-[#eef3ee] p-3.5">
+          <li v-for="comment in comments" :key="comment.id" class="rounded-lg border border-surface-tint p-3.5">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="text-[0.8rem] text-[#667768]">
-                <span v-if="comment.parentId !== null" class="mr-1.5 rounded-full bg-[#eef3ee] px-2 py-0.5 font-bold text-[#3d4f3f]">Phản hồi</span>
+              <div class="text-[0.8rem] text-ink-muted">
+                <span v-if="comment.parentId !== null" class="mr-1.5 rounded-full bg-surface-tint px-2 py-0.5 font-bold text-[#3d4f3f]">Phản hồi</span>
                 {{ formatMoment(comment.createdAt) }}
                 <span v-if="comment.articleTitle"> — Bài viết: {{ comment.articleTitle }}</span>
                 <span v-else-if="comment.mediaItemTitle"> — Video: {{ comment.mediaItemTitle }}</span>

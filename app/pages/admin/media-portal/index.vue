@@ -26,11 +26,9 @@
  * `NaN` lọt qua mọi so sánh.
  */
 import type { AdminMediaItem, AdminMediaPage, AdminMediaConfig } from '~/types/admin-api'
+import type { MediaDeleteResponse } from '~/types/admin-media-portal-api'
 
-definePageMeta({
-  layout: 'admin',
-  middleware: 'admin-auth'
-})
+definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const route = useRoute()
 const router = useRouter()
@@ -42,16 +40,11 @@ type MediaStatus = 'draft' | 'published' | 'archived'
 type MediaSource = 'upload' | 'youtube'
 
 const STATUS_OPTIONS: { value: '' | MediaStatus; label: string }[] = [
-  { value: '',          label: 'Tất cả trạng thái' },
-  { value: 'draft',     label: 'Bản nháp' },
-  { value: 'published', label: 'Đã xuất bản' },
-  { value: 'archived',   label: 'Đã lưu trữ' },
+  { value: '', label: 'Tất cả trạng thái' }, { value: 'draft', label: 'Bản nháp' }, { value: 'published', label: 'Đã xuất bản' }, { value: 'archived', label: 'Đã lưu trữ' },
 ]
 
 const SOURCE_OPTIONS: { value: '' | MediaSource; label: string }[] = [
-  { value: '',       label: 'Tất cả nguồn' },
-  { value: 'upload', label: 'Tải lên' },
-  { value: 'youtube',label: 'YouTube' },
+  { value: '', label: 'Tất cả nguồn' }, { value: 'upload', label: 'Tải lên' }, { value: 'youtube', label: 'YouTube' },
 ]
 
 const items = ref<AdminMediaItem[]>([])
@@ -78,32 +71,50 @@ const canCreate = hasPermission('media_portal', 'create')
 const canUpdate = hasPermission('media_portal', 'update')
 const canDelete = hasPermission('media_portal', 'delete')
 
-async function fetchMedia() {
+// Only the latest load writes (ticket, docs/decisions/fetch-rollout-d-fetch.md); a page past the end (the service does
+// not clamp) asks ONCE for the last page — the pager lives in the data branch (tests/admin-fetch-rollout-media-portal-list.test.ts).
+// Leaving the page retires every load in flight and refuses new ones: a late answer neither rewrites the URL
+// (of whatever page the officer went to) nor asks again.
+let listRequest = 0
+let disposed = false
+onBeforeUnmount(() => { disposed = true; listRequest++ })
+async function fetchMedia(mayAskForLastPage = true) {
+  if (disposed) return
+  const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
   try {
-    const [res, capabilities] = await Promise.all([($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaPage>)(`/api/admin/media-portal`, {
-      params: {
-        page:   currentPage.value,
-        limit:  PER_PAGE,
-        search: search.value || undefined,
-        status: statusFilter.value || undefined,
-        source: sourceFilter.value || undefined,
-      },
-    }), ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaConfig>)(`/api/admin/media-portal/config`)])
-    mediaConfig.value = capabilities
+    const listing = adminFetch<AdminMediaPage>(`/api/admin/media-portal`, { query: {
+      page: currentPage.value, limit: PER_PAGE, search: search.value || undefined, status: statusFilter.value || undefined, source: sourceFilter.value || undefined,
+    } })
+    if (!mediaConfig.value) void fetchConfig()
+    const res = await listing
+    if (ticket !== listRequest) return
+    const last = Math.max(1, Math.ceil(res.total / PER_PAGE))
+    if (mayAskForLastPage && res.page > last && res.total > 0) {
+      currentPage.value = last
+      syncQuery()
+      return await fetchMedia(false)
+    }
     items.value = res.items
     total.value = res.total
     currentPage.value = res.page
   } catch (err: unknown) {
+    if (ticket !== listRequest) return
     loadError.value = errorMessage(err, 'Không tải được danh sách video.')
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
-function applyFilters() {
-  currentPage.value = 1
+// The upload button's capabilities, on their own (failing hides the button, never the list); read again
+// with the next load while missing, so a passing failure is not kept until F5.
+async function fetchConfig() {
+  try { mediaConfig.value = await adminFetch<AdminMediaConfig>(`/api/admin/media-portal/config`) } catch { mediaConfig.value = null }
+}
+
+/** Filters AND page live in the URL (shareable, survive F5) — the pager used to skip this. */
+function syncQuery() {
   void router.replace({
     query: {
       ...(search.value ? { search: search.value } : {}),
@@ -112,12 +123,18 @@ function applyFilters() {
       ...(currentPage.value !== 1 ? { page: currentPage.value } : {}),
     }
   })
+}
+
+function applyFilters() {
+  currentPage.value = 1
+  syncQuery()
   void fetchMedia()
 }
 
 function changePage(page: number) {
   if (!Number.isFinite(page) || page < 1 || page > totalPages.value) return
   currentPage.value = page
+  syncQuery()
   void fetchMedia()
 }
 
@@ -128,7 +145,7 @@ async function deleteItem(id: number, title: string) {
     danger: true,
   })) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${id}`, { method: 'DELETE' })
+    await adminFetch<MediaDeleteResponse>(`/api/admin/media-portal/${id}`, { method: 'DELETE' })
     toast.success('Đã xoá video.')
     await fetchMedia()
   } catch (err: unknown) {
@@ -136,24 +153,16 @@ async function deleteItem(id: number, title: string) {
   }
 }
 
-function statusLabel(s: string): string {
-  const opt = STATUS_OPTIONS.find(o => o.value === s)
-  return opt ? opt.label : s
-}
+const statusLabel = (s: string): string => STATUS_OPTIONS.find(o => o.value === s)?.label ?? s
 
 function statusBadgeClass(s: string): string {
-  if (s === 'published') return 'bg-[#e6f4ea] text-[#2c6e33]'
+  if (s === 'published') return 'bg-[#e6f4ea] text-brand-700'
   if (s === 'archived') return 'bg-[#f0f0f0] text-[#666]'
   return 'bg-[#fff3cd] text-[#856404]'
 }
 
-function processingLabel(status: string): string {
-  if (status === 'pending') return 'Đang chờ xử lý'
-  if (status === 'ready') return 'Sẵn sàng'
-  if (status === 'processing') return 'Đang xử lý'
-  if (status === 'failed') return 'Lỗi xử lý'
-  return status
-}
+const PROCESSING_LABELS: Record<string, string> = { pending: 'Đang chờ xử lý', ready: 'Sẵn sàng', processing: 'Đang xử lý', failed: 'Lỗi xử lý' }
+const processingLabel = (status: string): string => PROCESSING_LABELS[status] ?? status
 
 function fmtDuration(secs: number | null): string {
   if (!secs || secs <= 0) return '—'
@@ -162,10 +171,7 @@ function fmtDuration(secs: number | null): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-function fmtDate(v: string | null): string {
-  if (!v) return '—'
-  return new Date(v).toLocaleDateString('vi-VN')
-}
+const fmtDate = (v: string | null): string => (v ? new Date(v).toLocaleDateString('vi-VN') : '—')
 
 onMounted(() => { void fetchMedia() })
 </script>
@@ -174,14 +180,14 @@ onMounted(() => { void fetchMedia() })
   <div class="p-4 md:p-6 lg:p-8 space-y-6">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-[#2c3e2e]">Thư viện Video</h1>
+        <h1 class="text-2xl font-bold text-ink-admin">Thư viện Video</h1>
         <p class="text-sm text-[#6b7d6c] mt-1">Quản lý video của Portal Media — tải lên, xuất bản, gỡ bỏ.</p>
       </div>
       <div class="flex gap-2">
         <NuxtLink
           v-if="canCreate"
           to="/admin/media-portal/external"
-          class="inline-flex items-center gap-2 rounded-lg bg-[#4A6741] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3d5636] transition-colors"
+          class="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800 transition-colors"
         >
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
           Đăng video YouTube
@@ -189,7 +195,7 @@ onMounted(() => { void fetchMedia() })
         <NuxtLink
           v-if="canCreate && mediaConfig?.uploadEnabled && hasPermission('media_portal', 'read')"
           to="/admin/media-portal/upload"
-          class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245830] transition-colors"
+          class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-[#245830] transition-colors"
         >
           <i class="fa-solid fa-upload" aria-hidden="true"></i>
           Tải video lên
@@ -198,21 +204,21 @@ onMounted(() => { void fetchMedia() })
     </div>
 
     <!-- Filters -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col md:flex-row gap-3">
+    <div class="bg-white rounded-xl border border-line p-4 flex flex-col md:flex-row gap-3">
       <div class="flex-1">
         <input
           v-model="search"
           aria-label="Tìm video theo tiêu đề"
           type="text"
           placeholder="Tìm theo tiêu đề..."
-          class="w-full rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-[#4A6741]"
+          class="w-full rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand-600"
           @keydown.enter="applyFilters"
         />
       </div>
       <select
         v-model="statusFilter"
         aria-label="Lọc trạng thái xuất bản"
-        class="rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-[#4A6741]"
+        class="rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand-600"
         @change="applyFilters"
       >
         <option v-for="o in STATUS_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
@@ -220,14 +226,14 @@ onMounted(() => { void fetchMedia() })
       <select
         v-model="sourceFilter"
         aria-label="Lọc nguồn video"
-        class="rounded-lg border border-[#dde6de] px-3 py-2 text-sm outline-none focus:border-[#4A6741]"
+        class="rounded-lg border border-line px-3 py-2 text-sm outline-none focus:border-brand-600"
         @change="applyFilters"
       >
         <option v-for="o in SOURCE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
       </select>
       <button
         type="button"
-        class="rounded-lg bg-[#4A6741] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3d5636] transition-colors"
+        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-800 transition-colors"
         @click="applyFilters"
       >
         Lọc
@@ -235,26 +241,26 @@ onMounted(() => { void fetchMedia() })
     </div>
 
     <!-- Table -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
+    <div class="bg-white rounded-xl border border-line overflow-hidden">
       <!-- Loading -->
       <div v-if="loading" role="status" aria-busy="true" class="p-6">
         <span class="sr-only">Đang tải danh sách video</span>
         <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
           <div v-for="n in 6" :key="n" class="flex gap-3">
-            <div v-for="c in 6" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+            <div v-for="c in 6" :key="c" class="h-10 bg-surface-tint rounded flex-1" aria-hidden="true"></div>
           </div>
         </div>
       </div>
 
       <!-- Error -->
-      <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-[#B04A4A] text-[0.95rem]">
+      <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-danger-soft text-[0.95rem]">
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-        {{ loadError }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchMedia()">thử lại</button>.
+        {{ loadError }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchMedia()">thử lại</button>.
       </div>
 
       <!-- Empty -->
       <div v-else-if="items.length === 0" class="px-6 py-12 text-center text-[#6b7d6c] text-[0.95rem]">
-        <i class="fa-solid fa-video-slash text-3xl mb-3 text-[#c5d3c7]" aria-hidden="true"></i>
+        <i class="fa-solid fa-video-slash text-3xl mb-3 text-line-strong" aria-hidden="true"></i>
         <p>Chưa có video nào{{ search || statusFilter || sourceFilter ? ' khớp bộ lọc' : '' }}.</p>
         <p v-if="canCreate" class="mt-2 text-xs">Bấm "Tải video lên" hoặc "Đăng video YouTube" để bắt đầu.</p>
       </div>
@@ -263,7 +269,7 @@ onMounted(() => { void fetchMedia() })
       <div v-else>
         <!-- Desktop table -->
         <table class="w-full text-sm hidden md:table">
-          <thead class="bg-[#f4f7f4] text-[#6b7d6c]">
+          <thead class="bg-surface text-[#6b7d6c]">
             <tr>
               <th class="px-4 py-3 text-left font-semibold">Tiêu đề</th>
               <th class="px-4 py-3 text-left font-semibold">Nguồn</th>
@@ -275,10 +281,10 @@ onMounted(() => { void fetchMedia() })
               <th class="px-4 py-3 text-right font-semibold">Thao tác</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-[#eef2ee]">
-            <tr v-for="item in items" :key="item.id" class="hover:bg-[#f8fbf8]">
+          <tbody class="divide-y divide-surface-tint">
+            <tr v-for="item in items" :key="item.id" class="hover:bg-surface">
               <td class="px-4 py-3">
-                <div class="font-medium text-[#2c3e2e] line-clamp-1">{{ item.title }}</div>
+                <div class="font-medium text-ink-admin line-clamp-1">{{ item.title }}</div>
                 <div v-if="item.categoryName" class="text-xs text-[#8aa08c]">{{ item.categoryName }}</div>
               </td>
               <td class="px-4 py-3">
@@ -294,7 +300,7 @@ onMounted(() => { void fetchMedia() })
                 </span>
               </td>
               <td class="px-4 py-3 text-xs">
-                <span :class="item.processingStatus === 'failed' ? 'text-[#B04A4A]' : 'text-[#6b7d6c]'">
+                <span :class="item.processingStatus === 'failed' ? 'text-danger-soft' : 'text-[#6b7d6c]'">
                   {{ processingLabel(item.processingStatus) }}
                 </span>
               </td>
@@ -304,7 +310,7 @@ onMounted(() => { void fetchMedia() })
                 <div class="flex justify-end gap-1">
                   <NuxtLink
                     :to="`/admin/media-portal/${item.id}`"
-                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[#e6f4ea] text-[#4A6741]"
+                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[#e6f4ea] text-brand-600"
                     :title="canUpdate ? 'Sửa' : 'Xem'"
                     :aria-label="`${canUpdate ? 'Sửa' : 'Xem'} video ${item.title}`"
                   >
@@ -313,7 +319,7 @@ onMounted(() => { void fetchMedia() })
                   <button
                     v-if="canDelete"
                     type="button"
-                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[#fbe6e6] text-[#B04A4A]"
+                    class="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-danger-bg text-danger-soft"
                     :title="'Xoá'"
                     @click="deleteItem(item.id, item.title)"
                   >
@@ -326,11 +332,11 @@ onMounted(() => { void fetchMedia() })
         </table>
 
         <!-- Mobile cards -->
-        <div class="md:hidden divide-y divide-[#eef2ee]">
+        <div class="md:hidden divide-y divide-surface-tint">
           <div v-for="item in items" :key="'m-'+item.id" class="p-4">
             <div class="flex items-start justify-between gap-2">
               <div class="flex-1 min-w-0">
-                <div class="font-medium text-[#2c3e2e] line-clamp-2">{{ item.title }}</div>
+                <div class="font-medium text-ink-admin line-clamp-2">{{ item.title }}</div>
                 <div class="text-xs text-[#8aa08c] mt-1">
                   {{ item.source === 'youtube' ? 'YouTube' : 'Tải lên' }}
                   · {{ fmtDuration(item.durationSeconds) }}
@@ -344,14 +350,14 @@ onMounted(() => { void fetchMedia() })
             <div class="flex gap-1 mt-3">
               <NuxtLink
                 :to="`/admin/media-portal/${item.id}`"
-                class="inline-flex items-center justify-center flex-1 h-9 rounded-lg bg-[#e6f4ea] text-[#4A6741] text-sm font-medium hover:bg-[#dcf0e0]"
+                class="inline-flex items-center justify-center flex-1 h-9 rounded-lg bg-[#e6f4ea] text-brand-600 text-sm font-medium hover:bg-[#dcf0e0]"
               >
                 <i class="fa-solid fa-pen mr-1.5 text-xs" aria-hidden="true"></i> {{ canUpdate ? 'Sửa' : 'Xem' }}
               </NuxtLink>
               <button
                 v-if="canDelete"
                 type="button"
-                class="inline-flex items-center justify-center flex-1 h-9 rounded-lg bg-[#fbe6e6] text-[#B04A4A] text-sm font-medium hover:bg-[#f8d8d8]"
+                class="inline-flex items-center justify-center flex-1 h-9 rounded-lg bg-danger-bg text-danger-soft text-sm font-medium hover:bg-[#f8d8d8]"
                 @click="deleteItem(item.id, item.title)"
               >
                 <i class="fa-solid fa-trash mr-1.5 text-xs" aria-hidden="true"></i> Xoá
@@ -361,7 +367,7 @@ onMounted(() => { void fetchMedia() })
         </div>
 
         <!-- Pagination -->
-        <div v-if="totalPages > 1" class="flex items-center justify-between px-4 py-3 border-t border-[#eef2ee] text-sm">
+        <div v-if="totalPages > 1" class="flex items-center justify-between px-4 py-3 border-t border-surface-tint text-sm">
           <div class="text-[#6b7d6c]">
             Trang {{ currentPage }} / {{ totalPages }}
             <span class="text-[#8aa08c]">· {{ total }} video</span>
@@ -369,7 +375,7 @@ onMounted(() => { void fetchMedia() })
           <div class="flex gap-2">
             <button
               type="button"
-              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#dde6de] text-[#4A6741] disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-line text-brand-600 disabled:opacity-40 disabled:cursor-not-allowed"
               :disabled="currentPage <= 1"
               @click="changePage(currentPage - 1)"
             >
@@ -377,7 +383,7 @@ onMounted(() => { void fetchMedia() })
             </button>
             <button
               type="button"
-              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#dde6de] text-[#4A6741] disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-line text-brand-600 disabled:opacity-40 disabled:cursor-not-allowed"
               :disabled="currentPage >= totalPages"
               @click="changePage(currentPage + 1)"
             >

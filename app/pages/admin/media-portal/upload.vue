@@ -58,10 +58,9 @@ async function load() {
   loadError.value = ''
   canUploadDenied.value = false
   try {
-    config.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaConfig>)('/api/admin/media-portal/config')
+    config.value = await adminFetch<AdminMediaConfig>('/api/admin/media-portal/config')
   } catch (err: unknown) {
-    const status = (err as { status?: number, statusCode?: number })?.statusCode || (err as { status?: number })?.status
-    if (status === 403) {
+    if (errorStatus(err) === 403) {
       canUploadDenied.value = true
     } else {
       loadError.value = 'Không kiểm tra được khả năng tải video của máy chủ.'
@@ -89,19 +88,19 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
 
 <template>
   <div class="mx-auto max-w-3xl space-y-6">
-    <NuxtLink to="/admin/media-portal" class="inline-flex items-center gap-1.5 text-sm font-medium text-[#2c6e33] hover:text-[#245830] transition-colors">
+    <NuxtLink to="/admin/media-portal" class="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:text-[#245830] transition-colors">
       <i class="fa-solid fa-arrow-left text-xs" aria-hidden="true"></i>
       Quay lại thư viện video
     </NuxtLink>
 
     <!-- Tiêu đề trang -->
     <div class="flex items-start gap-4">
-      <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#e8f0e8] text-[#2c6e33]">
+      <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-line text-brand-700">
         <i class="fa-solid fa-cloud-arrow-up text-xl" aria-hidden="true"></i>
       </div>
       <div>
-        <h1 class="text-2xl font-bold text-[#122815] leading-tight">Tải video lên</h1>
-        <p class="text-sm text-[#667768] mt-1">Tải tệp video lên máy chủ, hệ thống tự nén 360/720/1080p ở nền và xuất bản khi sẵn sàng.</p>
+        <h1 class="text-2xl font-bold text-brand-950 leading-tight">Tải video lên</h1>
+        <p class="text-sm text-ink-muted mt-1">Tải tệp video lên máy chủ, hệ thống tự nén 360/720/1080p ở nền và xuất bản khi sẵn sàng.</p>
       </div>
     </div>
 
@@ -122,10 +121,10 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
 
     <!-- Phase 2: Timeline xử lý sau khi upload xong -->
     <template v-else>
-      <div class="rounded-2xl border border-[#e2ece3] bg-white p-6 space-y-5 shadow-sm">
+      <div class="rounded-2xl border border-line bg-white p-6 space-y-5 shadow-sm">
         <div class="flex items-center justify-between gap-3 flex-wrap">
-          <h2 class="text-lg font-bold text-[#122815] m-0 flex items-center gap-2">
-            <i class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
+          <h2 class="text-lg font-bold text-brand-950 m-0 flex items-center gap-2">
+            <i class="fa-solid fa-circle-check text-brand-700" aria-hidden="true"></i>
             Đã tải lên xong
           </h2>
           <span
@@ -147,10 +146,10 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
         <p v-if="progressError" role="alert" class="rounded-lg bg-red-50 p-3 text-sm text-red-800">{{ progressError }} <button class="underline font-semibold" @click="refreshProcessing()">Thử lại</button></p>
 
         <!-- Hành động -->
-        <div class="flex flex-wrap items-center gap-3 border-t border-[#eef2ee] pt-4">
+        <div class="flex flex-wrap items-center gap-3 border-t border-surface-tint pt-4">
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2 text-sm font-bold text-white cursor-pointer border-0 hover:bg-[#2c6e33] transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
+            class="inline-flex items-center gap-2 rounded-lg bg-brand-900 px-4 py-2 text-sm font-bold text-white cursor-pointer border-0 hover:bg-brand-700 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
             @click="openDetail()"
           >
             <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
@@ -159,7 +158,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           <button
             v-if="uploadedItem.processingStatus === 'ready'"
             type="button"
-            class="inline-flex items-center gap-2 rounded-lg border border-[#c8d6c9] px-4 py-2 text-sm font-semibold text-[#2c3e2e] cursor-pointer bg-white hover:bg-[#f8faf8] transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
+            class="inline-flex items-center gap-2 rounded-lg border border-line-strong px-4 py-2 text-sm font-semibold text-ink-admin cursor-pointer bg-white hover:bg-surface transition-colors focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
             @click="uploadAnother()"
           >
             <i class="fa-solid fa-upload" aria-hidden="true"></i>

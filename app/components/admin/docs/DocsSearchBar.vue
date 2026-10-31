@@ -27,17 +27,17 @@ const intentLabels: Record<SearchIntent, string> = {
 <template>
   <div class="w-full">
     <div class="relative">
-      <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-[#8a9a8c] text-sm" aria-hidden="true"></i>
+      <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-ink-faint text-sm" aria-hidden="true"></i>
       <input
         v-model="query"
         type="text"
         placeholder="Hỏi bất kỳ: 'làm sao đăng bài', 'backup ở đâu', 'MFA là gì'..."
         maxlength="200"
-        class="w-full pl-11 pr-4 py-3 border border-[#c8d6c9] rounded-xl text-sm text-[#122815] outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border bg-white"
+        class="w-full pl-11 pr-4 py-3 border border-line-strong rounded-xl text-sm text-brand-950 outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border bg-white"
       />
       <span
         v-if="intent !== 'keyword' && query.trim()"
-        class="absolute right-4 top-1/2 -translate-y-1/2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#f0f7f1] border border-[#2c6e33]/20 text-[0.72rem] font-bold text-[#2c6e33] whitespace-nowrap"
+        class="absolute right-4 top-1/2 -translate-y-1/2 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-tint border border-brand-700/20 text-[0.72rem] font-bold text-brand-700 whitespace-nowrap"
       >
         <i class="fa-solid fa-wand-magic-sparkles text-[0.6rem]" aria-hidden="true"></i>
         {{ intentLabels[intent] }}

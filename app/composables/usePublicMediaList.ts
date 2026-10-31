@@ -2,7 +2,8 @@ import { computed, ref, watch } from 'vue'
 
 // Đường dẫn tương đối, KHÔNG alias `~/`: bộ nạp test không biết alias của Nuxt.
 // `useRoute` / `useAsyncData` / `navigateTo` / `$fetch` là auto-import của Nuxt —
-// để trần cho `tests/public-media-list.test.ts` thay bằng bản giả trên `globalThis`.
+// để trần cho `tests/public-media-list.test.ts` thay bằng bản giả trên `globalThis`
+// (`publicFetch` gọi `$fetch` toàn cục lúc gọi).
 import type { MediaListPayload, PublicMediaListItem } from '../types/public-api'
 import { pageRange as buildPageRange } from '../utils/pagination'
 import { isPageOutOfRange, listDataKey } from '../utils/public-article-list'
@@ -14,18 +15,13 @@ import {
   type MediaListQuery,
   type MediaRouteState,
 } from '../utils/public-media-list'
+import { publicFetch } from './publicFetch'
 import { useNavigationSnapshot } from './usePublicArticleList'
 import { useSsrFailureStatus } from './useSsrFailureStatus'
 
-interface MediaListResponse {
-  ok: boolean
-  items: PublicMediaListItem[]
-  categories: MediaListPayload['categories']
-  pagination: { page: number; limit: number; total: number; totalPages: number }
-}
-
-type MediaFetch = (url: string, options: { query: MediaListQuery }) => Promise<MediaListResponse>
-const fetchMedia: MediaFetch = (url, options) => ($fetch as unknown as MediaFetch)(url, options)
+/** `/api/public/media` — kiểu suy từ handler (`media/index.get.ts`, D-FETCH lô G). */
+type MediaListResponse = MediaListPayload
+const fetchMedia = (url: string, options: { query: MediaListQuery }) => publicFetch<MediaListResponse>(url, options)
 
 const emptyMediaList = (perPage: number): MediaListResponse => ({
   ok: true,

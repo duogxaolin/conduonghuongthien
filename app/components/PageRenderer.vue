@@ -6,20 +6,20 @@
        so the server always serialises real content (design.md D2). -->
   <div v-if="pending" role="status" aria-busy="true">
     <span class="sr-only">Đang tải nội dung trang</span>
-    <div class="h-[280px] w-full animate-pulse bg-[#EEF2EC] motion-reduce:animate-none" aria-hidden="true"></div>
+    <div class="h-[280px] w-full animate-pulse bg-surface-tint motion-reduce:animate-none" aria-hidden="true"></div>
     <div class="container py-12" aria-hidden="true">
-      <div class="mx-auto mb-8 h-6 w-64 animate-pulse rounded bg-[#EEF2EC] motion-reduce:animate-none"></div>
+      <div class="mx-auto mb-8 h-6 w-64 animate-pulse rounded bg-surface-tint motion-reduce:animate-none"></div>
       <div class="grid grid-cols-1 gap-[30px] md:grid-cols-2 lg:grid-cols-3">
         <div
           v-for="n in 3"
           :key="n"
-          class="overflow-hidden rounded-lg border border-[#E2E8DF] bg-white shadow-sm"
+          class="overflow-hidden rounded-lg border border-line bg-white shadow-sm"
         >
-          <div class="h-[220px] animate-pulse bg-[#EEF2EC] motion-reduce:animate-none"></div>
+          <div class="h-[220px] animate-pulse bg-surface-tint motion-reduce:animate-none"></div>
           <div class="flex flex-col gap-3 p-6">
-            <div class="h-3 w-32 animate-pulse rounded bg-[#EEF2EC] motion-reduce:animate-none"></div>
-            <div class="h-4 w-3/4 animate-pulse rounded bg-[#EEF2EC] motion-reduce:animate-none"></div>
-            <div class="h-3 w-full animate-pulse rounded bg-[#EEF2EC] motion-reduce:animate-none"></div>
+            <div class="h-3 w-32 animate-pulse rounded bg-surface-tint motion-reduce:animate-none"></div>
+            <div class="h-4 w-3/4 animate-pulse rounded bg-surface-tint motion-reduce:animate-none"></div>
+            <div class="h-3 w-full animate-pulse rounded bg-surface-tint motion-reduce:animate-none"></div>
           </div>
         </div>
       </div>
@@ -31,14 +31,14 @@
        retry re-runs the page's own fetch rather than reloading the document. -->
   <div v-else-if="loadError" class="container py-20">
     <div
-      class="mx-auto max-w-[700px] rounded-lg border border-dashed border-[#E2A0A0] bg-white px-6 py-10 text-center text-[0.95rem] text-[#B04A4A]"
+      class="mx-auto max-w-[700px] rounded-lg border border-dashed border-[#E2A0A0] bg-white px-6 py-10 text-center text-[0.95rem] text-danger-soft"
       role="alert"
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       Không thể tải nội dung trang.
       <template v-if="onRetry">
         Vui lòng
-        <button type="button" class="font-bold text-[#4A6741] underline" @click="onRetry()">thử lại</button>.
+        <button type="button" class="font-bold text-brand-600 underline" @click="onRetry()">thử lại</button>.
       </template>
     </div>
   </div>

@@ -1,10 +1,13 @@
 /**
  * Kiểu dùng chung cho response API công khai — thay `any` ở các trang đọc
- * danh sách bài viết / tài liệu hỏi-đáp.
+ * danh sách bài viết.
  *
- * Kiểu ở đây suy từ handler (`server/api/public/articles.get.ts`,
- * `server/api/public/chatbot/knowledge.get.ts`) — không viết tay shape khác.
+ * Kiểu ở đây suy từ handler (`server/api/public/articles.get.ts`) — không viết tay shape khác.
  * Trang nào cần thêm field thì mở rộng ở đây, không cast `any` lại.
+ *
+ * Ba kiểu tài liệu hỏi-đáp (`PublicQaDocument`/`PublicQaTopic`/`PublicQaPagination`) đã bỏ ở
+ * D-FETCH lô H: `/qa-documents` đọc thẳng `PublicKnowledgeResponse` (app/types/public-content-api.ts,
+ * suy từ handler) và không còn nơi nào dùng chúng.
  */
 
 /** Mục bài viết trong danh sách công khai — lược từ `articles.get.ts`. */
@@ -30,27 +33,4 @@ export interface PublicPagination {
   limit: number
   total: number
   totalPages: number
-}
-
-/** Dạng pagination của `/api/public/chatbot/knowledge` (perPage thay limit). */
-export interface PublicQaPagination {
-  page: number
-  perPage: number
-  total: number
-  totalPages: number
-}
-
-/** Mục tài liệu hỏi-đáp — lược từ `serializePublicKnowledge`. */
-export interface PublicQaDocument {
-  id: number
-  question: string
-  answer: string
-  topic: string | null
-  source: { label: string | null; reference: string | null; url: string | null } | null
-}
-
-/** Chủ đề facet trong `/api/public/chatbot/knowledge`. */
-export interface PublicQaTopic {
-  topic: string
-  total: number
 }

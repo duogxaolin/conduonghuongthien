@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminMediaItem, AdminMediaConfig } from '~/types/admin-api'
+import type { MediaDetailResponse, MediaProcessResponse, MediaThumbnailClearResponse, MediaThumbnailSetResponse, MediaUpdateResponse } from '~/types/admin-media-portal-api'
 import { mediaProcessingMessage } from '../../../composables/mediaProcessingMessage'
 import { errorMessage } from '~/utils/errorMessage'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
@@ -65,7 +66,7 @@ async function refreshProcessing() {
   controller = new AbortController()
   const signal = controller.signal
   try {
-    const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ item: AdminMediaItem }>)(`/api/admin/media-portal/${mediaId.value}`, { signal })
+    const response = await adminFetch<MediaDetailResponse>(`/api/admin/media-portal/${mediaId.value}`, { signal })
     if (stopped || signal.aborted) return
     item.value = response.item
     schedulePoll()
@@ -84,8 +85,8 @@ async function load() {
     if (!canRead.value) return
     if (!Number.isSafeInteger(mediaId.value) || mediaId.value < 1) throw new Error('invalid')
     const [response, options] = await Promise.all([
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ item: AdminMediaItem }>)(`/api/admin/media-portal/${mediaId.value}`, { signal }),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaConfig>)(`/api/admin/media-portal/config`, { signal }),
+      adminFetch<MediaDetailResponse>(`/api/admin/media-portal/${mediaId.value}`, { signal }),
+      adminFetch<AdminMediaConfig>(`/api/admin/media-portal/config`, { signal }),
     ])
     if (stopped || signal.aborted) return
     item.value = response.item
@@ -100,7 +101,7 @@ async function save(fields: Record<string, unknown>) {
   saving.value = true
   actionError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}`, { method: 'PUT', body: fields, retry: 0 })
+    await adminFetch<MediaUpdateResponse>(`/api/admin/media-portal/${mediaId.value}`, { method: 'PUT', body: fields, retry: 0 })
     toast.success('Đã lưu thay đổi.')
     await refreshProcessing()
   } catch (error) { actionError.value = errorMessage(error, 'Không lưu được thay đổi. Vui lòng thử lại.') }
@@ -117,7 +118,7 @@ async function reprocess() {
   actionError.value = ''
   confirmReprocess.value = false
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}/process`, { method: 'POST', retry: 0 })
+    await adminFetch<MediaProcessResponse>(`/api/admin/media-portal/${mediaId.value}/process`, { method: 'POST', retry: 0 })
     if (item.value) {
       item.value.processingStatus = 'pending'
       item.value.processingError = null
@@ -126,8 +127,8 @@ async function reprocess() {
     schedulePoll()
     toast.success('Đã yêu cầu xử lý lại video.')
   } catch (err: unknown) {
-    const msg = (err as { statusMessage?: string }).statusMessage
-    actionError.value = msg || 'Không gửi được yêu cầu xử lý lại. Vui lòng thử lại.'
+    // Câu máy chủ soạn (`data`), không phải dòng trạng thái HTTP của FetchError (h3 bỏ dấu).
+    actionError.value = errorMessage(err, 'Không gửi được yêu cầu xử lý lại. Vui lòng thử lại.')
   }
   finally { processing.value = false }
 }
@@ -155,7 +156,7 @@ async function submitTranscode() {
   transcoding.value = true
   actionError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}/process`, { method: 'POST', body: { renditions: picked }, retry: 0 })
+    await adminFetch<MediaProcessResponse>(`/api/admin/media-portal/${mediaId.value}/process`, { method: 'POST', body: { renditions: picked }, retry: 0 })
     if (item.value) {
       item.value.processingStatus = 'pending'
       item.value.processingError = null
@@ -164,8 +165,7 @@ async function submitTranscode() {
     schedulePoll()
     toast.success(`Đã yêu cầu nén chất lượng: ${picked.join(', ')}.`)
   } catch (err: unknown) {
-    const msg = (err as { statusMessage?: string }).statusMessage
-    actionError.value = msg || 'Không gửi được yêu cầu nén chất lượng. Vui lòng thử lại.'
+    actionError.value = errorMessage(err, 'Không gửi được yêu cầu nén chất lượng. Vui lòng thử lại.')
   }
   finally { transcoding.value = false }
 }
@@ -201,7 +201,7 @@ async function setThumbnail(imageMediaId: number) {
   thumbSaving.value = true
   actionError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}/thumbnail`, {
+    await adminFetch<MediaThumbnailSetResponse>(`/api/admin/media-portal/${mediaId.value}/thumbnail`, {
       method: 'POST', body: { mediaId: imageMediaId }, retry: 0,
     })
     toast.success('Đã đổi ảnh thumbnail.')
@@ -222,7 +222,7 @@ async function clearThumbnail() {
   confirmClearThumb.value = false
   actionError.value = ''
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}/thumbnail`, { method: 'DELETE', retry: 0 })
+    await adminFetch<MediaThumbnailClearResponse>(`/api/admin/media-portal/${mediaId.value}/thumbnail`, { method: 'DELETE', retry: 0 })
     toast.success('Đã đặt lại thumbnail mặc định.')
     await refreshProcessing()
   } catch (error) {
@@ -239,16 +239,16 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
 
 <template>
   <div class="mx-auto max-w-3xl space-y-5">
-    <NuxtLink to="/admin/media-portal" class="text-sm text-[#2c6e33] underline">Quay lại thư viện video</NuxtLink>
-    <h1 class="text-xl font-extrabold text-[#122815]">Chi tiết video</h1>
+    <NuxtLink to="/admin/media-portal" class="text-sm text-brand-700 underline">Quay lại thư viện video</NuxtLink>
+    <h1 class="text-xl font-extrabold text-brand-950">Chi tiết video</h1>
     <div v-if="loading" role="status" aria-busy="true"><span class="sr-only">Đang tải video</span><SkeletonForm label="Đang tải video" :fields="6" /></div>
     <div v-else-if="loadError" role="alert" class="rounded-lg bg-red-50 p-4 text-red-800">{{ loadError }} <button class="font-semibold underline" @click="load()">Thử lại</button></div>
     <p v-else-if="!canRead" role="alert" class="rounded-lg bg-amber-50 p-4">Bạn chưa được cấp quyền xem video.</p>
     <div v-else-if="item && config" class="space-y-5">
-      <div class="rounded-xl border border-[#e2ece3] bg-white p-4">
+      <div class="rounded-xl border border-line bg-white p-4">
         <div class="flex items-center justify-between gap-3 mb-3">
           <div class="flex items-center gap-2">
-            <h2 class="font-bold text-[#122815]">Tiến trình xử lý</h2>
+            <h2 class="font-bold text-brand-950">Tiến trình xử lý</h2>
             <!-- Huy hiệu lưu trữ: nơi video đang nằm (R2 / Cục bộ / chưa xác định).
                  Cán bộ cần biết để chẩn đoán một mục đã xuất bản mà không xem được. -->
             <span
@@ -284,8 +284,8 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
         <div v-if="confirmReprocess" class="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm">
           <p class="text-amber-900 font-medium">Video đã sẵn sàng. Xử lý lại sẽ xoá bản hiện tại và nén chất lượng từ đầu.</p>
           <div class="mt-2 flex gap-2">
-            <button :disabled="processing" class="rounded-lg bg-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" @click="reprocess()">{{ processing ? 'Đang gửi…' : 'Xác nhận xử lý lại' }}</button>
-            <button class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm" @click="cancelReprocess">Hủy</button>
+            <button :disabled="processing" class="rounded-lg bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" @click="reprocess()">{{ processing ? 'Đang gửi…' : 'Xác nhận xử lý lại' }}</button>
+            <button class="rounded-lg border border-line px-3 py-1.5 text-sm" @click="cancelReprocess">Hủy</button>
           </div>
         </div>
         <!-- Hành động: thay tệp / xử lý lại / chuyển mã -->
@@ -293,7 +293,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           <button
             v-if="item.processingStatus !== 'processing'"
             :disabled="processing"
-            class="rounded-lg border border-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-[#2c6e33] hover:bg-[#e8f0e8] disabled:opacity-50"
+            class="rounded-lg border border-brand-700 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-line disabled:opacity-50"
             @click="reprocess()"
           >
             <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>{{ processing ? 'Đang gửi…' : 'Xử lý lại video' }}
@@ -303,22 +303,22 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           <button
             v-if="!transcodeOpen"
             :disabled="transcoding || isPending"
-            class="rounded-lg border border-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-[#2c6e33] hover:bg-[#e8f0e8] disabled:opacity-50"
+            class="rounded-lg border border-brand-700 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-line disabled:opacity-50"
             @click="openTranscode()"
           >
             <i class="fa-solid fa-film mr-1" aria-hidden="true"></i>Nén chất lượng
           </button>
           <button
             :disabled="processing || isPending"
-            class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm font-semibold text-[#4a5e4d] hover:bg-[#f5f8f5] disabled:opacity-50"
+            class="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-[#4a5e4d] hover:bg-surface disabled:opacity-50"
             @click="replacing = true"
           >
             <i class="fa-solid fa-arrows-rotate mr-1" aria-hidden="true"></i>Thay tệp video
           </button>
         </div>
         <!-- Khu vực chọn bản nén chất lượng (360p/720p/1080p) -->
-        <div v-if="transcodeOpen && isUpload && canUpdate" class="mt-3 rounded-lg bg-[#f5f8f5] border border-[#e2ece3] p-3 text-sm">
-          <p class="font-medium text-[#122815] mb-2">Chọn các bản cần nén chất lượng:</p>
+        <div v-if="transcodeOpen && isUpload && canUpdate" class="mt-3 rounded-lg bg-surface border border-line p-3 text-sm">
+          <p class="font-medium text-brand-950 mb-2">Chọn các bản cần nén chất lượng:</p>
           <div class="flex flex-wrap gap-2 mb-3">
             <button
               v-for="name in ALL_RENDITIONS"
@@ -326,8 +326,8 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
               type="button"
               class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors"
               :class="transcodeRenditions.has(name)
-                ? 'bg-[#2c6e33] text-white'
-                : 'bg-white text-[#4a5e4d] border border-[#e2ece3] hover:bg-[#e8f0e8]'"
+                ? 'bg-brand-700 text-white'
+                : 'bg-white text-[#4a5e4d] border border-line hover:bg-line'"
               :aria-pressed="transcodeRenditions.has(name)"
               @click="toggleRendition(name)"
             >
@@ -335,21 +335,21 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
               {{ name }}
             </button>
           </div>
-          <p class="text-xs text-[#667768] mb-3">Mặc định chọn các bản phù hợp chiều cao video. Bản không tick sẽ không bị xoá nếu đã có sẵn.</p>
+          <p class="text-xs text-ink-muted mb-3">Mặc định chọn các bản phù hợp chiều cao video. Bản không tick sẽ không bị xoá nếu đã có sẵn.</p>
           <div class="flex gap-2">
             <button
               :disabled="transcoding || transcodeRenditions.size === 0"
-              class="rounded-lg bg-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+              class="rounded-lg bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
               @click="submitTranscode()"
             >{{ transcoding ? 'Đang gửi…' : 'Bắt đầu nén chất lượng' }}</button>
-            <button class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm" @click="cancelTranscode">Hủy</button>
+            <button class="rounded-lg border border-line px-3 py-1.5 text-sm" @click="cancelTranscode">Hủy</button>
           </div>
         </div>
         <!-- Khu vực thumbnail: chọn ảnh từ Thư viện Media hoặc về mặc định (tự sinh) -->
-        <div v-if="isUpload && canUpdate" class="mt-3 rounded-lg bg-[#f8faf7] border border-[#e2ece3] p-3">
-          <p class="font-medium text-[#122815] mb-2">Ảnh thumbnail</p>
+        <div v-if="isUpload && canUpdate" class="mt-3 rounded-lg bg-surface border border-line p-3">
+          <p class="font-medium text-brand-950 mb-2">Ảnh thumbnail</p>
           <div class="flex items-start gap-4">
-            <div class="relative w-40 aspect-video rounded-lg overflow-hidden bg-black/5 shrink-0 border border-[#e2ece3]">
+            <div class="relative w-40 aspect-video rounded-lg overflow-hidden bg-black/5 shrink-0 border border-line">
               <img
                 v-if="thumbPreviewSrc"
                 :src="thumbPreviewSrc"
@@ -359,14 +359,14 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
               />
             </div>
             <div class="flex-1 min-w-0">
-              <p class="text-xs text-[#667768] mb-3 leading-relaxed">
+              <p class="text-xs text-ink-muted mb-3 leading-relaxed">
                 Mặc định tự trích khung hình ở giây thứ 2. Đổi ảnh thumbnail để chọn khung khác từ Thư viện Media.
               </p>
               <div class="flex flex-wrap gap-2">
                 <button
                   type="button"
                   :disabled="thumbSaving"
-                  class="rounded-lg bg-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#245b2a] disabled:opacity-50"
+                  class="rounded-lg bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#245b2a] disabled:opacity-50"
                   @click="pickThumbnail"
                 >
                   <i class="fa-solid fa-image mr-1" aria-hidden="true"></i>{{ thumbSaving ? 'Đang xử lý…' : 'Đổi thumbnail' }}
@@ -375,7 +375,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
                   v-if="item.thumbnailUrl && !confirmClearThumb"
                   type="button"
                   :disabled="thumbSaving"
-                  class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm font-semibold text-[#4a5e4d] hover:bg-[#e8f0e8] disabled:opacity-50"
+                  class="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-[#4a5e4d] hover:bg-line disabled:opacity-50"
                   @click="clearThumbnail"
                 >
                   <i class="fa-solid fa-rotate-left mr-1" aria-hidden="true"></i>Dùng ảnh mặc định
@@ -385,17 +385,17 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
               <div v-if="confirmClearThumb" class="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm">
                 <p class="text-amber-900 font-medium">Đặt lại về ảnh thumbnail tự sinh?</p>
                 <div class="mt-2 flex gap-2">
-                  <button :disabled="thumbSaving" class="rounded-lg bg-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" @click="clearThumbnail">{{ thumbSaving ? 'Đang xoá…' : 'Xác nhận' }}</button>
-                  <button class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm" @click="cancelClearThumb">Hủy</button>
+                  <button :disabled="thumbSaving" class="rounded-lg bg-brand-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" @click="clearThumbnail">{{ thumbSaving ? 'Đang xoá…' : 'Xác nhận' }}</button>
+                  <button class="rounded-lg border border-line px-3 py-1.5 text-sm" @click="cancelClearThumb">Hủy</button>
                 </div>
               </div>
             </div>
           </div>
         </div>
-        <NuxtLink v-if="item.status === 'published'" :to="`/media/${item.shortId}`" class="mt-3 inline-block text-sm text-[#2c6e33] underline">Xem trang công khai</NuxtLink>
+        <NuxtLink v-if="item.status === 'published'" :to="`/media/${item.shortId}`" class="mt-3 inline-block text-sm text-brand-700 underline">Xem trang công khai</NuxtLink>
       </div>
       <!-- Mode thay tệp: uploader inline -->
-      <div v-if="replacing && isUpload && canUpdate && config" class="rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-6">
+      <div v-if="replacing && isUpload && canUpdate && config" class="rounded-xl border border-line bg-white p-4 sm:p-6">
         <AdminChunkedUploader
           :open="true"
           :max-upload-size="config.maxUploadSize"
@@ -404,8 +404,8 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           @close="replacing = false"
         />
       </div>
-      <div class="rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-6">
-        <p v-if="!canUpdate" class="mb-4 text-sm text-[#667768]">Bạn có quyền xem. Cần quyền sửa video để lưu thay đổi.</p>
+      <div class="rounded-xl border border-line bg-white p-4 sm:p-6">
+        <p v-if="!canUpdate" class="mb-4 text-sm text-ink-muted">Bạn có quyền xem. Cần quyền sửa video để lưu thay đổi.</p>
         <p v-if="actionError" role="alert" class="mb-4 text-red-800">{{ actionError }}</p>
         <AdminMediaPortalForm :key="formVersion" :item="item" :categories="config.categories" :saving="saving" :disabled="!canUpdate" @submit="save" />
       </div>

@@ -33,7 +33,10 @@
  * admin: nhánh lỗi mang `role="alert"`, nút "Thử lại" gọi `loadActive()` khai
  * báo trong cùng tệp, không tải lại trang.
  */
-import type { AdminLivestreamActive } from '~/types/admin-api'
+import type { AdminLivestreamActive, AdminLivestreamStartResult, AdminLivestreamStopResult } from '~/types/admin-api'
+import type {
+  LivestreamChatHistoryResponse, LivestreamChatMessage as LiveChatMessage, LivestreamChatRemoveResponse, YoutubeMetaResponse,
+} from '~/types/admin-livestream-api'
 
 definePageMeta({
   layout: 'admin',
@@ -44,23 +47,8 @@ const toast = useToast()
 const { confirm } = useConfirm()
 const { hasPermission } = useAdminAuth()
 
-interface LiveSession {
-  id:          number
-  title:        string
-  description:  string | null
-  source:       string
-  embedUrl:     string | null
-  streamUrl:    string
-  thumbnailUrl: string | null
-  startedAt:    string | null
-}
-
-interface LiveChatMessage {
-  id: number
-  displayName: string
-  content: string
-  createdAt: string
-}
+/** The session as `active.get.ts` answers it (title, source, embed/stream URL, startedAt). */
+type LiveSession = NonNullable<AdminLivestreamActive['session']>
 
 const loading = ref(true)
 const loadError = ref('')
@@ -100,7 +88,7 @@ async function fetchMeta() {
   fetchingMeta.value = true
   metaError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, reason?: string, title?: string, authorName?: string, thumbnailUrl?: string, videoId?: string }>)(
+    const res = await adminFetch<YoutubeMetaResponse>(
       '/api/admin/media-portal/youtube-meta',
       { method: 'POST', body: { url: startForm.value.youtubeVideoId.trim() } },
     )
@@ -137,21 +125,12 @@ async function loadActive() {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminLivestreamActive>)(`/api/public/livestream/active`)
+    const res = await adminFetch<AdminLivestreamActive>(`/api/public/livestream/active`)
     if (res.ok === false) {
       loadError.value = 'Không tải được trạng thái buổi phát.'
       return
     }
-    activeSession.value = res.active && res.session ? {
-      id:          res.session.id,
-      title:       res.session.title,
-      description: res.session.description,
-      source:      res.session.source,
-      embedUrl:    res.session.embedUrl,
-      streamUrl:   res.session.streamUrl,
-      thumbnailUrl:res.session.thumbnailUrl,
-      startedAt:   res.session.startedAt,
-    } : null
+    activeSession.value = res.active && res.session ? res.session : null
     await loadChatMessages(activeSession.value?.id)
   } catch (err: unknown) {
     activeSession.value = null
@@ -169,7 +148,7 @@ async function loadChatMessages(expectedSessionId?: number) {
 
   chatLoading.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, sessionId: number | null, messages: LiveChatMessage[] }>)(`/api/public/livestream/chat/history`, {
+    const res = await adminFetch<LivestreamChatHistoryResponse>(`/api/public/livestream/chat/history`, {
       query: { limit: 100 },
     })
     // A stop/start can happen between the two requests.  Never show the old
@@ -195,7 +174,7 @@ async function removeChatMessage(message: LiveChatMessage) {
 
   removingMessageId.value = message.id
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/livestream/chat/${message.id}`, { method: 'DELETE' })
+    await adminFetch<LivestreamChatRemoveResponse>(`/api/admin/livestream/chat/${message.id}`, { method: 'DELETE' })
     chatMessages.value = chatMessages.value.filter(item => item.id !== message.id)
     toast.success('Đã gỡ tin nhắn khỏi buổi phát.')
   } catch (err: unknown) {
@@ -220,7 +199,7 @@ async function startLivestream() {
   }
   isStarting.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sessionId?: number }>)(`/api/admin/livestream/start`, {
+    const res = await adminFetch<AdminLivestreamStartResult>(`/api/admin/livestream/start`, {
       method: 'POST',
       body: {
         title:          startForm.value.title.trim(),
@@ -251,7 +230,7 @@ async function stopLivestream() {
   })) return
   isStopping.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sessionId?: number }>)(`/api/admin/livestream/stop`, {
+    const res = await adminFetch<AdminLivestreamStopResult>(`/api/admin/livestream/stop`, {
       method: 'POST',
       body: { sessionId: activeSession.value.id },
     })
@@ -278,44 +257,44 @@ onMounted(() => { void loadActive() })
 <template>
   <div class="flex flex-col gap-6 -mx-4 md:-mx-6 px-4 md:px-6 lg:px-8 max-w-none">
     <div class="flex items-start gap-3">
-      <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#2c6e33] to-[#4A6741] text-white shadow-sm">
+      <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-brand-600 text-white shadow-sm">
         <i class="fa-solid fa-tower-broadcast text-lg" aria-hidden="true"></i>
       </div>
       <div>
-        <h1 class="text-[1.35rem] font-bold text-[#122815] leading-tight">Phát trực tiếp</h1>
-        <p class="text-sm text-[#667768] mt-0.5">Bắt đầu, dừng và kiểm duyệt buổi phát trực tiếp.</p>
+        <h1 class="text-[1.35rem] font-bold text-brand-950 leading-tight">Phát trực tiếp</h1>
+        <p class="text-sm text-ink-muted mt-0.5">Bắt đầu, dừng và kiểm duyệt buổi phát trực tiếp.</p>
       </div>
     </div>
 
     <!-- Active session / loading / error -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden shadow-sm">
+    <div class="bg-white rounded-xl border border-line overflow-hidden shadow-sm">
       <!-- Loading -->
       <div v-if="loading" role="status" aria-busy="true" class="p-6">
         <span class="sr-only">Đang tải trạng thái buổi phát</span>
         <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
           <div v-for="n in 4" :key="n" class="flex gap-3">
-            <div v-for="c in 4" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+            <div v-for="c in 4" :key="c" class="h-10 bg-surface-tint rounded flex-1" aria-hidden="true"></div>
           </div>
         </div>
       </div>
 
       <!-- Error -->
       <div v-else-if="loadError" role="alert" class="px-6 py-12 text-center">
-        <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-[#B04A4A]">
+        <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-danger-soft">
           <i class="fa-solid fa-triangle-exclamation text-xl" aria-hidden="true"></i>
         </div>
-        <p class="text-[#B04A4A] text-sm mb-2">{{ loadError }}</p>
-        <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] px-4 py-2 text-sm font-semibold text-[#2c6e33] hover:bg-[#f8faf7] transition-colors" @click="loadActive()">
+        <p class="text-danger-soft text-sm mb-2">{{ loadError }}</p>
+        <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-surface transition-colors" @click="loadActive()">
           <i class="fa-solid fa-rotate-right text-xs" aria-hidden="true"></i>Thử lại
         </button>
       </div>
 
       <!-- No active session -->
       <div v-else-if="!activeSession" class="p-8 md:p-12 text-center">
-        <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#f0f5f0] text-[#9bb89c]">
+        <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-tint text-[#9bb89c]">
           <i class="fa-solid fa-tower-broadcast text-2xl" aria-hidden="true"></i>
         </div>
-        <p class="text-[#667768] text-base font-medium mb-1">Không có buổi phát trực tiếp nào đang chạy</p>
+        <p class="text-ink-muted text-base font-medium mb-1">Không có buổi phát trực tiếp nào đang chạy</p>
         <p class="text-sm text-[#9bb89c] max-w-md mx-auto" v-if="canStart">Điền biểu mẫu bên dưới để bắt đầu một buổi phát mới.</p>
         <p class="text-sm text-[#9bb89c] max-w-md mx-auto" v-else>Liên hệ quản trị viên có quyền <span class="font-semibold">livestream/create</span> để bắt đầu.</p>
       </div>
@@ -323,26 +302,26 @@ onMounted(() => { void loadActive() })
       <!-- Active session -->
       <div v-else class="p-5 md:p-6">
         <div class="flex flex-wrap items-center gap-2 mb-4">
-          <span class="inline-flex items-center gap-1.5 rounded-full bg-[#d12420] px-3 py-1.5 text-xs font-bold text-white shadow-sm">
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-danger px-3 py-1.5 text-xs font-bold text-white shadow-sm">
             <span class="h-2 w-2 rounded-full bg-white animate-pulse motion-reduce:animate-none"></span>
             TRỰC TIẾP
           </span>
-          <span class="inline-flex items-center gap-1.5 text-xs text-[#667768] bg-[#f8faf7] rounded-full px-3 py-1.5 border border-[#eef2ee]">
+          <span class="inline-flex items-center gap-1.5 text-xs text-ink-muted bg-surface rounded-full px-3 py-1.5 border border-surface-tint">
             <i class="fa-regular fa-clock text-[0.7rem]" aria-hidden="true"></i>{{ fmtTime(activeSession.startedAt) }}
           </span>
-          <span v-if="activeSession.source === 'youtube'" class="inline-flex items-center gap-1.5 text-xs text-[#667768] bg-[#f8faf7] rounded-full px-3 py-1.5 border border-[#eef2ee]">
+          <span v-if="activeSession.source === 'youtube'" class="inline-flex items-center gap-1.5 text-xs text-ink-muted bg-surface rounded-full px-3 py-1.5 border border-surface-tint">
             <i class="fa-brands fa-youtube text-[0.85rem]" aria-hidden="true"></i>YouTube
           </span>
-          <span v-else class="inline-flex items-center gap-1.5 text-xs text-[#667768] bg-[#f8faf7] rounded-full px-3 py-1.5 border border-[#eef2ee]">
+          <span v-else class="inline-flex items-center gap-1.5 text-xs text-ink-muted bg-surface rounded-full px-3 py-1.5 border border-surface-tint">
             <i class="fa-solid fa-satellite-dish text-[0.8rem]" aria-hidden="true"></i>Luồng HLS cơ quan
           </span>
         </div>
-        <h2 class="text-xl font-bold text-[#122815] mb-1.5 leading-snug">{{ activeSession.title }}</h2>
-        <p v-if="activeSession.description" class="text-sm text-[#667768] whitespace-pre-line break-words mb-4 max-w-3xl">{{ activeSession.description }}</p>
-        <!-- Video preview -->
-        <div v-if="activeSession.embedUrl" class="rounded-xl overflow-hidden border border-[#e2ece3] bg-black mb-4 max-w-2xl">
+        <h2 class="text-xl font-bold text-brand-950 mb-1.5 leading-snug">{{ activeSession.title }}</h2>
+        <p v-if="activeSession.description" class="text-sm text-ink-muted whitespace-pre-line break-words mb-4 max-w-3xl">{{ activeSession.description }}</p>
+        <!-- Video preview: only a YouTube session has an embed URL (`streamUrl` is '' for it). -->
+        <div v-if="activeSession.embedUrl" class="rounded-xl overflow-hidden border border-line bg-black mb-4 max-w-2xl">
           <iframe
-            :src="activeSession.streamUrl"
+            :src="activeSession.embedUrl"
             title="Xem trực tiếp"
             class="w-full aspect-video"
             frameborder="0"
@@ -356,14 +335,14 @@ onMounted(() => { void loadActive() })
             :href="activeSession.embedUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#245830] transition-colors shadow-sm"
+            class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#245830] transition-colors shadow-sm"
           >
             <i class="fa-brands fa-youtube" aria-hidden="true"></i>
             Xem trên YouTube
           </a>
           <NuxtLink
             to="/media"
-            class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] bg-white px-4 py-2.5 text-sm font-semibold text-[#2c6e33] hover:bg-[#f8faf7] transition-colors"
+            class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-semibold text-brand-700 hover:bg-surface transition-colors"
           >
             <i class="fa-solid fa-eye" aria-hidden="true"></i>
             Trang công khai
@@ -371,7 +350,7 @@ onMounted(() => { void loadActive() })
           <button
             v-if="canStop"
             type="button"
-            class="inline-flex items-center gap-2 rounded-lg bg-white border border-[#e8c2c2] px-4 py-2.5 text-sm font-semibold text-[#B04A4A] hover:bg-red-50 transition-colors disabled:opacity-50 shadow-sm"
+            class="inline-flex items-center gap-2 rounded-lg bg-white border border-[#e8c2c2] px-4 py-2.5 text-sm font-semibold text-danger-soft hover:bg-red-50 transition-colors disabled:opacity-50 shadow-sm"
             :disabled="isStopping"
             @click="stopLivestream()"
           >
@@ -383,46 +362,46 @@ onMounted(() => { void loadActive() })
     </div>
 
     <!-- Start form -->
-    <div v-if="canStart && !activeSession" class="bg-white rounded-xl border border-[#e2ece3] p-5 md:p-6 shadow-sm">
+    <div v-if="canStart && !activeSession" class="bg-white rounded-xl border border-line p-5 md:p-6 shadow-sm">
       <div class="flex items-center gap-2.5 mb-5">
-        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[#e8f0e8] text-[#2c6e33]">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-line text-brand-700">
           <i class="fa-solid fa-plus text-sm" aria-hidden="true"></i>
         </div>
-        <h2 class="text-lg font-bold text-[#122815]">Bắt đầu buổi phát trực tiếp</h2>
+        <h2 class="text-lg font-bold text-brand-950">Bắt đầu buổi phát trực tiếp</h2>
       </div>
       <div class="space-y-5">
         <!-- Tiêu đề -->
         <div>
-          <label class="block text-sm font-medium text-[#1e251c] mb-1.5" for="ls-title">Tiêu đề <span class="text-[#d12420]">*</span></label>
+          <label class="block text-sm font-medium text-ink mb-1.5" for="ls-title">Tiêu đề <span class="text-danger">*</span></label>
           <input
             id="ls-title"
             v-model="startForm.title"
             type="text"
             maxlength="500"
-            class="w-full rounded-lg border border-[#dde6de] px-3.5 py-2.5 text-sm text-[#1e251c] placeholder-[#9bb89c] outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/10 transition-shadow"
+            class="w-full rounded-lg border border-line px-3.5 py-2.5 text-sm text-ink placeholder-[#9bb89c] outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/10 transition-shadow"
             placeholder="VD: Hội nghị tổng kết năm 2026"
           />
         </div>
         <!-- Mô tả -->
         <div>
-          <label class="block text-sm font-medium text-[#1e251c] mb-1.5" for="ls-desc">Mô tả</label>
+          <label class="block text-sm font-medium text-ink mb-1.5" for="ls-desc">Mô tả</label>
           <textarea
             id="ls-desc"
             v-model="startForm.description"
             rows="3"
             maxlength="5000"
-            class="w-full rounded-lg border border-[#dde6de] px-3.5 py-2.5 text-sm text-[#1e251c] placeholder-[#9bb89c] outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/10 transition-shadow resize-y"
+            class="w-full rounded-lg border border-line px-3.5 py-2.5 text-sm text-ink placeholder-[#9bb89c] outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/10 transition-shadow resize-y"
             placeholder="Giới thiệu ngắn về nội dung buổi phát..."
           />
         </div>
         <!-- Nguồn -->
         <div>
-          <label class="block text-sm font-medium text-[#1e251c] mb-1.5" for="ls-source">Nguồn phát</label>
+          <label class="block text-sm font-medium text-ink mb-1.5" for="ls-source">Nguồn phát</label>
           <div class="relative">
             <select
               id="ls-source"
               v-model="startForm.source"
-              class="w-full appearance-none rounded-lg border border-[#dde6de] bg-white px-3.5 py-2.5 pr-10 text-sm text-[#1e251c] outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/10 transition-shadow cursor-pointer"
+              class="w-full appearance-none rounded-lg border border-line bg-white px-3.5 py-2.5 pr-10 text-sm text-ink outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/10 transition-shadow cursor-pointer"
             >
               <option value="youtube">YouTube — dán liên kết video</option>
               <option value="upload">Luồng HLS — mã từ bộ mã hóa cơ quan</option>
@@ -431,20 +410,20 @@ onMounted(() => { void loadActive() })
           </div>
         </div>
         <!-- YouTube source fields -->
-        <div v-if="startForm.source === 'youtube'" class="rounded-xl border border-[#eef2ee] bg-[#fbfdfb] p-4 space-y-2">
-          <label class="block text-sm font-medium text-[#1e251c] mb-0.5" for="ls-yt">Địa chỉ video YouTube <span class="text-[#d12420]">*</span></label>
+        <div v-if="startForm.source === 'youtube'" class="rounded-xl border border-surface-tint bg-surface p-4 space-y-2">
+          <label class="block text-sm font-medium text-ink mb-0.5" for="ls-yt">Địa chỉ video YouTube <span class="text-danger">*</span></label>
           <div class="flex gap-2">
             <input
               id="ls-yt"
               v-model="startForm.youtubeVideoId"
               type="text"
-              class="flex-1 rounded-lg border border-[#dde6de] px-3.5 py-2.5 text-sm text-[#1e251c] placeholder-[#9bb89c] outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/10 transition-shadow bg-white"
+              class="flex-1 rounded-lg border border-line px-3.5 py-2.5 text-sm text-ink placeholder-[#9bb89c] outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/10 transition-shadow bg-white"
               placeholder="https://youtube.com/live/dQw4w9WgXcQ"
             />
             <button
               type="button"
               :disabled="fetchingMeta || !startForm.youtubeVideoId.trim()"
-              class="shrink-0 rounded-lg bg-white border border-[#2c6e33] px-3.5 py-2.5 text-sm font-semibold text-[#2c6e33] hover:bg-[#e8f0e8] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
+              class="shrink-0 rounded-lg bg-white border border-brand-700 px-3.5 py-2.5 text-sm font-semibold text-brand-700 hover:bg-line disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
               @click="fetchMeta"
             >
               <i :class="fetchingMeta ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-cloud-arrow-down'" class="text-xs" aria-hidden="true"></i>
@@ -460,7 +439,7 @@ onMounted(() => { void loadActive() })
             <i class="fa-solid fa-circle-exclamation mr-1" aria-hidden="true"></i>{{ metaError }}
           </p>
           <!-- Preview metadata đã lấy -->
-          <div v-if="previewThumb" class="flex gap-3 rounded-lg border border-[#e2ece3] bg-white p-3">
+          <div v-if="previewThumb" class="flex gap-3 rounded-lg border border-line bg-white p-3">
             <img
               :src="previewThumb"
               :alt="previewTitle"
@@ -468,26 +447,26 @@ onMounted(() => { void loadActive() })
               class="w-32 aspect-video object-cover rounded-lg shrink-0"
             />
             <div class="flex flex-col gap-1 min-w-0">
-              <span class="text-sm font-bold text-[#1e251c] line-clamp-2">{{ previewTitle }}</span>
-              <span v-if="previewAuthor" class="text-xs text-[#667768]">
+              <span class="text-sm font-bold text-ink line-clamp-2">{{ previewTitle }}</span>
+              <span v-if="previewAuthor" class="text-xs text-ink-muted">
                 <i class="fa-regular fa-circle-user mr-1" aria-hidden="true"></i>{{ previewAuthor }}
               </span>
-              <span class="text-[0.72rem] text-[#2c6e33] font-semibold mt-auto inline-flex items-center gap-1">
+              <span class="text-[0.72rem] text-brand-700 font-semibold mt-auto inline-flex items-center gap-1">
                 <i class="fa-solid fa-circle-check" aria-hidden="true"></i>Đã điền tiêu đề
               </span>
             </div>
           </div>
         </div>
         <!-- HLS source fields -->
-        <div v-else class="rounded-xl border border-[#eef2ee] bg-[#fbfdfb] p-4 space-y-2">
-          <label class="block text-sm font-medium text-[#1e251c] mb-0.5" for="ls-hls">Mã luồng HLS <span class="text-[#d12420]">*</span></label>
+        <div v-else class="rounded-xl border border-surface-tint bg-surface p-4 space-y-2">
+          <label class="block text-sm font-medium text-ink mb-0.5" for="ls-hls">Mã luồng HLS <span class="text-danger">*</span></label>
           <input
             id="ls-hls"
             v-model="startForm.storagePath"
             type="text"
             maxlength="1024"
             aria-describedby="ls-hls-help"
-            class="w-full rounded-lg border border-[#dde6de] px-3.5 py-2.5 text-sm text-[#1e251c] placeholder-[#9bb89c] outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/10 transition-shadow bg-white"
+            class="w-full rounded-lg border border-line px-3.5 py-2.5 text-sm text-ink placeholder-[#9bb89c] outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/10 transition-shadow bg-white"
             placeholder="VD: hoi-nghi-2026"
           />
           <p id="ls-hls-help" class="text-xs text-[#8aa08c]">
@@ -498,7 +477,7 @@ onMounted(() => { void loadActive() })
         <div class="pt-1">
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#245830] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#245830] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             :disabled="isStarting || !startForm.title.trim()"
             @click="startLivestream()"
           >
@@ -510,20 +489,20 @@ onMounted(() => { void loadActive() })
     </div>
 
     <!-- Current-session chat moderation -->
-    <div v-if="activeSession" class="bg-white rounded-xl border border-[#e2ece3] p-5 md:p-6 shadow-sm">
+    <div v-if="activeSession" class="bg-white rounded-xl border border-line p-5 md:p-6 shadow-sm">
       <div class="flex items-center justify-between gap-3 mb-4">
         <div class="flex items-center gap-2.5">
-          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[#e8f0e8] text-[#2c6e33]">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-line text-brand-700">
             <i class="fa-solid fa-comments text-sm" aria-hidden="true"></i>
           </div>
           <div>
-            <h2 class="text-lg font-bold text-[#122815] leading-tight">Kiểm duyệt chat</h2>
-            <p class="text-xs text-[#667768] mt-0.5">Tin nhắn đang hiển thị cho người xem của buổi phát này.</p>
+            <h2 class="text-lg font-bold text-brand-950 leading-tight">Kiểm duyệt chat</h2>
+            <p class="text-xs text-ink-muted mt-0.5">Tin nhắn đang hiển thị cho người xem của buổi phát này.</p>
           </div>
         </div>
         <button
           type="button"
-          class="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-[#e2ece3] bg-white px-3.5 py-2 text-sm font-semibold text-[#2c6e33] hover:bg-[#f8faf7] disabled:opacity-50 transition-colors"
+          class="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3.5 py-2 text-sm font-semibold text-brand-700 hover:bg-surface disabled:opacity-50 transition-colors"
           :disabled="chatLoading"
           @click="loadChatMessages(activeSession.id)"
         >
@@ -534,23 +513,23 @@ onMounted(() => { void loadActive() })
 
       <div v-if="chatLoading" role="status" aria-busy="true" class="py-8 text-center">
         <i class="fa-solid fa-spinner fa-spin text-[#9bb89c] text-xl mb-2" aria-hidden="true"></i>
-        <p class="text-sm text-[#667768]">Đang tải tin nhắn...</p>
+        <p class="text-sm text-ink-muted">Đang tải tin nhắn...</p>
       </div>
-      <div v-else-if="chatError" role="alert" class="rounded-lg bg-red-50 border border-red-100 p-4 text-sm text-[#B04A4A]">
+      <div v-else-if="chatError" role="alert" class="rounded-lg bg-red-50 border border-red-100 p-4 text-sm text-danger-soft">
         <p class="flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>{{ chatError }}</p>
         <button type="button" class="mt-2 font-semibold underline" @click="loadChatMessages(activeSession.id)">Thử lại</button>
       </div>
       <div v-else-if="chatMessages.length === 0" class="py-8 text-center">
-        <i class="fa-regular fa-comments text-2xl text-[#c5d3c7] mb-2" aria-hidden="true"></i>
-        <p class="text-sm text-[#667768]">Chưa có tin nhắn trong buổi phát này.</p>
+        <i class="fa-regular fa-comments text-2xl text-line-strong mb-2" aria-hidden="true"></i>
+        <p class="text-sm text-ink-muted">Chưa có tin nhắn trong buổi phát này.</p>
       </div>
       <ol v-else class="space-y-2.5">
-        <li v-for="message in chatMessages" :key="message.id" class="flex gap-3 rounded-lg border border-[#eef2ee] bg-[#fbfdfb] p-3">
-          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e8f0e8] text-[#2c6e33] text-xs font-bold">
+        <li v-for="message in chatMessages" :key="message.id" class="flex gap-3 rounded-lg border border-surface-tint bg-surface p-3">
+          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-line text-brand-700 text-xs font-bold">
             {{ message.displayName.charAt(0).toUpperCase() }}
           </div>
           <div class="min-w-0 flex-1">
-            <p class="text-sm font-semibold text-[#1e251c]">
+            <p class="text-sm font-semibold text-ink">
               {{ message.displayName }}
               <time class="ml-2 font-normal text-[#9bb89c] text-xs" :datetime="message.createdAt">{{ fmtTime(message.createdAt) }}</time>
             </p>
@@ -559,7 +538,7 @@ onMounted(() => { void loadActive() })
           <button
             v-if="canModerateChat"
             type="button"
-            class="h-fit shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-[#e8c2c2] bg-white px-3 py-1.5 text-xs font-semibold text-[#B04A4A] hover:bg-red-50 disabled:opacity-50 transition-colors"
+            class="h-fit shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-[#e8c2c2] bg-white px-3 py-1.5 text-xs font-semibold text-danger-soft hover:bg-red-50 disabled:opacity-50 transition-colors"
             :disabled="removingMessageId !== null"
             @click="removeChatMessage(message)"
           >

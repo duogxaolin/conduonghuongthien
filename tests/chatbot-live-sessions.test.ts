@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { issueSessionToken, verifySessionToken } from '../server/utils/chatbot/session-token'
 import { normalizeVietnamesePhone, detectPhone, detectName } from '../server/utils/chatbot/contact-detect'
 import { summarizeUserAgent } from '../server/utils/chatbot/user-agent'
+import { chatPolicyDeclaration, chatPolicyPart, chatPolicySource, chatPolicySourceWith, readRepoFile } from './_chat-policy-family.ts'
+import { CHAT_WIDGET_FAMILY, CHATBOT_COMPOSABLE_FAMILY, familySource, moduleFamilySource, readAppFile } from './_component-family.ts'
 
 const SECRET = 'test-secret-not-a-real-key-0123456789abcdef'
 
@@ -132,9 +134,11 @@ test('summarizeUserAgent keeps an unrecognised agent visible rather than hiding 
 
 // Ghép cả `chatbot-storage.ts`: phần khử độc dữ liệu `localStorage` đã sang tệp
 // đó để kiểm được không cần nạp composable. Các khẳng định ở đây nói về hành vi,
-// nên chia theo tệp sẽ khiến một lần chuyển hàm trông như một hồi quy.
-const COMPOSABLE = readFileSync('app/composables/useChatbot.ts', 'utf8')
-  + '\n' + readFileSync('app/utils/chatbot-storage.ts', 'utf8')
+// nên chia theo tệp sẽ khiến một lần chuyển hàm trông như một hồi quy. Từ lần tách
+// wave3, `useChatbot.ts` là mặt tiền và mã nằm ở `composables/chatbot/*.ts`: đọc cả họ
+// (`CHATBOT_COMPOSABLE_FAMILY` — mặt tiền + mọi module + chatbot-storage).
+const COMPOSABLE = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY)
+const PERSIST_SKIPS_STREAMING = /function persist[\s\S]{0,900}isStreaming/
 // Playback moved into its own module — the composable had grown to 939 lines and
 // this block reads nothing from the conversation state, so it is testable on its
 // own. `useChatbot` re-exports it, so every call site kept one import path.
@@ -175,9 +179,20 @@ test('persisted conversations never include a half-typed message', () => {
   assert.match(COMPOSABLE, /isStreaming/, 'tracks the streaming flag')
   assert.match(
     COMPOSABLE,
-    /function persist[\s\S]{0,900}isStreaming/,
+    PERSIST_SKIPS_STREAMING,
     'persist() filters on isStreaming',
   )
+})
+
+test('injection proof: the persist and session-token checks read the module that carries them', () => {
+  const persistence = 'composables/chatbot/persistence.ts'
+  const source = readAppFile(persistence)
+  assert.match(source, /!item\.isStreaming && /, `${persistence} no longer has the filter this proof removes`)
+  assert.doesNotMatch(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [persistence]: source.replace('!item.isStreaming && ', '') }), PERSIST_SKIPS_STREAMING)
+  const send = 'composables/chatbot/send.ts'
+  assert.doesNotMatch(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [send]: readAppFile(send).replaceAll('X-Chat-Session', 'X-Other') }), /X-Chat-Session/)
+  // A module added later is read too: a secret in it is caught.
+  assert.match(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { 'composables/chatbot/later.ts': 'const s = process.env.ANALYTICS_HMAC_SECRET' }), /ANALYTICS_HMAC_SECRET/)
 })
 
 test('the client asks the server for a session token instead of signing one', () => {
@@ -189,9 +204,13 @@ test('the client asks the server for a session token instead of signing one', ()
 })
 
 test('the widget ships a honeypot field and the server treats a filled one as a bot', () => {
-  const widget = readFileSync('app/components/ChatWidget.vue', 'utf8')
-  assert.match(widget, /name="_h"/, 'honeypot input present')
-  assert.match(widget, /tabindex="-1"/, 'kept out of the tab order')
+  // The input row is a part of the widget since its wave3 split: read the widget's family,
+  // and check the honeypot input tag itself (not "somewhere in the file").
+  const widget = familySource(CHAT_WIDGET_FAMILY)
+  const honeypot = widget.match(/<input\b[^>]*name="_h"[^>]*>/)?.[0] ?? ''
+  assert.ok(honeypot, 'honeypot input present')
+  assert.match(honeypot, /tabindex="-1"/, 'kept out of the tab order')
+  assert.match(widget, /if \(honeypot\.value\.trim\(\) !== ''\) return/, 'a filled honeypot sends nothing')
 
   const handler = readFileSync('server/api/public/chatbot/index.post.ts', 'utf8')
   // Answering 200 with a plausible reply is the point: a 400 or 403 would tell
@@ -264,13 +283,34 @@ test('the transcript is ordered oldest-first with a stable tie-break', () => {
   )
 })
 
+// `chat-policy.ts` is a barrel since wave3 4.3 (D-SPLIT): "is present" reads the quota
+// declaration itself (`enforceAiQuota`, in `server/services/chat-policy-rate-limit.ts`),
+// "is absent" reads every file of the policy family (`_chat-policy-family.ts`).
+const IN_PROCESS_BUCKET = /new Map\(\)[\s\S]{0,40}rateBucket/i
+
 test('the AI quota is charged per session at the provider call, not per request', () => {
-  const policy = readFileSync('server/utils/chatbot/chat-policy.ts', 'utf8')
-  assert.match(policy, /chat-ai:\$\{sessionId\}/, 'quota key is the session')
+  const quota = chatPolicyDeclaration('enforceAiQuota').text
+  assert.match(quota, /chat-ai:\$\{sessionId\}/, 'quota key is the session')
   // Charging at the top of the handler would spend a visitor's allowance on
   // curated answers that never reach a provider.
-  assert.match(policy, /enforceAiQuota/, 'quota helper exists')
+  assert.match(quota, /^export async function enforceAiQuota\(/, 'quota helper exists')
   const durable = /recordRateLimitHit/
-  assert.match(policy, durable, 'counts through the durable store, not a local Map')
-  assert.doesNotMatch(policy, /new Map\(\)[\s\S]{0,40}rateBucket/i, 'the in-process bucket is gone')
+  assert.match(quota, durable, 'counts through the durable store, not a local Map')
+  assert.doesNotMatch(chatPolicySource(), IN_PROCESS_BUCKET, 'the in-process bucket is gone')
+})
+
+test('injection proof: the in-process bucket ban reads every file of the chat-policy family, and only it', () => {
+  const planted = '\nconst _buckets = { store: new Map(), rateBucket: 1 }\n'
+  for (const overrides of [
+    { [chatPolicyPart('fallbacks')]: `${readRepoFile(chatPolicyPart('fallbacks'))}${planted}` },
+    { [chatPolicyPart('extra')]: planted },
+  ])
+    assert.match(chatPolicySourceWith(overrides), IN_PROCESS_BUCKET, JSON.stringify(Object.keys(overrides)))
+  assert.equal(chatPolicySourceWith({ 'server/utils/chatbot/chat-turns.ts': planted }), chatPolicySource())
+  // A quota keyed on something else, with the old key left in a comment, is red.
+  const file = chatPolicyPart('rate-limit')
+  const source = readRepoFile(file)
+  assert.ok(source.includes('`chat-ai:${sessionId}`'), `${file} no longer has the session key to mutate`)
+  const overrides = { [file]: `// chat-ai:\${sessionId}\n${source.replace('`chat-ai:${sessionId}`', '`chat-ai:${Date.now()}`')}` }
+  assert.doesNotMatch(chatPolicyDeclaration('enforceAiQuota', overrides).text, /chat-ai:\$\{sessionId\}/)
 })

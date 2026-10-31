@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { parse } from '@vue/compiler-sfc'
 import { renderSfcTemplate } from './_render-sfc-template'
 import { OFFSITE_STATUSES, isBackupLocalOnly, offsiteDestinationConfigured, offsiteStatusDisplay } from '../shared/backup-offsite-status'
+import { COLOR_TOKENS } from '../shared/color-tokens.ts'
 
 /**
  * Spec `backup-restore` (wave2 D-OFFSITE): "The backup page warns when no off-VPS
@@ -87,8 +88,10 @@ test('the panel renders the warning: backups exist only on this server', async (
   assert.match(warning[0], /<i [^>]*aria-hidden="true"/, 'the icon is decorative; the words carry the warning')
   // ui-dna: no implementation detail (env names, scripts, paths) in the page.
   assert.doesNotMatch(words, /BACKUP_|manage\.sh|crontab|\/app\/|offsite_status/)
-  // Yellow = warning (ui-dna), the same notice style the scheduler notice uses.
-  assert.match(warning[0], /border-\[#f0dcae\] bg-\[#fdf6e7\][^"]*text-\[#8a6412\]/)
+  // Yellow = warning (ui-dna), the same notice style the scheduler notice uses. The warning
+  // text is the `warn-ink` token (D-T1) — by name, or as that token's hex, read from COLOR_TOKENS.
+  const warnInk = `(?:warn-ink|\\[${COLOR_TOKENS['warn-ink']}\\])`
+  assert.match(warning[0], new RegExp(`border-\\[#f0dcae\\] bg-\\[#fdf6e7\\][^"]*text-${warnInk}(?![\\w-])`))
 })
 
 test('the warning tells a SuperAdmin what to do, and anyone else whom to ask', async () => {

@@ -11,24 +11,9 @@
  */
 import { computed, ref, watch } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
+import type { ArticleScanThumbnailsResponse as ScanResponse } from '~/types/admin-articles-api'
 
-interface BrokenArticle {
-  id: number
-  title: string
-  thumbnailUrl: string
-  reason: 'r2_404' | 'local_missing'
-}
-
-interface ScanResponse {
-  ok: boolean
-  scanned: number
-  brokenCount: number
-  broken: BrokenArticle[]
-  dryRun: boolean
-  fixedCount?: number
-  defaultCover?: string
-  message?: string
-}
+type BrokenArticle = ScanResponse['broken'][number]
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{
@@ -86,7 +71,7 @@ const runScan = async () => {
   report.value = null
   selectedIds.value = new Set()
   try {
-    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<ScanResponse>)(
+    const res = await adminFetch<ScanResponse>(
       '/api/admin/articles/scan-thumbnails',
       { method: 'POST', body: { dryRun: true } },
     )
@@ -115,7 +100,7 @@ const runFix = async () => {
   fixing.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<ScanResponse>)(
+    const res = await adminFetch<ScanResponse>(
       '/api/admin/articles/scan-thumbnails',
       { method: 'POST', body: { dryRun: false, fixIds: ids, defaultCover: defaultCover.value } },
     )
@@ -213,7 +198,7 @@ watch(() => props.open, (v) => {
               <!-- Summary -->
               <div class="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 text-sm">
                 <span class="font-semibold text-gray-700">
-                  Đã quét: <span class="text-[#1e4620]">{{ report.scanned }}</span> bài
+                  Đã quét: <span class="text-brand-900">{{ report.scanned }}</span> bài
                 </span>
                 <span class="text-gray-300">·</span>
                 <span class="font-semibold" :class="report.brokenCount > 0 ? 'text-red-600' : 'text-green-700'">
@@ -263,7 +248,7 @@ watch(() => props.open, (v) => {
 
                   <button
                     type="button"
-                    class="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-[#1e4620] px-4 py-2 text-sm font-bold text-white hover:bg-[#2c6e33] disabled:cursor-not-allowed disabled:opacity-50"
+                    class="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-brand-900 px-4 py-2 text-sm font-bold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
                     :disabled="!someSelected || fixing"
                     @click="runFix"
                   >

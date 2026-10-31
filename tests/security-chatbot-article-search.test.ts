@@ -5,6 +5,7 @@ import type { SQL } from 'drizzle-orm'
 import { articleSearchKeywords, buildArticleSearch } from '../server/utils/chatbot/article-search'
 import { escapeLikeWildcards } from '../server/utils/sql-like'
 import { intervalDays } from '../server/utils/sql-literals'
+import { CHAT_POLICY_BARREL, chatPolicyDeclaration, chatPolicyPart, chatPolicySource, chatPolicySourceWith, readRepoFile } from './_chat-policy-family.ts'
 
 /**
  * `search_c11_articles` nhận chuỗi tìm kiếm từ **model**, mà khách vãng lai dẫn
@@ -109,11 +110,20 @@ test('ranking still prefers title matches and falls back to newest first', () =>
   assert.equal(empty.order.length, 1, 'no query means newest first and nothing else')
 })
 
-test('chat-policy builds the article query through buildArticleSearch only', async () => {
-  const { readFile } = await import('node:fs/promises')
-  const source = await readFile(new URL('../server/utils/chatbot/chat-policy.ts', import.meta.url), 'utf8')
-  assert.match(source, /buildArticleSearch\(rawQ, type\)/)
-  assert.doesNotMatch(source, /sql\.raw/, 'no raw SQL may be assembled in the chatbot policy')
+// ─── The policy that runs the model's tool queries ───────────────────────────
+//
+// `chat-policy.ts` is a barrel since wave3 4.3 (D-SPLIT); the tool executors live in
+// `server/services/chat-policy-provider.ts`. The bans ("is absent") read EVERY file of the
+// policy family (derived from the directory, `_chat-policy-family.ts`) — on the barrel
+// alone they would read an export list and pass on nothing. The "is present" checks read
+// the one declaration that runs the tools (`callProvider`), so a comment cannot satisfy them.
+
+const RAW_SQL = /sql\.raw/
+const HAND_BUILT_LIKE = /like\([^)]*`%\$\{/
+
+test('chat-policy builds the article query through buildArticleSearch only', () => {
+  assert.match(chatPolicyDeclaration('callProvider').text, /buildArticleSearch\(rawQ, type\)/)
+  assert.doesNotMatch(chatPolicySource(), RAW_SQL, 'no raw SQL may be assembled in the chatbot policy')
 })
 
 // ─── intervalDays ────────────────────────────────────────────────────────────
@@ -149,10 +159,44 @@ test('a pathological query is cut to 200 characters before it is bound', async (
   assert.ok(bound.length > 0 && bound.every(value => value.length <= 204), 'pattern length: %…% around at most 200 characters')
 })
 
-test('every LIKE in chat-policy goes through the shared helper', async () => {
-  const { readFile } = await import('node:fs/promises')
-  const source = await readFile(new URL('../server/utils/chatbot/chat-policy.ts', import.meta.url), 'utf8')
-  assert.doesNotMatch(source, /like\([^)]*`%\$\{/, 'a LIKE pattern is assembled by hand again')
-  assert.match(source, /videoSearchCondition\(/)
-  assert.match(source, /photoSearchCondition\(/)
+test('every LIKE in chat-policy goes through the shared helper', () => {
+  assert.doesNotMatch(chatPolicySource(), HAND_BUILT_LIKE, 'a LIKE pattern is assembled by hand again')
+  const tools = chatPolicyDeclaration('callProvider').text
+  assert.match(tools, /videoSearchCondition\(/)
+  assert.match(tools, /photoSearchCondition\(/)
+})
+
+test('injection proof: both bans see raw SQL / a hand-built LIKE in ANY file of the policy, and only there', () => {
+  const planted = '\nexport const _unsafe = (db: { execute: (q: unknown) => unknown }, q: string) => [db.execute(sql.raw(`SELECT 1`)), like(articles.title, `%${q}%`)]\n'
+  const request = chatPolicyPart('request')
+  const cases: Array<[string, Record<string, string>]> = [
+    // A part that does not run any tool — the scan is not narrowed to the tools' file.
+    [request, { [request]: `${readRepoFile(request)}${planted}` }],
+    ['a new part nobody listed', { [chatPolicyPart('extra')]: planted }],
+    ['the barrel', { [CHAT_POLICY_BARREL]: `${readRepoFile(CHAT_POLICY_BARREL)}${planted}` }],
+  ]
+  for (const [label, overrides] of cases) {
+    const family = chatPolicySourceWith(overrides)
+    assert.match(family, RAW_SQL, `${label}: sql.raw not seen`)
+    assert.match(family, HAND_BUILT_LIKE, `${label}: hand-built LIKE not seen`)
+  }
+  // A neighbour that never was part of the policy does not join the scan through the proof.
+  assert.equal(chatPolicySourceWith({ 'server/utils/chatbot/chat-turns.ts': planted }), chatPolicySource())
+})
+
+test('injection proof: the "is present" checks read the tool code itself, not a comment about it', () => {
+  const provider = chatPolicyPart('provider')
+  const source = readRepoFile(provider)
+  const guarded: Array<[string, RegExp]> = [
+    ['buildArticleSearch(rawQ, type)', /buildArticleSearch\(rawQ, type\)/],
+    ['videoSearchCondition(q)', /videoSearchCondition\(/],
+    ['photoSearchCondition(q)', /photoSearchCondition\(/],
+  ]
+  for (const [call, pattern] of guarded) {
+    assert.ok(source.includes(call), `${provider} no longer has ${call} to mutate`)
+    // The call is gone from the code but still named in a comment of the same file.
+    const overrides = { [provider]: `// ${call}\n${source.replace(call, 'unsafeSearch(q)')}` }
+    assert.match(chatPolicySourceWith(overrides), pattern, `${call}: the file-level text still matches (that is the trap)`)
+    assert.doesNotMatch(chatPolicyDeclaration('callProvider', overrides).text, pattern, `${call}: the declaration check must go red`)
+  }
 })

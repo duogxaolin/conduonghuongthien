@@ -1060,6 +1060,11 @@ export const livestreamMessages = mysqlTable('livestream_messages', {
   // Soft delete: a moderated message leaves the public history but its row
   // remains, because the moderation action is itself auditable.
   isDeleted:   boolean('is_deleted').notNull().default(false),
+  // Set only by the automatic hide (`applyAutoHide`): the review-queue row's
+  // reason, cut to 255. It is what lets "Bỏ ẩn" on that queue row show the
+  // message again — an officer's removal (`removeChatMessage`) writes none, so
+  // it is never undone by an approve. NULL on rows hidden before the column.
+  flagReason:  varchar('flag_reason', { length: 255 }),
   // DATETIME(3) — chat ordering needs millisecond resolution, and two messages
   // in the same second are ordinary.
   createdAt:   datetime('created_at', { mode: 'date', fsp: 3 }).notNull(),

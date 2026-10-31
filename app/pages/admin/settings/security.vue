@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { MfaPolicyResponse, MfaPolicySaveResponse } from '~/types/admin-settings-api'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -10,16 +12,9 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  * bật — một chính sách khoá người vận hành ra ngoài là thứ phải thấy trước, không
  * phải phát hiện sau.
  */
-type Policy = 'off' | 'privileged' | 'all'
-type Account = { id: number; username: string; roleName: string | null }
-type Overview = {
-  ok: boolean
-  policy: Policy
-  enforceAfter: string | null
-  graceDays: number
-  killSwitch: boolean
-  withoutFactor: Record<'privileged' | 'all', Account[]>
-}
+type Overview = MfaPolicyResponse
+type Policy = Overview['policy']
+type Account = Overview['withoutFactor']['all'][number]
 
 const OPTIONS: Array<{ value: Policy; label: string; hint: string }> = [
   { value: 'off', label: 'Không bắt buộc', hint: 'Mỗi tài khoản tự quyết định có bật xác thực hai bước hay không.' },
@@ -50,7 +45,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string) => Promise<Overview>)('/api/admin/security/mfa-policy')
+    const res = await adminFetch<Overview>('/api/admin/security/mfa-policy')
     overview.value = res
     selected.value = res.policy
   } catch (err: unknown) {
@@ -70,7 +65,7 @@ async function save() {
   if (!await confirm({ message, confirmLabel: next === 'off' ? 'Tắt chính sách' : 'Bật chính sách', danger: next !== 'off' })) return
   saving.value = true
   try {
-    await ($fetch as (u: string, o: Record<string, unknown>) => Promise<unknown>)('/api/admin/security/mfa-policy', {
+    await adminFetch<MfaPolicySaveResponse>('/api/admin/security/mfa-policy', {
       method: 'PUT',
       body: { policy: next },
     })
@@ -90,8 +85,8 @@ onMounted(load)
 <template>
   <div class="flex flex-col gap-5">
     <div>
-      <h1 class="m-0 text-[1.35rem] font-extrabold text-[#122815]">Bắt buộc xác thực hai bước</h1>
-      <p class="m-0 mt-1 text-sm text-[#667768]">
+      <h1 class="m-0 text-[1.35rem] font-extrabold text-brand-950">Bắt buộc xác thực hai bước</h1>
+      <p class="m-0 mt-1 text-sm text-ink-muted">
         Chỉ SuperAdmin thay đổi được. Khi bật, tài khoản thuộc diện có thời hạn chuyển tiếp để tự bật ở trang "Tài khoản của tôi";
         lúc bật yếu tố đầu tiên, hệ thống phát kèm mã dự phòng.
       </p>
@@ -106,37 +101,37 @@ onMounted(load)
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="load">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-brand-700 underline" @click="load">Thử lại</button>
     </div>
 
-    <form v-else-if="overview" class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-5" @submit.prevent="save">
+    <form v-else-if="overview" class="flex flex-col gap-4 rounded-xl border border-line bg-white p-5" @submit.prevent="save">
       <p v-if="overview.killSwitch" class="m-0 flex items-start gap-2 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3.5 py-2.5 text-sm text-[#7a5a12]">
         <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
         <span>Máy chủ đang tắt cưỡng chế (<code>MFA_ENFORCEMENT=0</code>): chính sách vẫn lưu được nhưng không chặn tài khoản nào.</span>
       </p>
       <p v-if="overview.policy !== 'off' && overview.enforceAfter" class="m-0 text-sm text-[#3d4f3f]">
-        <i class="fa-regular fa-calendar mr-1.5 text-[#2c6e33]" aria-hidden="true"></i>
+        <i class="fa-regular fa-calendar mr-1.5 text-brand-700" aria-hidden="true"></i>
         Cưỡng chế từ <strong>{{ formatDay(overview.enforceAfter) }}</strong>.
       </p>
 
       <fieldset class="m-0 flex flex-col gap-2 border-0 p-0">
-        <legend class="mb-2 text-sm font-bold text-[#122815]">Phạm vi bắt buộc</legend>
+        <legend class="mb-2 text-sm font-bold text-brand-950">Phạm vi bắt buộc</legend>
         <label
           v-for="option in OPTIONS"
           :key="option.value"
           class="flex cursor-pointer items-start gap-3 rounded-lg border px-3.5 py-3"
-          :class="selected === option.value ? 'border-[#2c6e33] bg-[#f4f9f4]' : 'border-[#e2ece3]'"
+          :class="selected === option.value ? 'border-brand-700 bg-surface-tint' : 'border-line'"
         >
-          <input v-model="selected" type="radio" name="mfa-policy" :value="option.value" class="mt-1 accent-[#2c6e33] focus:ring-2 focus:ring-[#4A6741]" />
+          <input v-model="selected" type="radio" name="mfa-policy" :value="option.value" class="mt-1 accent-brand-700 focus:ring-2 focus:ring-brand-600" />
           <span class="flex flex-col gap-0.5">
-            <span class="text-sm font-bold text-[#122815]">{{ option.label }}</span>
-            <span class="text-[0.82rem] text-[#667768]">{{ option.hint }}</span>
+            <span class="text-sm font-bold text-brand-950">{{ option.label }}</span>
+            <span class="text-[0.82rem] text-ink-muted">{{ option.hint }}</span>
           </span>
         </label>
       </fieldset>
 
-      <div v-if="selected !== 'off'" class="rounded-lg border border-[#e2ece3] bg-[#f8faf8] px-3.5 py-3 text-sm">
-        <p v-if="!affected.length" class="m-0 text-[#2c6e33]">
+      <div v-if="selected !== 'off'" class="rounded-lg border border-line bg-surface px-3.5 py-3 text-sm">
+        <p v-if="!affected.length" class="m-0 text-brand-700">
           <i class="fa-solid fa-circle-check mr-1.5" aria-hidden="true"></i>Mọi tài khoản thuộc diện đã bật xác thực hai bước.
         </p>
         <template v-else>
@@ -144,8 +139,8 @@ onMounted(load)
             <i class="fa-solid fa-user-clock mr-1.5" aria-hidden="true"></i>{{ affected.length }} tài khoản thuộc diện chưa bật:
           </p>
           <ul class="m-0 flex list-none flex-wrap gap-1.5 p-0">
-            <li v-for="account in affected" :key="account.id" class="rounded bg-white px-2 py-0.5 text-[0.82rem] text-[#3d4f3f] ring-1 ring-[#e2ece3]">
-              {{ account.username }}<span v-if="account.roleName" class="text-[#667768]"> · {{ account.roleName }}</span>
+            <li v-for="account in affected" :key="account.id" class="rounded bg-white px-2 py-0.5 text-[0.82rem] text-[#3d4f3f] ring-1 ring-line">
+              {{ account.username }}<span v-if="account.roleName" class="text-ink-muted"> · {{ account.roleName }}</span>
             </li>
           </ul>
         </template>
@@ -155,7 +150,7 @@ onMounted(load)
         <button
           type="submit"
           :disabled="!changed || saving"
-          class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2.5 text-sm font-bold text-white hover:bg-[#2c6e33] focus:outline-none focus:ring-2 focus:ring-[#4A6741] focus:ring-offset-2 disabled:opacity-60"
+          class="inline-flex items-center gap-2 rounded-lg bg-brand-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:ring-offset-2 disabled:opacity-60"
         >
           <i v-if="saving" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
           Lưu

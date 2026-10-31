@@ -1,11 +1,30 @@
 <script setup lang="ts">
-import type { WindowWithTinyMce } from '~/types/tinymce'
-import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
-import type { MediaItem } from '~/types/media'
-import TinyMceEditor from '~/components/admin/TinyMceEditor.vue'
-import AdminModal from '~/components/admin/AdminModal.vue'
+/**
+ * Trình soạn bài viết (`/admin/content/articles/new` và `/:id`). Tách (wave3, 773 dòng —
+ * docs/decisions/refactor-large-files.md):
+ *  - `components/admin/articles/editor/*.vue` — đầu trang (menu tự động dịch, nút lưu), cột soạn
+ *    (panel AI, tiêu đề, tóm tắt, ô TinyMCE), cột "Cấu hình xuất bản", hộp nhắc dịch lại: chỉ
+ *    hiển thị, props vào, sự kiện ra;
+ *  - `useArticleEditorTinymce` (cấu hình + init TinyMCE — đường init thứ hai của dự án, cầu nối
+ *    thân bài, chèn ảnh, mốc thân bài), `useArticleEditorUnsavedGuard` (rời trang / đóng tab),
+ *    `useArticleEditorSave` (lưu, tạo + tự động dịch, nhắc dịch lại), `useArticleEditorMedia`
+ *    (thư viện ảnh, tải ảnh đại diện), `useArticleEditorTaxonomy` (thể loại, danh mục).
+ * Trang giữ: biểu mẫu; lượt tải `fetchArticle` với khung chờ, nhánh lỗi `role="alert"` + "Thử
+ * lại" và cờ DƯƠNG `loaded`; bộ theo dõi thể loại cùng `suppressTypeReset`; thứ tự `onMounted`;
+ * `translationPanelRef` (panel bản dịch là con trực tiếp).
+ */
+import type { ArticleReadResponse } from '~/types/admin-articles-api'
+import type { ArticleRetranslateStatus } from '~/types/admin-article-editor'
 import ArticleTranslationPanel from '~/components/admin/articles/ArticleTranslationPanel.vue'
-import ArticleAIPanel from '~/components/admin/articles/ArticleAIPanel.vue'
+import ArticleEditorHeader from '~/components/admin/articles/editor/ArticleEditorHeader.vue'
+import ArticleEditorMainForm from '~/components/admin/articles/editor/ArticleEditorMainForm.vue'
+import ArticleEditorPublishPanel from '~/components/admin/articles/editor/ArticleEditorPublishPanel.vue'
+import ArticleReTranslateModal from '~/components/admin/articles/editor/ArticleReTranslateModal.vue'
+import { useArticleEditorMedia } from '~/composables/useArticleEditorMedia'
+import { useArticleEditorSave } from '~/composables/useArticleEditorSave'
+import { useArticleEditorTaxonomy } from '~/composables/useArticleEditorTaxonomy'
+import { useArticleEditorTinymce } from '~/composables/useArticleEditorTinymce'
+import { useArticleEditorUnsavedGuard } from '~/composables/useArticleEditorUnsavedGuard'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -14,8 +33,6 @@ definePageMeta({
 const route = useRoute()
 const isNew = computed(() => route.params.id === 'new')
 const articleId = computed(() => isNew.value ? null : Number(route.params.id))
-
-const TINYMCE_EDITOR_ID = 'tinymce-content-editor'
 
 const form = reactive({
   title: '',
@@ -32,83 +49,52 @@ const form = reactive({
 // grid is never painted empty before the fetched values arrive. A new article
 // has nothing to fetch, so it starts false.
 const loading = ref(!isNew.value)
-const saving = ref(false)
+// Tải hỏng → `errorMsg` ("Thử lại"); lưu hỏng → `saveError` (không tải lại đè chữ đang gõ);
+// `loaded`: biểu mẫu đang giữ bài thật (bài mới: luôn) — chưa thì lưu là ghi đè bài bằng ô trống.
 const errorMsg = ref('')
-const tinymceReady = ref(false)
+const loaded = ref(isNew.value)
+const toast = useToast()
+const { confirm } = useConfirm()
 
-function setEditorContent(html: string): void {
-  form.content = html
-  if (tinymceReady.value && (window as WindowWithTinyMce).tinymce) {
-    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
-    if (ed) ed.setContent(html)
-  }
+const {
+  editorId, setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent, onBodyShown,
+  insertMediaIntoEditor, initTinyMCE, loadTinyMCEScript,
+} = useArticleEditorTinymce({ form })
+
+// ─── Unsaved-changes guard: route leave here (a Nuxt auto-import), the tab close in the composable ──
+const { markSaved, confirmLeave } = useArticleEditorUnsavedGuard({ form, loading, markBodySaved, bodyChanged, confirm })
+onBeforeRouteLeave(confirmLeave)
+
+const { availableCategories, contentTypes, fetchContentTypes, fetchCategories } = useArticleEditorTaxonomy()
+
+// Template ref tới ArticleTranslationPanel con. Khai báo trước computed đọc
+// từ nó (tránh TDZ visual — dù computed là lazy, đặt ref trước cho rõ thứ tự).
+const translationPanelRef = ref<InstanceType<typeof ArticleTranslationPanel> | null>(null)
+
+// `availableLanguages` / `articleTranslations` / `translatingAll` sống trong
+// `ArticleTranslationPanel` con. Cha đọc qua `translationPanelRef` (expose) cho
+// auto-translate menu (new article) + re-translate modal (hiển thị list lang).
+const availableLanguages = computed(() => translationPanelRef.value?.availableLanguages ?? [])
+
+function scrollToTranslations() {
+  nextTick(() => {
+    document.getElementById('article-translations-section')?.scrollIntoView({ behavior: 'smooth' })
+  })
 }
 
-function getEditorContent(): string {
-  if (typeof window !== 'undefined' && (window as WindowWithTinyMce).tinymce) {
-    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
-    if (ed) {
-      const c = ed.getContent()
-      if (c && c.trim()) return c
-    }
-  }
-  return form.content || ''
+// Wrapper gọi con — re-translate modal (confirmReTranslation) dùng. Con giữ state optimistic + polling.
+async function translateAllForThisArticle(targetStatus: ArticleRetranslateStatus = 'ai_draft') {
+  await translationPanelRef.value?.translateAllForThisArticle(targetStatus)
 }
 
-// ─── Unsaved-changes guard ────────────────────────────────────────────
-// Leaving the editor (another admin link, back button, closing the tab) used to
-// drop an unsaved article without a word. The baseline is what was last loaded
-// or saved; the body is compared as TinyMCE serialises it, since setContent()
-// normalises HTML and `form.content` only follows the editor on `change`.
-const savedFields = ref('')
-const savedContent = ref<string | null>(null)
-
-function fieldsSnapshot(): string {
-  const { title, type, category, categoryId, excerpt, thumbnailUrl, status } = form
-  return JSON.stringify({ title, type, category, categoryId, excerpt, thumbnailUrl, status })
-}
-
-/** The editor's current HTML, or null before TinyMCE has initialised. */
-function editorHtml(): string | null {
-  if (typeof window === 'undefined' || !tinymceReady.value) return null
-  return (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)?.getContent() ?? null
-}
-
-/** Record the current state as saved. The body baseline waits for the editor (see `init`). */
-function markSaved(): void {
-  savedFields.value = fieldsSnapshot()
-  savedContent.value = editorHtml()
-}
-
-function hasUnsavedChanges(): boolean {
-  if (loading.value || !savedFields.value) return false
-  if (fieldsSnapshot() !== savedFields.value) return true
-  const html = editorHtml()
-  return savedContent.value !== null && html !== null && html !== savedContent.value
-}
-
-// (AI editorial + translation đã chuyển vào ArticleAIPanel.vue / ArticleTranslationPanel.vue)
-
-// Dynamic categories for the selected article type
-const availableCategories = ref<AdminCategoryRow[]>([])
-
-// Content types from DB — drives the Type <select> so a type created in
-// /admin/content/content-types shows up here too (not just the 5 hardcoded ones).
-const contentTypes = ref<AdminContentTypeRow[]>([])
-
-const fetchContentTypes = async () => {
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)('/api/admin/content-types')
-    if (res.ok) contentTypes.value = res.items
-  } catch { /* keep empty — select falls back to nothing */ }
-}
-
-const fetchCategories = async (type: string) => {
-  try {
-    const res = await $fetch('/api/admin/categories', { params: { type } })
-    if (res.ok) availableCategories.value = res.items
-  } catch { availableCategories.value = [] }
-}
+const {
+  saving, saveError, autoTranslateLangs, handleSave,
+  showReTranslateModal, reTranslatePublishImmediately, reTranslateRunning, recordInitialSnapshot, rebaseSnapshotOnEditor, confirmReTranslation,
+} = useArticleEditorSave({
+  form, isNew, articleId, loaded, toast, getEditorContent, markSaved, navigate: navigateTo, translateAll: translateAllForThisArticle,
+})
+// The re-translate prompt compares the body as TinyMCE serialises it (FINDING-AE1).
+onBodyShown(rebaseSnapshotOnEditor)
 
 // Guard: true while fetchArticle is populating the form on initial load.
 // Prevents the type watcher from resetting categoryId during article load.
@@ -123,12 +109,18 @@ watch(() => form.type, async (newType) => {
   await fetchCategories(newType)
 })
 
+// Every load after the first (onMounted's) is a "Thử lại": its placeholder takes the editor grid,
+// and the element TinyMCE is bound to, off the page (KNOWN 5/6 of the split).
+let loads = 0
 const fetchArticle = async () => {
   if (isNew.value || !articleId.value) return
+  const reload = loads++ > 0
   suppressTypeReset = true  // block watcher resets during form population
   loading.value = true
+  loaded.value = false // trước await: "Thử lại" đang bay không được mở lại nút lưu
+  errorMsg.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; article: { title: string; type: string; category: string; categoryId: number | null; excerpt: string; content: string; thumbnailUrl: string; status: string } }>)(`/api/admin/articles/${articleId.value}`)
+    const res = await adminFetch<ArticleReadResponse>(`/api/admin/articles/${articleId.value}`)
     if (res.ok && res.article) {
       form.title = res.article.title || ''
       form.type = res.article.type || 'news'
@@ -138,14 +130,12 @@ const fetchArticle = async () => {
       form.content = res.article.content || ''
       form.thumbnailUrl = res.article.thumbnailUrl || ''
       form.status = res.article.status || 'published'
-      // Explicitly load categories for the article's type so the dropdown
-      // renders the saved selection. The watcher is suppressed and won't do this.
+      // The (suppressed) type watcher won't: load this type's categories so the saved one shows.
       await fetchCategories(form.type)
-      if (tinymceReady.value && (window as WindowWithTinyMce).tinymce) {
-        const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
-        if (ed) ed.setContent(form.content)
-      }
+      // Snapshot first: a live editor rebases its body as soon as it shows it (FINDING-AE1).
       recordInitialSnapshot()
+      showLoadedContent()
+      loaded.value = true
     }
   } catch (err: unknown) {
     errorMsg.value = errorMessage(err, 'Lỗi tải bài viết')
@@ -155,248 +145,19 @@ const fetchArticle = async () => {
     // above) so it runs — and is suppressed — before we release the guard.
     await nextTick()
     suppressTypeReset = false
-  }
-}
-const toast = useToast()
-
-// ─── Initial Content Snapshot & Re-translation Prompt ─────────────────
-const initialContentSnapshot = ref<{ title: string; excerpt: string; content: string } | null>(null)
-const showReTranslateModal = ref(false)
-const reTranslatePublishImmediately = ref(false)
-const reTranslateRunning = ref(false)
-
-function recordInitialSnapshot() {
-  initialContentSnapshot.value = {
-    title: form.title.trim(),
-    excerpt: form.excerpt.trim(),
-    content: form.content.trim(),
-  }
-}
-
-function checkAndPromptReTranslation() {
-  if (!initialContentSnapshot.value) return
-  const currentTitle = form.title.trim()
-  const currentExcerpt = form.excerpt.trim()
-  const currentContent = form.content.trim()
-
-  const hasContentChanged =
-    currentTitle !== initialContentSnapshot.value.title ||
-    currentExcerpt !== initialContentSnapshot.value.excerpt ||
-    currentContent !== initialContentSnapshot.value.content
-
-  if (hasContentChanged) {
-    recordInitialSnapshot()
-    showReTranslateModal.value = true
-  }
-}
-
-async function confirmReTranslation() {
-  reTranslateRunning.value = true
-  try {
-    const targetStatus = reTranslatePublishImmediately.value ? 'published' : 'ai_draft'
-    await translateAllForThisArticle(targetStatus)
-    showReTranslateModal.value = false
-  } finally {
-    reTranslateRunning.value = false
-  }
-}
-
-const autoTranslateLangs = ref<string[]>(['en'])
-const showAutoTranslateMenu = ref(false)
-
-// Template ref tới ArticleTranslationPanel con. Khai báo trước computed đọc
-// từ nó (tránh TDZ visual — dù computed là lazy, đặt ref trước cho rõ thứ tự).
-const translationPanelRef = ref<InstanceType<typeof ArticleTranslationPanel> | null>(null)
-
-// `availableLanguages` / `articleTranslations` / `translatingAll` giờ sống trong
-// `ArticleTranslationPanel` con. Cha đọc qua `translationPanelRef` (expose) cho
-// auto-translate menu (new article) + re-translate modal (hiển thị list lang).
-// Badge "Bản dịch X/Y" ở header không cần nữa — con đã hiển thị count trong panel.
-const availableLanguages = computed(() => translationPanelRef.value?.availableLanguages ?? [])
-
-function scrollToTranslations() {
-  nextTick(() => {
-    document.getElementById('article-translations-section')?.scrollIntoView({ behavior: 'smooth' })
-  })
-}
-
-// Wrapper gọi con — cha dùng cho re-translate modal (confirmReTranslation) và
-// auto-translate sau khi tạo bài mới. Con giữ state optimistic + polling.
-async function translateAllForThisArticle(targetStatus: 'ai_draft' | 'published' = 'ai_draft') {
-  await translationPanelRef.value?.translateAllForThisArticle(targetStatus)
-}
-
-
-const handleSave = async () => {
-  if (!form.title.trim()) {
-    toast.warning('Tiêu đề bài viết không được để trống'); return
-  }
-  form.content = getEditorContent()
-  errorMsg.value = ''
-  saving.value = true
-  try {
-    if (isNew.value) {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; id: number }>)('/api/admin/articles', { method: 'POST', body: form })
-      if (res.ok) {
-        toast.success('Tạo bài viết mới thành công!')
-        // Saved: the redirect to the new article's page must not ask "leave without saving?".
-        markSaved()
-        const newId = res.id
-        if (autoTranslateLangs.value.length > 0 && newId) {
-          try {
-            for (const langCode of autoTranslateLangs.value) {
-              await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${newId}/translations/translate`, {
-                method: 'POST',
-                body: { langCode },
-              })
-            }
-            toast.success(`Đã kích hoạt dịch tự động sang ${autoTranslateLangs.value.length} ngôn ngữ trong nền!`)
-          } catch {
-            // Non-blocking
-          }
-        }
-        navigateTo(`/admin/content/articles/${newId}`)
-      }
-    } else {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
-      if (res.ok) {
-        toast.success('Đã cập nhật bài viết thành công!')
-        markSaved()
-        checkAndPromptReTranslation()
-      }
+    // A reload, on the grid that replaced the placeholder: what onMounted does after the first
+    // load — the baseline (a good load only: after a failed one the form, and anything typed in
+    // it, is as it was), then the editor (initTinyMCE removes the orphaned one first).
+    if (reload) {
+      if (loaded.value) markSaved()
+      initTinyMCE()
     }
-  } catch (err: unknown) {
-    errorMsg.value = errorMessage(err, 'Lỗi lưu bài viết')
-    toast.error(errorMsg.value)
-  } finally {
-    saving.value = false
   }
 }
 
 const { openPicker } = useImagePicker()
 const { uploading: uploadingThumb, uploadFile } = useUpload()
-
-const insertMediaIntoEditor = (media: MediaItem) => {
-  const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>`
-  if ((window as WindowWithTinyMce).tinymce) {
-    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
-    if (ed) { ed.insertContent(imgHtml); return }
-  }
-  form.content += '\n' + imgHtml
-}
-
-const openMediaPicker = (target: 'thumbnail' | 'content') => {
-  if (target === 'thumbnail') {
-    openPicker({ onSelect: (media) => { form.thumbnailUrl = media.url } })
-  } else {
-    // Multiple-select: chọn nhiều ảnh cùng lúc rồi chèn hết vào editor theo thứ tự.
-    openPicker({
-      multiple: true,
-      onSelectMultiple: (items) => {
-        for (const media of items) insertMediaIntoEditor(media)
-      },
-    })
-  }
-}
-
-const uploadThumbnailFromInput = async (e: Event) => {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  const media = await uploadFile(file)
-  if (media) form.thumbnailUrl = media.url
-  ;(e.target as HTMLInputElement).value = ''
-}
-
-const initTinyMCE = () => {
-  if (typeof window === 'undefined') return
-  const win = window as WindowWithTinyMce
-  if (!win.tinymce) return
-  // Lấy một lần rồi dùng: gọi `.get()` hai lần thì lời gọi thứ hai có thể trả
-    // `undefined` khi trình soạn thảo bị gỡ giữa hai lần — và `.remove()` trên
-    // undefined là một lỗi lúc chạy ngay giữa lượt điều hướng.
-    win.tinymce?.get(TINYMCE_EDITOR_ID)?.remove()
-  win.tinymce.init({
-    selector: `#${TINYMCE_EDITOR_ID}`,
-    height: 700,
-    menubar: true,
-    promotion: false,
-    branding: false,
-    skin: 'oxide',
-    content_css: 'default',
-    relative_urls: false,
-    remove_script_host: false,
-    convert_urls: true,
-    plugins: [
-      'advlist', 'autolink', 'lists', 'link', 'image', 'charmap',
-      'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
-      'insertdatetime', 'media', 'table', 'wordcount', 'quickbars'
-    ],
-    toolbar: 'undo redo | blocks | ' +
-      'bold italic underline strikethrough | forecolor backcolor | ' +
-      'alignleft aligncenter alignright alignjustify | ' +
-      'bullist numlist outdent indent | ' +
-      'link image media | ' +
-      'table | removeformat | fullscreen code',
-    toolbar_mode: 'sliding',
-    quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
-    quickbars_insert_toolbar: 'quickimage quicktable',
-    contextmenu: 'link image table',
-    image_advtab: true,
-    image_caption: true,
-    automatic_uploads: true,
-    paste_data_images: true,
-    paste_merge_formats: true,
-    file_picker_types: 'image',
-    images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
-      const formData = new FormData()
-      formData.append('file', blobInfo.blob(), blobInfo.filename())
-      void ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; media?: { url: string } }>)(`/api/admin/media/upload`, { method: 'POST', body: formData })
-        .then((res) => {
-          if (res.ok && res.media?.url) resolve(res.media.url)
-          else reject('Upload thất bại')
-        })
-        .catch((err) => reject(errorMessage(err, 'Upload thất bại')))
-    }),
-    setup: (editor: {
-        on: (event: string, handler: () => void) => void
-        setContent: (html: string) => void
-        getContent: () => string
-      }) => {
-      editor.on('init', () => {
-        tinymceReady.value = true
-        if (form.content) editor.setContent(form.content)
-        // Body baseline as the editor serialises the loaded content.
-        if (savedContent.value === null) savedContent.value = editor.getContent()
-      })
-      editor.on('change', () => { form.content = editor.getContent() })
-    },
-    content_style: `
-      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; padding: 12px; color: #1a1a1a; }
-      img { max-width: 100%; height: auto; border-radius: 8px; }
-      iframe, video { max-width: 100%; height: auto; }
-      pre[class*="language-"] { background: #2d2d2d; border-radius: 6px; padding: 1em; overflow-x: auto; }
-      code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; }
-      blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
-      table { border-collapse: collapse; width: 100%; }
-      table td, table th { border: 1px solid #ddd; padding: 8px; }
-    `
-  })
-}
-
-const loadTinyMCEScript = () => new Promise<void>((resolve) => {
-  if ((window as WindowWithTinyMce).tinymce) { resolve(); return }
-  // Self-host only — TinyMCE đã có đủ 28 file trong public/assets/tinymce/.
-  // Không fallback ra cdnjs.cloudflare.com: cổng Bộ Công an không nên tải JS
-  // từ bên thứ ba, và file local luôn có (đã commit vào repo).
-  const script = document.createElement('script')
-  script.src = '/assets/tinymce/tinymce.min.js'
-  script.onload = () => resolve()
-  script.onerror = () => {
-    console.error('TinyMCE local assets missing — chạy npm run build lại, hoặc kiểm public/assets/tinymce/')
-    resolve()
-  }
-  document.head.appendChild(script)
-})
+const { openMediaPicker, uploadThumbnailFromInput } = useArticleEditorMedia({ form, openPicker, uploadFile, insertMediaIntoEditor })
 
 onMounted(async () => {
   // The script download runs alongside the data fetch, but initTinyMCE must
@@ -417,130 +178,22 @@ onMounted(async () => {
   await nextTick()
   initTinyMCE()
 })
-
-const { confirm } = useConfirm()
-onBeforeRouteLeave(async () => {
-  if (!hasUnsavedChanges()) return true
-  return await confirm({
-    title: 'Rời trang?',
-    message: 'Bài viết có thay đổi chưa lưu. Rời trang bây giờ sẽ mất các thay đổi này.',
-    confirmLabel: 'Rời trang',
-    cancelLabel: 'Ở lại',
-    danger: true,
-  })
-})
-
-// Closing the tab or reloading: browsers show their own generic prompt.
-function warnBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!hasUnsavedChanges()) return
-  event.preventDefault()
-  event.returnValue = ''
-}
-onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
-
-onUnmounted(() => {
-  window.removeEventListener('beforeunload', warnBeforeUnload)
-  if ((window as WindowWithTinyMce).tinymce) {
-    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
-    if (ed) ed.destroy()
-  }
-})
-// (Article translations state + fetch/poll/trigger/edit/delete đã chuyển vào
-// `components/admin/articles/ArticleTranslationPanel.vue` — con tự fetch +
-// lifecycle. Cha giữ re-translate modal + auto-translate menu vì chúng phụ thuộc
-// form state sống ở cha. `translationPanelRef` khai báo ở trên cùng script.)
 </script>
 <template>
   <div class="flex flex-col gap-5">
-    <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <div>
-        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">
-          {{ isNew ? '✍️ Viết Bài Mới' : '✏️ Chỉnh Sửa Bài Viết' }}
-        </h1>
-        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Soạn thảo nội dung tin tức, bài viết bài bản với thư viện ảnh tích hợp</p>
-      </div>
-      <div class="flex items-center gap-2 flex-wrap">
-        <!-- Khi tạo mới (isNew): Tích chọn những ngôn ngữ muốn tự động dịch qua -->
-        <div v-if="isNew" class="relative">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border text-sm font-bold cursor-pointer transition-colors"
-            :class="autoTranslateLangs.length > 0
-              ? 'border-[#2c6e33] bg-[#f0f7f1] text-[#1e4620]'
-              : 'border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f8faf8]'"
-            @click="showAutoTranslateMenu = !showAutoTranslateMenu"
-          >
-            <i class="fa-solid fa-language text-sm"></i>
-            <span>{{ autoTranslateLangs.length > 0 ? `Tự động dịch (${autoTranslateLangs.length})` : 'Tự động dịch...' }}</span>
-            <i class="fa-solid fa-chevron-down text-[0.6rem]"></i>
-          </button>
+    <ArticleEditorHeader
+      v-model:auto-translate-langs="autoTranslateLangs"
+      :is-new="isNew"
+      :saving="saving"
+      :loaded="loaded"
+      :available-languages="availableLanguages"
+      @save="handleSave"
+      @scroll-to-translations="scrollToTranslations"
+    />
 
-          <!-- Popover chọn ngôn ngữ -->
-          <div
-            v-if="showAutoTranslateMenu"
-            class="absolute right-0 top-full mt-1.5 w-60 rounded-xl bg-white border border-[#c8d6c9] shadow-xl p-3 z-30 flex flex-col gap-2"
-          >
-            <div class="flex items-center justify-between border-b border-[#e2ece3] pb-1.5 text-xs">
-              <span class="font-bold text-[#122815]">Chọn ngôn ngữ dịch tự động:</span>
-              <button
-                type="button"
-                class="text-[0.68rem] text-[#2c6e33] hover:underline bg-transparent border-0 cursor-pointer p-0"
-                @click="autoTranslateLangs = autoTranslateLangs.length === availableLanguages.length ? [] : availableLanguages.map(l => l.code)"
-              >
-                {{ autoTranslateLangs.length === availableLanguages.length ? 'Bỏ chọn' : 'Tất cả' }}
-              </button>
-            </div>
-            <div class="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
-              <label
-                v-for="l in availableLanguages"
-                :key="l.code"
-                class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[#f0f7f1] cursor-pointer text-xs font-semibold text-[#122815]"
-              >
-                <input
-                  type="checkbox"
-                  :value="l.code"
-                  v-model="autoTranslateLangs"
-                  class="h-3.5 w-3.5 accent-[#2c6e33] rounded"
-                />
-                <span>{{ l.flag }}</span>
-                <span>{{ l.label }}</span>
-              </label>
-            </div>
-            <p class="m-0 text-[0.68rem] text-[#667768] border-t border-[#e2ece3] pt-1.5">
-              Sau khi lưu bài gốc, hệ thống sẽ tự động kích hoạt dịch sang các ngôn ngữ đã chọn trong nền.
-            </p>
-          </div>
-        </div>
-
-        <!-- Khi chỉnh sửa (!isNew): Nút xem nhanh bản dịch -->
-        <button
-          v-else
-          type="button"
-          class="inline-flex items-center gap-1.5 bg-white border border-[#c8d6c9] text-[#1e4620] hover:bg-[#f0f7f1] px-3.5 py-2.5 rounded-lg text-sm font-bold cursor-pointer transition-colors"
-          @click="scrollToTranslations"
-        >
-          <i class="fa-solid fa-language text-sm"></i>
-          <span>Bản dịch ({{ availableLanguages.length }} ngôn ngữ)</span>
-        </button>
-        <nuxt-link
-          to="/admin/content/articles"
-          class="inline-flex items-center bg-white border border-[#c8d6c9] text-[#667768] no-underline px-4 py-2.5 rounded-lg font-semibold hover:bg-[#f8faf8] transition-colors"
-        >Hủy & Quay lại</nuxt-link>
-        <button
-          class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed"
-          :disabled="saving"
-          @click="handleSave"
-        >
-          <i class="fa-solid fa-floppy-disk"></i>
-          {{ saving ? 'Đang lưu...' : (isNew ? 'Đăng Bài Mới' : 'Cập Nhật Bài Viết') }}
-        </button>
-      </div>
-    </div>
-
-    <div v-if="errorMsg" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
-      <span>{{ errorMsg }}</span>
-      <button v-if="!loading && !saving" type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline whitespace-nowrap" @click="fetchArticle">Thử lại</button>
+    <div v-if="errorMsg || saveError" role="alert" class="bg-danger-bg text-danger px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+      <span>{{ errorMsg || saveError }}</span>
+      <button v-if="errorMsg && !loading && !saving" type="button" class="shrink-0 text-sm font-bold underline text-danger bg-transparent border-0 cursor-pointer p-0 hover:no-underline whitespace-nowrap" @click="fetchArticle">Thử lại</button>
     </div>
 
     <!-- Loading — shaped like the editor grid below, which is `v-else`, so the
@@ -549,149 +202,63 @@ onUnmounted(() => {
          `await fetchArticle()` and a nextTick(), i.e. after the flag has flipped
          and #tinymce-content-editor has actually been rendered. Moving
          initTinyMCE() ahead of the fetch would attach the editor to an element
-         that is about to be unmounted. -->
+         that is about to be unmounted. "Thử lại" brings this placeholder back,
+         so fetchArticle starts the editor again after the same nextTick. -->
     <div v-if="loading" class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5" role="status" aria-busy="true">
       <span class="sr-only">Đang tải nội dung bài viết</span>
-      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-5" aria-hidden="true">
+      <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-5" aria-hidden="true">
         <div class="flex flex-col gap-1.5">
-          <div class="h-3 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-[50px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-40 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-[50px] w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
         <div class="flex flex-col gap-1.5">
-          <div class="h-3 w-48 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-20 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-48 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-20 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
         <div class="flex flex-col gap-2">
-          <div class="h-3 w-56 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="min-h-[700px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-56 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="min-h-[700px] w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
       </div>
-      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-4 self-start" aria-hidden="true">
-        <div class="h-4 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+      <div class="bg-white rounded-xl border border-line p-6 flex flex-col gap-4 self-start" aria-hidden="true">
+        <div class="h-4 w-40 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
         <div v-for="n in 3" :key="'sf-' + n" class="flex flex-col gap-1.5">
-          <div class="h-3 w-28 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-10 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-28 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-10 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
         </div>
         <div class="flex flex-col gap-2">
-          <div class="h-3 w-36 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-40 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-10 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
-          <div class="h-10 w-full rounded-lg bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-3 w-36 rounded bg-line animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-40 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-10 w-full rounded-lg bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-10 w-full rounded-lg bg-line animate-pulse motion-reduce:animate-none"></div>
         </div>
       </div>
     </div>
 
-    <!-- Two-column editor grid -->
+    <!-- Two-column editor grid: the writing column, the publish settings -->
     <div v-else class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5">
-      <!-- Main Form -->
-      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-5">
-        <!-- AI Editorial Toolbar (gợi ý tiêu đề / tóm tắt / soát lỗi) — tách vào
-             ArticleAIPanel.vue. Con truyền kết quả về qua update:title/excerpt. -->
-        <ArticleAIPanel
-          :form-title="form.title"
-          :get-editor-content="getEditorContent"
-          :set-editor-content="setEditorContent"
-          @update:title="form.title = $event"
-          @update:excerpt="form.excerpt = $event"
-        />
-        <div class="flex flex-col gap-1.5">
-          <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Tiêu đề bài viết (*)</label>
-          <input
-            type="text"
-            v-model="form.title"
-            placeholder="Nhập tiêu đề hấp dẫn..."
-            class="w-full px-3.5 py-3 border border-[#c8d6c9] rounded-lg text-[1.1rem] font-bold outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border"
-          />
-        </div>
-
-        <div class="flex flex-col gap-1.5">
-          <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Tóm tắt bài viết (Excerpt)</label>
-          <textarea
-            v-model="form.excerpt"
-            rows="3"
-            placeholder="Nhập đoạn tóm tắt ngắn hiển thị ở trang danh sách..."
-            class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border resize-none font-[inherit]"
-          ></textarea>
-        </div>
-
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center justify-between">
-            <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Nội dung chi tiết (HTML / Editor)</label>
-            <button
-              class="inline-flex items-center gap-1.5 bg-[#f0f7f1] text-[#2c6e33] border border-[#8ed694] px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
-              @click="openMediaPicker('content')"
-            >
-              <i class="fa-regular fa-images"></i> Chèn Ảnh Từ Thư Viện
-            </button>
-          </div>
-          <div :id="TINYMCE_EDITOR_ID" class="min-h-[700px]"></div>
-        </div>
-      </div>
-
-      <!-- Meta Sidebar -->
-      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-4 self-start">
-        <h3 class="text-[1rem] font-bold text-[#122815] m-0">Cấu hình xuất bản</h3>
-
-        <div class="flex flex-col gap-1.5">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Thể loại bài viết (*)</label>
-          <select v-model="form.type" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
-            <option v-for="ct in contentTypes" :key="ct.id" :value="ct.slug">
-              {{ ct.icon ? ct.icon.replace('fa-solid ', '').replace('fa-regular ', '') : '' }} {{ ct.name }}
-            </option>
-          </select>
-        </div>
-
-        <!-- Dynamic category select — populated from DB by type -->
-        <div v-if="availableCategories.length > 0" class="flex flex-col gap-1.5">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">
-            Danh mục
-            <span class="font-normal text-[#667768]">— tùy chọn</span>
-          </label>
-          <select v-model="form.categoryId" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
-            <option :value="null">— Không có danh mục —</option>
-            <template v-for="cat in availableCategories" :key="cat.id">
-              <option v-if="!cat.parentId" :value="cat.id" class="font-bold">{{ cat.name }}</option>
-              <option v-else :value="cat.id">&nbsp;&nbsp;↳ {{ cat.name }}</option>
-            </template>
-          </select>
-        </div>
-
-        <div class="flex flex-col gap-1.5">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Trạng thái (*)</label>
-          <select v-model="form.status" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
-            <option value="published">🟢 Xuất Bản Ngay</option>
-            <option value="draft">🟡 Bản Nháp (Draft)</option>
-            <option value="archived">⚪ Lưu Trữ</option>
-          </select>
-        </div>
-
-        <div class="flex flex-col gap-2">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Ảnh đại diện (Thumbnail)</label>
-          <div v-if="form.thumbnailUrl" class="relative w-full h-40 rounded-lg overflow-hidden border border-[#e2ece3]">
-            <img :src="form.thumbnailUrl" class="w-full h-full object-cover" />
-            <button type="button" aria-label="Xóa ảnh đại diện" class="absolute top-2 right-2 bg-black/70 text-white border-0 w-6 h-6 rounded-full cursor-pointer flex items-center justify-center text-xs" @click="form.thumbnailUrl = ''">
-              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-            </button>
-          </div>
-          <button
-            class="w-full flex items-center justify-center gap-2 bg-[#f0f7f1] border border-[#8ed694] text-[#2c6e33] px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm hover:bg-[#e4f2e5] transition-colors"
-            @click="openMediaPicker('thumbnail')"
-          >
-            <i class="fa-regular fa-images"></i> {{ form.thumbnailUrl ? 'Đổi từ thư viện' : 'Chọn từ thư viện' }}
-          </button>
-          <label
-            class="w-full flex items-center justify-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm transition-colors"
-            :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploadingThumb }"
-          >
-            <i class="fa-regular" :class="uploadingThumb ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i>
-            {{ uploadingThumb ? 'Đang tải...' : 'Upload ảnh' }}
-            <input type="file" accept="image/*" class="sr-only" :disabled="uploadingThumb" @change="uploadThumbnailFromInput" />
-          </label>
-        </div>
-      </div>
+      <ArticleEditorMainForm
+        v-model:title="form.title"
+        v-model:excerpt="form.excerpt"
+        :editor-id="editorId"
+        :get-editor-content="getEditorContent"
+        :set-editor-content="setEditorContent"
+        @insert-media="openMediaPicker('content')"
+      />
+      <ArticleEditorPublishPanel
+        v-model:article-type="form.type"
+        v-model:category-id="form.categoryId"
+        v-model:status="form.status"
+        v-model:thumbnail-url="form.thumbnailUrl"
+        :content-types="contentTypes"
+        :available-categories="availableCategories"
+        :uploading="uploadingThumb"
+        @pick-thumbnail="openMediaPicker('thumbnail')"
+        @upload-thumbnail="uploadThumbnailFromInput"
+      />
     </div>
 
-    <!-- Quản lý Bản dịch Đa ngôn ngữ — tách vào ArticleTranslationPanel.vue.
+    <!-- Quản lý Bản dịch Đa ngôn ngữ — ArticleTranslationPanel.vue.
          Con tự fetch `/api/admin/articles/:id/translations` + poll tiến trình,
          giữ state `articleTranslations` / `availableLanguages` / editing drawer.
          Cha giữ `translationPanelRef` để: (1) đọc `availableLanguages` cho
@@ -707,67 +274,13 @@ onUnmounted(() => {
       :form-title="form.title"
     />
 
-
-    <!-- Modal: Nhắc nhở cập nhật bản dịch khi nội dung Tiếng Việt thay đổi -->
-    <AdminModal
+    <ArticleReTranslateModal
+      v-model:publish-immediately="reTranslatePublishImmediately"
       :open="showReTranslateModal"
-      title="Phát hiện nội dung Tiếng Việt vừa thay đổi!"
-      icon="fa-solid fa-lightbulb"
-      :busy="reTranslateRunning"
+      :running="reTranslateRunning"
+      :available-languages="availableLanguages"
       @close="showReTranslateModal = false"
-    >
-      <div class="flex flex-col gap-4">
-        <p class="m-0 text-xs text-[#667768]">
-          Bài viết gốc Tiếng Việt vừa được cập nhật nội dung mới. Bạn có muốn AI tự động cập nhật và dịch lại toàn bộ các ngôn ngữ quốc tế khác không?
-        </p>
-
-        <!-- Target languages preview -->
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-bold text-[#122815]">Các ngôn ngữ sẽ được đồng bộ hóa lại:</label>
-          <div class="flex flex-wrap gap-1.5">
-            <span
-              v-for="l in availableLanguages"
-              :key="l.code"
-              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#f0f7f1] border border-[#c8dcc9] text-xs font-bold text-[#1e4620]"
-            >
-              <span>{{ l.flag }}</span>
-              <span>{{ l.label }}</span>
-            </span>
-          </div>
-        </div>
-
-        <!-- Publish Option -->
-        <label class="flex items-center gap-2.5 p-3 rounded-xl bg-[#fcfdfc] border border-[#eef2ee] cursor-pointer text-xs text-[#1E251C]">
-          <input
-            type="checkbox"
-            v-model="reTranslatePublishImmediately"
-            class="h-4 w-4 accent-[#2c6e33] rounded"
-          />
-          <div class="flex flex-col">
-            <span class="font-bold">Tự động xuất bản luôn các bản dịch mới</span>
-            <span class="text-[0.68rem] text-[#667768]">Nếu không chọn, bản dịch sẽ lưu ở dạng Bản nháp AI để rà soát trước.</span>
-          </div>
-        </label>
-
-      </div>
-      <template #footer>
-          <button
-            type="button"
-            class="px-4 py-2.5 rounded-xl border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-50 cursor-pointer"
-            @click="showReTranslateModal = false"
-          >
-            Để sau / Giữ bản dịch hiện tại
-          </button>
-          <button
-            type="button"
-            class="px-5 py-2.5 rounded-xl bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-extrabold cursor-pointer border-none flex items-center gap-2 shadow-sm transition-all hover:-translate-y-0.5 disabled:opacity-50"
-            :disabled="reTranslateRunning"
-            @click="confirmReTranslation"
-          >
-            <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="reTranslateRunning ? 'animate-spin' : ''" aria-hidden="true"></i>
-            <span>{{ reTranslateRunning ? 'Đang kích hoạt...' : '⚡ Dịch lại tất cả ngay' }}</span>
-          </button>
-      </template>
-    </AdminModal>
+      @confirm="confirmReTranslation"
+    />
   </div>
 </template>

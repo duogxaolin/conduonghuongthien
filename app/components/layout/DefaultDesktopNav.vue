@@ -20,7 +20,7 @@
     thêm thật nhiều mục vẫn có thể vượt cả 1024px. Đó là tính chất có sẵn của
     một thanh ngang cao cố định, không phải thứ breakpoint này hứa sẽ chặn.
   -->
-  <div class="hidden lg:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
+  <div class="hidden lg:flex bg-white border-t border-surface-tint border-b border-line h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
     <div class="container w-full overflow-x-auto xl:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <nav class="desktop-nav flex w-max min-w-full" aria-label="Điều hướng chính" @click="onNavClick" @keydown.escape="$emit('toggle-mobile-menu')">
         <ul class="flex list-none w-full justify-start lg:justify-between items-center gap-2 lg:gap-1 flex-nowrap">
@@ -29,7 +29,7 @@
             <template v-if="item.children && item.children.length">
               <!-- Bấm mục con (link thật) → reset dropdown toggle để đóng lại sau khi navigate. -->
               <div
-                class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]"
+                class="nav-item no-underline text-brand-900 font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-surface-tint hover:text-[#143516]"
                 :aria-haspopup="true"
                 :role="item.url === '#' ? 'button' : undefined"
                 :tabindex="item.url === '#' ? 0 : undefined"
@@ -47,11 +47,11 @@
                 <li v-for="child in item.children" :key="child.id">
                   <component
                     :is="shouldOpenNewTab(child) ? 'a' : NuxtLink"
-                    v-bind="shouldOpenNewTab(child) ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'active-class': 'bg-[#e8f2e6] text-[#1e4620] font-bold', 'aria-current-value': 'page' }"
+                    v-bind="shouldOpenNewTab(child) ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'active-class': 'bg-line text-[#1e4620] font-bold', 'aria-current-value': 'page' }"
                     :title="navItemLabel(child)"
-                    class="group/child flex items-start gap-2.5 px-3 py-2 no-underline text-[#2d4a2d] text-[0.85rem] font-semibold leading-snug rounded-lg transition-colors duration-150 hover:bg-[#eff6ee] hover:text-[#1e4620] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
+                    class="group/child flex items-start gap-2.5 px-3 py-2 no-underline text-[#2d4a2d] text-[0.85rem] font-semibold leading-snug rounded-lg transition-colors duration-150 hover:bg-surface-tint hover:text-brand-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                   >
-                    <span class="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#7CB342]/50 transition-all duration-150 group-hover/child:bg-[#2c6e33] group-hover/child:scale-125" aria-hidden="true"></span>
+                    <span class="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-accent/50 transition-all duration-150 group-hover/child:bg-brand-700 group-hover/child:scale-125" aria-hidden="true"></span>
                     <span class="line-clamp-2">{{ navItemLabel(child) }}</span>
                   </component>
                 </li>
@@ -62,7 +62,7 @@
               <component
                 :is="shouldOpenNewTab(item) ? 'a' : NuxtLink"
                 v-bind="shouldOpenNewTab(item) ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'active-item bg-[#e4f0e2] font-extrabold', 'aria-current-value': 'page' }"
-                class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap relative transition-all hover:bg-[#f0f6ef] hover:text-[#143516]"
+                class="nav-item no-underline text-brand-900 font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap relative transition-all hover:bg-surface-tint hover:text-[#143516]"
               >{{ navItemLabel(item) }}</component>
             </template>
           </li>

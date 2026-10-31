@@ -1,24 +1,15 @@
 <script setup lang="ts">
 import type { ActivityRetentionStatus } from '~/types/admin-api'
+import type { AdminActivityLogItem, AdminActivityLogsResponse, AdminUsersResponse } from '~/types/admin-users-api'
 /**
  * System-wide activity log. Complements /admin/profile, which only shows the
  * signed-in account's own trail: this page reads every account's, so it is
  * gated on `users.read` server-side and hidden from the menu without it.
+ *
+ * Row type derived from the handler (`AdminActivityLogItem`); `phase` is `meta.phase` — the
+ * start and finish rows of a manual retention run, null on every other row.
  */
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
-
-type LogItem = {
-  id: number
-  userId: number | null
-  username: string | null
-  action: string
-  resource: string | null
-  resourceId: number | null
-  createdAt: string
-  ip: string | null
-  userAgent: string | null
-  mfaMethod: string | null
-}
 
 /**
  * Nhãn của bộ lọc là một hợp đồng HAI CHIỀU với những chuỗi mà máy chủ thật sự
@@ -103,8 +94,10 @@ const MFA_METHOD_LABELS: Record<string, string> = {
   totp: 'ứng dụng xác thực', email_otp: 'mã qua email',
   second_password: 'mật khẩu cấp 2', recovery_code: 'mã dự phòng',
 }
+/** `meta.phase` of a manual retention run's two rows. Only these get a label; any other value is not printed raw. */
+const PHASE_LABELS: Record<string, string> = { started: 'bắt đầu', finished: 'kết thúc' }
 
-const items = ref<LogItem[]>([])
+const items = ref<AdminActivityLogItem[]>([])
 const loading = ref(true)
 const error = ref('')
 const page = ref(1)
@@ -123,22 +116,30 @@ const retention = ref<ActivityRetentionStatus | null>(null)
 
 async function loadAccounts() {
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ users?: Array<{ id: number; username: string }> }>)('/api/admin/users')
+    const res = await adminFetch<AdminUsersResponse>('/api/admin/users')
     accounts.value = (res.users ?? []).map(item => ({ id: item.id, username: item.username }))
   } catch { accounts.value = [] }
 }
 
 async function loadRetention() {
-  try { retention.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ActivityRetentionStatus>)('/api/admin/activity-logs/retention') } catch { retention.value = null }
+  try { retention.value = await adminFetch<ActivityRetentionStatus>('/api/admin/activity-logs/retention') } catch { retention.value = null }
 }
 
+/**
+ * Only the LATEST load writes rows, totals, error and loading (the ticket of
+ * docs/decisions/fetch-rollout-d-fetch.md): filter by an account, then "Xoá lọc" before the
+ * first answer is back, and the older answer landing last used to show one account's trail
+ * under cleared filters (tests/admin-fetch-rollout-activity.test.ts).
+ */
+let listRequest = 0
 async function load(next = page.value) {
+  const ticket = ++listRequest
   loading.value = true
   error.value = ''
   page.value = next
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ items?: LogItem[]; total?: number; totalPages?: number }>)(`/api/admin/activity-logs`, {
-      params: {
+    const res = await adminFetch<AdminActivityLogsResponse>(`/api/admin/activity-logs`, {
+      query: {
         page: next,
         pageSize,
         ...(filterUserId.value ? { userId: filterUserId.value } : {}),
@@ -151,14 +152,16 @@ async function load(next = page.value) {
         ...(filterTo.value ? { to: filterTo.value } : {}),
       },
     })
+    if (ticket !== listRequest) return
     items.value = res.items ?? []
     total.value = res.total ?? 0
     totalPages.value = res.totalPages ?? 1
   } catch (err: unknown) {
+    if (ticket !== listRequest) return
     error.value = errorMessage(err, 'Không tải được lịch sử hoạt động.')
     items.value = []
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
@@ -173,12 +176,16 @@ function goPage(next: number) {
   return load(next)
 }
 
-function actionLabel(item: LogItem) {
+function actionLabel(item: AdminActivityLogItem) {
   const action = ACTION_LABELS[item.action] ?? item.action
   const resource = item.resource ? (RESOURCE_LABELS[item.resource] ?? item.resource) : ''
-  return resource ? `${action} · ${resource}` : action
+  const label = resource ? `${action} · ${resource}` : action
+  const phase = item.phase ? PHASE_LABELS[item.phase] : undefined
+  return phase ? `${label} (${phase})` : label
 }
-function formatWhen(value: string) {
+/** `created_at` is nullable: `new Date(null)` is a valid 1970 date, so null reads "—". */
+function formatWhen(value: string | null) {
+  if (!value) return '—'
   const d = new Date(value)
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString('vi-VN')
 }
@@ -211,73 +218,75 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
 <template>
   <div class="flex flex-col gap-5">
     <header>
-      <h1 class="m-0 text-[1.3rem] font-extrabold text-[#122815]">Lịch sử truy cập &amp; hoạt động</h1>
-      <p class="m-0 mt-1 text-sm text-[#667768]">Toàn bộ lượt đăng nhập và thao tác của mọi tài khoản quản trị. Mỗi lần xem trang này cũng được ghi vào nhật ký.</p>
+      <h1 class="m-0 text-[1.3rem] font-extrabold text-brand-950">Lịch sử truy cập &amp; hoạt động</h1>
+      <p class="m-0 mt-1 text-sm text-ink-muted">Toàn bộ lượt đăng nhập và thao tác của mọi tài khoản quản trị. Mỗi lần xem trang này cũng được ghi vào nhật ký.</p>
     </header>
 
     <!-- Retention status: the purge needs an external cron, so its absence is surfaced here. -->
-    <section v-if="retention" class="rounded-xl border border-[#e2ece3] bg-white p-4">
+    <section v-if="retention" class="rounded-xl border border-line bg-white p-4">
       <div class="flex flex-wrap gap-x-8 gap-y-3">
-        <div><p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Tổng bản ghi</p><p class="m-0 mt-0.5 text-lg font-extrabold text-[#122815]">{{ retention.total.toLocaleString('vi-VN') }}</p></div>
-        <div><p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Bản ghi cũ nhất</p><p class="m-0 mt-0.5 text-lg font-extrabold text-[#122815]">{{ formatDay(retention.oldest) }}</p></div>
-        <div><p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Thời hạn lưu</p><p class="m-0 mt-0.5 text-lg font-extrabold text-[#122815]">{{ retention.purgeDisabled ? 'Không tự xoá' : `${retention.retentionDays} ngày` }}</p></div>
-        <div v-if="!retention.purgeDisabled"><p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Quá hạn chưa xoá</p><p class="m-0 mt-0.5 text-lg font-extrabold" :class="retention.purgeOverdue ? 'text-[#a32924]' : 'text-[#1e4620]'">{{ retention.overdue.toLocaleString('vi-VN') }}</p></div>
+        <div><p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Tổng bản ghi</p><p class="m-0 mt-0.5 text-lg font-extrabold text-brand-950">{{ retention.total.toLocaleString('vi-VN') }}</p></div>
+        <div><p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Bản ghi cũ nhất</p><p class="m-0 mt-0.5 text-lg font-extrabold text-brand-950">{{ formatDay(retention.oldest) }}</p></div>
+        <div><p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Thời hạn lưu</p><p class="m-0 mt-0.5 text-lg font-extrabold text-brand-950">{{ retention.purgeDisabled ? 'Không tự xoá' : `${retention.retentionDays} ngày` }}</p></div>
+        <div v-if="!retention.purgeDisabled"><p class="m-0 text-xs font-bold uppercase tracking-wide text-ink-muted">Quá hạn chưa xoá</p><p class="m-0 mt-0.5 text-lg font-extrabold" :class="retention.purgeOverdue ? 'text-[#a32924]' : 'text-[#1e4620]'">{{ retention.overdue.toLocaleString('vi-VN') }}</p></div>
       </div>
 
-      <div v-if="retention.purgeOverdue" class="mt-3 flex items-start gap-2 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3.5 py-2.5 text-[0.82rem] text-[#8a6412]" role="status">
+      <div v-if="retention.purgeOverdue" class="mt-3 flex items-start gap-2 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3.5 py-2.5 text-[0.82rem] text-warn-ink" role="status">
         <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
         <span>Có {{ retention.overdue.toLocaleString('vi-VN') }} bản ghi vượt thời hạn {{ retention.retentionDays }} ngày nhưng chưa bị xoá. Tác vụ dọn dẹp không tự chạy — cần đặt cron trên máy chủ: <code class="rounded bg-white px-1.5 py-0.5 font-mono">{{ retention.command }}</code></span>
       </div>
-      <div v-else-if="retention.purgeDisabled" class="mt-3 flex items-start gap-2 rounded-lg border border-[#e2ece3] bg-[#fafcfa] px-3.5 py-2.5 text-[0.82rem] text-[#667768]" role="status">
+      <div v-else-if="retention.purgeDisabled" class="mt-3 flex items-start gap-2 rounded-lg border border-line bg-surface px-3.5 py-2.5 text-[0.82rem] text-ink-muted" role="status">
         <i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true"></i>
         <span>Đang cấu hình giữ nhật ký vô thời hạn (<code class="font-mono">ACTIVITY_LOG_RETENTION_DAYS=0</code>). Bảng sẽ lớn dần và không có gì tự xoá.</span>
       </div>
-      <div v-else class="mt-3 flex items-start gap-2 rounded-lg border border-[#cce5cd] bg-[#eef7ee] px-3.5 py-2.5 text-[0.82rem] text-[#1e4620]" role="status">
+      <div v-else class="mt-3 flex items-start gap-2 rounded-lg border border-[#cce5cd] bg-surface-tint px-3.5 py-2.5 text-[0.82rem] text-brand-900" role="status">
         <i class="fa-solid fa-circle-check mt-0.5" aria-hidden="true"></i>
         <span>Không có bản ghi nào quá hạn {{ retention.retentionDays }} ngày. Tác vụ dọn dẹp <code class="rounded bg-white px-1.5 py-0.5 font-mono">{{ retention.command }}</code> đang hoạt động đúng.</span>
       </div>
     </section>
 
     <!-- Filters -->
-    <div class="flex flex-col gap-3 rounded-xl border border-[#e2ece3] bg-white p-4 sm:flex-row sm:flex-wrap sm:items-end">
+    <div class="flex flex-col gap-3 rounded-xl border border-line bg-white p-4 sm:flex-row sm:flex-wrap sm:items-end">
       <label class="text-sm font-bold">Tài khoản
-        <select v-model="filterUserId" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]">
+        <select v-model="filterUserId" class="mt-1 w-full rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700">
           <option value="">Tất cả</option>
           <option v-for="account in accounts" :key="account.id" :value="String(account.id)">{{ account.username }}</option>
         </select>
       </label>
       <label class="text-sm font-bold">Hoạt động
-        <select v-model="filterAction" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]">
+        <select v-model="filterAction" class="mt-1 w-full rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700">
           <option value="">Tất cả</option>
           <option v-for="(label, key) in ACTION_LABELS" :key="key" :value="key">{{ label }}</option>
         </select>
       </label>
       <label class="text-sm font-bold">Đối tượng
-        <select v-model="filterResource" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]">
+        <select v-model="filterResource" class="mt-1 w-full rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700">
           <option value="">Tất cả</option>
           <option v-for="(label, key) in RESOURCE_LABELS" :key="key" :value="key">{{ label }}</option>
         </select>
       </label>
-      <label class="text-sm font-bold">Từ ngày<input v-model="filterFrom" type="date" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]" /></label>
-      <label class="text-sm font-bold">Đến ngày<input v-model="filterTo" type="date" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]" /></label>
+      <label class="text-sm font-bold">Từ ngày<input v-model="filterFrom" type="date" class="mt-1 w-full rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700" /></label>
+      <label class="text-sm font-bold">Đến ngày<input v-model="filterTo" type="date" class="mt-1 w-full rounded-lg border border-line-strong px-3 py-2.5 font-normal outline-none focus:border-brand-700" /></label>
       <div class="flex gap-2">
-        <button type="button" class="rounded-lg bg-[#1e4620] px-4 py-2.5 font-bold text-white hover:bg-[#2c6e33]" @click="applyFilters">Lọc</button>
-        <button type="button" class="rounded-lg border border-[#c8d6c9] px-4 py-2.5 font-bold text-[#2c6e33] hover:bg-[#f0f7f1]" @click="resetFilters">Xoá lọc</button>
+        <button type="button" class="rounded-lg bg-brand-900 px-4 py-2.5 font-bold text-white hover:bg-brand-700" @click="applyFilters">Lọc</button>
+        <button type="button" class="rounded-lg border border-line-strong px-4 py-2.5 font-bold text-brand-700 hover:bg-surface-tint" @click="resetFilters">Xoá lọc</button>
       </div>
     </div>
 
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-[#4A6741]" @click="load()">thử lại</button>.</div>
-
+    <!-- Loading / error / empty / rows: ONE chain — the alert used to sit outside it, so a
+         failed load also read "Không có bản ghi nào khớp điều kiện lọc." under it. -->
     <SkeletonTable v-if="loading" label="Đang tải lịch sử hoạt động" :rows="8" :cols="6" />
 
-    <div v-else-if="!items.length" class="rounded-xl border border-[#e2ece3] bg-white p-12 text-center">
-      <i class="fa-solid fa-clock-rotate-left mb-3 text-3xl text-[#c8d6c9]" aria-hidden="true"></i>
-      <p class="m-0 font-semibold text-[#667768]">Không có bản ghi nào khớp điều kiện lọc.</p>
+    <div v-else-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-brand-600" @click="load()">thử lại</button>.</div>
+
+    <div v-else-if="!items.length" class="rounded-xl border border-line bg-white p-12 text-center">
+      <i class="fa-solid fa-clock-rotate-left mb-3 text-3xl text-line-strong" aria-hidden="true"></i>
+      <p class="m-0 font-semibold text-ink-muted">Không có bản ghi nào khớp điều kiện lọc.</p>
     </div>
 
-    <div v-else class="overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs">
+    <div v-else class="overflow-hidden rounded-xl border border-line bg-white shadow-xs">
       <!-- Mobile Card View: Thẻ hoạt động dễ đọc trên điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <div
           v-for="item in items"
           :key="'m-'+item.id"
@@ -285,28 +294,28 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
         >
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-1.5 min-w-0">
-              <i class="fa-solid fa-user-clock text-[#2c6e33] text-xs" aria-hidden="true"></i>
-              <span class="font-bold text-[#122815] text-[0.88rem] truncate">
+              <i class="fa-solid fa-user-clock text-brand-700 text-xs" aria-hidden="true"></i>
+              <span class="font-bold text-brand-950 text-[0.88rem] truncate">
                 {{ item.username || (item.userId ? `#${item.userId}` : 'Hệ thống') }}
               </span>
-              <span v-if="item.userId && !item.username" class="rounded border border-[#c8d6c9] px-1 py-px text-[0.65rem] text-[#667768]">đã xoá</span>
+              <span v-if="item.userId && !item.username" class="rounded border border-line-strong px-1 py-px text-[0.65rem] text-ink-muted">đã xoá</span>
             </div>
-            <span class="text-[0.72rem] text-[#667768] shrink-0">{{ formatWhen(item.createdAt) }}</span>
+            <span class="text-[0.72rem] text-ink-muted shrink-0">{{ formatWhen(item.createdAt) }}</span>
           </div>
 
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="text-[0.82rem] text-[#3d4a3e]">
-              <span class="font-semibold text-[#1e4620]">{{ actionLabel(item) }}</span>
-              <span v-if="item.resourceId" class="text-[#667768] text-xs"> #{{ item.resourceId }}</span>
+              <span class="font-semibold text-brand-900">{{ actionLabel(item) }}</span>
+              <span v-if="item.resourceId" class="text-ink-muted text-xs"> #{{ item.resourceId }}</span>
             </div>
-            <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 rounded-full border border-[#cce5cd] bg-[#eef7ee] px-2 py-0.5 text-[0.7rem] font-bold text-[#1e4620]">
+            <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 rounded-full border border-[#cce5cd] bg-surface-tint px-2 py-0.5 text-[0.7rem] font-bold text-brand-900">
               <i class="fa-solid fa-shield-halved text-[0.65rem]" aria-hidden="true"></i>
               {{ MFA_METHOD_LABELS[item.mfaMethod] ?? item.mfaMethod }}
             </span>
           </div>
 
-          <div class="flex items-center justify-between text-[0.72rem] text-[#8a9a8c] pt-1.5 border-t border-[#f4f7f4]">
-            <code class="font-mono bg-[#f4f7f4] px-1.5 py-0.5 rounded text-[#445546]">{{ item.ip || '—' }}</code>
+          <div class="flex items-center justify-between text-[0.72rem] text-ink-faint pt-1.5 border-t border-surface">
+            <code class="font-mono bg-surface px-1.5 py-0.5 rounded text-[#445546]">{{ item.ip || '—' }}</code>
             <span class="truncate max-w-[180px]">{{ shortAgent(item.userAgent) }}</span>
           </div>
         </div>
@@ -316,7 +325,7 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
       <div class="hidden md:block overflow-x-auto">
         <table class="w-full min-w-[860px] border-collapse text-left text-[0.84rem]">
           <caption class="sr-only">Lịch sử truy cập và hoạt động của mọi tài khoản, mới nhất trước</caption>
-          <thead class="bg-[#f4f7f4] text-xs uppercase tracking-wide text-[#667768]">
+          <thead class="bg-surface text-xs uppercase tracking-wide text-ink-muted">
             <tr>
               <th scope="col" class="whitespace-nowrap px-3.5 py-3">Thời điểm</th>
               <th scope="col" class="px-3.5 py-3">Tài khoản</th>
@@ -327,20 +336,20 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in items" :key="item.id" class="border-t border-[#eef2ee] transition-colors hover:bg-[#fafcfa]">
+            <tr v-for="item in items" :key="item.id" class="border-t border-surface-tint transition-colors hover:bg-surface">
               <td class="whitespace-nowrap px-3.5 py-2.5 text-[#3d4a3e]">{{ formatWhen(item.createdAt) }}</td>
-              <td class="px-3.5 py-2.5 font-semibold text-[#122815]">
+              <td class="px-3.5 py-2.5 font-semibold text-brand-950">
                 {{ item.username || (item.userId ? `#${item.userId}` : 'Hệ thống') }}
-                <span v-if="item.userId && !item.username" class="ml-1 rounded border border-[#c8d6c9] px-1.5 py-0.5 text-[0.7rem] font-normal text-[#667768]">đã xoá</span>
+                <span v-if="item.userId && !item.username" class="ml-1 rounded border border-line-strong px-1.5 py-0.5 text-[0.7rem] font-normal text-ink-muted">đã xoá</span>
               </td>
               <td class="px-3.5 py-2.5 text-[#3d4a3e]">
                 {{ actionLabel(item) }}
-                <span v-if="item.resourceId" class="text-[#667768]"> #{{ item.resourceId }}</span>
+                <span v-if="item.resourceId" class="text-ink-muted"> #{{ item.resourceId }}</span>
               </td>
-              <td class="px-3.5 py-2.5 font-mono text-[0.8rem] text-[#667768]">{{ item.ip || '—' }}</td>
-              <td class="px-3.5 py-2.5 text-[#667768]">{{ shortAgent(item.userAgent) }}</td>
-              <td class="px-3.5 py-2.5 text-[#667768]">
-                <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 rounded-full border border-[#cce5cd] bg-[#eef7ee] px-2 py-0.5 text-[0.72rem] font-bold text-[#1e4620]">
+              <td class="px-3.5 py-2.5 font-mono text-[0.8rem] text-ink-muted">{{ item.ip || '—' }}</td>
+              <td class="px-3.5 py-2.5 text-ink-muted">{{ shortAgent(item.userAgent) }}</td>
+              <td class="px-3.5 py-2.5 text-ink-muted">
+                <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 rounded-full border border-[#cce5cd] bg-surface-tint px-2 py-0.5 text-[0.72rem] font-bold text-brand-900">
                   <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
                   {{ MFA_METHOD_LABELS[item.mfaMethod] ?? item.mfaMethod }}
                 </span>
@@ -351,7 +360,7 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
         </table>
       </div>
 
-      <nav class="border-t border-[#eef2ee] p-4" aria-label="Phân trang">
+      <nav class="border-t border-surface-tint p-4" aria-label="Phân trang">
         <AdminPagination
           :page="page"
           :total-pages="totalPages"

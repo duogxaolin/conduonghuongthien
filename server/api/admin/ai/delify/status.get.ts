@@ -3,14 +3,53 @@ import { getDb } from '../../../../utils/db'
 import { aiProviders, aiUsageLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { decryptAiSecret } from '../../../../utils/ai/crypto'
+import { DelifyUsageError, fetchDelifyUsage, type DelifyUsagePath } from '../../../../utils/ai/delify-usage'
+import { checkProviderBaseUrl } from '../../../../utils/ai/provider-url'
 
 const ALLOWED_PERIODS = new Set(['1h', '24h', '7d', '30d', 'all'])
 
+type PlainValue = string | number | boolean | null
+const HISTORY_FIELDS = ['timestamp', 'model', 'status', 'cost', 'input', 'output', 'tok', 'tokS']
+const SUMMARY_ITEM_FIELDS = ['model', 'input', 'output', 'cacheRead', 'requests', 'cost']
+const SUMMARY_TOTAL_FIELDS = ['input', 'output', 'cacheRead', 'requests', 'cost']
+const SUMMARY_PEAK_FIELDS = ['peakTpm', 'peakRpm', 'peakTokS']
+const MODEL_FIELDS = ['name', 'input', 'output', 'cached']
+
 /**
- * Fetch real-time status, budget, and receipts breakdown from Delify Router API.
- * Calls:
- * 1. https://router.delify.vn/api/usage/key?key=... (key info, total budget, used, remaining)
- * 2. https://router.delify.vn/api/usage/key/receipts?key=...&period=... (breakdown by period)
+ * The fields of `value` named in `fields` whose value is plain (string, number,
+ * boolean, null); null when `value` is not an object. The receipts answer used to be
+ * passed on as it came — anything the router adds (the key it was asked with, a
+ * request URL carrying it) reached everyone with `ai.read`. Only what the dashboard
+ * shows (`AiDashboardTab.vue`) goes through now.
+ */
+function plainFields(value: unknown, fields: readonly string[]): Record<string, PlainValue> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const picked: Record<string, PlainValue> = {}
+  for (const field of fields) {
+    const item: unknown = Object.hasOwn(value, field) ? (value as Record<string, unknown>)[field] : undefined
+    if (item === null || typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') picked[field] = item
+  }
+  return picked
+}
+const plainList = (value: unknown, fields: readonly string[], max = Infinity) =>
+  (Array.isArray(value) ? value.slice(0, max) : []).map(item => plainFields(item, fields)).filter(item => item !== null)
+
+function periodSummary(summary: unknown) {
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return null
+  const { items, totals } = summary as { items?: unknown, totals?: unknown }
+  const pickedTotals = plainFields(totals, SUMMARY_TOTAL_FIELDS)
+  return {
+    ...(Array.isArray(items) ? { items: plainList(items, SUMMARY_ITEM_FIELDS) } : {}),
+    ...(pickedTotals ? { totals: pickedTotals } : {}),
+    ...plainFields(summary, SUMMARY_PEAK_FIELDS),
+  }
+}
+
+/**
+ * Fetch real-time status, budget, and receipts breakdown from Delify Router API, on the
+ * delify provider's host, through `fetchDelifyUsage` (outbound.ts — never a bare fetch):
+ * 1. /api/usage/key (key info, total budget, used, remaining)
+ * 2. /api/usage/key/receipts?period=... (breakdown by period)
  */
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -51,9 +90,8 @@ export default defineEventHandler(async (event) => {
   }
 
   // 3. Query Delify Key endpoint and Receipts endpoint in parallel
-  const encodedKey = encodeURIComponent(apiKey)
-  const keyUrl = `https://router.delify.vn/api/usage/key?key=${encodedKey}`
-  const receiptsUrl = `https://router.delify.vn/api/usage/key/receipts?key=${encodedKey}&period=${period}&page=1&pageSize=20`
+  const ask = (path: DelifyUsagePath, params?: Record<string, string>) =>
+    fetchDelifyUsage({ baseUrl: delifyProvider.baseUrl, secret: apiKey, path, params })
 
   interface DelifyKeyData {
     name?: string
@@ -72,68 +110,35 @@ export default defineEventHandler(async (event) => {
     expiresAt?: string | null
   }
 
+  // `summary`, `history`, `availableModels` — read field by field below (`plainFields`).
   interface DelifyReceiptsData {
-    period?: string
-    summary?: {
-      items?: Array<{
-        model: string
-        input: number
-        output: number
-        cacheRead?: number
-        requests: number
-        cost: number
-      }>
-      totals?: {
-        input: number
-        output: number
-        cacheRead?: number
-        requests: number
-        cost: number
-      }
-      peakTpm?: number
-      peakRpm?: number
-      peakTokS?: number
-    }
-    history?: Array<{
-      timestamp: string
-      model: string
-      status: string
-      cost: number
-      input: number
-      output: number
-      tok: number
-      tokS?: number
-    }>
-    availableModels?: Array<{
-      name: string
-      input: number
-      output: number
-      cached?: number
-    }>
+    summary?: unknown
+    history?: unknown
+    availableModels?: unknown
   }
 
   let keyData: DelifyKeyData | null = null
   let receiptsData: DelifyReceiptsData | null = null
   let fetchError: string | null = null
 
-  try {
-    const [keyResp, receiptsResp] = await Promise.all([
-      fetch(keyUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10_000) }),
-      fetch(receiptsUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10_000) }),
-    ])
+  // Settled separately: the key card needs only the key answer, and a bad receipts
+  // answer (down, not JSON) must not take it down — the breakdown is just left empty.
+  const [keyResult, receiptsResult] = await Promise.allSettled([
+    ask('/api/usage/key'),
+    ask('/api/usage/key/receipts', { period, page: '1', pageSize: '20' }),
+  ])
 
-    if (keyResp.ok) {
-      keyData = (await keyResp.json()) as DelifyKeyData
-    } else {
-      fetchError = `Key API trả HTTP ${keyResp.status}`
-    }
+  if (keyResult.status === 'rejected') {
+    // A fixed sentence (the old one appended the driver's own message).
+    fetchError = keyResult.reason instanceof DelifyUsageError ? keyResult.reason.message : 'Không thể kết nối tới Delify Router API.'
+  } else if (keyResult.value.data && typeof keyResult.value.data === 'object') {
+    keyData = keyResult.value.data as DelifyKeyData
+  } else {
+    fetchError = `Key API trả HTTP ${keyResult.value.status}`
+  }
 
-    if (receiptsResp.ok) {
-      receiptsData = (await receiptsResp.json()) as DelifyReceiptsData
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Lỗi kết nối'
-    fetchError = `Không thể kết nối tới Delify API: ${msg}`
+  if (receiptsResult.status === 'fulfilled' && receiptsResult.value.data && typeof receiptsResult.value.data === 'object') {
+    receiptsData = receiptsResult.value.data as DelifyReceiptsData
   }
 
   if (!keyData) {
@@ -163,10 +168,13 @@ export default defineEventHandler(async (event) => {
   return {
     ok: true,
     configured: true,
+    // The host actually asked (the delify row's base URL) — the dashboard shows it.
+    host: ((target) => (target.ok ? target.hostname : null))(checkProviderBaseUrl(delifyProvider.baseUrl)),
+    // The router's own fields, each only in the type the card shows (`plainFields` above, for the same reason).
     keyInfo: {
-      name: keyData.name ?? 'Delify Key',
-      groupName: keyData.groupName ?? 'Default',
-      active: keyData.active ?? false,
+      name: typeof keyData.name === 'string' ? keyData.name : 'Delify Key',
+      groupName: typeof keyData.groupName === 'string' ? keyData.groupName : 'Default',
+      active: keyData.active === true,
       budgetUsd,
       budgetVnd,
       usedCostUsd,
@@ -174,13 +182,13 @@ export default defineEventHandler(async (event) => {
       remainingBudgetUsd,
       remainingBudgetVnd,
       totalRequests,
-      allowedModels: keyData.allowedModels ?? [],
-      rpm: keyData.rpm ?? null,
-      windowStartedAt: keyData.windowStartedAt ?? null,
+      allowedModels: Array.isArray(keyData.allowedModels) ? keyData.allowedModels.filter((model): model is string => typeof model === 'string') : [],
+      rpm: typeof keyData.rpm === 'number' ? keyData.rpm : null,
+      windowStartedAt: typeof keyData.windowStartedAt === 'string' ? keyData.windowStartedAt : null,
     },
     period,
-    periodSummary: receiptsData?.summary ?? null,
-    recentHistory: (receiptsData?.history ?? []).slice(0, 10),
-    availableModels: receiptsData?.availableModels ?? [],
+    periodSummary: periodSummary(receiptsData?.summary),
+    recentHistory: plainList(receiptsData?.history, HISTORY_FIELDS, 10),
+    availableModels: plainList(receiptsData?.availableModels, MODEL_FIELDS),
   }
 })

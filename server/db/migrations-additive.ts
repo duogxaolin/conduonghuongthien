@@ -819,6 +819,10 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureColumn(db, database, 'article_comments', 'flag_reason', 'VARCHAR(255) NULL')
   await ensureColumn(db, database, 'chat_messages', 'is_flagged', 'TINYINT(1) NOT NULL DEFAULT 0')
   await ensureColumn(db, database, 'chat_messages', 'flag_reason', 'VARCHAR(255) NULL')
+  // Dấu "ẩn bởi kiểm duyệt tự động" của tin livestream — "Bỏ ẩn" trên hàng chờ duyệt chỉ
+  // hiện lại tin mang đúng dấu đó (`restoreAutoHidden`). Không điền cho hàng cũ: tin đã ẩn
+  // trước cột này không phân biệt được với tin cán bộ gỡ tay, nên giữ NULL = không hiện lại.
+  await ensureColumn(db, database, 'livestream_messages', 'flag_reason', 'VARCHAR(255) NULL AFTER `is_deleted`')
   await ensureColumn(db, database, 'ai_moderation_queue', 'context_title', 'VARCHAR(512) NULL')
   await ensureColumn(db, database, 'ai_moderation_queue', 'context_url', 'VARCHAR(512) NULL')
   // ── Multilingual: languages + lang_translations + article_translations ──

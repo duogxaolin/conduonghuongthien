@@ -43,37 +43,18 @@ import { and, desc, eq } from 'drizzle-orm'
 import { activityLogs, livestreamMessages, livestreamSessions } from '../db/schema'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import { getDb, type Database } from '../utils/db'
-import { effectiveDisplayName, publicNameSnapshot } from '../utils/display-name'
-import { hasForbiddenControlChars } from '../utils/plain-text'
+import { publicNameSnapshot } from '../utils/display-name'
 import { finitePositive } from '../utils/query-number'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { recordRateLimitHit, type RateLimitDeps, type RateLimitRule } from '../utils/rate-limit-store'
 import { broadcastToSession, SSE_EVENT_MESSAGE, SSE_EVENT_REMOVAL } from '../utils/sse-manager'
+import { snapshotDisplayName, validateChatContent, type ChatMessage, type ChatSender } from './livestream-chat-content'
+import { createModerationRegexBudget } from './moderation-regex'
 import { checkAndModerateContent, fastPreModerate } from './moderation-worker'
 
-/**
- * Độ dài tối đa của một tin nhắn — và nó **phải** khớp `varchar(200)` của cột
- * `livestream_messages.content`.
- *
- * Hai con số này sống ở hai tệp khác nhau và không có gì buộc chúng khớp: MySQL ở
- * chế độ mặc định (`STRICT_TRANS_TABLES`) **từ chối** câu INSERT dài hơn cột chứ
- * không cắt, nên một hằng số lớn hơn cột biến mọi tin nhắn dài thành lỗi 500 —
- * người gửi thấy ô chat của mình hỏng và không có gì chỉ vào nguyên nhân. Nhỏ hơn
- * thì chỉ là một giới hạn chặt hơn cần thiết. `tests/livestream-chat.test.ts` đối
- * chiếu hằng số này với độ dài cột khai trong `schema.ts`.
- */
-export const LIVESTREAM_CHAT_MAX_LENGTH = 200
-
-/**
- * Độ dài tối đa của tên hiển thị chụp lại — khớp `varchar(100)`.
- *
- * Khác với nội dung, tên bị **cắt** chứ không bị từ chối. `reader_accounts.display_name`
- * rộng 255 ký tự vì nó là tên Google, nên một cái tên dài hơn 100 là chuyện có
- * thật; từ chối gửi tin vì tên Google của ai đó dài quá là biến một chuyện không
- * liên quan thành một ô chat hỏng. Một cái tên cắt ở 100 ký tự vẫn chỉ ra được
- * người nói, còn một tin nhắn bị từ chối thì mất đúng thứ người ta muốn nói.
- */
-export const LIVESTREAM_CHAT_NAME_MAX_LENGTH = 100
+// Nội dung + tên lúc gửi (hàm thuần) ở `livestream-chat-content.ts`; xuất lại nguyên tên cũ.
+export { LIVESTREAM_CHAT_MAX_LENGTH, LIVESTREAM_CHAT_NAME_MAX_LENGTH, snapshotDisplayName, validateChatContent } from './livestream-chat-content'
+export type { ChatMessage, ChatSender, ContentValidation } from './livestream-chat-content'
 
 /** Mặc định và trần của một lượt đọc lịch sử. Vượt trần thì phục vụ ở mức trần. */
 export const CHAT_HISTORY_DEFAULT = 50
@@ -100,85 +81,16 @@ export type LivestreamChatDeps = {
 }
 
 /**
- * Danh tính người gửi, **hẹp có chủ đích**.
- *
- * Chỉ ba trường, và không trường nào là tên hiển thị đã giải sẵn: tên được suy ra
- * *bên trong* service bằng `effectiveDisplayName`, nên không nơi gọi nào truyền
- * được một cái tên vào. Một hàm nhận `displayName: string` là một hàm mà nơi gọi
- * thứ hai sẽ truyền `body.name`.
- */
-export type ChatSender = {
-  id: number
-  displayName: string | null
-  customDisplayName: string | null
-  /** Tên Google là từ dành riêng → hiện "Bạn đọc" (spec reader-display-names-google). */
-  displayNameReserved: boolean
-}
-
-/** Tin nhắn ở dạng trang công khai được thấy. Không `readerId`, không `isDeleted`. */
-export type ChatMessage = {
-  id: number
-  displayName: string
-  content: string
-  createdAt: string
-}
-
-export type ContentValidation =
-  | { ok: true, content: string }
-  | { ok: false, message: string }
-
-/**
- * Chuẩn hoá và chặn nội dung, cùng khuôn `validateBody` của bình luận.
- *
- * CRLF gom về LF để trình duyệt Windows và điện thoại cho ra cùng một chuỗi byte —
- * không thì cùng một câu đếm ra hai độ dài khác nhau tuỳ người ta gõ bằng gì. Ký
- * tự điều khiển bị **từ chối** chứ không bị lọc bỏ: một nội dung mang chúng hoặc
- * là lỗi dán, hoặc là một lượt dò, và lọc bỏ sẽ cho người gửi thấy một tin nhắn
- * không phải thứ họ gửi.
- *
- * Quá dài thì **từ chối kèm nêu rõ giới hạn**, không bao giờ cắt ngầm — cùng quy
- * tắc nội dung bình luận và ghi chú xử lý đơn.
- */
-export function validateChatContent(raw: unknown): ContentValidation {
-  if (typeof raw !== 'string') return { ok: false, message: 'Nội dung tin nhắn không hợp lệ.' }
-
-  const normalized = raw.replace(/\r\n?/g, '\n').trim()
-  if (!normalized) return { ok: false, message: 'Vui lòng nhập nội dung tin nhắn.' }
-
-  if (hasForbiddenControlChars(normalized)) {
-    return { ok: false, message: 'Nội dung tin nhắn chứa ký tự không được phép.' }
-  }
-
-  if (normalized.length > LIVESTREAM_CHAT_MAX_LENGTH) {
-    return { ok: false, message: `Nội dung tin nhắn quá dài (tối đa ${LIVESTREAM_CHAT_MAX_LENGTH} ký tự).` }
-  }
-
-  return { ok: true, content: normalized }
-}
-
-/**
- * Tên hiển thị chụp vào hàng tin nhắn, đã cắt theo bề rộng cột.
- *
- * Đây là 12.9: tên được chụp **lúc gửi**, nên một lượt đổi tên sau đó không viết
- * lại được thứ hàng trăm người đã đọc.
- */
-export function snapshotDisplayName(sender: ChatSender): string {
-  return effectiveDisplayName({
-    customDisplayName: sender.customDisplayName,
-    displayName:      sender.displayName,
-    displayNameReserved: sender.displayNameReserved,
-  }).slice(0, LIVESTREAM_CHAT_NAME_MAX_LENGTH)
-}
-
-/**
  * Hàng đã lưu, ở dạng ra được khỏi máy chủ.
  *
  * Tên là bản chụp lúc gửi (12.9) — giữ nguyên, TRỪ bản chụp mang tên dành riêng:
  * tin gửi trước 2A chụp thẳng tên Google ("Admin"), nên lịch sử đọc ra "Bạn đọc"
  * (`publicNameSnapshot`, spec reader-display-names-google). Không ghi lại hàng:
- * bản chụp gốc vẫn là bằng chứng cho hàng chờ kiểm duyệt.
+ * bản chụp gốc vẫn là bằng chứng cho hàng chờ kiểm duyệt. Cột đọc ra: `CHAT_MESSAGE_COLUMNS` —
+ * lịch sử và tin "Bỏ ẩn" hiện lại (`moderated-content.ts`) đọc cùng bộ, cạnh hàm này (guard S5).
  */
-function serializeChatMessage(row: {
+export const CHAT_MESSAGE_COLUMNS = { id: livestreamMessages.id, displayName: livestreamMessages.displayName, content: livestreamMessages.content, createdAt: livestreamMessages.createdAt }
+export function serializeChatMessage(row: {
   id: number
   displayName: string
   content: string
@@ -300,8 +212,11 @@ export async function sendChatMessage(
   // ── Kiểm duyệt tức thì (< 1ms): chặn từ ngữ thô tục, chống phá, cờ bạc ──
   // SAU hạn mức: tin bị chặn ghi một hàng chờ duyệt (xem chú thích của hàm), và
   // số hàng đó còn bị chặn trần theo tài khoản VÀ theo địa chỉ (MODERATION_QUEUE_CAP).
-  // `session` ở đây là buổi phát máy chủ tự giải, đã khớp `input.sessionId` ở trên.
+  // `session` ở đây là buổi phát máy chủ tự giải, đã khớp `input.sessionId` ở trên. MỘT hạn
+  // mức regex cho tin này: lượt chặn tức thì VÀ lượt kiểm duyệt nền bên dưới (như bình luận).
+  const regexBudget = createModerationRegexBudget()
   const preCheck = await fastPreModerate(verdict.content, {
+    regexBudget,
     authorName: snapshotDisplayName(input.sender),
     authorIp: input.ip,
     readerId: input.sender.id,
@@ -312,7 +227,7 @@ export async function sendChatMessage(
     capQueuePerSource: true,
   })
   if (preCheck.blocked) {
-    return { ok: false, statusCode: 400, message: preCheck.reason }
+    return { ok: false, statusCode: 400, message: preCheck.publicMessage } // never `reason`: it names the rule
   }
 
   // Một mốc thời gian cho cả hàng và bản phát đi: hai lượt `new Date()` riêng thì
@@ -344,7 +259,7 @@ export async function sendChatMessage(
   // ── Broadcast ngay, kiểm duyệt nền ──
   // Tin nhắn hiện ngay cho mọi người xem qua SSE. AI kiểm duyệt chạy nền
   // (không block response): nếu AI flag vi phạm, broadcast removal event.
-  // Hàng KHÔNG bị xoá: `applyAutoHide` (moderation-worker.ts) đã đánh dấu
+  // Hàng KHÔNG bị xoá: `applyAutoHide` (moderation-worker-persist.ts) đã đánh dấu
   // `is_deleted = 1` — lịch sử công khai lọc nó ở tầng CSDL, còn tác giả, IP,
   // thời điểm ở lại làm bằng chứng cho hàng chờ duyệt. Người xem thấy tin biến
   // mất thay vì chờ 11 giây cho AI trả lời trước khi tin hiện.
@@ -371,7 +286,7 @@ export async function sendChatMessage(
       sessionId: String(session.id),
       contextTitle: `Livestream: ${session.title}`,
       contextUrl: '/media',
-    }).then((modResult) => {
+    }, { regexBudget }).then((modResult) => {
       if (modResult.flagged && modResult.action === 'auto_hide') {
         // AI flag vi phạm — hàng đã được đánh dấu xoá mềm bên trong lượt kiểm
         // duyệt; ở đây chỉ báo cho người đang xem gỡ tin khỏi màn hình.
@@ -427,12 +342,7 @@ export async function listChatHistory(
   const limit = finitePositive(input.limit, CHAT_HISTORY_DEFAULT, CHAT_HISTORY_MAX)
 
   const rows = await db
-    .select({
-      id:          livestreamMessages.id,
-      displayName: livestreamMessages.displayName,
-      content:     livestreamMessages.content,
-      createdAt:   livestreamMessages.createdAt,
-    })
+    .select(CHAT_MESSAGE_COLUMNS)
     .from(livestreamMessages)
     .where(and(
       eq(livestreamMessages.sessionId, session.id),

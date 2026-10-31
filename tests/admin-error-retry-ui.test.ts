@@ -39,7 +39,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
-import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+import { fetchesData } from './_admin-fetch-call.ts'
 
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
@@ -73,12 +73,17 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/content/articles/index.vue', refs: ['loadError'], retries: ['fetchArticles'] },
   { file: 'pages/admin/content/articles/[id].vue', refs: ['errorMsg'], retries: ['fetchArticle'] },
   { file: 'pages/admin/content/categories/index.vue', refs: ['error'], retries: ['fetchCategories'] },
-  { file: 'pages/admin/content/content-types.vue', refs: ['error'], retries: ['fetchTypes'] },
+  // The tree preview's categories fail on their own (wave3 7.1 batch D): a failed load used
+  // to leave every type reading "Chưa có danh mục nào trong thể loại này.".
+  { file: 'pages/admin/content/content-types.vue', refs: ['error', 'categoriesError'], retries: ['fetchTypes', 'fetchCategories'] },
   // Picker trong dialog navbar/mobile — chọn Thể loại để auto-fill URL. Failure
   // rendered trong `role="alert"` + nút "Thử lại" gọi lại `fetchTypes` (cùng file).
   { file: 'components/admin/ContentTypePicker.vue', refs: ['error'], retries: ['fetchTypes'] },
   { file: 'pages/admin/content/pages/index.vue', refs: ['loadError'], retries: ['fetchPages'] },
-  { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError'], retries: ['fetchPage'] },
+  // The builder's versions drawer (a wave3 4.2 part) shows a failed list read in the page's
+  // `#error` slot — the load and its error branch stay in the page (FINDING-B1: it used to
+  // read as "no versions").
+  { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError', 'versionsError'], retries: ['fetchPage', 'loadVersions'] },
   { file: 'pages/admin/content/navigation/navbar.vue', refs: ['error'], retries: ['loadMenu'] },
   { file: 'pages/admin/content/navigation/mobile.vue', refs: ['error'], retries: ['loadMenu'] },
 
@@ -123,7 +128,16 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   // `/admin/ai/moderation`. Vẫn tự fetch hai endpoint nên vẫn giữ nhánh lỗi riêng.
   { file: 'components/admin/ai/AiModerationTab.vue', refs: ['moderationError'], retries: ['loadModeration'] },
   { file: 'components/admin/ai/AiLogsTab.vue', refs: ['logsError'], retries: ['loadLogs'] },
-  { file: 'pages/admin/ai/moderation.vue', refs: ['error'], retries: ['loadData'] },
+  // Trang kiểm duyệt (đã tách panel, wave3 4.1): nhánh lỗi lượt tải TRANG (`error` →
+  // loadData) và ba nhánh lỗi của từng tab khi đọc lại SAU lần tải đầu (hàng đợi đổi bộ
+  // lọc/trang, cài đặt/quy tắc sau khi ghi). Cả bốn nằm trong file trang (panel nhận qua
+  // slot `#error`): lỗi của một tab không che các tab khác, "Thử lại" chỉ đọc lại tab đó —
+  // không chạy loadData (ghi đè chỗ đang sửa ở tab cài đặt).
+  {
+    file: 'pages/admin/ai/moderation.vue',
+    refs: ['error', 'settingsError', 'queueError', 'rulesError'],
+    retries: ['loadData', 'reloadSettings', 'loadQueue', 'reloadRules'],
+  },
 
   // Views whose panels fail independently. Each ref is its own branch, so a
   // failed history load still leaves the password form usable.
@@ -376,8 +390,9 @@ test('no admin view reaches for a full page reload as its retry', async () => {
  * and tests/client-ip.test.ts, and for the same reason.
  */
 // Shared with tests/skeleton-loading-ui.test.ts — includes adminFetch/useAdminList,
-// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan.
-const FETCH_CALL = ADMIN_FETCH_CALL
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan;
+// decided on code with comments dropped (`fetchesData`, tests/_admin-fetch-call.ts).
+const FETCH_CALL = { test: fetchesData }
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const roots = ['pages/admin', 'components/admin']

@@ -50,9 +50,9 @@ onMounted(async () => {
   <div class="mermaid-container">
     <div v-if="loading" role="status" aria-busy="true" class="flex items-center justify-center py-12">
       <span class="sr-only">Đang tải sơ đồ</span>
-      <div class="h-8 w-8 animate-pulse motion-reduce:animate-none rounded-full bg-[#e2ede3]" aria-hidden="true"></div>
+      <div class="h-8 w-8 animate-pulse motion-reduce:animate-none rounded-full bg-line" aria-hidden="true"></div>
     </div>
-    <pre v-else-if="error" class="bg-[#f0f7f1] border border-[#e2ede3] rounded-lg p-4 overflow-x-auto text-sm text-[#122815]"><code>{{ source }}</code></pre>
+    <pre v-else-if="error" class="bg-surface-tint border border-line rounded-lg p-4 overflow-x-auto text-sm text-brand-950"><code>{{ source }}</code></pre>
     <!-- eslint-disable-next-line vue/no-v-html -->
     <div v-else v-html="svg" class="mermaid-svg overflow-x-auto"></div>
   </div>

@@ -1,21 +1,15 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
-interface SocialLink {
-  id: number
-  platform: string
-  label: string
-  url: string
-  icon: string
-  iconType: 'fontawesome' | 'image' | 'svg'
-  color: string
-  sortOrder: number
-  isVisible: boolean
-  createdAt: string | null
-  updatedAt: string | null
-}
+import type {
+  AdminSocialLink, SocialLinkCreateResponse, SocialLinkDeleteResponse,
+  SocialLinksReorderResponse, SocialLinksResponse, SocialLinkUpdateResponse,
+} from '~/types/admin-settings-api'
+// Kiểu suy từ handler: `iconType` là `string` của cột (máy chủ chỉ lưu 3 giá trị) — startEdit thu hẹp.
+type SocialLink = AdminSocialLink
 
-import { useLayoutConfig, type LayoutConfig, DEFAULT_LAYOUT_CONFIG } from '~/composables/useLayoutConfig'
+import { useLayoutConfig } from '~/composables/useLayoutConfig'
+import { useLayoutSettingsForm } from '~/composables/useLayoutSettingsForm'
 
 const toast = useToast()
 const { confirm } = useConfirm()
@@ -66,45 +60,18 @@ function applyPreset(p: Preset) {
   form.value.color = p.color
 }
 
-const layoutLoading = ref(true)
-const layoutBusy = ref(false)
-const layoutDraft = ref<LayoutConfig>({ ...DEFAULT_LAYOUT_CONFIG })
-
-async function loadLayout() {
-  layoutLoading.value = true
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout')
-    if (res?.ok && res.config) layoutDraft.value = { ...res.config }
-  } catch {
-    // layout chưa cấu hình → giữ default
-  } finally {
-    layoutLoading.value = false
-  }
-}
-
-async function saveLayout() {
-  layoutBusy.value = true
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout', {
-      method: 'PUT',
-      body: { ...layoutDraft.value },
-    })
-    if (res?.ok && res.config) {
-      setConfig(res.config)
-      toast.success('Đã lưu cấu hình hiển thị mạng xã hội thành công!')
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Lưu cấu hình thất bại.'))
-  } finally {
-    layoutBusy.value = false
-  }
-}
+// Kiểu hiển thị MXH là một phần của `settings.layout_config` — PUT ghi CẢ hàng (độ rộng khung,
+// lưới bài viết…). Tải/khoá/lưu dùng chung với general.vue: chỉ lưu khi bản nháp giữ cấu hình
+// thật — trước đây nút bật cả lúc đang tải và sau khi tải hỏng, PUT mặc định đè cả hàng (R8-3).
+const {
+  draft: layoutDraft, loading: layoutLoading, busy: layoutBusy, loaded: layoutLoaded, error: layoutError, load: loadLayout, save: saveLayout,
+} = useLayoutSettingsForm({ toast, setConfig, savedMessage: 'Đã lưu cấu hình hiển thị mạng xã hội thành công!' })
 
 async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: SocialLink[] }>)('/api/admin/social-links')
+    const res = await adminFetch<SocialLinksResponse>('/api/admin/social-links')
     if (res.ok) items.value = res.items || []
   } catch (err: unknown) {
     loadError.value = errorMessage(err, 'Không tải được danh sách mạng xã hội.')
@@ -164,13 +131,13 @@ async function save() {
   busy.value = true
   try {
     if (editingId.value == null) {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; id: number }>)('/api/admin/social-links', {
+      const res = await adminFetch<SocialLinkCreateResponse>('/api/admin/social-links', {
         method: 'POST', body: { ...form.value, sortOrder: items.value.length },
       })
       toast.success(`Đã thêm "${form.value.label}".`)
       editingId.value = res.id
     } else {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/social-links/${editingId.value}`, {
+      await adminFetch<SocialLinkUpdateResponse>(`/api/admin/social-links/${editingId.value}`, {
         method: 'PUT', body: form.value,
       })
       toast.success(`Đã cập nhật "${form.value.label}".`)
@@ -185,7 +152,7 @@ async function save() {
 
 async function toggleVisible(item: SocialLink) {
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/social-links/${item.id}`, {
+    await adminFetch<SocialLinkUpdateResponse>(`/api/admin/social-links/${item.id}`, {
       method: 'PUT', body: { isVisible: !item.isVisible },
     })
     item.isVisible = !item.isVisible
@@ -204,7 +171,7 @@ async function remove(item: SocialLink) {
   })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/social-links/${item.id}`, { method: 'DELETE' })
+    await adminFetch<SocialLinkDeleteResponse>(`/api/admin/social-links/${item.id}`, { method: 'DELETE' })
     toast.success(`Đã xóa "${item.label}".`)
     if (editingId.value === item.id) resetForm()
     await load()
@@ -222,7 +189,7 @@ async function move(item: SocialLink, dir: -1 | 1) {
   // Đảo local ngay để UI responsive, rồi sync server.
   ;[items.value[idx], items.value[swap]] = [items.value[swap] as SocialLink, items.value[idx] as SocialLink]
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)('/api/admin/social-links/reorder', {
+    await adminFetch<SocialLinksReorderResponse>('/api/admin/social-links/reorder', {
       method: 'POST', body: { orderedIds: ordered },
     })
   } catch (err: unknown) {
@@ -241,22 +208,22 @@ onMounted(() => {
   <div class="flex flex-col gap-5">
     <div class="flex items-center justify-between flex-wrap gap-2">
       <div>
-        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Mạng xã hội</h1>
-        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Quản lý kênh và kiểu hiển thị mạng xã hội trên trang công khai.</p>
+        <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">Mạng xã hội</h1>
+        <p class="text-[0.85rem] text-ink-muted mt-1 mb-0">Quản lý kênh và kiểu hiển thị mạng xã hội trên trang công khai.</p>
       </div>
     </div>
 
     <!-- Cấu hình kiểu hiển thị trên trang công khai -->
-    <section class="bg-white rounded-xl border border-[#e2ece3] p-5 flex flex-col gap-4">
+    <section class="bg-white rounded-xl border border-line p-5 flex flex-col gap-4">
       <div class="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h2 class="text-sm font-extrabold text-[#122815] m-0">Kiểu hiển thị mạng xã hội</h2>
-          <p class="m-0 text-xs text-[#667768] mt-0.5">Chọn kiểu nổi trên trang công khai (đối xứng chatbot góc phải).</p>
+          <h2 class="text-sm font-extrabold text-brand-950 m-0">Kiểu hiển thị mạng xã hội</h2>
+          <p class="m-0 text-xs text-ink-muted mt-0.5">Chọn kiểu nổi trên trang công khai (đối xứng chatbot góc phải).</p>
         </div>
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-3.5 py-1.5 rounded-lg cursor-pointer border-0 text-xs transition-colors disabled:opacity-50"
-          :disabled="layoutBusy"
+          class="inline-flex items-center gap-1.5 bg-brand-700 hover:bg-brand-900 text-white font-bold px-3.5 py-1.5 rounded-lg cursor-pointer border-0 text-xs transition-colors disabled:opacity-50"
+          :disabled="layoutBusy || !layoutLoaded"
           @click="saveLayout"
         >
           <i v-if="layoutBusy" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
@@ -265,63 +232,68 @@ onMounted(() => {
         </button>
       </div>
 
-      <div v-if="layoutLoading" class="text-xs text-[#667768] py-2">Đang tải cấu hình...</div>
+      <div v-if="layoutLoading" class="text-xs text-ink-muted py-2">Đang tải cấu hình...</div>
+      <!-- Tải hỏng: nói ra, không vẽ kiểu mặc định như thể là kiểu đang dùng (R8-3). -->
+      <p v-else-if="layoutError" role="alert" class="m-0 text-xs text-danger-soft py-2">
+        <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ layoutError }}
+        <button type="button" class="font-bold text-brand-600 underline" @click="loadLayout()">Thử lại</button>
+      </p>
       <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         <!-- popup -->
         <button
           type="button"
           class="flex flex-col gap-2 p-3 rounded-lg border text-left transition-colors cursor-pointer"
-          :class="layoutDraft.socialDisplayMode === 'popup' ? 'border-[#2c6e33] bg-[#f0f7f1]' : 'border-[#c8d6c9] bg-white hover:bg-[#f4f7f4]'"
+          :class="layoutDraft.socialDisplayMode === 'popup' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong bg-white hover:bg-surface'"
           @click="layoutDraft.socialDisplayMode = 'popup'"
         >
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-[#245328]">Bảng nổi đang mở</span>
-            <i v-if="layoutDraft.socialDisplayMode === 'popup'" class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
+            <i v-if="layoutDraft.socialDisplayMode === 'popup'" class="fa-solid fa-circle-check text-brand-700" aria-hidden="true"></i>
           </div>
           <!-- mini preview -->
-          <div class="relative h-16 rounded-md bg-[#f4f7f4] border border-[#e2ece3] overflow-hidden">
+          <div class="relative h-16 rounded-md bg-surface border border-line overflow-hidden">
             <div class="absolute bottom-2 left-2 w-8 h-10 rounded-lg bg-white shadow flex flex-col items-center justify-center gap-0.5">
               <div class="w-4 h-1 rounded bg-[#1877f2]"></div>
               <div class="w-4 h-1 rounded bg-[#ff0000]"></div>
               <div class="w-4 h-1 rounded bg-[#0068ff]"></div>
             </div>
           </div>
-          <span class="text-[0.7rem] text-[#667768]">Bảng đứng góc trái, nút thu nhỏ khi đóng.</span>
+          <span class="text-[0.7rem] text-ink-muted">Bảng đứng góc trái, nút thu nhỏ khi đóng.</span>
         </button>
 
         <!-- floating -->
         <button
           type="button"
           class="flex flex-col gap-2 p-3 rounded-lg border text-left transition-colors cursor-pointer"
-          :class="layoutDraft.socialDisplayMode === 'floating' ? 'border-[#2c6e33] bg-[#f0f7f1]' : 'border-[#c8d6c9] bg-white hover:bg-[#f4f7f4]'"
+          :class="layoutDraft.socialDisplayMode === 'floating' ? 'border-brand-700 bg-surface-tint' : 'border-line-strong bg-white hover:bg-surface'"
           @click="layoutDraft.socialDisplayMode = 'floating'"
         >
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-[#245328]">Nút tròn rời</span>
-            <i v-if="layoutDraft.socialDisplayMode === 'floating'" class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
+            <i v-if="layoutDraft.socialDisplayMode === 'floating'" class="fa-solid fa-circle-check text-brand-700" aria-hidden="true"></i>
           </div>
           <!-- mini preview -->
-          <div class="relative h-16 rounded-md bg-[#f4f7f4] border border-[#e2ece3] overflow-hidden">
+          <div class="relative h-16 rounded-md bg-surface border border-line overflow-hidden">
             <div class="absolute bottom-2 left-2 flex flex-col gap-1">
               <div class="w-5 h-5 rounded-full bg-[#1877f2]"></div>
               <div class="w-5 h-5 rounded-full bg-[#ff0000]"></div>
               <div class="w-5 h-5 rounded-full bg-[#0068ff]"></div>
             </div>
           </div>
-          <span class="text-[0.7rem] text-[#667768]">Mỗi nền tảng một nút tròn riêng, xếp dọc có hiệu ứng pulse.</span>
+          <span class="text-[0.7rem] text-ink-muted">Mỗi nền tảng một nút tròn riêng, xếp dọc có hiệu ứng pulse.</span>
         </button>
       </div>
 
-      <label class="flex items-center gap-2 text-xs font-semibold text-[#3d4f3f] select-none cursor-pointer pt-1 border-t border-[#f0f4f0]">
-        <input v-model="layoutDraft.socialAutoOpen" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />
+      <label class="flex items-center gap-2 text-xs font-semibold text-[#3d4f3f] select-none cursor-pointer pt-1 border-t border-surface">
+        <input v-model="layoutDraft.socialAutoOpen" type="checkbox" class="w-4 h-4 accent-brand-700" />
         <span>Tự mở khi tải trang. <strong>Nút tròn rời</strong>: mở trên cả PC lẫn mobile. <strong>Bảng nổi</strong>: chỉ mở trên PC (mobile thu gọn để không che nội dung). Tắt để thu gọn ở mọi nơi.</span>
       </label>
     </section>
     <!-- Form thêm/sửa -->
-    <div id="social-form-top" class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col gap-3">
+    <div id="social-form-top" class="bg-white rounded-xl border border-line p-4 flex flex-col gap-3">
       <div class="flex items-center justify-between gap-2">
-        <h2 class="m-0 text-sm font-extrabold text-[#122815]">{{ editingId == null ? 'Thêm mạng xã hội' : 'Sửa mạng xã hội' }}</h2>
-        <button v-if="editingId != null" type="button" class="text-xs font-semibold text-[#667768] hover:text-[#d12420]" @click="resetForm">Hủy sửa</button>
+        <h2 class="m-0 text-sm font-extrabold text-brand-950">{{ editingId == null ? 'Thêm mạng xã hội' : 'Sửa mạng xã hội' }}</h2>
+        <button v-if="editingId != null" type="button" class="text-xs font-semibold text-ink-muted hover:text-danger" @click="resetForm">Hủy sửa</button>
       </div>
 
       <!-- Presets -->
@@ -330,7 +302,7 @@ onMounted(() => {
           v-for="p in PRESETS"
           :key="p.platform"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border border-[#e2ece3] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#3d4f3f] hover:bg-[#f0f7f1] transition-colors cursor-pointer"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs font-semibold text-[#3d4f3f] hover:bg-surface-tint transition-colors cursor-pointer"
           @click="applyPreset(p)"
         >
           <img v-if="p.iconType === 'svg'" :src="p.icon" alt="Zalo" class="w-3.5 h-3.5 object-contain" />
@@ -341,16 +313,16 @@ onMounted(() => {
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label class="flex flex-col gap-1">
-          <span class="text-xs font-bold text-[#3d4f3f]">Nền tảng <span class="text-[#d12420]">*</span></span>
-          <input v-model="form.platform" type="text" placeholder="Facebook, YouTube..." class="px-3 py-2 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
+          <span class="text-xs font-bold text-[#3d4f3f]">Nền tảng <span class="text-danger">*</span></span>
+          <input v-model="form.platform" type="text" placeholder="Facebook, YouTube..." class="px-3 py-2 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" />
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-xs font-bold text-[#3d4f3f]">Nhãn hiển thị <span class="text-[#d12420]">*</span></span>
-          <input v-model="form.label" type="text" placeholder="Fanpage C11..." class="px-3 py-2 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
+          <span class="text-xs font-bold text-[#3d4f3f]">Nhãn hiển thị <span class="text-danger">*</span></span>
+          <input v-model="form.label" type="text" placeholder="Fanpage C11..." class="px-3 py-2 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" />
         </label>
         <label class="flex flex-col gap-1 sm:col-span-2">
-          <span class="text-xs font-bold text-[#3d4f3f]">Đường dẫn <span class="text-[#d12420]">*</span></span>
-          <input v-model="form.url" type="text" placeholder="https://facebook.com/..." class="px-3 py-2 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
+          <span class="text-xs font-bold text-[#3d4f3f]">Đường dẫn <span class="text-danger">*</span></span>
+          <input v-model="form.url" type="text" placeholder="https://facebook.com/..." class="px-3 py-2 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" />
         </label>
         <!-- Icon: 3 chế độ (FontAwesome / Ảnh / SVG) -->
         <div class="flex flex-col gap-1.5 sm:col-span-2">
@@ -361,7 +333,7 @@ onMounted(() => {
               :key="opt.k"
               type="button"
               class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors"
-              :class="form.iconType === opt.k ? 'border-[#2c6e33] bg-[#2c6e33] text-white' : 'border-[#c8d6c9] bg-white text-[#3d4f3f] hover:bg-[#f0f7f1]'"
+              :class="form.iconType === opt.k ? 'border-brand-700 bg-brand-700 text-white' : 'border-line-strong bg-white text-[#3d4f3f] hover:bg-surface-tint'"
               @click="form.iconType = opt.k as 'fontawesome' | 'image' | 'svg'; if (opt.k === 'fontawesome' && !form.icon.startsWith('fa-')) form.icon = 'fa-brands fa-facebook-f'"
             >
               <i :class="opt.i" aria-hidden="true"></i>{{ opt.l }}
@@ -369,8 +341,8 @@ onMounted(() => {
           </div>
 
           <div v-if="form.iconType === 'fontawesome'" class="flex flex-col gap-1.5">
-            <input v-model="form.icon" type="text" placeholder="fa-brands fa-facebook-f" class="px-3 py-2 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
-            <p class="m-0 text-[0.72rem] text-[#667768]">Nhập class Font Awesome (fa-solid / fa-brands / fa-regular). Vd: <code class="bg-[#f0f7f1] px-1 rounded">fa-brands fa-youtube</code></p>
+            <input v-model="form.icon" type="text" placeholder="fa-brands fa-facebook-f" class="px-3 py-2 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" />
+            <p class="m-0 text-[0.72rem] text-ink-muted">Nhập class Font Awesome (fa-solid / fa-brands / fa-regular). Vd: <code class="bg-surface-tint px-1 rounded">fa-brands fa-youtube</code></p>
           </div>
 
           <div v-else class="flex flex-col gap-1.5">
@@ -380,17 +352,17 @@ onMounted(() => {
                 @input="form.icon = ($event.target as HTMLInputElement).value"
                 type="text"
                 :placeholder="form.iconType === 'svg' ? '/uploads/2026/09/logo.svg hoặc URL' : '/uploads/2026/09/logo.png hoặc URL'"
-                class="flex-1 px-3 py-2 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+                class="flex-1 px-3 py-2 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
               />
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-xs font-bold text-[#2c6e33] hover:bg-[#f0f7f1] transition-colors whitespace-nowrap"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-brand-700 bg-white px-3 py-2 text-xs font-bold text-brand-700 hover:bg-surface-tint transition-colors whitespace-nowrap"
                 @click="pickMediaIcon"
               >
                 <i class="fa-regular fa-folder-open" aria-hidden="true"></i> Chọn từ thư viện
               </button>
             </div>
-            <p class="m-0 text-[0.72rem] text-[#667768]">
+            <p class="m-0 text-[0.72rem] text-ink-muted">
               {{ form.iconType === 'svg'
                 ? 'SVG vector — sắc nét mọi kích thước. Tải file .svg lên thư viện media rồi chọn.'
                 : 'Ảnh raster (PNG/JPG/WebP) — phù hợp logo có chi tiết.' }}
@@ -399,41 +371,41 @@ onMounted(() => {
 
           <!-- Preview icon thật trong ô màu brand, đúng như hiển thị ngoài cổng. -->
           <div class="flex items-center gap-2 mt-0.5">
-            <span class="text-[0.72rem] text-[#667768]">Xem trước:</span>
+            <span class="text-[0.72rem] text-ink-muted">Xem trước:</span>
             <span
-              class="flex h-9 w-9 items-center justify-center rounded-lg overflow-hidden border border-[#e2ece3]"
+              class="flex h-9 w-9 items-center justify-center rounded-lg overflow-hidden border border-line"
               :style="form.iconType === 'fontawesome' ? { backgroundColor: form.color, color: '#fff' } : {}"
             >
               <img v-if="form.iconType === 'image'" :src="form.icon" :alt="'preview'" class="h-8 w-8 object-contain" />
               <img v-else-if="form.iconType === 'svg'" :src="form.icon" :alt="'preview'" class="h-9 w-9 object-cover" />
               <i v-else :class="form.icon" class="text-base" aria-hidden="true"></i>
             </span>
-            <span class="text-[0.72rem] text-[#667768]">{{ form.platform || 'Nền tảng' }} · {{ form.label || 'Nhãn' }}</span>
+            <span class="text-[0.72rem] text-ink-muted">{{ form.platform || 'Nền tảng' }} · {{ form.label || 'Nhãn' }}</span>
           </div>
         </div>
 
         <label class="flex flex-col gap-1">
           <span class="text-xs font-bold text-[#3d4f3f]">Màu nền hex</span>
           <div class="flex items-center gap-2">
-            <input v-model="form.color" type="color" class="h-9 w-9 rounded-lg border border-[#c8d6c9] cursor-pointer p-0.5" />
-            <input v-model="form.color" type="text" class="flex-1 px-3 py-2 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
+            <input v-model="form.color" type="color" class="h-9 w-9 rounded-lg border border-line-strong cursor-pointer p-0.5" />
+            <input v-model="form.color" type="text" class="flex-1 px-3 py-2 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15" />
           </div>
-          <span v-if="form.iconType !== 'fontawesome'" class="text-[0.68rem] text-[#667768]">Dùng cho nền ô icon (ảnh/SVG trong suốt sẽ hiện màu này).</span>
+          <span v-if="form.iconType !== 'fontawesome'" class="text-[0.68rem] text-ink-muted">Dùng cho nền ô icon (ảnh/SVG trong suốt sẽ hiện màu này).</span>
         </label>
         <label class="flex items-center gap-2 sm:col-span-2">
-          <input v-model="form.isVisible" type="checkbox" class="h-4 w-4 accent-[#2c6e33]" />
+          <input v-model="form.isVisible" type="checkbox" class="h-4 w-4 accent-brand-700" />
           <span class="text-sm font-semibold text-[#3d4f3f]">Hiển thị trên trang công khai</span>
         </label>
       </div>
 
-      <div v-if="formError" role="alert" class="text-xs text-[#b04a4a] flex items-center gap-1.5">
+      <div v-if="formError" role="alert" class="text-xs text-danger-soft flex items-center gap-1.5">
         <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>{{ formError }}
       </div>
 
       <div class="flex gap-2">
         <button
           type="button"
-          class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          class="inline-flex items-center gap-2 bg-brand-700 hover:bg-brand-900 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
           :disabled="busy"
           @click="save"
         >
@@ -443,7 +415,7 @@ onMounted(() => {
         <button
           v-if="editingId == null"
           type="button"
-          class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] text-[#3d4f3f] font-bold px-4 py-2.5 rounded-lg cursor-pointer hover:bg-[#f0f7f1] transition-colors text-sm"
+          class="inline-flex items-center gap-2 bg-white border border-line-strong text-[#3d4f3f] font-bold px-4 py-2.5 rounded-lg cursor-pointer hover:bg-surface-tint transition-colors text-sm"
           @click="resetForm"
         >Xóa form</button>
       </div>
@@ -452,10 +424,10 @@ onMounted(() => {
     <!-- List -->
     <SkeletonTable v-if="loading" label="Đang tải danh sách mạng xã hội" :rows="4" :cols="5" />
 
-    <div v-else-if="loadError" role="alert" class="flex flex-col items-center gap-3 py-12 text-[#b04a4a]">
+    <div v-else-if="loadError" role="alert" class="flex flex-col items-center gap-3 py-12 text-danger-soft">
       <i class="fa-solid fa-triangle-exclamation text-3xl text-[#e2a0a0]" aria-hidden="true"></i>
       <p class="m-0 text-sm">{{ loadError }}</p>
-      <button type="button" class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2 rounded-lg cursor-pointer border-0 text-sm" @click="load">
+      <button type="button" class="inline-flex items-center gap-2 bg-brand-700 hover:bg-brand-900 text-white font-bold px-4 py-2 rounded-lg cursor-pointer border-0 text-sm" @click="load">
         <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Thử lại
       </button>
     </div>
@@ -470,7 +442,7 @@ onMounted(() => {
       <div
         v-for="(item, idx) in items"
         :key="item.id"
-        class="group bg-white rounded-xl border border-[#e2ece3] p-3.5 flex flex-col gap-3 transition-shadow hover:shadow-[0_4px_16px_rgba(15,35,18,0.08)]"
+        class="group bg-white rounded-xl border border-line p-3.5 flex flex-col gap-3 transition-shadow hover:shadow-[0_4px_16px_rgba(15,35,18,0.08)]"
         :class="{ 'opacity-60': !item.isVisible }"
       >
         <!-- Hàng 1: icon + tên + số thứ tự -->
@@ -485,10 +457,10 @@ onMounted(() => {
           </span>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-1.5">
-              <span class="text-[0.95rem] font-extrabold text-[#122815] truncate">{{ item.platform }}</span>
-              <span class="text-[0.62rem] font-bold text-[#9ca3af] bg-[#f4f7f4] rounded px-1.5 py-0.5 shrink-0">#{{ idx + 1 }}</span>
+              <span class="text-[0.95rem] font-extrabold text-brand-950 truncate">{{ item.platform }}</span>
+              <span class="text-[0.62rem] font-bold text-[#9ca3af] bg-surface rounded px-1.5 py-0.5 shrink-0">#{{ idx + 1 }}</span>
             </div>
-            <p class="m-0 text-[0.78rem] text-[#4A5545] truncate">{{ item.label }}</p>
+            <p class="m-0 text-[0.78rem] text-ink-secondary truncate">{{ item.label }}</p>
           </div>
         </div>
 
@@ -497,7 +469,7 @@ onMounted(() => {
           :href="item.url"
           target="_blank"
           rel="noopener noreferrer"
-          class="flex items-center gap-1.5 text-[0.72rem] text-[#2c6e33] hover:underline truncate"
+          class="flex items-center gap-1.5 text-[0.72rem] text-brand-700 hover:underline truncate"
           :title="item.url"
         >
           <i class="fa-solid fa-arrow-up-right-from-square text-[0.6rem] shrink-0" aria-hidden="true"></i>
@@ -505,9 +477,9 @@ onMounted(() => {
         </a>
 
         <!-- Hàng 3: thao tác -->
-        <div class="flex items-center gap-1 pt-1 border-t border-[#eef2ee]">
-          <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg text-[#667768] hover:bg-[#f0f7f1] hover:text-[#2c6e33] disabled:opacity-25 disabled:hover:bg-transparent" :disabled="idx === 0" :aria-label="`Di chuyển ${item.label} lên`" @click="move(item, -1)"><i class="fa-solid fa-arrow-up text-[0.7rem]" aria-hidden="true"></i></button>
-          <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg text-[#667768] hover:bg-[#f0f7f1] hover:text-[#2c6e33] disabled:opacity-25 disabled:hover:bg-transparent" :disabled="idx === items.length - 1" :aria-label="`Di chuyển ${item.label} xuống`" @click="move(item, 1)"><i class="fa-solid fa-arrow-down text-[0.7rem]" aria-hidden="true"></i></button>
+        <div class="flex items-center gap-1 pt-1 border-t border-surface-tint">
+          <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg text-ink-muted hover:bg-surface-tint hover:text-brand-700 disabled:opacity-25 disabled:hover:bg-transparent" :disabled="idx === 0" :aria-label="`Di chuyển ${item.label} lên`" @click="move(item, -1)"><i class="fa-solid fa-arrow-up text-[0.7rem]" aria-hidden="true"></i></button>
+          <button type="button" class="w-7 h-7 flex items-center justify-center rounded-lg text-ink-muted hover:bg-surface-tint hover:text-brand-700 disabled:opacity-25 disabled:hover:bg-transparent" :disabled="idx === items.length - 1" :aria-label="`Di chuyển ${item.label} xuống`" @click="move(item, 1)"><i class="fa-solid fa-arrow-down text-[0.7rem]" aria-hidden="true"></i></button>
           <button
             type="button"
             class="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
@@ -518,10 +490,10 @@ onMounted(() => {
             <i :class="item.isVisible ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash'" class="text-[0.72rem]" aria-hidden="true"></i>
           </button>
           <div class="flex-1"></div>
-          <button type="button" class="inline-flex items-center gap-1 text-[0.72rem] font-bold text-[#2c6e33] hover:bg-[#f0f7f1] px-2 py-1 rounded-lg" @click="startEdit(item)">
+          <button type="button" class="inline-flex items-center gap-1 text-[0.72rem] font-bold text-brand-700 hover:bg-surface-tint px-2 py-1 rounded-lg" @click="startEdit(item)">
             <i class="fa-solid fa-pen text-[0.65rem]" aria-hidden="true"></i> Sửa
           </button>
-          <button type="button" class="inline-flex items-center gap-1 text-[0.72rem] font-bold text-[#d12420] hover:bg-[#fdecec] px-2 py-1 rounded-lg" @click="remove(item)">
+          <button type="button" class="inline-flex items-center gap-1 text-[0.72rem] font-bold text-danger hover:bg-danger-bg px-2 py-1 rounded-lg" @click="remove(item)">
             <i class="fa-solid fa-trash text-[0.65rem]" aria-hidden="true"></i> Xóa
           </button>
         </div>
