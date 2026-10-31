@@ -1160,13 +1160,13 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     assert.deepEqual(violations, [])
     // Không kiểm rỗng: nơi gọi mà mười tệp test thay `callAi` bằng mock phải đang đi qua
     // barrel — dịch bài (article-translation-worker-behavior), chatbot (chat-policy-seams),
-    // dịch ngôn ngữ (language-translations-write-behavior: ba endpoint), dịch danh mục
+    // dịch ngôn ngữ (language-translations-write-behavior: hai endpoint — `ai-translate.post.ts`
+    // không nơi gọi đã xoá, CHANGELOG § 64), dịch danh mục
     // (model-translations), kiểm duyệt (năm tệp moderation-*/reader-flows), biên tập AI
     // (security-ai-editorial-html). Kiểm tập con, không ghim đúng danh sách.
     for (const file of [
       'server/services/article-translation-worker.ts',
       'server/services/chat-policy-provider.ts',
-      'server/api/admin/languages/ai-translate.post.ts',
       'server/api/admin/languages/ai-translate-chunk.post.ts',
       'server/api/admin/languages/ai-translate-key.post.ts',
       'server/services/i18n-auto-translate.ts',

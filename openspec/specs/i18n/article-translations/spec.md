@@ -50,15 +50,16 @@ Long HTML content is split at semantic HTML boundaries (~8k chars per chunk) and
 - **THEN** translation runs asynchronously via `setTimeout(0)`
 
 ### Requirement: Translation progress polling
-Admin client polls translation progress every 2 seconds.
+Admin client polls translation progress every 2 seconds, through the article's translation list (`ArticleTranslationPanel.vue`). The per-language `GET …/translations/{lang}/progress` route had no caller and was removed (2026-10-31, CHANGELOG § 64).
 
 #### Scenario: Poll during translation
-- **WHEN** client GETs `/api/admin/articles/{id}/translations/{lang}/progress`
-- **THEN** response includes `{ status, progress, currentChunk, totalChunks }`
+- **WHEN** client GETs `/api/admin/articles/{id}/translations`
+- **THEN** each language's row includes `{ status, progress, currentChunk, totalChunks }`
 
 #### Scenario: Poll after completion
 - **WHEN** translation is complete
-- **THEN** response includes `{ status: 'ai_draft', progress: 100, completedAt }`
+- **THEN** that language's row includes `{ status: 'ai_draft', progress: 100, completedAt }`
+- **THEN** the client stops polling once no row is `translating`
 
 ### Requirement: Admin translation management
 Admin can view, edit, publish, unpublish, and delete translations from the article editor.

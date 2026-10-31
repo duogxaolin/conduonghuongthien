@@ -2,9 +2,12 @@ import assert from 'node:assert/strict'
 import test, { after, beforeEach } from 'node:test'
 
 /**
- * The chatbot settings page's read, and the key "clear":
+ * The chatbot settings page's read:
  *   GET  /api/admin/chatbot/settings        (index.get.ts — chatbot_settings.read)
- *   POST /api/admin/chatbot/settings/clear  (clear.post.ts — super admin only)
+ *
+ * The key "clear" (`POST …/settings/clear`, super admin only) had no caller and was
+ * deleted with its tests and its service function `clearChatbotApiKey` (CHANGELOG
+ * § 64); the file keeps its name so its history stays in one place.
  *
  * The invariants:
  *   - the read creates the single settings row with the defaults on first use (a GET
@@ -13,9 +16,7 @@ import test, { after, beforeEach } from 'node:test'
  *     form come from them (spec R11.4) — model, prompt, provider policy, base URL and
  *     the host it allows, "enabled", whether a key is stored — and the key itself, its
  *     envelope and the stored prompt never leave the server inside `settings`
- *     (`currentSystemPrompt` is the prompt the page edits, by design);
- *   - clear removes the stored chatbot key in one transaction with its audit row, and
- *     only a super admin may do it — a role holding every chatbot_settings flag may not.
+ *     (`currentSystemPrompt` is the prompt the page edits, by design).
  *
  * Real h3 app + `admin-auth`, SQL on SQLite (`_ai-route-harness.ts`).
  */
@@ -25,7 +26,6 @@ const h = await startAiRouteHarness({
   extraTables: s => [s.chatbotSettings, s.activityLogs],
   routes: async load => [
     { method: 'get', path: '/api/admin/chatbot/settings', handler: await load('../server/api/admin/chatbot/settings/index.get') },
-    { method: 'post', path: '/api/admin/chatbot/settings/clear', handler: await load('../server/api/admin/chatbot/settings/clear.post') },
   ],
 })
 after(() => h.server.close())
@@ -35,15 +35,10 @@ const { encryptChatbotSecret } = await import('../server/utils/chatbot/crypto')
 type Json = Record<string, unknown>
 type Account = Awaited<ReturnType<typeof h.account>>
 let reader: Account
-let allFlags: Account
-let superAdmin: Account
 
 beforeEach(async () => {
   h.reset()
   reader = await h.account([{ resource: 'chatbot_settings', canRead: true }], 'xem')
-  allFlags = await h.account([{ resource: 'chatbot_settings', canRead: true, canCreate: true, canUpdate: true, canDelete: true }], 'quantri')
-  superAdmin = await h.account([], 'sieuquantri')
-  h.harness.sqlite.prepare('UPDATE roles SET is_system = 1 WHERE id = ?').run(superAdmin.roleId)
 })
 
 const CHATBOT_KEY = 'sk-chatbot-legacy-KEY-0123456789-abcdefWXYZ'
@@ -62,15 +57,11 @@ const read = async (who: Account = reader) => {
   return response.body as { settings: Json, currentSystemPrompt: string, currentProvider: string, currentModel: string }
 }
 
-test('read needs chatbot_settings.read; clear needs a super admin, whatever chatbot_settings flags a role holds', async () => {
+test('read needs chatbot_settings.read: no session → 401, another resource → 403; a refused read writes nothing', async () => {
   const outsider = await h.account([{ resource: 'settings', canRead: true, canUpdate: true }], 'caidat')
   assert.equal((await h.request('GET', '/api/admin/chatbot/settings', null)).status, 401)
   assert.equal((await h.request('GET', '/api/admin/chatbot/settings', outsider)).status, 403)
-  await storeChatbotKey()
-  for (const who of [reader, allFlags, outsider]) {
-    assert.equal((await h.request('POST', '/api/admin/chatbot/settings/clear', who)).status, 403)
-  }
-  assert.ok(h.harness.rows(chatbotSettings)[0]!.apiKeyCiphertext, 'the key is still there')
+  assert.deepEqual(h.harness.rows(chatbotSettings), [], 'a refused read does not create the settings row')
   assert.deepEqual(h.harness.rows(activityLogs), [])
 })
 
@@ -103,22 +94,4 @@ test('with the chatbot service config and its provider, the AI fields come from 
   h.harness.sqlite.prepare("UPDATE ai_service_configs SET provider = 'anthropic'").run()
   const off = (await read()).settings
   assert.deepEqual([off.enabled, off.providerPolicy], [false, 'anthropic'])
-})
-
-test('clear: the stored chatbot key goes with its audit row in one transaction; the answer says no key is stored', async () => {
-  await storeChatbotKey()
-  h.harness.failNext(/^insert into `activity_logs`/)
-  assert.equal((await h.request('POST', '/api/admin/chatbot/settings/clear', superAdmin)).status, 500)
-  assert.ok(h.harness.rows(chatbotSettings)[0]!.apiKeyCiphertext, 'a failed audit insert keeps the key')
-
-  const response = await h.request('POST', '/api/admin/chatbot/settings/clear', superAdmin)
-  assert.equal(response.status, 200)
-  const settings = response.body.settings as Json
-  assert.deepEqual([settings.hasApiKey, settings.apiKeyStatus, settings.apiKeyMasked], [false, 'not_configured', null])
-  const row = h.harness.rows(chatbotSettings)[0]!
-  assert.deepEqual([row.apiKeyCiphertext, row.apiKeyNonce, row.apiKeyAuthTag, row.apiKeyVersion, row.apiKeyKeyId, row.apiKeyLastFour, row.updatedBy],
-    [null, null, null, null, null, null, superAdmin.id])
-  assert.equal(row.baseUrl, 'https://legacy.example/v1', 'only the key is cleared')
-  const audits = h.harness.rows(activityLogs)
-  assert.deepEqual(audits.map(a => [a.userId, a.action, a.resource, (a.meta as Json).configured]), [[superAdmin.id, 'clear_key', 'chatbot_settings', false]])
 })

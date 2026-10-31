@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import test, { after, beforeEach } from 'node:test'
 
 /**
- * Four read-only `settings` routes of the admin, all `settings.read`:
- *   - `GET /api/admin/settings/navigation` (navigation.get.ts) — the stored menu,
- *     `nav_menu`;
+ * Three read-only `settings` routes of the admin, all `settings.read`:
  *   - `GET /api/admin/settings/navigation/navbar` (navbar.get.ts) — the desktop
- *     menu, `nav_menu_navbar`, falling back to `nav_menu`;
+ *     menu, `nav_menu_navbar`, falling back to the legacy `nav_menu` (its own route,
+ *     `GET`/`PUT /api/admin/settings/navigation`, had no caller and was deleted —
+ *     CHANGELOG § 64; the row may still be in a database, so the fallback stays);
  *   - `GET /api/admin/settings/navigation/mobile` (mobile.get.ts) — the bottom bar,
  *     `nav_menu_mobile`, with NO fallback (another shape);
  *   - `POST /api/admin/settings/sitemap/generate` (generate.post.ts) — a fresh
@@ -29,7 +29,6 @@ const { startAiRouteHarness } = await import('./_ai-route-harness')
 const h = await startAiRouteHarness({
   extraTables: schema => [schema.pages, schema.articles, schema.categories, schema.contentTypes, schema.chatbotKnowledge],
   routes: async load => [
-    { method: 'get', path: '/api/admin/settings/navigation', handler: await load('../server/api/admin/settings/navigation.get') },
     { method: 'get', path: '/api/admin/settings/navigation/navbar', handler: await load('../server/api/admin/settings/navigation/navbar.get') },
     { method: 'get', path: '/api/admin/settings/navigation/mobile', handler: await load('../server/api/admin/settings/navigation/mobile.get') },
     { method: 'post', path: '/api/admin/settings/sitemap/generate', handler: await load('../server/api/admin/settings/sitemap/generate.post') },
@@ -53,25 +52,20 @@ const MAIN = [{ label: 'Tin tức', href: '/news' }]
 const NAVBAR = [{ label: 'Thanh trên', href: '/' }]
 const MOBILE = { items: [{ icon: 'house', href: '/' }] }
 
-test('settings.read is required by all four: no session → 401, another resource → 403', async () => {
+test('settings.read is required by all three: no session → 401, another resource → 403', async () => {
   const editor = await h.account([{ resource: 'news', canRead: true, canUpdate: true }], 'bientap')
-  for (const [method, path] of [['GET', '/api/admin/settings/navigation'], ['GET', '/api/admin/settings/navigation/navbar'], ['GET', '/api/admin/settings/navigation/mobile'], ['POST', '/api/admin/settings/sitemap/generate']] as const) {
+  for (const [method, path] of [['GET', '/api/admin/settings/navigation/navbar'], ['GET', '/api/admin/settings/navigation/mobile'], ['POST', '/api/admin/settings/sitemap/generate']] as const) {
     assert.equal((await h.request(method, path, null)).status, 401, path)
     assert.equal((await h.request(method, path, editor)).status, 403, path)
   }
 })
 
-test('navigation: the stored menu, parsed; missing or unreadable → null', async () => {
-  assert.equal(await menuAt(''), null)
-  await store('nav_menu', '{not json')
-  assert.equal(await menuAt(''), null)
-  h.harness.sqlite.prepare('DELETE FROM settings').run()
-  await store('nav_menu', JSON.stringify(MAIN))
-  assert.deepEqual(await menuAt(''), MAIN)
-})
-
-test('navbar: its own key first, the shared menu when it has none, null when neither', async () => {
+test('navbar: its own key first, the shared menu when it has none, null when neither — an unreadable one is null, not a 500', async () => {
   assert.equal(await menuAt('/navbar'), null)
+  // The unreadable-menu case the deleted `navigation.get.ts` test carried, on the route that is live.
+  await store('nav_menu', '{not json')
+  assert.equal(await menuAt('/navbar'), null)
+  h.harness.sqlite.prepare('DELETE FROM settings').run()
   await store('nav_menu', JSON.stringify(MAIN))
   assert.deepEqual(await menuAt('/navbar'), MAIN)
   await store('nav_menu_navbar', JSON.stringify(NAVBAR))

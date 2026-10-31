@@ -1,6 +1,7 @@
 /**
- * The target language of the two on-demand translation routes (`ai/translate`,
- * `ai/translate-ui`), which each kept a copy of this table.
+ * The target language of the on-demand translation route `ai/translate`. It and
+ * `ai/translate-ui` (deleted for having no caller — CHANGELOG § 64) each kept a
+ * copy of this table.
  *
  * Both used `LANGUAGE_NAMES[code] || code` on whatever the request sent: a name of
  * `Object.prototype` (`constructor`, `toString`) resolved to a function, pasted into

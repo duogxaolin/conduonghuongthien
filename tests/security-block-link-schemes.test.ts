@@ -18,8 +18,9 @@ import { renderSfcTemplate } from './_render-sfc-template'
  * Now `shared/link-policy.ts` decides, on a NORMALISED value (entities decoded,
  * control characters and whitespace stripped, lower-cased), and allows only
  * `/path` (not `//`), `#…`, `http:`, `https:`, `mailto:`, `tel:`:
- *  - write: `normalizeBlocks` (draft/publish/version paths) and
- *    `settings/navigation.put.ts` answer 400 naming the field;
+ *  - write: `normalizeBlocks` (draft/publish/version paths — the draft save and
+ *    publish handlers are driven below) and `settings/navigation/navbar.put.ts` +
+ *    `mobile.put.ts` answer 400 naming the field;
  *  - public read: `pages/[slug]` blanks unsafe values in rows stored before the
  *    rule;
  *  - render: LinksBlock/HeroBlock bind `href` through the same helper.
@@ -273,39 +274,14 @@ test('public page: legacy flat rows (no published tree) are blanked the same way
   assert.equal(response.blocks[1]!.data.btnLink, '')
 })
 
-// ─── Navigation save (legacy `nav_menu` endpoint) ─────────────────────────────
-
-const navigationPut = (await import('../server/api/admin/settings/navigation.put.ts')).default as unknown as (event: { body: unknown, context: Record<string, unknown> }) => Promise<{ ok: boolean }>
-const saveNav = (menu: unknown) => navigationPut({ body: { menu }, context: { adminUser: { id: 1 } } })
-
-test('navigation save: the spec example `//evil.example/path` is a 400, and nothing is stored', async () => {
-  for (const url of UNSAFE) {
-    nav.written = []
-    await assert.rejects(saveNav([{ id: 'a', label: 'Trang chủ', url: '/' }, { id: 'b', label: 'X', url }]),
-      (error: { statusCode?: number, statusMessage?: string }) => error.statusCode === 400 && /menu\[1\]\.url/.test(error.statusMessage ?? ''),
-      `${JSON.stringify(url)} was not refused with 400`)
-    assert.deepEqual(nav.written, [], 'a refused save must store nothing')
-  }
-  nav.written = []
-  await assert.rejects(saveNav([{ id: 'a', label: 'A', url: '/', children: [{ id: 'c', label: 'C', url: '//evil.example' }] }]),
-    (error: { statusCode?: number, statusMessage?: string }) => error.statusCode === 400 && /menu\[0\]\.children\[0\]\.url/.test(error.statusMessage ?? ''))
-  assert.deepEqual(nav.written, [])
-})
-
-test('navigation save: ordinary links are stored unchanged', async () => {
-  nav.written = []
-  const menu = SAFE.map((url, i) => ({ id: `i${i}`, label: `Mục ${i}`, url }))
-  assert.equal((await saveNav(menu)).ok, true)
-  assert.deepEqual((nav.written[0] as Array<{ url: string }>).map(item => item.url), SAFE)
-})
-
-// ─── The navigation endpoints the admin UI actually calls ─────────────────────
+// ─── The navigation endpoints the admin UI calls ──────────────────────────────
 //
 // `/admin/content/navigation/navbar.vue` and `mobile.vue` save through
 // `settings/navigation/navbar.put.ts` (`nav_menu_navbar`) and
-// `settings/navigation/mobile.put.ts` (`nav_menu_mobile`) — not the legacy
-// `navigation.put.ts`. The spec scenario "save `//evil.example/path` → 400" is
-// only met when THESE refuse it.
+// `settings/navigation/mobile.put.ts` (`nav_menu_mobile`). The legacy
+// `settings/navigation.put.ts` (`nav_menu`) had no caller and was deleted
+// (CHANGELOG § 64). The spec scenario "save `//evil.example/path` → 400" is met
+// when THESE refuse it.
 
 const navbarPut = (await import('../server/api/admin/settings/navigation/navbar.put.ts')).default as unknown as (event: { body: unknown, context: Record<string, unknown> }) => Promise<{ ok: boolean }>
 const mobilePut = (await import('../server/api/admin/settings/navigation/mobile.put.ts')).default as unknown as (event: { body: unknown, context: Record<string, unknown> }) => Promise<{ ok: boolean }>
@@ -345,69 +321,73 @@ test('mobile tab bar save (UI path): ordinary links are stored; chatbot/drawer t
   assert.deepEqual((nav.written[0] as Array<{ url: string }>).map(item => item.url), ['', ''], 'a non-navigating tab never stores the value')
 })
 
-// ─── The flat page-block write endpoints ──────────────────────────────────────
+// ─── Draft save: the write path the page builder uses ─────────────────────────
 //
-// `pages/[id]/blocks/index.post.ts` and `blocks/[blockId].put.ts` write
-// `page_blocks.data` directly. No admin page calls them today, but they answer to
-// anyone with `pages.create`/`pages.update`, so they apply the same rule.
+// `/admin/content/pages/[id].vue` saves its working copy through
+// `pages/[id]/draft.put.ts` (`pages.draft_blocks`) and publishes through
+// `publish.post.ts` (below). The flat per-block endpoints (`pages/[id]/blocks/**`)
+// had no caller and were deleted (CHANGELOG § 64); the handler-level checks they
+// carried — an unsafe link is a 400 naming the field with nothing written, an
+// allowed one is stored unchanged, rich text is filtered before it is stored —
+// run here on the handler that is live.
 
-const { pages: flatPagesTable, pageBlocks: pageBlocksTable } = await import('../server/db/schema')
-const flatPost = (await import('../server/api/admin/pages/[id]/blocks/index.post.ts')).default as unknown as (event: { body: unknown, params: Record<string, string>, context: Record<string, unknown> }) => Promise<{ ok: boolean }>
-const flatPut = (await import('../server/api/admin/pages/[id]/blocks/[blockId].put.ts')).default as unknown as (event: { body: unknown, params: Record<string, string>, context: Record<string, unknown> }) => Promise<{ ok: boolean }>
+const { pages: draftPagesTable } = await import('../server/db/schema')
+const draftPut = (await import('../server/api/admin/pages/[id]/draft.put.ts')).default as unknown as (event: { body: unknown, params: Record<string, string>, context: Record<string, unknown> }) => Promise<{ ok: boolean }>
+const saveDraft = (blocks: unknown) => draftPut({ body: { blocks }, params: { id: '7' }, context: { adminUser: { id: 1 } } })
+/** `normalizeBlocks` throws h3's `createError`: the field is named in its message. */
+const isNamedDraft400 = (field: RegExp) => (error: { statusCode?: number, statusMessage?: string, message?: string }) =>
+  error.statusCode === 400 && field.test(`${error.statusMessage ?? ''} ${error.message ?? ''}`)
 
-async function withFlatDb(existingType: string, run: (written: Array<Record<string, unknown>>) => Promise<void>) {
-  const written: Array<Record<string, unknown>> = []
-  const flatDb = {
-    select: (projection?: Record<string, unknown>) => ({
-      from: (table: unknown) => chain(() => {
-        if (table === flatPagesTable) return [{ id: 7, slug: 'p' }]
-        if (projection && 'maxOrder' in projection) return [{ maxOrder: 0 }]
-        if (table === pageBlocksTable) return [{ id: 11, pageId: 7, blockType: existingType, data: {} }]
-        return []
-      }),
-    }),
-    insert: (table: unknown) => ({ values: (values: Record<string, unknown>) => { if (table === pageBlocksTable) written.push(values); return chain(() => [{ insertId: 12 }]) } }),
-    update: (table: unknown) => ({ set: (values: Record<string, unknown>) => { if (table === pageBlocksTable) written.push(values); return chain(() => []) } }),
-    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(flatDb),
+async function withDraftDb(run: (stored: unknown[]) => Promise<void>) {
+  const stored: unknown[] = []
+  const draftDb = {
+    select: () => ({ from: (table: unknown) => chain(() => (table === draftPagesTable ? [{ id: 7, slug: 'p', draftBlocks: null }] : [])) }),
+    update: (table: unknown) => ({ set: (values: Record<string, unknown>) => { if (table === draftPagesTable) stored.push(values.draftBlocks); return chain(() => []) } }),
   }
-  activeDb = flatDb
+  activeDb = draftDb
   globals.getRouterParam = (event: { params: Record<string, string> }, key: string) => event.params[key]
   try {
-    await run(written)
+    await run(stored)
   } finally {
     activeDb = pageAndNavDb
     globals.getRouterParam = getRouterParam
   }
 }
 
-test('flat block create: an unsafe link is a 400 naming the field and nothing is inserted; a safe one is stored unchanged', async () => {
-  await withFlatDb('links', async (written) => {
+test('draft save (UI path): an unsafe link anywhere in the tree is a 400 naming the field, and nothing is stored', async () => {
+  await withDraftDb(async (stored) => {
     for (const url of UNSAFE) {
-      written.length = 0
-      await assert.rejects(flatPost({ body: { blockType: 'links', data: { links: [{ url: '/a' }, { url }] } }, params: { id: '7' }, context: { adminUser: { id: 1 } } }),
-        isNamed400(/links\[1\]\.url/), `${JSON.stringify(url)} was accepted`)
-      assert.deepEqual(written, [])
+      stored.length = 0
+      await assert.rejects(saveDraft(tree({ blockType: 'links', data: { links: [{ label: 'a', url: '/a' }, { label: 'b', url }] } })),
+        isNamedDraft400(/links\[1\]\.url/), `${JSON.stringify(url)} was accepted`)
+      await assert.rejects(saveDraft(tree({ blockType: 'cta', data: { btnLink: '/ok', translations: { en: { btnLink: url } } } })),
+        isNamedDraft400(/translations\.en\.btnLink/), `${JSON.stringify(url)} in a translation was accepted`)
+      await assert.rejects(saveDraft([{ blockType: 'hero', data: { btnHelpLink: url } }]),
+        isNamedDraft400(/btnHelpLink/), `${JSON.stringify(url)} at the top level was accepted`)
+      assert.deepEqual(stored, [], 'a refused save must store nothing')
     }
-    written.length = 0
-    await flatPost({ body: { blockType: 'cta', data: { btnLink: 'mailto:a@b.vn', translations: { en: { btnLink: '/en/x' } } } }, params: { id: '7' }, context: { adminUser: { id: 1 } } })
-    assert.equal(written.length, 1)
-    assert.equal((written[0]!.data as Record<string, unknown>).btnLink, 'mailto:a@b.vn')
   })
 })
 
-test('flat block update: the stored block type decides the link fields; unsafe → 400, nothing updated', async () => {
-  await withFlatDb('cta', async (written) => {
-    for (const url of UNSAFE) {
-      written.length = 0
-      await assert.rejects(flatPut({ body: { data: { btnLink: url } }, params: { id: '7', blockId: '11' }, context: { adminUser: { id: 1 } } }),
-        isNamed400(/btnLink/), `${JSON.stringify(url)} was accepted`)
-      await assert.rejects(flatPut({ body: { data: { btnLink: '/ok', translations: { en: { btnLink: url } } } }, params: { id: '7', blockId: '11' }, context: { adminUser: { id: 1 } } }),
-        isNamed400(/translations\.en\.btnLink/))
-      assert.deepEqual(written, [])
-    }
-    written.length = 0
-    await flatPut({ body: { data: { btnLink: 'https://example.gov.vn/x' } }, params: { id: '7', blockId: '11' }, context: { adminUser: { id: 1 } } })
-    assert.equal((written[0]!.data as Record<string, unknown>).btnLink, 'https://example.gov.vn/x')
+test('draft save (UI path): allowed links are stored unchanged; rich text is filtered before it is stored', async () => {
+  await withDraftDb(async (stored) => {
+    const result = await saveDraft([
+      ...tree({ blockType: 'links', data: { links: SAFE.map((url, i) => ({ label: `Mục ${i}`, url })) } }),
+      { blockType: 'cta', data: { btnLink: 'mailto:a@b.vn', translations: { en: { btnLink: '/en/x' } } } },
+      { blockType: 'richtext', data: { html: '<p onclick="alert(1)">Giữ chữ</p><script>alert(2)</script>' } },
+      { blockType: 'content_aside', data: { bodyHtml: '<p>Bên lề</p><img src=x onerror=alert(3)>' } },
+    ])
+    assert.equal(result.ok, true)
+    assert.equal(stored.length, 1, 'one draft write')
+    const nodes = flatten(stored[0] as PublicNode[])
+    assert.deepEqual((nodes.find(node => node.blockType === 'links')!.data.links as Array<{ url: string }>).map(link => link.url), SAFE)
+    const cta = nodes.find(node => node.blockType === 'cta')!
+    assert.equal(cta.data.btnLink, 'mailto:a@b.vn')
+    assert.equal((cta.data.translations as Record<string, Record<string, unknown>>).en!.btnLink, '/en/x')
+    const text = JSON.stringify(stored[0])
+    assert.doesNotMatch(text, /<script|onclick|onerror/i, 'markup that runs script reached draft_blocks')
+    assert.match(String(nodes.find(node => node.blockType === 'richtext')!.data.html), /Giữ chữ/)
+    assert.match(String(nodes.find(node => node.blockType === 'content_aside')!.data.bodyHtml), /Bên lề/)
   })
 })
 

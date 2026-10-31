@@ -3,7 +3,8 @@
  * design D3). ONE policy, used on write, on public read and on render:
  *  - write: `server/utils/page-versions.ts` (`normalizeBlocks`, via
  *    `assertSafeBlockLinks` in `sanitize-html.ts`) and
- *    `server/api/admin/settings/navigation.put.ts` — 400 naming the field;
+ *    `server/api/admin/settings/navigation/navbar.put.ts` + `mobile.put.ts` — 400
+ *    naming the field;
  *  - public read: `server/api/public/pages/[slug].get.ts` blanks unsafe values in
  *    rows stored before the rule; `app/utils/nav-config.ts` drops nav items whose
  *    URL is unsafe;
