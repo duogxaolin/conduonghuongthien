@@ -2275,6 +2275,7 @@ Bản vá của sự cố trên nhánh `fix/chatbot-sovereignty` (`ebaa1496`, `2
 ### 62. Đợt 3 — các mục chủ dự án đã quyết: dải IP quá rộng, ngày lượt xem, 擁 (2026-10-31)
 
 - **Chặn IP — dải quá rộng bị từ chối lúc lưu:** `validateBanValue` (cổng duy nhất của form chặn và nút "Cấm IP" ở hàng đợi kiểm duyệt) trả 400 cho dải IPv4 `/0`–`/7` (kể cả `::ffff:0.0.0.0/0`) và báo "quá rộng" cho dải IPv6 rộng hơn `/32` (dải IPv6 vẫn bị từ chối ở mọi độ rộng); hàng đã lưu không đổi và vẫn áp nguyên văn → `docs/decisions/realm-safety.md` § "Chặn IP: dải quá rộng".
+- **Ngày của lượt xem là ngày lịch Việt Nam:** `viewDay()` đổi từ ngày UTC sang `vietnamDateString` (+7, không phụ thuộc `TZ`) — hàng `article_view_daily`, token chống F5 của bài và video, boost; không DDL, không backfill (hàng cũ giữ ngày UTC, ngày chuyển đổi lệch một lần), analytics vẫn UTC → `docs/decisions/data-layer.md` § "Ngày của lượt xem".
 
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
@@ -2339,7 +2340,7 @@ Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏ
 - (Đợt 3, § 54) `callAi`: FINDING G1–G5 ghim nguyên trạng (lượt hỏng không ghi `ai_usage_logs` nên `checkBudget` không thấy chi phí; đọc giá sau khi đã trả tiền; `<think>` lọt khi câu cuối vòng công cụ rỗng; BOM chỉ nhận ở một đường; `onToolCall` ném làm cả lượt `provider_error`); KNOWN-A (chính sách `anthropic` với công cụ/stream hỏng), KNOWN-B (log che số token).
 - (Đợt 3, § 55) 9 màu fold cách token 4,2–6,7 chờ duyệt lại; `accent` làm chữ trên nền trắng chưa có test chặn (vài chỗ cũ vi phạm).
 - (Đợt 3, § 57) G-2b: `/news/<X>` không gửi `lang` — tiêu đề tab tiếng Việt cho người đọc tiếng Anh vào thẳng (sửa gốc: quyết định nhánh giữ kết quả khi đọc lại cùng slug).
-- (Đợt 3, § 58) KNOWN giữ như base: R7-3 (hai lượt cấm cùng IP → 500), R7-4 (duyệt hàng chat chỉ đổi hàng đợi), R8-6b/R8-7/R8-8 (đọc thừa trên tuyến bài viết, khoá "bài liên quan" thiếu ngôn ngữ). Cần chủ dự án quyết: chi phí Delify đếm hai lần, trần chi phí dịch toàn cục, deadlock chặn/xoá tài khoản ↔ trả lời (chỉ thử lại), chặn lại tài khoản đã bị chặn, ~~chặn dải `/0`~~ (đóng ở § 62), `viewDay` là ngày UTC, bốn route không nơi gọi, quyền chi tiền AI chỉ đòi cờ `read`.
+- (Đợt 3, § 58) KNOWN giữ như base: R7-3 (hai lượt cấm cùng IP → 500), R7-4 (duyệt hàng chat chỉ đổi hàng đợi), R8-6b/R8-7/R8-8 (đọc thừa trên tuyến bài viết, khoá "bài liên quan" thiếu ngôn ngữ). Cần chủ dự án quyết: chi phí Delify đếm hai lần, trần chi phí dịch toàn cục, deadlock chặn/xoá tài khoản ↔ trả lời (chỉ thử lại), chặn lại tài khoản đã bị chặn, ~~chặn dải `/0`~~ (đóng ở § 62), ~~`viewDay` là ngày UTC~~ (đóng ở § 62), bốn route không nơi gọi, quyền chi tiền AI chỉ đòi cờ `read`.
 - (Đợt 3, § 59) FINDING-AE2: hộp nhắc của trình soạn bài hứa "AI tự động cập nhật và dịch lại toàn bộ các ngôn ngữ" mà nút gọi `translate-all` (quyết định nghiệp vụ).
 - (Đợt 3, § 60) Nhánh gia cố chủ quyền `wave3/chatbot-sovereignty-port` (`b4fad200`) chưa gộp vào `wave3/integration`.
 - (Đợt 3, § 61) Integration (22 suite, MySQL thật) và E2E đầy đủ chưa chạy lại trên đỉnh `f3c311a0`.
