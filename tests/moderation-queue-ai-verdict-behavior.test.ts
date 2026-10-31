@@ -75,6 +75,9 @@ const commentList = async (visibility: 'visible' | 'hidden') => {
 const verdictWrites = () => h.harness.statements.filter(sql => /^update `ai_moderation_queue` set `ai_verdict`/i.test(sql))
 
 const NOTED = { verdict: 'violation', severity: 'critical', reason: AI_REASON }
+/** Invisible characters, built from code points so this source carries none itself (Trojan Source). */
+const RLO = String.fromCodePoint(0x202e) // RIGHT-TO-LEFT OVERRIDE
+const ZWSP = String.fromCodePoint(0x200b) // ZERO WIDTH SPACE
 
 test('the AI hides a comment that already has a pending flag_only row: its verdict lands on THAT row only — not the resolved row of the same comment, not another comment\'s, not a livestream row with the same id — and both admin lists show it', async () => {
   const id = await comment()
@@ -157,7 +160,7 @@ test('the model\'s reason is cleaned and cut before it is stored: bidi/zero-widt
   const pending = await queued({ targetId: id })
   // Cleaned, the prefix is 16 code points ("Lýdo bị ẩn ơơơơơ"), so the 299th kept code point is
   // the first emoji — whose high surrogate is UTF-16 unit 299: a cut by unit keeps half of it.
-  aiSays({ verdict: 'spam', riskLevel: 'medium', reason: `Lý‮do​  bị\n\tẩn ơơơơơ${'x'.repeat(282)}😀😀 đuôi` })
+  aiSays({ verdict: 'spam', riskLevel: 'medium', reason: `Lý${RLO}do${ZWSP}  bị\n\tẩn ơơơơơ${'x'.repeat(282)}😀😀 đuôi` })
   await check(id)
   const stored = queueRow(pending).aiVerdict as { verdict: string, severity: string, reason: string }
   assert.deepEqual([stored.verdict, stored.severity], ['spam', 'medium'])
@@ -165,7 +168,8 @@ test('the model\'s reason is cleaned and cut before it is stored: bidi/zero-widt
   assert.equal(points.length, QUEUE_AI_VERDICT_REASON_MAX_LENGTH)
   assert.ok(stored.reason.startsWith('Lýdo bị ẩn ơ'), stored.reason.slice(0, 30))
   assert.ok(stored.reason.endsWith('😀…'), 'cut by code point: the emoji whole, then the ellipsis')
-  assert.doesNotMatch(stored.reason, /[‮​\n\t]|\p{Cs}/u)
+  for (const gone of [RLO, ZWSP, '\n', '\t']) assert.ok(!stored.reason.includes(gone), `U+${gone.codePointAt(0)!.toString(16)} left in`)
+  assert.doesNotMatch(stored.reason, /\p{Cs}/u)
 })
 
 test('a reply with a reason that is not a string, and an unknown risk level: the verdict is still noted (no reason, severity high) — "[object Object]" never reaches the column', async () => {
@@ -276,7 +280,7 @@ test('a stored reason is cleaned again on the way out (a row written by hand, or
   const id = await comment({ isHidden: true, flagReason: autoHideFlagReason(NOT_CONFIGURED) })
   const pending = await queued({ targetId: id })
   h.harness.sqlite.prepare('UPDATE ai_moderation_queue SET ai_verdict = ? WHERE id = ?')
-    .run(JSON.stringify({ verdict: 'violation', severity: 'high', reason: `a‮b\n<script>x</script>${'y'.repeat(400)}` }), pending)
+    .run(JSON.stringify({ verdict: 'violation', severity: 'high', reason: `a${RLO}b\n<script>x</script>${'y'.repeat(400)}` }), pending)
   const [item] = await queueList('pending')
   const reason = (item!.aiVerdict as { reason: string }).reason
   assert.ok(reason.startsWith('ab <script>x</script>y'), 'bidi removed, newline a space; markup stays text — the page interpolates, never v-html')

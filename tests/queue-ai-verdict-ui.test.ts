@@ -23,6 +23,9 @@ const PAGE = new URL('../app/pages/admin/comments/index.vue', import.meta.url).p
 /** SSR output without Vue's fragment markers (`<!--[-->`), so assertions read the text as shown. */
 const renderNote = async (verdict: unknown) => (await renderSfcTemplate(NOTE, { verdict, queueAiVerdictSummary })).replace(/<!--.*?-->/g, '')
 
+/** Characters by code unit, so this source carries no invisible character itself (Trojan Source). */
+const ch = (...units: number[]) => String.fromCharCode(...units)
+
 test('only the AI\'s two verdicts are stored; an unknown severity is "high", a reason that is not a string is empty', () => {
   assert.equal(queueAiVerdictFromReply({ verdict: 'safe', severity: 'low', reason: 'ok' }), null)
   assert.equal(queueAiVerdictFromReply({ verdict: 'VIOLATION', severity: 'high', reason: 'x' }), null)
@@ -32,8 +35,10 @@ test('only the AI\'s two verdicts are stored; an unknown severity is "high", a r
 })
 
 test('the reason is cleaned and cut by code point', () => {
-  assert.equal(cleanQueueAiVerdictReason('a‮b⁦c‍d﻿e\u0000f\r\n g'), 'abcde f g')
-  assert.equal(cleanQueueAiVerdictReason('x\uD800y'), 'xy', 'a lone surrogate is dropped')
+  // RLO, LRI, ZWJ, BOM (format characters), NUL (control), CR LF, LINE SEPARATOR.
+  const dirty = `a${ch(0x202e)}b${ch(0x2066)}c${ch(0x200d)}d${ch(0xfeff)}e${ch(0)}f${ch(13, 10, 0x2028)}g`
+  assert.equal(cleanQueueAiVerdictReason(dirty), 'abcde f g')
+  assert.equal(cleanQueueAiVerdictReason(`x${ch(0xd800)}y`), 'xy', 'a lone surrogate is dropped')
   assert.equal(cleanQueueAiVerdictReason(null), '')
   const exact = 'ơ'.repeat(QUEUE_AI_VERDICT_REASON_MAX_LENGTH)
   assert.equal(cleanQueueAiVerdictReason(exact), exact, 'exactly the limit: kept whole, no ellipsis')
