@@ -141,7 +141,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, type Ref } from 'vue'
-import { pendingBadgeCount } from '~/utils/moderation-summary'
+import { pendingBadgeCount, resolveOutcomeNotice } from '~/utils/moderation-summary'
 import { useModerationWorker } from '~/composables/useModerationWorker'
 import type { AdminListPage } from '~/composables/useAdminList'
 import type {
@@ -382,15 +382,15 @@ async function resolveItem(item: ModerationQueueItem, action: ModerationResolveA
   })
   if (!ok) return
 
-  const body = { action }
+  let notice: ReturnType<typeof resolveOutcomeNotice> // "Bỏ ẩn" có thể giữ nội dung ẩn — nói rõ, không "thành công" chung
   try {
-    await adminFetch<ModerationResolveResponse>(`/api/admin/ai/moderation/queue/${item.id}/resolve`, { method: 'POST', body })
+    notice = resolveOutcomeNotice((await adminFetch<ModerationResolveResponse>(`/api/admin/ai/moderation/queue/${item.id}/resolve`, { method: 'POST', body: { action } })).restore)
   } catch (err: unknown) { // 409: người khác vừa xử lý; 404: mục đã mất — hàng trên màn hình đã cũ, đọc lại
     toast.error(errorMessage(err, 'Không thể xử lý đối soát.'))
     if ([404, 409].includes(errorStatus(err) ?? 0)) await Promise.all([loadQueue(), loadWorkerStatus()])
     return
   }
-  toast.success('Đã xử lý đối soát thành công!')
+  toast[notice.type](notice.message)
   // Số "pending" của worker-status cũng đổi (huy hiệu khi đang lọc trạng thái khác).
   // Hàng đợi tải lại hỏng hiện trên tab của nó (`queueError`), không thành toast "không xử lý được".
   await Promise.all([loadQueue(), loadWorkerStatus()])

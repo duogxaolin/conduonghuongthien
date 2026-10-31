@@ -86,9 +86,11 @@ export type LivestreamChatDeps = {
  * Tên là bản chụp lúc gửi (12.9) — giữ nguyên, TRỪ bản chụp mang tên dành riêng:
  * tin gửi trước 2A chụp thẳng tên Google ("Admin"), nên lịch sử đọc ra "Bạn đọc"
  * (`publicNameSnapshot`, spec reader-display-names-google). Không ghi lại hàng:
- * bản chụp gốc vẫn là bằng chứng cho hàng chờ kiểm duyệt.
+ * bản chụp gốc vẫn là bằng chứng cho hàng chờ kiểm duyệt. Cột đọc ra: `CHAT_MESSAGE_COLUMNS` —
+ * lịch sử và tin "Bỏ ẩn" hiện lại (`moderated-content.ts`) đọc cùng bộ, cạnh hàm này (guard S5).
  */
-function serializeChatMessage(row: {
+export const CHAT_MESSAGE_COLUMNS = { id: livestreamMessages.id, displayName: livestreamMessages.displayName, content: livestreamMessages.content, createdAt: livestreamMessages.createdAt }
+export function serializeChatMessage(row: {
   id: number
   displayName: string
   content: string
@@ -340,12 +342,7 @@ export async function listChatHistory(
   const limit = finitePositive(input.limit, CHAT_HISTORY_DEFAULT, CHAT_HISTORY_MAX)
 
   const rows = await db
-    .select({
-      id:          livestreamMessages.id,
-      displayName: livestreamMessages.displayName,
-      content:     livestreamMessages.content,
-      createdAt:   livestreamMessages.createdAt,
-    })
+    .select(CHAT_MESSAGE_COLUMNS)
     .from(livestreamMessages)
     .where(and(
       eq(livestreamMessages.sessionId, session.id),

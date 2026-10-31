@@ -163,11 +163,13 @@ export async function rescanExistingContent(options: RescanOptions = {}): Promis
   // One regex budget per scanned item (`createModerationRegexBudget`, 250 ms): a comment's full
   // check and its rules-only fallback share it; each livestream message gets its own. A run of
   // 1000 comments × 5 slow rules no longer blocks the event loop ~1 s per item.
+  // An instant block files its queue row WITH the scanned row's id, and the hide writes that row's
+  // reason (`matchedRule`): "Bỏ ẩn" on the row can then find and show again what this run hid.
   const rulesOnly = async (c: { id: number; body: string }, regexBudget: ModerationRegexBudget) => {
-    const check = await fastPreModerate(c.body, { targetType: 'comment', contextTitle: `Quét lại bình luận #${c.id}`, regexBudget })
+    const check = await fastPreModerate(c.body, { targetType: 'comment', targetId: c.id, contextTitle: `Quét lại bình luận #${c.id}`, regexBudget })
     if (!check.blocked) return
     const failures: ModerationPersistFailure[] = []
-    if (await applyAutoHide('comment', c.id, check.reason, failures)) progress.hiddenComments++
+    if (await applyAutoHide('comment', c.id, check.matchedRule, failures)) progress.hiddenComments++
     else progress.failedComments++
   }
   while (progress.scannedComments < progress.totalComments) {
@@ -234,12 +236,13 @@ export async function rescanExistingContent(options: RescanOptions = {}): Promis
       try {
         const check = await fastPreModerate(m.content, {
           targetType: 'livestream_chat',
+          targetId: m.id,
           contextTitle: `Quét lại tin chat trực tiếp #${m.id}`,
           regexBudget: createModerationRegexBudget(),
         })
         if (check.blocked) {
           const failures: ModerationPersistFailure[] = []
-          if (await applyAutoHide('livestream_chat', m.id, check.reason, failures)) progress.deletedMessages++
+          if (await applyAutoHide('livestream_chat', m.id, check.matchedRule, failures)) progress.deletedMessages++
           else progress.failedMessages++
         }
       } catch (err: unknown) {

@@ -10,19 +10,37 @@ import {
 import { requireResourcePermission } from '../../../../../../utils/permissions'
 import { readAffectedRows } from '../../../../../../utils/affected-rows'
 import { validateBanValue } from '../../../../../../utils/ip-ban'
+import {
+  announceToLiveViewers,
+  restoreAutoHidden,
+  withdrawLivestreamMessage,
+  type LivestreamAnnouncement,
+  type RestoreOutcome,
+} from '../../../../../../services/moderated-content'
 
 const VALID_ACTIONS = new Set(['approve', 'reject_delete', 'ban_ip'])
 
 /**
- * Resolve one row of the AI moderation queue: approve (unhide the comment), reject (delete it) or
- * ban the author's address (ban + delete). The row, its target and the audit row change together.
+ * Resolve one row of the AI moderation queue: approve (show again the comment or livestream message
+ * that this row's automatic hide still hides — `restore` in the answer says what happened, see
+ * `moderated-content.ts`), reject (delete the comment; on an approved livestream row the message the
+ * approve showed is removed again) or ban the author's address (ban + the same). The row, its target
+ * and the audit row change together; live viewers are told after the commit.
  *
  * A contested transition (CLAUDE.md "Chuyển trạng thái có cạnh tranh"): the status read before
  * the transaction is only a guess. The queue UPDATE inside it is conditional on that status and
  * counted; a request that loses to another resolve of the same row (0 rows) is a 409 and its
  * transaction — the comment it unhid or deleted, the ban it inserted — rolls back with it
- * (FINDING-R7-1). The statements and their order are the base's: only the queue UPDATE gained
- * its `status = ?` and nothing reads under a lock (no new lock scope — slice R6 lesson).
+ * (FINDING-R7-1). The order is the base's — the target first, then the queue UPDATE (which gained
+ * its `status = ?`), then the audit row — and nothing reads under a lock (slice R6 lesson): the
+ * target is read with a plain read and changed only by a conditional UPDATE on its primary key.
+ * The comment path locks a subset of what the base locked (the base UPDATEd the comment on every
+ * approve — a deleted one's missing id took the X lock on the supremum, stalling every new comment
+ * until the commit; now only when this row's mark still hides it). A livestream message is the one
+ * row this adds (restore, or removal again after an approve) — X,REC_NOT_GAP on its PRIMARY key, no
+ * gap lock. MySQL 8 (`mysql-restore-locks.sh` in the change's proof): a new message in the same
+ * broadcast, an officer removing another message, the automatic hide of another message, another
+ * row's approve and a new comment wait 0.01 s, as on the base; only the same message waits.
  *
  * KNOWN, kept as the base has it (FINDING-R7-3): two bans of one address at once — the second
  * INSERT hits the unique key, ER_DUP_ENTRY is a 500 and its whole resolve rolls back; clicking
@@ -75,15 +93,15 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   const nextStatus = action === 'approve' ? 'approved' : action === 'reject_delete' ? 'rejected' : 'banned'
 
-  await db.transaction(async (tx) => {
+  const resolved = await db.transaction(async (tx) => {
+    let restore: RestoreOutcome | null = null
+    let announce: LivestreamAnnouncement | null = null
     if (action === 'approve') {
-      // Unhide the comment
-      if (queueItem.targetType === 'comment' && queueItem.targetId) {
-        await tx
-          .update(articleComments)
-          .set({ isHidden: false })
-          .where(eq(articleComments.id, queueItem.targetId))
-      }
+      // Show the content again — only what this row's own automatic hide still hides
+      // (moderated-content.ts: not an officer's hide, not a deleted row, not a banned author).
+      const shown = await restoreAutoHidden(tx, queueItem)
+      restore = shown.outcome
+      announce = shown.announce
     } else if (action === 'reject_delete') {
       // Delete target comment
       if (queueItem.targetType === 'comment' && queueItem.targetId) {
@@ -91,6 +109,7 @@ export default defineEventHandler(async (event) => {
           .delete(articleComments)
           .where(eq(articleComments.id, queueItem.targetId))
       }
+      announce = await withdrawLivestreamMessage(tx, queueItem)
     } else if (action === 'ban_ip') {
       // Ban IP if available
       if (banValue) {
@@ -115,6 +134,7 @@ export default defineEventHandler(async (event) => {
           .delete(articleComments)
           .where(eq(articleComments.id, queueItem.targetId))
       }
+      announce = await withdrawLivestreamMessage(tx, queueItem)
     }
 
     const [header] = await tx
@@ -151,8 +171,12 @@ export default defineEventHandler(async (event) => {
         action,
         targetType: queueItem.targetType,
         targetId: queueItem.targetId,
+        ...(restore === null ? {} : { restore }),
       },
     })
+    return { restore, announce }
   })
-  return { ok: true, action, id }
+  // Committed: only now tell the people watching the broadcast.
+  announceToLiveViewers(resolved.announce)
+  return { ok: true, action, id, restore: resolved.restore }
 })

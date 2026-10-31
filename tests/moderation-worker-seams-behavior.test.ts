@@ -23,7 +23,7 @@
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
 import { MySqlDialect } from 'drizzle-orm/mysql-core'
-import { aiModerationQueue, aiModerationRules, articleComments, chatMessages } from '../server/db/schema.ts'
+import { aiModerationQueue, aiModerationRules, articleComments, chatMessages, livestreamMessages } from '../server/db/schema.ts'
 
 const dialect = new MySqlDialect()
 
@@ -324,7 +324,28 @@ test('an instant block reached through checkAndModerateContent hides only when t
   assert.equal(rec.aiCalls, 0)
   const withId = await svc.checkAndModerateContent({ content: 'mày dcm', targetType: 'chat', targetId: 42 })
   assert.equal(withId.hidden, true)
-  assert.deepEqual(rec.updates, [{ table: chatMessages, set: { isFlagged: true, flagReason: noId.reasons[0] } }])
+  // The hide writes the queue row's own reason (the rule's label), and the row carries the target:
+  // "Bỏ ẩn" on it recognises its hide (restore, `moderated-content.ts`). It used to write the
+  // wrapped `reasons[0]` over a row filed with `target_id` NULL — a hide no approve could find.
+  assert.deepEqual(rec.updates, [{ table: chatMessages, set: { isFlagged: true, flagReason: 'Chửi thề thô tục' } }])
+  assert.deepEqual(rec.queue.map(r => [r.targetType, r.targetId, r.flaggedReason]), [['comment', null, 'Chửi thề thô tục'], ['chat', 42, 'Chửi thề thô tục']])
+})
+
+test('every automatic hide writes its queue row\'s reason (cut by autoHideFlagReason) — the mark "Bỏ ẩn" looks for — on all three targets', async () => {
+  const { autoHideFlagReason } = await import('../server/utils/moderation-flag-reason.ts')
+  const long = { ok: true, text: JSON.stringify({ verdict: 'violation', intent: 'spam', riskLevel: 'high', reason: `${'lý do dài '.repeat(40)}😀` }) }
+  for (const [targetType, table, hiddenColumn] of [['comment', articleComments, 'isHidden'], ['chat', chatMessages, 'isFlagged'], ['livestream_chat', livestreamMessages, 'isDeleted']] as const) {
+    for (const [path, content, ai] of [['AI pass', 'một câu lạ', long], ['instant block', 'mày dcm', VIOLATION]] as const) {
+      reset()
+      rec.ai = ai
+      await svc.checkAndModerateContent({ content, targetType, targetId: 77 })
+      const [row] = rec.queue
+      const [hide] = rec.updates
+      assert.ok(row && hide, `${targetType} ${path}`)
+      assert.equal(row.targetId, 77, `${targetType} ${path}`)
+      assert.deepEqual([hide.table, hide.set], [table, { [hiddenColumn]: true, flagReason: autoHideFlagReason(String(row.flaggedReason)) }], `${targetType} ${path}`)
+    }
+  }
 })
 
 test('both writes failing: reported in order, each logged with its target, each counted as a worker error', async () => {
