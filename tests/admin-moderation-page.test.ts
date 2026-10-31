@@ -228,7 +228,8 @@ function moderationServer() {
         if (at >= 0) state.queue[to]!.unshift({ ...rows.splice(at, 1)[0]!, status: to })
         if (at >= 0 && status === to) break
       }
-      return json({ ok: true, action, id })
+      // Like the real handler: what the approve did to the content (moderated-content.ts), null otherwise.
+      return json({ ok: true, action, id, restore: action === 'approve' ? 'restored' : null })
     }
     if (route === `POST ${API}/restart-worker`) return json({ ok: true, message: 'Đã khởi động lại Moderation Worker và làm mới bộ đệm quy tắc thành công.' })
     if (route === `POST ${API}/rescan-all`) {
@@ -597,10 +598,10 @@ describe('moderation page — review queue tab', () => {
     assert.deepEqual(findAll(queueRowOf(page, 4), el => el.tag === 'button').map(textOf), ['Bỏ ẩn', 'Xóa'])
   })
 
-  for (const [label, action, message, confirmText, tone] of [
-    ['Bỏ ẩn', 'approve', 'Xác nhận nội dung này an toàn và hiển thị công khai lại?', 'Duyệt an toàn', 'primary'],
-    ['Xóa', 'reject_delete', 'Xác nhận nội dung vi phạm và xóa vĩnh viễn?', 'Xóa vĩnh viễn', 'danger'],
-    ['Cấm IP', 'ban_ip', 'Xác nhận xóa nội dung và CẤM vĩnh viễn địa chỉ IP 203.0.113.5?', 'Cấm IP', 'danger'],
+  for (const [label, action, message, confirmText, tone, done] of [
+    ['Bỏ ẩn', 'approve', 'Xác nhận nội dung này an toàn và hiển thị công khai lại?', 'Duyệt an toàn', 'primary', 'Đã duyệt an toàn: nội dung đã hiển thị công khai lại.'],
+    ['Xóa', 'reject_delete', 'Xác nhận nội dung vi phạm và xóa vĩnh viễn?', 'Xóa vĩnh viễn', 'danger', 'Đã xử lý đối soát thành công!'],
+    ['Cấm IP', 'ban_ip', 'Xác nhận xóa nội dung và CẤM vĩnh viễn địa chỉ IP 203.0.113.5?', 'Cấm IP', 'danger', 'Đã xử lý đối soát thành công!'],
   ] as const) {
     it(`"${label}": confirms, POSTs action=${action}, then reloads the same queue page and the worker count`, async () => {
       const { page, calls, toasts, confirms } = await openPage()
@@ -614,11 +615,32 @@ describe('moderation page — review queue tab', () => {
         `GET ${API}/queue?status=pending&page=1&perPage=20`,
         `GET ${API}/worker-status`,
       ])
-      assert.deepEqual(toasts, [{ type: 'success', message: 'Đã xử lý đối soát thành công!' }])
+      assert.deepEqual(toasts, [{ type: 'success', message: done }])
       assert.ok(!shownQueueIds(page).includes(5), 'the resolved row left the pending page')
       assert.equal(pendingBadge(page), '24')
     })
   }
+
+  it('"Bỏ ẩn" says what happened to the content: kept hidden or gone is a warning, never a bare "thành công" (base: one success toast for every outcome)', async () => {
+    const server = moderationServer()
+    let restore: string | null = null
+    server.state.override = call => (call.url.pathname.endsWith('/resolve') ? json({ ok: true, action: 'approve', id: 1, restore }) : undefined)
+    const { page, toasts } = await openPage(server)
+    await openTab(page, 'queue')
+    for (const [outcome, type, message] of [
+      ['not_restored', 'warning', 'Đã duyệt, nhưng nội dung VẪN BỊ ẨN: nó đang bị ẩn vì lý do khác (cán bộ ẩn tay, một lần ẩn khác) hoặc tác giả đang bị chặn.'],
+      ['gone', 'warning', 'Đã duyệt, nhưng nội dung không còn tồn tại (đã bị xoá).'],
+      ['visible', 'success', 'Đã duyệt an toàn: nội dung vẫn đang hiển thị.'],
+      ['not_applicable', 'success', 'Đã duyệt an toàn. Mục này không có nội dung bị ẩn để hiển thị lại.'],
+      ['restored', 'success', 'Đã duyệt an toàn: nội dung đã hiển thị công khai lại.'],
+    ] as const) {
+      restore = outcome
+      const before = toasts.length
+      await click(button(queueRowOf(page, 1), 'Bỏ ẩn'))
+      await settle()
+      assert.deepEqual(toasts.slice(before), [{ type, message }], outcome)
+    }
+  })
 
   it('a cancelled confirmation sends nothing', async () => {
     const { page, calls, answers } = await openPage()
@@ -1198,7 +1220,7 @@ describe('moderation page — the review queue follows the latest request (RED o
     server.state.override = call => (call.method === 'GET' && call.url.pathname === `${API}/queue` ? h3Error(403, 'Forbidden: Insufficient permissions') : undefined)
     await click(button(queueRowOf(page, 1), 'Bỏ ẩn'))
     await settle()
-    assert.deepEqual(toasts, [{ type: 'success', message: 'Đã xử lý đối soát thành công!' }])
+    assert.deepEqual(toasts, [{ type: 'success', message: 'Đã duyệt an toàn: nội dung đã hiển thị công khai lại.' }])
     assert.match(textOf(tabAlert(page)!), /Lỗi: Forbidden: Insufficient permissions/, 'the failed reload is on screen instead')
     assertTabsStillUsable(page)
   })
