@@ -41,6 +41,15 @@ async function ask(ctx: ChatCtx, question: string) {
   await ctx.settle()
 }
 
+/**
+ * The conversation list's rows, newest first (`<li>`, each a pick button and a delete button).
+ * Rows are found by position, not by title: a conversation whose question is still waiting, or
+ * was cancelled, has no title of its own yet (FINDING-C2 — a title comes only from a question the
+ * server accepted), so several rows can read the same default title.
+ */
+const listRows = (ctx: ChatCtx) => findAll(ctx.widget.root, el => el.tag === 'li'
+  && findAll(el, b => b.tag === 'button' && String(b.props['aria-label'] ?? '').startsWith('Xóa ')).length === 1)
+
 /** A conversation with an answered question in it, then a second one with a question still waiting. */
 async function waitingInSecondConversation(ctx: ChatCtx) {
   ctx.server.state.chat.push(answer('Trả lời A.'))
@@ -91,7 +100,8 @@ test('deleting the open conversation mid-answer cancels its request', async (t) 
   const call = await waitingInSecondConversation(ctx)
   await click(historyButton(ctx))
   await ctx.settle()
-  await click(byLabel(ctx.widget, 'Xóa Câu B'))
+  // B is the newest row; its delete button is the row's second button.
+  await click(findAll(listRows(ctx)[0]!, el => el.tag === 'button')[1]!)
   await ctx.settle()
   assert.deepEqual(transcript(ctx.widget).map(m => m.text), ['Câu A', 'Trả lời A.'], 'lands on the newest survivor')
   await assertCancelledAndUsable(ctx, call)
@@ -121,24 +131,29 @@ test('clearing the conversation mid-answer cancels its request', async (t) => {
 
 // ─── A question whose request was cancelled (FINDING-C3) ─────────────────────
 
-/** Open the list and pick the conversation titled `title` (or "Tạo mới"). */
-async function pickFromList(ctx: ChatCtx, title: string) {
+/**
+ * Open the list and pick: a button by its text (`'Tạo mới'`, the title of an answered
+ * conversation), or the conversation in row `n` (newest first) — B's question is cancelled, so
+ * B has no title of its own to pick it by.
+ */
+async function pickFromList(ctx: ChatCtx, which: string | number) {
   await click(historyButton(ctx))
   await ctx.settle()
-  await click(button(ctx.widget, title))
+  await click(typeof which === 'number' ? findAll(listRows(ctx)[which]!, el => el.tag === 'button')[0]! : button(ctx.widget, which))
   await ctx.settle()
 }
 
 /** What the visitor sees of conversation B and what is kept for it, once they are back in it. */
 function backInB(ctx: ChatCtx) {
   const question = bubbles(ctx.widget)[0]!
+  const saved = parsedStorage(ctx)!
   return {
     transcript: transcript(ctx.widget),
     question: words(question),
     questionClass: String(question.props.class),
     alerts: alerts(ctx.widget),
     awaiting: awaiting(ctx).length,
-    saved: parsedStorage(ctx)!.sessions.find(s => s.title === 'Câu B')?.messages,
+    saved: saved.sessions.find(s => s.id === saved.activeId)?.messages,
   }
 }
 
@@ -152,9 +167,10 @@ test('FINDING-C3 (fixed): leaving before the first word and coming back — the 
   assert.match(words(bubbles(ctx.widget)[0]!), /Đang gửi…/, 'B is waiting for its first word')
   await pickFromList(ctx, 'Câu A')
   assert.equal(call.signal?.aborted, true)
-  assert.deepEqual(parsedStorage(ctx)!.sessions.find(s => s.title === 'Câu B')?.messages.map(m => m.text), ['Câu B'],
+  // B is the newest conversation: first in the list and in what is saved.
+  assert.deepEqual(parsedStorage(ctx)!.sessions[0]?.messages.map(m => m.text), ['Câu B'],
     'saved as soon as B is left: a reload from A keeps it')
-  await pickFromList(ctx, 'Câu B')
+  await pickFromList(ctx, 0)
   const back = backInB(ctx)
   assert.deepEqual(back.transcript, [{ who: 'user', text: 'Câu B' }])
   assert.doesNotMatch(back.question, /Đang gửi…/)
@@ -188,7 +204,7 @@ test('FINDING-C3 (fixed): leaving while the chat session is still being opened �
   assert.equal(session.url.pathname, '/api/public/chatbot/session', 'B (no token yet) is opening its session')
   assert.match(words(bubbles(ctx.widget)[0]!), /Đang gửi…/)
   await pickFromList(ctx, 'Câu A')
-  await pickFromList(ctx, 'Câu B')
+  await pickFromList(ctx, 0) // B, the newest
   const back = backInB(ctx)
   assert.deepEqual(back.transcript, [{ who: 'user', text: 'Câu B' }])
   assert.equal(back.question, 'Câu B', 'not "Đang gửi…"')
@@ -223,7 +239,7 @@ test('FINDING-C3 (fixed): a cancelled question unwinding late does not let go of
   session.respond(json({ ok: true, token: 'tok.late' }))
   await ctx.settle()
   assert.equal(awaiting(ctx).length, 1, 'A2 is still waiting after B unwound')
-  await pickFromList(ctx, 'Câu B')
+  await pickFromList(ctx, 0) // B, the newest
   await pickFromList(ctx, 'Câu A')
   const a2 = bubbles(ctx.widget).at(-1)!
   assert.equal(words(a2), 'Câu A2', 'not "Đang gửi…"')
@@ -245,10 +261,10 @@ test('FINDING-C3 (fixed): cancelled before or after the first word, the conversa
       await ctx.settle()
       assert.doesNotMatch(words(bubbles(ctx.widget)[0]!), /Đang gửi…/, 'the first word ends "sending"')
     }
-    // Leave through "Tạo mới" this time, then come back.
+    // Leave through "Tạo mới" this time, then come back: B is second, under the new one.
     await pickFromList(ctx, 'Tạo mới')
     assert.equal(call.signal?.aborted, true)
-    await pickFromList(ctx, 'Câu B')
+    await pickFromList(ctx, 1)
     const end = backInB(ctx)
     ctx.server.state.chat.push(answer('Được.'))
     await ask(ctx, 'Câu tiếp')
