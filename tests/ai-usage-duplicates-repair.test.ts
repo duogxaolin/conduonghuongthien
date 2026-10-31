@@ -67,8 +67,11 @@ const FIXTURE = [
   // 101: one twin. 104: an identical copy of 101 written by a later sync (another officer).
   row({ id: 101, at: 0, prompt: 185, completion: 573, userId: 1 }), gw({ id: 1, at: SKEW, prompt: 185, completion: 573 }),
   row({ id: 104, at: 0, prompt: 185, completion: 573, userId: 2 }),
-  // 103: a gateway row of before 5adab79a still holds delify's 2000-token overhead.
-  row({ id: 103, at: 40, prompt: 30, completion: 10 }), gw({ id: 4, at: 40 + SKEW, prompt: 2030, completion: 10, serviceKey: 'chatbot' }),
+  // 103: a gateway row of before 5adab79a (the day before) still holds delify's 2000-token
+  // overhead. 119 (A18 of the verifier): the same shape a day later — the gateway already
+  // took the overhead off, so the router row is another request, not this one.
+  row({ id: 103, at: -100_000, prompt: 30, completion: 10 }), gw({ id: 4, at: -100_000 + SKEW, prompt: 2030, completion: 10, serviceKey: 'chatbot' }),
+  row({ id: 119, at: 280, prompt: 640, completion: 64 }), gw({ id: 17, at: 280 + SKEW, prompt: 2640, completion: 64, serviceKey: 'chatbot' }),
   // 105: the router counted the prompt 128 tokens higher (same completion) — a near twin, for
   // review. 111: a copy of it. 117: the gateway's prompt is the larger one; 118: 300 tokens
   // apart — neither is a near twin.
@@ -98,7 +101,7 @@ const GATEWAY_IDS = FIXTURE.filter(r => r.serviceKey !== 'delify_router').map(r 
 
 const EXACT = [[100, 'gateway_twin', 3, null], [101, 'gateway_twin', 1, null], [102, 'gateway_twin', 2, null], [103, 'gateway_twin_overhead', 4, null], [104, 'repeat_import', null, 101], [114, 'gateway_twin', 13, null]]
 const REVIEW = [[105, 'near_twin', 5, null], [111, 'repeat_import', null, 105]]
-const KEPT = [[106, 'no_twin'], [107, 'no_twin'], [108, 'failed_request'], [109, 'ambiguous'], [110, 'outside_band'], [112, 'no_twin'], [113, 'no_twin'], [115, 'ambiguous'], [116, 'ambiguous'], [117, 'no_twin'], [118, 'no_twin']]
+const KEPT = [[106, 'no_twin'], [107, 'no_twin'], [108, 'failed_request'], [109, 'ambiguous'], [110, 'outside_band'], [112, 'no_twin'], [113, 'no_twin'], [115, 'ambiguous'], [116, 'ambiguous'], [117, 'no_twin'], [118, 'no_twin'], [119, 'no_twin']]
 
 const ids = () => harness.rows(aiUsageLogs).map(r => r.id as number).sort((a, b) => a - b)
 const spend = () => harness.rows(aiUsageLogs).reduce((total, r) => total + Number(r.costVnd), 0)
@@ -136,10 +139,10 @@ test('the plan: one in-band twin each way → exact; copies follow their row; ev
   // Kept rows show what was considered, for the operator.
   assert.deepEqual(report.kept.find(k => k.id === 109)!.candidates, [{ id: 8, serviceKey: 'translation_article', offsetSeconds: 150 }, { id: 9, serviceKey: 'translation_article', offsetSeconds: 148 }])
   assert.deepEqual(report.kept.find(k => k.id === 110)!.candidates, [{ id: 10, serviceKey: 'translation_article', offsetSeconds: -400 }])
-  assert.equal(report.routerRows, 19)
+  assert.equal(report.routerRows, 20)
   assert.deepEqual(report.exact.map(p => p.promptDelta), [0, 0, 0, -2000, null, 0])
   assert.deepEqual(report.review.map(p => [p.promptDelta, p.offsetSeconds]), [[128, 152], [null, null]])
-  assert.deepEqual(report.costVnd, { exact: 153, review: 51, kept: 280.5 })
+  assert.deepEqual(report.costVnd, { exact: 153, review: 51, kept: 306 })
   // Never a gateway row in a bucket.
   for (const planned of [...report.exact, ...report.review, ...report.kept]) assert.ok(!GATEWAY_IDS.includes(planned.id), String(planned.id))
 })
@@ -219,8 +222,30 @@ test('the lock held by another run → refused before any read or write', async 
   assert.equal(ids().length, FIXTURE.length)
 })
 
+const asUsage = (r: ReturnType<typeof row>) => ({ ...r, serviceKey: r.serviceKey, createdAt: r.createdAt })
+/** Three anchors at +150 s far from the rows under test — enough for a band of 150 ± 30. */
+const anchorPairs = (from: number) => [0, 1, 2].flatMap(i => [
+  row({ id: 900 + i, at: from + i * 1000, prompt: 9000 + i, completion: 9 }), gw({ id: 800 + i, at: from + i * 1000 + SKEW, prompt: 9000 + i, completion: 9 }),
+])
+const planOf = (rows: Array<ReturnType<typeof row>>) => planAiUsageDuplicateRepair(
+  rows.filter(r => r.serviceKey === 'delify_router').map(asUsage), rows.filter(r => r.serviceKey !== 'delify_router').map(asUsage),
+)
+const reasonOf = (plan: ReturnType<typeof planOf>, id: number) => [...plan.exact, ...plan.review, ...plan.kept].find(p => p.id === id)?.reason
+
+test('the +2000 overhead pairs only a gateway row logged BEFORE 5adab79a — one second before: paired; at the commit and after: not (verifier A18)', () => {
+  // `git show -s --format=%cI 5adab79a` → 2026-09-24T11:51:36+01:00.
+  assert.equal(repair.LEGACY_OVERHEAD_UNTIL.toISOString(), '2026-09-24T10:51:36.000Z')
+  const cut = (repair.LEGACY_OVERHEAD_UNTIL.getTime() - T0) / 1000
+  const plan = planOf([
+    ...anchorPairs(-300_000),
+    row({ id: 1, at: cut - 1 - SKEW, prompt: 500, completion: 100 }), gw({ id: 11, at: cut - 1, prompt: 2500, completion: 100 }),
+    row({ id: 2, at: cut - SKEW, prompt: 600, completion: 100 }), gw({ id: 12, at: cut, prompt: 2600, completion: 100 }),
+    row({ id: 3, at: cut + 86_400 - SKEW, prompt: 700, completion: 100 }), gw({ id: 13, at: cut + 86_400, prompt: 2700, completion: 100 }),
+  ])
+  assert.deepEqual([1, 2, 3].map(id => reasonOf(plan, id)), ['gateway_twin_overhead', 'no_twin', 'no_twin'])
+})
+
 test('pure planner: no anchor at all → no band, nothing deleted; a twin with success = false is not a twin', () => {
-  const asUsage = (r: ReturnType<typeof row>) => ({ ...r, serviceKey: r.serviceKey, createdAt: r.createdAt })
   // Each router row has two candidates: no pair is an anchor, so there is no band.
   const plan = planAiUsageDuplicateRepair(
     [row({ id: 1, at: 0, prompt: 10, completion: 1 })].map(asUsage),

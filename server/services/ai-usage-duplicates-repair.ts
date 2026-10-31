@@ -60,6 +60,15 @@ export const BAND_TOLERANCE_SECONDS = 30
 export const MIN_ANCHORS = 3
 /** delify's prompt overhead (`ai-gateway-tokens.ts`), still in gateway rows logged before 5adab79a. */
 export const LEGACY_OVERHEAD_TOKENS = 2000
+/**
+ * The commit time of 5adab79a ("normalize Delify 2000-token proxy offset"): `git show -s
+ * --format=%cI 5adab79a` → 2026-09-24T11:51:36+01:00. Only a gateway row logged BEFORE it
+ * can still hold the overhead; after it, a router row 2000 below a gateway row is another
+ * request (verifier A18: an outside request 500/100 next to an October gateway row
+ * 2500/100 was deleted). A row logged between the commit and its deploy that still holds
+ * the overhead is not paired by this rule — kept, the safe side.
+ */
+export const LEGACY_OVERHEAD_UNTIL = new Date('2026-09-24T10:51:36.000Z')
 /** A near twin (`review`): the router's prompt count at most this many tokens above the gateway's. */
 export const NEAR_PROMPT_DELTA_MAX = 256
 const DELETE_BATCH = 500
@@ -153,7 +162,7 @@ export function planAiUsageDuplicateRepair(routerRows: readonly UsageRow[], gate
     const repAt = rep.createdAt
     if (!rep.success || !repAt || rep.model === null) continue
     for (const twin of gatewayByShape.get(`${rep.model}\u0000${rep.completionTokens}`) ?? []) {
-      const overhead = twin.promptTokens === rep.promptTokens + LEGACY_OVERHEAD_TOKENS
+      const overhead = twin.promptTokens === rep.promptTokens + LEGACY_OVERHEAD_TOKENS && twin.createdAt!.getTime() < LEGACY_OVERHEAD_UNTIL.getTime()
       if (twin.promptTokens !== rep.promptTokens && !overhead) continue
       const offset = Math.round((twin.createdAt!.getTime() - repAt.getTime()) / 1000)
       if (Math.abs(offset) > CANDIDATE_WINDOW_SECONDS) continue
