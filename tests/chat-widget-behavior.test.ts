@@ -398,8 +398,9 @@ test('a dropped connection keeps the question with "Thử lại"; retrying sends
   assert.equal(mainInput(ctx.widget).model?.value, 'Hỏi lúc mất mạng', 'the question is back in the input')
   assert.equal(mainInput(ctx.widget).props['aria-invalid'], true)
   assert.equal(mainInput(ctx.widget).props['aria-describedby'], 'public-chatbot-error public-chatbot-counter')
-  assert.deepEqual(parsedStorage(ctx)!.sessions[0]!.messages, [], 'a failed question is not saved (its title is)')
-  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Hỏi lúc mất mạng')
+  assert.deepEqual(parsedStorage(ctx)!.sessions[0]!.messages, [], 'a failed question is not saved')
+  // Nor is a title taken from it: the server never took it (FINDING-C2, fixed — it used to be).
+  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Cuộc trò chuyện mới')
   assert.match(String(bubbles(ctx.widget)[0]!.props.class), /bg-danger-bg/)
 
   ctx.server.state.chat.push(answer('Đã nhận.'))
@@ -408,6 +409,7 @@ test('a dropped connection keeps the question with "Thử lại"; retrying sends
   assert.deepEqual(transcript(ctx.widget), [{ who: 'user', text: 'Hỏi lúc mất mạng' }, { who: 'bot', text: 'Đã nhận.' }])
   assert.deepEqual(alerts(ctx.widget), [])
   assert.deepEqual(lastChatBody(ctx).messages, [{ sender: 'user', text: 'Hỏi lúc mất mạng' }], 'the failed copy is not sent as history')
+  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Hỏi lúc mất mạng', 'answered, it titles the conversation')
 })
 
 test('429: the server sentence is shown in the bubble and under the input; the question stays for later', async (t) => {
@@ -529,19 +531,19 @@ test('a refused question (moderation_blocked) leaves the transcript and storage;
   assert.ok(!lastChatBody(ctx).messages.some(m => m.text === 'câu vi phạm'), 'never sent again as history')
 })
 
-test('FINDING-C2 (current behaviour, NOT a contract): a refused first question stays as the conversation title', async (t) => {
-  // The 400 "rejected" path restores the title it auto-set from the question; the
-  // moderation_blocked path removes the question but keeps the title — on this device only
-  // (titles are never sent), shown in the conversation list. Pinned so a split cannot
-  // change it silently.
+test('FINDING-C2 (fixed): a refused first question is not the conversation title', async (t) => {
+  // It was: the title was set from the question as it was sent, before the server judged it,
+  // and the moderation_blocked path removed the question but kept the title. A title now comes
+  // only from a question the server accepted (every way in: tests/chat-widget-title.test.ts).
   const ctx = await openWidget(t)
   await openDialog(ctx)
   ctx.server.state.chat.push(answer('Nội dung không phù hợp.', { kind: 'moderation_blocked', sources: [] }))
   await ask(ctx, 'câu vi phạm')
-  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'câu vi phạm')
+  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Cuộc trò chuyện mới')
   await click(historyButton(ctx))
   await ctx.settle()
-  assert.match(words(ctx.widget), /câu vi phạm 1 tin nhắn/)
+  assert.match(words(ctx.widget), /Cuộc trò chuyện mới 1 tin nhắn/)
+  assert.doesNotMatch(words(ctx.widget), /câu vi phạm/)
 })
 
 // ─── What the verifier's probes caught that this suite did not (F3) ──────────
@@ -550,20 +552,25 @@ const REFUSED = () => answer('Nội dung không phù hợp.', { kind: 'moderatio
 /** The "Thử lại" inside one question's bubble. */
 const retryIn = (bubble: Parameters<typeof words>[0]) => findAll(bubble, el => el.tag === 'button' && words(el) === 'Thử lại')[0]!
 
-test('a failed question keeps the title it gave, shown in the list; a question refused after it leaves that title', async (t) => {
+test('a failed question gives no title, shown in the list; nor does a question refused after it; "Thử lại" answered does', async (t) => {
+  // Was "a failed question keeps the title it gave" (V03): a title came from the question as
+  // it was sent. Now only a question the server accepted titles the conversation (FINDING-C2).
   const ctx = await openWidget(t)
   await openDialog(ctx)
-  ctx.server.state.chat.push(() => dropped(), REFUSED())
+  ctx.server.state.chat.push(() => dropped(), REFUSED(), answer('Đã nhận.'))
   await ask(ctx, 'Câu một')
   await click(historyButton(ctx))
   await ctx.settle()
-  assert.match(words(ctx.widget), /Câu một 1 tin nhắn/, 'the failed question is still there, and titles the conversation')
+  assert.match(words(ctx.widget), /Cuộc trò chuyện mới 1 tin nhắn/, 'the failed question is still there, and gives no title')
   await click(historyButton(ctx))
   await ctx.settle()
   await ask(ctx, 'câu vi phạm')
   assert.deepEqual(transcript(ctx.widget).map(m => m.text), ['Câu một', 'Nội dung không phù hợp.'])
   assert.equal(buttonsWith(ctx.widget, 'Thử lại').length, 1, '"Câu một" can still be retried')
-  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu một')
+  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Cuộc trò chuyện mới')
+  await click(retryIn(bubbles(ctx.widget)[0]!))
+  await ctx.settle()
+  assert.equal(parsedStorage(ctx)!.sessions[0]!.title, 'Câu một', 'answered, it is the title')
 })
 
 test('the same words asked twice: the second, failed one is the one marked; the answered one is untouched', async (t) => {
