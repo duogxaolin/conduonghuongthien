@@ -22,9 +22,12 @@
  *   - the tool loop's handling of a missing tool, a throwing tool, a string result, the
  *     query shown to the visitor, and the replay sent to the model.
  *
+ * A failed call — `provider_error`/`parse_error`, i.e. after a request was sent — writes
+ * ONE usage row with `success: false`, the code, 0 tokens and 0 cost (decided 2026-10-31;
+ * it used to write none, a finding of the split's report). A refusal before any request
+ * (`service_inactive`, `budget_exceeded`, `no_api_key`, `provider_url_rejected`, …) writes none.
+ *
  * Pinned as-is, NOT endorsed (findings, see the split's report):
- *   - a failed call writes no usage log: every `provider_error`/`parse_error` returns
- *     before `logAiUsage`, so `ai_usage_logs` only ever sees `success: true`;
  *   - a final tool-loop answer that cleans to nothing returns the raw text minus
  *     `<|channel>` spans — a `<think>` span survives into `text` (never streamed).
  */
@@ -406,13 +409,17 @@ const failures: Array<[string, () => Response, string]> = [
   ['an answer that is only reasoning', () => json({ choices: [{ message: { content: '<think>chỉ nghĩ</think>' } }] }), 'parse_error'],
 ]
 for (const [label, response, error] of failures) {
-  test(`buffered: ${label} → ${error}, and NO usage log (finding: failures are never logged)`, async () => {
+  test(`buffered: ${label} → ${error}, and ONE usage row marking the failure (0 tokens, 0 cost, the code)`, async () => {
     reset()
     const { db, reads } = fakeDb({ config: configRow('delify'), provider: providerRow('delify'), pricing: PRICING })
+    const serviceKey = unique('svc')
     await withProvider([response()], async (transport) => {
-      assert.deepEqual(await callAi(unique('svc'), { prompt: 'x', db, transport }), { ok: false, error })
+      assert.deepEqual(await callAi(serviceKey, { prompt: 'x', db, transport, userId: 42 }), { ok: false, error })
     })
-    assert.deepEqual(rec.usage, [])
+    assert.deepEqual(rec.usage.map(row => ({ ...row, executionMs: typeof row.executionMs })), [{
+      serviceKey, provider: 'delify', model: 'seam-model', promptTokens: 0, completionTokens: 0, totalTokens: 0,
+      costUsd: 0, costVnd: 0, executionMs: 'number', userId: 42, success: false, errorMessage: error,
+    }])
     assert.deepEqual(rec.infos, [])
     assert.equal(reads.pricing, 0)
   })
@@ -420,7 +427,7 @@ for (const [label, response, error] of failures) {
 
 // ─── Streaming path (no tools, onChunk) ──────────────────────────────────────
 
-test('streaming: HTTP 500 → provider_error, nothing relayed, no usage log', async () => {
+test('streaming: HTTP 500 → provider_error, nothing relayed, one failure row', async () => {
   reset()
   const chunks: string[] = []
   const { db } = fakeDb({ config: configRow('delify'), provider: providerRow('delify'), pricing: PRICING })
@@ -429,7 +436,7 @@ test('streaming: HTTP 500 → provider_error, nothing relayed, no usage log', as
     assert.equal(seen.requests[0]!.body.stream, true)
   })
   assert.deepEqual(chunks, [])
-  assert.deepEqual(rec.usage, [])
+  assert.deepEqual(rec.usage.map(row => [row.success, row.errorMessage, row.promptTokens, row.completionTokens, row.costVnd]), [[false, 'provider_error', 0, 0, 0]])
 })
 
 test('streaming: a non-delify provider keeps its prompt tokens; no usage at all → length/3.5 estimates', async () => {
@@ -545,7 +552,8 @@ test('tool loop (no onChunk): no tool call → the step-1 message is the answer,
     assert.deepEqual(await callAi(unique('svc'), { prompt: 'x', tools, db, transport }), { ok: false, error: 'parse_error' })
   })
   assert.deepEqual(ran, [])
-  assert.equal(rec.usage.length, 1)
+  // Two calls, one row each: the answer, then the empty one as a failure at 0 tokens.
+  assert.deepEqual(rec.usage.map(row => [row.success, row.errorMessage, row.totalTokens]), [[true, null, 4], [false, 'parse_error', 0]])
 })
 
 test('tool loop (no onChunk): step 1 HTTP 502 → provider_error before any tool runs', async () => {
@@ -556,7 +564,7 @@ test('tool loop (no onChunk): step 1 HTTP 502 → provider_error before any tool
     assert.deepEqual(await callAi(unique('svc'), { prompt: 'x', tools, db, transport }), { ok: false, error: 'provider_error' })
   })
   assert.deepEqual(ran, [])
-  assert.deepEqual(rec.usage, [])
+  assert.deepEqual(rec.usage.map(row => [row.success, row.errorMessage, row.totalTokens]), [[false, 'provider_error', 0]])
 })
 
 test('tool loop: a final answer that cleans to nothing returns the raw text minus <|channel> spans (finding: <think> survives into text)', async () => {
@@ -615,5 +623,6 @@ test('tool loop (onChunk): step 1 HTTP 500 → provider_error; a failed follow-u
     assert.equal(seen.requests[1]!.body.tools, undefined)
   })
   assert.deepEqual(ran, [])
-  assert.deepEqual(rec.usage, [])
+  // One row per call, not per request: the second call made two requests and writes one.
+  assert.deepEqual(rec.usage.map(row => [row.success, row.errorMessage, row.totalTokens]), [[false, 'provider_error', 0], [false, 'parse_error', 0]])
 })

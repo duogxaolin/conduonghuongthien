@@ -95,7 +95,8 @@ function fakeIncoming(response: Response): IncomingMessage {
   return Object.assign(body, { statusCode: response.status, headers: Object.fromEntries(response.headers) }) as unknown as IncomingMessage
 }
 
-async function withProvider<T>(responses: Array<Response | (() => Response)>, run: (requests: Recorded[]) => Promise<T>): Promise<T> {
+/** An `Error` in `responses` is the socket failing that request (`error` on the request: a reset, a refused connection). */
+async function withProvider<T>(responses: Array<Response | (() => Response) | Error>, run: (requests: Recorded[]) => Promise<T>, resolveHost = PUBLIC_DNS): Promise<T> {
   const requests: Recorded[] = []
   let next = 0
   const request: ProviderRequest = (options, onResponse) => {
@@ -107,13 +108,14 @@ async function withProvider<T>(responses: Array<Response | (() => Response)>, ru
         requests.push({ body: JSON.parse(written.join('') || '{}'), options })
         const response = responses[next++]
         if (!response) { queueMicrotask(() => req.emit('error', new Error(`unexpected request #${next}`))); return }
+        if (response instanceof Error) { queueMicrotask(() => req.emit('error', response)); return }
         const incoming = fakeIncoming(typeof response === 'function' ? response() : response)
         queueMicrotask(() => onResponse(incoming))
       },
     })
     return req as never
   }
-  activeTransport = { request, resolveHost: PUBLIC_DNS }
+  activeTransport = { request, resolveHost }
   try { return await run(requests) } finally { activeTransport = undefined }
 }
 
@@ -317,4 +319,61 @@ test('no onChunk: the non-streaming tool loop still answers and sums tokens', as
     assert.equal(result.ok && result.completionTokens, 15)
     assert.equal(requests[0]!.body.stream, false)
   })
+})
+
+// ─── One usage row per call ──────────────────────────────────────────────────
+
+type OneRowCase = [string, Array<Response | (() => Response) | Error>, Parameters<typeof run>[0], number, Record<string, unknown>, ResolveProviderHost?]
+
+/** Each case is one `callAi`: exactly `requestCount` requests reach the socket and exactly ONE usage row is written. */
+async function assertOneRowPerCall(cases: OneRowCase[]) {
+  for (const [label, responses, options, requestCount, expected, resolveHost] of cases) {
+    const before = usageLog.length
+    await withProvider(responses, async (requests) => {
+      await run(options)
+      assert.equal(requests.length, requestCount, label)
+    }, resolveHost)
+    const rows = usageLog.slice(before)
+    assert.equal(rows.length, 1, `${label}: ${JSON.stringify(rows)}`)
+    for (const [field, value] of Object.entries(expected)) assert.equal(rows[0]![field], value, `${label}: ${field}`)
+    assert.deepEqual([rows[0]!.provider, rows[0]!.model], ['delify', 'test-model'], label)
+  }
+}
+
+test('one usage row per answered callAi on every path — a tool loop\'s two requests are one row', async () => {
+  // The Delify "double count" was never here (it was the router-history import of
+  // `delify/sync.post.ts`); this pins that it cannot start here either. Green on f58c7584
+  // too: the gateway wrote one row per answered call before the fix as well.
+  const calls: Array<Record<string, unknown>> = []
+  await assertOneRowPerCall([
+    ['no tools, streamed', [sseResponse(content('Đáp.') + usage(2100, 9) + DONE)], {}, 1, { success: true, promptTokens: 100, completionTokens: 9 }],
+    ['no tools, buffered', [jsonResponse({ choices: [{ message: { content: 'Đáp.' } }], usage: { prompt_tokens: 2100, completion_tokens: 9 } })], { stream: false }, 1, { success: true, promptTokens: 100, completionTokens: 9 }],
+    ['tools, streamed, a tool call', [step1WithToolCall(), sseResponse(content('Cuối.') + usage(2300, 20) + DONE)], { tools: [knowledgeTool(calls)] }, 2, { success: true, promptTokens: 400, completionTokens: 32 }],
+    ['tools, streamed, the follow-up after a reasoning-only step 1', [sseResponse(content('<think>x</think>') + DONE), sseResponse(content('Đáp.') + usage(2200, 8) + DONE)], { tools: [knowledgeTool(calls)] }, 2, { success: true, promptTokens: 200, completionTokens: 8 }],
+    ['tools, buffered, a tool call', [
+      jsonResponse({ choices: [{ message: { content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'search_c11_knowledge', arguments: '{"query":"q"}' } }] } }], usage: { prompt_tokens: 2050, completion_tokens: 6 } }),
+      jsonResponse({ choices: [{ message: { content: 'Cuối.' } }], usage: { prompt_tokens: 2200, completion_tokens: 9 } }),
+    ], { tools: [knowledgeTool(calls)], stream: false }, 2, { success: true, promptTokens: 250, completionTokens: 15 }],
+  ])
+})
+
+test('a failed callAi is ONE usage row too — 0 tokens, the code — whether the provider answered an error, nothing readable, or the connection failed', async () => {
+  const calls: Array<Record<string, unknown>> = []
+  const failed = (errorMessage: string) => ({ success: false, errorMessage, promptTokens: 0, completionTokens: 0, totalTokens: 0, costVnd: 0 })
+  const reset = () => Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' })
+  await assertOneRowPerCall([
+    ['tools, streamed, step 2 fails after a paid step 1', [step1WithToolCall(), new Response('boom', { status: 502 })], { tools: [knowledgeTool(calls)] }, 2, failed('provider_error')],
+    ['no tools, streamed, HTTP 503', [new Response('down', { status: 503 })], {}, 1, failed('provider_error')],
+    ['no tools, buffered, nothing to read', [jsonResponse({ choices: [{ message: { content: '<think>x</think>' } }] })], { stream: false }, 1, failed('parse_error')],
+    // The socket fails: no HTTP answer at all — still one row, never a rejected callAi.
+    ['no tools, streamed, the connection resets', [reset()], {}, 1, failed('provider_error')],
+    ['no tools, buffered, the connection resets', [reset()], { stream: false }, 1, failed('provider_error')],
+    ['tools, buffered, step 2\'s connection resets after a paid step 1', [
+      jsonResponse({ choices: [{ message: { content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'search_c11_knowledge', arguments: '{"query":"q"}' } }] } }], usage: { prompt_tokens: 2050, completion_tokens: 6 } }),
+      reset(),
+    ], { tools: [knowledgeTool(calls)], stream: false }, 2, failed('provider_error')],
+    // The provider's name resolves to a private address at call time: refused before any
+    // byte is sent (outbound.ts), a call that failed all the same.
+    ['no tools, streamed, the host resolves to a private address', [], {}, 0, failed('provider_error'), async () => [{ address: '10.0.0.5', family: 4 }]],
+  ])
 })
