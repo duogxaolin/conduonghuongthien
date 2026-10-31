@@ -450,7 +450,8 @@ test('a conversation title is written in exactly two places: the accepted-questi
   assert.deepEqual(writes.map(w => w.split(':')[0]), ['composables/chatbot/conversations.ts', 'composables/chatbot/send.ts'], writes.join('\n'))
   assert.match(writes[0]!, /= CHATBOT_UNTITLED$/, 'clearing resets to the default title')
   const send = readAppFile('composables/chatbot/send.ts')
-  assert.match(send, /acceptedQuestionTitle\(/, 'send.ts titles only through acceptedQuestionTitle (app/utils/chatbot-storage.ts)')
+  assert.match(send, /conversation\.title = title\n/, 'send.ts writes the title acceptedQuestionTitle gave')
+  assert.match(send, /const title = acceptedQuestionTitle\(question\.text, outcome\.verdict\)/, 'from the question asked and the server\'s verdict')
   assert.ok(readFileSync(new URL('../app/pages/assistant.vue', import.meta.url), 'utf8').includes('activeConversation.title'),
     '/assistant shows the active conversation\'s title from the shared state')
 })
