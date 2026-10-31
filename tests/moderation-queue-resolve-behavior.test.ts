@@ -3,8 +3,11 @@ import test, { after, beforeEach } from 'node:test'
 
 /**
  * POST /api/admin/ai/moderation/queue/:id/resolve — `ai.update` — one row of the AI
- * moderation queue resolved: `approve` (unhide the comment), `reject_delete` (delete it),
- * `ban_ip` (ban the author's address, delete the comment).
+ * moderation queue resolved: `approve` (unhide the comment, when this row's automatic hide still
+ * hides it — `moderated-content.ts`), `reject_delete` (delete it), `ban_ip` (ban the author's
+ * address, delete the comment). The comments here carry the row's mark (`autoHideFlagReason`),
+ * as the worker's hide writes it; what an approve restores and what it keeps hidden, per source,
+ * is tests/moderation-queue-restore-behavior.test.ts.
  *
  * The invariants:
  *   - the permission, and nothing written or audited on any refusal;
@@ -25,8 +28,9 @@ import test, { after, beforeEach } from 'node:test'
  *
  * Pinned, not changed (owner's call — doc "R7"): the server accepts a resolve from any status
  * (approve of a row already rejected answers 200 "approved" while its comment is gone; the page
- * only offers approve on pending rows); approve of a chat or livestream row changes only the
- * queue — the worker's `is_flagged` / `is_deleted` stays (FINDING-R7-4).
+ * only offers approve on pending rows). FINDING-R7-4 (approve of a livestream row left the message
+ * removed) is fixed — owner's decision 2026-10-31, the restore suite; a chatbot row still changes
+ * only the queue (nothing was hidden: a refused question is answered with a refusal).
  *
  * Real h3 app + `admin-auth`, SQL on SQLite (`_ai-route-harness.ts`). A competing resolve is
  * committed right before the first statement of the handler's transaction, which is still empty
@@ -44,6 +48,8 @@ const h = await startAiRouteHarness({
 })
 after(() => h.server.close())
 const { aiModerationQueue, articleComments, readerIpBans, activityLogs } = h.schema
+const { autoHideFlagReason } = await import('../server/utils/moderation-flag-reason')
+const FLAGGED = 'Từ ngữ thô tục'
 // The harness leaves unique keys out; this one is what makes a second ban a duplicate.
 h.harness.sqlite.exec('CREATE UNIQUE INDEX reader_ip_bans_value ON reader_ip_bans (value)')
 
@@ -56,14 +62,15 @@ beforeEach(async () => {
   officer = await h.account([{ resource: 'ai', canRead: true, canUpdate: true }], 'kiemduyet')
 })
 
+/** Hidden by the worker for the row `queued()` files: `flag_reason` is that row's mark. */
 async function comment(hidden = true) {
-  const [row] = await h.harness.db.insert(articleComments).values({ body: 'Nội dung bị gắn cờ', isHidden: hidden, createdAt: new Date() })
+  const [row] = await h.harness.db.insert(articleComments).values({ body: 'Nội dung bị gắn cờ', isHidden: hidden, flagReason: hidden ? autoHideFlagReason(FLAGGED) : null, createdAt: new Date() })
   return Number(row.insertId)
 }
 async function queued(fields: Partial<typeof aiModerationQueue.$inferInsert> = {}) {
   const [row] = await h.harness.db.insert(aiModerationQueue).values({
     targetType: 'comment', authorIp: '203.0.113.5', contentSnippet: 'Nội dung bị gắn cờ',
-    flaggedReason: 'Từ ngữ thô tục', status: 'pending', ...fields,
+    flaggedReason: FLAGGED, status: 'pending', ...fields,
   })
   return Number(row.insertId)
 }
@@ -109,11 +116,13 @@ test('approve: the comment shows again, the row is approved by the officer, one 
   const other = await comment()
   const id = await queued({ targetId: commentId })
   const response = await resolve(id, { action: ' Approve ' })
-  assert.deepEqual([response.status, response.body], [200, { ok: true, action: 'approve', id }])
+  assert.deepEqual([response.status, response.body], [200, { ok: true, action: 'approve', id, restore: 'restored' }])
   assert.deepEqual(comments(), [{ id: commentId, isHidden: false }, { id: other, isHidden: true }])
   assert.deepEqual(queueRows(), [{ id, status: 'approved', reviewedBy: officer.id }])
   assert.ok(h.harness.rows(aiModerationQueue)[0]!.reviewedAt instanceof Date)
-  assert.deepEqual(audits(), [{ userId: officer.id, action: 'update', resource: 'ai', resourceId: id, meta: { type: 'resolve_moderation_queue', action: 'approve', targetType: 'comment', targetId: commentId } }])
+  assert.deepEqual(audits(), [{ userId: officer.id, action: 'update', resource: 'ai', resourceId: id, meta: { type: 'resolve_moderation_queue', action: 'approve', targetType: 'comment', targetId: commentId, restore: 'restored' } }])
+  // A plain read, then the conditional UPDATE — no locking read (slice R6 lesson).
+  assert.deepEqual(h.harness.txStatements.map(shape), ['select `article_comments`', 'update `article_comments`', 'update `ai_moderation_queue`', 'insert into `activity_logs`'])
 })
 
 test('reject_delete: the comment is deleted and the row rejected; statements in the base order, none under a lock', async () => {
@@ -173,6 +182,8 @@ test('a failed audit insert rolls the whole resolve back: comment, ban and statu
     const id = await queued({ targetId: commentId })
     h.harness.failNext(/^insert into `activity_logs`/)
     assert.equal((await resolve(id, { action })).status, 500, action)
+    // The comment WAS written before the audit failed (unhidden or deleted) — what rolls back.
+    assert.ok(h.harness.txStatements.some(sql => /^(update|delete from) `article_comments`/.test(sql)), action)
     assert.deepEqual([comments(), bans(), queueRows()], [[{ id: commentId, isHidden: true }], [], [{ id, status: 'pending', reviewedBy: null }]], action)
   }
 })
@@ -198,7 +209,7 @@ test('FINDING-R7-1: an approve that loses to a reject is a 409 — the reject st
 test('FINDING-R7-1: a reject that loses to an approve is a 409 and its DELETE rolls back — the approved comment stays', async () => {
   const commentId = await comment()
   const id = await queued({ targetId: commentId })
-  competitorFirst(`UPDATE article_comments SET is_hidden = 0 WHERE id = ${commentId}; UPDATE ai_moderation_queue SET status = 'approved', reviewed_by = 77 WHERE id = ${id}`)
+  competitorFirst(`UPDATE article_comments SET is_hidden = 0, flag_reason = NULL WHERE id = ${commentId}; UPDATE ai_moderation_queue SET status = 'approved', reviewed_by = 77 WHERE id = ${id}`)
   // Before: 200 — the comment another officer had just approved was deleted, the row "rejected".
   assert.equal((await resolve(id, { action: 'reject_delete' })).status, 409)
   assert.deepEqual([queueRows(), comments(), audits()], [[{ id, status: 'approved', reviewedBy: 77 }], [{ id: commentId, isHidden: false }], []])
@@ -208,7 +219,7 @@ test('FINDING-R7-1: a double click — the second of two identical approves is a
   const commentId = await comment()
   const id = await queued({ targetId: commentId })
   // The first click committed while the second was between its read and its transaction.
-  competitorFirst(`UPDATE article_comments SET is_hidden = 0 WHERE id = ${commentId}; UPDATE ai_moderation_queue SET status = 'approved', reviewed_by = ${officer.id} WHERE id = ${id}`)
+  competitorFirst(`UPDATE article_comments SET is_hidden = 0, flag_reason = NULL WHERE id = ${commentId}; UPDATE ai_moderation_queue SET status = 'approved', reviewed_by = ${officer.id} WHERE id = ${id}`)
   assert.equal((await resolve(id, { action: 'approve' })).status, 409)
   assert.deepEqual([queueRows(), comments(), audits()], [[{ id, status: 'approved', reviewedBy: officer.id }], [{ id: commentId, isHidden: false }], []])
 })
@@ -216,7 +227,7 @@ test('FINDING-R7-1: a double click — the second of two identical approves is a
 test('FINDING-R7-1: a ban that loses the row to an approve is a 409 — the ban it inserted rolls back with it', async () => {
   const commentId = await comment()
   const id = await queued({ targetId: commentId })
-  competitorFirst(`UPDATE article_comments SET is_hidden = 0 WHERE id = ${commentId}; UPDATE ai_moderation_queue SET status = 'approved', reviewed_by = 77 WHERE id = ${id}`)
+  competitorFirst(`UPDATE article_comments SET is_hidden = 0, flag_reason = NULL WHERE id = ${commentId}; UPDATE ai_moderation_queue SET status = 'approved', reviewed_by = 77 WHERE id = ${id}`)
   assert.equal((await resolve(id, { action: 'ban_ip' })).status, 409)
   assert.deepEqual([bans(), comments(), queueRows().map(row => row.status), audits()], [[], [{ id: commentId, isHidden: false }], ['approved'], []])
 })
@@ -230,13 +241,14 @@ test('pinned (owner\'s call): a resolve from a non-pending status is accepted �
   assert.deepEqual(audits().map(a => a.meta.action), ['reject_delete', 'approve'])
 })
 
-test('pinned (FINDING-R7-4, owner\'s call): approve of a chat or livestream row changes only the queue row', async () => {
+test('FINDING-R7-4 (fixed for livestream — restore suite): approve of a chatbot row still changes only the queue row', async () => {
+  // Nothing of a chatbot turn is hidden (a refused question is answered with a refusal), so there
+  // is nothing to show again; a livestream row restores its message (moderation-queue-restore-behavior).
   const commentId = await comment()
-  for (const targetType of ['chat', 'livestream_chat']) {
-    const id = await queued({ targetType, targetId: commentId })
-    assert.equal((await resolve(id, { action: 'approve' })).status, 200, targetType)
-    assert.deepEqual(h.harness.txStatements.slice(-2).map(shape), ['update `ai_moderation_queue`', 'insert into `activity_logs`'], targetType)
-  }
+  const id = await queued({ targetType: 'chat', targetId: commentId })
+  const response = await resolve(id, { action: 'approve' })
+  assert.deepEqual([response.status, response.body.restore], [200, 'not_applicable'])
+  assert.deepEqual(h.harness.txStatements.map(shape), ['update `ai_moderation_queue`', 'insert into `activity_logs`'])
   assert.deepEqual(comments(), [{ id: commentId, isHidden: true }], 'a comment with the same id is not touched')
 })
 

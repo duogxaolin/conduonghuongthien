@@ -88,7 +88,7 @@ export type LivestreamChatDeps = {
  * (`publicNameSnapshot`, spec reader-display-names-google). Không ghi lại hàng:
  * bản chụp gốc vẫn là bằng chứng cho hàng chờ kiểm duyệt.
  */
-function serializeChatMessage(row: {
+export function serializeChatMessage(row: {
   id: number
   displayName: string
   content: string
