@@ -103,6 +103,20 @@ test('B01 livestream: a message with a pending row (a long reason, an emoji at t
   assert.deepEqual(pushed.filter(m => m.event === 'message').map(m => (JSON.parse(String(m.data)) as { id: number }).id), [id])
 })
 
+test('the lookup of the pending row failing: logged, and the hide still happens under the check\'s own reason — content the AI judged violating never stays on screen', async () => {
+  const id = insertId(await h.harness.db.insert(articleComments).values({ body: 'câu xấu', isHidden: false, readerId: AUTHOR, createdAt: new Date() }))
+  await queued({ targetId: id })
+  h.harness.failNext(/^select .*from `ai_moderation_queue`/i)
+  const out = await worker.checkAndModerateContent({ content: 'câu xấu', targetType: 'comment', targetId: id })
+  assert.deepEqual([out.action, out.hidden, out.failures], ['auto_hide', true, []])
+  assert.equal(h.harness.rows(aiModerationQueue).length, 1, 'precondition: the insert was skipped (a row is pending)')
+  const row = h.harness.rows(articleComments)[0]!
+  assert.deepEqual([row.isHidden, row.flagReason], [true, autoHideFlagReason(AI_REASON)])
+  const unread = h.logged.filter(line => line.includes('ai_moderation.pending_reason_unread'))
+  assert.equal(unread.length, 1)
+  assert.ok(unread[0]!.startsWith('warn ') && unread[0]!.includes(`targetId: ${id}`) && unread[0]!.includes('from `ai_moderation_queue`'), unread[0])
+})
+
 test('a hide that filed its own row still writes its own reason (nothing pending: no lookup changes the mark)', async () => {
   const id = insertId(await h.harness.db.insert(articleComments).values({ body: 'câu xấu', isHidden: false, readerId: AUTHOR, createdAt: new Date() }))
   await queued({ targetId: id, flaggedReason: 'Lần duyệt trước của cán bộ', status: 'approved' })
