@@ -3,6 +3,7 @@ import { getDb } from '../../../../utils/db'
 import { aiModerationQueue, readerIpBans } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { finitePositive, MAX_PAGE } from '../../../../utils/query-number'
+import { readQueueAiVerdict } from '../../../../../shared/moderation-ai-verdict'
 
 const DEFAULT_PER_PAGE = 20
 const MAX_PER_PAGE = 100
@@ -44,6 +45,9 @@ export default defineEventHandler(async (event) => {
 
   const items = rows.map(r => ({
     ...r,
+    // Read through the one validator: NULL (rows before the column, rows the AI filed itself) and
+    // anything malformed are `null` — the page shows nothing; a resolved row keeps what it had.
+    aiVerdict: readQueueAiVerdict(r.aiVerdict),
     isIpBanned: Boolean(r.authorIp && bannedSet.has(r.authorIp)),
   }))
 

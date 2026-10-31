@@ -18,7 +18,8 @@
  *     automatic hide, which then writes nothing, or since), or an officer showed it and another
  *     automatic hide filed under another reason hid it again: `not_restored`. (A hide that finds
  *     a row about the target still pending files none, and writes THAT row's reason as its mark —
- *     `pendingQueueReason` — so approving that row shows the content: B01);
+ *     `pendingQueueRow` — so approving that row shows the content: B01; what the AI judged goes on
+ *     that row's own `ai_verdict` column, display only, never the mark);
  *   - (livestream) its author's ACCOUNT is not banned — a ban does not touch livestream messages,
  *     so the restore itself must not put a banned reader's words back on screen. (Checked at the
  *     read only; an address ban in `reader_ip_bans` is not checked at all.)
