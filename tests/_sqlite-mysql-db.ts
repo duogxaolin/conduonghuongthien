@@ -182,6 +182,16 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     statements.push(sql)
     if (transactionOpen) { txStatements.push(sql); txParams.push(params) }
     maybeFail(sql)
+    // `INSERT … SELECT ?, … FROM DUAL WHERE NOT EXISTS (…)` — one review row per target
+    // (`insertQueueRowOnce`, moderation-worker-persist.ts). SQLite reads a SELECT without FROM, so
+    // the same statement runs with `FROM DUAL` dropped; a skipped row is 0 rows and insertId 0, as
+    // on MySQL. Before this, the harness refused the statement and every such insert "failed".
+    const conditionalInsert = /^(insert into `[^`]+` \([^)]*\))\s+select (.*?)\s+from dual\s+(where not exists \(.*\))$/is.exec(sql)
+    if (conditionalInsert) {
+      const result = sqlite.prepare(`${conditionalInsert[1]} SELECT ${conditionalInsert[2]} ${conditionalInsert[3]}`).run(...params.map(toSqliteParam))
+      const inserted = Number(result.changes)
+      return { rows: [{ insertId: inserted > 0 ? Number(result.lastInsertRowid) : 0, affectedRows: inserted }] }
+    }
     if (/^insert/i.test(sql)) return runInsert(sql, params)
     if (/on duplicate key/i.test(sql)) throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
 

@@ -8,7 +8,7 @@
  * Mỗi lệnh ghi hỏng đều được ghi log (sự kiện ổn định + loại + id) và báo cho nơi gọi
  * qua `failures` — không bao giờ nuốt im lặng (CLAUDE.md: "lỗi ẩn/ghi hàng duyệt phải log").
  */
-import { and, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import {
@@ -17,7 +17,7 @@ import {
   chatMessages,
   livestreamMessages,
 } from '../db/schema'
-import { logError } from '../utils/logger'
+import { logError, logWarn } from '../utils/logger'
 import { autoHideFlagReason } from '../utils/moderation-flag-reason'
 import { workerStats } from './moderation-stats'
 import type { ModerationCheckInput, ModerationPersistFailure } from './moderation-worker-types'
@@ -68,6 +68,33 @@ async function insertQueueRowOnce(row: QueueRow): Promise<boolean> {
     SELECT ${sql.join(values.map(v => sql`${v}`), sql`, `)} FROM DUAL
     WHERE NOT EXISTS (SELECT 1 FROM ${aiModerationQueue} WHERE ${aiModerationQueue.targetType} = ${row.targetType} AND ${aiModerationQueue.targetId} = ${row.targetId} AND ${aiModerationQueue.status} = ${'pending'})`)
   return affectedRowsOrZero(result) > 0
+}
+
+/**
+ * `flagged_reason` của hàng còn chờ đã khiến `insertQueueRowOnce` bỏ qua — cùng điều kiện với
+ * `NOT EXISTS` của nó (cùng loại, cùng id, `pending`); nhiều hàng (hai lượt đồng thời) thì lấy hàng
+ * mới nhất. Lượt ẩn tự động bị bỏ hàng ghi lý do NÀY làm dấu, vì hàng đang chờ là hàng duy nhất cán
+ * bộ duyệt được cho nội dung đó: trước đây nó ghi lý do của chính nó — không hàng nào mang — nên
+ * "Bỏ ẩn" trả `not_restored` và nội dung kẹt ẩn (B01, verifier wave3/queue-restore).
+ *
+ * Đọc thường, tự commit, không `FOR UPDATE` và không trong transaction: không thêm khoá nào. Hàng
+ * vừa được xử lý giữa hai câu (không còn hàng chờ) hoặc đọc hỏng (ghi log) → `null`, nơi gọi giữ
+ * lý do của mình như trước.
+ */
+async function pendingQueueReason(targetType: QueueRow['targetType'], targetId: number): Promise<string | null> {
+  try {
+    const [row] = await getDb()
+      .select({ reason: aiModerationQueue.flaggedReason })
+      .from(aiModerationQueue)
+      .where(and(eq(aiModerationQueue.targetType, targetType), eq(aiModerationQueue.targetId, targetId), eq(aiModerationQueue.status, 'pending')))
+      .orderBy(desc(aiModerationQueue.id))
+      .limit(1)
+    return row?.reason ?? null
+  } catch (err: unknown) {
+    noteWorkerError(err)
+    logWarn({ event: 'ai_moderation.pending_reason_unread', targetType, targetId, error: describeError(err) })
+    return null
+  }
 }
 
 /**
@@ -122,4 +149,4 @@ async function applyAutoHide(
 }
 
 // Khai báo giữ nguyên văn như trước khi tách; tên được xuất ở đây cho hai tệp anh em.
-export { describeError, noteWorkerError, insertQueueRowOnce, applyAutoHide }
+export { describeError, noteWorkerError, insertQueueRowOnce, pendingQueueReason, applyAutoHide }

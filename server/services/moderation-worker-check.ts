@@ -13,7 +13,7 @@ import { getActiveModerationRules } from './moderation-rules-cache'
 import { compileModerationRegex, createModerationRegexBudget, isRegexRuleType, testModerationRegexes, type ModerationRegexRule } from './moderation-regex'
 import { workerStats } from './moderation-stats'
 import { fastPreModerate } from './moderation-worker-prescreen'
-import { applyAutoHide, describeError, insertQueueRowOnce, noteWorkerError } from './moderation-worker-persist'
+import { applyAutoHide, describeError, insertQueueRowOnce, noteWorkerError, pendingQueueReason } from './moderation-worker-persist'
 import type {
   ModerationCheckInput,
   ModerationCheckOptions,
@@ -268,8 +268,9 @@ ${fencedContent.fenced}${detectedStr}`
   const failures: ModerationPersistFailure[] = []
   let hidden = false
   if (isFlagged) {
+    let queued = true
     try {
-      const queued = await insertQueueRowOnce({
+      queued = await insertQueueRowOnce({
         targetType: input.targetType,
         targetId: input.targetId ? Number(input.targetId) : null,
         authorName: input.authorName || 'Khách',
@@ -302,7 +303,12 @@ ${fencedContent.fenced}${detectedStr}`
     }
 
     if (finalAction === 'auto_hide' && input.targetId) {
-      hidden = await applyAutoHide(input.targetType, input.targetId, reasons.join('; '), failures)
+      // Dấu ẩn = lý do của hàng chờ mà "Bỏ ẩn" sẽ duyệt: hàng vừa ghi, hoặc — khi đã có hàng còn
+      // chờ cho mục này nên không ghi (`queued` false) — lý do của CHÍNH hàng đó (B01).
+      const hideReason = queued
+        ? reasons.join('; ')
+        : (await pendingQueueReason(input.targetType, Number(input.targetId))) ?? reasons.join('; ')
+      hidden = await applyAutoHide(input.targetType, input.targetId, hideReason, failures)
     }
   }
 

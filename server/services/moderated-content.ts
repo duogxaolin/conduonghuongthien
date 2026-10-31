@@ -16,7 +16,9 @@
  *     retention took it: `gone`;
  *   - it is hidden, and its `flag_reason` is exactly this row's — an officer hid it (before the
  *     automatic hide, which then writes nothing, or since), or an officer showed it and another
- *     automatic hide filed under another reason hid it again: `not_restored`;
+ *     automatic hide filed under another reason hid it again: `not_restored`. (A hide that finds
+ *     a row about the target still pending files none, and writes THAT row's reason as its mark —
+ *     `pendingQueueReason` — so approving that row shows the content: B01);
  *   - (livestream) its author is not banned — a ban does not touch livestream messages, so the
  *     restore itself must not put a banned reader's words back on screen.
  * The target is read first with a plain (non-locking) read, then changed by a conditional UPDATE
