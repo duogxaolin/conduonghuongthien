@@ -43,59 +43,10 @@ const ISLAND_WORDS_ALL = new RegExp(ISLAND_WORDS.source, 'gu')
 // trên vùng biển" kể chuyện thụ án ở Trung Quốc.
 const QUESTION_ISLAND_HAN = /群岛|岛礁|礁/
 const QUESTION_ISLAND_WORDS = /(?<![\p{L}])(?:quần đảo|hòn đảo|đảo (?:này|đó|ấy|kia|nào)|ba bình|đá chữ thập|vành khăn|xu bi|hoàng nham|islands?|archipelagos?|reefs?|itu aba|fiery cross|scarborough)(?![\p{L}])/u
-// Vòng 7: câu hỏi CHỦ QUYỀN của một hòn đảo tên lạ ("Đảo Quang Ảnh của nước nào?", "金银岛是哪个国家的？", "Bãi đá ngầm này của
-// ai", "Who owns Pattle Island?") cũng là hỏi về một hòn đảo — tên đảo lạ không liệt kê được. Chỉ là NGỮ CẢNH cho câu trả lời,
-// không phải cổng đầu vào: vòng 7 thử làm cổng đầu vào rồi bỏ — 21/22 câu hỏi về đảo không tranh chấp ("Đảo Phú Quốc của nước
-// nào?", "海南岛是哪个国家的？", "Who owns Jeju Island?") nhận lập trường thay câu trả lời (chặn oan). Hẹp: chữ hỏi phải đứng SÁT
-// sau chữ đảo (≤ 5 từ, không qua dấu câu) và hỏi QUỐC GIA/người sở hữu — câu kể chuyện thụ án ("Tôi ở đảo Phú Quý, giờ ai quản
-// lý hồ sơ…", "我在海南岛服过刑，哪个国家的政策更好") không bật cờ; "thuộc tỉnh nào", "ai quản lý trại giam", "海南岛属于哪个省",
-// "金银岛是哪个国家的作家写的" không phải.
-// Chữ hỏi: quốc gia/người sở hữu ("ai quản lý" không — "trại giam trên đảo do ai quản lý"; "nước nào quản lý" thì có).
-const OWNER_VI = [
-  '(?:của\\s+(?:ai|nước\\s+nào|quốc\\s+gia\\s+nào)|thuộc\\s+(?:về\\s+)?(?:ai|nước\\s+nào|quốc\\s+gia\\s+nào)|thuộc\\s+chủ\\s+quyền\\s+(?:của\\s+)?(?:ai|nước\\s+nào)',
-  '|(?:do\\s+)?(?:ai|nước\\s+nào|quốc\\s+gia\\s+nào)\\s+(?:đang\\s+)?(?:sở\\s+hữu|làm\\s+chủ|kiểm\\s+soát|chiếm|nắm\\s+giữ|giữ(?!\\s+gìn))',
-  '|(?:do\\s+)?(?:nước|quốc\\s+gia)\\s+nào\\s+(?:đang\\s+)?quản\\s+lý|của\\s+(?:mình|ta|việt\\s+nam|vn)\\s+hay\\s+(?:của\\s+)?(?:họ|trung\\s+quốc|tq))',
-].join('')
-const ISLAND_VI = `(?:(?:quần|hòn)\\s+)?(?<!(?:khuynh|điên|lảo|chao|côn)\\s+)đảo(?![\\p{L}])${sovereigntyDaoVerb}|bãi\\s+đá|đá\\s+ngầm|bãi\\s+cạn|rạn\\s+san\\s+hô`
-// "cay" (đảo cát) chỉ trong câu tiếng Anh: không dấu thì là "cay" (vị cay) — "Món cay này của ai?".
-const ISLAND_EN_WORDS = 'islands?|isles?|islets?|archipelagos?|reefs?|shoals?|atolls?'
-const ISLAND_EN = `(?<![\\p{L}])(?:${ISLAND_EN_WORDS}|cays?)(?![\\p{L}])`
-// Tối đa 5 từ ở giữa, không qua dấu câu, không qua giới từ ("Who controls the ferry to the island?").
-const NEAR = '(?![\\p{L}])(?:\\s+(?!(?:to|on|at|in|of|from|for|near|by|with)(?![\\p{L}]))[\\p{L}\\p{N}\'’]+){0,5}?\\s+'
-const COUNTRY_EN = 'chinese|vietnamese|filipino|taiwanese|malaysian'
-const ISLAND_OWNER_QUESTION = new RegExp([
-  `(?<![\\p{L}])(?:${ISLAND_VI}|(?:${ISLAND_EN_WORDS})(?![\\p{L}]))(?:\\s+[\\p{L}\\p{N}]+){0,5}?\\s+(?:là\\s+)?${OWNER_VI}(?![\\p{L}])`,
-  `|(?<![\\p{L}])(?:ai|nước\\s+nào|quốc\\s+gia\\s+nào)\\s+(?:đang\\s+)?(?:sở\\s+hữu|làm\\s+chủ|kiểm\\s+soát|chiếm|nắm\\s+giữ)\\s+(?:${ISLAND_VI})`,
-  `|(?<![\\p{L}])chủ\\s+quyền\\s+(?:(?:của|đối\\s+với|với)\\s+)?(?:${ISLAND_VI})`,
-  // Tiếng Anh, chữ hỏi và chữ đảo cách nhau ≤ 5 từ: "Who owns Pattle Island?", "Pattle Island belongs to which country?",
-  // "Which country does Money Island belong to?", "Whose is that reef?", "Robert Island — whose is it?", "Is Triton Island
-  // Chinese or Vietnamese?" — không "Whose job is it to help … on the island?".
-  `|(?<![\\p{L}])(?:who\\s+(?:owns|controls|claims|holds)|which\\s+(?:country|nation)\\s+(?:owns|controls|claims)|owned\\s+by\\s+(?:whom|who|which)|sovereignty\\s+over)${NEAR}${ISLAND_EN}`,
-  `|(?<![\\p{L}])whose(?:\\s+[\\p{L}'’]+){0,3}?\\s+${ISLAND_EN}|${ISLAND_EN}\\s*[-–—:,]?\\s*whose\\s+(?:is|are)\\s+(?:it|they|this|that)(?![\\p{L}])`,
-  `|(?<![\\p{L}])which\\s+(?:country|nation)\\s+(?:does|do|did)${NEAR}${ISLAND_EN}(?:\\s+[\\p{L}'’]+){0,2}?\\s+belong`,
-  `|${ISLAND_EN}${NEAR}(?:belongs?\\s+to\\s+(?:whom|who|which)|owned\\s+by\\s+(?:whom|who|which))(?![\\p{L}])`,
-  `|(?<![\\p{L}])(?:is|are)(?:\\s+[\\p{L}\\p{N}'’]+){0,4}?\\s+${ISLAND_EN}\\s+(?:${COUNTRY_EN})\\s+or\\s+(?:${COUNTRY_EN})(?![\\p{L}])`,
-].join(''), 'u')
-// Tên đảo/bãi/đá viết hoa như tên riêng ("bãi Vũng Mây thuộc ai", "đá Núi Le ai đang chiếm", "hòn Mù của nước nào") — trên chữ
-// GIỮ hoa/thường; "bãi xe này thuộc ai", "hòn đá này của ai" (viết thường) không phải.
-// "Northeast Cay" viết hoa (tên tiếng Anh) cũng vậy.
-const FEATURE_OWNER_QUESTION = new RegExp(`(?<![\\p{L}])(?:(?:[Bb]ãi|[Hh]òn|[Đđ]á)(?:\\s+\\p{Lu}\\p{Ll}*){1,3}|(?:\\p{Lu}\\p{Ll}+\\s+){1,3}Cays?)(?:\\s+[\\p{L}\\p{N}]+){0,3}?\\s+(?:là\\s+)?${OWNER_VI}(?![\\p{L}])`, 'u')
-// Chữ Hán trên khoá CÓ ngắt ("是谁的" phải hết mệnh đề: "金银岛是哪个国家的作家写的" là hỏi tác giả); "是中国的吗/属于越南吗" là hỏi
-// chủ quyền.
-const ISLAND_OWNER_QUESTION_HAN = new RegExp([
-  '(?:岛|礁|海域)[^|]{0,12}?(?:是(?:谁|哪个国家|哪国)的(?:\\||$)|属于(?:谁|哪个国家|哪国)|归属(?:于)?(?:谁|哪)|归谁|(?:谁|哪个国家|哪国)(?:拥有|管辖|控制)',
-  '|主权(?:属于|归|在)?(?:谁|哪)|(?:是|属于)(?:中国|越南|菲律宾|台湾|马来西亚)的?(?:吗|么|嗎))|(?:谁|哪个国家|哪国)(?:拥有|管辖|控制)[^|]{0,8}?(?:岛|礁|海域)',
-].join(''))
-
-/**
- * Câu hỏi chủ quyền của một hòn đảo/bãi/vùng biển, kể cả tên lạ (cả câu hỏi; `folded`: `sovereigntyFold`). Chữ Hán xét trên
- * khoá có ngắt và cả khoá nối liền ("群，岛，是，谁，的？"). Chỉ dùng làm ngữ cảnh câu hỏi (`sovereigntyQuestionIslandContext`).
- */
-export function sovereigntyIslandOwnershipQuestion(folded: string): boolean {
-  if (ISLAND_OWNER_QUESTION.test(folded.toLowerCase()) || FEATURE_OWNER_QUESTION.test(folded)) return true
-  const han = hanKey(folded)
-  return ISLAND_OWNER_QUESTION_HAN.test(han) || ISLAND_OWNER_QUESTION_HAN.test(joinedHan(han))
-}
+// Vòng 7 thử thêm "câu hỏi CHỦ QUYỀN của một hòn đảo tên lạ" ("Đảo Quang Ảnh của nước nào?", "金银岛是哪个国家的？") — trước là
+// cổng đầu vào, rồi là ngữ cảnh câu hỏi — và GỠ cả hai (quyết định của chủ dự án sau verifier v8, phương án A11): làm ngữ cảnh
+// thì câu trả lời ĐÚNG về đảo không tranh chấp có nhắc khách Trung Quốc ("Cát Bà thuộc Hải Phòng, Việt Nam. Trung Quốc có nhiều
+// khách…", Jeju, Bali, Langkawi) bị thay. Câu yêu sách trả lời câu hỏi đó vẫn bị thay khi nó có chữ đảo/biển.
 
 // ─── Cụm yêu sách ──────────────────────────────────────────────────────────────────────────────────────────────────
 // Tên nước của bên yêu sách trên khoá Latin bỏ dấu (khoá giữ chữ Hán: "thuộc chủ quyền 中國" → "thuoc chu quyen 中国"):
@@ -106,7 +57,8 @@ const LATIN_CLAIMS = [
   ` lanh tho (?:\\S+ ){0,5}${CN} `,
   ` thuoc (?:\\S+ ){0,4}${CN} `, // "thuộc (về / của / chủ quyền của) …"
   ` chu quyen (?:\\S+ ){0,3}${CN} `,
-  ` ${CN} (?:\\S+ ){0,4}(?:chu quyen|quan ly|kiem soat|chiem dong|chiem giu|so huu|lam chu) `,
+  // Không "sở hữu / làm chủ" (gỡ ở A11: "nhà hàng do người Trung Quốc làm chủ", "do một tập đoàn Trung Quốc sở hữu" trên đảo).
+  ` ${CN} (?:\\S+ ){0,4}(?:chu quyen|quan ly|kiem soat|chiem dong|chiem giu) `,
   ` (?:vung bien|lanh hai|hai phan) (?:\\S+ ){0,3}${CN} `,
   // "là của Trung Quốc", "đều là của TQ", "là của nước/chính quyền Trung Hoa".
   ` la (?:(?:hoan toan|that su|chinh thuc|tu lau|von|deu|da) )?cua (?:rieng |nuoc |phia |chinh quyen |nha nuoc )?${CN} `,
@@ -129,7 +81,8 @@ const IS_CHINESE = /(?<![\p{L}])(?:is|are|was|were|remains?)\s+(?:(?:all|now|sti
 // không phải chữ đầu của một tên riêng dài hơn ("thuộc về Tàu Cao tốc Phú Quốc", "là của Tàu Hải Âu").
 const TAU_CLAIM = /(?<![\p{L}])(?:[Ll]à|[Tt]huộc)(?:\s+(?:về|của|đất|lãnh\s+thổ|chủ\s+quyền|quyền|sở\s+hữu|một\s+phần))*\s+(?:nước\s+|bọn\s+|người\s+)?(?:Tàu|TÀU)(?![\p{L}])(?!\s+\p{Lu})/u
 // Chữ Hán, trên khoá NỐI LIỀN, chữ phồn thể đã gộp ("中華人民共和國" → 中华人民共和国, "歸屬" → 归属).
-const COUNTRY_HAN = ['中华人民共和国', '中国', '中华', '中共']
+// Không "中华" trần (gỡ ở A11: "海南岛自古以来就受中华文化影响" — văn hoá, không phải quốc gia); "中华人民共和国" vẫn là tên nước.
+const COUNTRY_HAN = ['中华人民共和国', '中国', '中共']
 const HC = `(?:${COUNTRY_HAN.join('|')})`
 const HAN_CLAIMS = new RegExp([
   `${HC}.{0,6}领土|领土.{0,6}${HC}|固有领土|属于${HC}|${HC}.{0,15}主权|主权.{0,4}${HC}|自古以来.{0,4}${HC}|${HC}.{0,4}管辖`,
@@ -187,12 +140,12 @@ export function sovereigntySettledIslandContext(folded: string, han: string, ski
   return false
 }
 
-/** Câu hỏi hỏi về một hòn đảo: tên/chữ quần đảo, hoặc chữ đảo kèm chữ hỏi chủ quyền. */
+/** Câu hỏi hỏi về một hòn đảo: tên/chữ quần đảo, "hòn đảo", "đảo này/đó…", 群岛/礁, islands (khoá chữ Hán nối liền). */
 export function sovereigntyQuestionIslandContext(question: string): boolean {
   const folded = fold(question)
   const han = joinedHan(hanKey(folded))
   const lower = folded.toLowerCase()
-  return QUESTION_ISLAND_HAN.test(han) || QUESTION_ISLAND_WORDS.test(lower) || sovereigntyIslandOwnershipQuestion(folded)
+  return QUESTION_ISLAND_HAN.test(han) || QUESTION_ISLAND_WORDS.test(lower)
 }
 
 /**

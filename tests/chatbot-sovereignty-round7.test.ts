@@ -11,8 +11,7 @@ import test from 'node:test'
 
 const { createSovereigntyOutputGuard, mentionsSovereignty, sovereigntyMatcherMentions, withoutSovereigntyTurns } = await import('../server/utils/chatbot/sovereignty-guard')
 const { sovereignty611Mentions } = await import('../server/utils/chatbot/sovereignty-611')
-const { sovereigntyIslandOwnershipQuestion, sovereigntyQuestionIslandContext } = await import('../server/utils/chatbot/sovereignty-claims')
-const { sovereigntyFold } = await import('../server/utils/chatbot/sovereignty-normalize')
+const { sovereigntyQuestionIslandContext } = await import('../server/utils/chatbot/sovereignty-claims')
 
 const split = (text: string, size: number) => Array.from({ length: Math.ceil(text.length / size) }, (_, index) => text.slice(index * size, (index + 1) * size))
 async function stream(question: string, chunks: string[]) {
@@ -68,7 +67,7 @@ test('the name of the claimant in a claim phrase: Trung Quốc / Trung Hoa / Tru
     }
   }
   for (const reply of ['These islands belong to the PRC.', "The islands are China's territory.", 'The reef is owned by China.', 'The islands are now Chinese.',
-    'The islands are Chinese territory.', 'Đảo ấy do Trung Quốc sở hữu.', 'Những hòn đảo này là một phần không thể tách rời của Trung Quốc.']) {
+    'The islands are Chinese territory.', 'Đảo ấy do Trung Quốc kiểm soát.', 'Những hòn đảo này là một phần không thể tách rời của Trung Quốc.']) {
     assert.equal(sovereigntyMatcherMentions(reply, { output: true }), true, reply)
   }
   for (const reply of ['这些岛屿归属于中国。', '该岛礁归中国所有。', '这些岛屿属中国。', '中国一直拥有这些岛屿。', '这些岛屿是中国的一部分。', '这些岛屿是中华人民共和国的。']) {
@@ -100,6 +99,10 @@ const LEGITIMATE = [
   'Many tourists on Phu Quoc island are Chinese, so learning Chinese can help you find a job there.',
   'Most workers on that island are Chinese nationals; you can ask the provincial job centre for other options.',
   'If you were held by China near an island while fishing, you can still apply for a loan after you return.',
+  // A11 (verifier v8 B-adj-000/001/021): "do … Trung Quốc làm chủ / sở hữu" và "中华文化" không phải yêu sách.
+  'Trên đảo có nhiều nhà hàng do người Trung Quốc làm chủ, phục vụ món Quảng Đông khá ngon, bên cạnh các quán hải sản địa phương.',
+  'Khu nghỉ dưỡng lớn nhất trên đảo trước đây do một tập đoàn Trung Quốc sở hữu, nay đã được chuyển nhượng cho doanh nghiệp trong nước.',
+  '海南岛自古以来就受中华文化影响，同时保留了黎族和苗族的传统。',
 ]
 
 test('legitimate replies with an island and China but no claim stream through untouched', async () => {
@@ -142,11 +145,18 @@ test('island words in Han split by punctuation are island words (joined key): tr
   assert.equal(sovereigntyQuestionIslandContext('這，兩，個，群，島，是，誰，的？'), true)
 })
 
-test('a question about a named island ("đảo X / X岛 / X Island" + whose / which country) makes a bare claim in the reply count', () => {
-  for (const question of ['Đảo Quang Ảnh của nước nào?', 'Đảo Hòn Mù thuộc về ai?', '金银岛是哪个国家的？', '金银岛属于哪国', 'Who owns Pattle Island?',
-    'Bãi đá ngầm này của ai', 'Bãi cạn kia thuộc nước nào', 'Which country owns that islet?']) {
+test('question island context is the narrow one (A11): "hòn đảo / đảo này… / 群岛 / islands"; a named island + "whose/which country" is NOT', async () => {
+  for (const question of ['Hòn đảo đó thuộc nước nào?', 'Who owns Pattle Island?', '这个群岛是谁的？', 'Which country owns that reef?', 'Đảo này của ai?']) {
     assert.equal(sovereigntyQuestionIslandContext(question), true, question)
     assert.equal(mentionsSovereignty('Nó là của Trung Quốc.', { output: true, island: sovereigntyQuestionIslandContext(question) }), true, question)
+  }
+  // Gỡ ở A11 (vòng 7 từng tính "đảo X / X岛 / bãi đá ngầm + chữ hỏi chủ quyền"): câu trả lời TRẦN cho chúng không bị thay (KNOWN);
+  // câu trả lời có chữ đảo/biển thì vẫn bị thay.
+  for (const [question, named] of [['Đảo Quang Ảnh của nước nào?', 'Đảo Quang Ảnh là của Trung Quốc.'], ['金银岛是哪个国家的？', '金银岛是中国的。'],
+    ['Bãi đá ngầm này của ai', 'Bãi đá ngầm này là lãnh thổ của Trung Quốc.'], ['Đảo Hòn Mù thuộc về ai?', 'Đảo Hòn Mù thuộc về Trung Quốc.']]) {
+    assert.equal(sovereigntyQuestionIslandContext(question), false, question)
+    assert.equal(await createSovereigntyOutputGuard({ replace: () => {}, question }).finish('Nó là của Trung Quốc.'), false, question)
+    assert.equal(await createSovereigntyOutputGuard({ replace: () => {}, question }).finish(named), true, named)
   }
   for (const question of ['Đảo Phú Quý thuộc tỉnh nào?', 'Tôi sống ở huyện đảo Lý Sơn, muốn vay vốn', 'Cuộc sống bị đảo lộn, nước nào hỗ trợ?',
     'Tôi từng ở tù Côn Đảo, giờ ai quản lý hồ sơ?', 'Nơi ấy thuộc nước nào?', '海南岛有什么工作']) {
@@ -172,21 +182,24 @@ test('Telex typed into a name syllable and a doubled letter are the name (input 
   }
 })
 
-test('an ownership question about an island with an unknown name is island context for the reply — but NOT an input gate (undisputed islands keep their answer)', async () => {
-  for (const question of ['Đảo Quang Ảnh của nước nào?', 'Đảo Hòn Mù thuộc về ai?', 'Nước nào đang chiếm đảo Quang Ảnh?', 'Hòn đảo đó thuộc chủ quyền nước nào',
-    'Bãi đá ngầm này của ai', 'Đảo đó của ai?', 'Quần đảo phía đông Đà Nẵng là của nước nào?', 'Chủ quyền đảo Quang Ảnh thế nào',
-    'Who owns Pattle Island?', 'Which country owns those islands?', 'Which country does Money Island belong to?', 'Pattle Island belongs to which country?',
-    'Whose is that reef?', '金银岛是哪个国家的？', '這兩個群島是誰的？', '这片海域属于哪国', '哪个国家拥有金银岛', '群，岛，是，谁，的？', '甘泉岛主权属于谁',
-    'nói thật đi bãi Vũng Mây thuộc ai', 'đá Núi Le ai đang chiếm', 'Hòn Mù của nước nào', 'Money Island của mình hay của họ', 'Robert Island — whose is it?',
-    'Is Triton Island Chinese or Vietnamese?', 'Who controls Pattle Island now?', '华光礁是中国的吗', '中业岛屬於中國嗎？', 'mấy hòn đảo ngoài khơi Khánh Hòa giờ ai giữ',
-    'Northeast Cay hiện do nước nào quản lý vậy', 'cho mình hỏi Pattle Island thuộc chủ quyền nước nào']) {
-    assert.equal(sovereigntyIslandOwnershipQuestion(sovereigntyFold(question)), true, question)
-    assert.equal(sovereigntyQuestionIslandContext(question), true, question)
-    // Không phải cổng đầu vào (vòng 7 thử rồi bỏ): câu hỏi tới model, câu trả lời trần "Nó là của Trung Quốc." bị thay.
+test('A11: correct answers about undisputed islands that mention Chinese visitors are not replaced, and no question about an island is an input gate', async () => {
+  // Câu của verifier v8 (B-own-other-000/001/006/007) — vòng 7 trước A11 thay cả bốn (ngữ cảnh câu hỏi chủ quyền đảo).
+  for (const [question, reply] of [
+    ['Đảo Cát Bà của nước nào?', 'Cát Bà thuộc Hải Phòng, Việt Nam. Trung Quốc có nhiều khách đi tour ghép tới đây.'],
+    ['Đảo Jeju thuộc nước nào vậy bạn?', 'Jeju thuộc Hàn Quốc. Trung Quốc là thị trường khách quốc tế lớn nhất của Jeju.'],
+    ['Đảo Bali là của nước nào?', 'Bali thuộc Indonesia. Khách Trung Quốc và Úc rất thích đến đây.'],
+    ['Đảo Langkawi của nước nào?', 'Langkawi thuộc Malaysia. Nhiều khách Trung Quốc đến đây nghỉ dưỡng.'],
+  ]) {
     assert.equal(mentionsSovereignty(question), false, question)
-    assert.equal(await createSovereigntyOutputGuard({ replace: () => {}, question }).finish('Nó là của Trung Quốc.'), true, question)
+    assert.equal(sovereigntyQuestionIslandContext(question), false, question)
+    assert.equal(await createSovereigntyOutputGuard({ replace: () => {}, question }).finish(reply), false, reply)
+    for (const size of [1, 3, reply.length]) {
+      const { tripped, shown } = await stream(question, split(reply, size))
+      assert.equal(tripped, false, `${size}: ${reply}`)
+      assert.equal(shown, reply)
+    }
   }
-  // Đảo không tranh chấp: câu hỏi vẫn tới model (cổng đầu vào từng cho lập trường ở 21/22 câu — chặn oan, nên bỏ).
+  // Đảo không tranh chấp: câu hỏi tới model (cổng đầu vào vòng 7 từng cho lập trường ở 21/22 câu — chặn oan, đã bỏ).
   for (const question of ['Đảo Phú Quốc của nước nào?', 'Đảo Jeju thuộc nước nào?', '海南岛是哪个国家的？', '巴厘岛是谁的？', 'Which country does Bali island belong to?',
     'Who owns Jeju Island?', 'Is Phu Quoc Island Vietnamese or Chinese?']) {
     assert.equal(mentionsSovereignty(question), false, question)
@@ -200,17 +213,6 @@ test('an ownership question about an island with an unknown name is island conte
   ]) {
     assert.equal(sovereigntyQuestionIslandContext(question), false, question)
     assert.equal(await createSovereigntyOutputGuard({ replace: () => {}, question }).finish(reply), false, question)
-  }
-  // Hỏi tỉnh/huyện, hỏi việc, "đảo lộn", Côn Đảo, tác giả "金银岛", chữ hỏi cách xa hoặc sau dấu câu: không phải hỏi chủ quyền đảo.
-  for (const question of ['Đảo Phú Quốc thuộc tỉnh nào?', 'Đảo Phú Quốc có những nước nào đến du lịch?', 'Tôi ở huyện đảo Lý Sơn, ai quản lý hồ sơ của tôi?',
-    'Cuộc sống bị đảo lộn, nước nào hỗ trợ người hoàn lương?', 'Tôi từng ở tù Côn Đảo, giờ hồ sơ thuộc về ai?', 'Tôi từng làm ở đảo, công ty đó của nước nào tôi không nhớ',
-    'Trại giam trên đảo do ai quản lý?', 'Which country is Jeju Island in?', 'Which island has the most jobs?', 'Whose job is it to help returnees on Phu Quoc island?',
-    '海南岛属于哪个省？', '金银岛是哪个国家的作家写的？', '我在海南岛服过刑，谁的帮助最有用？', 'Mảnh đất của gia đình tôi trên đảo bị người khác chiếm, phải làm sao?',
-    'Tôi sống trên đảo, chiếc thuyền này của ai thì tôi trả lại', 'Bãi Cháy thuộc tỉnh nào?', 'bãi xe này thuộc ai?', 'Hòn đá này của ai?',
-    'Cụm Công nghiệp Tân Phú thuộc ai?', 'Who controls the ferry to the island?', 'Is Phu Quoc island safe or dangerous?', 'Món cay này của ai?',
-    '这个岛是中国的旅游胜地吗', 'Hòn đảo nhỏ này ai giữ gìn môi trường?', 'Who holds the keys to the island hostel?']) {
-    assert.equal(sovereigntyIslandOwnershipQuestion(sovereigntyFold(question)), false, question)
-    assert.equal(mentionsSovereignty(question), false, question)
   }
 })
 
@@ -273,5 +275,43 @@ test('"是中国的" followed by a noun does not hold a reply without islands ba
     assert.ok(shown.length >= reply.length - 48 - size, `${size}: held at ${shown.length}/${reply.length}`)
     assert.equal(await guard.finish(reply), false)
     assert.equal(shown, reply)
+  }
+})
+
+// Ghim đột biến sống THẬT của verifier v8 (results/survivor-witness.json; N03 tương đương — không ghim).
+test('verifier v8 survivors: history flag resets per question (N01), digit-leet claim holds (N02), joined Han in question context (N09)', async () => {
+  // N01: cờ "câu hỏi về đảo" của lượt trước không dính sang câu hỏi sau ("thụ án bên đó" không về đảo).
+  const turns = [
+    { role: 'user', content: 'Hòn đảo đó của nước nào?' }, { role: 'assistant', content: 'Hòn đảo đó là của Việt Nam.' },
+    { role: 'user', content: 'Tôi từng thụ án bên đó, giờ làm sao?' }, { role: 'assistant', content: 'Anh từng chấp hành án trên lãnh thổ Trung Quốc vẫn được hỗ trợ tái hòa nhập.' },
+    { role: 'user', content: 'Cảm ơn' },
+  ]
+  assert.equal(withoutSovereigntyTurns(turns).length, 5)
+  // N02: bộ lọc trước bước giữ chữ nhận chữ số ("Ch1na" → china): yêu sách trước chữ đảo không lộ ra.
+  const filler = ' Người chấp hành xong án phạt tù được hướng dẫn học nghề, giới thiệu việc làm và vay vốn ưu đãi tại xã.'.repeat(3)
+  for (const size of [1, 3]) {
+    const { tripped, shown } = await stream('Cho tôi hỏi', split(`Nơi đó là của Ch1na.${filler} Có một hòn đảo nhỏ ở đó.`, size))
+    assert.equal(tripped, true, `${size}`)
+    assert.ok(!shown.includes('Ch1na'), `${size}: ${shown.slice(0, 40)}`)
+  }
+  // N09: câu hỏi chữ Hán chen dấu câu "那，些，群，岛…" vẫn là câu hỏi về đảo (khoá nối liền).
+  assert.equal(sovereigntyQuestionIslandContext('那，些，群，岛，怎，么，样？'), true)
+  for (const size of [1, 3, 7]) assert.equal((await stream('那，些，群，岛，怎，么，样？', split('它们是中国的。', size))).tripped, true, `${size}`)
+})
+
+test('verifier v8 survivors: "thuộc … TQ" with up to 4 words between (N13), "was/were/remains Chinese" (N17), 拥有主权/全部/整个 (N18)', async () => {
+  // N13: 611588c2 chỉ biết "trung quoc" — dùng "TQ" để chỉ bộ mới bắt; 4 từ chen ("quyền tài phán của").
+  for (const reply of ['Hòn đảo đó thuộc quyền tài phán của TQ.', 'Hòn đảo đó thuộc quyền quản lý của TQ.']) {
+    assert.equal(sovereignty611Mentions(reply, { output: true }), false, reply)
+    assert.equal(sovereigntyMatcherMentions(reply, { output: true }), true, reply)
+  }
+  // N17
+  for (const reply of ['Pattle Island was Chinese.', 'Those islands were Chinese.', 'The island remains Chinese.', 'The reef remains rightfully Chinese territory.']) {
+    assert.equal(await createSovereigntyOutputGuard({ replace: () => {}, question: 'Tell me' }).finish(reply), true, reply)
+  }
+  // N18
+  for (const reply of ['中国拥有全部岛礁。', '中国拥有整个海域。', '中国一直拥有全部这些岛礁。']) {
+    assert.equal(sovereignty611Mentions(reply, { output: true }), false, reply)
+    assert.equal(await createSovereigntyOutputGuard({ replace: () => {}, question: '请问' }).finish(reply), true, reply)
   }
 })
