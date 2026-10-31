@@ -35,9 +35,12 @@ const VALID_ACTIONS = new Set(['approve', 'reject_delete', 'ban_ip'])
  * its `status = ?`), then the audit row — and nothing reads under a lock (slice R6 lesson): the
  * target is read with a plain read and changed only by a conditional UPDATE on its primary key.
  * The comment path locks a subset of what the base locked (the base UPDATEd the comment on every
- * approve; now only when this row's mark still hides it). A livestream message is the one row this
- * adds (restore, or removal again after an approve) — a record lock on its PRIMARY key, the same
- * kind the comment path always took.
+ * approve — a deleted one's missing id took the X lock on the supremum, stalling every new comment
+ * until the commit; now only when this row's mark still hides it). A livestream message is the one
+ * row this adds (restore, or removal again after an approve) — X,REC_NOT_GAP on its PRIMARY key, no
+ * gap lock. MySQL 8 (`mysql-restore-locks.sh` in the change's proof): a new message in the same
+ * broadcast, an officer removing another message, the automatic hide of another message, another
+ * row's approve and a new comment wait 0.01 s, as on the base; only the same message waits.
  *
  * KNOWN, kept as the base has it (FINDING-R7-3): two bans of one address at once — the second
  * INSERT hits the unique key, ER_DUP_ENTRY is a 500 and its whole resolve rolls back; clicking
