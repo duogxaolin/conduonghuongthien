@@ -43,7 +43,9 @@ const aiSays = (reply: Reply) => {
 }
 
 let officer: Awaited<ReturnType<typeof h.account>>
+let testStartedAt = 0
 beforeEach(async () => {
+  testStartedAt = Date.now()
   h.reset()
   worker.invalidateModerationRulesCache()
   worker.resetWorkerStats()
@@ -75,6 +77,16 @@ const commentList = async (visibility: 'visible' | 'hidden') => {
 const verdictWrites = () => h.harness.statements.filter(sql => /^update `ai_moderation_queue` set `ai_verdict`/i.test(sql))
 
 const NOTED = { verdict: 'violation', severity: 'critical', reason: AI_REASON }
+/**
+ * A verdict the worker noted during THIS test, without its `at` — which is checked here: written
+ * as `toISOString` writes it, between the start of the test and now. `null` stays `null`.
+ */
+const judged = (value: unknown) => {
+  if (value === null) return null
+  const { at, ...verdict } = value as { at?: unknown }
+  assert.ok(typeof at === 'string' && /Z$/.test(at) && Date.parse(at) >= testStartedAt && Date.parse(at) <= Date.now(), `at: ${String(at)}`)
+  return verdict
+}
 /** Invisible characters, built from code points so this source carries none itself (Trojan Source). */
 const RLO = String.fromCodePoint(0x202e) // RIGHT-TO-LEFT OVERRIDE
 const ZWSP = String.fromCodePoint(0x200b) // ZERO WIDTH SPACE
@@ -92,15 +104,18 @@ test('the AI hides a comment that already has a pending flag_only row: its verdi
   assert.deepEqual([out.action, out.hidden, out.failures], ['auto_hide', true, []])
   assert.equal(h.harness.rows(aiModerationQueue).length, 4, 'precondition: no row filed for the AI hide (a row about the comment is pending)')
 
-  assert.deepEqual(queueRow(pending).aiVerdict, NOTED)
+  assert.deepEqual(judged(queueRow(pending).aiVerdict), NOTED)
   assert.equal(queueRow(pending).flaggedReason, NOT_CONFIGURED, 'flagged_reason is the mark: never rewritten')
   for (const bait of [resolved, otherRow, livestreamRow]) assert.equal(queueRow(bait).aiVerdict, null, `row ${bait} must keep no verdict`)
   assert.deepEqual([commentRow(id).isHidden, commentRow(id).flagReason], [true, autoHideFlagReason(NOT_CONFIGURED)])
 
   const pendingItems = await queueList('pending')
-  assert.deepEqual(pendingItems.map(item => [item.id, item.aiVerdict]).sort(), [[pending, NOTED], [otherRow, null], [livestreamRow, null]].sort())
+  assert.deepEqual(pendingItems.map(item => [item.id, judged(item.aiVerdict)]).sort(), [[pending, NOTED], [otherRow, null], [livestreamRow, null]].sort())
   const hidden = await commentList('hidden')
-  assert.deepEqual(hidden.map(row => [row.id, row.aiVerdict]).sort(), [[id, NOTED], [other, null]].sort())
+  assert.deepEqual(hidden.map(row => [row.id, judged(row.aiVerdict)]).sort(), [[id, NOTED], [other, null]].sort())
+  // Both lists hand the page the same instant the row holds — the label shows it (Vietnam time).
+  const at = (queueRow(pending).aiVerdict as { at: string }).at
+  assert.deepEqual([pendingItems.find(item => item.id === pending)!.aiVerdict, hidden.find(row => row.id === id)!.aiVerdict].map(v => (v as { at: string }).at), [at, at])
 })
 
 test('after the officer approves, the row keeps its verdict (queue tab), the comment is shown again and carries none', async () => {
@@ -109,8 +124,8 @@ test('after the officer approves, the row keeps its verdict (queue tab), the com
   await check(id)
   const response = await h.request('POST', `/api/admin/ai/moderation/queue/${pending}/resolve`, officer, { action: 'approve' })
   assert.deepEqual([response.status, response.body.restore], [200, 'restored'], 'the mark is untouched, so the approve still restores')
-  assert.deepEqual([queueRow(pending).status, queueRow(pending).aiVerdict], ['approved', NOTED])
-  assert.deepEqual((await queueList('approved')).map(item => [item.id, item.aiVerdict]), [[pending, NOTED]])
+  assert.deepEqual([queueRow(pending).status, judged(queueRow(pending).aiVerdict)], ['approved', NOTED])
+  assert.deepEqual((await queueList('approved')).map(item => [item.id, judged(item.aiVerdict)]), [[pending, NOTED]])
   assert.deepEqual((await commentList('visible')).map(row => [row.id, row.aiVerdict]), [[id, null]])
 })
 
@@ -120,8 +135,8 @@ test('a rejected row keeps its verdict too (the comment is deleted with it)', as
   await check(id)
   const response = await h.request('POST', `/api/admin/ai/moderation/queue/${pending}/resolve`, officer, { action: 'reject_delete' })
   assert.equal(response.status, 200)
-  assert.deepEqual([queueRow(pending).status, queueRow(pending).aiVerdict], ['rejected', NOTED])
-  assert.deepEqual((await queueList('rejected')).map(item => item.aiVerdict), [NOTED])
+  assert.deepEqual([queueRow(pending).status, judged(queueRow(pending).aiVerdict)], ['rejected', NOTED])
+  assert.deepEqual((await queueList('rejected')).map(item => judged(item.aiVerdict)), [NOTED])
 })
 
 test('one autocommit UPDATE on the pool, by the row\'s primary key and `status = pending` (plus its own target) — no locking read, no transaction', async () => {
@@ -162,7 +177,7 @@ test('the model\'s reason is cleaned and cut before it is stored: bidi/zero-widt
   // the first emoji — whose high surrogate is UTF-16 unit 299: a cut by unit keeps half of it.
   aiSays({ verdict: 'spam', riskLevel: 'medium', reason: `Lý${RLO}do${ZWSP}  bị\n\tẩn ơơơơơ${'x'.repeat(282)}😀😀 đuôi` })
   await check(id)
-  const stored = queueRow(pending).aiVerdict as { verdict: string, severity: string, reason: string }
+  const stored = judged(queueRow(pending).aiVerdict) as { verdict: string, severity: string, reason: string }
   assert.deepEqual([stored.verdict, stored.severity], ['spam', 'medium'])
   const points = Array.from(stored.reason)
   assert.equal(points.length, QUEUE_AI_VERDICT_REASON_MAX_LENGTH)
@@ -178,7 +193,7 @@ test('a reply with a reason that is not a string, and an unknown risk level: the
   aiSays({ verdict: 'violation', riskLevel: 'apocalyptic', reason: { text: 'lừa' } })
   const out = await check(id)
   assert.equal(out.hidden, true)
-  assert.deepEqual(queueRow(pending).aiVerdict, { verdict: 'violation', severity: 'high', reason: '' })
+  assert.deepEqual(judged(queueRow(pending).aiVerdict), { verdict: 'violation', severity: 'high', reason: '' })
 })
 
 test('nothing noted when the AI did not judge: the critical-keyword fallback after an AI error hides under the pending row\'s mark and writes no verdict', async () => {
@@ -236,7 +251,7 @@ test('livestream: the live pass hides a message with a pending row — the verdi
   const commentBait = await queued({ targetType: 'comment', targetId: id, flaggedReason: 'Hàng của bình luận cùng id' })
   const out = await worker.checkAndModerateContent({ content: 'tin mập mờ', targetType: 'livestream_chat', targetId: id, sessionId: '9' })
   assert.deepEqual([out.hidden, out.failures], [true, []])
-  assert.deepEqual([queueRow(pending).aiVerdict, queueRow(commentBait).aiVerdict], [NOTED, null])
+  assert.deepEqual([judged(queueRow(pending).aiVerdict), queueRow(commentBait).aiVerdict], [NOTED, null])
 })
 
 test('/admin/comments: a verdict shows only next to the hide it explains — an officer\'s hide (another reason) and a hide whose matching row is no longer pending show none', async () => {
@@ -274,6 +289,88 @@ test('old and malformed stored values read as no verdict on both lists: NULL, a 
   assert.equal(items.length, ids.length + 2)
   assert.ok(items.some(item => item.id === legacy))
   assert.deepEqual((await commentList('hidden')).map(row => row.aiVerdict), [null])
+})
+
+// ── Gaps the independent verifier found (its mutants W09, W10, W30, W08 survived the tests above) ──
+
+test('/admin/comments reads COMMENT rows only: a livestream row with the same id and the same reason — newer, with or without a verdict — never decides for the comment', async () => {
+  // Hidden under its own pending row's mark (no verdict); a newer livestream row (same id, same reason) has one…
+  const quiet = await comment({ isHidden: true, flagReason: autoHideFlagReason(NOT_CONFIGURED) })
+  await queued({ targetId: quiet })
+  await queued({ targetType: 'livestream_chat', targetId: quiet, aiVerdict: { verdict: 'spam', severity: 'low', reason: 'của tin livestream' } })
+  // …and the other way round: its own row has a verdict, the newer livestream row none.
+  const noted = await comment({ isHidden: true, flagReason: autoHideFlagReason(NOT_CONFIGURED) })
+  const own = { verdict: 'violation', severity: 'high', reason: 'của bình luận' }
+  await queued({ targetId: noted, aiVerdict: own })
+  await queued({ targetType: 'livestream_chat', targetId: noted })
+  const rows = await commentList('hidden')
+  assert.deepEqual(rows.map(row => [row.id, row.aiVerdict]).sort(), [[quiet, null], [noted, own]].sort())
+})
+
+test('a pending reason longer than the mark column (> 255 code points: a flag_only row listing many keywords): the mark is that reason cut, and /admin/comments still finds the row and its verdict', async () => {
+  const long = `AI kiểm duyệt chưa cấu hình; khớp từ khóa nhạy cảm: ${Array.from({ length: 40 }, (_, i) => `"từ khoá số ${i}"`).join(', ')} — cần con người đối soát`
+  const id = await comment()
+  const pending = await queued({ targetId: id, flaggedReason: long })
+  await check(id)
+  assert.ok(Array.from(long).length > 255, 'precondition')
+  assert.deepEqual([Array.from(commentRow(id).flagReason ?? '').length, commentRow(id).flagReason], [255, autoHideFlagReason(long)])
+  assert.deepEqual(judged(queueRow(pending).aiVerdict), NOTED)
+  assert.deepEqual((await commentList('hidden')).map(row => [row.id, judged(row.aiVerdict)]), [[id, NOTED]])
+})
+
+test('two pending rows about the comment (two passes filed at once): the hide takes the NEWEST row\'s mark, the verdict lands on that row, not the older one', async () => {
+  const id = await comment()
+  const older = await queued({ targetId: id, flaggedReason: 'Khớp từ khoá theo dõi — cần con người đối soát' })
+  const newer = await queued({ targetId: id })
+  const out = await check(id)
+  assert.deepEqual([out.hidden, out.failures], [true, []])
+  assert.equal(commentRow(id).flagReason, autoHideFlagReason(NOT_CONFIGURED), 'the newest pending row\'s reason is the mark')
+  assert.deepEqual([judged(queueRow(newer).aiVerdict), queueRow(older).aiVerdict], [NOTED, null])
+  assert.deepEqual((await commentList('hidden')).map(row => [row.id, judged(row.aiVerdict)]), [[id, NOTED]])
+})
+
+test('/admin/comments: a SHOWN comment carries no verdict, whatever its reason column still holds — only a hide is explained', async () => {
+  const shown = await comment({ isHidden: false, flagReason: autoHideFlagReason(NOT_CONFIGURED) })
+  await queued({ targetId: shown, aiVerdict: { verdict: 'violation', severity: 'high', reason: 'x' } })
+  assert.deepEqual((await commentList('visible')).map(row => [row.id, row.aiVerdict]), [[shown, null]])
+})
+
+// ── KNOWN W02, pinned on purpose ──
+// The verdict is noted whenever the AI judged violation/spam and a row about the content was
+// pending — also when the AI's hide changed nothing (an officer hid it first, the livestream
+// message was gone, the hide's UPDATE threw). It is still what the AI judged, on the row an officer
+// reviews; /admin/comments shows it only beside a hide carrying that row's mark. Changing this is
+// a decision (docs/decisions/realm-safety.md § "Phán quyết của AI trên hàng chờ còn chờ"), not a refactor.
+
+test('KNOWN W02: an officer hid the comment first (their reason) — the AI\'s hide changes nothing, the verdict is noted on the pending row (queue tab), and /admin/comments shows none beside the officer\'s hide', async () => {
+  const id = await comment({ isHidden: true, flagReason: 'Cán bộ ẩn: xúc phạm' })
+  const pending = await queued({ targetId: id })
+  const out = await check(id)
+  assert.deepEqual([out.action, out.hidden, out.failures], ['auto_hide', true, []])
+  assert.deepEqual([commentRow(id).isHidden, commentRow(id).flagReason], [true, 'Cán bộ ẩn: xúc phạm'], 'the officer\'s hide stands')
+  assert.deepEqual(judged(queueRow(pending).aiVerdict), NOTED)
+  assert.deepEqual((await queueList('pending')).map(item => [item.id, judged(item.aiVerdict)]), [[pending, NOTED]])
+  assert.deepEqual((await commentList('hidden')).map(row => [row.id, row.aiVerdict]), [[id, null]])
+})
+
+test('KNOWN W02: the livestream message was already removed — nothing re-marked, the verdict is still noted on its pending row', async () => {
+  const id = insertId(await h.harness.db.insert(livestreamMessages).values({ sessionId: 9, readerId: AUTHOR, displayName: 'Bạn đọc C', content: 'tin mập mờ', isDeleted: true, createdAt: new Date() }))
+  const pending = await queued({ targetType: 'livestream_chat', targetId: id })
+  const out = await worker.checkAndModerateContent({ content: 'tin mập mờ', targetType: 'livestream_chat', targetId: id, sessionId: '9' })
+  assert.deepEqual([out.hidden, out.failures], [true, []])
+  assert.equal(h.harness.rows(livestreamMessages).find(row => row.id === id)!.flagReason, null, 'the removal stands as it was')
+  assert.deepEqual(judged(queueRow(pending).aiVerdict), NOTED)
+})
+
+test('KNOWN W02: the hide itself failed (its UPDATE threw) — `hidden` false, `failures` ["hide"], and the verdict is STILL noted on the pending row', async () => {
+  const id = await comment()
+  const pending = await queued({ targetId: id })
+  h.harness.failNext(/^update `article_comments` set `is_hidden`/i)
+  const out = await check(id)
+  assert.deepEqual([out.action, out.hidden, out.failures], ['auto_hide', false, ['hide']])
+  assert.equal(commentRow(id).isHidden, false)
+  assert.deepEqual(judged(queueRow(pending).aiVerdict), NOTED)
+  assert.deepEqual((await commentList('visible')).map(row => [row.id, row.aiVerdict]), [[id, null]], 'not hidden: nothing to explain on /admin/comments')
 })
 
 test('a stored reason is cleaned again on the way out (a row written by hand, or before the cleaning changed)', async () => {
