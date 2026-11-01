@@ -376,6 +376,10 @@ test('draft save (UI path): allowed links are stored unchanged; rich text is fil
       { blockType: 'cta', data: { btnLink: 'mailto:a@b.vn', translations: { en: { btnLink: '/en/x' } } } },
       { blockType: 'richtext', data: { html: '<p onclick="alert(1)">Giữ chữ</p><script>alert(2)</script>' } },
       { blockType: 'content_aside', data: { bodyHtml: '<p>Bên lề</p><img src=x onerror=alert(3)>' } },
+      // Một nút mà normalizeBlocks BỎ: nếu handler lưu body thô thay vì kết quả normalize thì mã script này
+      // nằm trong bản lưu — không có nút này, đột biến "chỉ gọi normalize để kiểm rồi lưu body thô" sống
+      // (sanitizeBlockData sửa tại chỗ nên hai bản trông giống nhau).
+      { blockType: 'not_a_block', data: { html: '<script>alert(4)</script>' } },
     ])
     assert.equal(result.ok, true)
     assert.equal(stored.length, 1, 'one draft write')
