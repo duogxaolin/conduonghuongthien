@@ -10,15 +10,16 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
-import { affectedRowsOrZero } from '../utils/affected-rows'
+import { affectedRowsOrZero, readAffectedRows } from '../utils/affected-rows'
 import {
   aiModerationQueue,
   articleComments,
   chatMessages,
   livestreamMessages,
 } from '../db/schema'
-import { logError, logWarn } from '../utils/logger'
+import { logError, logInfo, logWarn } from '../utils/logger'
 import { autoHideFlagReason } from '../utils/moderation-flag-reason'
+import type { QueueAiVerdict } from '../../shared/moderation-ai-verdict'
 import { workerStats } from './moderation-stats'
 import type { ModerationCheckInput, ModerationPersistFailure } from './moderation-worker-types'
 
@@ -70,30 +71,72 @@ async function insertQueueRowOnce(row: QueueRow): Promise<boolean> {
   return affectedRowsOrZero(result) > 0
 }
 
+/** The pending queue row a skipped insert found: its id (for the verdict note) and its reason (the mark). */
+interface PendingQueueRow { id: number, reason: string }
+
 /**
- * `flagged_reason` của hàng còn chờ đã khiến `insertQueueRowOnce` bỏ qua — cùng điều kiện với
- * `NOT EXISTS` của nó (cùng loại, cùng id, `pending`); nhiều hàng (hai lượt đồng thời) thì lấy hàng
- * mới nhất. Lượt ẩn tự động bị bỏ hàng ghi lý do NÀY làm dấu, vì hàng đang chờ là hàng duy nhất cán
- * bộ duyệt được cho nội dung đó: trước đây nó ghi lý do của chính nó — không hàng nào mang — nên
- * "Bỏ ẩn" trả `not_restored` và nội dung kẹt ẩn (B01, verifier wave3/queue-restore).
+ * Hàng còn chờ đã khiến `insertQueueRowOnce` bỏ qua — cùng điều kiện với `NOT EXISTS` của nó (cùng
+ * loại, cùng id, `pending`); nhiều hàng (hai lượt đồng thời) thì lấy hàng mới nhất. Lượt ẩn tự động
+ * bị bỏ hàng ghi `flagged_reason` của hàng NÀY làm dấu, vì hàng đang chờ là hàng duy nhất cán bộ
+ * duyệt được cho nội dung đó: trước đây nó ghi lý do của chính nó — không hàng nào mang — nên
+ * "Bỏ ẩn" trả `not_restored` và nội dung kẹt ẩn (B01, verifier wave3/queue-restore). `id` là hàng
+ * mà phán quyết của AI được ghi kèm (`noteAiVerdict`) — đúng hàng mang dấu đó.
  *
  * Đọc thường, tự commit, không `FOR UPDATE` và không trong transaction: không thêm khoá nào. Hàng
  * vừa được xử lý giữa hai câu (không còn hàng chờ) hoặc đọc hỏng (ghi log) → `null`, nơi gọi giữ
  * lý do của mình như trước.
  */
-async function pendingQueueReason(targetType: QueueRow['targetType'], targetId: number): Promise<string | null> {
+async function pendingQueueRow(targetType: QueueRow['targetType'], targetId: number): Promise<PendingQueueRow | null> {
   try {
     const [row] = await getDb()
-      .select({ reason: aiModerationQueue.flaggedReason })
+      .select({ id: aiModerationQueue.id, reason: aiModerationQueue.flaggedReason })
       .from(aiModerationQueue)
       .where(and(eq(aiModerationQueue.targetType, targetType), eq(aiModerationQueue.targetId, targetId), eq(aiModerationQueue.status, 'pending')))
       .orderBy(desc(aiModerationQueue.id))
       .limit(1)
-    return row?.reason ?? null
+    return row ? { id: Number(row.id), reason: row.reason } : null
   } catch (err: unknown) {
     noteWorkerError(err)
     logWarn({ event: 'ai_moderation.pending_reason_unread', targetType, targetId, error: describeError(err) })
     return null
+  }
+}
+
+/**
+ * Ghi phán quyết của AI lên hàng còn chờ mà lần ẩn của nó vừa dùng lại dấu (`pendingQueueRow`) —
+ * để cán bộ thấy AI đã phán gì, thay vì chỉ lý do của luật cũ (cột `ai_verdict`, chỉ để đọc;
+ * `flagged_reason` — dấu mà "Bỏ ẩn" đối chiếu — không bao giờ bị sửa).
+ *
+ * MỘT câu `UPDATE … WHERE id = ? AND status = 'pending'` (kèm loại + id đích của chính hàng đó)
+ * trên pool: tự commit, không đọc khoá, không transaction — chỉ khoá đúng hàng đó theo khoá chính,
+ * trong thời gian của chính câu lệnh, và không giữ khoá nào khác lúc chờ (lượt ẩn ở trên đã commit
+ * riêng), nên không tạo được vòng chờ với lượt duyệt (`resolve.post.ts`: khoá nội dung rồi hàng
+ * chờ, giữ tới commit). Hàng đã được duyệt/xoá/cấm giữa lượt đọc và câu này: 0 hàng — cột của nó
+ * giữ nguyên, ghi log mức info. Lỗi ghi: log + trạng thái worker, KHÔNG vào `failures` (nội dung đã
+ * ẩn, hàng chờ vẫn còn — đây chỉ là phần hiển thị; lượt quét lại đếm `failures` là bình luận hỏng).
+ */
+async function noteAiVerdict(
+  row: PendingQueueRow,
+  targetType: QueueRow['targetType'],
+  targetId: number,
+  verdict: QueueAiVerdict,
+): Promise<void> {
+  try {
+    const result = await getDb()
+      .update(aiModerationQueue)
+      .set({ aiVerdict: verdict })
+      .where(and(
+        eq(aiModerationQueue.id, row.id),
+        eq(aiModerationQueue.status, 'pending'),
+        eq(aiModerationQueue.targetType, targetType),
+        eq(aiModerationQueue.targetId, targetId),
+      ))
+    if (readAffectedRows(result) === 0) {
+      logInfo({ event: 'ai_moderation.verdict_row_resolved', queueId: row.id, targetType, targetId })
+    }
+  } catch (err: unknown) {
+    noteWorkerError(err)
+    logWarn({ event: 'ai_moderation.verdict_note_failed', queueId: row.id, targetType, targetId, error: describeError(err) })
   }
 }
 
@@ -149,4 +192,5 @@ async function applyAutoHide(
 }
 
 // Khai báo giữ nguyên văn như trước khi tách; tên được xuất ở đây cho hai tệp anh em.
-export { describeError, noteWorkerError, insertQueueRowOnce, pendingQueueReason, applyAutoHide }
+export { describeError, noteWorkerError, insertQueueRowOnce, pendingQueueRow, noteAiVerdict, applyAutoHide }
+export type { PendingQueueRow }

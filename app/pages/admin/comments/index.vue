@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminListPage } from '~/composables/useAdminList'
+import type { QueueAiVerdict } from '~~/shared/moderation-ai-verdict'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -34,6 +35,8 @@ type Comment = {
   ip: string | null
   isHidden: boolean | null
   flagReason: string | null
+  /** The AI's verdict behind an automatic hide (server: `listCommentsForAdmin`); shown by AdminCommentHiddenNote. */
+  aiVerdict: QueueAiVerdict | null
 }
 
 type CommentFilters = {
@@ -361,11 +364,7 @@ onMounted(reload)
             </div>
           </div>
 
-          <div v-if="comment.isHidden" class="mt-1.5 flex items-center gap-1.5 text-[0.75rem] text-[#7a3520]">
-            <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
-            <span class="font-semibold">Đã ẩn</span>
-            <span v-if="comment.flagReason" class="text-ink-muted font-normal">— {{ comment.flagReason }}</span>
-          </div>
+          <AdminCommentHiddenNote v-if="comment.isHidden" class="text-[#7a3520]" :reason="comment.flagReason" :ai-verdict="comment.aiVerdict" />
 
           <p class="m-0 mt-2.5 whitespace-pre-line break-words text-sm" :class="comment.isHidden ? 'text-[#9a9a9a] line-through' : 'text-[#2c3529]'">{{ comment.body }}</p>
 

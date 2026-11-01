@@ -825,6 +825,10 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureColumn(db, database, 'livestream_messages', 'flag_reason', 'VARCHAR(255) NULL AFTER `is_deleted`')
   await ensureColumn(db, database, 'ai_moderation_queue', 'context_title', 'VARCHAR(512) NULL')
   await ensureColumn(db, database, 'ai_moderation_queue', 'context_url', 'VARCHAR(512) NULL')
+  // Phán quyết của AI khi lần ẩn tự động của nó dùng lại dấu của hàng còn chờ (không ghi hàng
+  // riêng) — chỉ để cán bộ đọc; `flagged_reason` vẫn là dấu. Hàng cũ NULL = không hiện gì.
+  // Cột nullable cuối bảng: MySQL 8 thêm INSTANT, không dựng lại bảng.
+  await ensureColumn(db, database, 'ai_moderation_queue', 'ai_verdict', 'JSON NULL')
   // ── Multilingual: languages + lang_translations + article_translations ──
   // Three new tables are created by initDb() CREATE TABLE IF NOT EXISTS, so on
   // an existing deployment they appear after the next restart. No ensureColumn

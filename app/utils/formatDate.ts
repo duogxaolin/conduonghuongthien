@@ -30,3 +30,21 @@ export function formatDateTimeVN(value: string | Date | null | undefined): strin
   const date = value instanceof Date ? value : new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('vi-VN')
 }
+
+/**
+ * "HH:mm dd/MM" theo giờ Việt Nam (Asia/Ho_Chi_Minh), bất kể múi giờ của máy dựng trang — cho một
+ * thời điểm UTC đã lưu mà cán bộ cần đọc theo giờ ở đây (vd. lúc AI kiểm duyệt phán,
+ * `AdminQueueAiVerdictNote`). Ghép từ `formatToParts` để dấu ngăn không đổi theo locale. Trống hoặc
+ * không phân tích được → ''. (Bộ định dạng dựng mỗi lần gọi — vài nhãn mỗi trang — nên test đổi
+ * múi giờ của máy giữa chừng kiểm được thật rằng kết quả không theo múi giờ máy.)
+ */
+export function formatTimeDayVN(value: string | Date | null | undefined): string {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh', hourCycle: 'h23', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
+  }).formatToParts(date)
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value ?? ''
+  return `${part('hour')}:${part('minute')} ${part('day')}/${part('month')}`
+}

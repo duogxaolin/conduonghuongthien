@@ -13,7 +13,8 @@ import { getActiveModerationRules } from './moderation-rules-cache'
 import { compileModerationRegex, createModerationRegexBudget, isRegexRuleType, testModerationRegexes, type ModerationRegexRule } from './moderation-regex'
 import { workerStats } from './moderation-stats'
 import { fastPreModerate } from './moderation-worker-prescreen'
-import { applyAutoHide, describeError, insertQueueRowOnce, noteWorkerError, pendingQueueReason } from './moderation-worker-persist'
+import { applyAutoHide, describeError, insertQueueRowOnce, noteAiVerdict, noteWorkerError, pendingQueueRow } from './moderation-worker-persist'
+import { queueAiVerdictFromReply, type QueueAiVerdict } from '../../shared/moderation-ai-verdict'
 import type {
   ModerationCheckInput,
   ModerationCheckOptions,
@@ -120,6 +121,9 @@ export async function checkAndModerateContent(
   // Set when the AI was asked and gave no usable answer — see `aiFailed` on the
   // output. Recorded only; it does not change any decision below.
   let aiFailure: string | null = null
+  // The AI's own violation/spam verdict — not the critical-keyword fallback, not `flag_only`.
+  // Noted on the pending row a hide reuses (`noteAiVerdict` below); decides nothing.
+  let aiVerdict: QueueAiVerdict | null = null
 
   const severityWeight = { low: 1, medium: 2, high: 3, critical: 4 }
 
@@ -194,6 +198,7 @@ ${fencedContent.fenced}${detectedStr}`
             matchedRules.push(`[${k.category}] ${k.pattern}`)
           }
           reasons.push(parsed.reason || 'AI phân tích ngữ cảnh: Phát hiện ý đồ vi phạm tiêu chuẩn an ninh.')
+          aiVerdict = queueAiVerdictFromReply({ verdict: parsed.verdict, severity: s, reason: parsed.reason })
           workerStats.blockedAi++
         } else {
           isFlagged = false
@@ -305,10 +310,11 @@ ${fencedContent.fenced}${detectedStr}`
     if (finalAction === 'auto_hide' && input.targetId) {
       // Dấu ẩn = lý do của hàng chờ mà "Bỏ ẩn" sẽ duyệt: hàng vừa ghi, hoặc — khi đã có hàng còn
       // chờ cho mục này nên không ghi (`queued` false) — lý do của CHÍNH hàng đó (B01).
-      const hideReason = queued
-        ? reasons.join('; ')
-        : (await pendingQueueReason(input.targetType, Number(input.targetId))) ?? reasons.join('; ')
-      hidden = await applyAutoHide(input.targetType, input.targetId, hideReason, failures)
+      const pending = queued ? null : await pendingQueueRow(input.targetType, Number(input.targetId))
+      hidden = await applyAutoHide(input.targetType, input.targetId, pending?.reason ?? reasons.join('; '), failures)
+      // Hàng đó mang lý do của luật cũ; phán quyết của AI (nếu là AI phán) ghi kèm vào cột riêng
+      // của nó, SAU lượt ẩn — một câu tự commit, không bao giờ trì hoãn hay chặn lượt ẩn.
+      if (pending && aiVerdict) await noteAiVerdict(pending, input.targetType, Number(input.targetId), aiVerdict)
     }
   }
 

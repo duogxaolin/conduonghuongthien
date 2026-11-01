@@ -110,6 +110,8 @@ const emit = defineEmits<{
             </td>
             <td class="px-3.5 py-2.5 max-w-[240px] break-words text-xs text-[#b42318] leading-relaxed">
               {{ item.flaggedReason }}
+              <!-- Phán quyết của AI khi lần ẩn của nó dùng lại dấu của hàng này (null: không hiện gì). -->
+              <AdminQueueAiVerdictNote :verdict="item.aiVerdict" class="mt-1.5" />
             </td>
             <td class="px-3.5 py-2.5 whitespace-nowrap">
               <span class="px-2 py-0.5 rounded-full font-bold text-[0.65rem] uppercase" :class="item.severity === 'critical' ? 'bg-red-600 text-white' : item.severity === 'high' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'">
