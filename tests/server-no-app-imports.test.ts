@@ -375,6 +375,8 @@ describe('shared/: bộ dò không báo nhầm', () => {
 describe('bộ dò bắt đúng 17 dòng import có thật tới a7be585', () => {
   // Nguyên văn các dòng trước khi chuyển sang shared/ (14 tệp). Guard phải đỏ với
   // từng dòng, ở đúng tệp của nó — đây là bằng chứng nó đã đỏ với codebase cũ.
+  // Bộ dò nhận đường dẫn + chuỗi, không đọc đĩa: dòng của `pages/[id]/blocks/index.post.ts`
+  // (route không nơi gọi, đã xoá — CHANGELOG § 64) giữ nguyên làm bằng chứng lịch sử.
   const BASELINE: Array<[string, string]> = [
     ['server/api/admin/pages/[id].get.ts', `import type { BlockNode } from '../../../../app/utils/blocks/types'`],
     ['server/api/admin/pages/[id]/publish.post.ts', `import type { BlockNode } from '../../../../../app/utils/blocks/types'`],

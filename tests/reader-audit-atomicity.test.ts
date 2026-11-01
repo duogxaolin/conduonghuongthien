@@ -187,10 +187,6 @@ const AUDITED_DELETE_ENDPOINTS: Array<{ file: string, why: string }> = [
     why: "another administrator's second factors are stripped and the override leaves no trace",
   },
   {
-    file: 'server/api/admin/pages/[id]/blocks/[blockId].delete.ts',
-    why: 'a block disappears from a live page with nobody accountable',
-  },
-  {
     file: 'server/api/admin/pages/[id]/versions/[versionId].delete.ts',
     why: 'a saved backup is discarded untraceably',
   },
@@ -279,12 +275,8 @@ describe('the MFA-confirm exclusion is deliberate and still correct', () => {
 const AUDITED_MUTATION_ENDPOINTS: string[] = [
   'server/api/admin/articles/[id].put.ts',
   'server/api/admin/articles/index.post.ts',
-  'server/api/admin/home-sections/[id].put.ts',
-  'server/api/admin/home-sections/[id]/toggle.patch.ts',
   'server/api/admin/media/upload.post.ts',
   'server/api/admin/pages/[id].put.ts',
-  'server/api/admin/pages/[id]/blocks/[blockId].put.ts',
-  'server/api/admin/pages/[id]/blocks/index.post.ts',
   'server/api/admin/pages/[id]/versions/[versionId]/restore.post.ts',
   'server/api/admin/pages/index.post.ts',
   // Factor, recovery codes, session generation and audit row in one transaction; the
@@ -293,7 +285,6 @@ const AUDITED_MUTATION_ENDPOINTS: string[] = [
   'server/api/admin/profile/mfa/disable.post.ts',
   'server/api/admin/roles/index.post.ts',
   'server/api/admin/settings/index.put.ts',
-  'server/api/admin/settings/navigation.put.ts',
   'server/api/admin/settings/navigation/mobile.put.ts',
   'server/api/admin/settings/navigation/navbar.put.ts',
   'server/api/admin/users/[id].put.ts',
@@ -518,7 +509,9 @@ describe('no admin endpoint writes a row and its audit row separately', () => {
  * phía người đọc được nêu tên riêng. Bảy đường ghi thật đã sống ở đó không ai
  * canh: `deleteUserById`, `setUserActive`, `deletePageById`, `deleteMediaById`,
  * `deleteSubmissionById`, `updateChatbotSettings`/`clearChatbotApiKey`, và bốn
- * hàm trong `chatbot-small-talk.ts`.
+ * hàm trong `chatbot-small-talk.ts`. (`clearChatbotApiKey` đã xoá cùng route
+ * `chatbot/settings/clear` không nơi gọi — CHANGELOG § 64; `chatbot-settings.ts`
+ * vẫn ở danh sách vì `updateChatbotSettings`.)
  *
  * Nhóm này nghiêm trọng hơn nhóm endpoint theo một điểm **đo được**: cả năm hàm
  * xoá đều được gọi từ **cả** tuyến xoá một hàng **lẫn** tuyến `bulk-delete`

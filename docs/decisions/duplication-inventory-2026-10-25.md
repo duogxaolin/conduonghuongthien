@@ -134,6 +134,8 @@ Cột "Dòng" cộng trường `lines` của từng cặp (tổng 1 694). Con s�
 
 ### T4 — Ba handler lưu menu điều hướng (#60, #61) — ưu tiên trung bình–cao
 
+> **2026-10-31:** cặp route cũ `settings/navigation.{get,put}.ts` (không nơi gọi) đã xoá — CHANGELOG § 64. Còn hai bản `navbar.put.ts` ↔ `mobile.put.ts` (#61 nay so giữa hai tệp này); phần tách bộ lọc chung bên dưới vẫn mở.
+
 - **Ở đâu:**
   - `server/api/admin/settings/navigation.put.ts:6-80` ↔ `settings/navigation/navbar.put.ts:6-81` (#60): 52 dòng mã khác nhau đúng tên khoá `nav_menu` / `nav_menu_navbar`;
   - `navigation.put.ts:50-80` ↔ `navigation/mobile.put.ts:62-92` (#61): đuôi `sanitizeMenu` + thân handler + transaction.
@@ -220,7 +222,7 @@ Cột "Dòng" cộng trường `lines` của từng cặp (tổng 1 694). Con s�
 
 | Nhóm | Ở đâu | Kế hoạch một dòng | Rủi ro |
 |---|---|---|---|
-| T13 `LANGUAGE_NAMES` (#49) | `server/api/admin/ai/translate-ui.post.ts:7-22` ↔ `ai/translate.post.ts:13-28` (bảng tên ngôn ngữ giống hệt) | `server/utils/ai/language-names.ts` | thấp |
+| T13 `LANGUAGE_NAMES` (#49) | `server/api/admin/ai/translate-ui.post.ts:7-22` ↔ `ai/translate.post.ts:13-28` (bảng tên ngôn ngữ giống hệt) — **hết trùng:** bảng đã gộp vào `server/utils/ai/target-language.ts`, rồi `translate-ui.post.ts` (không nơi gọi) bị xoá, CHANGELOG § 64 | `server/utils/ai/language-names.ts` | thấp |
 | T14 `shortAgent()` (#16) | `app/components/admin/ProfileActivityHistory.vue:112-132` ↔ `app/pages/admin/users/activity.vue:189-208` | hàm thuần trong `app/utils/` + test đơn vị | thấp |
 | T15 Cột sự kiện đơn (#68) | `server/services/submission-workflow.ts:72-90` ↔ `:365-381` | hằng `submissionEventColumns` dùng chung trong tệp | thấp; có suite `submission-workflow-integration` |
 | T16 Upload Drive hai chế độ (#65) | `server/services/backup-drive.ts:170-190` ↔ `:202-213` | `uploadWithDriveClient(drive, …)` cho cả Service Account lẫn OAuth | service chưa nạp, cần test trước |
@@ -254,7 +256,7 @@ Cột "Dòng" cộng trường `lines` của từng cặp (tổng 1 694). Con s�
 
 | Nhóm | Ở đâu | Vì sao |
 |---|---|---|
-| G1 Khung đầu handler (#46, #47, #48, #51, #56, #57) | `ai/pricing/[model].delete.ts` ↔ `[model].put.ts`; `ai/pricing/bulk-delete.post.ts` ↔ `index.post.ts`; `ai/providers/[id].put.ts` ↔ `ai/services/[id].put.ts`; `articles/[id]/translations/[lang].get.ts` ↔ `[lang]/progress.get.ts`; `languages/ai-translate-chunk.post.ts` ↔ `ai-translate-key.post.ts`; `pages/[id]/blocks/[blockId].delete.ts` ↔ `[blockId].put.ts` | Giống nhau ở import, `requireResourcePermission(adminUser, …)`, đọc id/thân, các câu 400. Đó là khung bắt buộc của mọi route; mỗi route nêu resource/action của riêng nó. Phần logic sau khung khác nhau. #51 còn có lời gọi `requireReadableArticle` mà `tests/article-translation-read-scope-behavior.test.ts` đòi ở **mỗi** route đọc. |
+| G1 Khung đầu handler (#46, #47, #48, #51, #56, #57) | `ai/pricing/[model].delete.ts` ↔ `[model].put.ts`; `ai/pricing/bulk-delete.post.ts` ↔ `index.post.ts`; `ai/providers/[id].put.ts` ↔ `ai/services/[id].put.ts`; `articles/[id]/translations/[lang].get.ts` ↔ `[lang]/progress.get.ts`; `languages/ai-translate-chunk.post.ts` ↔ `ai-translate-key.post.ts`; `pages/[id]/blocks/[blockId].delete.ts` ↔ `[blockId].put.ts` (`progress.get.ts` và `pages/[id]/blocks/**` không nơi gọi, đã xoá — CHANGELOG § 64) | Giống nhau ở import, `requireResourcePermission(adminUser, …)`, đọc id/thân, các câu 400. Đó là khung bắt buộc của mọi route; mỗi route nêu resource/action của riêng nó. Phần logic sau khung khác nhau. #51 còn có lời gọi `requireReadableArticle` mà `tests/article-translation-read-scope-behavior.test.ts` đòi ở **mỗi** route đọc. |
 
 ---
 
@@ -275,7 +277,7 @@ Một dòng cho mỗi nhóm trùng **thật**, xếp theo ưu tiên. File này k
 
 1. ~~**T1 (cao):** `server/utils/smtp-test-config.ts` re-export luật SMTP từ `shared/settings-credential-rules.ts` thay vì giữ bản chép (cổng cho phép, đích SMTP, dấu che).~~ **Đã xong** (nhánh `wave3/fix-striptags-slugify`): import + re-export, `isTruthy` export từ `shared/`; guard trong `tests/settings-credential-rules.test.ts`.
 2. ~~**T3 (cao, sửa lỗi):** một helper `htmlFragmentToText()` dùng `decode-html-entities.ts` cho `html-to-markdown.ts` và `html-to-docs.ts`; test đỏ-trước với `R&amp;D`, `Ng&agrave;y`, `&lt;`.~~ **Đã xong** (nhánh `wave3/fix-striptags-slugify`): `server/utils/html-fragment-text.ts` (+ `headingLevel`), escape theo định dạng ra; `tests/html-export-entities.test.ts`.
-3. **T4 (trung bình–cao):** tách bộ lọc menu + "ghi một khoá settings + audit" dùng chung cho `navigation.put.ts`, `navigation/navbar.put.ts`, `navigation/mobile.put.ts`; quyết riêng việc bỏ cặp route `navigation.{get,put}.ts` cũ; chốt `=== true` cho `openNewTab`.
+3. **T4 (trung bình–cao):** tách bộ lọc menu + "ghi một khoá settings + audit" dùng chung cho `navigation.put.ts`, `navigation/navbar.put.ts`, `navigation/mobile.put.ts`; quyết riêng việc bỏ cặp route `navigation.{get,put}.ts` cũ; chốt `=== true` cho `openNewTab`. (Cặp route cũ đã bỏ — CHANGELOG § 64; còn tách bộ lọc cho `navbar.put.ts` + `mobile.put.ts` và chốt `=== true`.)
 4. ~~**T2 (trung bình):** đưa `slugify` thuần sang `shared/`, ba trang admin bỏ `slugifyLocal` (cắt gạch treo lúc lưu/blur, không lúc gõ), mở rộng `tests/slugify.test.ts` bắt bản chép dạng arrow.~~ **Đã xong phần `slugify`** (nhánh `wave3/fix-striptags-slugify`): `shared/slugify.ts` (`slugify` + `slugifyDraft`), `tests/admin-slug-input.test.ts`. Phần markup form/nút cuối modal (#28, #30) vẫn để sau.
 5. **T5 (trung bình):** `auth/login.post.ts` gọi `loadSessionUser()` thay vì câu truy vấn chép.
 6. **T6 (trung bình):** `parseDay` → `vn-day-range.ts`, helper phân trang chặt, helper ánh xạ hàng nhật ký cho `activity-logs`, `chatbot/sessions`, `profile/history`.

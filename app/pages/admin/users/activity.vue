@@ -31,7 +31,7 @@ const ACTION_LABELS: Record<string, string> = {
   login: 'Đăng nhập', logout: 'Đăng xuất', create: 'Thêm mới',
   update: 'Cập nhật', delete: 'Xoá', read: 'Xem',
   publish: 'Xuất bản',
-  boost: 'Tăng lượt xem', reorder: 'Sắp xếp lại',
+  boost: 'Tăng lượt xem',
   version: 'Lưu phiên bản', restore: 'Phục hồi phiên bản',
   // Media Portal — nút "Dọn ngay" xoá upload bỏ dở. Action `update media_portal_settings`
   // (có khoảng trắng) vốn không khớp regex quét `[a-z_]+` nên không cần label ở đây;
@@ -65,6 +65,8 @@ const RESOURCE_LABELS: Record<string, string> = {
   user_history: 'Lịch sử tài khoản khác', activity_logs: 'Lịch sử toàn hệ thống',
   articles: 'Bài viết', media: 'Thư viện Media', pages: 'Trang', users: 'Người dùng',
   roles: 'Vai trò', settings: 'Cài đặt', submissions: 'Đơn đăng ký',
+  // `home_sections`: không còn mã nào ghi (trình sửa trang chủ cũ đã gỡ, route gỡ ở § 64) — GIỮ nhãn để
+  // hàng nhật ký cũ vẫn lọc được; tên trong HISTORICAL_RESOURCES của tests/activity-log-labels.test.ts.
   home_sections: 'Khối trang chủ', data_retention: 'Tự động dọn dữ liệu',
   chatbot_knowledge: 'Kho nội dung Chatbot', chat_sessions: 'Phiên trò chuyện',
   // Đăng nhập Google & bình luận công khai. Không có nhóm này thì mọi thao tác

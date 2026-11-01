@@ -79,6 +79,15 @@ function labelKeys(name: 'ACTION_LABELS' | 'RESOURCE_LABELS', endsBefore: string
   return new Set([...page.slice(start, end).matchAll(/([a-z_]+):\s*'/g)].map(match => match[1]!))
 }
 
+/**
+ * Resources no code writes any more but whose OLD rows may still sit in `activity_logs`: the filter option
+ * stays so the audit trail of those rows remains searchable (without it they show as raw keys and cannot be
+ * filtered). Add a name here only with the reason; a label for a resource that never existed is still red.
+ */
+const HISTORICAL_RESOURCES = new Set([
+  'home_sections', // legacy home editor: UI gone 2026-07-25, last writers removed in CHANGELOG § 64
+])
+
 describe('the audit page can filter every resource the server records', () => {
   const written = writtenValues('resource')
   const labels = labelKeys('RESOURCE_LABELS', 'const MFA_METHOD_LABELS')
@@ -96,7 +105,7 @@ describe('the audit page can filter every resource the server records', () => {
 
   it('no label points at a resource nothing writes', () => {
     // A filter option that always returns nothing reads as "this never happened".
-    const orphaned = [...labels].filter(value => !written.has(value))
+    const orphaned = [...labels].filter(value => !written.has(value) && !HISTORICAL_RESOURCES.has(value))
     assert.deepEqual(
       orphaned,
       [],

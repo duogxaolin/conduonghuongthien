@@ -215,7 +215,7 @@ describe('parseNavConfig — mọi đầu vào không dùng được ra null', (
   /**
    * `openNewTab` phải sống sót qua bộ khử độc — nó ĐÃ TỪNG không.
    *
-   * Cán bộ tick ô "Mở tab mới", `navigation.put.ts` lưu đúng trường đó, rồi
+   * Cán bộ tick ô "Mở tab mới", `navigation/navbar.put.ts` lưu đúng trường đó, rồi
    * `normalizeNavItem` dựng lại node từng trường và **không copy nó**. Kết quả là
    * trang công khai bỏ qua thiết lập sau một lượt lưu *thành công*, với ô vẫn còn
    * tick khi tải lại — không có triệu chứng nào chỉ vào nguyên nhân.

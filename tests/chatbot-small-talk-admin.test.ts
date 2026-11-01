@@ -115,7 +115,8 @@ test('every small-talk endpoint gates through requireChatbotSmallTalkPermission'
   }
   // the [id]/toggle.patch.ts nested route
   files.push({ path: new URL('[id]/toggle.patch.ts', dir), label: '[id]/toggle.patch.ts' })
-  assert.ok(files.length >= 8, `expected at least 8 endpoints, found ${files.length}`)
+  // Seven since `[id].get.ts` (no caller) was deleted — CHANGELOG § 64.
+  assert.ok(files.length >= 7, `expected at least 7 endpoints, found ${files.length}`)
   for (const file of files) {
     const source = readFileSync(file.path, 'utf8')
     assert.match(source, /requireChatbotSmallTalkPermission\(event, '(read|create|update|delete)'\)/u, `${file.label} must gate`)
