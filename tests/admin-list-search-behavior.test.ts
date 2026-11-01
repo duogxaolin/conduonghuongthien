@@ -8,9 +8,10 @@ import test, { after, beforeEach } from 'node:test'
  *   GET /api/admin/articles                 (articles/index.get.ts)
  *   GET /api/admin/articles/export-csv      (export-csv.get.ts — "theo filter hiện tại")
  *   GET /api/admin/media                    (media/index.get.ts)
- *   GET /api/admin/categories/:id/articles  (categories/[id]/articles.get.ts — paging only)
  *   GET /api/admin/chatbot/knowledge        (services/chatbot-knowledge.ts `listKnowledge`)
  *   GET /api/admin/chatbot/small-talk       (services/chatbot-small-talk.ts `listSmallTalk`)
+ * (`GET /api/admin/categories/:id/articles` was in this list for paging; it had no caller and
+ * was deleted — CHANGELOG § 64.)
  *
  * The invariants:
  *   - the search is for the text as typed: `_` and `%` match themselves, not "any character" /
@@ -40,7 +41,6 @@ const h = await startAiRouteHarness({
     { method: 'get', path: '/api/admin/articles', handler: await load('../server/api/admin/articles/index.get') },
     { method: 'get', path: '/api/admin/articles/export-csv', handler: await load('../server/api/admin/articles/export-csv.get') },
     { method: 'get', path: '/api/admin/media', handler: await load('../server/api/admin/media/index.get') },
-    { method: 'get', path: '/api/admin/categories/:id/articles', handler: await load('../server/api/admin/categories/[id]/articles.get') },
     { method: 'get', path: '/api/admin/chatbot/knowledge', handler: await load('../server/api/admin/chatbot/knowledge/index.get') },
     { method: 'get', path: '/api/admin/chatbot/small-talk', handler: await load('../server/api/admin/chatbot/small-talk/index.get') },
   ],
@@ -141,7 +141,7 @@ test('FINDING-R7-8: perPage is a whole number in [10, 100] — not a number fall
   for (let n = 0; n < 35; n++) await h.harness.db.insert(media).values({ filename: `f${n}`, originalName: `f${n}`, mimeType: 'image/png', sizeBytes: 1, url: `/u/${n}`, storagePath: 'x' })
   const cases: Array<[string, number, number]> = [['abc', 20, 30], ['12.5', 12, 12], ['0', 10, 10], ['3', 10, 10], ['500', 100, 100], ['', 20, 30]]
   for (const [raw, articleDefault, mediaDefault] of cases) {
-    for (const [path, expected] of [[`/api/admin/articles?perPage=${raw}`, articleDefault], [`/api/admin/categories/${categoryId}/articles?perPage=${raw}`, articleDefault], [`/api/admin/media?perPage=${raw}`, mediaDefault]] as const) {
+    for (const [path, expected] of [[`/api/admin/articles?perPage=${raw}`, articleDefault], [`/api/admin/media?perPage=${raw}`, mediaDefault]] as const) {
       const response = await get(path)
       // Before: `abc` was NaN — no LIMIT at all (every row, `perPage: null`) — and 12.5 a 500 (ER_PARSE_ERROR) on MySQL.
       assert.equal(response.status, 200, path)
@@ -158,11 +158,9 @@ test('FINDING-R7-9: rows sharing created_at come newest id first — two pages n
   const categoryId = Number(category.insertId)
   await articlesTitled(Array.from({ length: 12 }, (_, n) => `Bài ${n + 1}`), { categoryId })
   const all = h.harness.rows(articles).map(row => Number(row.id)).sort((a, b) => b - a)
-  for (const base of ['/api/admin/articles?', `/api/admin/categories/${categoryId}/articles?`]) {
-    const first = ids((await get(`${base}perPage=10&page=1`)).body)
-    const second = ids((await get(`${base}perPage=10&page=2`)).body)
-    assert.deepEqual([...first, ...second], all, base)
-  }
+  const first = ids((await get('/api/admin/articles?perPage=10&page=1')).body)
+  const second = ids((await get('/api/admin/articles?perPage=10&page=2')).body)
+  assert.deepEqual([...first, ...second], all)
   assert.deepEqual(csvTitles((await get('/api/admin/articles/export-csv')).body.text), all.map(id => `Bài ${id}`))
 
   for (let n = 0; n < 12; n++) await h.harness.db.insert(media).values({ filename: `f${n}`, originalName: `f${n}`, mimeType: 'image/png', sizeBytes: 1, url: `/u/${n}`, storagePath: 'x', createdAt: SAME_SECOND })

@@ -38,7 +38,7 @@ export interface NavItem {
    * `shouldOpenNewTab` trong `DefaultDesktopNav.vue` / `DefaultMobileDrawer.vue`).
    *
    * Trường này **từng bị rơi trong im lặng**. Cán bộ tick ô "Mở tab mới" ở
-   * `/admin/content/navigation/navbar.vue`, `navigation.put.ts` lưu đúng, nhưng
+   * `/admin/content/navigation/navbar.vue`, `navigation/navbar.put.ts` lưu đúng, nhưng
    * `normalizeNavItem` dựng lại node từng trường và không copy nó — nên trang công
    * khai bỏ qua hoàn toàn sau một lượt lưu **thành công**, với ô vẫn còn tick lúc
    * tải lại. Không có gì chỉ vào nguyên nhân.
@@ -146,7 +146,7 @@ function normalizeNavItem(raw: unknown, depth = 0): NavItem | null {
 
   // `=== true` chứ không `Boolean(...)`: giá trị đến từ JSON đã lưu, nên một chuỗi
   // `"false"` là truthy và sẽ bật cờ mà cán bộ vừa tắt. Server ghi đúng boolean
-  // (`navigation.put.ts` dùng `Boolean(m.openNewTab)`), nhưng bộ đọc này là biên
+  // (`navigation/navbar.put.ts` dùng `Boolean(m.openNewTab)`), nhưng bộ đọc này là biên
   // tin cậy — nó không được cho rằng thứ trên đĩa do đường ghi hiện tại tạo ra.
   if (item.openNewTab === true) node.openNewTab = true
 

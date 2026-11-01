@@ -59,7 +59,7 @@
   "server/db/seed.ts": 500,
   "server/services/analytics-maintenance.ts": 522,
   "server/services/analytics-reporting.ts": 496,
-  "server/services/article-translations.ts": 467,
+  "server/services/article-translations.ts": 440,
   "server/services/backup-restore-guards.ts": 482,
   "server/services/livestream-chat.ts": 456,
   "server/services/livestream.ts": 513,

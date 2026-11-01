@@ -5,11 +5,12 @@ import { getTableColumns, getTableName, type SQL } from 'drizzle-orm'
 import { MySqlDialect } from 'drizzle-orm/mysql-core'
 
 /**
- * The three translation READ routes (`[id]/translations`, `[id]/translations/:lang`,
- * `[id]/translations/:lang/progress`) checked only the fixed `news:read` grant and
- * never the article's own type: an officer allowed to read news could read the
- * translations of a document or role-model article by its id (rà soát 2026-10-22).
- * Every translation WRITE already checked the type in the service.
+ * The translation READ routes (`[id]/translations`, `[id]/translations/:lang`, and
+ * `[id]/translations/:lang/progress` until it was deleted for having no caller —
+ * CHANGELOG § 64) checked only the fixed `news:read` grant and never the article's
+ * own type: an officer allowed to read news could read the translations of a
+ * document or role-model article by its id (rà soát 2026-10-22). Every translation
+ * WRITE already checked the type in the service.
  *
  * Now each route looks the article up through `requireReadableArticle` — within
  * the types the actor may read — so another type's id answers 404, exactly like a
@@ -66,7 +67,6 @@ globals.getRouterParam = (event: Event, key: string) => event.params[key]
 
 const list = (await import('../server/api/admin/articles/[id]/translations/index.get')).default as unknown as (event: Event) => Promise<{ items: Row[] }>
 const one = (await import('../server/api/admin/articles/[id]/translations/[lang].get')).default as unknown as (event: Event) => Promise<{ translation: Row }>
-const progress = (await import('../server/api/admin/articles/[id]/translations/[lang]/progress.get')).default as unknown as (event: Event) => Promise<Row>
 const bulkStatus = (await import('../server/api/admin/articles/bulk-translate-status.get')).default as unknown as (event: Event) => Promise<{ task: { currentArticleId: number | null, currentArticleTitle: string | null } }>
 
 const grant = (resource: string) => ({ resource, canCreate: false, canRead: true, canUpdate: false, canDelete: false })
@@ -78,7 +78,7 @@ async function statusOf(run: () => Promise<unknown>): Promise<number | null> {
 }
 
 test('a news-only reader cannot read the translations of another type — 404, like a missing id', async () => {
-  for (const [name, route] of [['list', list], ['one', one], ['progress', progress]] as const) {
+  for (const [name, route] of [['list', list], ['one', one]] as const) {
     assert.equal(await statusOf(() => route(at(newsReader, 32))), 404, `${name}: document article`)
     assert.equal(await statusOf(() => route(at(newsReader, 999))), 404, `${name}: missing article`)
   }
@@ -87,7 +87,6 @@ test('a news-only reader cannot read the translations of another type — 404, l
 test('translations of a type the reader may read are still served', async () => {
   assert.equal((await list(at(newsReader, 31))).items.length, 1)
   assert.equal((await one(at(newsReader, 31))).translation.title, 'Ordinary news')
-  assert.equal((await progress(at(newsReader, 31))).progress, 100)
   assert.equal((await one(at(newsAndDocsReader, 32))).translation.title, 'Internal document', 'documents:read opens the document article')
 })
 

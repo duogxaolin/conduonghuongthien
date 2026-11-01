@@ -14,6 +14,10 @@ import { startH3TestServer, type H3TestServer } from './_h3-test-server'
  * paths: the chunk endpoint stored `String(p.value)` for any truthy model value
  * (`{…}` → "[object Object]"), the bulk endpoint stored whatever the model sent, and
  * the single-key endpoint stored the model's text even when that text was "null".
+ * The bulk endpoint (`languages/ai-translate.post.ts`) had no caller — the page uses
+ * the chunk and single-key endpoints — and was deleted with its test (CHANGELOG § 64);
+ * the reader it shared with the chunk endpoint (`readModelTranslations`) is still
+ * driven by the chunk tests below and by `model-translations.test.ts`.
  *
  * Decision pinned here: a `null` value in the PUT means "clear", stored as SQL NULL —
  * the state "Đồng bộ key" / a new language give a row, which every reader (public
@@ -84,7 +88,6 @@ globals.readBody = h3.readBody
 const putTranslations = (await import('../server/api/admin/languages/[code]/translations/index.put')).default
 const translateChunk = (await import('../server/api/admin/languages/ai-translate-chunk.post')).default
 const translateKey = (await import('../server/api/admin/languages/ai-translate-key.post')).default
-const translateMissing = (await import('../server/api/admin/languages/ai-translate.post')).default
 
 let server: H3TestServer
 before(async () => {
@@ -96,7 +99,6 @@ before(async () => {
     router.put('/api/admin/languages/:code/translations', admin(putTranslations))
     router.post('/api/admin/languages/ai-translate-chunk', admin(translateChunk))
     router.post('/api/admin/languages/ai-translate-key', admin(translateKey))
-    router.post('/api/admin/languages/ai-translate', admin(translateMissing))
   })
 })
 after(() => server.close())
@@ -202,9 +204,7 @@ test('the AI paths refuse an unknown language code with a 404 BEFORE spending an
   for (const [path, body] of [
     ['/api/admin/languages/ai-translate-chunk', { langCode: 'xx', items: [{ group: 'nav', key: 'news' }] }],
     ['/api/admin/languages/ai-translate-key', { langCode: 'xx', group: 'nav', key: 'news', sourceText: 'Tin tức' }],
-    ['/api/admin/languages/ai-translate', { langCode: 'xx' }],
   ] as const) {
-    // vi has a value, the target none: the bulk path would have keys to send.
     selectRows = [{ id: 1, group: 'nav', key: 'news', value: null }]
     const before = prompts.length
     const response = await send('POST', path, body)
@@ -213,7 +213,6 @@ test('the AI paths refuse an unknown language code with a 404 BEFORE spending an
   assert.deepEqual(outcomes, [
     '/api/admin/languages/ai-translate-chunk → 404, 0 AI call(s)',
     '/api/admin/languages/ai-translate-key → 404, 0 AI call(s)',
-    '/api/admin/languages/ai-translate → 404, 0 AI call(s)',
   ])
   assert.deepEqual(writes, [])
 })
@@ -277,14 +276,4 @@ test('single key: a key that is not a string is 400 (RED before: stored under "[
   const response = await send('POST', '/api/admin/languages/ai-translate-key', { langCode: 'fr', group: 'nav', key: { k: 1 } })
   assert.equal(response.status, 400, response.text)
   assert.deepEqual(writes, [])
-})
-
-test('translate missing: only string values for requested keys are stored (RED before: the number 5 reached the column)', async () => {
-  // The same rows answer every read: the vi list, the target list (no value → all six
-  // missing) and the per-item existence check (→ the update path, which sets `value`).
-  selectRows = ['home', 'news', 'about', 'contact', 'search', 'menu'].map((key, i) => ({ id: i + 1, group: 'nav', key, value: null }))
-  aiAnswer = { ok: true, text: MODEL_ANSWER }
-  const response = await send('POST', '/api/admin/languages/ai-translate', { langCode: 'fr', langName: 'French' })
-  assert.equal(response.status, 200, response.text)
-  assert.deepEqual(stored(), [{ value: 'Accueil', isAiTranslated: true }])
 })
