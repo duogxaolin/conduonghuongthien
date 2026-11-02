@@ -5,9 +5,12 @@
  * thị: bốn trường là `v-model` của trang (đổi thể loại thì trang tải lại danh mục và xoá danh mục
  * đang chọn); chọn ảnh từ thư viện / tải ảnh lên là sự kiện — `useArticleEditorMedia` làm.
  */
-import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
+import { computed } from 'vue'
 
-defineProps<{
+import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
+import { orderCategoriesAsTree } from '~/utils/category-tree-order'
+
+const props = defineProps<{
   contentTypes: AdminContentTypeRow[]
   availableCategories: AdminCategoryRow[]
   /** The thumbnail upload is running (`useUpload().uploading`). */
@@ -23,6 +26,8 @@ const articleType = defineModel<string>('articleType', { required: true })
 const categoryId = defineModel<number | null>('categoryId', { required: true })
 const status = defineModel<string>('status', { required: true })
 const thumbnailUrl = defineModel<string>('thumbnailUrl', { required: true })
+
+const categoryOptions = computed(() => orderCategoriesAsTree(props.availableCategories))
 </script>
 
 <template>
@@ -32,9 +37,9 @@ const thumbnailUrl = defineModel<string>('thumbnailUrl', { required: true })
     <div class="flex flex-col gap-1.5">
       <label class="text-[0.82rem] font-bold text-ink-admin">Thể loại bài viết (*)</label>
       <select v-model="articleType" class="w-full px-3 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border">
-        <option v-for="ct in contentTypes" :key="ct.id" :value="ct.slug">
-          {{ ct.icon ? ct.icon.replace('fa-solid ', '').replace('fa-regular ', '') : '' }} {{ ct.name }}
-        </option>
+        <!-- Name only: an <option> holds text, so the type's icon (a Font Awesome class) cannot
+             render here — printed, it read "fa-newspaper Bản tin & Tin tức". -->
+        <option v-for="ct in contentTypes" :key="ct.id" :value="ct.slug">{{ ct.name }}</option>
       </select>
     </div>
 
@@ -46,8 +51,9 @@ const thumbnailUrl = defineModel<string>('thumbnailUrl', { required: true })
       </label>
       <select v-model="categoryId" class="w-full px-3 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 box-border">
         <option :value="null">— Không có danh mục —</option>
-        <template v-for="cat in availableCategories" :key="cat.id">
-          <option v-if="!cat.parentId" :value="cat.id" class="font-bold">{{ cat.name }}</option>
+        <!-- Tree order: each parent, then its own children (the list arrives by display order). -->
+        <template v-for="cat in categoryOptions" :key="cat.id">
+          <option v-if="cat.depth === 0" :value="cat.id" class="font-bold">{{ cat.name }}</option>
           <option v-else :value="cat.id">&nbsp;&nbsp;↳ {{ cat.name }}</option>
         </template>
       </select>

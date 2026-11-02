@@ -33,7 +33,7 @@ import { byText, click, fire, input, type MiniElement } from './_sfc-mount.ts'
 import { alertText, dropped, OFETCH_LINE, sent, wire, type NetCall } from './_admin-page-harness.ts'
 import {
   ARTICLE, all, classOf, dialogs, editorBox, excerptInput, findAll, h3Error, isDisabled, json, openEditor, optionsOf,
-  placeholder, selectOf, server, textOf, titleInput, type Editor,
+  placeholder, selectOf, server, STAMP, textOf, titleInput, type Editor,
 } from './_article-editor-harness.ts'
 
 const button = (ctx: Editor, text: string) => byText(ctx.page.root, 'button', text)
@@ -195,7 +195,8 @@ describe('article editor — saving', () => {
 
   it('every field reaches the PUT: type (its categories reload, the category resets), category, status, excerpt, thumbnail removed', async (t) => {
     const ctx = await openEditor(t, '42')
-    assert.deepEqual(optionsOf(selectOf(ctx, 'Thể loại bài viết')), ['fa-newspaper Tin tức', 'fa-star Tấm gương', 'Không biểu tượng'])
+    // Names only — the icon class used to be printed in front ("fa-newspaper Tin tức").
+    assert.deepEqual(optionsOf(selectOf(ctx, 'Thể loại bài viết')), ['Tin tức', 'Tấm gương', 'Không biểu tượng'])
     const before = ctx.calls.length
     await input(selectOf(ctx, 'Thể loại bài viết'), 'news')
     await ctx.settle()
@@ -213,6 +214,30 @@ describe('article editor — saving', () => {
       body: { ...BODY, type: 'news', categoryId: 11, excerpt: 'Tóm tắt mới', thumbnailUrl: '', status: 'archived' },
     }])
     assert.equal(ctx.lastToast('success'), 'Đã cập nhật bài viết thành công!')
+  })
+
+  it('"Danh mục" lists each parent followed by its own children, whatever the display order the list arrives in', async (t) => {
+    // As `GET /api/admin/categories` sends them: by display_order, then id — so a child with a
+    // lower display_order than its parent comes first ("↳ tin trong ngày" above "Tin nổi bật").
+    const row = (id: number, name: string, parentId: number | null, displayOrder: number) => ({
+      id, name, slug: `c-${id}`, parentId, type: 'news', description: null, displayOrder, createdAt: STAMP, parentName: null,
+    })
+    const flat = [
+      row(31, 'tin trong ngày', 30, 0), row(40, 'Thông báo', null, 0), row(30, 'Tin nổi bật', null, 1),
+      row(41, 'Lịch công tác', 40, 2), row(32, 'Ảnh hoạt động', 30, 3), row(50, 'Mục lạc loài', 99, 0),
+    ]
+    const ctx = await openEditor(t, 'new', { responder: server({ 'GET /api/admin/categories': () => json({ ok: true, items: flat }) }) })
+    const select = selectOf(ctx, 'Danh mục')
+    assert.deepEqual(optionsOf(select), [
+      '— Không có danh mục —', 'Thông báo', '↳ Lịch công tác', 'Tin nổi bật', '↳ tin trong ngày', '↳ Ảnh hoạt động',
+      // A child whose parent is not in the list stays selectable, at the end, not under the last parent.
+      'Mục lạc loài',
+    ])
+    const options = findAll(select, el => el.tag === 'option')
+    assert.deepEqual(options.slice(1).map(o => o.props.value), [40, 41, 30, 31, 32, 50])
+    assert.deepEqual(options.map(o => classOf(o)), ['', 'font-bold', '', 'font-bold', '', '', 'font-bold'])
+    await input(select, 31)
+    assert.equal(select.model?.value, 31)
   })
 
   it('while the PUT is out: "Đang lưu..." and disabled; back to "Cập Nhật Bài Viết" after', async (t) => {
