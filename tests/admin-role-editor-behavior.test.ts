@@ -128,12 +128,45 @@ test('create: roles.read alone is a 403 and writes nothing', async () => {
 
 test('create: a name already taken is the server\'s 400 sentence — not a 500', async () => {
   // SQLite has no unique index here (`_sqlite-mysql-db.ts`): the error MySQL raises on
-  // `roles.name UNIQUE` (case-insensitive collation) is injected, wrapped by Drizzle as on MySQL.
+  // `roles.name UNIQUE` (utf8mb4_unicode_ci: case- AND accent-insensitive, so "Ëdîtor" collides
+  // with "editor") is injected, wrapped by Drizzle as on MySQL. The sentence says how names
+  // compare — an officer looking for an exact twin of "Ëdîtor" would find none (verifier W4).
   harness.failNext(/^insert into `roles`/, { errno: 1062, code: 'ER_DUP_ENTRY' })
-  const response = await call('POST', '/api/admin/roles', ROLE_MANAGER, { name: 'EDITOR' })
-  assert.deepEqual([response.status, response.body.statusMessage], [400, 'Tên vai trò đã tồn tại. Vui lòng chọn tên khác.'])
+  const response = await call('POST', '/api/admin/roles', ROLE_MANAGER, { name: 'Ëdîtor' })
+  assert.deepEqual([response.status, response.body.statusMessage],
+    [400, 'Tên vai trò trùng với vai trò đã có (không phân biệt hoa/thường và dấu). Vui lòng chọn tên khác.'])
   assert.equal(harness.rows(activityLogs).length, 0)
   assert.deepEqual(logged, [], 'a refused name is not a system failure')
+})
+
+test('create: the minimum length counts code points — one emoji is one character (verifier S2)', async () => {
+  const before = roleNames()
+  for (const name of ['😀', ' 😀 ', 'a']) {
+    const response = await call('POST', '/api/admin/roles', ROLE_MANAGER, { name })
+    assert.deepEqual([response.status, response.body.statusMessage], [400, 'Tên vai trò phải từ 2 ký tự trở lên.'], JSON.stringify(name))
+  }
+  assert.deepEqual(roleNames(), before)
+  assert.equal((await call('POST', '/api/admin/roles', ROLE_MANAGER, { name: '😀😀' })).status, 200)
+})
+
+test('create: a name or description that is not a string is a 400 — never "[object Object]" (verifier S3)', async () => {
+  const before = roleNames()
+  for (const name of [{}, ['Biên tập'], 12345, true]) {
+    const response = await call('POST', '/api/admin/roles', ROLE_MANAGER, { name })
+    assert.deepEqual([response.status, response.body.statusMessage], [400, 'Tên vai trò phải là chuỗi ký tự.'], JSON.stringify(name))
+  }
+  for (const description of [{}, ['Viết tin'], 5, false]) {
+    const response = await call('POST', '/api/admin/roles', ROLE_MANAGER, { name: 'Hợp lệ', description })
+    assert.deepEqual([response.status, response.body.statusMessage], [400, 'Mô tả vai trò phải là chuỗi ký tự.'], JSON.stringify(description))
+  }
+  assert.deepEqual(roleNames(), before)
+  assert.equal(harness.rows(activityLogs).length, 0)
+  // Absent and null still read as empty: a missing name is the length sentence, a missing description is none.
+  const missing = await call('POST', '/api/admin/roles', ROLE_MANAGER, { description: 'x' })
+  assert.deepEqual([missing.status, missing.body.statusMessage], [400, 'Tên vai trò phải từ 2 ký tự trở lên.'])
+  const noDescription = await call('POST', '/api/admin/roles', ROLE_MANAGER, { name: 'Không mô tả', description: null })
+  assert.equal(noDescription.status, 200)
+  assert.equal(harness.rows(roles).find(row => row.name === 'Không mô tả')?.description, null)
 })
 
 test('create: a name over 64 characters or a description over 255 is refused before any write', async () => {
