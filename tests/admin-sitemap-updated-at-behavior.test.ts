@@ -23,7 +23,8 @@ const harness = createSqliteMysqlDb([settings, activityLogs])
 
 mock.module('../server/utils/db', { namedExports: { getDb: () => harness.db } })
 mock.module('../server/utils/permissions', { namedExports: { requireResourcePermission: () => {} } })
-mock.module('../server/utils/google-oauth/config', { namedExports: { requestBase: () => 'https://cdkt.example.vn/' } })
+// The generated copy's base (`publicLinkBase`, § 70) is tested in tests/sitemap-generate-link-base.test.ts.
+mock.module('../server/utils/public-link-base', { namedExports: { publicLinkBase: () => 'https://cdkt.example.vn/' } })
 const GENERATED = '<?xml version="1.0"?><urlset><url><loc>https://cdkt.example.vn/</loc></url></urlset>'
 mock.module('../server/utils/sitemap-builder', { namedExports: { generateSitemap: async () => GENERATED } })
 

@@ -1,22 +1,22 @@
 /**
  * Reported: "/sitemap.xml lists https://127.0.0.1:3000/… while the local site runs on http".
- * Investigated (docs/CHANGELOG.md § 70, KNOWN), and pinned here as the designed behaviour —
- * NOT changed:
+ * Investigated (docs/CHANGELOG.md § 70). Pinned here, as the designed behaviour of the
+ * PER-REQUEST fallback `/sitemap.xml` serves while nothing is saved (multi-domain, computed for
+ * each request, never stored):
  *
- *  - The scheme. The sitemap (served fallback, and the copy the admin page generates and saves)
- *    takes its base from `requestBase()` (server/utils/google-oauth/config.ts), which answers
+ *  - The scheme. The fallback takes its base from `requestBase()`
+ *    (server/utils/google-oauth/config.ts), which answers
  *    `https` unless a TRUSTED proxy says `X-Forwarded-Proto: http`. That default is deliberate:
  *    the same function builds the Google OAuth redirect URI and e-mail links, and a client must
  *    not be able to downgrade them (tests/google-oauth-forwarded-proto.test.ts). Production
  *    always sits behind the TLS nginx, which sends `https`. A browser talking straight to the
  *    app on http://127.0.0.1:3000 sends no forwarded header, so the default applies — the
  *    user's local container (TRUSTED_PROXY_IPS=172.16.0.0/12, PUBLIC_BASE_URL=https://…).
- *  - The host. It is the request's, not `PUBLIC_BASE_URL` (the route never reads it) and not
- *    checked against `PUBLIC_HOST_ALLOWLIST` the way `publicLinkBase()` checks e-mail links. So
- *    a sitemap generated while browsing the admin through 127.0.0.1 or an IP, and saved, lists
- *    that host for every visitor afterwards. Whether the sitemap should follow the canonical
- *    `PUBLIC_BASE_URL` instead is a product decision (multi-domain was the stated reason for
- *    the request host) — left to the owner.
+ *  - The host. The fallback's is the request's (each domain gets its own; nothing is stored).
+ *    The copy the admin page GENERATES is another matter: it is saved and then served to
+ *    everyone, so a copy generated through 127.0.0.1 published that host — the reported case.
+ *    That copy now takes its base from `publicLinkBase()` (owner's decision):
+ *    tests/sitemap-generate-link-base.test.ts.
  */
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
