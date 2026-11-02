@@ -68,8 +68,19 @@ let focusRecorder: ((el: MiniElement) => void) | null = null
 export function recordFocus(recorder: ((el: MiniElement) => void) | null): void {
   focusRecorder = recorder
 }
+/**
+ * `parent` is non-enumerable on every node. A failing `assert.deepEqual`/`equal` that holds a
+ * mounted node builds its diff with `util.inspect({ customInspect: false, depth: 1000 })`, which
+ * walks every enumerable key — through `parent` up to the root and back down the whole page — and
+ * never reports: the test hangs while memory climbs to ~9 GB (measured; a 5461-node tree takes
+ * > 30 s even with a custom message). Hidden, the diff stops at the node's own subtree. Equality
+ * reads enumerable own keys only, so hiding a key can only make a comparison LESS strict — no
+ * passing assertion turns red. `node.parent` still reads and writes as before.
+ */
+const hideParent = <T extends { parent: unknown }>(node: T): T =>
+  Object.defineProperty(node, 'parent', { value: node.parent, writable: true, enumerable: false, configurable: true })
 const createElement = (tag: string): MiniElement => {
-  const el = { kind: 'element', tag, props: {}, children: [], parent: null } as MiniElement
+  const el = hideParent({ kind: 'element', tag, props: {}, children: [], parent: null } as MiniElement)
   return Object.defineProperty(el, 'focus', { value: () => { focusRecorder?.(el) } })
 }
 
@@ -83,14 +94,14 @@ const renderer = Vue.createRenderer<MiniNode, MiniElement>({
   },
   remove: detach,
   createElement,
-  createText: text => ({ kind: 'text', text, parent: null }),
-  createComment: text => ({ kind: 'comment', text, parent: null }),
+  createText: text => hideParent({ kind: 'text', text, parent: null } as MiniText),
+  createComment: text => hideParent({ kind: 'comment', text, parent: null } as MiniComment),
   setText(node, text) {
     if (node.kind !== 'element') node.text = text
   },
   setElementText(el, text) {
     for (const child of el.children) child.parent = null
-    el.children = text ? [{ kind: 'text', text, parent: el }] : []
+    el.children = text ? [hideParent({ kind: 'text', text, parent: el } as MiniText)] : []
   },
   parentNode: node => node.parent,
   nextSibling(node) {
