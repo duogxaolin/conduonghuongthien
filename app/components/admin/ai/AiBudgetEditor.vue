@@ -8,12 +8,15 @@
  * The current values come from the dashboard's own `GET /api/admin/ai/usage` (`budget` — the same
  * `ai_budget_settings` row `GET /api/admin/ai/budget` reads, under the same `ai.read`), so this
  * makes no request of its own until "Lưu" and has no load to fail. After a save it emits `saved`
- * and the dashboard reloads its numbers — which unmounts this card while it loads, so the success
- * is a toast. A failed save stays open with the server's sentence in `role="alert"`; the button is
- * the retry.
+ * and the dashboard re-reads its numbers in place (`loadUsage({ refresh: true })`: this card stays
+ * mounted, its props update). A failed save stays open with the server's sentence in
+ * `role="alert"`; the button is the retry.
+ *
+ * Focus: opening moves it to the first field; closing (Hủy, saved, "Không có thay đổi.") gives it
+ * back to "Sửa hạn mức" — the control that opened the form, shown again in its place.
  */
 import type { AdminAiBudgetUpdateResponse } from '~/types/admin-ai-api'
-import { budgetBlocksAiNow, parseBudgetVnd, saveAiBudget } from '~/utils/ai-budget-form'
+import { BUDGET_REACHED_EFFECTS, budgetBlocksAiNow, parseBudgetVnd, saveAiBudget, ZERO_BUDGET_WARNING } from '~/utils/ai-budget-form'
 import { formatVnd } from '~/utils/ai-service-labels'
 
 const props = defineProps<{
@@ -41,14 +44,26 @@ const saveError = ref('')
 const typedBudget = computed(() => parseBudgetVnd(form.budget))
 const budgetPreview = computed(() => (typedBudget.value.ok ? formatVnd(typedBudget.value.value) : ''))
 const blocksNow = computed(() => typedBudget.value.ok && budgetBlocksAiNow(typedBudget.value.value, props.monthSpendVnd))
+const zeroTyped = computed(() => typedBudget.value.ok && typedBudget.value.value === 0)
 
-function open() {
+const editButton = ref<HTMLButtonElement | null>(null)
+const budgetField = ref<HTMLInputElement | null>(null)
+
+async function open() {
   form.budget = String(props.monthlyBudgetVnd)
   form.threshold = String(props.warningThresholdPct)
   errors.budget = ''
   errors.threshold = ''
   saveError.value = ''
   editing.value = true
+  await nextTick()
+  budgetField.value?.focus()
+}
+
+async function close() {
+  editing.value = false
+  await nextTick()
+  editButton.value?.focus()
 }
 
 async function save() {
@@ -70,11 +85,11 @@ async function save() {
       saveError.value = outcome.message
     } else if (outcome.status === 'unchanged') {
       toast.info(outcome.message)
-      editing.value = false
+      await close()
     } else if (outcome.status === 'saved') {
       toast.success('Đã lưu hạn mức chi AI.')
-      editing.value = false
       emit('saved')
+      await close()
     }
   } finally {
     saving.value = false
@@ -93,6 +108,7 @@ async function save() {
       </div>
       <button
         v-if="!editing"
+        ref="editButton"
         type="button"
         class="inline-flex shrink-0 items-center gap-2 self-start rounded-lg border border-line-strong bg-white px-3 py-2 text-sm font-bold text-brand-700 hover:bg-surface-tint focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 sm:self-auto"
         @click="open"
@@ -105,6 +121,7 @@ async function save() {
           <label for="ai-budget-vnd" class="text-[0.82rem] font-bold text-ink-admin">Hạn mức mỗi tháng (đồng)</label>
           <input
             id="ai-budget-vnd"
+            ref="budgetField"
             v-model="form.budget"
             type="text"
             inputmode="numeric"
@@ -134,9 +151,14 @@ async function save() {
       </div>
 
       <div class="rounded-lg border border-line bg-surface p-3 text-xs leading-relaxed text-ink-admin">
-        <p class="m-0">Khi chi phí AI trong tháng (theo lịch Việt Nam) chạm hạn mức, máy chủ từ chối mọi lượt gọi AI — dịch bài, trợ lý biên tập, gọi thử; chatbot chỉ trả lời từ kho kiến thức, kiểm duyệt tự động chỉ còn luật từ khoá.</p>
+        <p class="m-0">Khi chi phí AI trong tháng (theo lịch Việt Nam) chạm hạn mức, {{ BUDGET_REACHED_EFFECTS }}</p>
         <p class="m-0 mt-1">Đặt 0: cổng không đặt hạn mức. Khi đó, nếu khoá Delify có ngân sách riêng, máy chủ dùng ngân sách đó (so với tổng chi từ trước tới nay).</p>
       </div>
+
+      <p v-if="zeroTyped" class="m-0 flex items-start gap-2 rounded-lg border border-line-strong bg-surface p-3 text-xs font-semibold text-warn-ink">
+        <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+        <span>{{ ZERO_BUDGET_WARNING }}</span>
+      </p>
 
       <p v-if="blocksNow" class="m-0 flex items-start gap-2 rounded-lg border border-danger bg-danger-bg p-3 text-xs font-semibold text-danger">
         <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
@@ -150,7 +172,7 @@ async function save() {
           type="button"
           class="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-admin hover:bg-surface-tint focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
           :disabled="saving"
-          @click="editing = false"
+          @click="close"
         >Hủy</button>
         <button
           type="submit"

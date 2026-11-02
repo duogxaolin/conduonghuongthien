@@ -133,9 +133,10 @@ const budgetColor = computed(() => {
   return 'bg-green-500'
 })
 
-async function loadUsage() {
+/** `refresh`: re-read without the loading state, so the cards stay mounted (the budget editor keeps its focus). */
+async function loadUsage(options: { refresh?: boolean } = {}) {
   usageError.value = null
-  usageLoading.value = true
+  if (!options.refresh) usageLoading.value = true
   try {
     const data = await adminFetch<AdminAiUsageResponse>('/api/admin/ai/usage')
     usageSummary.value = data.usage
@@ -213,7 +214,7 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
         :monthly-budget-vnd="budgetInfo?.monthlyBudgetVnd ?? 0"
         :warning-threshold-pct="budgetInfo?.warningThresholdPct ?? 80"
         :month-spend-vnd="usageSummary?.monthlyCostVnd ?? 0"
-        @saved="loadUsage()"
+        @saved="loadUsage({ refresh: true })"
       />
 
       <!-- Delify Router Live Observability Card (Real-time from Delify API) -->
