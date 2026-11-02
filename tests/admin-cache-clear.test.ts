@@ -61,12 +61,21 @@ describe('POST /api/admin/cache-clear — the guards are the endpoint', () => {
   })
 
   it('clears ONLY the nitro/routes group, not the whole cache namespace', () => {
-    assert.match(source, /getKeys\('nitro\/routes'\)/, 'must list only the route cache group')
-    assert.doesNotMatch(
-      source,
-      /getKeys\(\s*\)/,
-      'a bare getKeys() sweeps every cache group — favicon settings and future function caches have their own invalidation paths',
-    )
+    // The purge itself moved to server/utils/public-page-cache.ts so the article,
+    // menu and settings write paths run the very same one after commit. That it
+    // leaves the other groups alone is run for real (real unstorage, three groups)
+    // in tests/public-page-cache-behavior.test.ts; here: the button uses it.
+    assert.match(source, /await purgePublicPageCache\(\)/, 'the button must run the shared purge')
+    const util = read('server/utils/public-page-cache.ts')
+    assert.match(util, /ROUTE_CACHE_GROUP = 'nitro\/routes'/, 'the shared purge must name only the route cache group')
+    assert.match(util, /getKeys\(ROUTE_CACHE_GROUP\)/, 'must list only the route cache group')
+    for (const text of [source, util]) {
+      assert.doesNotMatch(
+        text,
+        /getKeys\(\s*\)/,
+        'a bare getKeys() sweeps every cache group — favicon settings and future function caches have their own invalidation paths',
+      )
+    }
   })
 
   it('writes one audit row naming who flushed and how much', () => {
