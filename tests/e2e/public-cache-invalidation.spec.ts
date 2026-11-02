@@ -15,8 +15,7 @@ import mysql from 'mysql2/promise'
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { E2E_ADMIN_USERNAME, E2E_PASSWORD_ENV, e2eDbConfig } from './harness'
 
-test.describe.configure({ mode: 'serial' })
-
+// Not `serial`: the four are independent, and one failing must not skip the others.
 const stamp = `${Date.now()}`
 let connection: mysql.Connection
 test.beforeAll(async () => { connection = await mysql.createConnection(e2eDbConfig()) })
