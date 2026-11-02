@@ -161,7 +161,7 @@ async function settleOnly() {
 }
 
 export type Toast = { type: string, message: string }
-export type RouteState = { path: string, fullPath: string, name: string | undefined }
+export type RouteState = { path: string, fullPath: string, name: string | undefined, params: Record<string, string> }
 export type MountOptions = { user?: LayoutUser | null, path?: string, name?: string }
 const MOUNTS = new WeakMap<TestContext, number>()
 
@@ -201,7 +201,7 @@ export async function mountLayout(t: TestContext, server = adminLayoutServer(), 
   restore.push(replaceGlobal('document', lockTarget))
 
   const at = options.path ?? '/admin'
-  const route = Vue.reactive<RouteState>({ path: at.split('?')[0]!, fullPath: at, name: options.name ?? 'admin' })
+  const route = Vue.reactive<RouteState>({ path: at.split('?')[0]!, fullPath: at, name: options.name ?? 'admin', params: {} })
   const toasts: Toast[] = []
   const toast = Object.fromEntries(['success', 'error', 'warning', 'info'].map(type => [type, (message: string) => { toasts.push({ type, message }) }]))
   const asyncKeys: string[] = []
@@ -242,11 +242,12 @@ export async function mountLayout(t: TestContext, server = adminLayoutServer(), 
       appendFileSync(DOM_LOG, `${JSON.stringify({ test: t.fullName, step: `${mount}.${step++}`, html: layout.html(), calls: sent(calls), toasts, navigations, lock: lock() })}\n`)
     }
   }
-  /** Move the route the way a navigation does (path, fullPath and name together). */
-  const go = async (to: string, name?: string) => {
+  /** Move the route the way a navigation does (path, fullPath, name and params together). */
+  const go = async (to: string, name?: string, params: Record<string, string> = {}) => {
     route.fullPath = to
     route.path = to.split('?')[0]!
     route.name = name
+    route.params = params
     await settle()
   }
   return { layout, server, calls, toasts, navigations, route, user, asyncKeys, lock, doc: lockTarget, settle, go, close }

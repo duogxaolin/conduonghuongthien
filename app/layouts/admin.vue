@@ -43,7 +43,7 @@ const { isSidebarCollapsed, isMobileMenuOpen, toggleSidebar, expandSidebar, togg
 const { isClearingCache, clearPublicCache } = useAdminLayoutCacheClear(toast)
 const { searchQuery, isSearching, filteredMenuGroups, openAccordions, toggleAccordion } = useAdminLayoutMenu({ route, user, hasPermission })
 
-const currentAdminPageTitle = computed(() => adminPageTitle(route.name))
+const currentAdminPageTitle = computed(() => adminPageTitle(route.name, route.params))
 </script>
 
 <template>

@@ -247,14 +247,21 @@ describe('the route: what each link hands the router, the accordion, the page ti
     const ctx = await openLayout(t)
     const title = () => textOf(one(findAll(topbar(ctx), el => el.tag === 'span' && String(el.props.class ?? '') === 'text-brand-950 font-bold'), 'page title'))
     assert.equal(title(), 'Dashboard')
-    for (const [path, name, expected] of [
-      ['/admin/content/articles/12', 'admin-content-articles-id', 'Chỉnh sửa bài viết'],
-      ['/admin/settings/security', 'admin-settings-security', 'Bắt buộc xác thực hai bước'],
-      ['/admin/ai', 'admin-ai', 'Kiểm duyệt an ninh AI'],
-      ['/admin/media/scan', 'admin-media-scan', 'media scan'],
-      ['/admin/x', undefined, 'Admin'],
+    for (const [path, name, params, expected] of [
+      ['/admin/content/articles/12', 'admin-content-articles-id', { id: '12' }, 'Chỉnh sửa bài viết'],
+      // `/new` is the same `[id].vue` route: only the param tells "Viết bài mới" from editing.
+      ['/admin/content/articles/new', 'admin-content-articles-id', { id: 'new' }, 'Viết bài mới'],
+      ['/admin/chatbot/knowledge/new', 'admin-chatbot-knowledge-id', { id: 'new' }, 'Tạo mục kiến thức'],
+      ['/admin/chatbot/knowledge/3', 'admin-chatbot-knowledge-id', { id: '3' }, 'Chỉnh sửa mục kiến thức'],
+      ['/admin/settings/sitemap', 'admin-settings-sitemap', {}, 'Sitemap'],
+      ['/admin/settings/security', 'admin-settings-security', {}, 'Bắt buộc xác thực hai bước'],
+      ['/admin/ai', 'admin-ai', {}, 'AI Panel'],
+      ['/admin/ai/moderation', 'admin-ai-moderation', {}, 'Kiểm duyệt an ninh AI'],
+      // A route the map does not know (none under app/pages/admin — tests/admin-page-titles.test.ts).
+      ['/admin/khong-co', 'admin-khong-co', {}, 'khong co'],
+      ['/admin/x', undefined, {}, 'Admin'],
     ] as const) {
-      await ctx.go(path, name)
+      await ctx.go(path, name, params)
       assert.equal(title(), expected, path)
     }
     assert.match(words(topbar(ctx)), /^Con Đường Hướng Thiện \/ Admin Xoá cache/)
