@@ -70,6 +70,30 @@ describe('articles table — the "Thao tác" column stays on screen', () => {
     }
   })
 
+  it('the pinned cell follows the row\'s hover: the row is the `group` its `group-hover:` reads (verifier B5)', async () => {
+    const opened = await open()
+    await settle()
+    for (const row of rows(opened)) {
+      // Without `group` on the <tr>, `group-hover:bg-surface` never matches: the row turns grey
+      // under the pointer and its opaque pinned cell stays white.
+      assert.deepEqual(['group', 'hover:bg-surface'].filter(c => !classes(row).includes(c)), [], `row class: ${row.props.class}`)
+      assert.ok(classes(actionCell(row)).includes('group-hover:bg-surface'))
+    }
+  })
+
+  it('the edge between the scrolling cells and the pinned column, and the badges\' width, are the measured ones', async () => {
+    const opened = await open()
+    await settle()
+    // Token colours only (`theme(colors.…)`), no raw rgba: the divider line and the soft shadow.
+    const EDGE = 'shadow-[inset_1px_0_0_theme(colors.line),-8px_0_10px_-8px_theme(colors.brand-950/18%)]'
+    assert.ok(classes(actionsTh(opened)).includes(EDGE), String(actionsTh(opened).props.class))
+    for (const row of rows(opened)) assert.ok(classes(actionCell(row)).includes(EDGE))
+    // The translation badges wrap three to a line, not one (rows ~150 px → ~95 px).
+    const badgeBoxes = findAll(table(opened), el => el.tag === 'div' && classes(el).includes('justify-center') && classes(el).includes('flex-wrap'))
+    assert.equal(badgeBoxes.length, rows(opened).length)
+    for (const box of badgeBoxes) assert.ok(classes(box).includes('min-w-[6.5rem]'))
+  })
+
   it('a ticked row keeps its tint under the pinned cell (opaque white would hide it)', async () => {
     const opened = await open()
     await settle()

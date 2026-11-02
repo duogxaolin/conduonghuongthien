@@ -1,8 +1,9 @@
 /**
  * The top bar of the admin shell names the current page from `adminPageTitle(route.name,
  * route.params)` (app/utils/admin-layout-menu.ts). A page missing from its map fell back to the
- * route name made readable — "/admin/settings/sitemap" showed "settings sitemap", and 23 other
- * admin pages the same way. This walks every page under `app/pages/admin/` that uses the admin
+ * route name made readable — "/admin/settings/sitemap" showed "settings sitemap", and 20 other
+ * admin pages the same way (22 entries added for those 21 pages: the knowledge editor also got
+ * its `-new` one). This walks every page under `app/pages/admin/` that uses the admin
  * layout, derives the route name the way Nuxt does (`index` dropped, `[id]` → `id`, path
  * segments joined by `-`), and fails on any page whose title is still that fallback.
  *

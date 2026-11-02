@@ -4,7 +4,7 @@ import { ne, and, like } from 'drizzle-orm'
 import { slugify } from '../../shared/slugify'
 
 type Db = ReturnType<typeof getDb>
-/** The pool or an open transaction (`services/categories.ts` reads the slugs inside the write's). */
+/** The pool or an open transaction (`services/category-writes.ts` reads the slugs inside the write's). */
 type DbOrTx = Db | Parameters<Parameters<Db['transaction']>[0]>[0]
 
 // The pure rule lives in `shared/slugify.ts` (the admin pages run the same one);
