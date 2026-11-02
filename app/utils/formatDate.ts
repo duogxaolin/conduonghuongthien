@@ -31,6 +31,31 @@ export function formatDateTimeVN(value: string | Date | null | undefined): strin
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('vi-VN')
 }
 
+/** Múi giờ của cổng — ngày đăng bài là ngày ở Việt Nam, đọc ở đâu cũng vậy. */
+export const PORTAL_TIME_ZONE = 'Asia/Ho_Chi_Minh'
+
+/**
+ * Ngày theo ngôn ngữ đang chọn, LUÔN theo giờ Việt Nam — cho ngày dựng ở cả máy chủ lẫn
+ * trình duyệt (trang chi tiết bài, trang in).
+ *
+ * `toLocaleDateString(locale, opts)` không có `timeZone` đọc theo múi giờ của MÁY: container
+ * chạy `TZ=Asia/Ho_Chi_Minh`, trình duyệt ở múi giờ khác (máy dev đặt Europe/London) ra một
+ * ngày khác cho mọi bài đăng từ 17:00 đến 23:59 UTC → "Hydration completed but contains
+ * mismatches" và ngày nhảy sau khi tải (đo trên cdkt_app: bài 20:59Z, HTML "06/10/2026",
+ * sau hydrate "05/10/2026"). Khác `formatDateVN` (ngày UTC, dạng cố định dd/MM/yyyy cho danh
+ * sách): hàm này giữ định dạng theo `locale` của trang. Không phân tích được → ''.
+ */
+export function formatPortalDate(
+  value: string | Date | null | undefined,
+  locale: string,
+  options: Omit<Intl.DateTimeFormatOptions, 'timeZone'>,
+): string {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString(locale, { ...options, timeZone: PORTAL_TIME_ZONE })
+}
+
 /**
  * "HH:mm dd/MM" theo giờ Việt Nam (Asia/Ho_Chi_Minh), bất kể múi giờ của máy dựng trang — cho một
  * thời điểm UTC đã lưu mà cán bộ cần đọc theo giờ ở đây (vd. lúc AI kiểm duyệt phán,
