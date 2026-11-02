@@ -76,9 +76,13 @@ const render = defineRenderHandler(async (event) => {
 // app.mjs: `cachedEventHandler(handler, { group: "nitro/routes", ...routeRules.cache })`, and
 // `swr: 60` becomes `cache: { swr: true, maxAge: 60 }` (nuxt.config.ts → nitro core).
 const cached = defineCachedEventHandler(render, { group: 'nitro/routes', swr: true, maxAge: 60 })
+// A hand-written `defineCachedEventHandler` (its default group `nitro/handlers`), as an API
+// route would use: not the public page cache, so the plugin leaves it alone.
+const handlerCache = defineCachedEventHandler(render, { swr: true, maxAge: 60 } as CachedOptions)
 const app = createApp()
 const router = createRouter()
 router.use('/news/**', cached as never)
+router.use('/api-cached/**', handlerCache as never)
 app.use(router)
 
 let server: Server
@@ -183,6 +187,22 @@ test('plugin: a 404 on a page that was never cached removes nothing', async () =
   await get('/news/bai-con')
   assert.equal((await get('/news/khong-co')).status, 404)
   assert.equal((await routeKeys()).length, 1)
+})
+
+test('plugin: only the route cache (nitro/routes) — a hand-written cached handler keeps its entry', async () => {
+  const path = '/api-cached/x'
+  pages.set(path, { status: 200, body: 'v1' })
+  await get(path)
+  pages.set(path, { status: 404, body: 'gone' })
+  const handlerKeys = () => storage.getKeys('cache:nitro:handlers')
+  for (const key of await handlerKeys()) {
+    const entry = await storage.getItem<{ mtime: number }>(key)
+    if (entry) await storage.setItem(key, { ...entry, mtime: entry.mtime - 61_000 })
+  }
+  const count = renders.length
+  await get(path)
+  await settle(count)
+  assert.equal((await handlerKeys()).length, 1, 'outside the public page cache: not the plugin\'s to drop')
 })
 
 // ─── 3. The key formula is Nitro's ─────────────────────────────────────────────────
