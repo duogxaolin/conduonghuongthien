@@ -54,7 +54,11 @@ export function mfaResetPrompt(target: MfaResetTarget): PromptOptions {
     title: 'Xoá xác thực hai bước',
     message: `Xoá MỌI yếu tố xác thực hai bước (ứng dụng xác thực, mã qua email, mật khẩu thứ hai) `
       + `và mọi mã dự phòng của tài khoản "${target.username}".\n\n`
-      + 'Tài khoản bị đăng xuất khỏi mọi phiên và phải đăng ký lại xác thực hai bước. '
+      // Re-enrolment is required only where the MFA policy covers the account
+      // (`server/utils/mfa/policy.ts`, `mfa_policy` ≠ `off`); otherwise the next sign-in is the
+      // password alone (`auth/login.post.ts`: no active factor → no challenge).
+      + 'Tài khoản bị đăng xuất khỏi mọi phiên. Nếu hệ thống đang bắt buộc xác thực hai bước với tài khoản này, '
+      + 'người đó phải đăng ký lại; nếu không, lần đăng nhập sau chỉ cần mật khẩu. '
       + 'Chỉ dùng khi người này bị khoá ngoài (mất thiết bị, mất mã dự phòng). '
       + 'Không thể hoàn tác; thao tác được ghi vào nhật ký hoạt động của cả hai tài khoản.',
     label: `Gõ tên tài khoản "${target.username}" để xác nhận`,
@@ -64,9 +68,13 @@ export function mfaResetPrompt(target: MfaResetTarget): PromptOptions {
   }
 }
 
-/** Chữ gõ vào phải đúng tên tài khoản (bỏ khoảng trắng hai đầu); `null` = đã bấm Hủy. */
+/**
+ * Chữ gõ vào phải đúng tên tài khoản (bỏ khoảng trắng hai đầu, phân biệt hoa/thường); `null` =
+ * đã bấm Hủy. Cả hai vế chuẩn hoá NFC trước khi so: bộ gõ tiếng Việt có thể gửi "ễ" dạng tổ hợp
+ * (NFD) — cùng chữ trên màn hình, khác chuỗi.
+ */
 export function mfaResetConfirmed(typed: string | null, target: MfaResetTarget): boolean {
-  return typed !== null && typed.trim() === target.username
+  return typed !== null && typed.trim().normalize('NFC') === target.username.normalize('NFC')
 }
 
 export interface MfaResetDeps {

@@ -13,8 +13,10 @@
  *
  * Mutations each test is meant to catch: a truthy look-alike counted as SuperAdmin; the button on
  * the operator's own row (number or string id); `users.update` instead of SuperAdmin; a request
- * without the typed name, or with a wrong one, or after "Hủy"; the wrong path/method, or a body;
- * the success/failure toast not being the server's sentence; a double click sending twice.
+ * without the typed name, or with a wrong one, or after "Hủy"; a decomposed (NFD) typing of the
+ * right name refused; the wrong path/method, or a body; the dialog dropping a consequence, or
+ * stating re-enrolment as unconditional; the success/failure toast not being the server's
+ * sentence; a double click sending twice; a button losing `aria-busy` while in flight.
  */
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
@@ -26,7 +28,7 @@ import {
 import { click, findAll, textOf, type MiniElement } from './_sfc-mount.ts'
 import {
   h3Error, json, mountAdminPage, OFETCH_LINE, OpenModal, routes, sent, settle, unmountAll, wire,
-  type MountedAdminPage,
+  type MountedAdminPage, type NetCall,
 } from './_admin-page-harness.ts'
 
 const SUPERADMIN = { id: 1, isSuperAdmin: true }
@@ -75,9 +77,24 @@ describe('the dialog and the request', () => {
     assert.equal(options.confirmLabel, 'Xoá xác thực hai bước')
     assert.equal(options.label, 'Gõ tên tài khoản "target" để xác nhận')
     assert.equal(options.placeholder, '', 'the field does not hand the name over')
-    for (const consequence of [/"target"/, /MỌI yếu tố/, /mã dự phòng/, /đăng xuất khỏi mọi phiên/, /đăng ký lại/, /Không thể hoàn tác/, /nhật ký hoạt động/]) {
+    for (const consequence of [
+      /MỌI yếu tố xác thực hai bước \(ứng dụng xác thực, mã qua email, mật khẩu thứ hai\)/,
+      // The recovery codes go too — pinned on their own clause: "mất mã dự phòng" further on is the
+      // lockout example, not this consequence.
+      /và mọi mã dự phòng của tài khoản "target"/,
+      /đăng xuất khỏi mọi phiên/,
+      /Không thể hoàn tác/,
+      /nhật ký hoạt động của cả hai tài khoản/,
+    ]) {
       assert.match(options.message, consequence)
     }
+  })
+
+  it('re-enrolment is stated as conditional on the MFA policy — without it the next sign-in is the password alone', () => {
+    const { message } = mfaResetPrompt(TARGET)
+    // server/utils/mfa/policy.ts: `off` covers no one; login.post.ts issues no challenge without an active factor.
+    assert.match(message, /Nếu hệ thống đang bắt buộc xác thực hai bước với tài khoản này, người đó phải đăng ký lại; nếu không, lần đăng nhập sau chỉ cần mật khẩu\./)
+    assert.doesNotMatch(message, /phiên và phải đăng ký lại/, 'not the unconditional claim')
   })
 
   it('only the exact name confirms (spaces around it are dropped; case is not)', () => {
@@ -86,6 +103,17 @@ describe('the dialog and the request', () => {
     for (const typed of [null, '', 'Target', 'targe', 'target2', 'admin']) {
       assert.equal(mfaResetConfirmed(typed, TARGET), false, String(typed))
     }
+  })
+
+  it('a composed and a decomposed Vietnamese name are the same name (NFC on both sides); case and diacritics still count', () => {
+    const vi = { id: 7, username: 'nguyễn.văn'.normalize('NFC') }
+    const nfd = vi.username.normalize('NFD')
+    assert.notEqual(nfd, vi.username, 'the two forms really are different strings')
+    assert.equal(mfaResetConfirmed(nfd, vi), true, 'typed decomposed, stored composed')
+    assert.equal(mfaResetConfirmed(` ${nfd}\n`, vi), true, 'trimmed as well')
+    assert.equal(mfaResetConfirmed(vi.username, { ...vi, username: nfd }), true, 'typed composed, stored decomposed')
+    assert.equal(mfaResetConfirmed('Nguyễn.văn'.normalize('NFD'), vi), false, 'case still counts')
+    assert.equal(mfaResetConfirmed('nguyen.van', vi), false, 'no diacritics folding')
   })
 
   function recorder(answer: string | null, response: (url: string) => Promise<{ message?: string }>) {
@@ -127,6 +155,13 @@ describe('the dialog and the request', () => {
     assert.equal(await resetUserMfa(TARGET, r.deps), 'cleared')
     assert.deepEqual(r.requests, [{ url: '/api/admin/users/9/mfa', options: { method: 'DELETE' } }])
     assert.deepEqual(r.toasts, [['success', 'Đã xoá toàn bộ xác thực hai bước của tài khoản "target" và thu hồi các phiên đăng nhập.']])
+  })
+
+  it('a decomposed typing of the right name sends the DELETE by id', async () => {
+    const vi = { id: 7, username: 'nguyễn.văn'.normalize('NFC') }
+    const r = recorder(vi.username.normalize('NFD'), ok)
+    assert.equal(await resetUserMfa(vi, r.deps), 'cleared')
+    assert.deepEqual(r.requests, [{ url: '/api/admin/users/7/mfa', options: { method: 'DELETE' } }])
   })
 
   it('an answer without a sentence still names the account', async () => {
@@ -220,6 +255,28 @@ describe('components/admin/UserMfaResetButton.vue', () => {
     assert.deepEqual(opened.calls.map(wire), ['DELETE /api/admin/users/5/mfa'])
     assert.equal(opened.lastToast('error'), 'Chỉ quản trị viên cấp cao được xoá xác thực hai bước của tài khoản khác.')
     for (const t of opened.toasts) assert.doesNotMatch(t.message, OFETCH_LINE)
+  })
+
+  it('both variants: disabled and aria-busy while the request is in flight, neither before nor after', async () => {
+    for (const compact of [true, false]) {
+      const pending: NetCall[] = []
+      const opened = await openButton({ compact, server: routes({ 'DELETE /api/admin/users/5/mfa': (call) => { pending.push(call); return undefined } }) })
+      opened.answers.prompt = 'bientap'
+      const idle = resetButtons(opened)[0]!
+      assert.equal(idle.props['aria-busy'], false, `compact=${compact}: idle`)
+      assert.equal(idle.props.disabled, false)
+      void click(idle)
+      await settle()
+      assert.equal(pending.length, 1)
+      const busy = resetButtons(opened)[0]!
+      assert.equal(busy.props['aria-busy'], true, `compact=${compact}: in flight`)
+      assert.equal(busy.props.disabled, true)
+      pending[0]!.respond(json(RESET_OK))
+      await settle()
+      assert.equal(resetButtons(opened)[0]!.props['aria-busy'], false, `compact=${compact}: done`)
+      assert.equal(resetButtons(opened)[0]!.props.disabled, false)
+      unmountAll()
+    }
   })
 
   it('a second click while the first is still asking does nothing', async () => {
