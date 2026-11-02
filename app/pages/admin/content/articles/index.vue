@@ -1008,7 +1008,7 @@ onUnmounted(() => {
               <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Bình luận</th>
               <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap text-center">Bản dịch</th>
               <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Ngày tạo</th>
-              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap sticky right-0 shadow-[inset_1px_0_0_theme(colors.line),-8px_0_10px_-8px_rgba(18,40,21,0.18)]">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -1099,7 +1099,7 @@ onUnmounted(() => {
               </td>
               <!-- Translation badges -->
               <td class="px-4 py-3 border-b border-surface-tint text-center whitespace-nowrap">
-                <div class="flex items-center justify-center gap-1 flex-wrap">
+                <div class="flex items-center justify-center gap-1 flex-wrap min-w-[6.5rem]">
                   <template v-if="parseTranslations(a.translatedLangs).length > 0">
                     <span
                       v-for="t in parseTranslations(a.translatedLangs)"
@@ -1129,9 +1129,9 @@ onUnmounted(() => {
               </td>
               <!-- Date -->
               <td class="px-4 py-3 border-b border-surface-tint text-ink-muted text-[0.82rem] whitespace-nowrap">{{ formatDateTimeVN(a.createdAt) }}</td>
-              <!-- Actions -->
-              <td class="px-4 py-3 border-b border-surface-tint">
-                <div class="flex items-center gap-2 flex-wrap">
+              <!-- Actions: pinned to the right edge of the scrolling table (opaque, row tint kept; raised while its menu is open, or the next row's cell covers it) -->
+              <td class="px-4 py-3 border-b border-surface-tint sticky right-0 group-hover:bg-surface shadow-[inset_1px_0_0_theme(colors.line),-8px_0_10px_-8px_rgba(18,40,21,0.18)]" :class="[selection.isSelected(Number(a.id)) ? 'bg-surface-tint' : 'bg-white', rowTranslateMenuId === Number(a.id) || rowDownloadMenuId === Number(a.id) ? 'z-20' : '']">
+                <div class="grid grid-cols-[auto_auto] gap-x-3 gap-y-1.5 justify-items-start whitespace-nowrap">
                   <nuxt-link
                     :to="`/admin/content/articles/${a.id}`"
                     class="inline-flex items-center gap-1 text-brand-700 no-underline font-bold text-[0.82rem] hover:underline"
