@@ -13,14 +13,14 @@
             >
               <span class="flex items-center gap-2">
                 <i class="fa-regular fa-pen-to-square text-xs" aria-hidden="true"></i>
-                <span>Đoạn chat mới</span>
+                <span>{{ t('asst_new_chat') }}</span>
               </span>
               <span class="w-5 h-5 rounded-md bg-white/15 flex items-center justify-center text-[0.7rem] font-bold">+</span>
             </button>
           </div>
 
           <nav class="flex-1 overflow-y-auto overscroll-contain p-2 space-y-1" :aria-label="t('asst_conversation_list')">
-            <p v-if="!conversations.length" class="m-0 px-3 py-6 text-center text-xs text-ink-soft">Chưa có cuộc trò chuyện nào.</p>
+            <p v-if="!conversations.length" class="m-0 px-3 py-6 text-center text-xs text-ink-soft">{{ t('asst_no_conversations') }}</p>
             <ul class="list-none m-0 p-0 space-y-1">
               <li v-for="conversation in sortedConversations" :key="conversation.id">
                 <!--
@@ -55,10 +55,10 @@
                         class="block truncate text-[0.82rem] font-bold leading-tight"
                         :class="conversation.id === activeId ? 'text-[#1e4620]' : 'text-[#2d3748] group-hover:text-brand-950'"
                       >
-                        {{ conversation.title }}
+                        {{ conversationTitleText(conversation.title, t) }}
                       </span>
                       <span class="block text-[0.68rem] text-ink-soft mt-0.5 truncate">
-                        {{ conversationMeta(conversation) }}
+                        {{ conversationMetaText(conversation, t) }}
                       </span>
                     </span>
                   </button>
@@ -68,7 +68,7 @@
                     type="button"
                     class="w-6 h-6 flex-shrink-0 rounded-md bg-transparent border-none text-ink-soft hover:text-[#b42318] hover:bg-[#fee2e2] flex items-center justify-center cursor-pointer transition-all opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
                     @click.stop="deleteConversation(conversation.id)"
-                    :aria-label="`${t('asst_delete_conv_aria')} ${conversation.title}`"
+                    :aria-label="`${t('asst_delete_conv_aria')} ${conversationTitleText(conversation.title, t)}`"
                     :title="t('asst_delete_conv')"
                   >
                     <i class="fa-regular fa-trash-can text-[0.68rem]" aria-hidden="true"></i>
@@ -80,7 +80,7 @@
 
           <div class="flex-shrink-0 border-t border-line px-3 py-2 bg-surface">
             <p class="m-0 text-[0.68rem] leading-snug text-[#6b7280]">
-              Tối đa {{ limits.maxConversations }} cuộc trò chuyện được lưu trên thiết bị này.
+              {{ fillPlaceholders(t('asst_max_saved'), { n: limits.maxConversations }) }}
             </p>
           </div>
         </aside>
@@ -94,8 +94,8 @@
                 <i class="fa-solid fa-robot text-white text-[1.05rem]" aria-hidden="true"></i>
               </div>
               <div class="min-w-0">
-                <h1 class="m-0 truncate text-[1rem] font-bold leading-tight text-white">Trợ lý Hướng Thiện</h1>
-                <p class="mt-0.5 mb-0 truncate text-[0.72rem] text-white/65">{{ activeConversation.title }}</p>
+                <h1 class="m-0 truncate text-[1rem] font-bold leading-tight text-white">{{ t('cw_title') }}</h1>
+                <p class="mt-0.5 mb-0 truncate text-[0.72rem] text-white/65">{{ conversationTitleText(activeConversation.title, t) }}</p>
               </div>
             </div>
             <div class="flex flex-shrink-0 items-center gap-1.5">
@@ -121,15 +121,14 @@
                   <i class="fa-solid fa-shield-halved text-[1.6rem] text-brand-900" aria-hidden="true"></i>
                 </div>
                 <p class="m-0 text-[0.95rem] leading-relaxed text-ink-secondary">
-                  Xin chào! Tôi hỗ trợ tra cứu thông tin từ kho dữ liệu đã được
-                  <strong class="text-brand-900">Cục C11</strong> phê duyệt.
+                  <I18nStrong :text="t('cw_welcome')" :values="{ org: t('cw_welcome_org') }" strong-class="text-brand-900" />
                 </p>
                 <p
                   v-if="quickQuestionState !== 'success'"
                   class="m-0 mt-5 text-[0.8rem] text-ink-muted"
                   role="status"
                   aria-live="polite"
-                >{{ quickQuestionStatusText }}</p>
+                >{{ t(quickQuestionStatusKey) }}</p>
                 <div v-if="quickQuestionState === 'success' && quickQuestions.length" class="mt-5 flex flex-wrap justify-center gap-2">
                   <button
                     v-for="question in quickQuestions"
@@ -161,27 +160,27 @@
                     <ChatMessageContent :text="msg.text" :is-bot="msg.sender === 'bot'" :tool-calls="msg.toolCalls" />
                     <span v-if="msg.status === 'pending'" class="inline-flex items-center gap-1 mt-1 text-[0.72rem] opacity-70">
                       <i class="fa-solid fa-circle-notch fa-spin text-[0.6rem]" aria-hidden="true"></i>
-                      Đang gửi…
+                      {{ t('cw_sending') }}
                     </span>
                     <div v-if="msg.status === 'error' && msg.error" class="mt-1 flex items-center gap-2 text-[0.72rem]" role="alert">
                       <i class="fa-solid fa-circle-exclamation text-[0.65rem]" aria-hidden="true"></i>
                       {{ msg.error }}
-                      <button type="button" class="underline font-semibold text-brand-900 bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">Thử lại</button>
+                      <button type="button" class="underline font-semibold text-brand-900 bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">{{ t('cw_retry') }}</button>
                     </div>
                     <div v-if="msg.sender === 'bot' && !msg.isStreaming" class="mt-2 flex items-center justify-between gap-2 border-t border-line pt-1.5 text-[0.72rem]">
                       <span v-if="msg.kind" class="flex items-center gap-1 font-semibold" :class="messageKindClass(msg.kind)" role="status">
                         <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
-                        {{ messageKindLabel(msg.kind) }}
+                        {{ t(messageKindKey(msg.kind)) }}
                       </span>
                       <span v-else></span>
                       <button
                         type="button"
                         class="inline-flex items-center gap-1 text-[0.72rem] text-[#6b7280] hover:text-brand-900 bg-transparent border-none cursor-pointer p-0.5 rounded transition-colors"
                         @click="copyMessageText(msg.text, msg.id)"
-                        :title="copiedMsgId === msg.id ? 'Đã sao chép' : 'Sao chép câu trả lời'"
+                        :title="t(copiedMsgId === msg.id ? 'cw_copied_title' : 'cw_copy_title')"
                       >
                         <i :class="copiedMsgId === msg.id ? 'fa-solid fa-check text-accent' : 'fa-regular fa-copy'" aria-hidden="true"></i>
-                        {{ copiedMsgId === msg.id ? 'Đã chép' : 'Sao chép' }}
+                        {{ t(copiedMsgId === msg.id ? 'cw_copied' : 'cw_copy') }}
                       </button>
                     </div>
                     <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 list-none space-y-1 border-t border-line pl-0 pt-1.5" :aria-label="t('cw_sources')">
@@ -198,19 +197,19 @@
                           @click="toggleSourceDetail(source.entryId)"
                         >
                           <i class="fa-solid fa-book-open text-[0.56rem]" aria-hidden="true"></i>
-                          {{ isSourceExpanded(source.entryId) ? 'Thu gọn' : 'Xem đầy đủ' }}
+                          {{ t(isSourceExpanded(source.entryId) ? 'cw_source_collapse' : 'cw_source_expand') }}
                         </button>
 
                         <div v-if="isSourceExpanded(source.entryId)" class="mt-1 rounded-lg border border-line bg-surface px-2.5 py-1.5">
-                          <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.68rem] text-ink-muted" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
+                          <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.68rem] text-ink-muted" role="status" aria-live="polite">{{ t('cw_source_loading') }}</p>
                           <div v-else-if="sourceDetailOf(source.entryId)?.status === 'error'" role="alert">
-                            <p class="m-0 text-[0.68rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
-                            <button type="button" class="mt-1 cursor-pointer rounded-full border-none bg-brand-900 px-2.5 py-0.5 text-[0.66rem] font-bold text-white hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600" @click="retrySourceDetail(source.entryId)">Thử lại</button>
+                            <p class="m-0 text-[0.68rem] text-[#b42318]">{{ t('cw_source_error') }}</p>
+                            <button type="button" class="mt-1 cursor-pointer rounded-full border-none bg-brand-900 px-2.5 py-0.5 text-[0.66rem] font-bold text-white hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600" @click="retrySourceDetail(source.entryId)">{{ t('cw_retry') }}</button>
                           </div>
                           <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
                             <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.72rem] font-bold text-brand-900">{{ sourceDetailOf(source.entryId)?.question }}</p>
                             <p class="m-0 whitespace-pre-wrap text-[0.72rem] leading-[1.55] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
-                            <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.68rem] font-bold text-brand-900 underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
+                            <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.68rem] font-bold text-brand-900 underline underline-offset-2">{{ t('cw_source_open') }}</nuxt-link>
                           </template>
                         </div>
                       </li>
@@ -218,10 +217,10 @@
                     <div v-if="msg.askContact && msg.lead && !msg.isStreaming" class="mt-3 border-t border-line pt-3">
                       <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.82rem] font-semibold text-brand-900">
                         <i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i>
-                        Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!
+                        {{ t('cw_lead_done') }}
                       </p>
                       <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
-                        <p class="m-0 text-[0.8rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
+                        <p class="m-0 text-[0.8rem] font-bold text-[#1f2937]">{{ t('cw_lead_title') }}</p>
                         <!-- Nhãn sr-only: placeholder biến mất khi gõ và không phải tên truy cập đáng tin. -->
                         <label :for="leadFieldId(uid, msg.id || index, 'name')" class="sr-only">{{ t('cw_lead_name') }}</label>
                         <input :id="leadFieldId(uid, msg.id || index, 'name')" v-model="msg.lead.name" type="text" autocomplete="name" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-surface px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-brand-900" />
@@ -233,7 +232,7 @@
                         <textarea :id="leadFieldId(uid, msg.id || index, 'question')" v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-surface px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-brand-900"></textarea>
                         <p v-if="msg.lead.error" :id="leadFieldId(uid, msg.id || index, 'error')" class="m-0 text-[0.74rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
                         <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-brand-900 px-4 py-1.5 text-[0.82rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">
-                          {{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}
+                          {{ t(msg.lead.status === 'sending' ? 'cw_lead_sending' : 'cw_lead_submit') }}
                         </button>
                       </form>
                     </div>
@@ -257,13 +256,13 @@
                   <i class="fa-solid fa-robot text-[0.7rem] text-white"></i>
                 </div>
                 <div class="rounded-[4px_18px_18px_18px] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)] border border-surface-tint max-w-sm" role="status" aria-live="polite">
-                  <span class="sr-only">Trợ lý đang soạn câu trả lời</span>
+                  <span class="sr-only">{{ t('cw_typing_sr') }}</span>
                   <div class="flex items-center gap-2 text-xs font-semibold text-brand-700">
                     <span class="relative flex h-2 w-2">
                       <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
                       <span class="relative inline-flex rounded-full h-2 w-2 bg-brand-700"></span>
                     </span>
-                    <span>Trợ lý đang suy nghĩ &amp; tra cứu dữ liệu...</span>
+                    <span>{{ t('asst_thinking') }}</span>
                   </div>
                   <div class="flex items-center gap-1.5 mt-2" aria-hidden="true">
                     <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-brand-900 motion-reduce:animate-none motion-reduce:opacity-60"></span>
@@ -271,7 +270,7 @@
                     <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-brand-900 [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
                   </div>
                   <!-- Sau ~20 giây: nói rõ lần chờ này dài hơn thường (trong vùng role="status"). -->
-                  <p v-if="isSlowWait" class="m-0 mt-2 text-[0.78rem] leading-snug text-ink-muted">Đang chờ lâu hơn bình thường, xin anh/chị chờ thêm…</p>
+                  <p v-if="isSlowWait" class="m-0 mt-2 text-[0.78rem] leading-snug text-ink-muted">{{ t('cw_slow_wait') }}</p>
                 </div>
               </div>
             </div>
@@ -283,7 +282,7 @@
             <form class="mx-auto flex max-w-[760px] items-end gap-2" @submit.prevent="sendBotMessage">
               <input v-model="honeypot" type="text" name="_h" tabindex="-1" autocomplete="off" aria-hidden="true" class="absolute left-[-9999px] h-px w-px opacity-0 pointer-events-none" />
               <div class="min-w-0 flex-1">
-                <label for="tro-ly-input" class="sr-only">Nhập câu hỏi cho trợ lý</label>
+                <label for="tro-ly-input" class="sr-only">{{ t('cw_input_label') }}</label>
                 <textarea
                   id="tro-ly-input"
                   ref="botInputRef"
@@ -322,10 +321,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, useId } from 'vue'
 import { leadContactInvalid, leadFieldId } from '~/utils/form-a11y'
-import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
+import { useChatbot, type ChatMessage } from '~/composables/useChatbot'
 import { useChatAutoScroll } from '~/composables/useChatAutoScroll'
 import { useSlowWait } from '~/composables/useSlowWait'
 import { useI18n } from '~/composables/useI18n'
+import { conversationMetaText, conversationTitleText } from '~/utils/chat-i18n'
+import { fillPlaceholders } from '~/utils/i18n-placeholders'
+import I18nStrong from '~/components/I18nStrong.vue'
 
 const { t } = useI18n()
 // Tiền tố id cho biểu mẫu để-lại-liên-hệ (lặp theo từng tin nhắn).
@@ -333,21 +335,15 @@ const uid = useId()
 const {
   conversations, activeId, activeConversation, chatMessages,
   isSubmitting, isAwaitingFirstWord, botInput, botInputError,
-  quickQuestions, quickQuestionState, quickQuestionStatusText, limits,
+  quickQuestions, quickQuestionState, quickQuestionStatusKey, limits,
   hydrate, loadQuickQuestions,
   createConversation, switchConversation, deleteConversation, clearChatHistory,
   submitBotQuestion, submitLead,
   isSourceExpanded, sourceDetailOf, toggleSourceDetail, retrySourceDetail,
-  isProblemKind, messageKindLabel, messageKindClass,
+  isProblemKind, messageKindKey, messageKindClass,
 } = useChatbot()
 
-useHead({
-  title: 'Trợ lý Hướng Thiện',
-  meta: [{
-    name: 'description',
-    content: 'Trợ lý ảo hỗ trợ tra cứu thông tin về tái hòa nhập cộng đồng từ kho dữ liệu đã được Cục C11 phê duyệt.',
-  }],
-})
+useHead(() => ({ title: t('cw_title'), meta: [{ name: 'description', content: t('asst_seo_desc') }] }))
 
 // "Waiting longer than usual" once the first word is 20s late.
 const isSlowWait = useSlowWait(isAwaitingFirstWord)
@@ -401,13 +397,6 @@ watch(() => activeConversation.value?.messages.length, () => {
 watch(isSubmitting, (submitting) => {
   if (submitting) void scrollChatBottom(true)
 })
-
-const conversationMeta = (conversation: StoredConversation) => {
-  const count = conversation.messages.filter(item => item.id !== 'welcome').length
-  const when = new Date(conversation.createdAt)
-  const stamp = Number.isNaN(when.getTime()) ? '' : when.toLocaleDateString('vi-VN')
-  return count ? `${count} tin nhắn · ${stamp}` : `Chưa có tin nhắn · ${stamp}`
-}
 
 const onCreateConversation = () => {
   createConversation()

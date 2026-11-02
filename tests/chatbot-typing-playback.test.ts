@@ -6,6 +6,7 @@ import { nextTick, ref, watchEffect } from 'vue'
 import { normalizeSource, type ChatMessage } from '../app/composables/useChatbot'
 import { playTypewriter, TYPEWRITER_MAX_MS, TYPEWRITER_WORD_DELAY_MS } from '../app/composables/useChatbotTypewriter'
 import { CHATBOT_COMPOSABLE_FAMILY, chatSurfaceSource, chatSurfaceTemplate, moduleFamilySource, readAppFile } from './_component-family.ts'
+import { inVietnamese } from './_vi-template.ts'
 
 /**
  * The waiting/typing indicator and the reveal animation, tested by *running*
@@ -335,7 +336,8 @@ test('the indicator announces itself to assistive technology', () => {
   // Dots convey "wait" only to someone who can see them. Without the label, a
   // screen-reader user gets silence between sending and the answer arriving.
   for (const file of SURFACES) {
-    const template = chatSurfaceTemplate(file)
+    // The wording through `t()`, read in Vietnamese (tests/_vi-template.ts).
+    const template = inVietnamese(chatSurfaceTemplate(file))
     const block = template.match(/v-if="isAwaitingFirstWord"[\s\S]{0,900}/)?.[0] ?? ''
     assert.match(block, /role="status"/, `${file} indicator needs role="status"`)
     assert.match(block, /sr-only/, `${file} indicator needs a text label`)
@@ -347,7 +349,7 @@ test('the indicator announces itself to assistive technology', () => {
 
 test('both surfaces offer the full approved answer with load, error and retry', () => {
   for (const file of SURFACES) {
-    const template = chatSurfaceTemplate(file)
+    const template = inVietnamese(chatSurfaceTemplate(file))
     assert.match(template, /source\.entryId !== null/, `${file} must gate the affordance on a real row id`)
     assert.match(template, /toggleSourceDetail\(source\.entryId\)/, `${file} must open the detail`)
     assert.match(template, /:aria-expanded="isSourceExpanded\(source\.entryId\)"/, `${file} must announce expansion`)

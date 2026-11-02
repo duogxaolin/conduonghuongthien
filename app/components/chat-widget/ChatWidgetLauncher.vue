@@ -6,7 +6,7 @@
       @click="emit('toggle')"
     >
       <p class="m-0">{{ chatTeaserText }}</p>
-      <button type="button" class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#e5e7eb] text-[#6b7280] text-[0.6rem] flex items-center justify-center border-none cursor-pointer hover:bg-[#d1d5db]" @click.stop="emit('dismiss-teaser')" aria-label="Đóng">
+      <button type="button" class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#e5e7eb] text-[#6b7280] text-[0.6rem] flex items-center justify-center border-none cursor-pointer hover:bg-[#d1d5db]" @click.stop="emit('dismiss-teaser')" :aria-label="t('close')">
         <i class="fa-solid fa-xmark"></i>
       </button>
     </div>
@@ -20,7 +20,7 @@
       <div class="flex items-center justify-center">
         <i class="fa-solid fa-comment-dots text-[1.05rem]" aria-hidden="true"></i>
       </div>
-      <span class="bot-label">{{ t('ask_ai') || 'Hỏi trợ lý' }}</span>
+      <span class="bot-label">{{ t('ask_ai') }}</span>
     </button>
   </div>
 </template>

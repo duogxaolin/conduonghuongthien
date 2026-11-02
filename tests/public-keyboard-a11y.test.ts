@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from '@vue/compiler-sfc'
+import { inVietnamese } from './_vi-template.ts'
 
 /**
  * STRUCTURAL guards (đọc AST của <template>, không mount): không có DOM/JS client
@@ -135,7 +136,8 @@ describe('search.vue — "xoá/nhập từ khoá mới" focus đúng ô tìm ki�
 
   it('ô tìm kiếm có ref + tên truy cập; inputFocus dùng ref', () => {
     assert.match(src, /<input\s+ref="searchInputEl"/)
-    assert.match(src, /aria-label="Từ khóa tìm kiếm"/)
+    // Tên truy cập qua `t()` (bản tiếng Anh dịch được), đọc bằng tiếng Việt (tests/_vi-template.ts).
+    assert.match(inVietnamese(src), /aria-label="Từ khóa tìm kiếm"/)
     assert.match(src, /const searchInputEl = ref<HTMLInputElement \| null>\(null\)/)
     assert.match(src, /searchInputEl\.value\?\.focus\(\)/)
   })

@@ -6,6 +6,7 @@ import { createSseHeartbeat, SSE_HEARTBEAT_FRAME, SSE_HEARTBEAT_INTERVAL_MS } fr
 import { SLOW_WAIT_THRESHOLD_MS, useSlowWait } from '../app/composables/useSlowWait'
 import { parseSseLine } from '../app/composables/useChatbot'
 import { chatSurfaceSource, chatSurfaceTemplate } from './_component-family.ts'
+import { inVietnamese } from './_vi-template.ts'
 
 /**
  * The AI provider can take 40–200 seconds for one answer. Two things go wrong while
@@ -150,7 +151,8 @@ test('both surfaces say so inside the existing status region, without losing the
   // The widget is read as its whole family since its wave3 split (tests/_component-family.ts).
   for (const file of ['../app/components/ChatWidget.vue', '../app/pages/assistant.vue']) {
     const source = chatSurfaceSource(file)
-    const template = chatSurfaceTemplate(file)
+    // The wording through `t()`, read in Vietnamese (tests/_vi-template.ts).
+    const template = inVietnamese(chatSurfaceTemplate(file))
     assert.match(source, /useSlowWait\(isAwaitingFirstWord\)/, `${file} must track the wait`)
     const block = template.match(/v-if="isAwaitingFirstWord"[\s\S]{0,3500}/)?.[0] ?? ''
     assert.match(block, /role="status"/, `${file}: the indicator must stay a status region`)

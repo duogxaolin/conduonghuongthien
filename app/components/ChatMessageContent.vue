@@ -6,7 +6,7 @@
       class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[0.74rem] font-medium bg-surface-tint text-brand-900 border border-line-strong animate-pulse self-start"
     >
       <i class="fa-solid fa-circle-notch animate-spin text-brand-700" aria-hidden="true"></i>
-      <span>Đang tra cứu dữ liệu thực tế từ hệ thống...</span>
+      <span>{{ t('cw_tool_searching') }}</span>
     </div>
 
     <!-- Main Message Content — markdown tự bọc <p> với whitespace-pre-wrap ở trong; div ngoài
@@ -25,8 +25,8 @@
       <summary class="flex items-center justify-between font-bold cursor-pointer select-none">
         <span class="flex items-center gap-1.5">
           <i class="fa-solid fa-screwdriver-wrench text-brand-700"></i>
-          <span v-if="toolCalls && toolCalls.length > 0">Công cụ AI đã sử dụng ({{ toolCalls.length }})</span>
-          <span v-else class="text-ink-soft font-medium">Công cụ AI: Trả lời trực tiếp</span>
+          <span v-if="toolCalls && toolCalls.length > 0">{{ fillPlaceholders(t('cw_tools_used'), { n: toolCalls.length }) }}</span>
+          <span v-else class="text-ink-soft font-medium">{{ t('cw_tools_none') }}</span>
         </span>
         <span class="text-[0.68rem] text-ink-muted font-normal group-open:rotate-180 transition-transform">
           <i class="fa-solid fa-chevron-down"></i>
@@ -45,16 +45,16 @@
                 class="rounded px-1.5 py-px text-[0.65rem] font-bold"
                 :class="tool.status === 'calling' ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-[#e8efe8] text-[#2c6e33]'"
               >
-                {{ tool.status === 'calling' ? 'Đang gọi...' : (tool.count ? `${tool.count} kết quả` : '0 kết quả') }}
+                {{ tool.status === 'calling' ? t('cw_tool_calling') : fillPlaceholders(t('cw_tool_results'), { n: tool.count || 0 }) }}
               </span>
             </div>
             <div v-if="tool.query" class="text-ink-muted truncate">
-              &gt; Truy vấn: &laquo;{{ tool.query }}&raquo;
+              &gt; {{ fillPlaceholders(t('cw_tool_query'), { q: tool.query }) }}
             </div>
           </div>
         </div>
         <div v-else class="text-[0.7rem] text-ink-muted italic p-1">
-          Lượt hội thoại này model AI phân tích câu hỏi và trả lời trực tiếp mà không cần kích hoạt công cụ tra cứu thêm.
+          {{ t('cw_tools_direct_desc') }}
         </div>
       </div>
     </details>
@@ -66,6 +66,10 @@
 import { computed } from 'vue'
 import { renderChatMarkdownBlocks } from '~/utils/markdown'
 import type { ToolCallExecution } from '~/utils/chatbot-storage'
+import { useI18n } from '~/composables/useI18n'
+import { fillPlaceholders } from '~/utils/i18n-placeholders'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   text: string
@@ -75,5 +79,5 @@ const props = defineProps<{
 
 const blocks = computed(() => (props.isBot ? renderChatMarkdownBlocks(props.text) : []))
 
-const hasActiveCall = computed(() => props.toolCalls?.some(t => t.status === 'calling'))
+const hasActiveCall = computed(() => props.toolCalls?.some(call => call.status === 'calling'))
 </script>

@@ -102,6 +102,14 @@ export const CHATBOT_RESPONSE_KINDS = new Set([
   'moderation_blocked',
 ])
 
+/**
+ * The title of a conversation in which the server has accepted no question yet — a sentinel
+ * saved in localStorage and compared with `===` (`composables/chatbot/send.ts` titles a
+ * conversation only while it still has this one). Shown translated (`utils/chat-i18n.ts`
+ * `conversationTitleText`), never stored translated.
+ */
+export const CHATBOT_UNTITLED = 'Cuộc trò chuyện mới'
+
 export const CHATBOT_WELCOME_MESSAGE = Object.freeze({
   id: 'welcome',
   sender: 'bot' as const,
@@ -256,7 +264,7 @@ export function normalizeConversation(
   const token = typeof raw.token === 'string' && raw.token ? raw.token : null
   const title = typeof raw.title === 'string' && raw.title.trim()
     ? raw.title.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
-    : 'Cuộc trò chuyện mới'
+    : CHATBOT_UNTITLED
   const createdAt = typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt) ? raw.createdAt : now()
   const messages = Array.isArray(raw.messages)
     ? raw.messages

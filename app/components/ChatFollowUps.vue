@@ -5,7 +5,7 @@
   <div role="group" :aria-labelledby="labelId" class="flex flex-col items-start gap-1.5 animate-fade-slide-up motion-reduce:animate-none">
     <p :id="labelId" class="m-0 flex items-center gap-1.5 text-[0.72rem] font-semibold text-ink-muted">
       <i class="fa-solid fa-lightbulb text-[0.68rem] text-accent" aria-hidden="true"></i>
-      Có thể bạn muốn hỏi tiếp
+      {{ t('cw_follow_ups') }}
     </p>
     <button
       v-for="question in questions"
@@ -23,9 +23,11 @@
 
 <script setup lang="ts">
 import { useId } from 'vue'
+import { useI18n } from '~/composables/useI18n'
 
 // The widget and /assistant can show the same conversation at once.
 const labelId = `chat-follow-ups-${useId()}`
+const { t } = useI18n()
 
 defineProps<{
   questions: string[]

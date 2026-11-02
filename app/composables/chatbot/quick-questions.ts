@@ -1,5 +1,6 @@
 import { computed } from 'vue'
 import { CHATBOT_CLIENT_LIMITS } from '../../utils/chatbot-storage'
+import { QUICK_QUESTION_STATUS_KEYS } from '../../utils/chat-i18n'
 import { quickQuestions, quickQuestionState } from './state'
 
 /**
@@ -44,17 +45,14 @@ export async function loadQuickQuestions(): Promise<void> {
 }
 
 /**
- * The one line that explains what the quick-question strip is currently doing.
+ * The i18n key of the one line that explains what the quick-question strip is currently
+ * doing; the surfaces show `t(quickQuestionStatusKey)`.
  *
- * Loading, error and empty each get their own sentence because they mean
- * different things to the visitor: "wait", "the suggestions are broken but the
- * box below still works", and "there are no approved suggestions yet, the box
- * below still works". A single generic message would leave someone staring at an
- * empty strip with no idea whether to wait.
+ * Loading, error and empty each get their own sentence because they mean different things
+ * to the visitor: "wait", "the suggestions are broken but the box below still works", and
+ * "there are no approved suggestions yet, the box below still works". A single generic
+ * message would leave someone staring at an empty strip with no idea whether to wait.
+ * It used to be the Vietnamese sentence itself — module state cannot reach `useI18n()`,
+ * so an English page showed it untranslated (`utils/chat-i18n.ts`).
  */
-export const quickQuestionStatusText = computed(() => {
-  if (quickQuestionState.value === 'loading') return 'Đang tải câu hỏi đã được phê duyệt…'
-  if (quickQuestionState.value === 'error') return 'Hiện không thể tải câu hỏi gợi ý. Bạn vẫn có thể nhập câu hỏi bên dưới.'
-  if (quickQuestionState.value === 'empty') return 'Hiện chưa có câu hỏi gợi ý đã được phê duyệt. Bạn vẫn có thể nhập câu hỏi bên dưới.'
-  return 'Câu hỏi gợi ý từ kho dữ liệu đã phê duyệt'
-})
+export const quickQuestionStatusKey = computed(() => QUICK_QUESTION_STATUS_KEYS[quickQuestionState.value])

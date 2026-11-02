@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readdirSync } from 'node:fs'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { hardcodedDictionary } from '../app/composables/i18n-default-dictionary.ts'
+import { QUICK_QUESTION_STATUS_KEYS } from '../app/utils/chat-i18n.ts'
 import {
   autoImportedIndexFiles, CHAT_WIDGET_FAMILY, CHATBOT_COMPOSABLE_FAMILY, familyScript, familySource, familyTemplate, familyVueFiles,
   moduleFamilyParts, moduleFamilySource, readAppFile,
@@ -45,9 +47,15 @@ test('quick-question loading, error, empty, success, and retry states are explic
     assert.match(script, new RegExp(`quickQuestionState\\.value = ['"]${state}['"]|quickQuestionState\\.value === ['"]${state}['"]`))
   }
   assert.match(source, /quickQuestionState(?:\.value)? === ['"]success['"]|\? ['"]success['"] : ['"]empty['"]/)
-  assert.match(script, /Đang tải câu hỏi đã được phê duyệt/)
-  assert.match(script, /Hiện không thể tải câu hỏi gợi ý/)
-  assert.match(script, /Hiện chưa có câu hỏi gợi ý đã được phê duyệt/)
+  // Each state says its own sentence — an i18n key per state since 2026-11-02 (the module
+  // cannot call useI18n(); the surfaces show `t(quickQuestionStatusKey)`). Distinct keys, and
+  // the Vietnamese wording each said before.
+  assert.match(script, /quickQuestionStatusKey = computed\(\(\) => QUICK_QUESTION_STATUS_KEYS\[quickQuestionState\.value\]\)/)
+  assert.match(template, /\{\{ t\(quickQuestionStatusKey\) \}\}/)
+  assert.equal(new Set(Object.values(QUICK_QUESTION_STATUS_KEYS)).size, 4)
+  assert.match(hardcodedDictionary.vi![QUICK_QUESTION_STATUS_KEYS.loading]!, /Đang tải câu hỏi đã được phê duyệt/)
+  assert.match(hardcodedDictionary.vi![QUICK_QUESTION_STATUS_KEYS.error]!, /Hiện không thể tải câu hỏi gợi ý/)
+  assert.match(hardcodedDictionary.vi![QUICK_QUESTION_STATUS_KEYS.empty]!, /Hiện chưa có câu hỏi gợi ý đã được phê duyệt/)
   // Retry is no longer a separate button: reopening the panel re-fetches the
   // quick questions whenever the previous attempt errored or came back empty.
   assert.match(script, /quickQuestionState\.value === 'error' \|\| quickQuestionState\.value === 'empty'\) loadQuickQuestions\(\)/)
@@ -63,7 +71,7 @@ test('governed SSE endpoint and response metadata drive public status rendering'
   for (const kind of ['curated', 'provider', 'not_found', 'unavailable', 'rate_limited']) {
     assert.match(script, new RegExp(`['"]${kind}['"]`))
   }
-  assert.match(template, /messageKindLabel\(msg\.kind\)/)
+  assert.match(template, /t\(messageKindKey\(msg\.kind\)\)/)
   assert.match(template, /msg\.sources\?\.length/)
   assert.match(template, /:aria-label="t\('cw_sources'\)"/)
 })
