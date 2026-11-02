@@ -19,7 +19,11 @@
  *     never ofetch's `[POST] "…"` line;
  *   - the detail page leaves for the list after a delete, and after a 404 (gone already —
  *     the route's own 404 sentence is English, so the page says it in Vietnamese);
- *   - one request per click while one is out.
+ *   - one request per click while one is out;
+ *   - (verifier W1) only rows ON SCREEN are selectable: a page change, "Lọc" or "Xóa lọc"
+ *     empties the selection as its request starts, and no strip shows while the list
+ *     loads or after it failed — RED on b37c9410;
+ *   - (W2) the confirm says what the route leaves behind; (W3) the checkboxes themselves.
  */
 import assert from 'node:assert/strict'
 import { afterEach, describe, it } from 'node:test'
@@ -93,6 +97,21 @@ const tick = async (opened: MountedAdminPage, ip: string) => {
 const bar = (opened: MountedAdminPage) => findAll(opened.page.root, el => el.tag === 'AdminBulkActionBar')[0]
 const deleteButton = (opened: MountedAdminPage) => byText(bar(opened)!, 'button', 'Xóa vĩnh viễn')
 const listQuery = (call: NetCall) => call.url.searchParams.get('page')
+const insideRow = (el: MiniElement) => {
+  for (let p = el.parent; p; p = p.parent) if (p.tag === 'tr') return true
+  return false
+}
+/** The checkbox of a session, in the table (`'table'`) or on its mobile card (`'card'`), by its accessible name. */
+const boxOf = (opened: MountedAdminPage, where: 'table' | 'card', label: string): MiniElement => {
+  const found = findAll(opened.page.root, el => el.tag === 'input' && el.props['aria-label'] === label && insideRow(el) === (where === 'table'))
+  assert.equal(found.length, 1, `expected one ${where} box "${label}", found ${found.length}`)
+  return found[0]!
+}
+const headerBox = (opened: MountedAdminPage) => {
+  const found = findAll(opened.page.root, el => el.tag === 'input' && el.props['aria-label'] === 'Chọn tất cả phiên đang hiển thị')
+  assert.equal(found.length, 1)
+  return found[0]!
+}
 
 describe('pages/admin/chatbot/sessions/index.vue — bulk delete', () => {
   it('without chatbot_knowledge.delete: no checkbox anywhere (table, header, cards) and no action strip', async () => {
@@ -139,8 +158,10 @@ describe('pages/admin/chatbot/sessions/index.vue — bulk delete', () => {
     await settle()
     const asked = opened.confirms.at(-1)!
     assert.equal(asked.danger, true)
-    assert.match(asked.message!, /^Xóa vĩnh viễn 2 phiên trò chuyện đã chọn/)
+    assert.match(asked.message!, /^Xóa vĩnh viễn 2 phiên trò chuyện đã chọn\?/)
     assert.match(asked.message!, /không thể hoàn tác/)
+    // W2: says what the route leaves behind instead of promising the citizen's data is all gone.
+    assert.match(asked.message!, /Không bị xóa theo: đơn đăng ký khách đã gửi, hàng chờ kiểm duyệt của tin nhắn bị gắn cờ, nhật ký thao tác\.$/)
     assert.deepEqual(sent(opened.calls, before), [
       { wire: `POST ${BULK_URL}`, body: { ids: ['s-1', 's-333'] } },
       `GET ${LIST_URL}?page=1&pageSize=25`,
@@ -235,7 +256,7 @@ describe('pages/admin/chatbot/sessions/index.vue — bulk delete', () => {
     assert.equal(bar(opened)?.props.count, undefined)
   })
 
-  it('a page change drops ticks no longer on screen — page 2 cannot delete a row ticked on page 1', async () => {
+  it('a page change empties the selection as it starts — nothing ticked on page 1 is still selected once page 2 shows', async () => {
     const table = Array.from({ length: 26 }, (_, n) => session(`s-${String(n).padStart(2, '0')}`))
     const opened = await openList(table)
     await tick(opened, table[0]!.ip!)
@@ -243,6 +264,114 @@ describe('pages/admin/chatbot/sessions/index.vue — bulk delete', () => {
     await fire(findAll(opened.page.root, el => el.tag === 'AdminPagination')[0]!, 'update:page', 2)
     await settle()
     assert.equal(bar(opened)?.props.count, undefined)
+  })
+
+  // ─── W1 (verifier, 2026-11-02): the windows where the previous page's rows are still held ──
+  // useAdminList keeps the previous `items` while the next page loads and after it fails; the
+  // strip sat outside the loading/error branches, so a row ticked on page 1 — no longer on
+  // screen — could be deleted from under a skeleton or an error. RED on b37c9410.
+
+  for (const mode of ['pending', 'error'] as const) {
+    it(`W1: page 2 ${mode === 'pending' ? 'still loading' : 'failed (500)'} — no strip, and the page-1 tick is gone for good`, async () => {
+      const table = Array.from({ length: 26 }, (_, n) => session(`s-${String(n).padStart(2, '0')}`))
+      let held: NetCall | undefined
+      const opened = await openList(table, {
+        [`GET ${LIST_URL}`]: (call) => {
+          if (call.url.searchParams.get('page') !== '2') return json({ ok: true, page: 1, total: 26, totalPages: 2, items: table.slice(0, 25) })
+          if (mode === 'error') return h3Error(500, 'Lỗi máy chủ.')
+          held = call
+          return undefined
+        },
+      })
+      await tick(opened, 'ip-s-00')
+      assert.equal(bar(opened)?.props.count, 1)
+      void fire(findAll(opened.page.root, el => el.tag === 'AdminPagination')[0]!, 'update:page', 2)
+      await settle()
+      const showing = mode === 'pending'
+        ? findAll(opened.page.root, el => el.tag === 'SkeletonTable').length
+        : findAll(opened.page.root, el => el.props.role === 'alert').length
+      assert.equal(showing, 1, mode === 'pending' ? 'the skeleton is showing' : 'the error branch is showing')
+      assert.equal(bar(opened)?.props.count, undefined, 'a strip offering to delete a row that is not on screen')
+      if (held) {
+        held.respond(json({ ok: true, page: 2, total: 26, totalPages: 2, items: table.slice(25) }))
+        await settle()
+        assert.equal(bar(opened)?.props.count, undefined, 'page 2 arrived with the page-1 row still selected')
+      }
+      assert.equal(opened.calls.filter(c => c.method === 'POST').length, 0)
+    })
+  }
+
+  it('W1: "Lọc" and "Xóa lọc" empty the selection while the filtered list is loading, and after it', async () => {
+    const table = [session('s-1'), session('s-22', 'Nguyễn A')]
+    const held: NetCall[] = []
+    let hold = false
+    const opened = await openList(table, {
+      [`GET ${LIST_URL}`]: (call) => {
+        if (hold) { held.push(call); return undefined }
+        return json({ ok: true, page: 1, total: table.length, totalPages: 1, items: table })
+      },
+    })
+    for (const label of ['Lọc', 'Xóa lọc']) {
+      await tick(opened, 'ip-s-1')
+      assert.equal(bar(opened)?.props.count, 1)
+      hold = true
+      void click(byText(opened.page.root, 'button', label))
+      await settle()
+      assert.equal(bar(opened)?.props.count, undefined, `"${label}": the strip stays while the list is re-read`)
+      hold = false
+      held.shift()!.respond(json({ ok: true, page: 1, total: table.length, totalPages: 1, items: table }))
+      await settle()
+      assert.equal(bar(opened)?.props.count, undefined, `"${label}": the old tick came back with the new list`)
+    }
+  })
+
+  // ─── W3 (verifier mutants M20–M24): the checkboxes themselves ──────────────────
+
+  it('the header box selects every row on screen (not only the first), shows them checked, and clears them again', async () => {
+    const opened = await openList([session('s-1'), session('s-22', 'Nguyễn A'), session('s-333')])
+    await fire(headerBox(opened), 'change')
+    await settle()
+    assert.equal(bar(opened)?.props.count, 3)
+    for (const label of ['Chọn phiên của ip-s-1', 'Chọn phiên của Nguyễn A', 'Chọn phiên của ip-s-333']) {
+      assert.equal(boxOf(opened, 'table', label).props.checked, true, label)
+    }
+    assert.equal(headerBox(opened).props.checked, true)
+    await fire(headerBox(opened), 'change')
+    await settle()
+    assert.equal(bar(opened)?.props.count, undefined)
+    await fire(headerBox(opened), 'change')
+    await settle()
+    await click(deleteButton(opened))
+    await settle()
+    assert.deepEqual(opened.calls.find(c => c.method === 'POST')?.body, { ids: ['s-1', 's-22', 's-333'] })
+  })
+
+  it('a mobile card box ticks THAT session: its table box shows checked and the delete sends its id', async () => {
+    const opened = await openList([session('s-1'), session('s-22', 'Nguyễn A')])
+    await fire(boxOf(opened, 'card', 'Chọn phiên của Nguyễn A'), 'change')
+    await settle()
+    assert.equal(boxOf(opened, 'table', 'Chọn phiên của Nguyễn A').props.checked, true)
+    assert.equal(boxOf(opened, 'table', 'Chọn phiên của ip-s-1').props.checked, false)
+    await click(deleteButton(opened))
+    await settle()
+    assert.deepEqual(opened.calls.find(c => c.method === 'POST')?.body, { ids: ['s-22'] })
+  })
+
+  it('a table tick shows on the mobile card too (one selection, both views)', async () => {
+    const opened = await openList([session('s-1'), session('s-22', 'Nguyễn A')])
+    assert.equal(boxOf(opened, 'card', 'Chọn phiên của ip-s-1').props.checked, false)
+    await tick(opened, 'ip-s-1')
+    assert.equal(boxOf(opened, 'card', 'Chọn phiên của ip-s-1').props.checked, true)
+    assert.equal(boxOf(opened, 'card', 'Chọn phiên của Nguyễn A').props.checked, false)
+  })
+
+  it('every box has an accessible name naming its session (name, else IP), in the table and on the cards', async () => {
+    const opened = await openList([session('s-1'), session('s-22', 'Nguyễn A')])
+    const labels = (where: 'table' | 'card') => checkboxes(opened)
+      .filter(el => insideRow(el) === (where === 'table') && el.props['aria-label'] !== 'Chọn tất cả phiên đang hiển thị')
+      .map(el => el.props['aria-label'])
+    assert.deepEqual(labels('table'), ['Chọn phiên của ip-s-1', 'Chọn phiên của Nguyễn A'])
+    assert.deepEqual(labels('card'), ['Chọn phiên của ip-s-1', 'Chọn phiên của Nguyễn A'])
   })
 })
 
@@ -290,9 +419,26 @@ describe('pages/admin/chatbot/sessions/[id].vue — delete this session', () => 
     assert.equal(asked.danger, true)
     assert.match(asked.message!, /cùng 7 tin nhắn/)
     assert.match(asked.message!, /không thể hoàn tác/)
+    assert.match(asked.message!, /Không bị xóa theo: đơn đăng ký khách đã gửi, hàng chờ kiểm duyệt của tin nhắn bị gắn cờ, nhật ký thao tác\.$/)
     assert.deepEqual(sent(opened.calls, 1), [`DELETE ${SESSION_URL}`])
     assert.deepEqual(opened.toasts, [{ type: 'success', message: 'Đã xóa phiên trò chuyện.' }])
     assert.deepEqual(opened.pushes, ['/admin/chatbot/sessions'])
+  })
+
+  it('W2: forms this visitor filed are named by count as NOT deleted — in the confirm and beside the list of forms', async () => {
+    const withForms = { ...DETAIL, relatedSubmissions: [
+      { id: 12, fullName: 'Nguyễn A', phone: '0900000001', email: null, formTitle: 'Đăng ký hỗ trợ', createdAt: STAMP },
+      { id: 13, fullName: 'Nguyễn A', phone: '0900000001', email: null, formTitle: null, createdAt: STAMP },
+    ] }
+    const opened = await mountAdminPage(DETAIL_PAGE, routes({ [`GET ${SESSION_URL}`]: () => json(withForms), [`DELETE ${SESSION_URL}`]: () => json({ ok: true, deleted: 'abc' }) }), { route: { params: { id: 'abc' } } })
+    assert.match(textOf(opened.page.root), /Khách này đã gửi 2 đơn đăng ký trước đó \(xóa phiên trò chuyện không xóa các đơn này\):/)
+    opened.answers.confirm = false
+    await click(deleteOne(opened))
+    await settle()
+    assert.match(opened.confirms.at(-1)!.message!, /Không bị xóa theo: 2 đơn đăng ký khách này đã gửi \(xóa riêng ở mục Đơn đăng ký\), hàng chờ kiểm duyệt của tin nhắn bị gắn cờ, nhật ký thao tác\.$/)
+
+    const viewer = await mountAdminPage(DETAIL_PAGE, routes({ [`GET ${SESSION_URL}`]: () => json(withForms) }), { route: { params: { id: 'abc' } }, can: noDelete })
+    assert.doesNotMatch(textOf(viewer.page.root), /không xóa các đơn này/, 'the note belongs to the delete action')
   })
 
   it('404 (removed meanwhile by another officer or the retention purge): a Vietnamese warning, back to the list — never the route\'s English sentence', async () => {

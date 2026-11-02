@@ -69,9 +69,15 @@ const SESSIONS_LIST = '/admin/chatbot/sessions'
 
 async function deleteSession() {
   if (!canDelete.value || !session.value || deleting.value) return
+  // What the route removes, and what it leaves (verifier W2): the review-queue rows of
+  // flagged turns (`session_id`, no FK), forms matching the phone number, audit rows.
+  // The forms already listed on this page are named by count.
+  const forms = relatedSubmissions.value.length
+    ? `${relatedSubmissions.value.length} đơn đăng ký khách này đã gửi (xóa riêng ở mục Đơn đăng ký)`
+    : 'đơn đăng ký khách đã gửi'
   if (!await confirm({
     title: 'Xóa phiên trò chuyện',
-    message: `Xóa vĩnh viễn phiên trò chuyện này cùng ${session.value.messageCount} tin nhắn? Nội dung trò chuyện và thông tin liên hệ khách đã để lại sẽ bị xóa, không thể hoàn tác.`,
+    message: `Xóa vĩnh viễn phiên trò chuyện này cùng ${session.value.messageCount} tin nhắn? Tin nhắn và thông tin liên hệ (họ tên, số điện thoại) ghi trong phiên sẽ bị xóa, không thể hoàn tác. Không bị xóa theo: ${forms}, hàng chờ kiểm duyệt của tin nhắn bị gắn cờ, nhật ký thao tác.`,
     confirmLabel: 'Xóa vĩnh viễn',
     danger: true,
   })) return
@@ -175,7 +181,7 @@ onMounted(() => { fetchSession() })
 
         <div v-if="relatedSubmissions.length" class="mt-4 border-t border-[#cfe4d1] pt-3">
           <p class="m-0 text-[0.82rem] font-bold text-brand-900">
-            Khách này đã gửi {{ relatedSubmissions.length }} đơn đăng ký trước đó:
+            Khách này đã gửi {{ relatedSubmissions.length }} đơn đăng ký trước đó<span v-if="canDelete"> (xóa phiên trò chuyện không xóa các đơn này)</span>:
           </p>
           <ul class="mt-2 flex flex-col gap-1.5">
             <li v-for="sub in relatedSubmissions" :key="sub.id" class="text-[0.85rem] text-ink-admin">

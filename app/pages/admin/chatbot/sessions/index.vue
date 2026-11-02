@@ -63,10 +63,16 @@ const { confirm } = useConfirm()
 const { hasPermission } = useAdminAuth()
 const canDelete = computed(() => hasPermission('chatbot_knowledge', 'delete'))
 
-// A session id is a string (UUID), hence `<string>`. The selectable set is the page
-// on screen; a page or filter change drops what is no longer visible.
+// A session id is a string (UUID), hence `<string>`. The selectable set is the rows
+// ON SCREEN, and none while the list is loading or has failed: useAdminList keeps the
+// previous `items` in both windows, so a set built from them let a row ticked on page 1
+// be deleted from under page 2's skeleton or error (verifier W1). Any page change,
+// "Lọc", "Xóa lọc" or retry therefore empties the selection as its request starts.
+// `listShown` also hides the strip and stops `bulkDelete` — a second layer, redundant
+// while the watcher below runs before render (removing it alone changes nothing today).
 const selection = useBulkSelection<string>()
-const visibleIds = computed(() => rows.value.map(s => s.id))
+const listShown = computed(() => !loading.value && !error.value)
+const visibleIds = computed(() => (listShown.value ? rows.value.map(s => s.id) : []))
 watch(visibleIds, ids => selection.keepOnly(ids))
 const deleting = ref(false)
 
@@ -79,10 +85,12 @@ const deleting = ref(false)
  */
 async function bulkDelete() {
   const ids = selection.ids.value
-  if (!canDelete.value || ids.length === 0 || deleting.value) return
+  if (!canDelete.value || !listShown.value || ids.length === 0 || deleting.value) return
   if (!await confirm({
     title: 'Xóa phiên trò chuyện',
-    message: `Xóa vĩnh viễn ${ids.length} phiên trò chuyện đã chọn cùng toàn bộ tin nhắn? Nội dung trò chuyện và thông tin liên hệ khách đã để lại sẽ bị xóa, không thể hoàn tác.`,
+    // What the route removes, and what it leaves (verifier W2): the review-queue rows of
+    // flagged turns (`session_id`, no FK), forms matching the phone number, audit rows.
+    message: `Xóa vĩnh viễn ${ids.length} phiên trò chuyện đã chọn? Toàn bộ tin nhắn và thông tin liên hệ (họ tên, số điện thoại) ghi trong các phiên này sẽ bị xóa, không thể hoàn tác. Không bị xóa theo: đơn đăng ký khách đã gửi, hàng chờ kiểm duyệt của tin nhắn bị gắn cờ, nhật ký thao tác.`,
     confirmLabel: 'Xóa vĩnh viễn',
     danger: true,
   })) return
@@ -144,7 +152,7 @@ onMounted(reload)
     </div>
 
     <AdminBulkActionBar
-      v-if="canDelete && selection.count.value"
+      v-if="canDelete && listShown && selection.count.value"
       :count="selection.count.value"
       :busy="deleting"
       noun="phiên trò chuyện"

@@ -24,7 +24,7 @@ import * as Vue from 'vue'
 
 import { adminFetch } from '../app/composables/adminFetch.ts'
 import { errorMessage } from '../app/utils/errorMessage.ts'
-import { byText, click, findAll, fire, mountSfc, textOf } from './_sfc-mount.ts'
+import { byText, click, findAll, fire, input, mountSfc, textOf } from './_sfc-mount.ts'
 import {
   alertText, dropped, h3Error, json, mountAdminPage, OFETCH_LINE, routes, sent, settle, unmountAll,
   type MountedAdminPage, type NetCall,
@@ -86,6 +86,53 @@ describe('pages/admin/livestream/index.vue — save the stopped broadcast as a m
     assert.match(textOf(card(opened)!), /Hội nghị tổng kết/)
     assert.equal(saveButtons(opened).length, 1)
     assert.equal(recordingCalls(opened).length, 0)
+  })
+
+  it('no card when the stop did not happen: confirm declined, stop refused (409), connection dropped', async () => {
+    const declined = await mountAdminPage(LIVESTREAM, livestreamServer({ session: youtubeSession() }))
+    declined.answers.confirm = false
+    await click(byText(declined.page.root, 'button', 'Dừng buổi phát'))
+    await settle()
+    assert.equal(declined.calls.filter(c => c.method === 'POST').length, 0)
+    assert.equal(card(declined)?.tag, undefined, 'a declined stop offered to save a broadcast that is still running')
+
+    for (const answer of [() => h3Error(409, 'Buổi phát này đã dừng.'), () => dropped()]) {
+      const failed = await mountAdminPage(LIVESTREAM, livestreamServer({ session: youtubeSession() }, { 'POST /api/admin/livestream/stop': answer }))
+      await click(byText(failed.page.root, 'button', 'Dừng buổi phát'))
+      await settle()
+      assert.equal(failed.toasts.filter(t => t.type === 'error').length, 1)
+      assert.equal(card(failed)?.tag, undefined, 'a failed stop offered the card')
+    }
+  })
+
+  it('a second broadcast stopped after the first was saved gets its own card — not the first one\'s "Đã lưu"', async () => {
+    const state = { session: youtubeSession() as Record<string, unknown> | null }
+    const opened = await mountAdminPage(LIVESTREAM, livestreamServer(state, {
+      'POST /api/admin/livestream/start': () => { state.session = youtubeSession({ id: 10, title: 'Buổi thứ hai' }); return json({ ok: true, sessionId: 10 }, 201) },
+      'POST /api/admin/livestream/stop': (call) => { state.session = null; return json({ ok: true, sessionId: (call.body as { sessionId: number }).sessionId }) },
+      'POST /api/admin/livestream/10/recording': () => json({ ok: true, mediaItemId: 88, slug: 'buoi-thu-hai' }, 201),
+    }))
+    await click(byText(opened.page.root, 'button', 'Dừng buổi phát'))
+    await settle()
+    await click(saveButtons(opened)[0]!)
+    await settle()
+    assert.match(textOf(card(opened)!), /Đã lưu thành mục media/)
+
+    await input(findAll(opened.page.root, el => el.tag === 'input' && el.props.id === 'ls-title')[0]!, 'Buổi thứ hai')
+    await input(findAll(opened.page.root, el => el.tag === 'input' && el.props.id === 'ls-yt')[0]!, 'dQw4w9WgXcQ')
+    await settle()
+    await click(byText(opened.page.root, 'button', 'Bắt đầu phát'))
+    await settle()
+    await click(byText(opened.page.root, 'button', 'Dừng buổi phát'))
+    await settle()
+
+    assert.match(textOf(card(opened)!), /Buổi thứ hai/)
+    assert.doesNotMatch(textOf(card(opened)!), /Đã lưu/, 'the first broadcast\'s saved state shows on the second')
+    assert.equal(saveButtons(opened).length, 1)
+    await click(saveButtons(opened)[0]!)
+    await settle()
+    assert.deepEqual(recordingCalls(opened).map(c => c.url.pathname), [RECORDING_URL, '/api/admin/livestream/10/recording'])
+    assert.equal(findAll(card(opened)!, el => el.tag === 'NuxtLink')[0]!.props.to, '/admin/media-portal/88')
   })
 
   it('save: POST /api/admin/livestream/<id>/recording with no body → "bản nháp" + a link to the new item; the button is gone', async () => {
