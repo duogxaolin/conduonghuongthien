@@ -50,7 +50,8 @@ export const DUPLICATE_CATEGORY_MESSAGE = 'Đã có danh mục cùng tên trong 
 /**
  * The key two names are "the same" under: case, accents, `đ`/`Đ` (and the look-alike Eth
  * `Ð`/`ð`), invisible characters (format characters such as U+200B, and other default-ignorable
- * code points) and spacing ignored — "Tin​nổi bật" or "ÐÀO TẠO" no longer slip past.
+ * code points) and spacing ignored — "Tin nổi bật" with a zero-width space (U+200B) inside, or
+ * "ÐÀO TẠO" with an Eth, no longer slip past.
  */
 export function categoryNameKey(name: string): string {
   return name
