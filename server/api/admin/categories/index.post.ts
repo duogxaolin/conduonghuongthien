@@ -1,17 +1,19 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateCategory } from '../../../services/i18n-auto-translate'
-import { createCategory } from '../../../services/category-writes'
+import { createCategory, readCategoryName, readDisplayOrder, readParentId } from '../../../services/category-writes'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'categories', 'create')
 
   const body = await readBody(event).catch(() => ({}))
-  const name = String(body?.name || '').trim()
+  // A non-string name, a parent that is not an id, an order that is not a number → 400 here
+  // (they reached MySQL as a 500 before); `null` name is "no name" (the empty-name sentence).
+  const name = readCategoryName(body?.name ?? undefined) ?? ''
   const type = String(body?.type || '').trim()
   const description = (() => { const d = String(body?.description || '').trim(); return (!d || d.toLowerCase() === 'null') ? null : d })()
-  const displayOrder = Number(body?.displayOrder ?? 0)
-  const parentId = body?.parentId ? Number(body.parentId) : null
+  const displayOrder = readDisplayOrder(body?.displayOrder, 0) ?? 0
+  const parentId = readParentId(body?.parentId)
   const rawSlug = String(body?.slug || '').trim()
 
   // Parent check, same-name check (same parent, or same type's roots) and insert in one

@@ -279,12 +279,6 @@ describe('category names are unique among siblings (update)', () => {
     assert.equal((await refusal(() => update(5, { type: 'news' })))?.statusCode, undefined, '"Văn bản" is free among the news roots')
   })
 
-  it('an edit that keeps name, parent and type is not checked: duplicates already stored do not block it', async () => {
-    seed(8, 'tin trong ngày', 'tin-trong-ngay-cu', 1) // written before this check existed
-    assert.deepEqual(await update(8, { displayOrder: 4, description: 'Mô tả' }), { ok: true, slug: 'tin-trong-ngay-cu' })
-    assert.equal((await refusal(() => update(8, { name: 'tin trong ngày' })))?.statusCode, 409, 'naming it again is checked')
-  })
-
   it('the existing rules and sentences are unchanged: 404, empty name, own parent, child as parent, parent of a parent', async () => {
     assert.equal((await refusal(() => update(99, { name: 'X' })))?.statusCode, 404)
     assert.equal((await refusal(() => update(3, { name: '  ' })))?.statusMessage, 'Tên danh mục không được để trống.')
@@ -295,6 +289,118 @@ describe('category names are unique among siblings (update)', () => {
   })
 })
 
+/**
+ * Verifier F1 (CRITICAL): the page (`pages/admin/content/categories/index.vue`, `handleSave`)
+ * sends EVERY field on every save — name, slug (the row's own, unless typed), type,
+ * description, parentId, displayOrder. A check run whenever name/type/parent were SENT refused
+ * every save of a duplicate pair stored before the check (409 on MySQL; the base answered 200).
+ * These edits are sent exactly as the page sends them.
+ */
+describe('edits as the categories page sends them (the full body of handleSave)', () => {
+  type Row = { id: number, name: string, slug: string, parentId: number | null, type: string, description: string | null, displayOrder: number }
+  const rowOf = (id: number) => {
+    const r = sqlite.prepare('SELECT id, name, slug, parent_id AS parentId, type, description, display_order AS displayOrder FROM categories WHERE id = ?').get(id) as Row
+    return { ...r }
+  }
+  /** What the edit modal sends for a row (its fields as loaded), with what the officer changed. */
+  const pageSave = (id: number, change: Partial<Omit<Row, 'id'>> = {}) => {
+    const r = rowOf(id)
+    return update(id, {
+      name: r.name, slug: r.slug, type: r.type, description: r.description || null, parentId: r.parentId || null, displayOrder: r.displayOrder, ...change,
+    })
+  }
+
+  for (const [kind, id, dup] of [['root', 9, () => seed(9, 'tin nổi bật', 'tin-noi-bat-cu', null)], ['child', 8, () => seed(8, 'tin trong ngày', 'tin-trong-ngay-cu', 1)]] as const) {
+    it(`a ${kind} duplicate stored before the check: description, order and slug still save (200)`, async () => {
+      dup() // written before this check existed — a duplicate of #1 / #3
+      assert.deepEqual(await pageSave(id, { description: 'Mô tả mới' }), { ok: true, slug: rowOf(id).slug })
+      assert.equal(rowOf(id).description, 'Mô tả mới')
+      assert.deepEqual(await pageSave(id, { displayOrder: 7 }), { ok: true, slug: rowOf(id).slug })
+      assert.equal(rowOf(id).displayOrder, 7)
+      const moved = await pageSave(id, { slug: `${kind}-moi` })
+      assert.deepEqual(moved, { ok: true, slug: `${kind}-moi` })
+      assert.equal(rowOf(id).slug, `${kind}-moi`)
+      // Its own case/accents may change too: the key is the same, nothing new is duplicated.
+      assert.deepEqual(await pageSave(id, { name: rowOf(id).name.toUpperCase() }), { ok: true, slug: `${kind}-moi` })
+    })
+  }
+
+  it('renaming to a sibling\'s name is refused (409), the row unchanged', async () => {
+    const before = rowOf(4)
+    const err = await refusal(() => pageSave(4, { name: 'TIN TRONG NGAY' }))
+    assert.equal(err?.statusCode, 409)
+    assert.equal(err?.statusMessage, 'Đã có danh mục cùng tên trong mục này: “Tin trong ngày”.')
+    assert.deepEqual(rowOf(4), before)
+  })
+
+  it('moving a root to another type where a root has that name is refused (409) — the type alone, name unchanged', async () => {
+    seed(11, 'văn bản', 'van-ban-tin', null, 'news') // not a duplicate: "Văn bản" (#5) is a root of `document`
+    assert.deepEqual(await pageSave(11, { description: 'ok' }), { ok: true, slug: 'van-ban-tin' })
+    const err = await refusal(() => pageSave(11, { type: 'document' }))
+    assert.equal(err?.statusCode, 409)
+    assert.equal(err?.statusMessage, 'Đã có danh mục cùng tên trong mục này: “Văn bản”.')
+    assert.equal(rowOf(11).type, 'news')
+    assert.deepEqual(await pageSave(11, { type: 'faq' }), { ok: true, slug: 'van-ban-tin' }, 'a type with no such root is fine')
+  })
+
+  it('moving a child under a parent that has a child of that name is refused (409); a child\'s type alone does not move it', async () => {
+    seed(6, 'Tin trong ngày', 'tin-trong-ngay-2', 2)
+    const err = await refusal(() => pageSave(6, { parentId: 1 }))
+    assert.equal(err?.statusCode, 409)
+    assert.equal(rowOf(6).parentId, 2)
+    // A child's place is its parent: a duplicate child pair stays editable when only its type changes.
+    seed(8, 'tin trong ngày', 'tin-trong-ngay-cu', 1)
+    assert.deepEqual(await pageSave(8, { type: 'document' }), { ok: true, slug: 'tin-trong-ngay-cu' })
+  })
+
+  it('making a duplicate child a root where its type has that name is refused', async () => {
+    seed(7, 'Thông báo', 'thong-bao-2', 1)
+    assert.equal((await refusal(() => pageSave(7, { parentId: null })))?.statusCode, 409)
+  })
+})
+
+describe('the request body: what used to be a 500 or stored as text is a 400', () => {
+  const longName = 'a'.repeat(256)
+  it('a name that is not a string: PUT `name: null` used to be stored as "null"', async () => {
+    assert.equal((await refusal(() => update(3, { name: null })))?.statusMessage, 'Tên danh mục phải là chuỗi ký tự.')
+    assert.equal((await refusal(() => update(3, { name: 42 })))?.statusMessage, 'Tên danh mục phải là chuỗi ký tự.')
+    assert.equal((await refusal(() => create({ name: { x: 1 }, type: 'news' })))?.statusMessage, 'Tên danh mục phải là chuỗi ký tự.')
+    assert.equal((await refusal(() => create({ name: null, type: 'news' })))?.statusMessage, 'Tên danh mục không được để trống.')
+    assert.equal(all().find(r => r.id === 3)?.name, 'Tin trong ngày')
+  })
+
+  it('a name over 255 characters (VARCHAR(255)), an explicit slug over 255, a type over 32: 400, not 500', async () => {
+    assert.equal((await refusal(() => create({ name: longName, type: 'news' })))?.statusMessage, 'Tên danh mục tối đa 255 ký tự.')
+    assert.equal((await refusal(() => update(3, { name: longName })))?.statusMessage, 'Tên danh mục tối đa 255 ký tự.')
+    assert.equal((await refusal(() => create({ name: 'X', type: 'news', slug: 'b'.repeat(300) })))?.statusMessage, 'Đường dẫn (slug) tối đa 255 ký tự.')
+    assert.equal((await refusal(() => update(3, { slug: 'b'.repeat(300) })))?.statusMessage, 'Đường dẫn (slug) tối đa 255 ký tự.')
+    assert.equal((await refusal(() => create({ name: 'X', type: 't'.repeat(33) })))?.statusMessage, 'Loại danh mục không hợp lệ.')
+    // 255 Vietnamese characters are 255, not their UTF-16 or byte length.
+    assert.equal((await create({ name: 'đ'.repeat(255), type: 'news' })).slug, 'd'.repeat(255))
+    assert.equal(all().length, 6)
+  })
+
+  it('a parent that is not an id (`\'abc\'`, -1, 1.5): 400; digits as text are an id; empty means no parent', async () => {
+    for (const parentId of ['abc', -1, 1.5, '1x', true]) {
+      assert.equal((await refusal(() => create({ name: 'X', type: 'news', parentId })))?.statusMessage, 'Danh mục cha không hợp lệ.', String(parentId))
+      assert.equal((await refusal(() => update(2, { parentId })))?.statusMessage, 'Danh mục cha không hợp lệ.', String(parentId))
+    }
+    assert.equal(all().find(r => r.id === 2)?.parentId, null)
+    const child = await create({ name: 'Con bằng chữ số', type: 'news', parentId: '2' })
+    assert.equal(all().find(r => r.id === child.id)?.parentId, 2)
+    const root = await create({ name: 'Gốc', type: 'news', parentId: '' })
+    assert.equal(all().find(r => r.id === root.id)?.parentId, null)
+  })
+
+  it('an order that is not a number: 400; digits as text are taken', async () => {
+    assert.equal((await refusal(() => create({ name: 'X', type: 'news', displayOrder: 'abc' })))?.statusMessage, 'Thứ tự hiển thị phải là một số.')
+    assert.equal((await refusal(() => update(2, { displayOrder: 'abc' })))?.statusMessage, 'Thứ tự hiển thị phải là một số.')
+    assert.equal((await refusal(() => update(2, { displayOrder: 1e12 })))?.statusMessage, 'Thứ tự hiển thị phải là một số.')
+    await update(2, { displayOrder: '3' })
+    assert.equal((sqlite.prepare('SELECT display_order AS o FROM categories WHERE id = 2').get() as { o: number }).o, 3)
+  })
+})
+
 describe('categoryNameKey', () => {
   it('ignores case, Vietnamese accents, đ/Đ and spacing; keeps punctuation and digits', () => {
     assert.equal(categoryNameKey('  Đào   TẠO nghề '), 'dao tao nghe')
@@ -302,5 +408,17 @@ describe('categoryNameKey', () => {
     assert.equal(categoryNameKey('Ảnh hoạt động'), 'anh hoat dong')
     assert.notEqual(categoryNameKey('Tin & Sự kiện'), categoryNameKey('Tin Sự kiện'))
     assert.notEqual(categoryNameKey('Quý 1'), categoryNameKey('Quý 2'))
+  })
+
+  it('ignores invisible characters and the look-alike Eth (Ð, ð) — both slipped past the check', async () => {
+    // Built from code points: the source holds no invisible character.
+    const zwsp = String.fromCodePoint(0x200b), bom = String.fromCodePoint(0xfeff), shy = String.fromCodePoint(0xad), wj = String.fromCodePoint(0x2060)
+    assert.equal(categoryNameKey(`Tin${zwsp} trong${bom} ngày${shy}${wj}`), 'tin trong ngay')
+    assert.equal(categoryNameKey('ÐÀO TẠO NGHỀ'), 'dao tao nghe')
+    assert.equal(categoryNameKey('ðào tạo nghề'), 'dao tao nghe')
+    const viaZw = await refusal(() => create({ name: `Tin trong${zwsp} ngày`, type: 'news', parentId: 1 }))
+    assert.equal(viaZw?.statusCode, 409)
+    const viaEth = await refusal(() => create({ name: 'ÐÀO TẠO NGHỀ', type: 'news', parentId: 1 }))
+    assert.equal(viaEth?.statusCode, 409)
   })
 })

@@ -1,6 +1,6 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateCategoryUpdate } from '../../../services/i18n-auto-translate'
-import { updateCategory, type CategoryUpdateInput } from '../../../services/category-writes'
+import { readCategoryName, readDisplayOrder, readParentId, updateCategory, type CategoryUpdateInput } from '../../../services/category-writes'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -11,12 +11,14 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event).catch(() => ({}))
   const input: CategoryUpdateInput = {}
-  if (body.name !== undefined) input.name = String(body.name).trim()
+  // `name: null` used to be stored as the text "null"; a parent that is not an id or an order
+  // that is not a number reached MySQL as a 500 — all 400 now (services/category-writes.ts).
+  if (body.name !== undefined) input.name = readCategoryName(body.name)
   if (body.type !== undefined) input.type = String(body.type).trim()
   if (body.description !== undefined) { const d = String(body.description).trim(); input.description = (!d || d.toLowerCase() === 'null') ? null : d }
-  if (body.displayOrder !== undefined) input.displayOrder = Number(body.displayOrder)
+  if (body.displayOrder !== undefined) input.displayOrder = readDisplayOrder(body.displayOrder, 0)
   if (body.slug !== undefined) input.rawSlug = String(body.slug).trim()
-  if ('parentId' in body) input.parentId = body.parentId ? Number(body.parentId) : null
+  if ('parentId' in body) input.parentId = readParentId(body.parentId)
 
   // Existence, parent rules, same-name check (where the category will be) and the update in
   // one transaction — services/category-writes.ts.
