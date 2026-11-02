@@ -377,6 +377,8 @@ const MIGRATED_TO_ADMIN_MODAL: Record<string, number> = {
   'components/admin/page-builder/PageMetaModal.vue': 1,
   'components/admin/page-builder/PageVersionsDrawer.vue': 1,
   'pages/admin/users/index.vue': 2,
+  // "Thêm vai trò" (CHANGELOG § 66) — dựng thẳng bằng AdminModal, không qua lớp phủ tự viết.
+  'pages/admin/users/roles.vue': 1,
   'pages/admin/media-portal/categories.vue': 1,
   'components/admin/SubmissionDetailModal.vue': 1,
   'components/admin/ContentTypePicker.vue': 1,
@@ -399,8 +401,8 @@ const MIGRATED_TO_ADMIN_MODAL: Record<string, number> = {
   'components/admin/MediaLibraryModal.vue': 1,
 }
 
-test('23 hộp thoại admin dựng bằng AdminModal (17 của D-MODAL + 6 hộp không tên)', () => {
-  assert.equal(Object.values(MIGRATED_TO_ADMIN_MODAL).reduce((a, b) => a + b, 0), 23)
+test('24 hộp thoại admin dựng bằng AdminModal (17 của D-MODAL + 6 hộp không tên + "Thêm vai trò")', () => {
+  assert.equal(Object.values(MIGRATED_TO_ADMIN_MODAL).reduce((a, b) => a + b, 0), 24)
   for (const [file, expected] of Object.entries(MIGRATED_TO_ADMIN_MODAL)) {
     const source = read(file)
     const { descriptor } = parse(source, { filename: file })
