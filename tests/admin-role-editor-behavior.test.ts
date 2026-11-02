@@ -164,6 +164,9 @@ test('create: a name or description that is not a string is a 400 — never "[ob
   // Absent and null still read as empty: a missing name is the length sentence, a missing description is none.
   const missing = await call('POST', '/api/admin/roles', ROLE_MANAGER, { description: 'x' })
   assert.deepEqual([missing.status, missing.body.statusMessage], [400, 'Tên vai trò phải từ 2 ký tự trở lên.'])
+  // `null` is "no name", not a wrong type (verifier S-R2): the sentence that says what to type.
+  const nullName = await call('POST', '/api/admin/roles', ROLE_MANAGER, { name: null })
+  assert.deepEqual([nullName.status, nullName.body.statusMessage], [400, 'Tên vai trò phải từ 2 ký tự trở lên.'])
   const noDescription = await call('POST', '/api/admin/roles', ROLE_MANAGER, { name: 'Không mô tả', description: null })
   assert.equal(noDescription.status, 200)
   assert.equal(harness.rows(roles).find(row => row.name === 'Không mô tả')?.description, null)

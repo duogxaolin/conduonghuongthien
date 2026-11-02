@@ -2322,6 +2322,8 @@ Bản vá của sự cố trên nhánh `fix/chatbot-sovereignty` (`ebaa1496`, `2
   - **KNOWN W2** — `DELETE` kiểm "không còn tài khoản" rồi mới xoá, không cùng transaction: một tài khoản được gán vai trò chen giữa sẽ còn lại với `role_id` NULL (`ON DELETE SET NULL`). Có từ trước; sửa là đổi hình dạng khoá — không làm ở lô này.
   - **KNOWN W3** — `DELETE` không gọi `assertRoleWithinActor`: người có `roles.delete` xoá được vai trò rỗng giàu quyền hơn mình. Không cấp gì (không phải leo thang); chấp nhận.
   - **KNOWN S1** — `userCount` có thể cũ (tài khoản được gán sau khi tải danh sách): nút xoá vẫn mở, máy chủ từ chối bằng câu 400 của nó; giữ `userCount`.
+  - **KNOWN — test chặn W1 là quét tĩnh:** không bắt tên dựng lúc chạy (`'home_' + 'sections'`, template, `['can', 'Test'].join('')`), tài nguyên lấy từ chính `RETIRED_*`, hay hàm kiểm cờ chung tra qua `PERMISSION_ACTIONS` rồi gọi với `'test'`. Hướng sửa gốc (chưa làm, chạm `admin-auth.ts`/`mfa/session.ts` — chủ dự án quyết): `withoutRetiredCells(rows)` ở `shared/permissions.ts` bỏ ô đã ngừng ngay lúc nạp quyền → realm-safety § "Ô quyền đã ngừng".
+  - **S-R2:** test ghim `{ name: null }` → 400 "Tên vai trò phải từ 2 ký tự trở lên." (null là "không có tên", không phải sai kiểu); đột biến coi null là sai kiểu → đỏ.
 
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
