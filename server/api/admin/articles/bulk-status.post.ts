@@ -1,6 +1,7 @@
 import { createError } from 'h3'
 import { ARTICLE_STATUSES, setArticleStatus, type ArticleStatus } from '../../../services/articles'
 import { parseBulkIds, runBulk } from '../../../utils/bulk'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 /**
  * Move several articles to one status. `archived` is what "hide" means for an
@@ -20,9 +21,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const ids = parseBulkIds(body)
-  return runBulk(
+  const outcome = await runBulk(
     ids,
     id => setArticleStatus(actor, id, status as ArticleStatus),
     'Không thể đổi trạng thái bài viết này.',
   )
+  // Once, after every row is written: an archived article renders 404, and a cached
+  // 200 is never overwritten by a 404 (server/utils/public-page-cache.ts).
+  if (outcome.succeeded > 0) await purgePublicPageCacheAfterWrite('articles.bulk_status')
+  return outcome
 })

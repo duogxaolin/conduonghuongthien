@@ -6,6 +6,7 @@ import { decodePlainTextInput } from '../../../utils/decode-html-entities'
 import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { articleActionScope } from '../../../services/articles'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -89,6 +90,10 @@ export default defineEventHandler(async (event) => {
       meta: { fieldsUpdated: Object.keys(updateFields) },
     })
   })
+
+  // Sau commit: lưu trữ/đổi trạng thái/đổi thể loại làm trang bài thành 404, mà Nitro
+  // không bao giờ ghi đè bản 200 đã đệm bằng 404 (`server/utils/public-page-cache.ts`).
+  await purgePublicPageCacheAfterWrite('articles.update')
 
   return { ok: true }
 })

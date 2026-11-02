@@ -2,6 +2,7 @@ import { getDb } from '../../../../utils/db'
 import { settings, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { UnsafeLinkError, assertSafeLink } from '../../../../../shared/link-policy'
+import { purgePublicPageCacheAfterWrite } from '../../../../utils/public-page-cache'
 
 type MenuItem = {
   id: string
@@ -91,6 +92,10 @@ export default defineEventHandler(async (event) => {
       meta: { keysUpdated: ['nav_menu_navbar'], itemCount: items.length },
     })
   })
+
+  // Thanh điều hướng nằm trong HTML đã đệm `swr` của MỌI trang công khai: không xoá thì
+  // mục vừa thêm chỉ hiện sau ≥ 60 giây và một lượt tải nữa (đo trên bản build 1009c36c).
+  await purgePublicPageCacheAfterWrite('settings.nav_menu_navbar')
 
   return { ok: true, menu: items }
 })

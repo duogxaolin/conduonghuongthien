@@ -5,6 +5,7 @@ import { settings, activityLogs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { FAVICON_ICO_SETTING_KEY, clearFaviconSettingCache } from '../../../utils/favicon-setting'
 import { clearOgImageSettingCache } from '../../../utils/og-image-setting'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 import { credentialRetargetViolation } from '../../../utils/settings-credential-guard'
 import { isSettingsSecretKey, sealSettingsSecret, SettingsSecretError } from '../../../utils/settings-secrets'
 import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
@@ -171,6 +172,10 @@ export default defineEventHandler(async (event) => {
   // Cùng lý do `clearFaviconSettingCache`: plugin `og-image.ts` đệm 30s, không
   // xoá thì admin lưu xong vẫn thấy og:image cũ tới nửa phút.
   if (applied.includes('og_image_url')) clearOgImageSettingCache()
+
+  // Cùng thứ tự, lớp đệm thứ ba: tên cổng, logo, hotline, địa chỉ… nằm trong HTML đã đệm
+  // `swr` của mọi trang công khai (`server/utils/public-page-cache.ts`).
+  await purgePublicPageCacheAfterWrite('settings.update')
 
   return { ok: true }
 })
