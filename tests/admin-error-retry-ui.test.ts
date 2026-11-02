@@ -270,6 +270,16 @@ const NO_CONTRACT_NEEDED: Record<string, string> = {
   // "chưa có bản dịch nào" — `availableLanguages` luôn hiển thị tất cả lang cards.
   // Retry = nút "Làm mới" trong panel header.
   'components/admin/articles/ArticleTranslationPanel.vue': 'best-effort fill; cards render with last-known status, and the Làm mới button is the retry affordance',
+  // Nút break-glass "Xoá xác thực hai bước" trên mỗi hàng /admin/users (§ 68). Gửi
+  // `DELETE …/users/:id/mfa` chỉ khi SuperAdmin bấm và gõ đúng tên — không tải gì, danh
+  // sách không hiện trạng thái MFA nên không có gì để lỗi thành "trống". Kết quả (câu máy
+  // chủ) ở toast; bấm lại nút là thử lại.
+  'components/admin/UserMfaResetButton.vue': 'submit-time fetch; nothing is loaded, the result lands in a toast and the button is the retry',
+  // Trình sửa hạn mức chi AI trong tab Tổng quan (§ 68). Giá trị hiện tại đến từ lượt đọc
+  // usage của AiDashboardTab (đã có nhánh lỗi `usageError` riêng); file này chỉ `PUT` khi
+  // bấm "Lưu". Lỗi lưu nằm lại trong form ở `role="alert"` với câu máy chủ, form vẫn mở —
+  // nút "Lưu hạn mức" là thử lại.
+  'components/admin/ai/AiBudgetEditor.vue': 'submit-time fetch; values come from the parent\'s usage read, a failed save stays in the open form as role="alert" and the Save button is the retry',
 }
 
 test('every admin view that fetches keeps somewhere for a rejection to land', async () => {

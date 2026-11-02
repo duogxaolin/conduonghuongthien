@@ -18,9 +18,16 @@ type LogsHandler = typeof import('~~/server/api/admin/ai/logs/index.get').defaul
 type ProvidersHandler = typeof import('~~/server/api/admin/ai/providers/index.get').default
 type PricingHandler = typeof import('~~/server/api/admin/ai/pricing/index.get').default
 type EditorialHandler = typeof import('~~/server/api/admin/ai/editorial.post').default
+type BudgetUpdateHandler = typeof import('~~/server/api/admin/ai/budget/index.put').default
 
 /** `GET /api/admin/ai/usage` — the dashboard's month: totals, per service, per day, the budget. */
 export type AdminAiUsageResponse = Payload<UsageHandler>
+/**
+ * `PUT /api/admin/ai/budget` — the dashboard's budget editor (`AiBudgetEditor.vue`). `{ ok }` when
+ * the row was written; `{ ok, message: 'Không có thay đổi.' }` when the body held nothing usable
+ * (the handler ignores a non-number instead of refusing it), so the editor never reads that as saved.
+ */
+export type AdminAiBudgetUpdateResponse = Payload<BudgetUpdateHandler>
 /** `GET /api/admin/ai/logs` — one page of the call log (AiLogsTab). */
 export type AdminAiLogsResponse = Payload<LogsHandler>
 /** `GET /api/admin/ai/providers` and `/pricing` — the parent's fallback read for the Services/Logs tabs. */

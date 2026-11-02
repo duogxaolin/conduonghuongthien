@@ -17,6 +17,7 @@ import {
 } from '~/utils/ai-service-labels'
 
 import type { AdminAiUsageResponse } from '~/types/admin-ai-api'
+import AiBudgetEditor from '~/components/admin/ai/AiBudgetEditor.vue'
 
 const usageError = ref(null as string | null)
 const usageLoading = ref(false)
@@ -206,6 +207,14 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
           </div>
         </div>
       </div>
+
+      <!-- Sửa hạn mức (`ai.update`): giá trị lấy từ chính lượt đọc usage ở trên; lưu xong đọc lại. -->
+      <AiBudgetEditor
+        :monthly-budget-vnd="budgetInfo?.monthlyBudgetVnd ?? 0"
+        :warning-threshold-pct="budgetInfo?.warningThresholdPct ?? 80"
+        :month-spend-vnd="usageSummary?.monthlyCostVnd ?? 0"
+        @saved="loadUsage()"
+      />
 
       <!-- Delify Router Live Observability Card (Real-time from Delify API) -->
       <div class="rounded-xl border border-line-strong bg-surface-tint p-4 sm:p-5 flex flex-col gap-4 shadow-sm">

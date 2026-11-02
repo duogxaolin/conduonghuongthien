@@ -15,6 +15,7 @@ type UserUpdateHandler = typeof import('~~/server/api/admin/users/[id].put').def
 type UserDeleteHandler = typeof import('~~/server/api/admin/users/[id].delete').default
 type ActivityLogsHandler = typeof import('~~/server/api/admin/activity-logs/index.get').default
 type RoleUpdateHandler = typeof import('~~/server/api/admin/roles/[id].put').default
+type UserMfaResetHandler = typeof import('~~/server/api/admin/users/[id]/mfa.delete').default
 
 /** `GET /api/admin/users`. */
 export type AdminUsersResponse = Payload<UsersHandler>
@@ -26,6 +27,8 @@ export type AdminUserCreateResponse = Payload<UserCreateHandler>
 /** `PUT /api/admin/users/:id` — the edit dialog and the status button. */
 export type AdminUserUpdateResponse = Payload<UserUpdateHandler>
 export type AdminUserDeleteResponse = Payload<UserDeleteHandler>
+/** `DELETE /api/admin/users/:id/mfa` — break-glass (SuperAdmin): `message` names the account. */
+export type AdminUserMfaResetResponse = Payload<UserMfaResetHandler>
 
 /**
  * `GET /api/admin/activity-logs` — the system-wide log (`/admin/users/activity`, wave3 7.1
