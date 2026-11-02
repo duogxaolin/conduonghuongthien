@@ -414,6 +414,9 @@ describe('categoryNameKey', () => {
     // Built from code points: the source holds no invisible character.
     const zwsp = String.fromCodePoint(0x200b), bom = String.fromCodePoint(0xfeff), shy = String.fromCodePoint(0xad), wj = String.fromCodePoint(0x2060)
     assert.equal(categoryNameKey(`Tin${zwsp} trong${bom} ngày${shy}${wj}`), 'tin trong ngay')
+    // Invisible but not format characters (Default_Ignorable, letter category): the Hangul fillers.
+    const hangulFiller = String.fromCodePoint(0x3164), choseongFiller = String.fromCodePoint(0x115f)
+    assert.equal(categoryNameKey(`Tin${hangulFiller} trong ngày${choseongFiller}`), 'tin trong ngay')
     assert.equal(categoryNameKey('ÐÀO TẠO NGHỀ'), 'dao tao nghe')
     assert.equal(categoryNameKey('ðào tạo nghề'), 'dao tao nghe')
     const viaZw = await refusal(() => create({ name: `Tin trong${zwsp} ngày`, type: 'news', parentId: 1 }))
