@@ -67,6 +67,16 @@ export async function purgePublicPageCacheAfterWrite(reason: string): Promise<vo
   }
 }
 
+/**
+ * Cho tuyến hàng loạt: xoá MỘT lần sau khi mọi hàng đã ghi, và chỉ khi có ít nhất một hàng
+ * đổi; trả lại nguyên `outcome` (tuyến vẫn `return runBulk(…)` — hình dạng `AdminBulkOutcome`
+ * mà tests/admin-fetch-rollout-bulk-action.test.ts canh).
+ */
+export async function purgeAfterBulk<T extends { succeeded: number }>(outcome: T, reason: string): Promise<T> {
+  if (outcome.succeeded > 0) await purgePublicPageCacheAfterWrite(reason)
+  return outcome
+}
+
 /** 404/410 = trang không còn. Chỉ hai mã này: 5xx là "tạm hỏng", bản cũ vẫn đáng phát. */
 export function isGoneStatus(status: unknown): boolean {
   return status === 404 || status === 410

@@ -1,6 +1,6 @@
 import { deleteArticleById } from '../../../services/articles'
 import { parseBulkIds, runBulk } from '../../../utils/bulk'
-import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
+import { purgeAfterBulk } from '../../../utils/public-page-cache'
 
 /**
  * Delete several articles in one request.
@@ -16,7 +16,6 @@ import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache
 export default defineEventHandler(async (event) => {
   const actor = event.context.adminUser
   const ids = parseBulkIds(await readBody(event).catch(() => ({})))
-  const outcome = await runBulk(ids, id => deleteArticleById(actor, id), 'Không thể xóa bài viết này.')
-  if (outcome.succeeded > 0) await purgePublicPageCacheAfterWrite('articles.bulk_delete')
-  return outcome
+  return runBulk(ids, id => deleteArticleById(actor, id), 'Không thể xóa bài viết này.')
+    .then(outcome => purgeAfterBulk(outcome, 'articles.bulk_delete'))
 })
