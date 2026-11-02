@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AdminChatSessionResponse } from '~/types/admin-chatbot-api'
+import type { AdminChatSessionDeleteResponse, AdminChatSessionResponse } from '~/types/admin-chatbot-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 // Derived from the handler (wave3 7.1 batch F) — they replace three hand-written interfaces.
@@ -57,6 +57,51 @@ const kindClass = (kind: string | null) =>
     ? 'bg-[#fff4e0] text-[#8a5a00]'
     : 'bg-[#eef6ef] text-brand-700'
 
+// ─── Xoá phiên này (yêu cầu của người dân) ───────────────────────────────────
+// The route checks `chatbot_knowledge.delete`; without it the button is not shown.
+const router = useRouter()
+const toast = useToast()
+const { confirm } = useConfirm()
+const { hasPermission } = useAdminAuth()
+const canDelete = computed(() => hasPermission('chatbot_knowledge', 'delete'))
+const deleting = ref(false)
+const SESSIONS_LIST = '/admin/chatbot/sessions'
+
+async function deleteSession() {
+  if (!canDelete.value || !session.value || deleting.value) return
+  // What the route removes, and what it leaves (verifier W2): the review-queue rows of
+  // flagged turns (`session_id`, no FK), forms matching the phone number, audit rows.
+  // The forms already listed on this page are named by count.
+  const forms = relatedSubmissions.value.length
+    ? `${relatedSubmissions.value.length} đơn đăng ký khách này đã gửi (xóa riêng ở mục Đơn đăng ký)`
+    : 'đơn đăng ký khách đã gửi'
+  if (!await confirm({
+    title: 'Xóa phiên trò chuyện',
+    message: `Xóa vĩnh viễn phiên trò chuyện này cùng ${session.value.messageCount} tin nhắn? Tin nhắn và thông tin liên hệ (họ tên, số điện thoại) ghi trong phiên sẽ bị xóa, không thể hoàn tác. Không bị xóa theo: ${forms}, hàng chờ kiểm duyệt của tin nhắn bị gắn cờ, nhật ký thao tác.`,
+    confirmLabel: 'Xóa vĩnh viễn',
+    danger: true,
+  })) return
+
+  deleting.value = true
+  try {
+    await adminFetch<AdminChatSessionDeleteResponse>(`/api/admin/chatbot/sessions/${encodeURIComponent(sessionId.value)}`, { method: 'DELETE' })
+    toast.success('Đã xóa phiên trò chuyện.')
+    await router.push(SESSIONS_LIST)
+  } catch (err: unknown) {
+    // 404: another officer or the retention purge removed it since this page loaded
+    // — the outcome asked for, and nothing is left here to look at. The route's own
+    // 404 sentence is English ("Chat session not found"), so the page says it.
+    if (errorStatus(err) === 404) {
+      toast.warning('Phiên trò chuyện này không còn tồn tại (có thể đã bị xóa trước đó).')
+      await router.push(SESSIONS_LIST)
+      return
+    }
+    toast.error(errorMessage(err, 'Không thể xóa phiên trò chuyện.'))
+  } finally {
+    deleting.value = false
+  }
+}
+
 onMounted(() => { fetchSession() })
 </script>
 
@@ -67,12 +112,24 @@ onMounted(() => { fetchSession() })
         <h1 class="m-0 text-[1.3rem] font-extrabold text-brand-950">Nội dung phiên trò chuyện</h1>
         <p class="mt-1 mb-0 break-all text-[0.8rem] text-ink-muted">Mã phiên: {{ sessionId }}</p>
       </div>
-      <nuxt-link
-        to="/admin/chatbot/sessions"
-        class="rounded-lg border border-line-strong px-3.5 py-2 text-sm font-bold text-[#445546] hover:bg-surface"
-      >
-        <i class="fa-solid fa-arrow-left mr-1 text-[0.75rem]" aria-hidden="true"></i> Danh sách phiên
-      </nuxt-link>
+      <div class="flex flex-wrap gap-2">
+        <nuxt-link
+          to="/admin/chatbot/sessions"
+          class="rounded-lg border border-line-strong px-3.5 py-2 text-sm font-bold text-[#445546] hover:bg-surface"
+        >
+          <i class="fa-solid fa-arrow-left mr-1 text-[0.75rem]" aria-hidden="true"></i> Danh sách phiên
+        </nuxt-link>
+        <button
+          v-if="canDelete && session"
+          type="button"
+          class="rounded-lg border border-danger-soft bg-white px-3.5 py-2 text-sm font-bold text-danger-soft hover:bg-danger-bg focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="deleting"
+          @click="deleteSession()"
+        >
+          <i class="fa-solid fa-trash-can mr-1 text-[0.75rem]" aria-hidden="true"></i>
+          {{ deleting ? 'Đang xóa…' : 'Xóa phiên này' }}
+        </button>
+      </div>
     </div>
 
     <div v-if="loading" class="flex flex-col gap-5">
@@ -124,7 +181,7 @@ onMounted(() => { fetchSession() })
 
         <div v-if="relatedSubmissions.length" class="mt-4 border-t border-[#cfe4d1] pt-3">
           <p class="m-0 text-[0.82rem] font-bold text-brand-900">
-            Khách này đã gửi {{ relatedSubmissions.length }} đơn đăng ký trước đó:
+            Khách này đã gửi {{ relatedSubmissions.length }} đơn đăng ký trước đó<span v-if="canDelete"> (xóa phiên trò chuyện không xóa các đơn này)</span>:
           </p>
           <ul class="mt-2 flex flex-col gap-1.5">
             <li v-for="sub in relatedSubmissions" :key="sub.id" class="text-[0.85rem] text-ink-admin">

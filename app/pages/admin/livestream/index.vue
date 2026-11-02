@@ -37,6 +37,8 @@ import type { AdminLivestreamActive, AdminLivestreamStartResult, AdminLivestream
 import type {
   LivestreamChatHistoryResponse, LivestreamChatMessage as LiveChatMessage, LivestreamChatRemoveResponse, YoutubeMetaResponse,
 } from '~/types/admin-livestream-api'
+import LivestreamRecordingCard from '~/components/admin/livestream/LivestreamRecordingCard.vue'
+import LivestreamYoutubePreview from '~/components/admin/livestream/LivestreamYoutubePreview.vue'
 
 definePageMeta({
   layout: 'admin',
@@ -120,6 +122,9 @@ async function fetchMeta() {
 
 // ─── Stop ────────────────────────────────────────────────────────────────────
 const isStopping = ref(false)
+// The broadcast this view just stopped — the only ended session the page knows
+// (no route lists ended ones), offered to LivestreamRecordingCard for "save as media".
+const endedSession = ref<LiveSession | null>(null)
 
 async function loadActive() {
   loading.value = true
@@ -222,7 +227,8 @@ async function startLivestream() {
 }
 
 async function stopLivestream() {
-  if (!activeSession.value) return
+  const stopping = activeSession.value
+  if (!stopping) return
   if (!await confirm({
     message: 'Dừng buổi phát trực tiếp này?',
     confirmLabel: 'Dừng phát',
@@ -232,10 +238,11 @@ async function stopLivestream() {
   try {
     const res = await adminFetch<AdminLivestreamStopResult>(`/api/admin/livestream/stop`, {
       method: 'POST',
-      body: { sessionId: activeSession.value.id },
+      body: { sessionId: stopping.id },
     })
     if (res.ok) {
       toast.success('Đã dừng buổi phát trực tiếp.')
+      endedSession.value = stopping
       activeSession.value = null
       await loadActive()
     }
@@ -361,6 +368,8 @@ onMounted(() => { void loadActive() })
       </div>
     </div>
 
+    <LivestreamRecordingCard v-if="endedSession" :key="endedSession.id" :session="endedSession" />
+
     <!-- Start form -->
     <div v-if="canStart && !activeSession" class="bg-white rounded-xl border border-line p-5 md:p-6 shadow-sm">
       <div class="flex items-center gap-2.5 mb-5">
@@ -438,24 +447,7 @@ onMounted(() => { void loadActive() })
           <p v-if="metaError" role="alert" class="text-sm text-[#a32924]">
             <i class="fa-solid fa-circle-exclamation mr-1" aria-hidden="true"></i>{{ metaError }}
           </p>
-          <!-- Preview metadata đã lấy -->
-          <div v-if="previewThumb" class="flex gap-3 rounded-lg border border-line bg-white p-3">
-            <img
-              :src="previewThumb"
-              :alt="previewTitle"
-              loading="lazy"
-              class="w-32 aspect-video object-cover rounded-lg shrink-0"
-            />
-            <div class="flex flex-col gap-1 min-w-0">
-              <span class="text-sm font-bold text-ink line-clamp-2">{{ previewTitle }}</span>
-              <span v-if="previewAuthor" class="text-xs text-ink-muted">
-                <i class="fa-regular fa-circle-user mr-1" aria-hidden="true"></i>{{ previewAuthor }}
-              </span>
-              <span class="text-[0.72rem] text-brand-700 font-semibold mt-auto inline-flex items-center gap-1">
-                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>Đã điền tiêu đề
-              </span>
-            </div>
-          </div>
+          <LivestreamYoutubePreview v-if="previewThumb" :title="previewTitle" :author="previewAuthor" :thumb="previewThumb" />
         </div>
         <!-- HLS source fields -->
         <div v-else class="rounded-xl border border-surface-tint bg-surface p-4 space-y-2">

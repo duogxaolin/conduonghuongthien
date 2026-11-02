@@ -8,22 +8,28 @@
  * Scope note: selection covers the rows currently on screen. "Select all 3,400
  * matching the filter" is a different and far more dangerous feature — it would
  * have to travel to the server as a filter rather than a list of ids.
+ *
+ * `Id` is the row key's type: `number` for the sixteen `runBulk` lists, `string` for
+ * chat sessions (their id is a UUID — `pages/admin/chatbot/sessions/index.vue`).
  */
+import type { Ref } from 'vue'
 import type { AdminBulkOutcome } from '../types/admin-api'
 
-export function useBulkSelection() {
-  const selected = ref<Set<number>>(new Set())
+export function useBulkSelection<Id extends string | number = number>() {
+  // Stated, not inferred: `ref<Set<Id>>` unwraps through a conditional type that
+  // TypeScript cannot resolve while `Id` is still generic (same as useAdminList's `result`).
+  const selected = ref(new Set<Id>()) as Ref<Set<Id>>
 
   const count = computed(() => selected.value.size)
   const ids = computed(() => [...selected.value])
   const hasSelection = computed(() => selected.value.size > 0)
 
-  function isSelected(id: number) {
+  function isSelected(id: Id) {
     return selected.value.has(id)
   }
 
   /** Reassigns the Set: Vue does not track Set mutation for template reads. */
-  function toggle(id: number) {
+  function toggle(id: Id) {
     const next = new Set(selected.value)
     if (next.has(id)) next.delete(id)
     else next.add(id)
@@ -31,16 +37,16 @@ export function useBulkSelection() {
   }
 
   /** True only when every visible row is selected (and there is at least one). */
-  function allSelected(visibleIds: number[]) {
+  function allSelected(visibleIds: Id[]) {
     return visibleIds.length > 0 && visibleIds.every(id => selected.value.has(id))
   }
 
-  function someSelected(visibleIds: number[]) {
+  function someSelected(visibleIds: Id[]) {
     return visibleIds.some(id => selected.value.has(id)) && !allSelected(visibleIds)
   }
 
   /** Header checkbox: select every visible row, or clear them if all are already on. */
-  function toggleAll(visibleIds: number[]) {
+  function toggleAll(visibleIds: Id[]) {
     selected.value = allSelected(visibleIds) ? new Set() : new Set(visibleIds)
   }
 
@@ -52,7 +58,7 @@ export function useBulkSelection() {
    * Drop the ids a bulk action consumed, keeping the ones it could not process
    * so the operator can still see and retry exactly those.
    */
-  function remove(doneIds: number[]) {
+  function remove(doneIds: Id[]) {
     const next = new Set(selected.value)
     for (const id of doneIds) next.delete(id)
     selected.value = next
@@ -64,10 +70,10 @@ export function useBulkSelection() {
    * that is no longer visible is exactly the surprise this feature must avoid.
    * Blocked rows still present after a partial failure stay ticked.
    */
-  function keepOnly(visibleIds: number[]) {
+  function keepOnly(visibleIds: Id[]) {
     if (selected.value.size === 0) return
     const visible = new Set(visibleIds)
-    const next = new Set<number>()
+    const next = new Set<Id>()
     for (const id of selected.value) if (visible.has(id)) next.add(id)
     selected.value = next
   }
@@ -110,7 +116,7 @@ export function bulkResultMessage(result: BulkResult, noun: string): { tone: 'su
  *   - a partial result is reported as a warning listing each reason, never as
  *     success. "Đã xoá 19" on a lot of 20 hides the one that matters.
  */
-export function useBulkAction(selection: ReturnType<typeof useBulkSelection>) {
+export function useBulkAction(selection: ReturnType<typeof useBulkSelection<number>>) {
   const toast = useToast()
   const { confirm } = useConfirm()
   const busy = ref(false)

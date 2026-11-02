@@ -23,7 +23,7 @@
   "app/pages/admin/content/content-types.vue": 594,
   "app/pages/admin/content/navigation/navbar.vue": 425,
   "app/pages/admin/index.vue": 565,
-  "app/pages/admin/livestream/index.vue": 552,
+  "app/pages/admin/livestream/index.vue": 544,
   "app/pages/admin/login.vue": 428,
   "app/pages/admin/media-portal/[id].vue": 414,
   "app/pages/admin/media/index.vue": 453,

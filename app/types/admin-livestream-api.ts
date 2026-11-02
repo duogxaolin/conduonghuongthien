@@ -21,3 +21,7 @@ export type YoutubeMetaResponse = Payload<YoutubeMetaHandler>
 export type LivestreamChatHistoryResponse = Payload<ChatHistoryHandler>
 export type LivestreamChatMessage = LivestreamChatHistoryResponse['messages'][number]
 export type LivestreamChatRemoveResponse = Payload<ChatRemoveHandler>
+
+type RecordingHandler = typeof import('~~/server/api/admin/livestream/[id]/recording.post').default
+/** `POST /api/admin/livestream/:id/recording` — 201 `{ ok, mediaItemId, slug }` (a draft media item). */
+export type LivestreamRecordingResponse = Payload<RecordingHandler>
