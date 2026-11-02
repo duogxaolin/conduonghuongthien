@@ -28,7 +28,9 @@ export default defineNitroPlugin((nitroApp) => {
 
   nitroApp.hooks.hook('error', async (error, context) => {
     const event = context?.event
-    if (!event || !context.tags?.includes('cache')) return
+    // `CapturedErrorContext` types `tags` as unknown; cache.mjs passes `{ event, tags: ['cache'] }`.
+    const tags = (context as { tags?: unknown } | undefined)?.tags
+    if (!event || !Array.isArray(tags) || !tags.includes('cache')) return
     if (!isGoneStatus(errorStatus(error))) return
     await evictGoneCachedRoute(event, 'error')
   })
