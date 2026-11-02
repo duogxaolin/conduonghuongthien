@@ -36,6 +36,26 @@ export function leadContactInvalid(lead: { error?: string; phone?: string; email
   return !(lead.phone ?? '').trim() && !(lead.email ?? '').trim()
 }
 
+/**
+ * Nhãn của một trường BẮT BUỘC, bỏ dấu sao chính nhãn mang ở cuối ("Họ và tên *").
+ * Dấu sao là của component (`<span aria-hidden> *</span>` theo `required`); hàng DB
+ * `form_name`/`form_phone`/`form_city` của seed — và nhãn cán bộ tự gõ — đã có sẵn một
+ * cái, nên trang hiện "Họ và tên … * *" sau hydrate. Không áp cho trường tuỳ chọn: ở đó
+ * không có dấu sao thứ hai, và chữ là của cán bộ.
+ */
+export function withoutRequiredMark(label: string): string {
+  return label.replace(/\s*\*+\s*$/, '')
+}
+
+/**
+ * Nhãn "Tên:" cho bảng thông tin liên hệ: đúng một dấu hai chấm ở cuối. Các khoá dịch
+ * dùng chung (`address`, `phone`, `email`) không có dấu hai chấm, `footer_agency` thì có.
+ */
+export function labelWithColon(label: string): string {
+  const bare = label.replace(/\s*[:：]\s*$/, '')
+  return bare ? `${bare}:` : ''
+}
+
 export interface FieldValidationMessages {
   required: string
   email: string
