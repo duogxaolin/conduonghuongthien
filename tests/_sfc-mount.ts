@@ -69,18 +69,28 @@ export function recordFocus(recorder: ((el: MiniElement) => void) | null): void 
   focusRecorder = recorder
 }
 /**
- * `parent` is non-enumerable on every node. A failing `assert.deepEqual`/`equal` that holds a
+ * Back-links are non-enumerable on every node. A failing `assert.deepEqual`/`equal` that holds a
  * mounted node builds its diff with `util.inspect({ customInspect: false, depth: 1000 })`, which
- * walks every enumerable key — through `parent` up to the root and back down the whole page — and
- * never reports: the test hangs while memory climbs to ~9 GB (measured; a 5461-node tree takes
- * > 30 s even with a custom message). Hidden, the diff stops at the node's own subtree. Equality
- * reads enumerable own keys only, so hiding a key can only make a comparison LESS strict — no
- * passing assertion turns red. `node.parent` still reads and writes as before.
+ * walks every enumerable key and never reports through a back-link: the test hangs while memory
+ * climbs to ~9 GB (measured; a 5461-node tree takes > 30 s even with a custom message). The links:
+ *   - `parent` — up to the root and back down the whole page;
+ *   - `__vnode` — Vue's dev build `def`s it non-enumerable on an element it mounts, but ASSIGNS it
+ *     on a text/comment node it re-patches (runtime-core `traverseStaticChildren`), creating an
+ *     enumerable key into the vnode → component instance → app graph: a re-rendered form's `v-if`
+ *     placeholder was enough to hang (measured). Defined first, Vue's assignment keeps it hidden;
+ *   - on the mount root only, `_vnode` and `__vue_app__`, which `app.mount()` assigns the same way.
+ * Hidden, the diff stops at the node's own subtree. Equality reads enumerable own keys only, so
+ * hiding a key can only make a comparison LESS strict — no passing assertion turns red. Each key
+ * still reads and writes as before.
  */
-const hideParent = <T extends { parent: unknown }>(node: T): T =>
-  Object.defineProperty(node, 'parent', { value: node.parent, writable: true, enumerable: false, configurable: true })
+const hideBackLinks = <T extends object>(node: T, keys: readonly string[] = ['parent', '__vnode']): T => {
+  for (const key of keys) {
+    Object.defineProperty(node, key, { value: (node as Record<string, unknown>)[key], writable: true, enumerable: false, configurable: true })
+  }
+  return node
+}
 const createElement = (tag: string): MiniElement => {
-  const el = hideParent({ kind: 'element', tag, props: {}, children: [], parent: null } as MiniElement)
+  const el = hideBackLinks({ kind: 'element', tag, props: {}, children: [], parent: null } as MiniElement)
   return Object.defineProperty(el, 'focus', { value: () => { focusRecorder?.(el) } })
 }
 
@@ -94,14 +104,14 @@ const renderer = Vue.createRenderer<MiniNode, MiniElement>({
   },
   remove: detach,
   createElement,
-  createText: text => hideParent({ kind: 'text', text, parent: null } as MiniText),
-  createComment: text => hideParent({ kind: 'comment', text, parent: null } as MiniComment),
+  createText: text => hideBackLinks({ kind: 'text', text, parent: null } as MiniText),
+  createComment: text => hideBackLinks({ kind: 'comment', text, parent: null } as MiniComment),
   setText(node, text) {
     if (node.kind !== 'element') node.text = text
   },
   setElementText(el, text) {
     for (const child of el.children) child.parent = null
-    el.children = text ? [hideParent({ kind: 'text', text, parent: el } as MiniText)] : []
+    el.children = text ? [hideBackLinks({ kind: 'text', text, parent: el } as MiniText)] : []
   },
   parentNode: node => node.parent,
   nextSibling(node) {
@@ -266,7 +276,7 @@ export interface MountedSfc {
 
 export async function mountSfc(file: string, env: SfcEnv, props?: Record<string, unknown>): Promise<MountedSfc> {
   const component = await loadSfc(file, env)
-  const root = createElement('#root')
+  const root = hideBackLinks(createElement('#root'), ['_vnode', '__vue_app__'])
   const errors: unknown[] = []
   const app = env.suspense
     ? renderer.createApp(Vue.defineComponent({ setup: () => () => Vue.h(Vue.Suspense, null, { default: () => Vue.h(component, props) }) }))
