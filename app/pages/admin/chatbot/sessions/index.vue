@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AdminChatSessionBulkDeleteResponse } from '~/types/admin-chatbot-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 interface SessionRow {
@@ -54,6 +55,58 @@ const reload = list.reload
 
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleString('vi-VN') : '—')
 
+// ─── Xoá phiên theo yêu cầu của người dân ──────────────────────────────────────
+// Both delete routes check `chatbot_knowledge.delete`: without it there is no
+// checkbox, no action strip — a button that can only come back 403 is a trap.
+const toast = useToast()
+const { confirm } = useConfirm()
+const { hasPermission } = useAdminAuth()
+const canDelete = computed(() => hasPermission('chatbot_knowledge', 'delete'))
+
+// A session id is a string (UUID), hence `<string>`. The selectable set is the page
+// on screen; a page or filter change drops what is no longer visible.
+const selection = useBulkSelection<string>()
+const visibleIds = computed(() => rows.value.map(s => s.id))
+watch(visibleIds, ids => selection.keepOnly(ids))
+const deleting = ref(false)
+
+/**
+ * Not `useBulkAction`: this route answers `{ ok, deleted: <count> }`, not the
+ * `runBulk` outcome (no per-id result — tests/admin-fetch-rollout-bulk-action.test.ts
+ * names it as the route that must stay out of that composable). Every id sent is
+ * gone afterwards — removed now, or already removed by another officer or the
+ * retention purge — so the whole lot leaves the selection and the gap is reported.
+ */
+async function bulkDelete() {
+  const ids = selection.ids.value
+  if (!canDelete.value || ids.length === 0 || deleting.value) return
+  if (!await confirm({
+    title: 'Xóa phiên trò chuyện',
+    message: `Xóa vĩnh viễn ${ids.length} phiên trò chuyện đã chọn cùng toàn bộ tin nhắn? Nội dung trò chuyện và thông tin liên hệ khách đã để lại sẽ bị xóa, không thể hoàn tác.`,
+    confirmLabel: 'Xóa vĩnh viễn',
+    danger: true,
+  })) return
+
+  deleting.value = true
+  try {
+    const res = await adminFetch<AdminChatSessionBulkDeleteResponse>('/api/admin/chatbot/sessions/bulk-delete', {
+      method: 'POST',
+      body: { ids },
+    })
+    selection.remove(ids)
+    const missing = Math.max(0, ids.length - res.deleted)
+    if (missing === 0) toast.success(`Đã xóa ${res.deleted} phiên trò chuyện.`)
+    else if (res.deleted === 0) toast.warning(`Không có phiên nào bị xóa: ${missing} phiên đã chọn không còn tồn tại (có thể đã bị xóa trước đó).`)
+    else toast.warning(`Đã xóa ${res.deleted} phiên trò chuyện; ${missing} phiên không còn tồn tại (có thể đã bị xóa trước đó).`)
+    // useAdminList re-asks once for the last page when this one is now past the end.
+    await reload()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể xóa các phiên trò chuyện đã chọn.'))
+  } finally {
+    deleting.value = false
+  }
+}
+
 onMounted(reload)
 </script>
 
@@ -90,6 +143,24 @@ onMounted(reload)
       </div>
     </div>
 
+    <AdminBulkActionBar
+      v-if="canDelete && selection.count.value"
+      :count="selection.count.value"
+      :busy="deleting"
+      noun="phiên trò chuyện"
+      @clear="selection.clear()"
+    >
+      <button
+        type="button"
+        class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-danger/90 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+        :disabled="deleting"
+        @click="bulkDelete"
+      >
+        <i class="fa-solid fa-trash-can mr-1 text-[0.75rem]" aria-hidden="true"></i>
+        {{ deleting ? 'Đang xóa…' : 'Xóa vĩnh viễn' }}
+      </button>
+    </AdminBulkActionBar>
+
     <SkeletonTable v-if="loading" label="Đang tải danh sách phiên trò chuyện" :rows="6" :cols="6" />
 
     <div v-else-if="error" role="alert" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-danger-soft">
@@ -104,27 +175,39 @@ onMounted(reload)
 
     <template v-else>
       <!-- Mobile cards -->
+      <!-- A checkbox may not sit inside the link (interactive content in <a>): the
+           card is a row holding the checkbox beside the link. -->
       <div class="divide-y divide-surface-tint overflow-hidden rounded-xl border border-line bg-white md:hidden">
-        <nuxt-link
+        <div
           v-for="s in rows"
           :key="'m-' + s.id"
-          :to="`/admin/chatbot/sessions/${s.id}`"
-          class="block p-4 hover:bg-surface"
+          class="flex items-start gap-3 px-4 hover:bg-surface"
+          :class="selection.isSelected(s.id) ? 'bg-surface-tint' : ''"
         >
-          <div class="mb-1 flex items-center justify-between gap-2">
-            <span class="truncate text-[0.9rem] font-bold text-brand-950">
-              {{ s.detectedName || s.ip || 'Khách ẩn danh' }}
-            </span>
-            <span class="shrink-0 text-[0.72rem] text-ink-muted">{{ fmtDate(s.lastMessageAt) }}</span>
-          </div>
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8rem] text-[#445546]">
-            <span><i class="fa-solid fa-comments text-[0.65rem] text-ink-muted" aria-hidden="true"></i> {{ s.messageCount }} tin nhắn</span>
-            <span class="truncate"><i class="fa-solid fa-desktop text-[0.65rem] text-ink-muted" aria-hidden="true"></i> {{ s.browser }}</span>
-            <span v-if="s.detectedPhone" class="font-bold text-brand-700">
-              <i class="fa-solid fa-phone text-[0.65rem]" aria-hidden="true"></i> {{ s.detectedPhone }}
-            </span>
-          </div>
-        </nuxt-link>
+          <input
+            v-if="canDelete"
+            type="checkbox"
+            class="mt-5 h-4 w-4 shrink-0 accent-brand-700"
+            :checked="selection.isSelected(s.id)"
+            :aria-label="`Chọn phiên của ${s.detectedName || s.ip || 'khách ẩn danh'}`"
+            @change="selection.toggle(s.id)"
+          />
+          <nuxt-link :to="`/admin/chatbot/sessions/${s.id}`" class="block min-w-0 flex-1 py-4">
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <span class="truncate text-[0.9rem] font-bold text-brand-950">
+                {{ s.detectedName || s.ip || 'Khách ẩn danh' }}
+              </span>
+              <span class="shrink-0 text-[0.72rem] text-ink-muted">{{ fmtDate(s.lastMessageAt) }}</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8rem] text-[#445546]">
+              <span><i class="fa-solid fa-comments text-[0.65rem] text-ink-muted" aria-hidden="true"></i> {{ s.messageCount }} tin nhắn</span>
+              <span class="truncate"><i class="fa-solid fa-desktop text-[0.65rem] text-ink-muted" aria-hidden="true"></i> {{ s.browser }}</span>
+              <span v-if="s.detectedPhone" class="font-bold text-brand-700">
+                <i class="fa-solid fa-phone text-[0.65rem]" aria-hidden="true"></i> {{ s.detectedPhone }}
+              </span>
+            </div>
+          </nuxt-link>
+        </div>
       </div>
 
       <!-- Desktop table -->
@@ -133,6 +216,16 @@ onMounted(reload)
           <table class="w-full border-collapse text-left text-[0.88rem]">
             <thead>
               <tr>
+                <th v-if="canDelete" class="w-10 border-b border-line bg-surface px-4 py-3">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 accent-brand-700"
+                    :checked="selection.allSelected(visibleIds)"
+                    :indeterminate="selection.someSelected(visibleIds)"
+                    aria-label="Chọn tất cả phiên đang hiển thị"
+                    @change="selection.toggleAll(visibleIds)"
+                  />
+                </th>
                 <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Địa chỉ IP</th>
                 <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Trình duyệt</th>
                 <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Bắt đầu</th>
@@ -143,7 +236,16 @@ onMounted(reload)
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in rows" :key="s.id" class="hover:bg-surface">
+              <tr v-for="s in rows" :key="s.id" class="hover:bg-surface" :class="selection.isSelected(s.id) ? 'bg-surface-tint' : ''">
+                <td v-if="canDelete" class="border-b border-surface-tint px-4 py-3.5">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 accent-brand-700"
+                    :checked="selection.isSelected(s.id)"
+                    :aria-label="`Chọn phiên của ${s.detectedName || s.ip || 'khách ẩn danh'}`"
+                    @change="selection.toggle(s.id)"
+                  />
+                </td>
                 <td class="border-b border-surface-tint px-4 py-3.5">
                   <code class="rounded bg-surface px-1.5 py-0.5 text-xs">{{ s.ip || '—' }}</code>
                 </td>

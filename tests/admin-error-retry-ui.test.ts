@@ -202,6 +202,9 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   //   - QuickViewModal/GlobalTranslateModal: lỗi fetch → toast + đóng (KHÔNG
   //     render empty-state), exempt ở `NO_CONTRACT_NEEDED`.
   { file: 'components/admin/articles/ArticleBoostStatsPanel.vue', refs: ['statsError'], retries: ['loadStats'] },
+  // "Lưu thành mục media" (CHANGELOG § 67): a submit-time POST, no list. A refusal (409
+  // saved meanwhile, 403) lands in its own role="alert" under the button, which is the retry.
+  { file: 'components/admin/livestream/LivestreamRecordingCard.vue', refs: ['error'], retries: ['saveRecording'] },
 ]
 
 /**

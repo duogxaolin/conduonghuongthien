@@ -224,6 +224,9 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // không có khung danh sách nào để thay thế bằng skeleton. Form vẫn dùng được
   // trong lúc fetch.
   'components/admin/MediaPortalForm.vue': 'submit-time fetch; the button shows pending and the result is inline preview',
+  // "Lưu thành mục media" (CHANGELOG § 67): không tải gì lúc mount — chỉ POST khi bấm
+  // nút; nút mang trạng thái chờ ("Đang lưu…", bị vô hiệu), kết quả hiện ngay dưới nút.
+  'components/admin/livestream/LivestreamRecordingCard.vue': 'submit-time fetch; the button shows pending and the result is inline',
   // `MediaProcessingTimeline.vue` bị bỏ khỏi exemption list vì nó KHÔNG tự fetch
   // — chỉ nhận dữ liệu từ parent qua props. Gate "stale exemption" bắt đúng:
   // một component không fetch thì không cần được miễn skeleton.

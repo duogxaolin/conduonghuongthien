@@ -47,3 +47,13 @@ export type AdminSmallTalkToggleResponse = Payload<SmallTalkToggleHandler>
 type SessionDetailHandler = typeof import('~~/server/api/admin/chatbot/sessions/[id].get').default
 /** `GET /api/admin/chatbot/sessions/:id` — the session, its transcript and the forms filed from it. */
 export type AdminChatSessionResponse = Payload<SessionDetailHandler>
+type SessionDeleteHandler = typeof import('~~/server/api/admin/chatbot/sessions/[id]/index.delete').default
+type SessionBulkDeleteHandler = typeof import('~~/server/api/admin/chatbot/sessions/bulk-delete.post').default
+/** `DELETE /api/admin/chatbot/sessions/:id` — `{ ok, deleted: <the id> }`; a session already gone is a 404. */
+export type AdminChatSessionDeleteResponse = Payload<SessionDeleteHandler>
+/**
+ * `POST /api/admin/chatbot/sessions/bulk-delete` — `{ ok, deleted: <count> }`. NOT the
+ * `runBulk` outcome (`AdminBulkOutcome`): no per-id result, so the page compares the
+ * count with what it sent instead of going through `useBulkAction`.
+ */
+export type AdminChatSessionBulkDeleteResponse = Payload<SessionBulkDeleteHandler>
