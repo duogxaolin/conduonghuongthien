@@ -178,8 +178,9 @@ describe('SocialBubble popup (desktop): not over the home hero, once per session
     })
   }
 
-  it('the visitor opens and closes it themselves before scrolling: no auto-open on top of that', async (t) => {
-    const ctx = await mountBubble(t, { path: '/' })
+  it('the visitor opens and closes it themselves before scrolling: no auto-open on top of that, nor after a reload', async (t) => {
+    const storage = new Map<string, string>()
+    const ctx = await mountBubble(t, { path: '/', storage })
     await click(byAria(ctx.page.root, 'Kênh mạng xã hội C11'))
     await settle()
     assert.equal(panelOpen(ctx.page.root), true)
@@ -189,6 +190,28 @@ describe('SocialBubble popup (desktop): not over the home hero, once per session
     await ctx.browser.scrollTo(900)
     assert.equal(panelOpen(ctx.page.root), false, 'auto-opened after the visitor had closed it')
     assert.equal(ctx.browser.scroll.size, 0)
+    // It never auto-opened, so only the visitor's own close marks the session: a reload (a
+    // language change) back at the top of home must not wait to pop it open again.
+    ctx.close()
+    const again = await mountBubble(t, { path: '/', storage })
+    assert.equal(again.browser.scroll.size, 0, 'waits to auto-open after the visitor already closed it')
+    await again.browser.scrollTo(900)
+    assert.equal(panelOpen(again.page.root), false)
+  })
+
+  it('floating: the visitor expands then collapses the buttons before scrolling; a reload keeps them collapsed', async (t) => {
+    const storage = new Map<string, string>()
+    const ctx = await mountBubble(t, { mode: 'floating', path: '/', storage })
+    // The phone capsule (the desktop one listens on its wrapper, not on the button).
+    await click(byAria(ctx.page.root, 'Hỗ trợ 24/7. Mở kết nối mạng xã hội và liên hệ hỗ trợ'))
+    await settle()
+    assert.equal(floatingExpanded(ctx.page.root), true)
+    await click(byAria(ctx.page.root, 'Thu gọn mạng xã hội'))
+    await settle()
+    ctx.close()
+    const again = await mountBubble(t, { mode: 'floating', path: '/', storage })
+    await again.browser.scrollTo(900)
+    assert.equal(floatingExpanded(again.page.root), false)
   })
 
   it('leaving the home page before scrolling (client-side navigation) opens it on the next page', async (t) => {
