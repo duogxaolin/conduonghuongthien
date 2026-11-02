@@ -331,6 +331,11 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   // gửi…" and no "Thử lại" until something else repainted the widget (FINDING-C1).
   const question = conversation.messages[conversation.messages.length - 1]!
   awaitedQuestion = question
+  // The question has left the box: it empties NOW, not when the answer is in (it used to sit
+  // there for the whole reply). Only if the box holds this question — "Thử lại" with another
+  // draft typed keeps the draft. A failure below puts the question back
+  // (tests/chat-input-clears-on-send.test.ts).
+  if (botInput.value.normalize('NFKC').trim() === text) botInput.value = ''
   onScroll?.()
 
   const requestSequence = botRequestSequence + 1
@@ -340,7 +345,6 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
   const succeeded = outcome !== null && 'replied' in outcome
   const failure = succeeded ? null : outcome
   if (succeeded) {
-    botInput.value = ''
     question.status = undefined
     // The ONE place a conversation gets its title: its first question the server accepted
     // (tests/chat-widget-title.test.ts). A refusal answers too, and gives none.
@@ -355,13 +359,14 @@ export async function submitBotQuestion(rawText: string, onScroll?: () => void):
     const index = conversation.messages.findIndex(item => item.id === question.id)
     if (index !== -1) conversation.messages.splice(index, 1)
     if (failure.maxChars) inputCharLimit.value = Math.min(inputCharLimit.value, failure.maxChars)
-    botInput.value = text
+    if (!botInput.value.trim()) botInput.value = text
     persist()
   } else {
     // Don't pop the message — mark as error and allow retry.
-    // Restore the text to the input so the user can edit and resubmit.
+    // Restore the text to the input so the user can edit and resubmit — unless they are
+    // typing something else there (a "Thử lại" sent from the bubble).
     question.status = 'error'
     question.error = failure?.kind === 'rate_limited' ? failure.message : 'Không thể gửi câu hỏi. Vui lòng thử lại.'
-    botInput.value = text
+    if (!botInput.value.trim()) botInput.value = text
   }
 }

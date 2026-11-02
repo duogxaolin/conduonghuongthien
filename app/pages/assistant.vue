@@ -438,10 +438,10 @@ const sendBotMessage = () => {
   followLatestQuestion()
   void scrollChatBottom(true)
   submitBotQuestion(botInput.value, followChatBottom).then(() => {
-    resetInputHeight()
     // Chỉ focus lại ô nhập trên máy có chuột; trên điện thoại focus() làm bàn phím ảo bật lên lại sau mỗi câu trả lời.
     if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) nextTick(() => botInputRef.value?.focus())
   })
+  resetInputHeight() // the box empties as the question is sent (chatbot/send.ts), not when answered
 }
 
 const askBot = (question: string) => {

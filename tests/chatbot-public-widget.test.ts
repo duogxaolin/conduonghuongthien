@@ -97,7 +97,11 @@ test('client submission is bounded, single-flight, abortable, and preserves fail
   // chaining or a plain if — is not the contract.
   assert.match(script, /chatRequestController(?:\?)?\.abort\(\)/)
   assert.match(script, /botInput\.value = text/)
-  assert.match(script, /if \(succeeded\) \{\s*botInput\.value = ''/s)
+  // The box empties as the question is sent — before the reply is awaited — not once it is
+  // answered: `if (succeeded) { botInput.value = ''` held the sent question in the box for the
+  // whole reply (2026-11-02; behaviour in tests/chat-input-clears-on-send.test.ts).
+  assert.match(script, /botInput\.value = ''[\s\S]*?await fetchStreamBotReply\(question/)
+  assert.doesNotMatch(script, /if \(succeeded\) \{\s*botInput\.value = ''/s)
 })
 
 test('widget exposes accessible status, focus, reduced-motion, and mobile-safe controls', () => {
