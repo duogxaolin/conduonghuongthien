@@ -150,6 +150,12 @@ async function loadUsage(options: { refresh?: boolean } = {}) {
   }
 }
 
+/** The budget editor saved: its card stays mounted, so show what was written now (not the old cap), then re-read. */
+function budgetSaved(saved: { monthlyBudgetVnd: number, warningThresholdPct: number }) {
+  if (budgetInfo.value) budgetInfo.value = { ...budgetInfo.value, ...saved }
+  void loadUsage({ refresh: true })
+}
+
 onMounted(() => {
   void loadUsage()
   void loadDelifyStatus()
@@ -214,7 +220,7 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
         :monthly-budget-vnd="budgetInfo?.monthlyBudgetVnd ?? 0"
         :warning-threshold-pct="budgetInfo?.warningThresholdPct ?? 80"
         :month-spend-vnd="usageSummary?.monthlyCostVnd ?? 0"
-        @saved="loadUsage({ refresh: true })"
+        @saved="budgetSaved"
       />
 
       <!-- Delify Router Live Observability Card (Real-time from Delify API) -->

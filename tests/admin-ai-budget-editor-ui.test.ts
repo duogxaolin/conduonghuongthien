@@ -163,7 +163,7 @@ describe('saveAiBudget', () => {
 
   it('a cap above this month\'s spend: no question, one PUT with two numbers', async () => {
     const r = recorder({ spend: 12_000 })
-    assert.deepEqual(await saveAiBudget({ budget: '5000000', threshold: '75' }, r.deps), { status: 'saved' })
+    assert.deepEqual(await saveAiBudget({ budget: '5000000', threshold: '75' }, r.deps), { status: 'saved', saved: { monthlyBudgetVnd: 5_000_000, warningThresholdPct: 75 } })
     assert.deepEqual(r.confirms, [])
     assert.deepEqual(r.requests, [{ url: '/api/admin/ai/budget', options: { method: 'PUT', body: { monthlyBudgetVnd: 5_000_000, warningThresholdPct: 75 } } }])
     const { body } = r.requests[0]!.options as { body: Record<string, unknown> }
@@ -178,7 +178,7 @@ describe('saveAiBudget', () => {
       assert.deepEqual(declined.confirms, [zeroBudgetConfirm()], `spend ${spend}`)
       assert.deepEqual(declined.requests, [])
       const accepted = recorder({ spend, confirm: true })
-      assert.deepEqual(await saveAiBudget({ budget: ' 000 ', threshold: '80' }, accepted.deps), { status: 'saved' })
+      assert.deepEqual(await saveAiBudget({ budget: ' 000 ', threshold: '80' }, accepted.deps), { status: 'saved', saved: { monthlyBudgetVnd: 0, warningThresholdPct: 80 } })
       assert.deepEqual(accepted.confirms, [zeroBudgetConfirm()])
       assert.deepEqual(accepted.requests, [{ url: '/api/admin/ai/budget', options: { method: 'PUT', body: { monthlyBudgetVnd: 0, warningThresholdPct: 80 } } }])
     }
@@ -190,7 +190,7 @@ describe('saveAiBudget', () => {
     assert.deepEqual(declined.confirms, [blockingBudgetConfirm(12_000, 12_000)])
     assert.deepEqual(declined.requests, [])
     const accepted = recorder({ spend: 12_000, confirm: true })
-    assert.deepEqual(await saveAiBudget({ budget: '10000', threshold: '80' }, accepted.deps), { status: 'saved' })
+    assert.deepEqual(await saveAiBudget({ budget: '10000', threshold: '80' }, accepted.deps), { status: 'saved', saved: { monthlyBudgetVnd: 10_000, warningThresholdPct: 80 } })
     assert.deepEqual(accepted.confirms, [blockingBudgetConfirm(10_000, 12_000)])
     assert.equal(accepted.requests.length, 1)
   })
@@ -229,10 +229,15 @@ describe('components/admin/ai/AiDashboardTab.vue — the budget editor', () => {
   })
   type Route = (call: NetCall) => Response | Error | undefined
   const NO_DELIFY = () => json({ ok: false, configured: false, error: 'Chưa tạo nhà cung cấp Delify Router.' })
-  function openDashboard(options: { put?: Route, delify?: Route, stored?: Stored, can?: (resource: string, action: string) => boolean } = {}) {
+  /** `heldReads`: every usage read after the mount's is left pending there (the test answers it). */
+  function openDashboard(options: { put?: Route, delify?: Route, stored?: Stored, heldReads?: NetCall[], can?: (resource: string, action: string) => boolean } = {}) {
     let stored = options.stored ?? { monthlyBudgetVnd: 0, warningThresholdPct: 80 }
+    let reads = 0
     return mountAdminPage('components/admin/ai/AiDashboardTab.vue', routes({
-      'GET /api/admin/ai/usage': () => usage(stored),
+      'GET /api/admin/ai/usage': (call) => {
+        if (reads++ > 0 && options.heldReads) { options.heldReads.push(call); return undefined }
+        return usage(stored)
+      },
       'GET /api/admin/ai/delify/status': options.delify ?? NO_DELIFY,
       'PUT /api/admin/ai/budget': options.put ?? ((call) => { stored = call.body as Stored; return json({ ok: true }) }),
     }), { can: options.can })
@@ -337,6 +342,26 @@ describe('components/admin/ai/AiDashboardTab.vue — the budget editor', () => {
     assert.equal(opened.lastToast('success'), 'Đã lưu hạn mức chi AI.')
     assert.equal(form(opened), undefined, 'closed after the save')
     assert.equal(editorCard(opened), card, 'the same card: re-read without the loading state, not unmounted and rebuilt')
+    assert.match(textOf(editorCard(opened)!), new RegExp(`${formatVnd(5_000_000)} mỗi tháng · Ngưỡng cảnh báo 75%`))
+  })
+
+  it('right after a save, before the re-read answers: the card shows what was saved, and reopening seeds it — a second save cannot revert the first', async () => {
+    const held: NetCall[] = []
+    const opened = await openDashboard({ heldReads: held })
+    await fill(opened, '5000000', '75')
+    await submit(opened)
+    assert.equal(held.length, 1, 'the re-read is on its way, not answered yet')
+    assert.equal(form(opened), undefined)
+    assert.match(textOf(editorCard(opened)!), new RegExp(`${formatVnd(5_000_000)} mỗi tháng · Ngưỡng cảnh báo 75%`))
+    await click(editButton(opened)[0]!) // focus is on this button: Enter right away
+    await settle()
+    assert.equal(field(opened, 'ai-budget-vnd').model?.value, '5000000', 'not the cap from before the save')
+    assert.equal(field(opened, 'ai-budget-threshold').model?.value, '75')
+    const before = opened.calls.length
+    await submit(opened)
+    assert.deepEqual(sent(opened.calls, before)[0], { wire: 'PUT /api/admin/ai/budget', body: { monthlyBudgetVnd: 5_000_000, warningThresholdPct: 75 } })
+    for (const call of held) call.respond(usage({ monthlyBudgetVnd: 5_000_000, warningThresholdPct: 75 }))
+    await settle()
     assert.match(textOf(editorCard(opened)!), new RegExp(`${formatVnd(5_000_000)} mỗi tháng · Ngưỡng cảnh báo 75%`))
   })
 

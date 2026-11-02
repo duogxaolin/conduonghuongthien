@@ -8,14 +8,17 @@
  * The current values come from the dashboard's own `GET /api/admin/ai/usage` (`budget` — the same
  * `ai_budget_settings` row `GET /api/admin/ai/budget` reads, under the same `ai.read`), so this
  * makes no request of its own until "Lưu" and has no load to fail. After a save it emits `saved`
- * and the dashboard re-reads its numbers in place (`loadUsage({ refresh: true })`: this card stays
- * mounted, its props update). A failed save stays open with the server's sentence in
- * `role="alert"`; the button is the retry.
+ * with the two numbers written; the dashboard shows them at once and re-reads in place
+ * (`loadUsage({ refresh: true })`: this card stays mounted). Without the first step the card would
+ * keep the OLD props until the re-read answers — and "Sửa hạn mức", focused right then, would open
+ * on the old cap and a second save would revert the first. A failed save stays open with the
+ * server's sentence in `role="alert"`; the button is the retry.
  *
  * Focus: opening moves it to the first field; closing (Hủy, saved, "Không có thay đổi.") gives it
  * back to "Sửa hạn mức" — the control that opened the form, shown again in its place.
  */
 import type { AdminAiBudgetUpdateResponse } from '~/types/admin-ai-api'
+import type { BudgetPayload } from '~/utils/ai-budget-form'
 import { BUDGET_REACHED_EFFECTS, budgetBlocksAiNow, parseBudgetVnd, saveAiBudget, ZERO_BUDGET_WARNING } from '~/utils/ai-budget-form'
 import { formatVnd } from '~/utils/ai-service-labels'
 
@@ -26,7 +29,7 @@ const props = defineProps<{
   /** This Vietnam month's spend — the total `checkBudget` compares the cap with. */
   monthSpendVnd: number
 }>()
-const emit = defineEmits<{ saved: [] }>()
+const emit = defineEmits<{ saved: [saved: BudgetPayload] }>()
 
 const { hasPermission } = useAdminAuth()
 const { confirm } = useConfirm()
@@ -88,7 +91,7 @@ async function save() {
       await close()
     } else if (outcome.status === 'saved') {
       toast.success('Đã lưu hạn mức chi AI.')
-      emit('saved')
+      emit('saved', outcome.saved)
       await close()
     }
   } finally {

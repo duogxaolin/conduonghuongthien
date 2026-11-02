@@ -140,7 +140,8 @@ export interface SaveBudgetDeps {
 export type SaveBudgetOutcome =
   | { status: 'invalid', errors: { budget?: string, threshold?: string } }
   | { status: 'cancelled' }
-  | { status: 'saved' }
+  /** `saved`: the two numbers the PUT wrote — the dashboard shows them before its re-read answers. */
+  | { status: 'saved', saved: BudgetPayload }
   | { status: 'unchanged', message: string }
   | { status: 'failed', message: string }
 
@@ -160,7 +161,7 @@ export async function saveAiBudget(input: BudgetFormInput, deps: SaveBudgetDeps)
   try {
     const res = await deps.request('/api/admin/ai/budget', { method: 'PUT', body })
     if (res?.message) return { status: 'unchanged', message: res.message }
-    return { status: 'saved' }
+    return { status: 'saved', saved: body }
   } catch (err: unknown) {
     return { status: 'failed', message: errorMessage(err, 'Không lưu được hạn mức chi AI.') }
   }
