@@ -15,7 +15,7 @@ export const SYSTEM_DOCS: AdminDoc[] = [
     workflow: [
       { title: 'Vào quản lý người dùng', detail: 'Mở /admin/users', link: '/admin/users' },
       { title: 'Tạo thêm người dùng', detail: 'Hoặc gán người vào vai trò đã có.' },
-      { title: 'Tạo vai trò mới', detail: 'Mở /admin/users/roles, tạo vai trò, gán quyền theo resource.', link: '/admin/users/roles' },
+      { title: 'Tạo vai trò mới', detail: 'Mở /admin/users/roles, bấm "Thêm vai trò" (cần quyền roles.create), rồi đánh dấu quyền theo resource trong ma trận và bấm "Lưu Phân Quyền". Xóa vai trò (cần roles.delete) chỉ được khi không phải vai trò hệ thống và không còn tài khoản nào dùng.', link: '/admin/users/roles' },
       { title: 'Gán người vào vai trò', detail: 'Chỉnh người dùng, gán vai trò phù hợp.' },
     ],
     mermaid: `flowchart TD

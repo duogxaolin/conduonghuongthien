@@ -15,6 +15,8 @@ type UserUpdateHandler = typeof import('~~/server/api/admin/users/[id].put').def
 type UserDeleteHandler = typeof import('~~/server/api/admin/users/[id].delete').default
 type ActivityLogsHandler = typeof import('~~/server/api/admin/activity-logs/index.get').default
 type RoleUpdateHandler = typeof import('~~/server/api/admin/roles/[id].put').default
+type RoleCreateHandler = typeof import('~~/server/api/admin/roles/index.post').default
+type RoleDeleteHandler = typeof import('~~/server/api/admin/roles/[id].delete').default
 
 /** `GET /api/admin/users`. */
 export type AdminUsersResponse = Payload<UsersHandler>
@@ -22,6 +24,10 @@ export type AdminUsersResponse = Payload<UsersHandler>
 export type AdminRolesResponse = Payload<RolesHandler>
 /** `PUT /api/admin/roles/:id` — the role editor's "Lưu Phân Quyền" (batch F). */
 export type AdminRoleUpdateResponse = Payload<RoleUpdateHandler>
+/** `POST /api/admin/roles` — the role editor's "Thêm vai trò" dialog; answers the new role's `id`. */
+export type AdminRoleCreateResponse = Payload<RoleCreateHandler>
+/** `DELETE /api/admin/roles/:id` — the role editor's "Xóa vai trò". */
+export type AdminRoleDeleteResponse = Payload<RoleDeleteHandler>
 export type AdminUserCreateResponse = Payload<UserCreateHandler>
 /** `PUT /api/admin/users/:id` — the edit dialog and the status button. */
 export type AdminUserUpdateResponse = Payload<UserUpdateHandler>

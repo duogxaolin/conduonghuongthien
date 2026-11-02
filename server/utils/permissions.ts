@@ -1,6 +1,6 @@
 import { createError, type H3Event } from 'h3'
 import { checkPermission } from './auth'
-import { PERMISSION_ACTIONS, PERMISSION_RESOURCES, type PermissionGrant, type PermissionFlag } from '../../shared/permissions'
+import { isRetiredPermission, PERMISSION_ACTIONS, PERMISSION_RESOURCES, type PermissionGrant, type PermissionFlag } from '../../shared/permissions'
 
 export const CHATBOT_RESOURCES = Object.freeze({
   settings: 'chatbot_settings',
@@ -8,7 +8,7 @@ export const CHATBOT_RESOURCES = Object.freeze({
 } as const)
 
 export type ChatbotResource = typeof CHATBOT_RESOURCES[keyof typeof CHATBOT_RESOURCES]
-export type ChatbotSettingsAction = 'read' | 'update' | 'clear' | 'test' | 'rotate_key'
+export type ChatbotSettingsAction = 'read' | 'update' | 'clear' | 'rotate_key'
 export type ChatbotKnowledgeAction = 'read' | 'create' | 'update' | 'delete' | 'publish' | 'archive'
 // The everyday-reply store shares the chatbot_knowledge resource on purpose
 // (see design decision 3). It has no publish/archive lifecycle, so its actions
@@ -67,6 +67,12 @@ export function requireSuperAdmin(actor: ActorLike | undefined): void {
  * Guard against privilege escalation when writing role permissions: every
  * resource must be valid, and a non-superadmin may not grant a permission they
  * do not themselves hold ("no granting what you don't have").
+ *
+ * Retired cells (`isRetiredPermission`: `home_sections`, `canTest`) are type-checked
+ * and stored like the rest, but exempt from the "you hold it" rule: they grant
+ * nothing, the role editor sends their stored value back without showing them, and
+ * no officer can obtain them any more — counting them would refuse every save of a
+ * role that still carries one (the seeded `editor`'s `home_sections:read`).
  */
 export function assertAssignablePermissions(actor: ActorLike, permsInput: unknown): PermissionGrant[] {
   if (!Array.isArray(permsInput)) {
@@ -91,7 +97,7 @@ export function assertAssignablePermissions(actor: ActorLike, permsInput: unknow
         throw createError({ statusCode: 400, statusMessage: `${resource}:${flag} phải là true hoặc false.` })
       }
       grant[flag] = p[flag] === true
-      if (!isSuper && grant[flag] && held?.[flag] !== true) {
+      if (!isSuper && grant[flag] && !isRetiredPermission(resource, flag) && held?.[flag] !== true) {
         throw createError({ statusCode: 403, statusMessage: `Bạn không thể cấp quyền ${resource}:${action} mà chính bạn chưa có.` })
       }
     }
@@ -121,7 +127,11 @@ export type RoleGrantRow = { resource: string } & Partial<Record<PermissionFlag,
  * rights than the actor, or reset the password of an account already in one and
  * sign in as it (rà soát 2026-10-22). Same rule as `assertAssignablePermissions`,
  * applied to the role of the account being assigned or managed: what you do not
- * hold, you can neither hand out nor take over. Every flag counts, not just CRUD.
+ * hold, you can neither hand out nor take over. Every flag that grants something
+ * counts, not just CRUD (publish, archive); retired cells (`isRetiredPermission`)
+ * grant nothing and cannot be obtained any more, so they are skipped — counting
+ * them would lock every delegated manager out of the seeded `editor` role, whose
+ * `home_sections:read` nobody can see or clear in the role editor now.
  */
 export function assertRoleWithinActor(actor: ActorLike, rolePerms: readonly RoleGrantRow[], statusMessage: string): void {
   if (actor?.isSuperAdmin === true) return
@@ -129,6 +139,7 @@ export function assertRoleWithinActor(actor: ActorLike, rolePerms: readonly Role
   for (const row of rolePerms) {
     const held = actorPerms.find(permission => permission.resource === row.resource)
     for (const { flag } of PERMISSION_ACTIONS) {
+      if (isRetiredPermission(row.resource, flag)) continue
       if (row[flag] === true && held?.[flag] !== true) {
         throw createError({ statusCode: 403, statusMessage })
       }
@@ -144,7 +155,6 @@ type BasePermission = {
   canDelete: boolean | null
   canPublish?: boolean | null
   canArchive?: boolean | null
-  canTest?: boolean | null
 }
 
 export type ChatbotAdminUser = {
@@ -175,13 +185,11 @@ export function requireChatbotSettingsPermission(event: H3Event, action: Chatbot
 
   // Replacing or clearing provider credentials is deliberately restricted to the
   // system superadmin boundary even if a delegated role can edit ordinary settings.
+  // There is no `'test'` action any more: it read `canTest`, which no route needs since
+  // `POST /api/admin/chatbot/test` was removed (CHANGELOG § 64) — the flag is retired
+  // (`RETIRED_PERMISSION_FLAGS`), so nothing may start granting through it again.
   if (action === 'rotate_key' || action === 'clear') {
     if (!isSuperAdmin) forbidden()
-    return user
-  }
-
-  if (action === 'test') {
-    if (!isSuperAdmin && findPermission(user, CHATBOT_RESOURCES.settings)?.canTest !== true) forbidden()
     return user
   }
 
