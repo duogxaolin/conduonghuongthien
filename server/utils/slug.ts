@@ -4,6 +4,8 @@ import { ne, and, like } from 'drizzle-orm'
 import { slugify } from '../../shared/slugify'
 
 type Db = ReturnType<typeof getDb>
+/** The pool or an open transaction (`services/categories.ts` reads the slugs inside the write's). */
+type DbOrTx = Db | Parameters<Parameters<Db['transaction']>[0]>[0]
 
 // The pure rule lives in `shared/slugify.ts` (the admin pages run the same one);
 // only the DB-backed `unique*Slug()` helpers stay server-side.
@@ -13,7 +15,7 @@ export { slugify }
  * Resolve a collision-safe category slug by appending the smallest free
  * `-2`, `-3`, … suffix. `excludeId` skips the current row when editing.
  */
-export async function uniqueCategorySlug(db: Db, base: string, excludeId?: number): Promise<string> {
+export async function uniqueCategorySlug(db: DbOrTx, base: string, excludeId?: number): Promise<string> {
   const baseSlug = slugify(base) || 'muc'
 
   // Pull existing slugs that could collide (baseSlug or baseSlug-N)
