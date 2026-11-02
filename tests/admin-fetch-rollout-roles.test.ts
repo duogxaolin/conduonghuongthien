@@ -171,6 +171,42 @@ describe(`${PAGE} — "Trang chủ" and "Kiểm thử" (retired, CHANGELOG § 66
   })
 })
 
+// ─── Without roles.update: the matrix is read-only (verifier W5) ─────────────
+
+describe(`${PAGE} — without roles.update`, () => {
+  const readOnly: MountOptions = { can: (resource, action) => !(resource === 'roles' && action === 'update') }
+  const boxes = (opened: MountedAdminPage) => findAll(opened.page.root, el => el.tag === 'input' && el.props.type === 'checkbox')
+  const saveReason = (opened: MountedAdminPage) => findAll(opened.page.root, el => el.props.id === 'role-save-blocked').map(textOf).join('')
+
+  it('every box disabled, "Lưu Phân Quyền" greyed with the reason; a forced click sends nothing', async () => {
+    const opened = await open(server(), readOnly)
+    await fire(roleButton(opened, 'viewer'), 'click')
+    await settle()
+    const save = saveButtons(opened)[0]!
+    assert.equal(save.props.disabled, true)
+    assert.equal(save.props['aria-describedby'], 'role-save-blocked')
+    assert.match(saveReason(opened), /cần quyền Sửa trên "Vai trò & Phân quyền" để lưu\. Nhờ người có quyền sửa vai trò gán quyền\./)
+    assert.ok(boxes(opened).length > 0 && boxes(opened).every(el => el.props.disabled === true))
+    const before = opened.calls.length
+    await fire(save, 'click')
+    await settle()
+    assert.deepEqual(opened.calls.slice(before), [], 'the handler refuses too, not only the button')
+  })
+
+  it('with roles.update the same role is editable and no reason shows; a system role shows its own lock, not this one', async () => {
+    const opened = await open()
+    assert.equal(saveReason(opened), '', 'superadmin: the system-role banner explains it')
+    await fire(roleButton(opened, 'viewer'), 'click')
+    await settle()
+    assert.equal(saveButtons(opened)[0]!.props.disabled, false)
+    assert.equal(saveButtons(opened)[0]!.props['aria-describedby'], undefined)
+    assert.ok(boxes(opened).every(el => el.props.disabled === false))
+    assert.equal(saveReason(opened), '')
+    const locked = await open(server(), readOnly)
+    assert.equal(saveReason(locked), '')
+  })
+})
+
 // ─── "Thêm vai trò" ──────────────────────────────────────────────────────────
 
 describe(`${PAGE} — "Thêm vai trò" (POST /api/admin/roles)`, () => {
@@ -218,6 +254,27 @@ describe(`${PAGE} — "Thêm vai trò" (POST /api/admin/roles)`, () => {
     assert.match(heading(opened), /Ma trận Phân quyền: Cộng tác viên/, 'the new role is selected, ready for its matrix')
   })
 
+  it('without roles.update the dialog and the toast say who sets the rights (verifier W5)', async () => {
+    let created = false
+    const opened = await open(server({
+      'GET /api/admin/roles': () => json({ ok: true, roles: created ? [...ROLES, NEW_ROLE] : ROLES }),
+      'POST /api/admin/roles': () => { created = true; return json({ ok: true, id: 4 }) },
+    }), { can: (resource, action) => !(resource === 'roles' && action === 'update') })
+    await openDialog(opened, 'Cộng tác viên')
+    assert.match(textOf(dialog(opened)!), /Bạn không có quyền sửa vai trò: sau khi tạo, nhờ người có quyền sửa vai trò gán quyền\./)
+    assert.doesNotMatch(textOf(dialog(opened)!), /bấm "Lưu Phân Quyền"/)
+    await submit(opened)
+    await settle()
+    assert.equal(opened.lastToast('success'), 'Đã tạo vai trò Cộng tác viên. Nhờ người có quyền sửa vai trò gán quyền cho vai trò này.')
+
+    const editor = await open(server({ 'POST /api/admin/roles': () => json({ ok: true, id: 4 }) }))
+    await openDialog(editor, 'Cộng tác viên')
+    assert.match(textOf(dialog(editor)!), /đánh dấu quyền trong ma trận rồi bấm "Lưu Phân Quyền"/)
+    await submit(editor)
+    await settle()
+    assert.match(editor.lastToast('success') ?? '', /Hãy chọn quyền rồi bấm "Lưu Phân Quyền"\.$/)
+  })
+
   it('"Hủy" closes without sending; reopening starts empty', async () => {
     const opened = await open()
     await openDialog(opened, 'Nháp')
@@ -232,13 +289,14 @@ describe(`${PAGE} — "Thêm vai trò" (POST /api/admin/roles)`, () => {
   })
 
   it('refused: the dialog stays open with what was typed and the server\'s sentence in role="alert"; nothing reloads', async () => {
-    const opened = await open(server({ 'POST /api/admin/roles': () => h3Error(400, 'Tên vai trò đã tồn tại. Vui lòng chọn tên khác.') }))
+    const taken = 'Tên vai trò trùng với vai trò đã có (không phân biệt hoa/thường và dấu). Vui lòng chọn tên khác.'
+    const opened = await open(server({ 'POST /api/admin/roles': () => h3Error(400, taken) }))
     await openDialog(opened, 'editor')
     const before = opened.calls.length
     await submit(opened)
     await settle()
     assert.deepEqual(opened.calls.slice(before).map(wire), ['POST /api/admin/roles'])
-    assert.equal(dialogAlert(opened), 'Tên vai trò đã tồn tại. Vui lòng chọn tên khác.')
+    assert.equal(dialogAlert(opened), taken)
     assert.equal(field(opened, 'role-create-name').model?.value, 'editor')
     assert.equal(field(opened, 'role-create-name').props['aria-describedby'], 'role-create-error')
     assert.equal(opened.lastToast('success'), undefined)

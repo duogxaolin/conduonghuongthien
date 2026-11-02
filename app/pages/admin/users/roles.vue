@@ -47,6 +47,9 @@ const { hasPermission } = useAdminAuth()
 // the page from offering an action it is certain to refuse.
 const canCreateRole = computed(() => hasPermission('roles', 'create'))
 const canDeleteRole = computed(() => hasPermission('roles', 'delete'))
+const canUpdateRole = computed(() => hasPermission('roles', 'update'))
+/** Ticks cannot be saved: a system role, or no `roles.update` (`[id].put.ts` would 403). */
+const matrixReadOnly = computed(() => selectedRoleLocked.value || !canUpdateRole.value)
 
 /** `selectId`: the role to show after the reload (a role just created); default the one shown. */
 const fetchRoles = async (selectId?: number) => {
@@ -84,7 +87,7 @@ const matrixRows = computed(() => resourcesList.flatMap((res) => {
 }))
 
 const handleSavePermissions = async () => {
-  if (!selectedRole.value) return
+  if (!selectedRole.value || matrixReadOnly.value) return
   saving.value = true
   const permsPayload = Object.entries(permissionMatrix.value).map(([resource, perm]) => ({ resource, ...perm }))
   try {
@@ -126,7 +129,7 @@ const handleCreateRole = async () => {
       body: { name: createForm.name, description: createForm.description },
     })
     if (res.ok) {
-      toast.success(`Đã tạo vai trò ${createForm.name.trim()}. Hãy chọn quyền rồi bấm "Lưu Phân Quyền".`)
+      toast.success(`Đã tạo vai trò ${createForm.name.trim()}. ${canUpdateRole.value ? 'Hãy chọn quyền rồi bấm "Lưu Phân Quyền".' : 'Nhờ người có quyền sửa vai trò gán quyền cho vai trò này.'}`)
       showCreate.value = false
       await fetchRoles(res.id)
     }
@@ -287,7 +290,8 @@ onMounted(() => { fetchRoles() })
             <button
               class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-50 disabled:cursor-not-allowed"
               @click="handleSavePermissions"
-              :disabled="saving || selectedRoleLocked"
+              :disabled="saving || matrixReadOnly"
+              :aria-describedby="!selectedRoleLocked && !canUpdateRole ? 'role-save-blocked' : undefined"
             >
               <i class="fa-solid fa-floppy-disk"></i>
               {{ saving ? 'Đang lưu...' : 'Lưu Phân Quyền' }}
@@ -295,6 +299,9 @@ onMounted(() => { fetchRoles() })
           </div>
         </div>
 
+        <p v-if="!selectedRoleLocked && !canUpdateRole" id="role-save-blocked" class="text-[0.8rem] text-ink-muted mt-0 mb-4">
+          <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>Bạn chỉ xem được ma trận: cần quyền Sửa trên "Vai trò & Phân quyền" để lưu. Nhờ người có quyền sửa vai trò gán quyền.
+        </p>
         <p v-if="canDeleteRole && deleteBlockReason" id="role-delete-blocked" class="text-[0.8rem] text-ink-muted mt-0 mb-4">
           <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>{{ deleteBlockReason }}
         </p>
@@ -321,7 +328,7 @@ onMounted(() => { fetchRoles() })
                   <code class="ml-1.5 text-[0.72rem] text-[#888]">({{ res.key }})</code>
                 </td>
                 <td v-for="action in ROLE_MATRIX_ACTIONS" :key="action.flag" class="px-3 py-3 border-b border-surface-tint text-center">
-                  <input type="checkbox" v-model="perm[action.flag]" :aria-label="`${res.label}: ${action.label}`" :disabled="selectedRoleLocked" class="w-4 h-4 accent-brand-700" />
+                  <input type="checkbox" v-model="perm[action.flag]" :aria-label="`${res.label}: ${action.label}`" :disabled="matrixReadOnly" class="w-4 h-4 accent-brand-700" />
                 </td>
               </tr>
             </tbody>
@@ -333,7 +340,7 @@ onMounted(() => { fetchRoles() })
     <!-- Thêm vai trò -->
     <AdminModal :open="showCreate" title="Thêm vai trò" size="sm" :busy="creating" @close="closeCreate">
       <form class="flex flex-col gap-4" @submit.prevent="handleCreateRole">
-        <p class="text-[0.82rem] text-ink-muted m-0">Vai trò mới chưa có quyền nào. Sau khi tạo, đánh dấu quyền trong ma trận rồi bấm "Lưu Phân Quyền".</p>
+        <p class="text-[0.82rem] text-ink-muted m-0">Vai trò mới chưa có quyền nào. {{ canUpdateRole ? 'Sau khi tạo, đánh dấu quyền trong ma trận rồi bấm "Lưu Phân Quyền".' : 'Bạn không có quyền sửa vai trò: sau khi tạo, nhờ người có quyền sửa vai trò gán quyền.' }}</p>
         <p v-if="createError" id="role-create-error" role="alert" class="bg-danger-bg text-danger px-3 py-2 rounded-lg text-[0.82rem] m-0">{{ createError }}</p>
         <div class="flex flex-col gap-1.5">
           <label for="role-create-name" class="text-[0.82rem] font-bold text-ink-admin">Tên vai trò (*)</label>
