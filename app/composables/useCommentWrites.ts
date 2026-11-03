@@ -3,6 +3,7 @@ import type { PublicCommentItem } from '~/types/public-api'
 // Đường dẫn tương đối (không `~/`): tệp này cũng chạy trong test Node, nơi bộ nạp không
 // biết alias của Nuxt.
 import { errorMessage as messageFrom, errorStatus } from '../utils/errorMessage'
+import { useConfirm } from './useConfirm'
 import { commentDraftKey, removeCommentFromThread, threadHasComment } from '../utils/comment-thread'
 
 /**
@@ -49,6 +50,7 @@ export function useCommentWrites(options: {
   forgetReader: () => void
 }) {
   const { comments, total, revokedNotice, loadThread, api, t, forgetReader } = options
+  const { confirm } = useConfirm()
 
   const pendingComments = ref<PendingComment[]>([])
   const body = ref('')
@@ -248,12 +250,18 @@ export function useCommentWrites(options: {
   }
 
   async function removeComment(comment: PublicCommentItem) {
-    // A deletion is irreversible, so it asks first. `window.confirm` rather than
-    // the admin `useConfirm()` modal: that composable drives a ConfirmDialog which
-    // is mounted only in layouts/admin.vue, so calling it from a public page would
-    // set state nothing renders — the promise would never resolve and the delete
-    // would silently never happen.
-    if (!window.confirm(t('c_delete_confirm'))) return
+    // A deletion is irreversible, so it asks first — in the site's own modal (`ConfirmModal`,
+    // mounted by `ArticleComments.vue`), not the browser's `window.confirm`. The modal opens on
+    // "Cancel" for a `danger` question, so a stray Enter deletes nothing, and traps focus.
+    // The composable is imported relatively (this file also runs in Node tests).
+    const accepted = await confirm({
+      title: t('c_delete_title'),
+      message: t('c_delete_confirm'),
+      confirmLabel: t('c_delete_action'),
+      cancelLabel: t('c_cancel'),
+      danger: true,
+    })
+    if (!accepted) return
 
     deletingId.value = comment.id
     try {

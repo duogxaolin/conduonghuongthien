@@ -39,7 +39,7 @@ export type ReaderNotificationsReadResponse = Payload<typeof import('~~/server/a
 export type CommentPostResponse = Payload<typeof import('~~/server/api/public/comments/index.post').default>
 
 /** `DELETE /api/public/comments/<id>` — the reader's own comment. */
-export type CommentDeleteResponse = Payload<typeof import('~~/server/api/public/comments/[id].delete').default>
+export type CommentDeleteResponse = Payload<typeof import('~~/server/api/public/comments/[articleSlug].delete').default>
 
 /** `GET /api/public/comments/checkpoint?ids=` — `isHidden` of the reader's own comments (moderation outcome). */
 export type CommentCheckpointResponse = Payload<typeof import('~~/server/api/public/comments/checkpoint.get').default>

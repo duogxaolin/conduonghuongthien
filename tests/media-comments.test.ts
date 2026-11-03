@@ -327,7 +327,7 @@ describe('10.5 — a removal records which item it was on', () => {
     }
     for (const file of [
       'server/services/readers.ts',
-      'server/api/public/comments/[id].delete.ts',
+      'server/api/public/comments/[articleSlug].delete.ts',
     ]) {
       const caller = read(file)
       assert.match(caller, /deleteComment|deleteReaderComments/, `${file} no longer uses the shared deletion path`)

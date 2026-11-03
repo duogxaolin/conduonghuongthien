@@ -39,6 +39,9 @@ import type { Ref } from 'vue'
  * HLS. MediaPlayer.vue cập nhật menu đó sau khi hls.js parse manifest, nên cần
  * truy cập `quality.options`/`forced`/`onChange` từ type này thay vì cast.
  */
+/** Bộ biểu tượng plyr phục vụ từ chính cổng (`public/assets/plyr.svg`). */
+export const PLYR_ICON_URL = '/assets/plyr.svg'
+
 export type PlyrInstance = {
   destroy: () => void
   quality?: {
@@ -139,6 +142,11 @@ export async function attachPlyrPlayer(
           options.hlsQuality?.setLevel(selected === 0 ? -1 : selected)
         },
       },
+      // Bộ biểu tượng tự chủ: mặc định plyr tải `https://cdn.plyr.io/<ver>/plyr.svg` bằng fetch —
+      // `connect-src` của cổng chặn (đo trên bản docker: "GET /3.8.5/plyr.svg" bị CSP chặn → nút
+      // điều khiển trống biểu tượng) và đó là tài nguyên bên thứ ba. Tệp sao từ `plyr/dist/plyr.svg`
+      // (cùng phiên bản trong package-lock); đổi phiên bản plyr thì sao lại — `tests/plyr-icon-sprite.test.ts`.
+      iconUrl: PLYR_ICON_URL,
       ratio: '16:9',
       keyboard: { focused: true, global: false },
       i18n: {

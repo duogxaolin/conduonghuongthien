@@ -79,7 +79,10 @@ function directives(scriptSrc: readonly string[]): string[] {
     cspImgSrcDirective(),
     "media-src 'self' blob: https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
     "font-src 'self' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
-    'frame-src https://www.youtube-nocookie.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.googletagmanager.com https://*.gov.vn',
+    // `'self'` cho iframe XEM TRƯỚC của trình dựng trang (`/admin/content/pages/<id>`):
+    // khung đó trỏ về chính cổng, nhưng trên domain không khớp ba mẫu dưới (dev `127.0.0.1`,
+    // bản QA chạy IP) `frame-src` chặn nó. Chỉ mở cùng nguồn, không thêm host ngoài.
+    "frame-src 'self' https://www.youtube-nocookie.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.googletagmanager.com https://*.gov.vn",
     "connect-src 'self' https://static.cloudflareinsights.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.google-analytics.com https://*.facebook.com https://analytics.tiktok.com https://www.clarity.ms https://*.gov.vn",
     "frame-ancestors 'self'",
     "base-uri 'self'",
@@ -96,7 +99,21 @@ export const CONTENT_SECURITY_POLICY = directives(["'self'", "'unsafe-inline'", 
  * để trình duyệt gửi 40 ký tự đầu của script inline bị chặn: endpoint chỉ ghi tiền tố
  * SHA-256 của nó (không bao giờ nội dung) để phân biệt các script inline với nhau.
  */
-export const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
-  ...directives(["'self'", "'report-sample'", ...CSP_TARGET_SCRIPT_SRC_HOSTS.map(host => `https://${host}`)]),
-  `report-uri ${CSP_REPORT_PATH}`,
-].join('; ')
+export const CONTENT_SECURITY_POLICY_REPORT_ONLY = cspReportOnlyWithInlineHashes([])
+
+/**
+ * Chính sách Report-Only với hash của các script inline CÓ THẬT trong một trang
+ * (giai đoạn 3, design D-CSP): `server/plugins/csp-inline-hashes.ts` tính hash trên HTML đã
+ * dựng rồi gọi hàm này, nên console chỉ còn báo thứ KHÔNG nằm trong danh sách — script lạ,
+ * hay inline event handler (hash không áp cho handler: cần `'unsafe-hashes'`, giai đoạn 4).
+ * Không có hash → đúng từng byte `CONTENT_SECURITY_POLICY_REPORT_ONLY` mặc định. Mỗi hash
+ * là `'sha256-<base64>'` (chuẩn của `inlineScriptHashes`); từ chối mọi thứ khác để một giá trị
+ * lạ không bao giờ lọt vào header.
+ */
+export function cspReportOnlyWithInlineHashes(hashes: readonly string[]): string {
+  const valid = hashes.filter(h => /^'sha256-[A-Za-z0-9+/]{43}='$/.test(h))
+  return [
+    ...directives(["'self'", "'report-sample'", ...valid, ...CSP_TARGET_SCRIPT_SRC_HOSTS.map(host => `https://${host}`)]),
+    `report-uri ${CSP_REPORT_PATH}`,
+  ].join('; ')
+}
