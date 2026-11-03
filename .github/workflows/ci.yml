@@ -791,7 +791,7 @@ jobs:
       # Traces and screenshots are written only for failures, so this uploads
       # nothing on a green run. Without it a CI-only failure is a one-line
       # assertion message with no way to see what the page actually showed.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
