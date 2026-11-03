@@ -85,12 +85,12 @@ test('the interval is well under a 60s proxy read timeout', () => {
   assert.ok(SSE_HEARTBEAT_INTERVAL_MS <= 20_000)
 })
 
-test('the endpoint heartbeats until the first text and always stops it', () => {
+test('the endpoint heartbeats through every silence and always stops it', () => {
   const source = read('../server/api/public/chatbot/index.post.ts')
   assert.match(source, /createSseHeartbeat\(/)
   assert.match(source, /heartbeat\.start\(\)/)
-  // Stopped at the first chunk of text…
-  assert.match(source, /\(delta: string\) => \{\s*heartbeat\.stop\(\)/)
+  // Each chunk of text resets the count (stop, write, start) — a ping goes only after 15 s of silence…
+  assert.match(source, /\(delta: string\) => \{\s*heartbeat\.stop\(\)[\s\S]*?heartbeat\.start\(\)\s*\},/)
   // …and on every other way out (error, empty answer), before the stream ends.
   assert.match(source, /finally \{\s*heartbeat\.stop\(\)/)
 })

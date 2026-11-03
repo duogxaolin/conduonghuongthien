@@ -84,6 +84,7 @@ export async function answerChat(
   messages: unknown,
   onChunk?: (chunk: string) => void | Promise<void>,
   onToolEvent?: (evt: ToolCallEvent) => void | Promise<void>,
+  onReplace?: (answer: string) => void | Promise<void>,
 ) {
   return answerGroundedChat(event, settings, messages, {
     loadPublishedEntries: publishedEntries,
@@ -92,5 +93,5 @@ export async function answerChat(
     providerRequest: safeProviderRequest,
     semanticSmallTalkProvider: getSmallTalkSemanticProvider(),
     semanticSmallTalkConfig: readSmallTalkSemanticConfig(),
-  }, onChunk, onToolEvent)
+  }, onChunk, onToolEvent, onReplace)
 }
