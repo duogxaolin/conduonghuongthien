@@ -170,7 +170,12 @@ test('injection proof: the widget half of these checks reads every part of ChatW
   const composer = 'components/chat-widget/ChatWidgetComposer.vue'
   assert.doesNotMatch(widgetTemplate({ [composer]: readAppFile(composer).replace(':maxlength="limits.maxMessageChars"', '') }), /:maxlength="(?:CHATBOT_CLIENT_LIMITS|limits)\.maxMessageChars"/)
   const meta = 'components/chat-widget/ChatWidgetMessageMeta.vue'
-  assert.doesNotMatch(widgetTemplate({ [meta]: readAppFile(meta).replace('messageKindLabel(msg.kind)', "''") }), /messageKindLabel\(msg\.kind\)/)
+  // The planted part must actually differ from the file: a probe whose search string is gone
+  // from the part (it was `messageKindLabel(msg.kind)` until 2026-11-02) replaces nothing and
+  // the "must appear" check below passes for no reason (kiểm chứng độc lập W3).
+  const metaWithoutLabel = readAppFile(meta).replace('t(messageKindKey(msg.kind))', "''")
+  assert.notEqual(metaWithoutLabel, readAppFile(meta), 'the probe no longer finds the reply-kind label in ChatWidgetMessageMeta')
+  assert.doesNotMatch(widgetTemplate({ [meta]: metaWithoutLabel }), /t\(messageKindKey\(msg\.kind\)\)/)
   // "Must appear nowhere": markup or a log line planted in a part — or a part added
   // later — is in what the checks read.
   assert.match(widgetTemplate({ 'components/chat-widget/ChatWidgetLater.vue': '<template><div v-html="x"></div></template>' }), /v-html/)
