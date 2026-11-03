@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
 
   // Xoá bộ đệm trang công khai sau commit, nuốt lỗi (chỉ log) — để khách thấy ngay video
   // vừa xuất bản, VÀ thấy ngay một video vừa gỡ xuất bản (bản cũ chỉ xoá khi kết quả là
-  // `published`, nên gỡ xuất bản không làm mới gì). Bản cũ (`purgeMediaListCache`) lọc
+  // `published`, nên gỡ xuất bản không làm mới gì). Bản cũ (`purgeMediaListCache`, đã xoá) lọc
   // khoá dạng `nitro/routes:/media:GET.json` mà Nitro không bao giờ sinh ra (khoá thật:
   // `nitro:routes:_:media.<hash>.json`), nên chưa từng xoá được gì. `/media/**` vẫn
   // `swr: 60`: xoá một bản đệm không đụng gì tới việc danh tính người đọc chỉ nạp sau mount.
