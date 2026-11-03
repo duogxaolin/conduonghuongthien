@@ -297,7 +297,7 @@ export default defineNuxtConfig({
         'X-Content-Type-Options': 'nosniff',
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
         'Referrer-Policy': 'strict-origin-when-cross-origin',
-        'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+        'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
         // Cross-origin isolation — pentest RedAmon 2026-10-06 báo COOP/CORP/COEP
         // missing. COOP `same-origin` cô lập window handle (chống Spectre
         // side-channel + cross-origin window interaction), an toàn không chặn
