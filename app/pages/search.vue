@@ -3,21 +3,17 @@
     <!-- Breadcrumb & Header Bar -->
     <section class="bg-white border-b border-line">
       <div class="container py-7 sm:py-9">
-        <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-ink-soft mb-3">
+        <nav :aria-label="t('sp_breadcrumb_aria')" class="flex items-center gap-2 text-xs text-ink-soft mb-3">
           <nuxt-link to="/" class="hover:text-brand-600 transition-colors flex items-center gap-1.5 no-underline text-ink-soft">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
-            <span>Trang chủ</span>
+            <span>{{ t('home') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
-          <span class="text-[#2D5A27] font-bold">Tìm kiếm</span>
+          <span class="text-[#2D5A27] font-bold">{{ t('search') }}</span>
         </nav>
 
-        <h1 class="text-2xl sm:text-3xl font-black text-ink-strong tracking-tight m-0 mb-2">
-          Tìm kiếm thông tin
-        </h1>
-        <p class="text-sm text-ink-soft max-w-2xl m-0 leading-relaxed">
-          Tra cứu toàn diện bản tin, tấm gương hoàn lương, mô hình tái hòa nhập, văn bản pháp luật và giải đáp thắc mắc.
-        </p>
+        <h1 class="text-2xl sm:text-3xl font-black text-ink-strong tracking-tight m-0 mb-2">{{ t('sp_title') }}</h1>
+        <p class="text-sm text-ink-soft max-w-2xl m-0 leading-relaxed">{{ t('sp_intro') }}</p>
 
         <!-- Big Search Form -->
         <form @submit.prevent="onFormSubmit" class="mt-6 max-w-3xl">
@@ -29,8 +25,8 @@
               ref="searchInputEl"
               v-model="inputQuery"
               type="text"
-              aria-label="Từ khóa tìm kiếm"
-              placeholder="Nhập từ khóa cần tìm kiếm (tiêu đề, nội dung, chủ đề)..."
+              :aria-label="t('sp_input_aria')"
+              :placeholder="t('sp_input_ph')"
               class="w-full py-2.5 px-2 text-[0.95rem] text-ink-strong outline-none border-none bg-transparent font-medium placeholder:text-[#9AABA0]"
             />
             <button
@@ -38,7 +34,7 @@
               type="button"
               @click="inputQuery = ''; inputFocus()"
               class="w-8 h-8 rounded-lg text-ink-faint hover:text-[#2D5A27] hover:bg-surface-tint flex items-center justify-center text-xs shrink-0 cursor-pointer border-none bg-transparent transition-colors mr-1"
-              aria-label="Xóa từ khóa"
+              :aria-label="t('sp_clear_aria')"
             >
               <i class="fa-solid fa-xmark" aria-hidden="true"></i>
             </button>
@@ -46,7 +42,7 @@
               type="submit"
               class="bg-brand-600 hover:bg-brand-800 text-white px-5 sm:px-6 py-2.5 rounded-lg text-sm font-extrabold cursor-pointer transition-all shrink-0 border-none flex items-center gap-2 shadow-sm"
             >
-              <span>Tìm kiếm</span>
+              <span>{{ t('search') }}</span>
               <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
             </button>
           </div>
@@ -61,16 +57,14 @@
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-line">
           <div>
             <h2 class="text-lg font-black text-ink-strong m-0">
-              Kết quả cho từ khóa: <span class="text-[#2D5A27]">&laquo;{{ searchQuery }}&raquo;</span>
+              {{ t('sp_results_for') }} <span class="text-[#2D5A27]">&laquo;{{ searchQuery }}&raquo;</span>
             </h2>
-            <p class="text-xs text-ink-soft mt-1 m-0">
-              Tìm thấy <strong>{{ searchData?.total ?? 0 }}</strong> kết quả phù hợp trên toàn hệ thống
-            </p>
+            <p class="text-xs text-ink-soft mt-1 m-0"><I18nStrong :text="t(countKey('sp_found', searchData?.total ?? 0))" :values="{ n: searchData?.total ?? 0 }" /></p>
           </div>
 
           <div v-if="pending" class="text-xs text-brand-600 font-semibold flex items-center gap-2">
             <i class="fa-solid fa-circle-notch animate-spin text-sm" aria-hidden="true"></i>
-            <span>Đang tìm kiếm...</span>
+            <span>{{ t('sp_searching') }}</span>
           </div>
         </div>
 
@@ -89,7 +83,7 @@
             ]"
           >
             <i :class="tab.icon" class="text-[0.75rem]" aria-hidden="true"></i>
-            <span>{{ tab.label }}</span>
+            <span>{{ t(tab.labelKey) }}</span>
             <span
               :class="[
                 'text-[0.7rem] px-1.5 py-px rounded-full font-black',
@@ -104,7 +98,7 @@
 
       <!-- Loading State -->
       <div v-if="pending" role="status" aria-busy="true" class="space-y-4">
-        <span class="sr-only">Đang tải kết quả tìm kiếm</span>
+        <span class="sr-only">{{ t('sp_loading_sr') }}</span>
         <div v-for="n in 5" :key="n" class="bg-white p-5 rounded-xl border border-line flex gap-4 animate-pulse motion-reduce:animate-none">
           <div class="w-24 sm:w-32 aspect-video bg-surface-tint rounded-lg shrink-0"></div>
           <div class="flex-1 space-y-2.5">
@@ -124,15 +118,15 @@
         <div class="w-12 h-12 rounded-full bg-danger-bg text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
         </div>
-        <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">Không thể tải kết quả tìm kiếm</h3>
-        <p class="text-sm text-ink-muted m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu máy chủ.</p>
+        <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('sp_error_title') }}</h3>
+        <p class="text-sm text-ink-muted m-0 mb-4">{{ t('sp_error_desc') }}</p>
         <button
           type="button"
           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#C62828] text-white text-xs font-bold hover:bg-[#B71C1C] transition-all cursor-pointer border-none"
           @click="() => refresh()"
         >
           <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-          <span>Thử lại</span>
+          <span>{{ t('sp_retry') }}</span>
         </button>
       </div>
 
@@ -141,12 +135,11 @@
         <div class="w-16 h-16 rounded-full bg-line text-brand-600 flex items-center justify-center mx-auto mb-4 text-2xl shadow-sm">
           <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
         </div>
-        <h3 class="text-lg font-extrabold text-ink-strong m-0 mb-2">Nhập từ khóa để bắt đầu tìm kiếm</h3>
-        <p class="text-sm text-ink-soft m-0 leading-relaxed mb-6">
-          Bạn có thể tìm kiếm tên bài viết, tấm gương hoàn lương, mô hình cơ sở, câu hỏi giải đáp pháp luật hoặc số hiệu văn bản.
-        </p>
+        <h3 class="text-lg font-extrabold text-ink-strong m-0 mb-2">{{ t('sp_idle_title') }}</h3>
+        <p class="text-sm text-ink-soft m-0 leading-relaxed mb-6">{{ t('sp_idle_desc') }}</p>
         <div class="flex flex-wrap items-center justify-center gap-2 text-xs">
-          <span class="text-ink-soft font-medium">Gợi ý từ khóa:</span>
+          <span class="text-ink-soft font-medium">{{ t('sp_suggest') }}</span>
+          <!-- Từ khoá tìm trên nội dung tiếng Việt của cổng: cố ý không dịch (dịch thì 0 kết quả). -->
           <button
             v-for="kw in ['Ninh Bình', 'Tái hòa nhập', 'Tấm gương', 'Văn bản', 'Nghị định']"
             :key="kw"
@@ -164,10 +157,8 @@
         <div class="w-16 h-16 rounded-full bg-danger-bg text-[#C62828] flex items-center justify-center mx-auto mb-4 text-2xl">
           <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
         </div>
-        <h3 class="text-lg font-extrabold text-ink-strong m-0 mb-2">Không tìm thấy kết quả nào</h3>
-        <p class="text-sm text-ink-soft m-0 leading-relaxed mb-6">
-          Không có nội dung nào phù hợp với từ khóa &laquo;<strong>{{ searchQuery }}</strong>&raquo;. Vui lòng thử lại với từ khóa ngắn gọn hơn hoặc chọn bộ lọc khác.
-        </p>
+        <h3 class="text-lg font-extrabold text-ink-strong m-0 mb-2">{{ t('sp_empty_title') }}</h3>
+        <p class="text-sm text-ink-soft m-0 leading-relaxed mb-6"><I18nStrong :text="t('sp_empty_desc')" :values="{ q: searchQuery }" /></p>
         <div class="flex justify-center gap-3">
           <button
             v-if="activeType !== 'all'"
@@ -175,14 +166,14 @@
             @click="setTab('all')"
             class="px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-800 transition-all cursor-pointer border-none"
           >
-            Xem tất cả chuyên mục
+            {{ t('sp_all_categories') }}
           </button>
           <button
             type="button"
             @click="inputQuery = ''; inputFocus()"
             class="px-4 py-2 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold hover:bg-surface-tint transition-all cursor-pointer"
           >
-            Nhập từ khóa mới
+            {{ t('sp_new_keyword') }}
           </button>
         </div>
       </div>
@@ -216,7 +207,7 @@
                 <!-- Type Badge -->
                 <span :class="['inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[0.7rem] font-extrabold uppercase tracking-wider', item.typeBadgeClass]">
                   <i :class="item.typeIcon" class="text-[0.65rem]" aria-hidden="true"></i>
-                  <span>{{ item.typeLabel }}</span>
+                  <span>{{ searchTypeLabel(item) }}</span>
                 </span>
 
                 <!-- Category Name -->
@@ -250,10 +241,10 @@
                 :to="item.url"
                 class="inline-flex items-center gap-1.5 font-extrabold text-brand-800 hover:text-[#1B3617] transition-all no-underline group/link"
               >
-                <span>Xem chi tiết</span>
+                <span>{{ t('view_detail') }}</span>
                 <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover/link:translate-x-1" aria-hidden="true"></i>
               </nuxt-link>
-              <span class="text-[#6B7B68] font-medium text-[0.75rem]">Cổng thông tin C11</span>
+              <span class="text-[#6B7B68] font-medium text-[0.75rem]">{{ t('sp_source') }}</span>
             </div>
           </div>
         </article>
@@ -261,11 +252,11 @@
         <!-- Pagination -->
         <nav
           v-if="searchData.pagination && searchData.pagination.totalPages > 1"
-          aria-label="Phân trang kết quả tìm kiếm"
+          :aria-label="t('sp_pagination_aria')"
           class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-line"
         >
           <div class="text-xs text-[#6F7F6C] font-medium">
-            Trang <strong>{{ currentPage }}</strong> trên tổng số <strong>{{ searchData.pagination.totalPages }}</strong> trang
+            <I18nStrong :text="t('sp_page_of')" :values="{ page: currentPage, total: searchData.pagination.totalPages }" />
           </div>
 
           <div class="flex items-center gap-1.5 flex-wrap justify-center">
@@ -274,7 +265,7 @@
               class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all hover:border-brand-600 hover:text-brand-600 disabled:opacity-30 disabled:cursor-not-allowed"
               :disabled="currentPage <= 1"
               @click="setPage(currentPage - 1)"
-              aria-label="Trang trước"
+              :aria-label="t('sp_prev_aria')"
             >
               <i class="fa-solid fa-chevron-left text-[0.7rem]" aria-hidden="true"></i>
             </button>
@@ -299,7 +290,7 @@
               class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-ink-secondary text-xs font-bold cursor-pointer transition-all hover:border-brand-600 hover:text-brand-600 disabled:opacity-30 disabled:cursor-not-allowed"
               :disabled="currentPage >= searchData.pagination.totalPages"
               @click="setPage(currentPage + 1)"
-              aria-label="Trang tiếp"
+              :aria-label="t('sp_next_aria')"
             >
               <i class="fa-solid fa-chevron-right text-[0.7rem]" aria-hidden="true"></i>
             </button>
@@ -312,16 +303,14 @@
 
 <script setup lang="ts">
 import { formatDateVN } from '../utils/formatDate'
+import { useI18n } from '~/composables/useI18n'
+import I18nStrong from '~/components/I18nStrong.vue'
+import { countKey } from '~/utils/i18n-placeholders'
 
-useHead({
-  title: 'Tìm kiếm thông tin | Con Đường Hướng Thiện',
-  meta: [
-    {
-      name: 'description',
-      content: 'Tra cứu thông tin tin tức, tấm gương hoàn lương, mô hình tái hòa nhập và văn bản pháp luật.',
-    },
-  ],
-})
+// Mọi chữ giao diện qua `t()` (trang không cache: máy chủ render đúng ngôn ngữ của cookie
+// từ từ điển hardcoded, trình duyệt đổi sang bản DB). Bản tiếng Anh từng hiện toàn tiếng Việt.
+const { t } = useI18n()
+useHead(() => ({ title: t('sp_seo_title'), meta: [{ name: 'description', content: t('sp_seo_desc') }] }))
 
 const route = useRoute()
 const router = useRouter()
@@ -340,15 +329,22 @@ watch(searchQuery, (newVal) => {
 })
 
 const filterTabs = [
-  { key: 'all', label: 'Tất cả', icon: 'fa-solid fa-layer-group' },
-  { key: 'news', label: 'Bản tin', icon: 'fa-solid fa-newspaper' },
-  { key: 'role_model', label: 'Tấm gương', icon: 'fa-solid fa-award' },
-  { key: 'reintegration_model', label: 'Mô hình', icon: 'fa-solid fa-people-group' },
-  { key: 'document', label: 'Văn bản', icon: 'fa-solid fa-file-lines' },
-  { key: 'faq', label: 'Giải đáp', icon: 'fa-solid fa-circle-question' },
-  { key: 'qa', label: 'Hỏi – Đáp', icon: 'fa-solid fa-comments' },
-  { key: 'page', label: 'Trang', icon: 'fa-solid fa-file-invoice' },
+  { key: 'all', labelKey: 'sp_tab_all', icon: 'fa-solid fa-layer-group' },
+  { key: 'news', labelKey: 'sp_tab_news', icon: 'fa-solid fa-newspaper' },
+  { key: 'role_model', labelKey: 'sp_tab_role_model', icon: 'fa-solid fa-award' },
+  { key: 'reintegration_model', labelKey: 'sp_tab_reintegration_model', icon: 'fa-solid fa-people-group' },
+  { key: 'document', labelKey: 'sp_tab_document', icon: 'fa-solid fa-file-lines' },
+  { key: 'faq', labelKey: 'sp_tab_faq', icon: 'fa-solid fa-circle-question' },
+  { key: 'qa', labelKey: 'sp_tab_qa', icon: 'fa-solid fa-comments' },
+  { key: 'page', labelKey: 'sp_tab_page', icon: 'fa-solid fa-file-invoice' },
 ]
+// Nhãn loại của từng kết quả: máy chủ gửi `typeLabel` tiếng Việt; dịch theo `type` đã biết,
+// loại lạ (nội dung tự tạo) giữ nhãn của máy chủ.
+const TYPE_LABEL_KEYS: Record<string, string> = {
+  news: 'sp_type_news', role_model: 'sp_type_role_model', reintegration: 'sp_type_reintegration_model',
+  reintegration_model: 'sp_type_reintegration_model', document: 'sp_type_document', faq: 'sp_type_faq', qa: 'sp_type_qa', page: 'sp_type_page',
+}
+const searchTypeLabel = (item: { type: string, typeLabel: string }) => (TYPE_LABEL_KEYS[item.type] ? t(TYPE_LABEL_KEYS[item.type]!) : item.typeLabel)
 
 const { data: searchData, pending, error, refresh } = await useAsyncData(
   () => `search-${searchQuery.value}-${activeType.value}-${currentPage.value}`,

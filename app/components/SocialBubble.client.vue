@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useLayoutConfig } from '~/composables/useLayoutConfig'
 import { publicFetch } from '~/composables/publicFetch'
+import { useSocialAutoOpen } from '~/composables/useSocialAutoOpen'
 import type { PublicSocialLinksResponse } from '~/types/public-site-api'
 
 /**
@@ -25,15 +26,19 @@ const open = ref(false)
 const loaded = ref(false)
 const root = ref<HTMLElement | null>(null)
 
-// Trạng thái mở rộng cho chế độ Nút tròn rời (Floating):
-// - Floating: Mặc định mở trên cả PC lẫn Mobile (nút tròn rời không che nội
-//   dung như bảng popup — chỉ là các viên thuốc nhỏ xếp dọc).
-// - Popup: PC mặc định mở, Mobile mặc định thu gọn (bảng popup che nội dung
-//   trên điện thoại).
-// `socialAutoOpen` (từ admin settings) cho phép admin tắt tự mở hoàn toàn.
-const isExpanded = ref(true)
+// Cột nút tròn (floating) mở rộng / bảng (popup) mở: khởi tạo ĐÓNG. Tự mở (cài đặt
+// `socialAutoOpen`) là việc của `useSocialAutoOpen`: một lần mỗi phiên, chỉ sau khi khách cuộn
+// qua đầu trang — không đè lên h1/hero. `isExpanded` từng khởi tạo `true`: nút tròn mở rộng cả
+// khi đã tắt tự mở.
+const isExpanded = ref(false)
+const autoOpen = useSocialAutoOpen({
+  enabled: () => config.value.socialAutoOpen !== false,
+  floating: () => isFloating.value,
+  reveal: () => { if (isFloating.value) isExpanded.value = true; else open.value = true },
+})
 
 function toggleExpand() {
+  autoOpen.handled()
   isExpanded.value = !isExpanded.value
 }
 
@@ -48,24 +53,27 @@ async function load() {
   }
 }
 
+// Mọi lần khách tự mở/đóng (nút, X, Escape, bấm ra ngoài) đều tính là "đã xử lý" cho phiên.
 function toggle() {
+  autoOpen.handled()
   open.value = !open.value
 }
 
 function close() {
+  autoOpen.handled()
   open.value = false
 }
 
 // Đóng khi click ra ngoài hoặc bấm Escape
 function onClickOutside(e: MouseEvent) {
   if (open.value && root.value && !root.value.contains(e.target as Node)) {
-    open.value = false
+    close()
   }
 }
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    if (open.value) open.value = false
+    if (open.value) close()
   }
 }
 
@@ -73,21 +81,8 @@ onMounted(() => {
   void load()
   document.addEventListener('click', onClickOutside)
   document.addEventListener('keydown', onKeydown)
-
-  // Tự mở theo chế độ hiển thị + kích thước màn hình:
-  // - Floating: mở trên cả PC và mobile (nút tròn rời không che nội dung).
-  // - Popup: chỉ mở trên PC (≥768px); mobile thu gọn để bảng không che nội dung.
-  // `socialAutoOpen` tắt → không tự mở ở đâu (admin chủ ý).
-  if (typeof window !== 'undefined' && config.value.socialAutoOpen !== false) {
-    const isDesktop = window.innerWidth >= 768
-    if (isFloating.value) {
-      isExpanded.value = true
-      open.value = true
-    } else {
-      isExpanded.value = isDesktop
-      open.value = isDesktop
-    }
-  }
+  // Kiểu bảng nổi: chỉ PC; nút tròn rời: cả điện thoại; mọi trang: đợi cuộn qua đầu trang.
+  autoOpen.start()
 })
 
 onBeforeUnmount(() => {

@@ -59,12 +59,12 @@
               <ChatMessageContent :text="msg.text" :is-bot="msg.sender === 'bot'" :tool-calls="msg.toolCalls" />
               <span v-if="msg.status === 'pending'" class="inline-flex items-center gap-1 mt-1 text-[0.72rem] opacity-70">
                 <i class="fa-solid fa-circle-notch fa-spin text-[0.6rem]" aria-hidden="true"></i>
-                Đang gửi…
+                {{ t('cw_sending') }}
               </span>
               <div v-if="msg.status === 'error' && msg.error" class="mt-1 flex items-center gap-2 text-[0.72rem]" role="alert">
                 <i class="fa-solid fa-circle-exclamation text-[0.65rem]" aria-hidden="true"></i>
                 {{ msg.error }}
-                <button type="button" class="underline font-semibold text-brand-900 bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">Thử lại</button>
+                <button type="button" class="underline font-semibold text-brand-900 bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">{{ t('cw_retry') }}</button>
               </div>
               <ChatWidgetMessageMeta v-if="msg.sender === 'bot' && !msg.isStreaming" :msg="msg" :copied-msg-id="copiedMsgId" @copy="copyMessageText(msg.text, msg.id)" />
               <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 space-y-1 border-t border-line pt-1.5 list-none pl-0" :aria-label="t('cw_sources')">
@@ -84,27 +84,27 @@
                     @click="toggleSourceDetail(source.entryId)"
                   >
                     <i class="fa-solid fa-book-open text-[0.55rem]" aria-hidden="true"></i>
-                    {{ isSourceExpanded(source.entryId) ? 'Thu gọn' : 'Xem đầy đủ' }}
+                    {{ t(isSourceExpanded(source.entryId) ? 'cw_source_collapse' : 'cw_source_expand') }}
                   </button>
 
                   <div v-if="isSourceExpanded(source.entryId)" class="mt-1 rounded-lg border border-line bg-surface px-2 py-1.5">
-                    <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.64rem] text-ink-muted" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
+                    <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.64rem] text-ink-muted" role="status" aria-live="polite">{{ t('cw_source_loading') }}</p>
                     <div v-else-if="sourceDetailOf(source.entryId)?.status === 'error'" role="alert">
-                      <p class="m-0 text-[0.64rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
-                      <button type="button" class="mt-1 rounded-full bg-brand-900 px-2 py-0.5 text-[0.62rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-1" @click="retrySourceDetail(source.entryId)">Thử lại</button>
+                      <p class="m-0 text-[0.64rem] text-[#b42318]">{{ t('cw_source_error') }}</p>
+                      <button type="button" class="mt-1 rounded-full bg-brand-900 px-2 py-0.5 text-[0.62rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-1" @click="retrySourceDetail(source.entryId)">{{ t('cw_retry') }}</button>
                     </div>
                     <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
                       <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.66rem] font-bold text-brand-900">{{ sourceDetailOf(source.entryId)?.question }}</p>
                       <p class="m-0 whitespace-pre-wrap text-[0.66rem] leading-[1.55] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
-                      <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.6rem] font-bold text-brand-900 underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
+                      <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.6rem] font-bold text-brand-900 underline underline-offset-2">{{ t('cw_source_open') }}</nuxt-link>
                     </template>
                   </div>
                 </li>
               </ul>
               <div v-if="msg.askContact && msg.lead && !msg.isStreaming" class="mt-3 border-t border-line pt-3">
-                <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-brand-900"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!</p>
+                <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-brand-900"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> {{ t('cw_lead_done') }}</p>
                 <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
-                  <p class="m-0 text-[0.75rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
+                  <p class="m-0 text-[0.75rem] font-bold text-[#1f2937]">{{ t('cw_lead_title') }}</p>
                   <!-- Nhãn sr-only: placeholder biến mất khi gõ và không phải tên truy cập đáng tin. -->
                   <label :for="leadFieldId(uid, msg.id || index, 'name')" class="sr-only">{{ t('cw_lead_name') }}</label>
                   <input :id="leadFieldId(uid, msg.id || index, 'name')" v-model="msg.lead.name" type="text" autocomplete="name" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-surface px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-brand-900" />
@@ -115,7 +115,7 @@
                   <label :for="leadFieldId(uid, msg.id || index, 'question')" class="sr-only">{{ t('cw_lead_question') }}</label>
                   <textarea :id="leadFieldId(uid, msg.id || index, 'question')" v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-surface px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-brand-900"></textarea>
                   <p v-if="msg.lead.error" :id="leadFieldId(uid, msg.id || index, 'error')" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
-                  <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-brand-900 px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
+                  <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-brand-900 px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ t(msg.lead.status === 'sending' ? 'cw_lead_sending' : 'cw_lead_submit') }}</button>
                 </form>
               </div>
             </div>
@@ -138,13 +138,13 @@
             <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
           </div>
           <div class="bg-white px-3.5 py-2.5 rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)] border border-surface-tint max-w-xs" role="status" aria-live="polite">
-            <span class="sr-only">Trợ lý đang soạn câu trả lời</span>
+            <span class="sr-only">{{ t('cw_typing_sr') }}</span>
             <div class="flex items-center gap-1.5 text-[0.72rem] font-semibold text-brand-700">
               <span class="relative flex h-2 w-2">
                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
                 <span class="relative inline-flex rounded-full h-2 w-2 bg-brand-700"></span>
               </span>
-              <span>Đang suy nghĩ &amp; tra cứu...</span>
+              <span>{{ t('cw_thinking') }}</span>
             </div>
             <div class="flex gap-1 items-center mt-1.5" aria-hidden="true">
               <span class="w-1.5 h-1.5 bg-brand-900 rounded-full animate-typing-dot motion-reduce:animate-none motion-reduce:opacity-60"></span>
@@ -153,7 +153,7 @@
             </div>
             <!-- Sau ~20 giây: nói rõ lần chờ này dài hơn thường. Nằm trong vùng role="status"
                  nên trình đọc màn hình cũng được báo; cuộc gọi không bị huỷ. -->
-            <p v-if="isSlowWait" class="m-0 mt-1.5 text-[0.72rem] leading-snug text-ink-muted">Đang chờ lâu hơn bình thường, xin anh/chị chờ thêm…</p>
+            <p v-if="isSlowWait" class="m-0 mt-1.5 text-[0.72rem] leading-snug text-ink-muted">{{ t('cw_slow_wait') }}</p>
           </div>
         </div>
         </div>
@@ -168,8 +168,8 @@
         class="flex-shrink-0 m-0 border-t border-line bg-white px-4 py-2 text-[0.72rem] text-ink-muted"
         role="status"
         aria-live="polite"
-      >{{ quickQuestionStatusText }}</p>
-      <p v-else class="sr-only" role="status" aria-live="polite">{{ quickQuestionStatusText }}</p>
+      >{{ t(quickQuestionStatusKey) }}</p>
+      <p v-else class="sr-only" role="status" aria-live="polite">{{ t(quickQuestionStatusKey) }}</p>
 
       <!-- Quick questions -->
       <ChatWidgetQuickQuestions
@@ -204,7 +204,7 @@
       ref="chatToggleButton"
       :is-chatbot-open="isChatbotOpen"
       :chat-teaser-visible="chatTeaserVisible"
-      :chat-teaser-text="chatTeaserText"
+      :chat-teaser-text="t(chatTeaserKey)"
       @toggle="toggleChatbot"
       @dismiss-teaser="dismissTeaser"
     />
@@ -245,7 +245,7 @@ const uid = useId()
 
 const {
   conversations, activeId, activeConversation, chatMessages, isSubmitting, isAwaitingFirstWord, botInput, botInputError,
-  quickQuestions, quickQuestionState, quickQuestionStatusText, limits,
+  quickQuestions, quickQuestionState, quickQuestionStatusKey, limits,
   hydrate, loadQuickQuestions,
   createConversation, switchConversation, deleteConversation, clearChatHistory,
   submitBotQuestion, submitLead,
@@ -283,7 +283,7 @@ const showLauncher = computed(() => route.path !== '/assistant')
 const { copiedMsgId, copyMessageText } = useChatCopy()
 // ─── Teaser bubble. Its timers stop on unmount BEFORE the dialog releases the page
 // (each composable's own onUnmounted, in creation order — as the one hook did).
-const { chatTeaserVisible, chatTeaserText, dismissTeaser, startTeaserCycle } = useChatWidgetTeaser(isChatbotOpen, showLauncher)
+const { chatTeaserVisible, chatTeaserKey, dismissTeaser, startTeaserCycle } = useChatWidgetTeaser(isChatbotOpen, showLauncher)
 
 // ─── Following the newest content ────────────────────────────────────────────
 /**

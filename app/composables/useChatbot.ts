@@ -11,10 +11,11 @@
  */
 export * from '../utils/chatbot-storage'
 import type { ChatMessage } from '../utils/chatbot-storage'
+import { messageKindKey } from '../utils/chat-i18n'
 import { stopTypewriter } from './useChatbotTypewriter'
 import { clearChatHistory, createConversation, deleteConversation, switchConversation } from './chatbot/conversations'
 import { hydrate, persist } from './chatbot/persistence'
-import { loadQuickQuestions, quickQuestionStatusText } from './chatbot/quick-questions'
+import { loadQuickQuestions, quickQuestionStatusKey } from './chatbot/quick-questions'
 import { submitBotQuestion } from './chatbot/send'
 import { expandedSourceIds, isSourceExpanded, retrySourceDetail, sourceDetailOf, sourceDetails, toggleSourceDetail } from './chatbot/sources'
 import {
@@ -36,7 +37,9 @@ import {
  *   - `conversations.ts`   — create / switch / delete / clear (each cancels in flight);
  *   - `quick-questions.ts` — the approved quick questions and their status line;
  *   - `sources.ts`         — the full approved answer behind a citation.
- * What stays here: the contact form send (`submitLead`) and the reply-kind labels.
+ * What stays here: the contact form send (`submitLead`) and the reply-kind helpers. The
+ * WORDS the surfaces show (status lines, reply-kind labels, default title) are i18n keys
+ * translated in the components (`utils/chat-i18n.ts`): module state cannot call `useI18n()`.
  */
 
 export { parseSseLine } from './chatbot/sse'
@@ -72,17 +75,6 @@ export function isProblemKind(kind: string | undefined): boolean {
   return kind === 'not_found' || kind === 'unavailable' || kind === 'rate_limited'
 }
 
-export function messageKindLabel(kind: string | undefined): string {
-  return ({
-    curated: 'Trả lời từ nội dung đã phê duyệt',
-    provider: 'Giải thích có tham chiếu nội dung đã phê duyệt',
-    small_talk: 'Trả lời chào hỏi',
-    not_found: 'Chưa tìm thấy thông tin phù hợp',
-    unavailable: 'Dịch vụ tạm thời chưa sẵn sàng',
-    rate_limited: 'Tạm giới hạn yêu cầu',
-  } as Record<string, string>)[kind ?? ''] || ''
-}
-
 export function messageKindClass(kind: string | undefined): string {
   return isProblemKind(kind) ? 'text-[#9a3412]' : 'text-[#385130]'
 }
@@ -102,7 +94,7 @@ export function useChatbot() {
     botInputError,
     quickQuestions,
     quickQuestionState,
-    quickQuestionStatusText,
+    quickQuestionStatusKey,
 
     // lifecycle
     hydrate,
@@ -132,7 +124,9 @@ export function useChatbot() {
     // Computed: `maxMessageChars` theo trần máy chủ đã báo (xem `inputCharLimit` ở chatbot/state.ts).
     limits,
     isProblemKind,
-    messageKindLabel,
+    // The label under a reply is `t(messageKindKey(kind))`. Not re-exported by name: it is
+    // `utils/chat-i18n.ts`'s, and Nuxt auto-imports both directories (duplicate import).
+    messageKindKey,
     messageKindClass,
   }
 }

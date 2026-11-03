@@ -1,7 +1,7 @@
 <template>
   <div class="flex-shrink-0 border-t border-line">
     <button type="button" class="w-full px-4 py-2 bg-white text-[0.75rem] font-semibold text-ink-secondary flex items-center justify-between border-none cursor-pointer transition-all hover:bg-surface" @click="emit('toggle')">
-      <span class="flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-accent text-[0.7rem]" aria-hidden="true"></i> Câu hỏi gợi ý</span>
+      <span class="flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-accent text-[0.7rem]" aria-hidden="true"></i> {{ t('cw_qq_title') }}</span>
       <i class="fa-solid fa-chevron-up text-[0.6rem] transition-transform duration-200" :class="{ 'rotate-180': !isQuickQuestionsExpanded }" aria-hidden="true"></i>
     </button>
     <div v-show="isQuickQuestionsExpanded" class="px-3.5 pb-2.5 bg-white">
@@ -20,6 +20,8 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from '~/composables/useI18n'
+
 /**
  * The approved quick questions above the chat input (`ChatWidget.vue`, wave3 split), as
  * chips under a fold. Display only. Shown by the widget only once they loaded; loading,
@@ -32,4 +34,5 @@ defineProps<{
   isSubmitting: boolean
 }>()
 const emit = defineEmits<{ toggle: [], ask: [question: string] }>()
+const { t } = useI18n()
 </script>

@@ -320,6 +320,12 @@ export type MountOptions = {
   media?: Record<string, boolean>
   /** `window.visualViewport`, for the phone keyboard. */
   viewport?: { height: number, offsetTop: number }
+  /** Mount this surface instead of the widget (`app/pages/assistant.vue`: the same composable). */
+  file?: string
+  /** `useI18n()` for the mounted files; default: Vietnamese from the hardcoded dictionary. */
+  i18n?: { t: (key: string) => string, currentLang: Vue.Ref<string> }
+  /** More Nuxt auto-imports the mounted surface uses bare (`useHead`, `watch` on /assistant). */
+  auto?: Record<string, unknown>
 }
 
 /** The clock every test starts at (node:test mock timers). */
@@ -440,10 +446,11 @@ export async function mountChat(t: TestContext, server = chatServer(), options: 
       computed: Vue.computed,
       useRoute: () => route,
       navigateTo: (to: string) => { navigations.push(to); log(`navigate ${to}`) },
+      ...options.auto,
     },
     modules: {
       '~/composables/useChatbot': composable,
-      '~/composables/useI18n': { useI18n: () => ({ t: translate, currentLang: Vue.ref('vi') }) },
+      '~/composables/useI18n': { useI18n: () => options.i18n ?? ({ t: translate, currentLang: Vue.ref('vi') }) },
       '~/composables/useChatAutoScroll': autoScroll,
     },
   }
@@ -451,7 +458,7 @@ export async function mountChat(t: TestContext, server = chatServer(), options: 
     ChatMessageContent: await loadSfc(fileURLToPath(new URL('../app/components/ChatMessageContent.vue', import.meta.url)), env),
     ChatFollowUps: await loadSfc(fileURLToPath(new URL('../app/components/ChatFollowUps.vue', import.meta.url)), env),
   }
-  const widget = await mountSfc(WIDGET, { ...env, components })
+  const widget = await mountSfc(options.file ?? WIDGET, { ...env, components })
 
   let open = true
   const close = () => {

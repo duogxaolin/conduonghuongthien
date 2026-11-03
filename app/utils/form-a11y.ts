@@ -36,6 +36,27 @@ export function leadContactInvalid(lead: { error?: string; phone?: string; email
   return !(lead.phone ?? '').trim() && !(lead.email ?? '').trim()
 }
 
+/**
+ * Nhãn bỏ dấu sao chính nó mang ở cuối ("Họ và tên *"). Dấu sao là của component
+ * (`<span aria-hidden> *</span>`, chỉ khi `required`, kèm `aria-required`); hàng DB
+ * `form_name`/`form_phone`/`form_city` của seed — và nhãn cán bộ tự gõ — đã có sẵn một
+ * cái, nên trường bắt buộc hiện "Họ và tên … * *" sau hydrate, còn trường TUỲ CHỌN mang
+ * nhãn đó hiện một dấu sao nói dối (không bắt buộc, không `aria-required`). Áp cho mọi
+ * trường, ở cả nhãn gốc lẫn bản dịch.
+ */
+export function withoutRequiredMark(label: string): string {
+  return label.replace(/\s*\*+\s*$/, '')
+}
+
+/**
+ * Nhãn "Tên:" cho bảng thông tin liên hệ: đúng một dấu hai chấm ở cuối. Các khoá dịch
+ * dùng chung (`address`, `phone`, `email`) không có dấu hai chấm, `footer_agency` thì có.
+ */
+export function labelWithColon(label: string): string {
+  const bare = label.replace(/\s*[:：]\s*$/, '')
+  return bare ? `${bare}:` : ''
+}
+
 export interface FieldValidationMessages {
   required: string
   email: string

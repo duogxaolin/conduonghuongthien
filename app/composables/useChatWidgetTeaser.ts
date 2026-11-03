@@ -1,4 +1,5 @@
 import { onUnmounted, ref, type Ref } from 'vue'
+import { CHAT_TEASER_KEYS } from '../utils/chat-i18n'
 
 /**
  * The teaser bubble beside the chat launcher: a rotating one-line invitation, first 2 s
@@ -9,20 +10,13 @@ import { onUnmounted, ref, type Ref } from 'vue'
  * Split out of `ChatWidget.vue` (wave3). `startTeaserCycle()` is called from the widget's
  * `onMounted`, so no timer ever starts during SSR (tests/no-server-side-timers.test.ts);
  * the timers are cleared on unmount.
+ *
+ * The invitation is an i18n KEY (`CHAT_TEASER_KEYS`, `utils/chat-i18n.ts`); the widget shows
+ * `t(chatTeaserKey)` — the seven sentences used to be Vietnamese literals here.
  */
-const CHAT_TEASER_MESSAGES = [
-  'Bạn cần tìm hiểu về quyền lợi sau khi chấp hành xong án phạt tù?',
-  'Tôi có thể giúp bạn tra cứu thủ tục xóa án tích miễn phí.',
-  'Cần hỗ trợ tìm việc làm sau khi tái hòa nhập cộng đồng?',
-  'Hỏi tôi về chính sách hỗ trợ vay vốn cho người hoàn lương nhé!',
-  'Bạn muốn biết về các mô hình tái hòa nhập thành công?',
-  'Tôi giúp bạn tìm hiểu quy trình đăng ký tạm trú sau mãn hạn tù.',
-  'Cần tư vấn về quyền học nghề, học văn hóa miễn phí?',
-]
-
 export function useChatWidgetTeaser(isChatbotOpen: Ref<boolean>, showLauncher: Ref<boolean>) {
   const chatTeaserVisible = ref(false)
-  const chatTeaserText = ref('')
+  const chatTeaserKey = ref('')
   let teaserInterval: ReturnType<typeof setInterval> | null = null
   let teaserInitTimeout: ReturnType<typeof setTimeout> | null = null
   let teaserHideTimeout: ReturnType<typeof setTimeout> | null = null
@@ -30,7 +24,7 @@ export function useChatWidgetTeaser(isChatbotOpen: Ref<boolean>, showLauncher: R
 
   const showRandomTeaser = () => {
     if (isChatbotOpen.value || teaserDismissed) return
-    chatTeaserText.value = CHAT_TEASER_MESSAGES[Math.floor(Math.random() * CHAT_TEASER_MESSAGES.length)]!
+    chatTeaserKey.value = CHAT_TEASER_KEYS[Math.floor(Math.random() * CHAT_TEASER_KEYS.length)]!
     chatTeaserVisible.value = true
     if (teaserHideTimeout) clearTimeout(teaserHideTimeout)
     teaserHideTimeout = setTimeout(() => { chatTeaserVisible.value = false }, 6000)
@@ -60,5 +54,5 @@ export function useChatWidgetTeaser(isChatbotOpen: Ref<boolean>, showLauncher: R
 
   onUnmounted(stopTeaserCycle)
 
-  return { chatTeaserVisible, chatTeaserText, dismissTeaser, startTeaserCycle }
+  return { chatTeaserVisible, chatTeaserKey, dismissTeaser, startTeaserCycle }
 }

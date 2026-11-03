@@ -69,9 +69,13 @@ test('useChatbot keeps its public surface: export names and the shape of what us
   const ctx = await mountChat(t)
   const names = Object.keys(ctx.composable).sort()
   assert.deepEqual(names, [
-    'CHATBOT_CLIENT_LIMITS', 'CHATBOT_RESPONSE_KINDS', 'CHATBOT_SEND_FAILURE_MESSAGES', 'CHATBOT_WELCOME_MESSAGE',
+    // 2026-11-02 (CHANGELOG § 71): the words are i18n keys translated by the surfaces —
+    // `messageKindLabel` (Vietnamese) left: `useChatbot().messageKindKey` / `utils/chat-i18n.ts`;
+    // `quickQuestionStatusText` became `quickQuestionStatusKey`; `CHATBOT_UNTITLED` moved to the
+    // storage module it is saved by.
+    'CHATBOT_CLIENT_LIMITS', 'CHATBOT_RESPONSE_KINDS', 'CHATBOT_SEND_FAILURE_MESSAGES', 'CHATBOT_UNTITLED', 'CHATBOT_WELCOME_MESSAGE',
     'chatInputTooLongText', 'describeChatSendFailure', 'isProblemKind', 'isSourceExpanded', 'knowledgeEntryId',
-    'messageKindClass', 'messageKindLabel', 'normalizeConversation', 'normalizeFollowUps', 'normalizeSource',
+    'messageKindClass', 'normalizeConversation', 'normalizeFollowUps', 'normalizeSource',
     'normalizeStoredMessage', 'parseSseLine', 'safeHttpsUrl', 'safeSourceUrl', 'sourceDetailOf', 'useChatbot',
   ])
   const api = (ctx.composable.useChatbot as () => Record<string, unknown>)()
@@ -79,11 +83,11 @@ test('useChatbot keeps its public surface: export names and the shape of what us
   assert.deepEqual(kinds, [
     'conversations:ref', 'activeId:ref', 'activeConversation:computed', 'chatMessages:computed', 'isSubmitting:ref',
     'isAwaitingFirstWord:computed', 'botInput:ref', 'botInputError:ref', 'quickQuestions:ref', 'quickQuestionState:ref',
-    'quickQuestionStatusText:computed', 'hydrate:function', 'persist:function', 'loadQuickQuestions:function',
+    'quickQuestionStatusKey:computed', 'hydrate:function', 'persist:function', 'loadQuickQuestions:function',
     'createConversation:function', 'switchConversation:function', 'deleteConversation:function', 'clearChatHistory:function',
     'submitBotQuestion:function', 'submitLead:function', 'stopTypewriter:function', 'sourceDetails:ref', 'expandedSourceIds:ref',
     'sourceDetailOf:function', 'isSourceExpanded:function', 'toggleSourceDetail:function', 'retrySourceDetail:function',
-    'limits:computed', 'isProblemKind:function', 'messageKindLabel:function', 'messageKindClass:function',
+    'limits:computed', 'isProblemKind:function', 'messageKindKey:function', 'messageKindClass:function',
   ])
   // Two calls are one state: the widget and /assistant show the same conversation.
   const again = (ctx.composable.useChatbot as () => Record<string, unknown>)()

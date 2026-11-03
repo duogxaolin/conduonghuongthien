@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readdirSync } from 'node:fs'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { hardcodedDictionary } from '../app/composables/i18n-default-dictionary.ts'
+import { QUICK_QUESTION_STATUS_KEYS } from '../app/utils/chat-i18n.ts'
 import {
   autoImportedIndexFiles, CHAT_WIDGET_FAMILY, CHATBOT_COMPOSABLE_FAMILY, familyScript, familySource, familyTemplate, familyVueFiles,
   moduleFamilyParts, moduleFamilySource, readAppFile,
@@ -45,9 +47,15 @@ test('quick-question loading, error, empty, success, and retry states are explic
     assert.match(script, new RegExp(`quickQuestionState\\.value = ['"]${state}['"]|quickQuestionState\\.value === ['"]${state}['"]`))
   }
   assert.match(source, /quickQuestionState(?:\.value)? === ['"]success['"]|\? ['"]success['"] : ['"]empty['"]/)
-  assert.match(script, /Đang tải câu hỏi đã được phê duyệt/)
-  assert.match(script, /Hiện không thể tải câu hỏi gợi ý/)
-  assert.match(script, /Hiện chưa có câu hỏi gợi ý đã được phê duyệt/)
+  // Each state says its own sentence — an i18n key per state since 2026-11-02 (the module
+  // cannot call useI18n(); the surfaces show `t(quickQuestionStatusKey)`). Distinct keys, and
+  // the Vietnamese wording each said before.
+  assert.match(script, /quickQuestionStatusKey = computed\(\(\) => QUICK_QUESTION_STATUS_KEYS\[quickQuestionState\.value\]\)/)
+  assert.match(template, /\{\{ t\(quickQuestionStatusKey\) \}\}/)
+  assert.equal(new Set(Object.values(QUICK_QUESTION_STATUS_KEYS)).size, 4)
+  assert.match(hardcodedDictionary.vi![QUICK_QUESTION_STATUS_KEYS.loading]!, /Đang tải câu hỏi đã được phê duyệt/)
+  assert.match(hardcodedDictionary.vi![QUICK_QUESTION_STATUS_KEYS.error]!, /Hiện không thể tải câu hỏi gợi ý/)
+  assert.match(hardcodedDictionary.vi![QUICK_QUESTION_STATUS_KEYS.empty]!, /Hiện chưa có câu hỏi gợi ý đã được phê duyệt/)
   // Retry is no longer a separate button: reopening the panel re-fetches the
   // quick questions whenever the previous attempt errored or came back empty.
   assert.match(script, /quickQuestionState\.value === 'error' \|\| quickQuestionState\.value === 'empty'\) loadQuickQuestions\(\)/)
@@ -63,7 +71,7 @@ test('governed SSE endpoint and response metadata drive public status rendering'
   for (const kind of ['curated', 'provider', 'not_found', 'unavailable', 'rate_limited']) {
     assert.match(script, new RegExp(`['"]${kind}['"]`))
   }
-  assert.match(template, /messageKindLabel\(msg\.kind\)/)
+  assert.match(template, /t\(messageKindKey\(msg\.kind\)\)/)
   assert.match(template, /msg\.sources\?\.length/)
   assert.match(template, /:aria-label="t\('cw_sources'\)"/)
 })
@@ -97,7 +105,11 @@ test('client submission is bounded, single-flight, abortable, and preserves fail
   // chaining or a plain if — is not the contract.
   assert.match(script, /chatRequestController(?:\?)?\.abort\(\)/)
   assert.match(script, /botInput\.value = text/)
-  assert.match(script, /if \(succeeded\) \{\s*botInput\.value = ''/s)
+  // The box empties as the question is sent — before the reply is awaited — not once it is
+  // answered: `if (succeeded) { botInput.value = ''` held the sent question in the box for the
+  // whole reply (2026-11-02; behaviour in tests/chat-input-clears-on-send.test.ts).
+  assert.match(script, /botInput\.value = ''[\s\S]*?await fetchStreamBotReply\(question/)
+  assert.doesNotMatch(script, /if \(succeeded\) \{\s*botInput\.value = ''/s)
 })
 
 test('widget exposes accessible status, focus, reduced-motion, and mobile-safe controls', () => {
@@ -158,7 +170,12 @@ test('injection proof: the widget half of these checks reads every part of ChatW
   const composer = 'components/chat-widget/ChatWidgetComposer.vue'
   assert.doesNotMatch(widgetTemplate({ [composer]: readAppFile(composer).replace(':maxlength="limits.maxMessageChars"', '') }), /:maxlength="(?:CHATBOT_CLIENT_LIMITS|limits)\.maxMessageChars"/)
   const meta = 'components/chat-widget/ChatWidgetMessageMeta.vue'
-  assert.doesNotMatch(widgetTemplate({ [meta]: readAppFile(meta).replace('messageKindLabel(msg.kind)', "''") }), /messageKindLabel\(msg\.kind\)/)
+  // The planted part must actually differ from the file: a probe whose search string is gone
+  // from the part (it was `messageKindLabel(msg.kind)` until 2026-11-02) replaces nothing and
+  // the "must appear" check below passes for no reason (kiểm chứng độc lập W3).
+  const metaWithoutLabel = readAppFile(meta).replace('t(messageKindKey(msg.kind))', "''")
+  assert.notEqual(metaWithoutLabel, readAppFile(meta), 'the probe no longer finds the reply-kind label in ChatWidgetMessageMeta')
+  assert.doesNotMatch(widgetTemplate({ [meta]: metaWithoutLabel }), /t\(messageKindKey\(msg\.kind\)\)/)
   // "Must appear nowhere": markup or a log line planted in a part — or a part added
   // later — is in what the checks read.
   assert.match(widgetTemplate({ 'components/chat-widget/ChatWidgetLater.vue': '<template><div v-html="x"></div></template>' }), /v-html/)

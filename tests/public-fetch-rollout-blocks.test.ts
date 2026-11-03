@@ -297,7 +297,11 @@ describe('components/SocialBubble.client.vue over publicFetch', () => {
       responder: routes({ 'GET /api/public/social-links': answer }),
       auto: { useLayoutConfig: () => ({ config: Vue.computed(() => ({ socialDisplayMode: 'floating', socialAutoOpen: true })) }) },
       modules: { '~/composables/useLayoutConfig': { useLayoutConfig: () => ({ config: Vue.computed(() => ({ socialDisplayMode: 'floating', socialAutoOpen: true })) }) } },
-      globals: { window: { innerWidth: 1280, matchMedia: () => ({ matches: false }), addEventListener: () => {}, removeEventListener: () => {} }, document: { addEventListener: () => {}, removeEventListener: () => {} } },
+      // Loaded already scrolled past the top of the page, in a session that has not auto-opened
+      // yet: the buttons are shown on load (at the top of any page they wait for a scroll —
+      // tests/social-bubble-auto-open.test.ts).
+      route: { path: '/news' },
+      globals: { window: { innerWidth: 1280, innerHeight: 800, scrollY: 900, sessionStorage: { getItem: () => null, setItem: () => {} }, matchMedia: () => ({ matches: false }), addEventListener: () => {}, removeEventListener: () => {} }, document: { addEventListener: () => {}, removeEventListener: () => {} } },
     })
     await settle()
     return ctx

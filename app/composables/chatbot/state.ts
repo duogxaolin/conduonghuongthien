@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import {
   CHATBOT_CLIENT_LIMITS,
+  CHATBOT_UNTITLED,
   CHATBOT_WELCOME_MESSAGE,
   type ChatMessage,
   type StoredConversation,
@@ -50,11 +51,11 @@ export const quickQuestionState = ref<'loading' | 'success' | 'empty' | 'error'>
 export const hydrated = ref(false)
 
 /**
- * The title of a conversation in which the server has accepted no question yet. A conversation
- * leaves it only through the accepted-question gate in `./send.ts` (FINDING-C2), and comes back
- * to it when cleared.
+ * The title of a conversation in which the server has accepted no question yet (defined with
+ * the storage it is saved in, `utils/chatbot-storage.ts`). A conversation leaves it only through
+ * the accepted-question gate in `./send.ts` (FINDING-C2), and comes back to it when cleared.
  */
-export const CHATBOT_UNTITLED = 'Cuộc trò chuyện mới'
+export { CHATBOT_UNTITLED }
 
 export function newLocalId(): string {
   if (import.meta.client && typeof crypto?.randomUUID === 'function') return crypto.randomUUID()

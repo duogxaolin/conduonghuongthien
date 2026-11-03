@@ -9,10 +9,10 @@
           <i class="fa-solid fa-robot text-white text-[1.1rem]"></i>
         </div>
         <div>
-          <h4 id="public-chatbot-title" class="text-[0.95rem] font-bold text-white m-0 leading-tight">Trợ lý Hướng Thiện</h4>
+          <h4 id="public-chatbot-title" class="text-[0.95rem] font-bold text-white m-0 leading-tight">{{ t('cw_title') }}</h4>
           <p class="text-[0.7rem] text-white/60 mt-0.5 mb-0 flex items-center gap-1.5">
             <span class="w-2 h-2 rounded-full bg-accent inline-block animate-pulse" aria-hidden="true"></span>
-            Đang hoạt động
+            {{ t('cw_online') }}
           </p>
         </div>
       </div>
@@ -34,7 +34,7 @@
         <button class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90" @click="emit('expand')" :title="t('cw_expand')" :aria-label="t('cw_expand')">
           <i class="fa-solid fa-up-right-and-down-left-from-center text-[0.75rem]"></i>
         </button>
-        <button class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="emit('close')" aria-label="Đóng">
+        <button class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="emit('close')" :aria-label="t('close')">
           <i class="fa-solid fa-xmark text-[0.9rem]"></i>
         </button>
       </div>
