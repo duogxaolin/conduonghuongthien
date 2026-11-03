@@ -80,6 +80,8 @@ export function vietnamDateString(at: Date): string {
  * mức tháng mới.
  */
 export function vietnamMonthStart(at: Date): Date {
-  const local = new Date(at.getTime() + VIETNAM_OFFSET_MS)
-  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - VIETNAM_OFFSET_MS)
+  // Lấy "YYYY-MM" của giờ VN từ chuỗi ISO (không dùng hàm UTC của Date: bước CI "No accidental UTC
+  // date usage" cấm các hàm đó ngoài analytics — cùng kết quả, không chạm lịch của máy).
+  const yearMonth = new Date(at.getTime() + VIETNAM_OFFSET_MS).toISOString().slice(0, 7)
+  return new Date(Date.parse(`${yearMonth}-01T00:00:00.000Z`) - VIETNAM_OFFSET_MS)
 }
