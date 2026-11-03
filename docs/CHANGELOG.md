@@ -1112,7 +1112,6 @@ Mỗi mục có test đỏ trước khi sửa.
   - Bộ đọc import bằng AST được tách sang `tests/_module-references.ts`, dùng chung với `server-no-app-imports`.
 - **Kiểm chứng:** 5 lượt `npm run build` sạch liên tiếp (xoá `.output` và `node_modules/.cache/nuxt` giữa các lượt) đều xanh. Đầu ra SSR không còn chuỗi `"../…shared/"` nào, và `link-policy` được nạp bằng đường tuyệt đối. `npm test` 4414 / 4387 pass / 0 fail / 27 skip (+20). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh.
 
-<<<<<<< HEAD
 ### 33. Đợt 2 — 2A bảo mật (2026-10-24)
 
 OpenSpec `wave2-hardening`, nhóm 2 (task 2.1–2.6), quyết định D-CSRF, D1, D-SECRETS, D-NAMES theo mặc định của proposal. Đã đọc `openspec/ui-dna.md` trước mọi thay đổi giao diện. Lý do + runbook → `docs/decisions/realm-safety.md` § *Đợt 2 — 2A bảo mật*.
@@ -1855,8 +1854,8 @@ Nhánh `wave2/backup-split-followups` (PR #143, 9 commit `4c1ad54`…`09e8dcd`),
 - **Kiểm chứng:**
   - Trên nhánh (PR #143): unit 4839 / 4786 pass / 0 fail / 53 skip; typecheck 0 lỗi, lint 0 error. Integration trên MySQL 8 dev, chạy lần lượt: `backup-dump` 18/18, `media-repoint` 1/1, `media-self-heal` 1/1, `media-sync-rewrite` 2/2, không DB/khoá nào sót.
   - Sau khi gộp vào `wave2/integration` (2026-10-25, Node 26.11): `npm test` 5063 / 5010 pass / 0 fail / 53 skip trước guard nhóm `backup`; sau guard 5072 / 5019 / 0 / 53 (+9, đều ở `service-split-boundaries`). Typecheck 0 lỗi. eslint 0 error / 16 warning (không cảnh báo nào ở tệp mới/sửa). Không chạy integration/E2E ở lượt này (MySQL dùng chung đang chạy suite khác).
-=======
-### 31. Chatbot trả lời chủ quyền biển, đảo theo lập trường Trung Quốc (sự cố 2026-10-27)
+
+### 31b. Chatbot trả lời chủ quyền biển, đảo theo lập trường Trung Quốc (sự cố 2026-10-27)
 
 Khách hỏi bằng tiếng Trung "哪个国家拥有西沙群岛和南沙群岛?". Không khớp kho, production `mode=ai` + `ai_freeform`, nên câu đi thẳng tới model. Model trả lời "自古以来就是中国领土" và tự nhận là trợ lý của "公安部", giúp tìm hiểu "中国法律法规". Lý do và ràng buộc → `docs/decisions/chatbot.md` § Chủ quyền biển, đảo.
 
@@ -1888,7 +1887,7 @@ Khách hỏi bằng tiếng Trung "哪个国家拥有西沙群岛和南沙群岛
   - Cho tới khi bản vá lên production, đặt "ngoài phạm vi" = `knowledge_only` ở `/admin/chatbot/settings`.
   - Đơn vị phụ trách duyệt câu chữ lập trường (vi/zh/en) trước khi merge.
   - Chạy cùng truy vấn trên CSDL production — bản dịch bài viết dùng chung router AI.
->>>>>>> wave1/integration
+
 
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
