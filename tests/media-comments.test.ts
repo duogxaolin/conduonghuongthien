@@ -3,7 +3,8 @@
  *
  * The engine is ONE implementation serving two item kinds. That is the whole
  * design (design.md §1): a second table would have started from none of the seven
- * mechanisms `server/services/comments.ts` already carries — reply-depth
+ * mechanisms the comment service (`server/services/comments.ts` and its
+ * `comments-*.ts` sub-files) already carries — reply-depth
  * eligibility, two-key rate limiting, the notification written in the same
  * transaction as the reply, the reply email, the cascade-impact counter, the
  * admin-reply path, and `serializePublicComment` — and the loss would have been
@@ -32,8 +33,21 @@ import {
   notificationUrl,
   COMMENT_THREAD_PER_PAGE,
 } from '../server/services/notifications.ts'
+import { commentServiceFiles, fileDeclaring, readServiceFile } from './_comments-service-source'
+import { ARTICLE_COMMENTS_FAMILY, familySource } from './_component-family.ts'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
+
+/**
+ * The source of the comment-service file that declares `name`.
+ *
+ * `server/services/comments.ts` is a barrel since the wave2 split; the guards
+ * below read the sub-file that actually holds each function, found by scanning
+ * every `comments*.ts` (see tests/_comments-service-source.ts) rather than a
+ * hard-coded path, so moving a function between sub-files cannot leave a guard
+ * reading a file that no longer contains it.
+ */
+const declaringSource = (name: string) => fileDeclaring(name).source
 
 /** Strip comments before asserting a thing must NOT appear, so the sentence
  *  explaining why it is forbidden does not fail the test explaining it. */
@@ -101,7 +115,7 @@ describe('10.1 — exactly one item, enforced at runtime', () => {
   })
 
   it('createComment resolves the target before it touches anything else', () => {
-    const body = functionBody(read('server/services/comments.ts'), 'createComment')
+    const body = functionBody(declaringSource('createComment'), 'createComment')
     const resolveAt = body.indexOf('resolveCommentTarget(')
     const insertAt = body.indexOf('tx.insert(articleComments)')
     assert.ok(resolveAt !== -1, 'createComment no longer runs the XOR guard')
@@ -154,7 +168,7 @@ describe('10.2 — a parent must belong to the same item AND the same kind', () 
     // before this change — could not distinguish "both are media comments" from
     // "both are on the same media item", so a reply could cross between two
     // videos with no check able to notice.
-    const source = read('server/services/comments.ts')
+    const source = declaringSource('checkParentEligibility')
     assert.match(
       source,
       /export function checkParentEligibility\(parent: ParentCandidate \| null \| undefined, target: CommentTarget\)/,
@@ -164,7 +178,7 @@ describe('10.2 — a parent must belong to the same item AND the same kind', () 
 })
 
 describe('10.3 — the thread is scoped by item in BOTH passes', () => {
-  const body = functionBody(read('server/services/comments.ts'), 'loadCommentThread')
+  const body = functionBody(declaringSource('loadCommentThread'), 'loadCommentThread')
 
   it('uses isNull, never eq(column, null)', () => {
     // Drizzle renders `eq(column, null)` as `= NULL`, which is unknown in SQL
@@ -216,7 +230,7 @@ describe('10.3 — the thread is scoped by item in BOTH passes', () => {
 })
 
 describe('10.4 — the moderation list carries both kinds, and neither join may drop a row', () => {
-  const body = functionBody(read('server/services/comments.ts'), 'listCommentsForAdmin')
+  const body = functionBody(declaringSource('listCommentsForAdmin'), 'listCommentsForAdmin')
 
   it('joins media_items with a leftJoin', () => {
     // An inner join drops every comment whose media item is gone — which is
@@ -270,7 +284,7 @@ describe('10.4 — the moderation list carries both kinds, and neither join may 
 })
 
 describe('10.5 — a removal records which item it was on', () => {
-  const body = functionBody(read('server/services/comments.ts'), 'deleteComment')
+  const body = functionBody(declaringSource('deleteComment'), 'deleteComment')
 
   it('reads mediaItemId in its first select', () => {
     assert.match(body, /mediaItemId:\s*articleComments\.mediaItemId/, 'deleteComment does not read the media identifier')
@@ -300,8 +314,17 @@ describe('10.5 — a removal records which item it was on', () => {
   it('every deletion path still routes through this one function', () => {
     // Six callers share it. A second deletion path is how replies and
     // notifications stop being handled identically.
-    const source = read('server/services/comments.ts')
+    const { file: deletionFile, source } = fileDeclaring('deleteComment')
     assert.match(source, /export async function deleteComment/, 'the single deletion path is gone')
+    // Since the split the service is several files. A comment DELETE written in
+    // any other comment-service file is a second deletion path by construction.
+    for (const file of commentServiceFiles()) {
+      if (file === deletionFile) continue
+      assert.ok(
+        !/\.delete\(articleComments\)/.test(stripComments(readServiceFile(file))),
+        `${file} deletes comments itself — route it through ${deletionFile}`,
+      )
+    }
     for (const file of [
       'server/services/readers.ts',
       'server/api/public/comments/[id].delete.ts',
@@ -481,11 +504,12 @@ describe('10.8 — email for a media reply, and never inside the transaction', (
   it('sends after the transaction commits, never inside it', () => {
     // Inside, an unreachable SMTP host holds the comment's row locks open for the
     // length of a network timeout — a mail outage becomes a comment outage.
-    const comments = read('server/services/comments.ts')
     for (const fn of ['createComment', 'createAdminReply']) {
-      const body = functionBody(comments, fn)
+      const body = functionBody(declaringSource(fn), fn)
       const sendAt = body.indexOf('await sendReplyEmail(')
-      const txAt = body.indexOf('await db.transaction(')
+      // The transaction may sit under its deadlock retry (R6 round 5: a reply chosen as a deadlock
+      // victim is written again in a new transaction) — the e-mail still goes after both.
+      const txAt = body.search(/await (?:withDeadlockRetry\(\(\) => )?db\.transaction\(/)
       assert.ok(sendAt !== -1, `${fn} no longer sends the reply email`)
       assert.ok(txAt !== -1, `${fn} no longer wraps its writes in a transaction`)
       assert.ok(sendAt > txAt, `${fn} sends the email before its transaction`)
@@ -586,10 +610,18 @@ describe('10.9 — one thread component, parameterized on the item axis', () => 
     )
   })
 
+  // Since wave3 4.2 the thread is a family (ArticleComments.vue + components/comments/ +
+  // useCommentWrites/useCommentAnchor + utils/comment-thread.ts — tests/_component-family.ts).
+  // The two "must never appear" checks below read all of it; the item axis above stays on
+  // ArticleComments.vue, where the thread target is declared.
+  const thread = (overrides?: Record<string, string>) => stripComments(familySource(ARTICLE_COMMENTS_FAMILY, overrides))
+  const vHtmlIn = (source: string) => /v-html/.test(source)
+  const setupFetchIn = (source: string) => /useFetch|useAsyncData/.test(source)
+
   it('still renders comment bodies as text, never as markup', () => {
     // The body is stored verbatim, so this template is the only thing standing
     // between a citizen's text and being interpreted.
-    assert.ok(!/v-html/.test(stripComments(component)), 'v-html is back in the comment thread')
+    assert.ok(!vHtmlIn(thread()), 'v-html is back in the comment thread')
   })
 
   it('still loads the thread after mount only', () => {
@@ -598,8 +630,18 @@ describe('10.9 — one thread component, parameterized on the item axis', () => 
     // comments are the current reader's to delete.
     assert.match(component, /onMounted\(async \(\) => \{/, 'the component no longer defers its load to mount')
     assert.ok(
-      !/useFetch|useAsyncData/.test(stripComments(component)),
+      !setupFetchIn(thread()),
       'the thread is fetched during setup, so it can enter server-rendered HTML',
     )
+  })
+
+  it('both checks bite on a part of the thread, not only on ArticleComments.vue (injection proof)', () => {
+    const item = 'components/comments/CommentThreadItem.vue'
+    const itemSource = readFileSync(new URL(`../app/${item}`, import.meta.url), 'utf8')
+    assert.ok(vHtmlIn(thread({ [item]: itemSource.replace('</article>', '<div v-html="comment.body"></div></article>') })))
+    assert.ok(vHtmlIn(thread({ 'components/comments/Planted.vue': '<template><div v-html="x"></div></template>' })))
+    const writes = 'composables/useCommentWrites.ts'
+    const writesSource = readFileSync(new URL(`../app/${writes}`, import.meta.url), 'utf8')
+    assert.ok(setupFetchIn(thread({ [writes]: `${writesSource}\nconst early = useAsyncData('x', () => 1)\n` })))
   })
 })

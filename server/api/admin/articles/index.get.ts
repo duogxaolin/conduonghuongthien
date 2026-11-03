@@ -2,6 +2,7 @@ import { finitePositive, MAX_PAGE } from '../../../utils/query-number'
 import { getDb } from '../../../utils/db'
 import { articles, users, categories } from '../../../db/schema'
 import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
+import { likeContains } from '../../../utils/like-pattern'
 import { eq, like, desc, sql, count, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'
 import { articleReadScope } from '../../../services/articles'
@@ -11,7 +12,9 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event)
   const page = finitePositive(query.page, 1, MAX_PAGE)
-  const perPage = Math.min(100, Math.max(10, Number(query.perPage || 20)))
+  // finitePositive before the floor of 10: `?perPage=abc` was NaN through both clamps (Drizzle then
+  // drops LIMIT/OFFSET — every row) and `?perPage=12.5` a LIMIT MySQL refuses, a 500 (FINDING-R7-8).
+  const perPage = Math.max(10, finitePositive(query.perPage || 20, 20, 100))
   const offset = (page - 1) * perPage
   const search = String(query.search || '').trim()
   const typeFilter = String(query.type || '').trim()
@@ -38,7 +41,8 @@ export default defineEventHandler(async (event) => {
 
   const conditions = [articleReadScope(adminUser, typeFilter)]
   if (search) {
-    conditions.push(like(articles.title, `%${search}%`))
+    // The text as typed: `_` and `%` are not wildcards (FINDING-R7-7, as R6-8 for readers).
+    conditions.push(like(articles.title, likeContains(search)))
   }
   if (typeFilter) {
     conditions.push(eq(articles.type, typeFilter))
@@ -90,30 +94,12 @@ export default defineEventHandler(async (event) => {
       updatedAt:    articles.updatedAt,
       authorName:   users.username,
       /**
-       * Total displayed views (real + fabricated) per row.
-       *
-       * A correlated subquery rather than a fourth left join: `article_view_daily`
-       * holds one row per day per source, so joining it would fan each article
-       * out into many rows and `limit`/`offset` would then paginate view rows
-       * instead of articles. Still one statement for the whole page — the
-       * per-row fetch this replaces would be N+1 on a list that already joins
-       * three tables. Articles with no views report 0, not null.
-       *
-       * ⚠️ Tên bảng viết THẲNG RA, không nội suy `${articleViewDaily.articleId}`.
-       * Drizzle chỉ gắn tiền tố tên bảng khi truy vấn bao ngoài CÓ JOIN; không có
-       * join thì nó phát ra tên cột trần, và trong một truy vấn con trên
-       * `article_view_daily` thì `` \`id\` `` trần trỏ vào khoá chính của chính
-       * bảng đó chứ không phải bài viết ở ngoài — tương quan lặng lẽ ngừng tương
-       * quan, MySQL không báo gì, và mọi bài đều trả về 0. Ở đây hiện có join nên
-       * dạng nội suy vẫn đúng; nó chỉ đúng NHỜ một phần khác của truy vấn, và xoá
-       * join đi là hỏng bộ đếm mà không có gì đỏ. Xem
-       * tests/correlated-subquery-qualification.test.ts.
+       * Total displayed views (real + fabricated) per row — the maintained column
+       * (wave2 design D6), equal to the sum of the article's `article_view_daily`
+       * rows. It replaced a correlated subquery per row; the real/fabricated split
+       * is in the per-article stats modal (`getArticleViewStats`), not here.
        */
-      viewTotal: sql<number>`(
-        SELECT COALESCE(SUM(\`v\`.\`real_views\` + \`v\`.\`fabricated_views\`), 0)
-        FROM \`article_view_daily\` \`v\`
-        WHERE \`v\`.\`article_id\` = \`articles\`.\`id\`
-      )`,
+      viewTotal:    articles.viewTotal,
       translatedLangs: sql<string>`(
         SELECT COALESCE(GROUP_CONCAT(DISTINCT CONCAT(\`t\`.\`lang_code\`, ':', \`t\`.\`status\`) SEPARATOR ','), '')
         FROM \`article_translations\` \`t\`
@@ -125,7 +111,9 @@ export default defineEventHandler(async (event) => {
     .leftJoin(categories, eq(articles.categoryId, categories.id))
     .leftJoin(parentCategories, eq(categories.parentId, parentCategories.id))
     .where(whereClause)
-    .orderBy(desc(articles.createdAt))
+    // `id` breaks ties: articles imported in one second share `created_at`, and MySQL returns tied
+    // rows in any order — two pages could share or skip one (FINDING-R7-9, as R6-9).
+    .orderBy(desc(articles.createdAt), desc(articles.id))
     .limit(perPage)
     .offset(offset)
 

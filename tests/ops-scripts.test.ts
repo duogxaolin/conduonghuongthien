@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFileSync, statSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  EXPECTED_MANAGE_LIBS, MANAGE_ENTRY, manageFunction, manageLayoutProblems, manageParts, manageSource,
+} from './_manage-sh-source'
 
 /**
  * The operational scripts and the CI definition. They are not imported by the
  * app, so nothing else would notice them rotting.
+ *
+ * production/manage.sh is an entry plus production/lib/*.sh (wave3 4.4): every guard
+ * on it reads the WHOLE toolkit through tests/_manage-sh-source.ts, never the entry
+ * file alone.
  */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -36,24 +46,60 @@ test('the backup script is executable and fails loudly', () => {
 
 test('a backup is verified before it is trusted', () => {
   const script = read('scripts/backup-db.sh')
-  // A dump that fails halfway leaves a plausible-looking file behind.
-  assert.match(script, /Dump completed/, 'no completion marker check — a truncated dump would pass')
+  // A dump that fails halfway leaves a plausible-looking file behind. The marker must
+  // start a line — "Dump completed" inside a row's text is a dump cut off mid-INSERT
+  // (behaviour: tests/ops-scripts-sandbox.test.ts, FAKE_DUMP_MARKER_MIDLINE).
+  assert.match(script, /^DUMP_MARKER='\^-- Dump completed'$/m, 'the completion marker is not anchored to the start of a line — a truncated dump would pass')
+  assert.match(script, /^has_completion_marker "\$PARTIAL" \|\| fail verify /m, 'the dump being written is not checked for its completion marker')
+  assert.doesNotMatch(script, /\| *grep -q/, '`grep -q` in a pipe under pipefail: SIGPIPE makes the pipeline lie')
   assert.match(script, /gzip -t/, 'the archive is never integrity-checked')
   assert.match(script, /CREATE TABLE/, 'the table count is never checked')
   assert.match(script, /PLAIN_BYTES.*-ge/s, 'no size floor')
 })
 
+test('restore-db trusts only an anchored completion marker, and never `grep -q` in a pipe', () => {
+  const script = read('scripts/restore-db.sh')
+  // Behaviour (a dump cut off inside a row holding the marker text is refused, for the
+  // dump to restore and for the pre-restore dump) is in tests/ops-scripts-sandbox.test.ts.
+  assert.match(script, /^DUMP_MARKER='\^-- Dump completed'$/m, 'the marker is not anchored to the start of a line')
+  assert.equal((script.match(/has_completion_marker "\$(ARCHIVE|PRE_DUMP)"/g) ?? []).length, 2, 'both the dump to restore and the pre-restore dump are checked')
+  assert.doesNotMatch(script, /\| *grep -q/, '`grep -q` in a pipe under pipefail: SIGPIPE makes the pipeline lie')
+})
+
+test('backup-db.sh and restore-db.sh decide "complete dump" with the SAME block, byte for byte', () => {
+  // No shared library: the deploy ships backup-db.sh alone (checksummed) for the
+  // pre-deploy dump, so a sourced file would not be there. Two copies, kept identical
+  // here — a dump backup-db.sh keeps must be a dump restore-db.sh restores.
+  const block = (file: string) => {
+    const match = /^# >>> dump-completion-marker\b[\s\S]*?^# <<< dump-completion-marker$/m.exec(read(file))
+    assert.ok(match, `${file}: no dump-completion-marker block`)
+    return match[0]
+  }
+  const writer = block('scripts/backup-db.sh')
+  assert.match(writer, /^has_completion_marker\(\) \{$/m)
+  assert.equal(block('scripts/restore-db.sh'), writer, 'the two scripts no longer agree on what a complete dump is')
+})
+
 test('a rejected backup is deleted, not left looking valid', () => {
   // Found by running the script against a stubbed docker: a failed verification
-  // used to leave the bad archive in the backup directory.
-  assert.match(read('scripts/backup-db.sh'), /"\$1" == "verify".*rm -f "\$TARGET"/s)
+  // used to leave the bad archive in the backup directory. The archive is now
+  // written as <name>.partial and only renamed once verified; the single exit
+  // handler removes the partial on every other path (run in
+  // tests/ops-scripts-sandbox.test.ts and tests/backup-ping-predeploy.test.ts).
+  const script = read('scripts/backup-db.sh')
+  const handler = /^on_exit\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+  assert.match(handler, /rm -f -- "\$PARTIAL"/)
+  assert.match(script, /\| gzip -9 > "\$PARTIAL"; then/)
+  const verified = script.indexOf('[[ "$PLAIN_BYTES" -ge 51200 ]]')
+  const renamed = script.indexOf('mv -f -- "$PARTIAL" "$TARGET"')
+  assert.ok(verified > 0 && renamed > verified, 'the dump gets its final name before it is verified')
 })
 
 test('the size floor is measured on the SQL, not on the compressed archive', () => {
   // Also found by running it: a highly repetitive dump compresses so well that a
   // threshold on the .gz size rejects a perfectly good backup.
   const script = read('scripts/backup-db.sh')
-  assert.match(script, /PLAIN_BYTES="\$\(gzip -dc "\$TARGET" \| wc -c/)
+  assert.match(script, /PLAIN_BYTES="\$\(gzip -dc "\$PARTIAL" \| wc -c/)
   assert.doesNotMatch(script, /\[\[ "\$BYTES" -ge/, 'the floor is back on the compressed size')
 })
 
@@ -122,11 +168,45 @@ test('the restore check never touches the live database', () => {
   assert.match(script, /SCRATCH="cdkt_restore_check_\$\$"/)
   assert.match(script, /refusing to use the live database as scratch/)
   assert.match(script, /DROP DATABASE IF EXISTS/)
-  assert.match(script, /trap cleanup EXIT/, 'the scratch database survives an early exit')
+  // ONE exit handler: a second `trap … EXIT` (the health-check ping) would replace
+  // `trap cleanup EXIT` and leave every scratch database behind.
+  assert.match(script, /^trap on_exit EXIT$/m, 'the scratch database survives an early exit')
+  assert.equal((script.match(/^trap .* EXIT$/gm) ?? []).length, 1, 'more than one EXIT trap — the last one silently wins')
+  const handler = /^on_exit\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+  assert.match(handler, /^\s+cleanup$/m, 'the exit handler no longer drops the scratch database')
 })
 
 test('backups are not committed to the repository', () => {
   assert.match(read('.gitignore'), /^backups\/$/m)
+})
+
+test('what a deploy leaves on the VPS stays out of git AND out of the Docker build context', () => {
+  // The VPS clone collects production database dumps (.deploy-db-backups/), the
+  // backup script CI ships (.deploy-incoming/), compose backups and the incoming
+  // compose. manage.sh Update can fall back to `docker compose build app` in that
+  // clone, and the builder stage runs `COPY . .` — without these lines every
+  // production dump would be sent to the daemon and baked into a cached layer.
+  const ignoredDirs = ['.deploy-db-backups', '.deploy-incoming', '.deploy-compose-backups']
+  // docker-compose.override.yml: host-local (the json-file log fallback the deploy
+  // writes when the VPS has no journald, or the operator's own) — never committed.
+  // `.docker-compose.override.*`: the fallback's temp file before its `mv`.
+  const ignoredFiles = ['.docker-compose.incoming.yml', 'docker-compose.override.yml', '.docker-compose.override.*']
+  const gitignore = read('.gitignore').split('\n').map((l) => l.trim())
+  const dockerignore = read('.dockerignore').split('\n').map((l) => l.trim())
+  for (const dir of ignoredDirs) {
+    assert.ok(gitignore.includes(`${dir}/`), `.gitignore does not list ${dir}/`)
+    // Docker matches a pattern against the whole path from the context root: a bare
+    // name covers only the top level, `**/` any depth.
+    for (const pattern of [dir, `**/${dir}`]) {
+      assert.ok(dockerignore.includes(pattern) || dockerignore.includes(`${pattern}/`), `.dockerignore does not list ${pattern}`)
+    }
+  }
+  for (const file of ignoredFiles) {
+    assert.ok(gitignore.includes(file), `.gitignore does not list ${file}`)
+    assert.ok(dockerignore.includes(file) && dockerignore.includes(`**/${file}`), `.dockerignore does not list ${file}`)
+  }
+  // Nothing re-includes them afterwards.
+  assert.ok(!dockerignore.some((l) => l.startsWith('!') && /\.deploy-|\.docker-compose\.incoming/.test(l)))
 })
 
 // ─── CI ──────────────────────────────────────────────────────────────────────
@@ -235,7 +315,19 @@ test('PR chạy bộ nhẹ; integration và bản đầy đủ chỉ bị bỏ q
 
   // PR nháp bị bỏ qua; PR thường chỉ chạy integration khi đụng backend/DB/CI.
   assert.match(planJob, /DRAFT: \$\{\{ github\.event\.pull_request\.draft \}\}/)
-  assert.match(planJob, /\^\(server\/\|migrations\/\|scripts\/\|package/, 'danh sách đường dẫn kích hoạt integration')
+  assert.match(planJob, /\^\(server\/\|shared\/\|migrations\/\|scripts\/\|package/, 'danh sách đường dẫn kích hoạt integration')
+  // Chạy chính biểu thức lọc của ci.yml trên vài đường dẫn: shared/ là mã máy chủ
+  // import thẳng (registry block, trạng thái đơn, quyền…), nên PR chỉ đụng shared/
+  // vẫn phải chạy integration.
+  const filter = /grep -Eq '([^']+)'/.exec(planJob)?.[1] ?? ''
+  assert.ok(filter, 'không đọc được biểu thức lọc đường dẫn integration')
+  const triggersIntegration = new RegExp(filter)
+  for (const file of ['server/utils/db.ts', 'shared/blocks/registry.ts', 'shared/submission-status.ts', 'migrations/001.sql', 'tests/media-category-migration-integration.test.ts']) {
+    assert.match(file, triggersIntegration, `PR đụng ${file} phải chạy integration`)
+  }
+  for (const file of ['app/pages/index.vue', 'docs/CHANGELOG.md', 'tests/cms-core-content.test.ts', 'app/shared/x.ts']) {
+    assert.doesNotMatch(file, triggersIntegration, `PR chỉ đụng ${file} không cần integration`)
+  }
   assert.match(workflow, /types: \[opened, synchronize, reopened, ready_for_review\]/,
     'PR nháp cần ready_for_review để chạy lại khi sẵn sàng')
   assert.match(workflow, /workflow_dispatch:/, 'cần lượt chạy tay để ép chạy đủ')
@@ -288,6 +380,66 @@ test('nothing reaches the VPS without passing every gate first', () => {
   assert.match(workflow, /deploy:\s*\n[\s\S]*?needs: image/, 'deploy does not wait for the image')
   // Deploying a pull request would push a fork's code onto the server.
   assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && github\.event_name != 'pull_request'/)
+})
+
+test('the ratchets run in npm test and in CI, and the coverage ratchet is its own blocking step', async () => {
+  // wave3 D-R. A ratchet that never runs is green forever, and two ways to lose one
+  // look harmless in review: the tests sit in tests/ratchets/, which `tests/*.test.ts`
+  // and `find tests -maxdepth 1` do not reach; and the coverage comparison is a CI step,
+  // which one `continue-on-error` (as the summary step has, on purpose) turns into a
+  // log line with a green tick.
+  const repo = new URL('..', import.meta.url).pathname
+  const ci = await loadYaml('.github/workflows/ci.yml')
+  const unit = asMap(asMap(ci.jobs, 'jobs')['unit-tests'], 'unit-tests')
+  const steps = (unit.steps ?? []) as YamlMap[]
+  const testStep = steps.find((step) => step.name === 'Unit and contract tests (no DB)')
+  assert.ok(testStep, 'the unit test step is gone')
+  assert.equal(testStep.id, 'unit', 'the Coverage ratchet step keys off the test step id `unit`')
+
+  // The file list CI builds, by running its own `find` line in this checkout.
+  const findLine = /^\s*files=\$\(find [^\n]+\)\s*$/m.exec(String(testStep.run))?.[0]
+  assert.ok(findLine, 'the unit step no longer builds its file list with find')
+  const listed = spawnSync('bash', ['-c', `${findLine.trim()}\nprintf '%s\\n' "$files"`], { cwd: repo, encoding: 'utf8' })
+    .stdout.split('\n').filter(Boolean).sort()
+  const { globSync, readdirSync } = await import('node:fs')
+  const ratchets = readdirSync(join(repo, 'tests/ratchets')).filter((f) => f.endsWith('.test.ts')).map((f) => `tests/ratchets/${f}`)
+  assert.ok(ratchets.length >= 4, `expected the ratchet tests in tests/ratchets/, found ${ratchets.length}`)
+  for (const file of ratchets) assert.ok(listed.includes(file), `CI's unit step does not run ${file}`)
+  assert.deepEqual(listed.filter((f) => f.endsWith('-integration.test.ts') || f.startsWith('tests/e2e/')), [],
+    'the unit step picked up an integration suite or a browser spec')
+
+  // npm test runs at least what CI runs; test:coverage runs exactly what CI runs, so the
+  // coverage ratchet compares the same measurement locally and in CI.
+  const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> }
+  const testFiles = (script: string) => {
+    const tail = /--test (?:--watch )?(.+?)(?: &&|$)/.exec(pkg.scripts[script] ?? '')?.[1] ?? ''
+    const patterns = tail.split(/\s+/).map((p) => p.replace(/^"|"$/g, '')).filter(Boolean)
+    return [...new Set(patterns.flatMap((p) => globSync(p, { cwd: repo })))].sort()
+  }
+  for (const script of ['test', 'test:watch']) {
+    const files = testFiles(script)
+    for (const file of listed) assert.ok(files.includes(file), `npm run ${script} does not run ${file}`)
+  }
+  assert.deepEqual(testFiles('test:coverage'), listed, 'npm run test:coverage must run the same files as CI, or the coverage ratchet compares two different measurements')
+  assert.match(pkg.scripts['test:coverage']!, /&& node --experimental-strip-types scripts\/coverage-ratchet\.ts node_modules\/\.cache\/cdkt-coverage\/lcov\.info$/,
+    'npm run test:coverage no longer ends with the coverage ratchet')
+
+  // The comparison: its own step, blocking, on the lcov the test step wrote.
+  assert.match(String(testStep.run), /--test-reporter=lcov --test-reporter-destination=\/tmp\/unit-test\.lcov/)
+  const ratchetStep = steps.find((step) => step.name === 'Coverage ratchet')
+  assert.ok(ratchetStep, 'the Coverage ratchet step is gone from the unit-tests job — a coverage drop no longer fails CI')
+  assert.match(String(ratchetStep.run), /^node --experimental-strip-types scripts\/coverage-ratchet\.ts \/tmp\/unit-test\.lcov$/)
+  assert.ok(!('continue-on-error' in ratchetStep), 'the Coverage ratchet step has continue-on-error — a drop would show green')
+  // Exactly this condition. Without `always()` the ratchet never compares the partial lcov
+  // of a failed test run; without a status function GitHub prepends an implicit
+  // `success() &&`, so `!cancelled()` is what keeps the ratchet running when only the
+  // Typecheck step before it failed; `steps.unit.outcome` ties it to the test step.
+  const condition = String(ratchetStep.if ?? '').replace(/^\$\{\{\s*|\s*\}\}$/g, '').replace(/\s+/g, ' ').trim()
+  assert.doesNotMatch(condition, /always\(\)/, 'the ratchet would compare the partial lcov of a failed run')
+  assert.equal(condition, "!cancelled() && steps.unit.outcome == 'success'",
+    'the Coverage ratchet `if:` must be `!cancelled() && steps.unit.outcome == \'success\'` — without `!cancelled()` a Typecheck failure silently skips it')
+  const summary = steps.find((step) => step.name === 'Coverage summary')
+  assert.doesNotMatch(String(summary?.run ?? ''), /coverage-ratchet/, 'the comparison must not hide inside the report-only summary step')
 })
 
 test('the deployed image is pinned to a commit, not to a moving tag', () => {
@@ -373,10 +525,26 @@ test('the deploy ships the compose file of the commit it deploys, with a checksu
   assert.ok(upload >= 0, 'docker-compose.yml is not sent to the VPS')
   assert.ok(script > upload, 'the compose file must arrive before the deploy script runs')
   assert.match(run, /compose_sha256=\$\(sha256sum docker-compose\.yml/)
-  assert.match(run, /INCOMING_COMPOSE=\.docker-compose\.incoming\.yml INCOMING_COMPOSE_SHA256=\$compose_sha256 bash -s --/)
-  // Both connections use the same pinned-host-key options.
-  assert.equal((run.match(/ssh "\$\{ssh_opts\[@\]\}"/g) ?? []).length, 2)
+  assert.match(run, /INCOMING_COMPOSE=\.docker-compose\.incoming\.yml INCOMING_COMPOSE_SHA256=\$compose_sha256 /)
+  assert.match(run, / bash -s -- '\$APP_DIR' '\$IMAGE'"/)
+  // Every connection (compose, backup script, deploy script) uses the same
+  // pinned-host-key options.
+  assert.equal((run.match(/ssh "\$\{ssh_opts\[@\]\}"/g) ?? []).length, 3)
   assert.match(run, /StrictHostKeyChecking=yes/)
+})
+
+test('the pre-deploy dump runs the backup script of the commit being deployed, checksummed', async () => {
+  // The VPS checkout is only refreshed by a manual `git pull`, so its
+  // scripts/backup-db.sh can be any age — an old copy reads `--prefix` as the
+  // destination directory. The script travels with the deploy, like compose.
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const steps = asMap(jobs.deploy, 'deploy job').steps as YamlMap[]
+  const run = String(steps.find((s) => s.name === 'Deploy over SSH')?.run ?? '')
+  const upload = run.indexOf(`cat > '$APP_DIR/.deploy-incoming/backup-db.sh'" < scripts/backup-db.sh`)
+  assert.ok(upload >= 0, 'scripts/backup-db.sh is not sent to the VPS')
+  assert.ok(upload < run.indexOf('< scripts/deploy-remote.sh'), 'the backup script must arrive before the deploy script runs')
+  assert.match(run, /backup_sha256=\$\(sha256sum scripts\/backup-db\.sh/)
+  assert.match(run, /INCOMING_BACKUP_SCRIPT=\.deploy-incoming\/backup-db\.sh INCOMING_BACKUP_SCRIPT_SHA256=\$backup_sha256 /)
 })
 
 test('the MySQL healthcheck keeps the root password out of the process list', async () => {
@@ -421,6 +589,10 @@ test('operational switches set in .env reach the container', async () => {
     BACKUP_SCHEDULER: 'server/plugins/backup-scheduler.ts',
     LOG_LEVEL: 'server/utils/logger.ts',
     LOGIN_CAPTCHA_ENABLED: 'server/api/admin/auth/login.post.ts',
+    // Kill switch of the admin MFA policy (wave2 2A, spec admin-mfa-policy).
+    MFA_ENFORCEMENT: 'server/utils/mfa/policy.ts',
+    // wave2 D-ALERT: empty = no alert e-mail at all.
+    OPS_ALERT_EMAIL: 'server/utils/ops-alert.ts',
   }
   for (const [variable, reader] of Object.entries(readers)) {
     assert.equal(appEnv[variable], `\${${variable}:-}`, `${variable} is not passed through to the app`)
@@ -621,8 +793,12 @@ test('the media volume is writable by the unprivileged user', () => {
   // nothing says why.
   const dockerfile = read('Dockerfile')
   const runtimeStage = dockerfile.slice(dockerfile.indexOf('# ─── Stage 2'))
-  const chownIndex = runtimeStage.indexOf('chown -R node:node')
-  assert.ok(chownIndex > -1, 'the runtime stage never chowns the app directory')
+  // The chown that hands the EMPTY mount points to `node` (no longer a recursive
+  // chown of /app — see tests/dockerfile-layers.test.ts). It must name the media
+  // work directory itself, the mount point of the `media_work` volume.
+  const chownMatch = /RUN [^\n]*(?:\\\n[^\n]*)*?\bchown node:node [^\n]*\/var\/lib\/cdkt\/media\b/.exec(runtimeStage)
+  assert.ok(chownMatch, 'the runtime stage never hands the media work directory to node')
+  const chownIndex = (chownMatch.index ?? 0) + chownMatch[0].indexOf('chown node:node')
 
   // Match the mkdir COMMAND, not the bare path: `ENV CDKT_MEDIA_WORKDIR=...`
   // also contains `/var/lib/cdkt`, and it sits above the chown — so asserting
@@ -708,8 +884,7 @@ test('media-tuning asks check-resources for the memory figures instead of recomp
   // check-resources.sh exists to fix: MySQL reads its cgroup limit, not the
   // host's RAM, to size the InnoDB buffer pool, so too low a cap is slower
   // forever with nothing to report it.
-  const script = read('production/manage.sh')
-  const command = script.slice(script.indexOf('cmd_media_tuning()'), script.indexOf('# ── Entry ──'))
+  const command = manageFunction('cmd_media_tuning')
   assert.ok(command.length > 0, 'cmd_media_tuning is gone')
   assert.match(command, /check-resources\.sh/, 'media-tuning does not call check-resources.sh')
   assert.doesNotMatch(
@@ -724,8 +899,8 @@ test('media-tuning only reads and writes .env', () => {
   // decides when to apply it. Restarting a portal that is serving citizens
   // because a value was just written — before anyone has looked at it — is a
   // worse failure than the one the command fixes.
-  const script = read('production/manage.sh')
-  const command = script.slice(script.indexOf('cmd_media_tuning()'), script.indexOf('# ── Entry ──'))
+  const command = manageFunction('cmd_media_tuning')
+  assert.ok(command.length > 0, 'cmd_media_tuning is gone')
   // Only executable lines: the command legitimately PRINTS the `docker compose
   // up -d` an operator should run next, and a check that cannot tell an
   // instruction from an action would fail on that helpful line.
@@ -749,8 +924,7 @@ test('media-tuning only reads and writes .env', () => {
 test('set_env is idempotent, so re-running a command cannot duplicate a key', () => {
   // compose reads .env as a mapping; two lines with the same key make the
   // effective value depend on parse order rather than on intent.
-  const script = read('production/manage.sh')
-  const helper = script.slice(script.indexOf('set_env()'), script.indexOf('# ── Menu chính'))
+  const helper = manageFunction('set_env')
   assert.ok(helper.length > 0, 'set_env is gone')
   // Replace in place when the key exists, append only when it does not.
   assert.ok(helper.includes('grep -qE "^${key}="'), 'set_env does not detect an existing key')
@@ -784,4 +958,692 @@ test('the stream location names a route that exists', () => {
     read('DEPLOY.md').includes('/api/public/livestream/chat/stream'),
     'the documented proxy path does not match the route',
   )
+})
+
+// ─── Wave 1 · 1D: deploy pipeline ────────────────────────────────────────────
+// Behaviour (run, not read) lives in tests/deploy-remote-behavior.test.ts,
+// tests/ci-docs-only-skip.test.ts and tests/backup-ping-predeploy.test.ts. These
+// pin the shape those tests cannot see: the order of the top-level calls, and the
+// workflow wiring that only GitHub executes.
+
+/** The top-level (column-0) lines of deploy-remote.sh: the order things happen in. */
+const deployMainFlow = () => read('scripts/deploy-remote.sh').split('\n').filter((line) => /^[a-zA-Z_]/.test(line))
+const flowIndex = (flow: string[], pattern: RegExp) => flow.findIndex((line) => pattern.test(line))
+
+test('a verified pre-deploy dump is taken after the pull and before anything on the server changes', () => {
+  const flow = deployMainFlow()
+  const pull = flowIndex(flow, /^docker pull "\$IMAGE"$/)
+  const dump = flowIndex(flow, /^predeploy_dump$/)
+  const compose = flowIndex(flow, /^install_compose$/)
+  const proxy = flowIndex(flow, /^migrate_trusted_proxy_ips$/)
+  const swap = flowIndex(flow, /^set_image "\$IMAGE"$/)
+  assert.ok(pull >= 0 && dump > pull, 'the dump must come after the image is known to exist')
+  // install_compose and migrate_trusted_proxy_ips both rewrite files: a dump that
+  // fails after them would leave a new compose next to the old container.
+  assert.ok(compose > dump && proxy > dump && swap > dump, `the dump must precede every change on the server:\n${flow.join('\n')}`)
+
+  const script = read('scripts/deploy-remote.sh')
+  const fn = /^predeploy_dump\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+  assert.match(fn, /--prefix "\$PREDEPLOY_PREFIX"/)
+  assert.match(fn, /exit 1/, 'a failed dump must stop the deploy, not warn and carry on')
+  assert.match(script, /^PREDEPLOY_PREFIX=cdkt-predeploy$/m)
+
+  // The backup script: a validated prefix, the same verification, count rotation.
+  const backup = read('scripts/backup-db.sh')
+  assert.match(backup, /--prefix\)/, 'backup-db.sh takes no --prefix option')
+  assert.match(backup, /\[\[ "\$PREFIX" =~ \^cdkt/, 'the prefix becomes part of a host path and must be validated')
+  assert.match(backup, /TARGET="\$DEST\/\$PREFIX-\$DATABASE-\$STAMP-\$\$\.sql\.gz"/)
+  assert.match(backup, /^PREFIX_KEEP=5$/m, 'pre-deploy dumps are kept by count: 5')
+})
+
+test('manage.sh Update offers the same pre-deploy dump, defaulting to yes, before it changes anything', () => {
+  const script = manageSource()
+  const update = manageFunction('cmd_update', script)
+  assert.ok(update.length > 0, 'cmd_update is gone')
+  const ask = update.indexOf('confirm "Sao lưu DB trước khi cập nhật?" "y"')
+  assert.ok(ask >= 0, 'Update does not offer the pre-update dump (default yes)')
+  // Like the CI deploy (dump before install_compose/.env/container): before git pull
+  // (which rewrites compose), before the prompts that rewrite .env, before the image.
+  const at = (re: RegExp) => update.search(re)
+  for (const [what, re] of Object.entries({
+    'git pull': /^\s+update_pull_code$/m,
+    'the PORT prompt (.env edits)': /prompt " {2}PORT"/,
+    'the image swap': /update_app_image/,
+  })) {
+    assert.ok(at(re) > ask, `the dump must come before ${what}`)
+  }
+  assert.match(script, /scripts\/backup-db\.sh" --prefix cdkt-predeploy "\$ROOT\/\.deploy-db-backups"/)
+})
+
+test('a docs-only merge to main skips the image and the deploy; everything else still deploys', async () => {
+  const workflow = await loadYaml('.github/workflows/ci.yml')
+  const jobs = asMap(workflow.jobs, 'jobs')
+  const changes = asMap(jobs.changes, 'changes job')
+  assert.equal(asMap(changes.outputs, 'changes outputs').deploy, '${{ steps.deploy.outputs.deploy }}')
+  const steps = changes.steps as YamlMap[]
+  const checkout = steps.find((s) => String(s.uses ?? '').startsWith('actions/checkout@'))
+  assert.ok(checkout, 'the changes job needs history to diff a push')
+  assert.equal(checkout.if, "github.event_name == 'push'", 'pull requests keep the API-only plan (no checkout)')
+  assert.equal(asMap(checkout.with, 'checkout inputs')['fetch-depth'], 0)
+  const deployStep = steps.find((s) => s.id === 'deploy')
+  assert.ok(deployStep, 'no step computes the deploy output')
+  const run = String(deployStep.run)
+  // The base is the commit production runs (tests/ci-docs-only-skip.test.ts runs it),
+  // never `github.event.before`.
+  assert.match(run, /git diff --no-renames --name-only "\$base" "\$SHA"/,
+    '--no-renames: a renamed .ts → .md must list BOTH paths, so it still deploys')
+  assert.match(run, /git merge-base --is-ancestor "\$base" "\$SHA"/)
+  assert.ok(run.includes(`grep -Ev '\\.md$|^docs/|^openspec/'`), 'the docs-only pattern changed')
+
+  const image = asMap(jobs.image, 'image job')
+  assert.ok((image.needs as string[]).includes('changes'), 'image must need `changes` to read its output')
+  assert.equal(image.if, "github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.changes.outputs.deploy == 'true'")
+  const deploy = asMap(jobs.deploy, 'deploy job')
+  assert.equal(deploy.if, "needs.image.result == 'success'", 'deploy follows the image, never `if: true`')
+})
+
+test('the image carries the commit it was built from, as its last layer', async () => {
+  const dockerfile = read('Dockerfile')
+  const tail = dockerfile.trimEnd().split('\n').filter((line) => line && !line.startsWith('#'))
+  const cmdAt = tail.findIndex((line) => line.startsWith('CMD '))
+  assert.equal(cmdAt, tail.length - 1, 'CMD is not the last instruction')
+  // Last before CMD (HEALTHCHECK is metadata): a changing value at the end busts no cache.
+  const instructions = tail.filter((line) => /^[A-Z]+ /.test(line))
+  assert.deepEqual(instructions.slice(-3), ['ARG APP_VERSION', 'ENV APP_VERSION=$APP_VERSION', instructions.at(-1)])
+
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const image = asMap(jobs.image, 'image job')
+  assert.equal(asMap(image.outputs, 'image outputs').version, '${{ steps.meta.outputs.version }}')
+  const meta = (image.steps as YamlMap[]).find((s) => s.id === 'meta')
+  assert.match(String(meta?.run), /echo "version=\$\{GITHUB_SHA::12\}"/)
+  const build = (image.steps as YamlMap[]).find((s) => String(s.uses ?? '').startsWith('docker/build-push-action@'))
+  const inputs = asMap(build?.with, 'build-push inputs')
+  assert.equal(String(inputs['build-args']).trim(), 'APP_VERSION=${{ steps.meta.outputs.version }}')
+  // One push = one package version (no attestation index with untagged
+  // children), so GHCR retention can count versions as images.
+  assert.equal(inputs.provenance, false)
+})
+
+test('the deploy is only green once the public URL serves the new version', async () => {
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const steps = asMap(jobs.deploy, 'deploy job').steps as YamlMap[]
+  const ssh = steps.findIndex((s) => s.name === 'Deploy over SSH')
+  const smokeAt = steps.findIndex((s) => s.name === 'Smoke test through the public URL')
+  assert.ok(smokeAt > ssh && ssh >= 0, 'no smoke step after the SSH deploy')
+  const smoke = steps[smokeAt]!
+  const env = asMap(smoke.env, 'smoke env')
+  assert.equal(env.SMOKE_URL, '${{ vars.VPS_SMOKE_URL }}')
+  assert.equal(env.EXPECTED_VERSION, '${{ needs.image.outputs.version }}')
+  const run = String(smoke.run)
+  assert.match(run, /::warning::/, 'an unset VPS_SMOKE_URL must warn, not fail and not pass silently')
+  assert.match(run, /url="\$\{SMOKE_URL%\/\}\/api\/public\/health"/)
+  // `-L`: a site that answers through a redirect (http→https, apex→www) still counts.
+  assert.match(run, /curl -fsSL -m 10 "\$url\?t=\$\{GITHUB_RUN_ID\}-\$\{attempt\}"/, 'no cache-busting query, or redirects not followed')
+  assert.match(run, /seq 1 12/)
+  assert.match(run, /sleep 10/)
+  assert.match(run, /\.version/, 'the version in the body is never compared')
+  assert.match(run, /"\$EXPECTED_VERSION"/)
+  // A CDN or DNS hiccup must not roll a healthy container back.
+  assert.doesNotMatch(run, /\bssh\b|set_image|CDKT_IMAGE=/, 'the smoke step must not roll back on its own')
+})
+
+test('the smoke step, RUN: 12 tries, no pause after the last, and it never claims a time it did not wait', async () => {
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const steps = asMap(jobs.deploy, 'deploy job').steps as YamlMap[]
+  const run = String(steps.find((s) => s.name === 'Smoke test through the public URL')?.run ?? '')
+  const VERSION = '0123456789ab'
+  const smoke = (servedFrom: number | null, smokeUrl = 'https://portal.example.test/') => {
+    const dir = mkdtempSync(join(tmpdir(), 'cdkt-smoke-'))
+    try {
+      mkdirSync(join(dir, 'bin'))
+      // curl: logs argv; answers 200 with the new version from attempt `servedFrom`
+      // on (the attempt number is the `-<n>` of the cache-busting query), the old
+      // version before that, and fails outright when `servedFrom` is null.
+      writeFileSync(
+        join(dir, 'bin', 'curl'),
+        `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "${dir}/curl.log"\nn=\${*: -1}; n=\${n##*-}\n` +
+          `[ -n "\${FROM:-}" ] || { echo 'curl: (22) The requested URL returned error: 502' >&2; exit 22; }\n` +
+          `if [ "$n" -ge "$FROM" ]; then echo '{"ok":true,"version":"${VERSION}"}'; else echo '{"ok":true,"version":"oldversion00"}'; fi\n`,
+      )
+      writeFileSync(join(dir, 'bin', 'sleep'), `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "${dir}/sleep.log"\n`)
+      chmodSync(join(dir, 'bin', 'curl'), 0o755)
+      chmodSync(join(dir, 'bin', 'sleep'), 0o755)
+      const r = spawnSync('bash', ['-e', '-c', run], {
+        encoding: 'utf8',
+        env: {
+          PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`,
+          SMOKE_URL: smokeUrl,
+          EXPECTED_VERSION: VERSION,
+          GITHUB_RUN_ID: '77',
+          FROM: servedFrom === null ? '' : String(servedFrom),
+        },
+      })
+      const log = (name: string) =>
+        existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8').split('\n').filter(Boolean) : []
+      return { status: r.status, out: r.stdout + r.stderr, curl: log('curl.log'), sleeps: log('sleep.log') }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  const never = smoke(null)
+  assert.equal(never.status, 1, never.out)
+  assert.equal(never.curl.length, 12)
+  assert.equal(never.sleeps.length, 11, 'a pause after the last attempt only delays the red job')
+  assert.ok(never.curl.every((args, i) => /(^| )-[a-zA-Z]*L/.test(args) && args.endsWith(`?t=77-${i + 1}`)), JSON.stringify(never.curl))
+  // 12 tries × up to 10 s of curl + 11 × 10 s of pause: up to ~4 minutes, not "2".
+  assert.doesNotMatch(never.out, /2 phút/, 'the error claims a 2-minute window; the worst case is ~4 minutes')
+  assert.match(never.out, /::error::/)
+
+  const third = smoke(3)
+  assert.equal(third.status, 0, third.out)
+  assert.equal(third.curl.length, 3)
+  assert.equal(third.sleeps.length, 2)
+
+  const unset = smoke(1, '')
+  assert.equal(unset.status, 0)
+  assert.match(unset.out, /::warning::/)
+  assert.deepEqual(unset.curl, [])
+})
+
+test('the deploy SSH sessions keep alive through a long dump or health wait', async () => {
+  // The pre-deploy dump and the health wait can sit silent for minutes; a NAT or
+  // firewall that drops an idle TCP session would cut the deploy halfway, before the
+  // rollback can run. Keep-alives every 30 s, give up after 10 missed (5 minutes).
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const steps = asMap(jobs.deploy, 'deploy job').steps as YamlMap[]
+  const run = String(steps.find((s) => s.name === 'Deploy over SSH')?.run ?? '')
+  const opts = /ssh_opts=\(\n([\s\S]*?)\n\s*\)/.exec(run)?.[1] ?? ''
+  assert.ok(opts, 'no ssh_opts array')
+  assert.match(opts, /^\s*-o ServerAliveInterval=30$/m)
+  assert.match(opts, /^\s*-o ServerAliveCountMax=10$/m)
+})
+
+test('wait_healthy gives up on a restart-looping container instead of waiting out the timeout', () => {
+  const script = read('scripts/deploy-remote.sh')
+  const fn = /^wait_healthy\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+  assert.match(script, /\{\{\.RestartCount\}\}/)
+  // A baseline per call: compose does not recreate an unchanged container, so its
+  // absolute count can be days old.
+  assert.match(fn, /base=\$\(restart_count\)/)
+  assert.match(fn, /-gt "\$MAX_RESTARTS"/)
+  assert.match(script, /^MAX_RESTARTS=2$/m)
+  assert.match(fn, /show_container_logs/, 'the crash loop must print the container log')
+  assert.match(fn, /return 1/)
+})
+
+test('the app container is given longer to stop than Nitro takes to drain, and stops the backup scheduler', async () => {
+  const services = asMap((await loadYaml('docker-compose.yml')).services, 'services')
+  const grace = String(asMap(services.app, 'app').stop_grace_period ?? '')
+  const seconds = /^(\d+)s$/.exec(grace)?.[1]
+  assert.ok(seconds && Number(seconds) > 30, `app stop_grace_period ${grace || '(unset: 10s)'} does not exceed Nitro's 30 s shutdown`)
+  const plugin = read('server/plugins/backup-scheduler.ts')
+  assert.match(plugin, /nitroApp\.hooks\.hook\('close', stopBackupScheduler\)/)
+  // The grace period only helps if SIGTERM reaches Node: the CMD hands PID 1 to it.
+  const cmd = read('Dockerfile').split('\n').find((line) => line.startsWith('CMD ')) ?? ''
+  assert.match(cmd, /&& exec node \.output\/server\/index\.mjs"\]$/)
+})
+
+test('old app images are removed by tag and by count, never by force', () => {
+  for (const [path, script] of [['scripts/deploy-remote.sh', read('scripts/deploy-remote.sh')], ['production/manage.sh + lib/', manageSource()]] as const) {
+    const fn = /^prune_app_images\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+    assert.ok(fn, `${path} has no prune_app_images`)
+    // `image prune` alone never removes a tagged image — the bug this replaces.
+    assert.match(fn, /docker image rm "\$repo:\$tag"/, `${path} does not remove old tags`)
+    assert.doesNotMatch(fn, /image rm -f|rmi -f|--force/, `${path} force-removes images`)
+    assert.match(fn, /sha-\*\)/, `${path} must only consider sha-* tags of the app repository`)
+    assert.match(fn, /"\$running_id"/, `${path} could remove the running image`)
+    assert.match(fn, /docker image prune -f/, `${path} leaves dangling layers behind`)
+    assert.match(script, /^IMAGE_KEEP=5$/m, `${path}: keep the running image + 5`)
+    assert.match(script, /df --output=pcent/, `${path} has no disk-usage warning`)
+    assert.match(script, /DISK_WARN_PCT=80/)
+  }
+  // The deploy no longer relies on a dangling-only prune.
+  assert.doesNotMatch(read('scripts/deploy-remote.sh'), /image prune -f --filter 'until=168h'/)
+})
+
+test('the registry keeps the newest 20 image versions, weekly, with a pinned action', async () => {
+  const workflow = await loadYaml('.github/workflows/ghcr-retention.yml')
+  const on = asMap(workflow.on, 'triggers')
+  assert.ok('workflow_dispatch' in on, 'cannot be run by hand')
+  const schedule = on.schedule as YamlMap[]
+  assert.equal(schedule.length, 1)
+  assert.match(String(schedule[0]!.cron), /^\d+ \d+ \* \* [0-6]$/, 'not a weekly schedule')
+  assert.deepEqual(workflow.permissions, { packages: 'write' })
+  const jobs = Object.values(asMap(workflow.jobs, 'jobs')).map((job) => asMap(job, 'job'))
+  const steps = jobs.flatMap((job) => job.steps as YamlMap[])
+  const action = steps.find((s) => String(s.uses ?? '').startsWith('actions/delete-package-versions@'))
+  assert.ok(action, 'no delete-package-versions step')
+  assert.match(String(action.uses), /^actions\/delete-package-versions@[0-9a-f]{40}$/, 'a third-party action pinned by tag can change under us')
+  const inputs = asMap(action.with, 'inputs')
+  assert.equal(inputs['package-type'], 'container')
+  assert.equal(inputs['min-versions-to-keep'], 20)
+  assert.equal(inputs['delete-only-untagged-versions'], undefined,
+    'untagged versions can be the platform manifests of a kept image')
+})
+
+test('retention prunes the package the image job pushes to, on a schedule too (RUN, not read)', async () => {
+  // `github.event.repository` is not part of a `schedule` payload: the weekly run read
+  // an empty name. The name comes from `github.repository`, which every event has, and
+  // must equal the last segment of the image the `image` job pushes.
+  const retention = await loadYaml('.github/workflows/ghcr-retention.yml')
+  // Only as code — the comment explaining why it is gone names it.
+  assert.doesNotMatch(read('.github/workflows/ghcr-retention.yml'), /^(?!\s*#).*github\.event\.repository/m)
+  const steps = Object.values(asMap(retention.jobs, 'jobs')).flatMap((job) => asMap(job, 'job').steps as YamlMap[])
+  const pkg = steps.find((s) => s.id === 'pkg')
+  assert.ok(pkg, 'no step computes the package name')
+  const action = steps.find((s) => String(s.uses ?? '').startsWith('actions/delete-package-versions@'))
+  assert.equal(asMap(action?.with, 'inputs')['package-name'], '${{ steps.pkg.outputs.name }}')
+
+  const repository = 'DuogXaolin/ConDuongHuongThien'
+  const runStep = (body: string, env: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), 'cdkt-ghcr-'))
+    try {
+      const out = join(dir, 'out')
+      writeFileSync(out, '')
+      const r = spawnSync('bash', ['-e', '-c', body], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', GITHUB_OUTPUT: out, ...env } })
+      assert.equal(r.status, 0, r.stderr)
+      return Object.fromEntries(readFileSync(out, 'utf8').split('\n').filter(Boolean).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  // Only `${{ github.repository }}` may feed the name — substitute it as GitHub would.
+  const expressions = (text: string) => text.match(/\$\{\{[^}]*\}\}/g) ?? []
+  const pkgEnv = asMap(pkg.env ?? {}, 'pkg env')
+  for (const value of [...Object.values(pkgEnv).map(String), String(pkg.run)]) {
+    for (const expr of expressions(value)) assert.equal(expr, '${{ github.repository }}', `the package name reads ${expr}`)
+  }
+  const resolve = (text: string) => text.replaceAll('${{ github.repository }}', repository)
+  const name = runStep(resolve(String(pkg.run)), Object.fromEntries(Object.entries(pkgEnv).map(([k, v]) => [k, resolve(String(v))]))).name
+
+  const image = asMap(asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs').image, 'image job')
+  const meta = (image.steps as YamlMap[]).find((s) => s.id === 'meta')
+  const pushed = runStep(resolve(String(meta?.run)).replaceAll('${{ github.sha }}', 'f'.repeat(40)), { GITHUB_SHA: 'f'.repeat(40) }).repo
+  assert.equal(pushed, 'ghcr.io/duogxaolin/conduonghuongthien')
+  assert.equal(name, pushed!.split('/').at(-1), 'retention would prune a different package than the one the image job pushes')
+})
+
+test('backup jobs ping the monitor only when it is configured, and a dead monitor never fails them', async () => {
+  for (const path of ['scripts/backup-db.sh', 'scripts/verify-restore.sh']) {
+    const script = read(path)
+    const fn = /^ping_healthcheck\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+    assert.ok(fn, `${path} has no ping_healthcheck`)
+    assert.match(fn, /\[\[ -n "\$url" \]\] \|\| return 0/, `${path} pings without HEALTHCHECK_PING_URL`)
+    assert.match(fn, /url="\$\{HEALTHCHECK_PING_URL:-\}"/)
+    assert.match(fn, /\/fail/, `${path} never reports a failure`)
+    assert.match(fn, /curl -fsS -m 10 --retry 2 [^\n]*\|\| true$/m, `${path}: an unreachable monitor would change the exit status`)
+    assert.match(script, /^trap on_exit EXIT$/m)
+    const handler = /^on_exit\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+    assert.match(handler, /local status=\$\?/)
+    assert.match(handler, /ping_healthcheck "\$status"/)
+    assert.match(handler, /exit "\$status"/)
+  }
+  // The host scripts read it from .env; the app container never does, so compose
+  // must not list it (nothing in the image reads it).
+  const services = asMap((await loadYaml('docker-compose.yml')).services, 'services')
+  assert.equal(asMap(asMap(services.app, 'app').environment, 'env').HEALTHCHECK_PING_URL, undefined)
+})
+
+test('manage.sh asks for the ping URL in Deploy and Update and writes it to .env', () => {
+  const script = manageSource()
+  const deploy = script.slice(script.indexOf('cmd_deploy() {'), script.indexOf('Bước 6/6'))
+  assert.match(deploy, /prompt " {2}HEALTHCHECK_PING_URL/)
+  assert.match(script, /^HEALTHCHECK_PING_URL=\$HEALTHCHECK_PING_URL$/m, 'the .env template has no HEALTHCHECK_PING_URL line')
+  const update = script.slice(script.indexOf('cmd_update() {'), script.indexOf('Pull image + restart'))
+  assert.match(update, /prompt " {2}HEALTHCHECK_PING_URL/)
+  assert.match(update, /set_env HEALTHCHECK_PING_URL /)
+})
+
+// ─── Logs that survive a deploy (wave2 D-LOG) ─────────────────────────────────
+test('the app logs to journald with the cdkt-app tag; MySQL keeps its rotated json-file', async () => {
+  // json-file logs live inside the container's directory and are deleted with it —
+  // every deploy recreates the app container, so yesterday's log was gone exactly
+  // when someone came to read it. journald keeps them on the host
+  // (`journalctl CONTAINER_TAG=cdkt-app`), with retention set in journald.conf.
+  const services = asMap((await loadYaml('docker-compose.yml')).services, 'services')
+  const appLogging = asMap(asMap(services.app, 'app').logging, 'app logging')
+  assert.equal(appLogging.driver, 'journald')
+  const options = asMap(appLogging.options, 'app logging options')
+  assert.equal(options.tag, 'cdkt-app')
+  // The journald driver REFUSES max-size/max-file ("unknown log opt") at container
+  // create — `docker compose config` does not catch it, the deploy's `up` would.
+  assert.deepEqual(Object.keys(options), ['tag'], 'only options the journald driver accepts')
+  const mysqlLogging = asMap(asMap(services.mysql, 'mysql').logging, 'mysql logging')
+  assert.equal(mysqlLogging.driver, 'json-file')
+})
+
+test('the json-file fallback is ONE function, identical in manage.sh and deploy-remote.sh, called before the app starts', () => {
+  const manageText = manageSource()
+  const deployText = read('scripts/deploy-remote.sh')
+  const body = (text: string, fn: string) => new RegExp(`^${fn}\\(\\) \\{\\n([\\s\\S]*?)\\n\\}`, 'm').exec(text)?.[1] ?? ''
+  for (const fn of ['journald_available', 'effective_app_log_driver', 'ensure_log_driver']) {
+    const manage = body(manageText, fn)
+    assert.ok(manage, `manage.sh has no ${fn}`)
+    assert.equal(body(deployText, fn), manage, `${fn} differs between manage.sh and deploy-remote.sh`)
+  }
+  for (const [path, script] of [['production/manage.sh + lib/', manageText], ['scripts/deploy-remote.sh', deployText]] as const) {
+    assert.match(script, /^LOG_FALLBACK_MARKER='# cdkt-log-fallback[^']*'$/m, `${path}: the marker must be the same literal`)
+    assert.equal(
+      /^LOG_FALLBACK_MARKER=.*$/m.exec(script)?.[0],
+      /^LOG_FALLBACK_MARKER=.*$/m.exec(manageText)?.[0],
+    )
+  }
+  const check = body(manageText, 'journald_available')
+  assert.match(check, /CDKT_JOURNALD_SOCKET:-\/run\/systemd\/journal\/socket/, 'the socket Docker writes to, not just a journalctl binary')
+  assert.match(check, /command -v journalctl/)
+  // W2: and the DAEMON can use it — its log plugins, then a throwaway container.
+  // Bounded in time (a wedged daemon must not hang a deploy) and never a network pull.
+  assert.match(check, /timeout 20 docker info --format '\{\{json \.Plugins\.Log\}\}'/)
+  assert.match(check, /timeout 60 docker run --rm --pull=never --network none --log-driver journald /)
+  // W1: the merged model decides, read without an early `exit` (SIGPIPE under pipefail).
+  const effective = body(manageText, 'effective_app_log_driver')
+  assert.match(effective, /docker compose config 2>\/dev\/null \| awk/)
+  assert.doesNotMatch(effective, /\bexit\b/)
+
+  // deploy-remote: after the dump (nothing changes before it) and after the shipped
+  // compose is in place (the merged model must be the one `up` will use), before the
+  // app starts; a refusal puts the previous compose back.
+  const deploy = read('scripts/deploy-remote.sh')
+  const main = deploy.slice(deploy.lastIndexOf('\npredeploy_dump\n'))
+  const call = main.indexOf('\nif ! ensure_log_driver "$IMAGE"; then\n  restore_compose\n  exit 1\nfi\n')
+  assert.ok(call > 0, 'deploy-remote.sh must call ensure_log_driver "$IMAGE" and stop (restoring compose) when it refuses')
+  assert.ok(call > main.indexOf('\ninstall_compose\n'))
+  assert.ok(call < main.indexOf('\nset_image "$IMAGE"\n'))
+  // manage.sh: Deploy before the stack is first started, Update before the restart.
+  const deployCmd = manageFunction('cmd_deploy', manageText)
+  assert.ok(deployCmd.indexOf('ensure_log_driver') > 0 && deployCmd.indexOf('ensure_log_driver') < deployCmd.indexOf('Bước 6/6'))
+  const updateCmd = manageFunction('cmd_update', manageText)
+  assert.ok(updateCmd.indexOf('ensure_log_driver') > 0 && updateCmd.indexOf('ensure_log_driver') < updateCmd.indexOf('update_app_image'))
+})
+
+test('the effective-driver parser reads real `docker compose config` output', () => {
+  // Shape of a real `docker compose config` (Compose v2): two-space service keys,
+  // `logging:` four spaces in, `driver:` six. Run the function itself on it.
+  const fn = /^effective_app_log_driver\(\) \{\n[\s\S]*?\n\}/m.exec(manageSource())?.[0] ?? ''
+  assert.ok(fn)
+  const sample = (appDriver: string) => [
+    'name: conduonghuongthien', 'services:', '  app:', '    environment:', '      PORT: "3000"',
+    '    logging:', `      driver: ${appDriver}`, '      options:', '        tag: cdkt-app',
+    '  mysql:', '    logging:', '      driver: json-file', 'volumes:', '  mysql_data:', '    name: x_mysql_data', '',
+  ].join('\n')
+  for (const driver of ['journald', 'json-file']) {
+    const r = spawnSync('bash', ['-c', `docker() { cat; }\n${fn}\neffective_app_log_driver`], { input: sample(driver), encoding: 'utf8' })
+    assert.equal(r.stdout.trim(), driver)
+  }
+  // Nothing to read → empty, not a guess.
+  const none = spawnSync('bash', ['-c', `docker() { return 1; }\nset -euo pipefail\n${fn}\nd=$(effective_app_log_driver); echo "[$d]"`], { encoding: 'utf8' })
+  assert.equal(none.status, 0, none.stderr)
+  assert.equal(none.stdout.trim(), '[]')
+})
+
+// ─── manage.sh: off-VPS copies (wave2 D-OFFSITE) ──────────────────────────────
+// Behaviour is in tests/ops-scripts-sandbox.test.ts; these pin the shape a later
+// edit must not lose.
+const fnBody = (script: string, fn: string) => new RegExp(`^${fn}\\(\\) \\{\\n([\\s\\S]*?)\\n\\}`, 'm').exec(script)?.[1] ?? ''
+
+test('manage.sh offers the cron install and the encrypted export, in the menu and as arguments', () => {
+  const script = manageSource()
+  assert.match(script, /^ {2}echo -e " {2}\$\{C_BOLD\}5\)\$\{C_RESET\} Cài cron sao lưu/m)
+  assert.match(script, /^ {2}echo -e " {2}\$\{C_BOLD\}6\)\$\{C_RESET\} Xuất \.env đã mã hoá/m)
+  assert.match(script, /^ {4}5\) cmd_backup_cron ;;$/m)
+  assert.match(script, /^ {4}6\) cmd_export_env ;;$/m)
+  assert.match(script, /^ {2}backup-cron\|cron\|5\) cmd_backup_cron ;;$/m)
+  assert.match(script, /^ {2}export-env\|6\) cmd_export_env ;;$/m)
+})
+
+test('cron install: confirmation required (default no), one marked block replaced in place, the documented jobs', () => {
+  const cron = fnBody(manageSource(), 'cmd_backup_cron')
+  assert.ok(cron, 'no cmd_backup_cron')
+  assert.match(cron, /if ! confirm "Cài các dòng trên vào crontab của \$user\?" "n"; then/)
+  // The install comes after the confirm, and only through `crontab <file>`.
+  assert.ok(cron.indexOf('crontab "$tmp"') > cron.indexOf('confirm "Cài các dòng'))
+  assert.equal((cron.match(/crontab "\$tmp"/g) ?? []).length, 1)
+  // Idempotent: the old block is filtered out before the new one is appended.
+  assert.match(cron, /\$0 == b \{ skip = 1; next \}/)
+  assert.match(manageSource(), /^CRON_BEGIN='# BEGIN cdkt-backup/m)
+  // The same two jobs DEPLOY.md documents: backup.sh (database + media + uploads) and
+  // the monthly restore check.
+  assert.match(cron, /^0 2 \* \* \* cd '\$ROOT' && \.\/scripts\/backup\.sh >> '\$log_dir\/cdkt-backup\.log' 2>&1$/m)
+  assert.match(cron, /^30 3 1 \* \* cd '\$ROOT' && \.\/scripts\/verify-restore\.sh --latest >> '\$log_dir\/cdkt-verify-restore\.log' 2>&1$/m)
+  // No `grep -q` in a pipe under pipefail (SIGPIPE makes it lie).
+  assert.doesNotMatch(cron, /\| *grep -q/)
+})
+
+test('export: AES-256-CBC with PBKDF2 at 200000 iterations, the passphrase through a file descriptor', () => {
+  const exp = fnBody(manageSource(), 'cmd_export_env')
+  assert.ok(exp, 'no cmd_export_env')
+  assert.match(exp, /openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "\$ROOT\/\.env" -out "\$tmp" -pass fd:3 3< <\(printf '%s' "\$pass"\)/)
+  assert.doesNotMatch(exp, /-pass (pass|env):/, 'pass: is in argv (ps); env: in /proc/<pid>/environ')
+  assert.match(exp, /read -rs pass/)
+  assert.match(exp, /\*-pbkdf2\*\) ;;/, 'an openssl without -pbkdf2 must be refused')
+  assert.match(exp, /chmod 600 "\$tmp"/)
+  assert.doesNotMatch(exp, /cat "\$ROOT\/\.env"|echo "\$pass/, 'the export never prints .env or the passphrase')
+})
+
+test('OPS_ALERT_EMAIL: asked in Deploy and Update, written to the .env template', () => {
+  const script = manageSource()
+  const deploy = script.slice(script.indexOf('cmd_deploy() {'), script.indexOf('Bước 6/6'))
+  assert.match(deploy, /prompt " {2}OPS_ALERT_EMAIL/)
+  assert.match(script, /^OPS_ALERT_EMAIL=\$OPS_ALERT_EMAIL$/m)
+  const update = script.slice(script.indexOf('cmd_update() {'), script.indexOf('Pull image + restart'))
+  assert.match(update, /prompt " {2}OPS_ALERT_EMAIL/)
+  assert.match(update, /set_env OPS_ALERT_EMAIL /)
+  // The ping prompt stays the LAST prompt before "Pull image" (the sandbox tests answer it by position).
+  assert.ok(update.lastIndexOf('prompt "  OPS_ALERT_EMAIL') < update.lastIndexOf('prompt "  HEALTHCHECK_PING_URL'))
+  assert.match(read('.env.example'), /^# OPS_ALERT_EMAIL=/m)
+})
+
+test('MFA_ENFORCEMENT: the Deploy .env template carries the break-glass switch as a commented line at its default', () => {
+  // wave2 2A × 7 checkpoint (tasks.md group 7): compose `environment:`, the manage.sh
+  // `.env` template and production/README.md all name it. It is NOT asked and NOT set:
+  // empty (the default) enforces whatever the SuperAdmin chose; `0` is for an incident.
+  const script = manageSource()
+  const template = script.slice(script.indexOf('cat > "$env_tmp" <<EOF'), script.indexOf('\nEOF\n', script.indexOf('cat > "$env_tmp" <<EOF')))
+  assert.match(template, /^# MFA_ENFORCEMENT=$/m, 'a commented line with the default (empty)')
+  assert.doesNotMatch(template, /^MFA_ENFORCEMENT=/m, 'never switched on (or off) by Deploy')
+  const explanation = template.slice(0, template.indexOf('# MFA_ENFORCEMENT=')).split('\n').at(-2) ?? ''
+  assert.match(explanation, /^# .*0.*\/admin\/settings\/security|^# .*\/admin\/settings\/security.*0/, `one-line explanation above it: ${explanation}`)
+  assert.match(read('production/README.md'), /MFA_ENFORCEMENT/)
+  assert.match(read('.env.example'), /^# MFA_ENFORCEMENT=/m)
+})
+
+// ─── manage.sh = entry + production/lib/*.sh (wave3 4.4) ──────────────────────
+// Behaviour across the split (old single-file manage.sh pulling the split one, a pull
+// that changes only a lib, every way of invoking it) is in tests/ops-scripts-sandbox.test.ts.
+
+test('manage.sh toolkit layout: lib/ on disk == the expected list == what the entry checks == what it sources', () => {
+  assert.deepEqual(manageLayoutProblems(), [])
+  const parts = manageParts()
+  assert.deepEqual(parts.map((p) => p.file), [...EXPECTED_MANAGE_LIBS.map((n) => `production/lib/${n}.sh`), MANAGE_ENTRY])
+  // The guard itself: a lib nobody listed is still scanned (the list comes from the
+  // directory), and the layout check names it.
+  const root = mkdtempSync(join(tmpdir(), 'cdkt-manage-layout-'))
+  try {
+    cpSync(new URL('../production', import.meta.url), join(root, 'production'), { recursive: true })
+    writeFileSync(join(root, 'production/lib/stray.sh'), 'stray_fn() {\n  docker ps | grep -q cdkt\n}\n')
+    assert.ok(manageSource(root).includes('stray_fn() {'), 'an unlisted lib must still be part of the scanned source')
+    assert.ok(manageLayoutProblems(root).some((p) => p.includes('stray')), 'an unlisted lib must fail the layout check')
+    rmSync(join(root, 'production/lib/stray.sh'))
+    rmSync(join(root, 'production/lib/media.sh'))
+    assert.ok(manageLayoutProblems(root).some((p) => p.startsWith('production/lib/*.sh on disk')), 'a missing lib must fail the layout check')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('every toolkit file parses (bash -n) and stays within 400 lines', () => {
+  for (const { file } of manageParts()) {
+    const r = spawnSync('bash', ['-n', new URL(`../${file}`, import.meta.url).pathname], { encoding: 'utf8' })
+    assert.equal(r.status, 0, `${file}: ${r.stderr}`)
+    const lines = (read(file).match(/\n/g) ?? []).length
+    assert.ok(lines <= 400, `${file} has ${lines} lines (> 400): split it further (the file-length ratchet only sees tracked files)`)
+  }
+})
+
+test('the entry: set -euo pipefail first, the whole file one `{ … exit }` block, libs found from its own real path, no functions of its own', () => {
+  const entry = read(MANAGE_ENTRY)
+  const code = entry.split('\n').filter((line) => line.trim() !== '' && !line.startsWith('#'))
+  // bash reads a running script lazily: an in-place rewrite (scp, `cat >`) mid-run would
+  // mix old and new lines. One brace group is parsed whole before anything runs, and the
+  // `exit` inside it stops bash from reading on.
+  assert.equal(code[0], '{', 'the first statement must open the block')
+  assert.deepEqual(code.slice(-2), ['exit', '}'], 'the block must end with `exit` then `}`, and nothing after it')
+  assert.equal(code[1], 'set -euo pipefail')
+  assert.ok(entry.indexOf('set -euo pipefail') < entry.indexOf('. "$MANAGE_LIB_DIR/'), 'errexit/pipefail must be on before any lib is sourced')
+  // Relative to the script's real location (symlinks followed), never the CWD.
+  assert.match(entry, /^MANAGE_SELF="\$\{BASH_SOURCE\[0\]\}"$/m)
+  assert.match(entry, /^while \[ -L "\$MANAGE_SELF" \]; do$/m)
+  assert.match(entry, /^MANAGE_LIB_DIR="\$\(cd "\$\(dirname "\$MANAGE_SELF"\)" && pwd\)\/lib"$/m)
+  assert.match(entry, /^ROOT="\$\(cd "\$\(dirname "\$MANAGE_SELF"\)\/\.\." && pwd\)"$/m)
+  // A missing lib stops it loudly, before anything is sourced.
+  assert.ok(entry.indexOf('exit 1') < entry.indexOf('. "$MANAGE_LIB_DIR/common.sh"'))
+  assert.doesNotMatch(entry, /^[A-Za-z_][A-Za-z0-9_]*\(\) \{/m, 'functions belong in production/lib/, not in the entry')
+})
+
+/**
+ * Source ONE lib into a clean bash that starts like the entry (`set -euo pipefail`)
+ * and report everything loading it changed: new variables, new functions, the shell's
+ * state (`$-`, `set +o`, `shopt -p`, umask, working directory), the traps, and anything
+ * it printed. State is written to files by builtins (no `$(…)`: a command substitution
+ * drops errexit and would hide a lib's `set +e`).
+ */
+const LIB_PROBE = [
+  'set -euo pipefail',
+  'state() { printf "flags=%s\\npwd=%s\\numask=%s\\n" "$-" "$PWD" "$(umask)"; set +o; shopt -p; }',
+  'v0=$(compgen -v | LC_ALL=C sort); f0=$(compgen -A function | LC_ALL=C sort)',
+  'state > "$2/state.before"',
+  '. "$1" > "$2/out" 2>&1',
+  'state > "$2/state.after"',
+  'trap -p > "$2/traps"',
+  'v1=$(compgen -v | LC_ALL=C sort); f1=$(compgen -A function | LC_ALL=C sort)',
+  'echo "@@vars"; comm -13 <(printf "%s\\n" "$v0") <(printf "%s\\n" "$v1") | grep -vxE "v0|f0|PIPESTATUS" || true',
+  'echo "@@funcs"; comm -13 <(printf "%s\\n" "$f0") <(printf "%s\\n" "$f1") || true',
+  'echo "@@state"; diff "$2/state.before" "$2/state.after" || true',
+  'echo "@@traps"; cat "$2/traps"',
+  'echo "@@out"; cat "$2/out"',
+].join('\n')
+function probeLib(libPath: string) {
+  const work = mkdtempSync(join(tmpdir(), 'cdkt-lib-probe-'))
+  try {
+    const r = spawnSync('bash', ['--noprofile', '--norc', '-c', LIB_PROBE, '_', libPath, work], {
+      cwd: work,
+      encoding: 'utf8',
+      // common.sh refuses to load without the two paths manage.sh sets.
+      env: { PATH: process.env.PATH ?? '', ROOT: '/nonexistent', PROD: '/nonexistent/production' },
+    })
+    const sections = new Map<string, string[]>()
+    let current: string[] | undefined
+    for (const line of r.stdout.split('\n')) {
+      const marker = /^@@(vars|funcs|state|traps|out)$/.exec(line)
+      if (marker) sections.set(marker[1]!, (current = []))
+      else current?.push(line)
+    }
+    const list = (name: string) => (sections.get(name) ?? []).filter(Boolean)
+    const text = (name: string) => list(name).join('\n')
+    return { status: r.status, stderr: r.stderr, vars: list('vars'), funcs: list('funcs'), state: text('state'), traps: list('traps'), out: text('out') }
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+  }
+}
+
+test('loading a lib changes no shell state; only common.sh sets variables (and its one EXIT trap); no function is defined twice', () => {
+  // All libs share one shell. A lib's top level doing `set +e`, `umask 000`,
+  // `shopt -s nullglob` or `cd` would silently undo the entry's `set -euo pipefail` (or
+  // move every relative path) for the WHOLE toolkit; a variable set there, or a function
+  // defined in two libs, would depend on the source order. Globals live in common.sh alone.
+  const owner = new Map<string, string>()
+  for (const { file } of manageParts().filter((p) => p.file !== MANAGE_ENTRY)) {
+    const probe = probeLib(new URL(`../${file}`, import.meta.url).pathname)
+    assert.equal(probe.status, 0, `${file}: ${probe.stderr}`)
+    assert.equal(probe.state, '', `${file} changes the shell's state at load time:\n${probe.state}`)
+    assert.equal(probe.out, '', `${file} prints at load time`)
+    assert.ok(probe.funcs.length > 0, `${file} defines no function`)
+    for (const fn of probe.funcs) {
+      assert.equal(owner.get(fn), undefined, `${fn} is defined in both ${owner.get(fn)} and ${file}`)
+      owner.set(fn, file)
+    }
+    if (file === 'production/lib/common.sh') {
+      assert.equal(probe.traps.length, 1, `common.sh installs exactly one trap:\n${probe.traps.join('\n')}`)
+      assert.match(probe.traps[0]!, /^trap -- 'if \[ -n "\$LOG_FALLBACK_TMP" \]; then rm -f "\$LOG_FALLBACK_TMP"; fi' EXIT$/)
+      continue
+    }
+    assert.deepEqual(probe.vars, [], `${file} sets a top-level variable — globals belong in production/lib/common.sh`)
+    assert.deepEqual(probe.traps, [], `${file} installs a trap at load time`)
+  }
+  // Every command the entry dispatches to exists.
+  for (const cmd of ['cmd_deploy', 'cmd_update', 'cmd_migrate', 'cmd_media_tuning', 'cmd_backup_cron', 'cmd_export_env', 'main_menu']) {
+    assert.ok(owner.has(cmd), `${cmd} is not defined by any lib`)
+  }
+})
+
+test('shellcheck -x -a -S warning on the entry is clean — the whole toolkit, warnings inside lib/ included', (t) => {
+  // `-x` alone only FOLLOWS the `.` lines for definitions; a warning inside a lib is
+  // reported only with `-a` (--check-sourced). CI runs the same check (next test).
+  const root = new URL('..', import.meta.url).pathname
+  if (spawnSync('shellcheck', ['--version'], { encoding: 'utf8' }).status !== 0) {
+    t.skip('shellcheck is not installed here. Run it by hand: docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -x -a -S warning production/manage.sh')
+    return
+  }
+  const r = spawnSync('shellcheck', ['-x', '-a', '-S', 'warning', '--format=gcc', 'production/manage.sh'], { cwd: root, encoding: 'utf8' })
+  assert.equal(r.status, 0, `shellcheck found problems in production/manage.sh or production/lib/:\n${r.stdout}${r.stderr}`)
+})
+
+test('CI shellchecks production/ from the entry with -x -a, and never a lib on its own', async () => {
+  const hygiene = asMap(asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs').hygiene, 'hygiene job')
+  const steps = (hygiene.steps as YamlMap[]).filter((s) => String(s.uses ?? '').startsWith('ludeeus/action-shellcheck@'))
+  const scripts = steps.find((s) => asMap(s.with, 'with').scandir === './scripts')
+  const production = steps.find((s) => asMap(s.with, 'with').scandir === './production')
+  assert.ok(scripts && production, 'hygiene must shellcheck both ./scripts and ./production')
+  assert.equal(production.uses, scripts.uses, 'the same pinned action for both')
+  const opts = String(asMap(production.env ?? {}, 'env').SHELLCHECK_OPTS ?? '').split(/\s+/)
+  assert.ok(opts.includes('-x') && opts.includes('-a'), `SHELLCHECK_OPTS must carry -x and -a (got ${JSON.stringify(opts)}): without -a a warning inside lib/ is silent`)
+  const inputs = asMap(production.with, 'with')
+  // The action's find excludes `*/<path>/*`: lib/ is checked through the entry, not alone
+  // (alone, a lib has none of common.sh's variables).
+  assert.equal(inputs.ignore_paths, 'production/lib')
+  assert.equal(inputs.severity, 'warning')
+})
+
+test('the lib probe itself: each kind of load-time state change is caught, in an ordinary lib and in common.sh', () => {
+  const work = mkdtempSync(join(tmpdir(), 'cdkt-lib-plant-'))
+  try {
+    for (const lib of ['menu.sh', 'common.sh']) {
+      const clean = read(`production/lib/${lib}`)
+      for (const plant of ['set +e +o pipefail', 'umask 000', 'shopt -s nullglob', 'cd /']) {
+        const file = join(work, `${plant.replace(/\W+/g, '_')}.${lib}`)
+        writeFileSync(file, `${clean}${plant}\n`)
+        const probe = probeLib(file)
+        assert.equal(probe.status, 0, `${plant} in ${lib}: ${probe.stderr}`)
+        assert.notEqual(probe.state, '', `\`${plant}\` at the top level of ${lib} went unnoticed`)
+      }
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+  }
+})
+
+test('rules that hold for the WHOLE toolkit, every lib included', () => {
+  const source = manageSource()
+  // Code lines only: the comments explain the very forms they forbid.
+  const offending = (re: RegExp) => manageParts().flatMap(({ file, text }) =>
+    text.split('\n').flatMap((line, i) => (!line.trimStart().startsWith('#') && re.test(line) ? [`${file}:${i + 1}: ${line.trim()}`] : [])))
+  // SIGPIPE under `set -o pipefail` makes `… | grep -q` report the wrong answer.
+  assert.deepEqual(offending(/\|\s*grep -q/), [], '`grep -q` in a pipe under pipefail')
+  // The MySQL password never goes on a command line (`ps` shows every argv).
+  assert.deepEqual(offending(/\s-p["']?\$/), [], '`-p$PASSWORD` puts the MySQL password in argv')
+  assert.deepEqual(offending(/-e MYSQL_PWD=/), [], '`-e MYSQL_PWD=<value>` puts the password in the docker client argv')
+  assert.match(manageFunction('mysql_exec', source), /MYSQL_PWD="\$pw" docker exec -i -e MYSQL_PWD /)
+})
+
+test('Update continues in the new code when the pull changes manage.sh OR any lib/*.sh', () => {
+  // The single-file manage.sh compared a hash of manage.sh alone. After the split, a pull
+  // that changes only a lib would leave the rest of Update running the OLD libs already
+  // loaded into the shell. Behaviour: tests/ops-scripts-sandbox.test.ts (real git pulls).
+  const update = manageFunction('cmd_update')
+  assert.match(update, /^ {4}manage_before=\$\(manage_toolkit_digest\)$/m)
+  assert.match(update, /^ {4}manage_after=\$\(manage_toolkit_digest\)$/m)
+  assert.match(update, /^ {6}exec env CDKT_UPDATE_RESUMED=1 CDKT_UPDATE_COMPOSE_BACKUP="\$UPDATE_COMPOSE_BACKUP" bash "\$PROD\/manage\.sh" update$/m,
+    'the resumed Update must REPLACE this process (`exec`), with the env the old single-file manage.sh also passes')
+  assert.match(manageFunction('manage_toolkit_digest'), /sha256sum manage\.sh lib\/\*\.sh/)
 })

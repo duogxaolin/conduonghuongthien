@@ -27,7 +27,7 @@ Biến khai bằng `const` ở đầu `db.transaction(…)` còn trong vùng ch�
 
 ### `insertId` — bốn chỗ đã viết sai
 
-`db.insert()` trả về một MẢNG, phải destructure mới lấy được `insertId` (`tests/insert-id-integration.test.ts`). Viết `res.insertId` trên giá trị chưa destructure cho ra `undefined` — **âm thầm**. **Bốn** chỗ đã viết sai và cả bốn đều lọt qua mọi cổng: `callback.get.ts` (đăng nhập người đọc), `ip-bans.ts`, rồi `createComment` và `createAdminReply` trong `services/comments.ts` (phát hiện sau, lúc làm trang cá nhân người đọc). Các chỗ cũ hơn trong dự án đều viết đúng dạng `const [res] = await db.insert(...)`.
+`db.insert()` trả về một MẢNG, phải destructure mới lấy được `insertId` (`tests/insert-id-integration.test.ts`). Viết `res.insertId` trên giá trị chưa destructure cho ra `undefined` — **âm thầm**. **Bốn** chỗ đã viết sai và cả bốn đều lọt qua mọi cổng: `callback.get.ts` (đăng nhập người đọc), `ip-bans.ts`, rồi `createComment` và `createAdminReply` trong `services/comments.ts` (phát hiện sau, lúc làm trang cá nhân người đọc; nay ở `comments-posting.ts` / `comments-admin-reply.ts` sau lượt tách wave2). Các chỗ cũ hơn trong dự án đều viết đúng dạng `const [res] = await db.insert(...)`.
 
 - **Triệu chứng ở production đọc ra như một lỗi chập chờn, không như một lỗi lập trình**: lần đăng nhập **đầu tiên** báo "không thể hoàn tất đăng nhập", lần thứ hai thì được. Cả hai đến từ cùng một dòng — `Number(undefined ?? 0)` là `0`, guard `if (!readerId)` nổ và chuyển hướng `failed`, **nhưng hàng đã commit xong**. Lần thứ hai tìm thấy hàng đó, đi nhánh `existing` (nhánh này không đọc `insertId`) nên chạy đúng. Người thử hai lần tưởng cổng chỉ cần "làm lại một lần"; người thử một lần kết luận đăng nhập bị hỏng.
 - **`as unknown as { insertId?: number }` là thứ làm lỗi này vô hình.** Nó *khẳng định* hình dạng chứ không *kiểm* hình dạng, nên cách đọc sai vẫn qua `typecheck`. Fake pool cũng không bắt được (một stub trả về đúng hình dạng mà người viết tin là đúng), và test soi văn bản mã nguồn thì chỉ ghim được ký tự của một phép đọc, không ghim được giá trị nó trả về lúc chạy. **Chỉ driver thật phản đối.**
@@ -46,7 +46,7 @@ Biến khai bằng `const` ở đầu `db.transaction(…)` còn trong vùng ch�
 
 `server/utils/query-number.ts`. `Math.max(1, Number(query.page))` trông đúng — có kẹp biên, có mặc định — nhưng `Number('abc')` là `NaN` và **mọi so sánh với `NaN` đều `false`**, nên `Math.max` trả lại chính `NaN`. Giá trị đó vào `offset()` rồi JSON hoá thành `page: null`: endpoint **trả về hàng nhưng khai là không ở trang nào**. `?page=1e999` (Infinity) lọt y hệt.
 
-- Hàm này từng bị **chép năm bản** giống hệt nhau, còn **bốn endpoint khác không có bản nào** (`public/articles`, `admin/articles`, `admin/categories/[id]/articles`, `admin/media`) — chúng vẫn kẹp biên trần. Đó là hình dạng của một quy ước lan ra không đều: chỗ có helper thì đúng, chỗ không có thì sai, và **không có gì chỉ ra chỗ nào là chỗ nào**. Nay còn một bản; `tests/query-number.test.ts` chặn cả việc phép kẹp biên trần quay lại lẫn việc bản sao thứ hai xuất hiện.
+- Hàm này từng bị **chép năm bản** giống hệt nhau, còn **bốn endpoint khác không có bản nào** (`public/articles`, `admin/articles`, `admin/categories/[id]/articles` — route này sau đó bị xoá vì không nơi gọi, CHANGELOG § 64 —, `admin/media`) — chúng vẫn kẹp biên trần. Đó là hình dạng của một quy ước lan ra không đều: chỗ có helper thì đúng, chỗ không có thì sai, và **không có gì chỉ ra chỗ nào là chỗ nào**. Nay còn một bản; `tests/query-number.test.ts` chặn cả việc phép kẹp biên trần quay lại lẫn việc bản sao thứ hai xuất hiện.
 - Phát hiện bằng cách **gọi thật endpoint sau khi build**, không phải đọc mã — một test soi văn bản mã nguồn không thấy được hình dạng phản hồi.
 - **Đã đo lại bằng A/B trên hai máy chủ thật** (HEAD so với `main`, hai CSDL dùng một lần, 30 tuyến đọc quản trị): 28/30 giống nhau, và **đúng hai chỗ lệch là chính lỗi này**. `?page=abc` → `main` trả `pagination.page: null` trong khi vẫn trả về hàng; `?page=1e999` → `main` trả **500**. HEAD trả `page: 1` và `200`. Ghi lại con số vì nó trả lời câu "phép sửa này có thật cần không" bằng một quan sát chứ bằng một lập luận — và vì `Infinity` đi tới **500** là hậu quả không ai đoán trước khi chạy thử.
 
@@ -92,7 +92,7 @@ Ba danh sách trong `tests/reader-audit-atomicity.test.ts` liệt kê **đườn
 
 `app/utils/nav-config.ts` (`tests/nav-config-boundary.test.ts`, 35 test) — cấu hình điều hướng do quản trị viên nhập ở `/admin/content/navigation/*`, đi thẳng vào `v-for` dựng thanh nav của **mọi trang công khai**. Bản cũ chỉ có `try { JSON.parse } catch { null }`: bắt được JSON hỏng cú pháp, **không** bắt được JSON hợp lệ mang hình dạng sai. `[{}]` đi qua trót lọt → `<NuxtLink :to="undefined">` → liên kết chết trên toàn cổng; một mảng rỗng thì **thanh nav biến mất**. Cả hai sau một lượt lưu **thành công**, nên không có gì chỉ vào nguyên nhân. Nay **mọi** dữ liệu không dùng được ra `null` để lùi về bảng mặc định — cấu hình sai nên làm cổng trông như *chưa* cấu hình, không nên làm cổng trông như *bị hỏng*. Kiểm chứng ngược: quay về parser cũ → **15 test đỏ**.
 
-- **⚠️ Việc đổi sang allowlist đã làm RƠI một trường, và nó im lặng: `openNewTab`.** Cán bộ tick ô "Mở tab mới" ở `/admin/content/navigation/navbar.vue`, `navigation.put.ts:35` lưu đúng trường đó, nhưng `normalizeNavItem` **dựng lại node từng trường** và không copy nó — nên trang công khai bỏ qua thiết lập sau một lượt lưu **thành công**, với ô vẫn còn tick lúc tải lại. Không có triệu chứng nào chỉ vào nguyên nhân. Đo được bằng cách **chạy thật** normalizer (`parseNavConfig` trên một mục có `openNewTab: true` → trường biến mất ở cả hai cấp), không phải bằng đọc mã; và nó lọt qua `npm test`, `typecheck`, `db:drift` **và cả 35 test của chính tệp này** — vì không test nào nhắc tới trường đó (`grep -c openNewTab` = 0).
+- **⚠️ Việc đổi sang allowlist đã làm RƠI một trường, và nó im lặng: `openNewTab`.** Cán bộ tick ô "Mở tab mới" ở `/admin/content/navigation/navbar.vue`, `navigation.put.ts:35` (đường lưu thật của trang này là `navigation/navbar.put.ts`, ghi cùng trường; `navigation.put.ts` không nơi gọi đã xoá — CHANGELOG § 64) lưu đúng trường đó, nhưng `normalizeNavItem` **dựng lại node từng trường** và không copy nó — nên trang công khai bỏ qua thiết lập sau một lượt lưu **thành công**, với ô vẫn còn tick lúc tải lại. Không có triệu chứng nào chỉ vào nguyên nhân. Đo được bằng cách **chạy thật** normalizer (`parseNavConfig` trên một mục có `openNewTab: true` → trường biến mất ở cả hai cấp), không phải bằng đọc mã; và nó lọt qua `npm test`, `typecheck`, `db:drift` **và cả 35 test của chính tệp này** — vì không test nào nhắc tới trường đó (`grep -c openNewTab` = 0).
 - **Đây là cái giá cố hữu của việc đổi passthrough → allowlist**, không phải một lần bất cẩn: `JSON.parse` giữ **mọi** trường kể cả trường nó không biết, còn allowlist chỉ giữ trường **được nêu tên**. Allowlist đúng hơn về mọi mặt khác — đó là lý do nó tồn tại — nhưng nó biến "thêm một trường nav" thành việc phải sửa **hai** chỗ, và chỗ thứ hai **không báo lỗi khi bị quên**. Thêm trường mới thì thêm ở `interface NavItem`, ở `normalizeNavItem`, **và** một khẳng định trong test.
 - Bộ đọc dùng `item.openNewTab === true`, **không** `Boolean(...)`: giá trị đến từ JSON đã lưu nên chuỗi `"false"` là truthy và sẽ **bật** cờ mà cán bộ vừa tắt. Có test chạy qua 6 dạng giá trị không dùng được. Kèm một test soi `default.vue` đòi **mọi** chỗ đặt `target="_blank"` phải đặt kèm `rel="noopener noreferrer"` — thiếu `noopener` thì trang đích **ghi được vào `location`** của cổng, tức một liên kết ngoài do cán bộ cấu hình có thể bị chuyển hướng sang bản sao giả mạo của chính cổng này.
 - **Cổng `lang="ts"` nay bắt được chính bug `openNewTab`.** Đã kiểm chứng: xoá trường khỏi `interface NavItem` → **6 lỗi `TS2339` ở `default.vue`**. Trước khi bật `lang="ts"`, hồi quy đó lọt qua `npm test`, `typecheck`, `db:drift` và cả 35 test của chính tệp nav.
@@ -123,7 +123,7 @@ Nay (`media-sync-files.ts`, `media-sync-rewrite.ts`, `media-sync.ts`):
 - Mỗi mục: upload → Head kiểm (hỏng thì ném, hàng không đổi) → **một transaction** gồm đổi hàng `media` có điều kiện + thay URL ở **mọi** bảng đích (bài, bản dịch, `page_blocks` JSON với dạng `\/` đã thoát, trang, phiên bản trang, `home_sections`, `media_items`/livestream thumbnail, `settings`) + audit → **rồi mới** xoá bản local. REPLACE là idempotent nên chạy lại an toàn. Trên MySQL: `REGEXP` không phân biệt hoa thường dưới `utf8mb4_unicode_ci` (cần `(?-i)`), `LIKE` phải thoát `_`, REPLACE vào cột JSON với `"` chưa thoát → lỗi 3140 — `tests/media-sync-rewrite-integration.test.ts` chạy trên MySQL thật.
 - Worker giữ `withNamedLock` suốt lượt + mã thế hệ kiểm mỗi lô, nên `forceResetSyncJob` không để worker cũ ghi tiếp. "Sửa URL" (`media-repair.ts`) có bước sửa các mục bị cắt ngang: hàng đã lên R2 mà URL local cũ vẫn còn trong nội dung.
 - `media-sync-rewrite.ts` không còn trong `SERVICE_EXEMPTIONS` của `tests/reader-audit-atomicity.test.ts` (audit của nó nay cùng transaction).
-- Thay file video (`chunked-upload.ts`): cây cũ nằm ở `media/<uploadId>` chứ không phải `media/<slug>`, và bị `rm` trước khi transaction commit, bỏ qua R2 → mọi lượt thay rò cây cũ. Nay chọn đúng `storagePath`, đẩy vào outbox `media_asset_cleanup` **trong** transaction (giống `deleteMediaItem`), không xoá gì trước commit; `deleteR2Tree` xoá theo ranh giới thư mục (`prefix/`) và từ chối prefix rỗng.
+- Thay file video (`completeUpload`, `chunked-upload-completion.ts`): cây cũ nằm ở `media/<uploadId>` chứ không phải `media/<slug>`, và bị `rm` trước khi transaction commit, bỏ qua R2 → mọi lượt thay rò cây cũ. Nay chọn đúng `storagePath`, đẩy vào outbox `media_asset_cleanup` **trong** transaction (giống `deleteMediaItem`), không xoá gì trước commit; `deleteR2Tree` xoá theo ranh giới thư mục (`prefix/`) và từ chối prefix rỗng.
 
 ### Đọc công khai hỏng phải là lỗi, không phải "danh sách trống"
 
@@ -143,6 +143,10 @@ Spike chỉ mục `(status, type, published_at)` cho danh sách bài: **không t
 
 `<input type="date">` gửi `YYYY-MM-DD` — một ngày lịch cán bộ đọc theo giờ VN, không phải một thời điểm. Ba lỗi cùng gốc ở `ai/logs`, `chatbot/sessions`, `activity-logs`: `new Date('2026-10-14')` là 00:00 UTC = 07:00 VN (mất 7 giờ đầu ngày); `setHours(23,59,59,999)` và `'…T00:00:00'` không múi giờ tính theo `TZ` của tiến trình (kết quả đổi theo container); `to=YYYY-MM-DD` đọc thành 00:00 của chính ngày đó (ngày cuối bị loại hẳn). Nay `server/utils/vn-day-range.ts`: `[ngày đầu 00:00 +07:00, ngày sau ngày cuối 00:00 +07:00)`, so `lt` chứ không `lte`, giá trị không phải ngày → 400; `users/activity.vue` gửi ngày trần. **Điều kiện tiên quyết:** phiên MySQL chạy UTC (`time_zone=SYSTEM=UTC`, đã kiểm chỉ đọc) — đổi múi giờ phiên thì mốc lệch theo. `profile/history.get.ts` cùng mẫu cũ, chưa đổi; `analytics.vue` cố ý dùng ngày UTC. Test: `tests/admin-date-filters-vn-day.test.ts`, `tests/ai-logs-date-filter.test.ts`.
 
+### Ngày của lượt xem (`viewDay`) là ngày lịch Việt Nam (từ 2026-10-31)
+
+`viewDay()` (`server/services/article-views.ts`) từng là ngày UTC (`toISOString().slice(0,10)`): 00:00–07:00 giờ Hà Nội rơi vào ngày hôm trước trong chuỗi "Diễn biến theo ngày" của modal thống kê bài. Nay là `vietnamDateString(at)` (`vn-day-range.ts`, +7 cố định, không phụ thuộc `TZ` tiến trình). Hai handler (`articles/[slug]/view.post.ts`, `media/[shortId]/view.post.ts`) tính `day` MỘT lần và dùng cho cả token khách (khoá chống F5 10 phút) lẫn hàng `article_view_daily` — nên token và hàng luôn cùng ngày; boost tức thì/dần (`addFabricatedViews`) và `getArticleViewStats` (`since`) đi theo. **Không DDL**: `day` là `DATE` ghi chuỗi nguyên văn, khoá duy nhất `(day, article_id, source_category)` không đổi; mỗi lượt xem vẫn ghi đúng một lần vào một hàng, nên không mất/không nhân đôi đếm, tổng `view_total*` không đổi. **Không backfill** (chủ dự án chấp nhận): hàng cũ giữ ngày UTC (07:00 VN → 07:00 VN hôm sau); ngày chuyển đổi là một ngày ngắn/dài hơn trong chuỗi; deploy trong 00:00–07:00 VN làm chuỗi ngày của token đổi ngay lúc deploy → một khách xem lại trong 10 phút quanh lúc deploy được tính thêm tối đa một lượt mỗi bài (cùng hiện tượng vốn xảy ra mỗi lần sang ngày, nay lúc 00:00 VN thay vì 07:00 VN). Analytics (`event_day`, `analytics_daily_*`) **vẫn UTC** có chủ đích (`utc-query.ts`) — không join với `article_view_daily`. Còn từ trước, không đổi: modal in `new Date(row.day).toLocaleDateString('vi-VN')` theo múi giờ trình duyệt (lệch một ngày ở trình duyệt múi giờ âm). Test: `tests/article-view-day-vn.test.ts` (hai handler thật, ba `TZ`), `tests/article-view-analytics.test.ts`, `tests/article-boost-behavior.test.ts`.
+
 ### Đồng bộ media: "một tham chiếu tới ảnh X" là gì
 
 Bản 2026-10-13 thay URL ở một danh sách cột hẹp và không có quy tắc ranh giới cuối URL (`a.jpg` phải không khớp bên trong `a.jpg.webp`), còn `settings.value` (logo, favicon, og-image), `chat_messages`, `page_versions`, câu trả lời chatbot, `social_links.icon`… không được thay, nên bản local bị xoá trong khi các chỗ đó vẫn trỏ tới nó. Nay `server/services/media-sync-url-match.ts` giữ **27 cột đích** (mỗi cột ghi lý do) và **một** định nghĩa ranh giới cuối URL cho cả bản SQL (`REGEXP_REPLACE`) lẫn bản JS (bộ dò của lượt vá) — hai bản lệch nhau thì hoặc thay mà không thấy, hoặc thấy mà không thay. Sau commit, `findRemainingReferences` còn thấy tham chiếu → **giữ** bản local và log `media.sync_old_copy_kept_referenced` thay vì xoá. Trước khi đổi hàng, kiểm đường dẫn đích chưa thuộc hàng khác (bỏ qua hàng đó). Viết lại `settings` thì xoá cache favicon/og-image. Chi phí đo trên dữ liệu dev (3705 hàng media): ≈ +0,4–0,5 s mỗi hàng → ≈ 25–30 phút thêm cho một lượt đồng bộ đầy đủ. `tests/media-sync-rewrite-integration.test.ts` đỏ trên mã cũ (settings không được thay).
@@ -156,3 +160,300 @@ Lượt kiểm chứng đo trên bản build với CSDL không với tới: 12 A
 Đợt G1–G3 (2026-10-14) đóng ba lỗ còn lại: `/legal-qa` gọi `useSsrFailureStatus`; nhánh hai đoạn của `[slug].vue` quyết định bằng `resolveCategoryRoute` (tra chuyên mục hỏng → `BlockLoadError` + 503, không rơi sang `ArticleDetail`); `ArticleDetail.vue` tách "không có" khỏi "không tải được" bằng `resolveDetailFetch` — bài thật không có → 404 + "Không tìm thấy" (trước đây cả hai đều là cảnh báo + Thử lại với HTTP 200, nên lỗi tải được SWR phát lại và 404 thật bị báo là lỗi), lỗi tải → 503 + `no-store` + Thử lại (`useSsrFailureStatus` tuỳ chọn `notFound`). Đo lại trên bản build (CSDL không với tới): thêm `/legal-qa`, `/news/<x>/<bài>`, `/video/<x>`, `/role-models/<x>` → 503 + `no-store`. Với CSDL khoẻ, trang 404 trên tuyến `swr` (`/news/**`, `/role-models/**`…) vẫn mang `s-maxage=60` — còn mở.
 
 Còn mở: `rate_limit.database_read_failed` không giới hạn tần suất log (`rate_limit.database_write_failed` của store chung — page-view, đăng nhập… — nay tối đa 1 dòng/phút kèm số lần bị nén); `analytics-maintenance.ts` vẫn tự `createPool`.
+
+## Nhật ký chi phí AI (`ai_usage_logs`): một hàng mỗi lượt `callAi` (2026-10-31)
+
+**Bất biến:** mỗi lượt `callAi` đã qua các bước từ chối (cấu hình, ngân sách, khoá, URL đã lưu) ghi **đúng một** hàng — trả lời (`recordAiCall`) hay lỗi (`recordAiFailure`, `server/services/ai-gateway-record.ts`), dù đường đã gửi một hay hai request (vòng công cụ). Không nơi nào khác ghi lượt gọi qua cổng; "Gọi thử" (`test-call.post.ts`) ghi hàng `test_call` của riêng nó.
+
+**Delify đếm hai lần — nguyên nhân gốc.** Không phải ở cổng AI: test chạy `callAi` thật với socket giả ("one usage row per answered callAi on every path", `tests/ai-gateway-streaming-paths.test.ts`) **xanh trên `f58c7584`**. Gốc là nút "Đồng bộ" Delify (`delify/sync.post.ts`) nhập lịch sử router thành hàng `delify_router` — bản chép của lượt cổng đã ghi. `checkBudget` (`loadTotalSpend` cộng **mọi** hàng khi giới hạn là ngân sách khoá Delify), `usage.get` và thẻ khoá (`status.get`) cộng cả hai. Hai bản không có khoá chung (lịch sử không có id lượt gọi; một lượt vòng công cụ là hai request router nhưng một hàng cổng; giá router khác giá nội bộ), nên không khớp được chắc chắn lúc nhập → **bỏ hẳn việc nhập**; lịch sử router vẫn hiện trên dashboard, đọc trực tiếp (`recentHistory`). Test "one delify request is ONE usage row and ONE cost" (`ai-delify-sync-behavior`) đỏ trên `f58c7584` (hàng thừa `delify_router` 1000/500).
+
+**Dọn hàng đã nhập — `npm run db:repair-ai-usage-duplicates`** (`server/services/ai-usage-duplicates-repair.ts`, runbook `production/README.md`). Chỉ xoá hàng `service_key='delify_router' AND provider='delify'` (mỗi `DELETE` ghi lại điều kiện đó); ghép theo model + token vào/ra (hoặc token vào của hàng cổng = router + 2000, **chỉ** khi hàng cổng ghi trước thời điểm commit `5adab79a` — `LEGACY_OVERHEAD_UNTIL` = 2026-09-24T10:51:36Z; trước lượt sửa của verifier mã không chặn theo ngày và một hàng ngoài app 500/100 cạnh hàng cổng tháng 10 2500/100 bị xoá — A18), cả hai thành công, trong **dải lệch đồng hồ**, một-một. Phép ghép là suy luận, **không chắc chắn tuyệt đối** — kể cả nhóm `exact` (rủi ro còn lại ở cuối mục). Vì sao từng phần:
+- **Dải lệch, áp TRƯỚC phép một-một.** Đồng hồ router lệch máy chủ (dev: hàng cổng ghi sau 137–152 s). Không có dải, một đoạn văn dịch lại bốn lần trong mười phút (cùng 82/7 token) làm mọi hàng "nhiều ứng viên"; có dải, mỗi hàng chỉ còn đúng bản ở độ lệch. Tâm = trung vị (không phải trung bình) độ lệch của cặp neo, ± 30 s.
+- **Cần ≥ 3 neo và quá nửa nằm trong dải**, và **dải của lượt `--apply` trước thắng** (đọc từ dòng audit của nó). Lượt `--apply` đầu xoá chính các cặp neo; đo trên bản sao CSDL dev, lượt sau không còn neo → nhóm `review` thành `no_band` và README bước 4 không làm được gì — đã sửa bằng cách giữ dải đo lần đầu. Cũng vì thế một cặp lẻ xa độ lệch (neo duy nhất còn lại) không bao giờ thành dải của lượt sau.
+- **`review` = near twin**: không có hàng cổng cùng token, nhưng một hàng trong dải cùng token ra và token vào ít hơn 1–256 (cổng trừ cố định 2000, router có lúc tính phụ phí thấp hơn — dev: 77 hàng lệch đúng 96 hoặc 128, độ lệch giờ 151–152 s), một-một ở cả hai phía. Yếu hơn `exact` → chỉ `--include-review` mới xoá, và chỉ sau khi chạy lại xem trước sau bước `--apply` (danh sách có thể trôi — A29).
+- **Bản sao y hệt** (R5-8: mỗi lượt đồng bộ trên MySQL chèn lại cả lịch sử) theo hàng đại diện: đại diện vào `exact` thì bản sao cũng vậy (chỉ một hàng cổng, nên không thể là lượt khác của app); còn lại vào `review`.
+- `kept` không bao giờ xoá: `no_twin` (vòng công cụ: hai request router = tổng một hàng cổng; lượt cổng lỗi trước bản vá G1 nên không có hàng; lượt từ nơi khác dùng chung khoá), `ambiguous`, `outside_band`, `no_band`, `failed_request`.
+
+**Số đo (bản sao `cdkt_admin` trên MySQL dev, CLI thật, `cdht-wave3-delify-usage-proof/mysql-proof.log`):** 183 hàng `delify_router` (15 459,73 VND) → `exact` 98 (5 055,66 VND: 90 cùng token + 8 phụ phí 2000), `review` 77 (9 694,13 VND), `kept` 8 (709,94 VND: 6 `no_twin` — 2 là một lượt vòng công cụ, 4 không có hàng cổng — và 2 `ambiguous`: hai lượt 98/23 cách nhau 12 s, mỗi hàng có hai ứng viên trong dải). 76 neo, tâm 149 s. Tổng chi tiêu giảm đúng 5 055,66 rồi 9 694,13; 1 561 hàng cổng giữ nguyên (checksum không đổi); chạy lại: `exact` 0. Sau mốc ngày của luật phụ phí: không đổi (8 cặp phụ phí đều ngày 23/9 — `mysql-proof-r2.log`).
+
+**Rủi ro còn lại (kịch bản đối kháng của verifier độc lập, `cdht-wave3-delify-usage-verify/adversarial-summary.log`):** hàng ngoài app (cùng khoá, hay lượt cổng hỏng trước G1) cạnh một hàng cổng cùng model + token trong dải có thể được ghép thay bản chép thật (A03, A05), hoặc hai request trùng giây/token/thời gian chạy bị coi là bản sao (A13) → một chi phí thật bị xoá; dải sai khi ít neo trùng hợp (A06) và dải của lượt `--apply` đầu đóng băng cho mọi lượt sau kể cả khi sai (A11) — nên README bắt đọc `band`/`bandSource`/`anchorHistogram` trước `--apply`; danh sách `review` trôi sau bước 3 (A29) — README bắt chạy lại xem trước trước bước 4. Lượt sửa sau verifier không đổi thuật toán cho các ca này (ngoài A18); ghép chặt hơn sẽ để lại nhiều đếm-đôi hơn — cần chủ dự án quyết nếu muốn đổi.
+
+**Tác dụng phụ đã biết của bản vá:** chi tiêu của request ngoài app dùng chung khoá Delify không còn vào `loadTotalSpend` / "đã dùng" của thẻ khoá → "còn lại" có thể cao hơn thật (router vẫn tự chặn khi khoá hết ngân sách; cổng dừng khi khoá báo `active: false`); chatbot khi `callAi` lỗi rơi xuống đường gọi thẳng cũ (`chat-policy-provider.ts`, nếu cài đặt chatbot còn khoá) — lượt đó vẫn ghi một hàng lỗi dù khách nhận câu trả lời, còn lượt đường cũ không ghi hàng.
+
+**Lượt gọi lỗi (FINDING-G1, người dùng quyết):** `success: false`, `error_message` = mã đã phân loại (`provider_error`/`parse_error` — không bao giờ chữ của provider, có thể lặp lại khoá), **0 token, 0 chi phí**. Không cần DDL: cột `success`/`error_message` có từ đầu và mọi nơi đọc đã gặp hàng `success = false` (của "Gọi thử", của lịch sử router cũ). Tổng tiền/token (`checkBudget`, `usage.get`, thẻ khoá) không đổi; số lượt gọi tính cả lượt lỗi và tỉ lệ thành công phản ánh nó (`tests/ai-usage-failure-rows-behavior.test.ts`: harness h3 + SQLite + `callAi` thật); `enforceAiQuota` đếm ở `rate_limit_counters`, không đọc bảng này. Lượt từ chối trước khi vào đường gọi (`service_inactive`, `budget_exceeded`, `no_api_key`, `provider_url_rejected`) không ghi hàng; địa chỉ bị từ chối **lúc gửi** (DNS ra IP nội bộ) và kết nối đứt thì có (một lượt đã thử).
+
+**Điều kiện tiên quyết:** sync không nhập lại (`ai-delify-sync-behavior`); trước khi chạy lệnh dọn bản vá phải đã deploy (bản cũ bấm "Đồng bộ" nhập lại đúng các hàng vừa xoá). **KNOWN:** vòng công cụ bước 1 đã trả lời (đã tính tiền) rồi bước 2 lỗi ghi 0 token — chi phí bước 1 không vào ngân sách; người gọi tự thử lại (`article-translation-worker.ts`: 3 lần mỗi tiêu đề/đoạn) tạo một hàng mỗi lần thử — mỗi lần là một lượt gọi thật.
+
+## Đợt 2 — 2C hiệu năng (2026-10-24)
+
+OpenSpec `wave2-hardening` nhóm 4, design D6 + D8. Tóm tắt thay đổi → `docs/CHANGELOG.md` § 35. Ở đây là vì sao và số đo.
+
+### "Đọc nhiều" đọc tổng duy trì sẵn (D6)
+
+`GET /api/public/articles?sort=views` từng cộng `article_view_daily` trong một truy vấn con tương quan cho **mọi** bài đã xuất bản của thể loại, rồi chạy thêm `COUNT(*)` cho một khối phân trang không ai đọc. Nay `articles` giữ `view_total_real`/`view_total_fabricated` (hai cột riêng — bất biến trung thực của `article-views.ts`) và `view_total` = tổng — **cột thường** `BIGINT NOT NULL DEFAULT 0`, index `articles_status_type_views_idx (status, type, view_total, published_at, created_at)`.
+
+**Ba cột luôn bằng tổng hàng theo ngày vì cấu trúc, không vì quy ước:** chỉ `recordArticleView`/`addFabricatedViews` ghi, cộng nửa thật/ảo **và** `view_total` trong cùng một câu UPDATE, trong cùng transaction với upsert hàng ngày; mỗi lần khởi động, lượt đối soát sửa bài nào lệch. Các chi tiết đã đo/đã trả giá:
+- **Thứ tự khoá: `articles` trước.** Chèn một hàng `article_view_daily` mới lấy khoá S trên hàng `articles` cha (kiểm FK). Nếu cộng tổng sau, hai transaction cùng bài (hai nguồn lượt xem đầu ngày; lượt xem thật cạnh lượt giao boost) mỗi bên giữ S, chờ X của bên kia → deadlock, và `view.post.ts` nuốt lỗi nên lượt xem mất im lặng. Lấy X trên `articles` trước thì các transaction cùng bài xếp hàng (đảo lại thì đợt bắn đồng thời trong `view-boost-integration` đỏ — đã thử).
+- **`updated_at = updated_at`** trong mọi câu UPDATE `articles` của đường đếm và của lượt đối soát: cột `ON UPDATE CURRENT_TIMESTAMP`; MySQL để yên cột tự cập nhật khi câu lệnh gán nó tường minh.
+- **Không cột sinh — vì đường lùi.** d079453 khai `view_total` là cột sinh STORED. `deploy-remote.sh` tự lùi image khi healthcheck hỏng, *sau* khi image mới đã chạy `init.ts` — nên image cũ chạy trên lược đồ có cột mới. Image cũ dump `SELECT *` mọi cột vào mọi bản sao lưu trong app (kể cả `pre-restore`); MySQL từ chối mọi giá trị cho cột sinh (3105), khôi phục chết giữa chừng, `articles` dở dang. Cột thường thì bản dump đó khôi phục được (`tests/backup-dump-integration.test.ts` dựng đúng bản dump kiểu image cũ). CSDL đã chạy d079453 được đổi sang cột thường lúc khởi động (`MODIFY COLUMN`, MySQL giữ giá trị; khoá theo `EXTRA = 'STORED GENERATED'`).
+- **Bản dump trong app vẫn bỏ cột sinh** (`backup-sql.ts`) — quy tắc chung cho mọi bảng, vô hại khi không có cột sinh nào: liệt kê cột theo `information_schema.COLUMNS` với `EXTRA NOT IN ('STORED GENERATED','VIRTUAL GENERATED')` — **không** `LIKE '%GENERATED%'`: trên 8.0.46 `created_at`/`updated_at` mang `DEFAULT_GENERATED` (đã kiểm), lọc lỏng sẽ đánh rơi mọi mốc thời gian và bản khôi phục nhận NOW() im lặng. Kiểm bằng bảng fixture có cột sinh STORED + VIRTUAL. `scripts/backup-db.sh` (mysqldump) vốn đã bỏ cột sinh.
+
+**Đối soát mỗi lần khởi động** (`reconcileArticleViewTotals`), thay cho lượt "điền một lần khoá theo index" của d079453: lượt đó không chạy lại sau một vòng lùi → tiến (image cũ đếm lượt xem mà không cộng tổng; khi quay lại index đã có), nên tổng lệch vĩnh viễn. Câu UPDATE `LEFT JOIN` tổng theo bài của `article_view_daily`, `WHERE` một trong ba cột khác tổng → chỉ ghi bài lệch, CSDL khớp thì 0 hàng; bài không còn hàng ngày nào về 0. Chữa cùng lúc: lượt nâng cấp (cột mới = 0), mọi độ lệch sau lùi/tiến, khởi động bị cắt ngang ở bất kỳ đâu. Chạy trong `init.ts` trước khi server nhận yêu cầu, nên không lượt đếm nào chen giữa lúc cộng và lúc ghi (chạy tay `db:init` khi app đang phục vụ thì một lượt xem đúng lúc đó có thể bị ghi đè bằng tổng cũ một nhịp — lần khởi động sau sửa). Khôi phục một bản dump **trước 2C** (bảng `articles` không có ba cột) → lần khởi động kế tiếp dựng lại tổng từ hàng theo ngày vừa khôi phục. **Còn mở:** khôi phục trong app không chạy di trú sau đó, nên từ lúc khôi phục bản trước 2C tới lần khởi động lại, mọi lượt đọc `articles.view_total` và mọi lượt đếm báo lỗi (cùng lớp vấn đề với mọi cột thêm bằng `ensureColumn`; đề xuất: chạy `applyAdditiveMigrations` sau khôi phục).
+
+**Index 5 cột, không phải 3 cột như chữ của D6 — lệch có chủ đích, theo EXPLAIN.** Spec đòi hoà thì xếp theo ngày đăng, nên câu sắp `view_total DESC, published_at DESC, created_at DESC`. Với index `(status, type, view_total)` của D6, optimizer **không dùng nó** cho câu đó: chọn `articles_status_type_pub_idx` rồi filesort mọi bài cùng thể loại (đo ở cả 1100 và 5000 bài) — tức mỗi lượt xem trả phí cập nhật một index không ai đọc. Thêm hai cột phá hoà (giữ nguyên tiền tố và tên) thì MySQL đọc ngược thẳng trên index, dừng ở hàng thứ 6. `ensureIndex` chỉ so **tên** — một CSDL dev từng chạy bản 3 cột của nhánh này phải tự `DROP INDEX` (chưa CSDL thật nào có bản 3 cột).
+
+**Thể loại lưu dưới hai tên** (`type=reintegration` → `reintegration` + `reintegration_model`): `type IN (…)` ở cột thứ hai của index không đọc được theo thứ tự `view_total` — EXPLAIN: `Filter: (a.type in ('reintegration','reintegration_model'))` trên `status_idx` (1 100 bài) / `articles_status_category_pub_idx` (5 000 bài) rồi **Sort** mọi bài của hai thể loại. `articles.get.ts` với `sort=views` nay đọc từng tên một (`type = ?`, `LIMIT offset + limit`, mỗi câu `Index lookup on a using articles_status_type_views_idx … (reverse)`), trộn theo cùng thứ tự rồi cắt trang. Mỗi lượt đọc lấy `offset + limit` hàng, nên `sort=views` có trần trang riêng `MOST_READ_MAX_PAGE = 10` (≤ 500 hàng mỗi lượt; trần chung `MAX_PAGE` = 100 000 từng cho phép một yêu cầu ẩn danh kéo mọi bài của thể loại về Node). Danh sách thường của thể loại đó vẫn là một câu `IN (…)`. Bộ lọc chuyên mục kèm `sort=views` (không trang nào gửi) vẫn filesort — index không có `category_id`.
+
+Đo trên CSDL dùng một lần của MySQL dev (8.0.46, đĩa btrfs, `innodb_flush_log_at_trx_commit=2`), bài 20 KB nội dung, 30 hàng `article_view_daily` mỗi bài, script đo tạm `view-totals-measure.ts` (giả lập bản trước 2C rồi gọi `convergeArticleViewTotals`):
+
+| cỡ | bảng `articles` | "Đọc nhiều" cũ (truy vấn con) + `COUNT` | mới, index 3 cột (D6) | mới, index 5 cột (bản giao) | `reintegration`: `IN` → từng tên | lượt nâng cấp (một lần) | đối soát mỗi lần khởi động sau (CSDL khớp) |
+|---|---|---|---|---|---|---|---|
+| 1 100 bài / 33 000 hàng ngày (cỡ production) | 34,9 MB | 14,0–14,4 ms + 0,4 ms | 0,88 ms — `articles_status_type_pub_idx` + filesort | **0,28–0,29 ms** — `articles_status_type_views_idx (reverse)` | 1,46 → 0,57 ms (2 câu) | 0,9 s | 41 ms, 0 hàng ghi |
+| 5 000 bài / 150 000 hàng ngày | 158,8 MB | 61,5–63,7 ms + 0,8–1,0 ms | 3,7 ms — `pub_idx` + filesort | 0,27–0,31 ms | 6,24 → 0,63 ms | 2,4 s | 179 ms, 0 hàng ghi |
+
+Cả hai cỡ: 0 bài lệch tổng sau lượt nâng cấp, 0 bài đổi `updated_at`; top-6 cũ = mới theo bộ (tổng, ngày đăng, ngày tạo) — ở 5 000 bài id khác nhau chỉ giữa các bài hoà trọn ba khoá (dữ liệu đo lặp ngày mỗi 900 bài; MySQL không định thứ tự trong hoà trọn). Bản cột sinh của d079453 mất 3,6 s / 23,0 s cho lượt nâng cấp (thêm cột sinh STORED dựng lại bảng); cột thường được MySQL 8 thêm tức thì. **Rủi ro deploy:** lượt nâng cấp + đối soát chạy trong CMD của container (`init.ts` trước khi server lên); healthcheck của image có `start-period=45s` + 3 lần × 30 s, `deploy-remote.sh` chờ 300 s — dư nhiều. Chi phí cố định mỗi lần khởi động: một lượt cộng toàn bảng `article_view_daily` (41 ms ở cỡ production), lớn dần theo số hàng ngày.
+
+### Ghi analytics: thứ tự câu lệnh trong transaction (D8) — đo, rồi lệch khỏi chữ của D8
+
+D8 viết: "upsert `total` cuối cùng" để rút thời gian giữ hàng nóng. Đo cho thấy chữ đó **làm mất ~37 % lượt xem**. Nguyên nhân (bản dump `SHOW ENGINE INNODB STATUS`, rút gọn):
+
+```
+*** (1) TRANSACTION: INSERT INTO analytics_live_minute_buckets (…'device_class','desktop'…) ON DUPLICATE KEY UPDATE …
+*** (1) HOLDS THE LOCK(S):   index PRIMARY … lock_mode X            (heap no 1 = supremum)
+*** (1) WAITING FOR THIS LOCK: index PRIMARY … lock_mode X insert intention waiting (supremum)
+*** (2) TRANSACTION: INSERT INTO analytics_live_minute_buckets (…'source_category','direct'…) ON DUPLICATE KEY UPDATE …
+*** (2) HOLDS / WAITING: giống hệt (1)
+*** WE ROLL BACK TRANSACTION (2)
+```
+
+`analytics_live_minute_buckets` (và `analytics_live_deduplication`) có PK tự tăng cạnh khoá tự nhiên `(bucket_start, scope_type, scope_value_hash[, visitor_token])`. `INSERT … ON DUPLICATE KEY UPDATE` ở đó giữ khoá X next-key trên **supremum của PK** tới commit. Khi upsert bucket đầu tiên của mỗi transaction là hàng **chung** (`total` của phút), nó tuần tự hoá pha bucket; khi là hàng riêng (`path`…), hai transaction cùng giữ supremum rồi chờ nhau ở upsert thứ hai.
+
+**Bộ mô phỏng** (cùng SQL với `analytics-ingestion.ts`, pool 10, hình dạng production 4 scope `total/path/source_category/device_class`, MySQL 8.0.46 image production — `innodb_flush_log_at_trx_commit=2`, `sync_binlog=1` — datadir tmpfs để fsync không lấn át):
+
+Lượt ngắn (3000 transaction, < 1 phút, không qua mốc phút):
+
+| thứ tự | đồng thời | deadlock | commit/s | p95 ms |
+|---|---|---|---|---|
+| cũ (`3ede49a`): `total` đầu, dedupe/bucket xen kẽ | 10 | 85 | 558 | 23,9 |
+| chữ D8: xen kẽ, `total` cuối | 10 | 1108 | 509 | 33,5 |
+| dedupe trước, `total` cuối (bản cài đầu tiên) | 10 | 1145 | 504 | 28,5 |
+| **dedupe trước, `total` đầu (bản giao)** | 10 | **0** | **705** | **20,4** |
+| cũ | 40 | 92 | 524 | 93,4 |
+| chữ D8 | 40 | 1083 | 496 | 80,3 |
+| dedupe trước, `total` cuối | 40 | 1114 | 602 | 59,7 |
+| **dedupe trước, `total` đầu** | 40 | **0** | **947** | **53,4** |
+
+Lượt dài 185 s (qua 3 mốc phút; khách lặp lại trong phút → `INSERT IGNORE` trùng lấy khoá S next-key):
+
+| thứ tự | đồng thời | transaction | deadlock | tỉ lệ hỏng | commit/s | p95 / p99 ms |
+|---|---|---|---|---|---|---|
+| cũ | 10 | 159 106 | 60 047 | 37,7 % | 535 | 21,4 / 99 |
+| **dedupe trước, `total` đầu** | 10 | 159 353 | 6 234 | **3,9 %** | **828** | 20,7 / 33,2 |
+| cũ | 40 | 181 156 | 70 889 | 39,1 % | 595 | 62,3 / 164,1 |
+| **dedupe trước, `total` đầu** | 40 | 102 335 | 2 390 | **2,3 %** | 539 | 258 / 397 |
+
+Đọc bảng: thứ tự cũ cũng deadlock nặng khi tải kéo dài (lượt ngắn 3000 transaction che mất điều đó); bản giao giảm deadlock ~10–17 lần nhưng **không về 0**; ở 40 đồng thời đuôi trễ của bản giao dài hơn vì giao dịch chờ khoá thay vì chết sớm (thứ tự cũ "nhanh" một phần nhờ 39 % chết ngay). Máy đo chia sẻ CPU với các tác tử khác (load ≈ 8/8 lõi lúc chạy bộ mô phỏng) — số tuyệt đối dao động, tỉ lệ deadlock thì không.
+
+**Qua endpoint thật** (`POST /api/public/analytics/page-view`, hai bản build `nuxt build` cạnh nhau chỉ khác `analytics-ingestion.ts` — "trước" = thứ tự của `3ede49a`; app pool 10, rate limit thật, NOC thật, mỗi yêu cầu một `X-Forwarded-For` ngẫu nhiên để không chạm trần 120/phút/IP, User-Agent trình duyệt; MySQL 8.0.46 dùng một lần từ image production; xen kẽ trước/sau, mỗi lượt 75 s (qua mốc phút), bảng analytics xoá trắng trước mỗi lượt; máy rảnh, load ≈ 0,3):
+
+Datadir tmpfs (fsync ≈ 0 — tách riêng thời gian giữ khoá khỏi chi phí đĩa), 2 vòng:
+
+| bản | đồng thời | nhận/s | p50 / p95 / p99 ms | 500 (deadlock) | thời gian chờ khoá hàng |
+|---|---|---|---|---|---|
+| trước | 1 | 206–214 | 4,3–4,6 / 5,9–6,6 / 9,8–13 | 0 | 0 |
+| sau | 1 | 178–209 | 4,3–5,1 / 6,7–8,1 / 11–23 | 0 | 0 |
+| trước | 10 | 460 / 467 | 20 / **29,6–29,7** / 41–43 | 22 / 39 | 572 s / 572 s |
+| **sau** | 10 | **572 / 544** | 17 / **23,1–25,6** / 30–33 | **0 / 0** | **468 s / 469 s** |
+| trước | 40 | 484 / 492 | 79–80 / 101–102 / 119–121 | 41 / 40 | 601 s / 602 s |
+| **sau** | 40 | **573 / 548** | 67–70 / 90–96 / 105–122 | **0 / 0** | **520 s / 520 s** |
+
+Datadir trên đĩa (độ bền như production: `innodb_flush_log_at_trx_commit=2`, `sync_binlog=1`, binlog bật), 1 vòng — **bị fsync lúc commit chi phối**: một lượt xem có ba commit (rate limit, transaction ghi, NOC), mỗi commit một fsync binlog trên btrfs:
+
+| bản | đồng thời | nhận/s | p50 / p95 ms | 500 |
+|---|---|---|---|---|
+| trước | 1 | 14 | 79 / 118 | 0 |
+| sau | 1 | 12 | 89 / 132 | 0 |
+| trước | 10 | 18 | 541 / 642 | 0 |
+| sau | 10 | 17 | 589 / 735 | 0 |
+| trước | 40 | 18 | 2265 / 2478 | 0 |
+| sau | 40 | 30 | 1219 / 2238 | 0 |
+
+Khác biệt trên đĩa nằm trong nhiễu (thứ tự câu lệnh không đổi số fsync).
+
+**Ngưỡng batching của D8 (p95 > 50 ms).** tmpfs ở 10 đồng thời (≈ pool): p95 23–26 ms — dưới ngưỡng. Ở 40 đồng thời p95 90–96 ms, nhưng phần lớn là chờ một trong 10 kết nối pool. Trên đĩa btrfs của máy dev p95 vượt ngưỡng **ngay ở 1 đồng thời** (118–132 ms) vì fsync binlog mỗi commit — batching (gộp nhiều lượt xem vào một commit) chính là thứ giảm được chi phí đó, nhưng con số này là của đĩa máy dev, không phải VPS. **Không làm batching trong 2C**; đề xuất đo p95 của endpoint này trên VPS (log thời gian của nginx) trước khi quyết.
+
+**Thử lại nạn nhân deadlock (sau kiểm chứng độc lập).** "0 deadlock" ở bảng endpoint là 0 *trong mỗi lượt 75 s đo được*, không phải bảo đảm: bộ mô phỏng 185 s vẫn còn 3,9 % / 2,3 % transaction là nạn nhân, và trước bản sửa mỗi nạn nhân là một lượt xem mất kèm 500. `storeAnalyticsPageView` nay thử lại nguyên transaction tối đa 3 lần (tỉ lệ còn mất **sau** khi thử lại chưa đo — deadlock dưới tải dồn theo cụm, ba lần chưa chắc đủ trong một cơn bão; test chỉ chứng minh thử lại chạy và không đếm trùng) khi gặp `ER_LOCK_DEADLOCK` (1213, tìm cả trong chuỗi `cause` mà Drizzle bọc), nghỉ ngẫu nhiên 5–25 ms giữa hai lần. An toàn vì InnoDB huỷ trọn transaction của nạn nhân và lớp bọc rollback khi có lỗi: không gì của lần hỏng còn lại (hàng thô, hàng dedupe, bucket), lần thử lại đếm khách đúng như lần đầu. `ER_LOCK_WAIT_TIMEOUT` (1205) **không** thử lại: lượt đó đã chờ `innodb_lock_wait_timeout` (50 s), thử lại chỉ giữ yêu cầu lâu thêm trên máy chủ đang quá tải. Test bơm lỗi ở `tests/analytics-ingestion.test.ts`.
+
+**Gốc rễ (đề xuất, ngoài phạm vi 2C):** cho hai bảng live dùng khoá tự nhiên làm PRIMARY KEY (bỏ `id` tự tăng). Không còn supremum chung thì mọi thứ tự đều không deadlock vì lý do này, và "hàng nóng cuối" của D8 mới thực sự rút được thời gian giữ khoá. Đổi PK trên bảng đang ghi liên tục cần một lượt chuyển riêng.
+
+---
+
+<a id="media-category-restore"></a>
+
+## Khôi phục danh mục video sau lỗi xoá lúc khởi động (2026-09-22 → bản vá)
+
+**Lỗi.** Từ `69a84eb` (2026-09-22) tới bản vá `fix-media-category-wipe-on-boot`, `applyAdditiveMigrations` chạy `UPDATE media_items SET category_id = NULL` **vô điều kiện**, rồi drop/add `fk_media_items_category` theo tên. Khối đó chạy ở **mọi** lần container khởi động (Dockerfile CMD: `init.ts` → `seed.ts` → server): mỗi lượt CI deploy, mỗi `manage.sh` Update, mỗi lần `restart: always` sau sự cố. Danh mục cán bộ gán cho video chỉ sống tới lần khởi động kế tiếp; riêng 2026-10-23 có bốn lượt deploy.
+
+**Bản vá** (`convergeMediaCategoryForeignKey`, `server/db/migrations-additive.ts`):
+- Lượt chuyển `categories` → `media_categories` khoá theo **trạng thái lược đồ**. Nó chỉ chạy khi trên cột `media_items.category_id` còn FK trỏ `categories` (đọc theo cột, không theo tên), và lượt chuyển tự xoá điều kiện đó.
+- CSDL đã chuyển không nhận lệnh `UPDATE`/`ALTER` nào vào `media_items` từ khối này.
+- Không bao giờ xoá theo giá trị: id thể loại bài viết cũ 1–7 trùng id danh mục video được seed 1–4.
+- Thiếu FK mà có giá trị treo: giữ giá trị, không thêm FK, log `db.migration.media_category_fk_blocked` (`{ danglingRows }`), app vẫn khởi động.
+- Khoá bằng `tests/media-category-migration-integration.test.ts` (MySQL thật, đỏ trên mã cũ).
+
+**Giá trị đã mất không tự về.** Không có khôi phục tự động: cần người chọn bản sao lưu, và giá trị phải được đối chiếu với `media_categories` hiện tại. Quy trình dưới đây chỉ **đọc** bản dump trong một CSDL nháp, và chỉ điền những hàng đang `NULL` ở CSDL thật.
+
+> ⛔ **Không bao giờ nạp bản dump vào CSDL production** cho việc này — không `restore-db.sh --replace`, không nút khôi phục trong admin. Làm vậy là đưa **mọi** bảng về thời điểm dump. Chỉ nạp vào CSDL nháp.
+>
+> ⛔ **Không bao giờ lùi về image cũ hơn bản vá**, kể cả lượt lùi tự động của `deploy-remote.sh` khi healthcheck hỏng. Lần khởi động đầu của image cũ sẽ xoá danh mục lại, kể cả giá trị vừa khôi phục. Image mới không khởi động được vì lý do khác thì sửa tiến, đừng lùi.
+
+Các lệnh bên dưới chạy trên VPS, trong thư mục repo. Mật khẩu MySQL đi qua `MYSQL_PWD` theo **tên biến**, không bao giờ `-p<mật khẩu>` (lộ trong `ps`), cùng cách với `scripts/verify-restore.sh`:
+
+```bash
+cd /www/wwwroot/conduonghuongthien
+set -a; source <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env); set +a
+LIVE="${MYSQL_DATABASE:-cdkt_admin}"
+DB_CONTAINER="${MYSQL_CONTAINER:-cdkt_mysql}"
+KEEP=/root/cdkt-category-restore    # thư mục giữ bản sao lưu của bước 0 — cùng đường dẫn ở MỌI phiên
+dexec() { MYSQL_PWD="$MYSQL_ROOT_PASSWORD" docker exec -e MYSQL_PWD "$@"; }
+```
+
+Khối này phải chạy lại ở mỗi phiên shell mới, vì bước 0 làm hôm nay còn bước 1–7 làm sau khi deploy. `KEEP` là một đường dẫn cố định có chủ đích: một tên có ngày tháng sẽ trỏ sang thư mục rỗng khác ở phiên sau.
+
+### 0. Giữ lại bản sao lưu NGAY — chép ra khỏi vòng xoay
+
+Làm **hôm nay**, kể cả trước khi bản vá được merge. Cả hai loại sao lưu nằm trong `./backups` của repo (bind mount `/app/backups`), và cả hai đang bị xoay vòng:
+- `scripts/backup-db.sh` ghi `cdkt-<db>-<stamp>-<pid>.sql.gz` và xoá bản cũ hơn `BACKUP_KEEP_DAYS` (mặc định 14 ngày).
+- Sao lưu trong app ghi `cdkt-<stamp>-<trigger>.sql.gz` và chỉ giữ `backup_keep_count` bản (mặc định 14).
+
+Vòng xoay đang xoá đúng những bản có thể còn giữ danh mục đã mất.
+
+```bash
+mkdir -p "$KEEP" && chmod 700 "$KEEP"
+cp -a backups/*.sql.gz "$KEEP"/
+ls -l --time-style=full-iso "$KEEP"
+```
+
+Tốt hơn nữa: chép thêm một bản ra ngoài VPS (`scp`/`rsync` về máy khác). Thư mục `$KEEP` nằm ngoài `./backups`, nên không vòng xoay nào chạm tới nó.
+
+### 1. Xác nhận image đã vá đang chạy, và không có lượt lùi nào đang chờ
+
+- Lượt CI deploy của commit vá phải xanh (tab Actions hoặc `gh run list --branch main`), và container healthy: `docker inspect -f '{{.State.Health.Status}} {{.State.StartedAt}}' cdkt_app`.
+- Cột chỉ còn **một** FK, trỏ `media_categories (id) ON DELETE SET NULL`: `dexec "$DB_CONTAINER" mysql -u root "$LIVE" -e 'SHOW CREATE TABLE media_items\G'`.
+- Gán thử danh mục cho một video, chạy `docker compose restart app`, rồi kiểm danh mục còn nguyên.
+- Log khởi động không có sự kiện chặn: `docker logs cdkt_app 2>&1 | grep media_category_fk_blocked`. Nếu có thì dừng: cột đang thiếu FK và có giá trị trỏ tới danh mục không tồn tại, cần xem tay trước.
+
+### 2. Sao lưu mới ngay trước khi ghi
+
+```bash
+./scripts/backup-db.sh "$KEEP/truoc-khoi-phuc"   # dòng JSON `succeeded` in đường dẫn tệp
+```
+
+Thư mục đích riêng là có chủ đích. `backup-db.sh` xoay vòng **thư mục đích của nó**, xoá `cdkt-<db>-*.sql.gz` cũ hơn `BACKUP_KEEP_DAYS` theo mtime, và `cp -a` ở bước 0 giữ nguyên mtime cũ. Vì vậy **đừng bao giờ** dùng chính `$KEEP` (hay `./backups`, nếu chưa làm bước 0) làm đích.
+
+### 3. Chọn bản dump ứng viên
+
+- **Mới hơn 2026-09-22 14:23 (+01:00).** Bản cũ hơn chưa có bảng `media_categories`, và giá trị trong đó là id thể loại **bài viết**. Câu lệnh ở bước 5 sẽ báo lỗi bảng không tồn tại, nên bản đó không bao giờ được dùng nhầm.
+- **Chụp SAU khi cán bộ gán danh mục, và TRƯỚC lần khởi động kế tiếp.** Mỗi lần khởi động là một lần xoá. Đặt thời điểm của bản dump cạnh lịch khởi động để chọn:
+  - các lượt deploy CI: `gh run list --workflow ci.yml --branch main --json createdAt,conclusion`;
+  - các lần chạy `manage.sh` Update;
+  - số lần restart vì sự cố: `docker inspect -f '{{.RestartCount}}' cdkt_app`;
+  - mốc khởi động in trong log, chỉ tính từ lần container được tạo gần nhất: `docker logs --timestamps cdkt_app 2>&1 | grep 'Checking & Creating MySQL tables'`.
+- Bản tốt nhất thường là bản sao lưu đêm (03:00) sau một ngày làm việc không có deploy.
+- Không chắc thì cứ thử. Bước 5 cho biết chính xác bản đó khôi phục được những video nào. Thử từ bản **mới nhất** về cũ, và lặp lại bước 4–7 cho từng bản: điều kiện `IS NULL` bảo đảm bản sau không đè giá trị bản trước đã điền.
+
+### 4. Nạp bản dump vào CSDL NHÁP trên cùng MySQL — không bao giờ vào CSDL thật
+
+```bash
+DUMP="$KEEP/cdkt-cdkt_admin-20261020T030000Z-12345.sql.gz"   # bản đã chọn (ví dụ)
+SCRATCH=cdkt_catrestore_20261020                              # tên nháp, KHÁC "$LIVE"
+test "$SCRATCH" != "$LIVE" && echo "tên nháp OK"
+
+# 4a. Dump phải nạp được, và KHÔNG tự chọn CSDL. Một dòng `USE`/`CREATE DATABASE`
+#     sẽ ghi vào CSDL khác chứ không ở lại trong nháp. Script này kiểm cả hai, nạp
+#     thử vào một CSDL kiểm riêng rồi tự xoá CSDL đó. Phải in `restore_check.succeeded`.
+./scripts/verify-restore.sh "$DUMP"
+
+# 4b. Nạp vào nháp.
+dexec "$DB_CONTAINER" mysql -u root -e "CREATE DATABASE \`$SCRATCH\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+gzip -dc "$DUMP" | dexec -i "$DB_CONTAINER" mysql -u root --default-character-set=utf8mb4 "$SCRATCH"
+```
+
+### 5. Xem trước (dry-run), rồi mới UPDATE
+
+Mở phiên trên CSDL **thật**: `dexec -it "$DB_CONTAINER" mysql -u root --default-character-set=utf8mb4 "$LIVE"`. Trong các câu SQL dưới đây, thay `cdkt_catrestore_20261020` bằng tên nháp của bước 4.
+
+Video được ghép trên **id + slug** của video (slug video không sửa được sau khi tạo, nên một id bị dùng lại cho video khác sẽ không khớp). Danh mục được ghép trên **id + slug** của danh mục: danh mục đã xoá, hoặc id đã bị dùng lại cho danh mục khác, sẽ bị từ chối. `WHERE mi.category_id IS NULL` bảo đảm không bao giờ đè danh mục cán bộ đã gán lại sau bản vá.
+
+```sql
+-- 5a. Những video SẼ được điền lại, và điền danh mục nào.
+SELECT mi.id, mi.title, s.category_id AS restore_to, pc.name AS category_name
+FROM media_items mi
+JOIN cdkt_catrestore_20261020.media_items s ON s.id = mi.id AND s.slug = mi.slug
+JOIN cdkt_catrestore_20261020.media_categories sc ON sc.id = s.category_id
+JOIN media_categories pc ON pc.id = sc.id AND pc.slug = sc.slug
+WHERE mi.category_id IS NULL
+ORDER BY mi.id;
+
+-- 5b. Video bản dump có danh mục nhưng KHÔNG được điền: video đã xoá hoặc id thuộc
+--     video khác, danh mục đã xoá, hoặc id danh mục nay là danh mục khác.
+SELECT s.id, s.title, s.category_id AS dump_category, sc.slug AS dump_slug, pc.slug AS live_slug,
+       mi.slug AS live_video_slug
+FROM cdkt_catrestore_20261020.media_items s
+LEFT JOIN cdkt_catrestore_20261020.media_categories sc ON sc.id = s.category_id
+LEFT JOIN media_items mi ON mi.id = s.id
+LEFT JOIN media_categories pc ON pc.id = s.category_id
+WHERE s.category_id IS NOT NULL
+  AND mi.category_id IS NULL
+  AND (mi.id IS NULL OR mi.slug <> s.slug OR pc.id IS NULL OR pc.slug <> sc.slug)
+ORDER BY s.id;
+```
+
+Cho cán bộ duyệt danh sách 5a. Danh mục trong bản dump là giá trị **tại lúc dump**: cán bộ có thể đã đổi nó sau đó, và giá trị mới hơn đã bị xoá trước khi kịp vào bản dump nào. Rồi ghi trong một transaction, và chỉ `COMMIT` khi số hàng khớp với 5a:
+
+```sql
+START TRANSACTION;
+UPDATE media_items mi
+JOIN cdkt_catrestore_20261020.media_items s ON s.id = mi.id AND s.slug = mi.slug
+JOIN cdkt_catrestore_20261020.media_categories sc ON sc.id = s.category_id
+JOIN media_categories pc ON pc.id = sc.id AND pc.slug = sc.slug
+SET mi.category_id = s.category_id
+WHERE mi.category_id IS NULL;
+SELECT ROW_COUNT() AS restored;   -- phải bằng số dòng của 5a
+COMMIT;                           -- hoặc ROLLBACK nếu không khớp
+```
+
+Đã chạy thử trên CSDL dùng một lần (2026-10-23). Kết quả đúng như mô tả:
+- 5a chỉ điền các video có cả video lẫn danh mục còn khớp.
+- 5b liệt kê ba ca bị từ chối: danh mục đã xoá, slug danh mục đổi, id video thuộc video khác.
+- UPDATE không đè video đã được gán lại.
+
+### 6. Video không khôi phục được: danh sách để cán bộ gán lại bằng tay
+
+Nhật ký kiểm toán chỉ ghi **rằng** danh mục đã được đặt, không ghi **danh mục nào**: `createMediaItem` ghi `meta.hasCategory`, `updateMediaItem` ghi `meta.changed` có `"categoryId"`. Cán bộ phải tự chọn giá trị. `changed` cũng chứa `categoryId` khi cán bộ **bỏ** danh mục, nên đây là danh sách ứng viên, không phải danh sách chắc chắn.
+
+```sql
+SELECT mi.id, mi.title, al.action, al.created_at, al.user_id
+FROM activity_logs al
+JOIN media_items mi ON mi.id = al.resource_id
+WHERE al.resource = 'media_portal'
+  AND mi.category_id IS NULL
+  AND (
+    (al.action = 'create' AND JSON_EXTRACT(al.meta, '$.hasCategory') = true)
+    OR JSON_CONTAINS(JSON_EXTRACT(al.meta, '$.changed'), '"categoryId"')
+  )
+ORDER BY mi.id, al.created_at;
+```
+
+`activity_logs` là một scope của data retention, nên hàng cũ có thể đã bị dọn và danh sách này có thể thiếu.
+
+Nếu không bản dump nào khớp (mọi bản đều chụp sau một lần khởi động), chỉ còn danh sách này. Khi đó hãy nói rõ với cán bộ rằng giá trị trong khoảng đó không khôi phục được.
+
+### 7. Xoá CSDL nháp
+
+```bash
+dexec "$DB_CONTAINER" mysql -u root -e "DROP DATABASE IF EXISTS \`$SCRATCH\`"
+dexec "$DB_CONTAINER" mysql -u root -N -e "SHOW DATABASES LIKE 'cdkt\_catrestore\_%'"   # phải rỗng
+```
+
+Giữ thư mục `$KEEP` tới khi cán bộ xác nhận xong, rồi xoá; nó chứa dữ liệu cá nhân của toàn site.

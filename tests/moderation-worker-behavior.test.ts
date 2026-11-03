@@ -91,7 +91,8 @@ test('nội dung rỗng/khoảng trắng → allow, không tính lượt quét',
   reset(svc)
   const before = svc.getWorkerStats().totalScanned
   const r = await svc.fastPreModerate('   ')
-  assert.deepEqual(r, { blocked: false, action: 'allow', severity: 'low', reason: '', matchedRule: '' })
+  // `publicMessage` (verify of 4.3c follow-up, W8): what a blocked reader is told — empty when allowed.
+  assert.deepEqual(r, { blocked: false, action: 'allow', severity: 'low', reason: '', matchedRule: '', publicMessage: '' })
   assert.equal(svc.getWorkerStats().totalScanned, before)
 })
 
@@ -218,6 +219,58 @@ test('AI chưa cấu hình → flag_only (không ẩn) vào hàng đợi; lỗi 
   assert.equal(b.severity, 'critical')
 })
 
+/**
+ * Moderation that did not complete is now SAID, without changing what it decides
+ * (spec comment-notifications: "a moderation failure MUST NOT send the e-mail").
+ * Before, a provider error, a parse error or a thrown call all came back as the
+ * very same `{ flagged: false, action: 'allow' }` as a clean "safe" verdict — the
+ * reply-email path could not tell "the AI said fine" from "the AI never answered".
+ * `aiFailed: true` (+ `aiFailure`) marks the second case; the verdict fields and
+ * every side effect (queue rows, hiding) are exactly what they were.
+ */
+test('AI failed (provider error / exception / unparseable / unknown verdict) → same allow verdict, plus aiFailed', async () => {
+  const cases: Array<[string, () => void, string]> = [
+    ['provider error', () => { rec.ai = { ok: false, error: 'provider_error' } }, 'provider_error'],
+    ['budget exceeded', () => { rec.ai = { ok: false, error: 'budget_exceeded' } }, 'budget_exceeded'],
+    ['ok but empty text', () => { rec.ai = { ok: true, text: '' } }, 'empty_response'],
+    ['call threw', () => { rec.aiThrows = true }, 'exception'],
+    ['not JSON', () => { rec.ai = { ok: true, text: 'Tôi nghĩ là an toàn.' } }, 'parse_error'],
+    ['unknown verdict', () => { rec.ai = { ok: true, text: '{"verdict":"maybe"}' } }, 'unrecognised_verdict'],
+  ]
+  for (const [name, arrange, failure] of cases) {
+    reset(svc)
+    arrange()
+    const result = await svc.checkAndModerateContent({ content: 'một câu lạ', targetType: 'comment', targetId: 4 })
+    assert.equal(result.flagged, false, `${name}: verdict changed`)
+    assert.equal(result.action, 'allow', `${name}: verdict changed`)
+    assert.equal(rec.queue.length, 0, `${name}: side effects changed`)
+    assert.equal(rec.updates.length, 0, `${name}: side effects changed`)
+    assert.equal(result.aiFailed, true, `${name}: the failure is not reported`)
+    assert.equal(result.aiFailure, failure)
+  }
+})
+
+test('aiFailed is set only when the AI was asked and did not answer usably', async () => {
+  reset(svc)
+  rec.ai = { ok: true, text: '{"verdict":"safe"}' }
+  assert.equal((await svc.checkAndModerateContent({ content: 'một câu lạ', targetType: 'comment', targetId: 4 })).aiFailed, undefined, 'clean verdict')
+  reset(svc)
+  rec.ai = { ok: true, text: '{"verdict":"spam","riskLevel":"high","reason":"quảng cáo"}' }
+  const spam = await svc.checkAndModerateContent({ content: 'một câu lạ', targetType: 'comment', targetId: 4 })
+  assert.equal(spam.action, 'auto_hide')
+  assert.equal(spam.aiFailed, undefined, 'a violation verdict is an answer')
+  reset(svc)
+  rec.ai = { ok: false, error: 'no_api_key' }
+  const unconfigured = await svc.checkAndModerateContent({ content: 'một câu lạ', targetType: 'comment', targetId: 4 })
+  assert.equal(unconfigured.action, 'flag_only', 'AI not configured keeps its own path (human review)')
+  assert.equal(unconfigured.aiFailed, undefined)
+  reset(svc)
+  const instant = await svc.checkAndModerateContent({ content: 'mày dcm', targetType: 'comment', targetId: 4 })
+  assert.equal(instant.action, 'auto_hide')
+  assert.equal(instant.aiFailed, undefined, 'the instant block never asks the AI')
+  assert.equal(rec.aiCalls, 0)
+})
+
 test('rescanExistingContent trả cấu trúc tổng kết', async () => {
   reset(svc)
   const r = await svc.rescanExistingContent()
@@ -280,12 +333,16 @@ test('luật regex chạy chậm bị tắt tạm ở cả hai đường (đồn
   rec.rules = [rule({ id: 10, pattern: 'cấm\\d', ruleType: 'regex', category: 'rx', severity: 'high' })]
   const clock = { t: 0, step: regexMod.MODERATION_RULE_WINDOW_BUDGET_MS + 5 }
   regexMod.setModerationRegexTimingForTests({ elapsed: () => (clock.t += clock.step), now: () => 1_000 })
+  // Đồng hồ này nhảy 205 ms MỖI lần đọc; từ kiểm chứng 4.3c tiếp (W7) lời gọi không truyền hạn mức
+  // tự có 250 ms — với nhịp đó hạn mức hết trước cả cửa sổ đầu. Điều test này ghim là cửa sổ chậm
+  // giữ kết quả và tắt luật, nên mỗi lời gọi có hạn mức rộng.
+  const roomy = () => regexMod.createModerationRegexBudget(60_000)
   try {
     // Lượt đầu chậm: vẫn trả kết quả của chính nó, rồi luật bị tắt.
-    assert.equal((await svc.fastPreModerate('có cấm1 đây')).blocked, true)
-    assert.equal((await svc.fastPreModerate('có cấm1 đây')).blocked, false, 'luật đang tắt')
+    assert.equal((await svc.fastPreModerate('có cấm1 đây', { regexBudget: roomy() })).blocked, true)
+    assert.equal((await svc.fastPreModerate('có cấm1 đây', { regexBudget: roomy() })).blocked, false, 'luật đang tắt')
     rec.ai = { ok: true, text: '{"verdict":"safe"}' }
-    const full = await svc.checkAndModerateContent({ content: 'có cấm1 đây', targetType: 'comment', targetId: 6 })
+    const full = await svc.checkAndModerateContent({ content: 'có cấm1 đây', targetType: 'comment', targetId: 6 }, { regexBudget: roomy() })
     assert.equal(full.flagged, false)
   } finally {
     regexMod.setModerationRegexTimingForTests(null)
@@ -338,4 +395,80 @@ test('matchInstantRule: cùng quyết định với fastPreModerate nhưng khôn
   const after = svc.getWorkerStats()
   assert.equal(after.blockedInstant, before.blockedInstant)
   assert.equal(after.totalScanned, before.totalScanned)
+})
+
+test('chặn tức thì: luật tuỳ biến khớp ĐẦU TIÊN theo thứ tự thắng, từ khoá và regex xen kẽ; regex sau từ khoá đã khớp không chạy', async () => {
+  const regexMod = await import('../server/services/moderation-regex.ts')
+  reset(svc)
+  regexMod.resetSlowModerationRules()
+  rec.rules = [
+    rule({ id: 1, pattern: 'cấm\\d', ruleType: 'regex', category: 'rx1' }),
+    rule({ id: 2, pattern: 'nhạy cảm', category: 'kw' }),
+    rule({ id: 3, pattern: 'abc\\d+', ruleType: 'regex', category: 'rx2' }),
+    rule({ id: 4, pattern: '日*日*$', ruleType: 'regex', category: 'redos' }),
+  ]
+  assert.deepEqual(await svc.matchInstantRule('nhạy cảm, cấm1, abc1'), { category: 'rx1', severity: 'high', label: 'Mẫu regex: cấm\\d' })
+  assert.deepEqual(await svc.matchInstantRule('nhạy cảm và abc1'), { category: 'kw', severity: 'high', label: 'Từ khóa: nhạy cảm' })
+  assert.deepEqual(await svc.matchInstantRule('chỉ có abc1'), { category: 'rx2', severity: 'high', label: 'Mẫu regex: abc\\d+' })
+  // Luật regex nằm SAU một từ khoá đã khớp không tới lượt — như vòng lặp theo thứ tự trước đây.
+  // Chạy thì nó đã bị ngắt và TẮT (日 × 1999 + '!'): còn bật nghĩa là không chạy.
+  assert.equal((await svc.matchInstantRule(`nhạy cảm ${'日'.repeat(1999)}!`))?.category, 'kw')
+  assert.equal(regexMod.isModerationRuleDisabled('日*日*$'), false, 'the catastrophic rule after the keyword hit never ran')
+})
+
+test('cả hai đường chạy MỌI luật regex của một văn bản trong MỘT lượt vm có hạn giờ (không phải một lượt mỗi luật)', async () => {
+  const vm = await import('node:vm')
+  const regexMod = await import('../server/services/moderation-regex.ts')
+  reset(svc)
+  regexMod.resetSlowModerationRules()
+  rec.rules = [
+    rule({ id: 21, pattern: 'abc\\d+', ruleType: 'regex', category: 'r1' }),
+    rule({ id: 22, pattern: 'từ khoá', category: 'kw' }),
+    rule({ id: 23, pattern: 'cờ[\\s,.]+bạc', ruleType: 'regex', category: 'r2' }),
+    rule({ id: 24, pattern: 'lô\\s*đề', ruleType: 'regex', category: 'r3' }),
+  ]
+  const spy = mock.method(vm.default.Script.prototype, 'runInContext')
+  try {
+    assert.equal((await svc.fastPreModerate('một câu bình thường, không vi phạm')).blocked, false)
+    assert.equal(spy.mock.callCount(), 1, 'fast path: three regex rules, one vm call')
+    // The full path screens with the fast path first (one call), then runs its own rule pass
+    // over every rule (one more) — a text no rule matches, so neither stops early.
+    rec.ai = { ok: true, text: '{"verdict":"safe"}' }
+    const full = await svc.checkAndModerateContent({ content: 'một câu bình thường khác', targetType: 'comment', targetId: 20 })
+    assert.equal(full.flagged, false)
+    assert.equal(spy.mock.callCount(), 3, 'full path: one vm call for its own pass over the three regex rules')
+    for (const call of spy.mock.calls) assert.deepEqual(call.arguments[1], { timeout: regexMod.MODERATION_RULE_WINDOW_BUDGET_MS })
+  } finally {
+    spy.mock.restore()
+  }
+})
+
+test('luật regex thảm hoạ lọt lớp 1 (日*日*$) bị ngắt cứng ở cả hai đường: không khớp, tắt 10 phút, lượt sau không chạy nó', async () => {
+  const regexMod = await import('../server/services/moderation-regex.ts')
+  reset(svc)
+  regexMod.resetSlowModerationRules()
+  const quiet = mock.method(console, 'error', () => {})
+  try {
+    rec.rules = [rule({ id: 11, pattern: '日*日*$', ruleType: 'regex', category: 'redos', severity: 'critical' })]
+    const content = `${'日'.repeat(1999)}!`
+    // Không có ngắt cứng: ~1,2 s cho một cửa sổ (Node 26); có: quanh ngân sách 200 ms.
+    const started = performance.now()
+    assert.equal((await svc.fastPreModerate(content)).blocked, false, 'interrupted = no match (fail-open)')
+    assert.ok(performance.now() - started < 1000, `bounded: ${(performance.now() - started).toFixed(0)} ms`)
+    assert.equal(regexMod.isModerationRuleDisabled('日*日*$'), true)
+    rec.ai = { ok: true, text: '{"verdict":"safe"}' }
+    const vm = await import('node:vm')
+    const spy = mock.method(vm.default.Script.prototype, 'runInContext')
+    let full: Awaited<ReturnType<typeof svc.checkAndModerateContent>>
+    try {
+      full = await svc.checkAndModerateContent({ content, targetType: 'comment', targetId: 12 })
+    } finally {
+      spy.mock.restore()
+    }
+    assert.equal(spy.mock.callCount(), 0, 'disabled: neither pass of the full path runs it again (no vm pass at all)')
+    assert.deepEqual(full.matchedRules, [])
+  } finally {
+    quiet.mock.restore()
+    regexMod.resetSlowModerationRules()
+  }
 })

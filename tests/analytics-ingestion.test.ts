@@ -90,6 +90,101 @@ test('writes exactly six bounded scopes and preserves only normalized values', a
   assert.doesNotMatch(serialized, /203\.0\.113\.42|Private Browser|\?|#|cookie|referrer/i)
 })
 
+/**
+ * Design D8, as measured (docs/decisions/data-layer.md). Every page view upserts
+ * the same `total` bucket row for the current minute, and that row's lock is held
+ * until COMMIT. The per-visitor dedupe rows — which no other page view waits on —
+ * now all go BEFORE the first shared row is locked, so `total` is held across the
+ * bucket upserts only, not the dedupe inserts too (the old order interleaved
+ * them: dedupe, bucket, dedupe, bucket …).
+ *
+ * `total` stays the FIRST bucket upsert. The live tables have an auto-increment
+ * PK beside their natural unique key, so each upsert holds an X next-key lock on
+ * the PK supremum until commit; `total` first serialises the bucket phase per
+ * minute. `total` last — the literal D8 text — rolled back ~37 % of page views
+ * with ER_LOCK_DEADLOCK under 10 concurrent requests. This test keeps it first.
+ */
+test('statement order: raw row, every dedupe insert, then the bucket upserts with total first', async () => {
+  const calls: string[] = []
+  await storeAnalyticsPageView(row(), {
+    async transaction(callback) {
+      calls.push('begin')
+      const result = await callback({
+        async insertRaw() { calls.push('raw') },
+        async insertDeduplication(_bucket, _visitor, scope) { calls.push(`dedup:${scope.scopeType}`); return true },
+        async incrementBucket(_bucket, scope) { calls.push(`bucket:${scope.scopeType}`) },
+      })
+      calls.push('commit')
+      return result
+    },
+  })
+  assert.deepEqual(calls, [
+    'begin',
+    'raw',
+    'dedup:total', 'dedup:path', 'dedup:source_category', 'dedup:device_class', 'dedup:country_code', 'dedup:region_code',
+    'bucket:total', 'bucket:path', 'bucket:source_category', 'bucket:device_class', 'bucket:country_code', 'bucket:region_code',
+    'commit',
+  ])
+})
+
+test('statement order holds when geography is absent (the production shape: four scopes, total first)', async () => {
+  const buckets: string[] = []
+  await storeAnalyticsPageView(row({ countryCode: null, regionCode: null }), {
+    async transaction(callback) {
+      return callback({
+        async insertRaw() {},
+        async insertDeduplication() { return true },
+        async incrementBucket(_bucket, scope) { buckets.push(scope.scopeType) },
+      })
+    },
+  })
+  assert.deepEqual(buckets, ['total', 'path', 'source_category', 'device_class'])
+})
+
+test('a dedupe result still decides the unique increment of its own scope once dedupes run first', async () => {
+  const increments: Array<[string, number]> = []
+  await storeAnalyticsPageView(row(), {
+    async transaction(callback) {
+      return callback({
+        async insertRaw() {},
+        // Only the path scope has seen this visitor before in this minute.
+        async insertDeduplication(_bucket, _visitor, scope) { return scope.scopeType !== 'path' },
+        async incrementBucket(_bucket, scope, unique) { increments.push([scope.scopeType, unique]) },
+      })
+    },
+  })
+  assert.deepEqual(Object.fromEntries(increments), {
+    path: 0, region_code: 1, source_category: 1, device_class: 1, country_code: 1, total: 1,
+  })
+})
+
+test('the NOC aggregate is written only after the ingestion transaction committed', async () => {
+  const events: string[] = []
+  const store = (value: MinimalPageViewRow) => storeAnalyticsPageView(value, {
+    async transaction(callback) {
+      const result = await callback({
+        async insertRaw() { events.push('raw') },
+        async insertDeduplication() { return true },
+        async incrementBucket(_bucket, scope) { events.push(`bucket:${scope.scopeType}`) },
+      })
+      events.push('commit')
+      return result
+    },
+  })
+  const outcome = await ingestAnalyticsPageView({
+    event,
+    payload: { path: '/news', sourceCategory: 'direct', deviceClass: 'desktop' },
+    config: { collectionEnabled: true, hmacSecret: SECRET },
+    now: new Date('2026-07-22T12:00:00Z'),
+    store,
+    storeNoc: async (record) => { events.push(`noc:${record.eventType}`) },
+  })
+  assert.equal(outcome, 'accepted')
+  // No geography in this payload: the last bucket is the last dimension.
+  assert.deepEqual(events.slice(-3), ['bucket:device_class', 'commit', 'noc:ingestion_accepted'])
+  assert.equal(events.filter(event => event.startsWith('noc:')).length, 1)
+})
+
 test('increments page views for repeats but approximate unique once per minute and scope', async () => {
   const { state, store } = transactionStore()
   await storeAnalyticsPageView(row(), store)
@@ -134,4 +229,95 @@ test('best-effort NOC records accepted, rejected, and bot outcomes without unsaf
   assert.equal(await ingestAnalyticsPageView({ event: botEvent, payload: { path: '/news' }, config: { collectionEnabled: true, hmacSecret: SECRET }, store: acceptedStore, storeNoc }), 'bot')
   assert.equal(noc.length, 3)
   assert.doesNotMatch(JSON.stringify(noc), /secret=1|private|Googlebot|203\.0\.113\.42|visitor-token/i)
+})
+
+// ─── Deadlock retry ──────────────────────────────────────────────────────────
+//
+// The order above cut deadlocks by ~10× under sustained load but not to zero
+// (docs/decisions/data-layer.md: 3.9 % / 2.3 % of transactions in a 185 s run). A
+// deadlock victim's transaction is rolled back whole by InnoDB, so the page view
+// is retried from the start: nothing of the failed attempt survived, the dedupe
+// rows included, and the retry counts the visitor exactly as the first attempt
+// would have.
+
+/** What the driver throws, wrapped the way Drizzle wraps it ("Failed query: …"). */
+function driverError(code: string, errno: number, message: string) {
+  return Object.assign(new Error('Failed query: INSERT INTO analytics_live_minute_buckets …'), {
+    cause: Object.assign(new Error(message), { code, errno }),
+  })
+}
+const deadlock = () => driverError('ER_LOCK_DEADLOCK', 1213, 'Deadlock found when trying to get lock; try restarting transaction')
+
+/** `transactionStore` semantics plus an error injected on chosen attempts. */
+function flakyStore(failures: Array<Error | null>) {
+  const { state, store } = transactionStore()
+  let attempt = 0
+  const attempts: number[] = []
+  return {
+    state,
+    attempts,
+    store: {
+      async transaction<T>(callback: (tx: AnalyticsPageViewTransaction) => Promise<T>): Promise<T> {
+        const failure = failures[attempt] ?? null
+        attempt += 1
+        attempts.push(attempt)
+        return store.transaction(async (tx) => {
+          const result = await callback({
+            ...tx,
+            async incrementBucket(bucketStart, scope, unique) {
+              // Fail half-way through the buckets, after every dedupe row was written.
+              if (failure && scope.scopeType === 'source_category') throw failure
+              return tx.incrementBucket(bucketStart, scope, unique)
+            },
+          })
+          return result
+        }) as Promise<T>
+      },
+    },
+  }
+}
+
+const noWait = async () => {}
+
+test('a deadlock retries the whole page view and commits it once, dedupe included', async () => {
+  const { state, attempts, store } = flakyStore([deadlock(), null])
+  await storeAnalyticsPageView(row(), store, { sleep: noWait })
+  assert.deepEqual(attempts, [1, 2])
+  assert.equal(state.committed, true)
+  assert.equal(state.raw.length, 1, 'the raw event is written once, not once per attempt')
+  for (const bucket of state.buckets.values()) {
+    assert.deepEqual([bucket.pageViews, bucket.unique], [1, 1], `${bucket.scope.scopeType}: the rolled-back attempt left no dedupe row, so the visitor is still unique`)
+  }
+})
+
+test('the retry is bounded: three deadlocks in a row fail the page view, nothing committed', async () => {
+  const { state, attempts, store } = flakyStore([deadlock(), deadlock(), deadlock(), null])
+  await assert.rejects(storeAnalyticsPageView(row(), store, { sleep: noWait }), /Failed query/)
+  assert.deepEqual(attempts, [1, 2, 3])
+  assert.equal(state.committed, false)
+  assert.equal(state.raw.length, 0)
+  assert.equal(state.buckets.size, 0)
+})
+
+test('the retry waits a small jittered pause between attempts', async () => {
+  const pauses: number[] = []
+  const { store } = flakyStore([deadlock(), deadlock(), null])
+  await storeAnalyticsPageView(row(), store, { sleep: async (ms) => { pauses.push(ms) } })
+  assert.equal(pauses.length, 2)
+  for (const ms of pauses) assert.ok(ms >= 5 && ms <= 50, `pause ${ms} ms`)
+})
+
+test('only a deadlock is retried — a lock-wait timeout or any other error fails at once', async () => {
+  // A lock-wait timeout already waited innodb_lock_wait_timeout (50 s by default):
+  // retrying a page-view beacon would hold the request minutes longer on a server
+  // that is already saturated.
+  for (const error of [
+    driverError('ER_LOCK_WAIT_TIMEOUT', 1205, 'Lock wait timeout exceeded; try restarting transaction'),
+    driverError('ER_DUP_ENTRY', 1062, 'Duplicate entry'),
+    new Error('bucket failure'),
+  ]) {
+    const { attempts, store } = flakyStore([error, null])
+    await assert.rejects(storeAnalyticsPageView(row(), store, { sleep: noWait }))
+    assert.deepEqual(attempts, [1], String(error.message))
+  }
 })

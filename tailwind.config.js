@@ -1,8 +1,17 @@
+// Semantic colour tokens (`brand-700`, `ink-muted`, `line`…): one table shared with
+// scripts/codemod-hex-tokens.ts, which rewrites exact `[#hex]` matches into these names.
+// Values and rules live there and in tests/tailwind-color-tokens.test.ts.
+const { COLOR_TOKENS } = require('./shared/color-tokens.ts')
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
     './app/**/*.{vue,ts,js}',
     './server/**/*.{ts,js}',
+    // `shared/submission-status.ts` giữ lớp huy hiệu (`bg-[#fdf3e2] …`) chỉ dùng qua
+    // `:class` — không quét `shared/` thì các lớp đó bị purge, huy hiệu mất màu.
+    // tests/tailwind-content-shared.test.ts ghim dòng này.
+    './shared/**/*.{ts,js}',
   ],
   // `useLayoutConfig` dựng `grid-cols-${n}` theo cấu hình trong DB — Tailwind
   // tĩnh quét không thấy chuỗi nguyên bản nên phải liệt kê for đúng các giá
@@ -11,17 +20,10 @@ module.exports = {
   safelist: ['grid-cols-2', 'grid-cols-3', 'grid-cols-4'],
   theme: {
     extend: {
-      colors: {
-        admin: {
-          darkest: '#122815',
-          dark:    '#1e4620',
-          green:   '#2c6e33',
-          light:   '#8ed694',
-          bg:      '#f4f7f4',
-          border:  '#e2ece3',
-          muted:   '#667768',
-        }
-      },
+      // The old `admin-*` palette (0 uses) is folded in: darkest/dark/green/border/muted
+      // are brand-950/brand-900/brand-700/line/ink-muted. `light` (#8ed694) is now
+      // brand-300 and `bg` (#f4f7f4) is merged into surface.
+      colors: { ...COLOR_TOKENS },
       // Custom animations belong here, not in a component's `<style scoped>`.
       // Vue rewrites scoped keyframe names (`blinkCursor` → `blinkCursor-a1b2c3`),
       // so an `animate-[blinkCursor_...]` utility referenced a name that existed

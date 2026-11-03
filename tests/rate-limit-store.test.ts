@@ -161,8 +161,70 @@ test('expired buckets are removed, live ones are left alone', async () => {
   clock += RULE.windowSeconds * 1000 + 1
   await recordRateLimitHit('fresh', RULE, deps)
 
-  assert.equal(await purgeExpiredRateLimits(deps), 1)
+  assert.equal((await purgeExpiredRateLimits(deps)).deleted, 1)
   assert.deepEqual([...db.rows.keys()], ['fresh'])
+})
+
+/**
+ * A table of N rows that honours `DELETE … WHERE window_expires_at <= ? LIMIT ?`
+ * exactly as MySQL would: at most LIMIT rows per statement, only expired ones.
+ * The purge used to issue ONE `LIMIT 5000` statement per night, while article
+ * views alone write one bucket per (article, visitor, day) — the table only grew.
+ */
+function bulkCounterTable(expired: number, live = 0) {
+  const now = 5_000_000
+  const rows: Array<{ expiresAt: number }> = []
+  for (let i = 0; i < expired; i += 1) rows.push({ expiresAt: now - 1 - (i % 1000) })
+  for (let i = 0; i < live; i += 1) rows.push({ expiresAt: now + 60_000 })
+  const limits: unknown[] = []
+  return {
+    now,
+    limits,
+    get size() { return rows.length },
+    get liveLeft() { return rows.filter(row => row.expiresAt > now).length },
+    execute: async (sql: string, params: unknown[]) => {
+      const text = sql.replace(/\s+/g, ' ').trim()
+      assert.match(text, /^DELETE FROM rate_limit_counters WHERE window_expires_at <= \? LIMIT \?$/)
+      const before = (params[0] as Date).getTime()
+      const limit = params[1] as number
+      limits.push(limit)
+      let removed = 0
+      for (let i = rows.length - 1; i >= 0 && removed < limit; i -= 1) {
+        if (rows[i]!.expiresAt <= before) { rows.splice(i, 1); removed += 1 }
+      }
+      return [{ affectedRows: removed }]
+    },
+  }
+}
+
+test('a backlog larger than one batch is drained in one run, 5 000 rows per statement', async () => {
+  const table = bulkCounterTable(12_000, 7)
+  const result = await purgeExpiredRateLimits({ execute: table.execute, now: () => table.now, memory: new Map() })
+
+  assert.equal(result.deleted, 12_000, 'rows past the first batch were left for another night')
+  assert.equal(result.bounded, false)
+  assert.equal(result.batches, 3)
+  assert.deepEqual(table.limits, [5000, 5000, 5000], 'every statement is bounded by the batch size')
+  assert.equal(table.size, 7, 'only live buckets remain')
+  assert.equal(table.liveLeft, 7, 'a live bucket was deleted')
+})
+
+test('one run stops after 10 batches and reports the rest as unfinished', async () => {
+  const table = bulkCounterTable(60_000)
+  const result = await purgeExpiredRateLimits({ execute: table.execute, now: () => table.now, memory: new Map() })
+
+  assert.equal(table.limits.length, 10, 'the per-run cap of 10 statements was not respected')
+  assert.equal(result.deleted, 50_000)
+  assert.equal(result.bounded, true, 'a capped run must not look like a finished one')
+  assert.equal(table.size, 10_000, 'the remainder is left for the next tick')
+})
+
+test('an exactly-full last batch costs one extra empty statement, not an endless loop', async () => {
+  const table = bulkCounterTable(10_000)
+  const result = await purgeExpiredRateLimits({ execute: table.execute, now: () => table.now, memory: new Map() })
+  assert.equal(result.deleted, 10_000)
+  assert.equal(result.bounded, false)
+  assert.deepEqual(table.limits, [5000, 5000, 5000])
 })
 
 // ─── Wiring ──────────────────────────────────────────────────────────────────

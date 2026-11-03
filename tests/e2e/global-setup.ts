@@ -12,7 +12,9 @@
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import mysql from 'mysql2/promise'
 import { passwordRejectionMessage } from '../../server/utils/password-policy'
 import { E2E_ADMIN_USERNAME, E2E_BASE_URL, E2E_DB_ENV, E2E_PASSWORD_ENV, E2E_PORT } from './harness'
@@ -73,6 +75,12 @@ export default async function globalSetup() {
     throw new Error('.output/server/index.mjs is missing — run `npm run build` before `npm run test:e2e`.')
   }
   const adminPassword = generateAdminPassword()
+  // The server's backup directory, per run. The default is `<cwd>/backups` — this
+  // checkout's own backups — and this server runs on a fresh database whose
+  // `backups` table is empty, so every file there would look like an orphan to the
+  // backup cleanup (tests/backup-dir-isolation.test.ts). Removed on every exit path.
+  const backupsDirForRun = mkdtempSync(path.join(tmpdir(), 'cdkt-e2e-backups-'))
+  console.log(`[e2e] server backup directory: ${backupsDirForRun}`)
 
   const env = {
     ...process.env,
@@ -100,10 +108,14 @@ export default async function globalSetup() {
     NUXT_ANALYTICS_COLLECTION_ENABLED: 'true',
     ADMIN_PASSWORD: adminPassword,
     ADMIN_EMAIL: 'e2e@example.test',
-    // Both schedulers off. A retention pass firing mid-run would delete rows
-    // underneath an assertion, and the failure would look like a UI bug.
+    // The schedulers that write or delete on their own are off. A retention pass
+    // firing mid-run would delete rows underneath an assertion, and the failure
+    // would look like a UI bug. The backup scheduler defaults ON in production
+    // (wave1 1B): off here, so no scheduled backup and no startup cleanup runs.
     RETENTION_SCHEDULER: '0',
     VIEW_BOOST_SCHEDULER: '0',
+    BACKUP_SCHEDULER: '0',
+    CDKT_BACKUPS_DIR: backupsDirForRun,
     // Captcha gate off: serial workers re-login dozens of times in 15 min, past
     // the 3-fail threshold. The gate would 403 specs that don't send captcha.
     // Rate limit (429 after 5 fails) stays on — that's the layer E2E exercises.
@@ -122,6 +134,7 @@ export default async function globalSetup() {
     // đúng lỗi đã gặp khi chạy suite này trên checkout Windows.
     const result = spawnSync('npm', ['run', script], { env, encoding: 'utf8', shell: process.platform === 'win32' })
     if (result.status !== 0) {
+      rmSync(backupsDirForRun, { recursive: true, force: true })
       throw new Error(`npm run ${script} failed (exit ${result.status})\n${result.stdout}\n${result.stderr}`)
     }
   }
@@ -137,6 +150,7 @@ export default async function globalSetup() {
   } catch (error) {
     server.kill('SIGKILL')
     await dropDatabase()
+    rmSync(backupsDirForRun, { recursive: true, force: true })
     throw error
   }
 
@@ -164,6 +178,7 @@ export default async function globalSetup() {
     delete process.env[E2E_PASSWORD_ENV]
     for (const key of Object.values(E2E_DB_ENV)) delete process.env[key]
     await dropDatabase()
+    rmSync(backupsDirForRun, { recursive: true, force: true })
   }
 }
 

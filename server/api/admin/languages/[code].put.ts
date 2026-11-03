@@ -1,6 +1,7 @@
 import { createError } from 'h3'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { updateLanguage } from '../../../services/languages'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -18,6 +19,8 @@ export default defineEventHandler(async (event) => {
     isDefault: typeof body.isDefault === 'boolean' ? body.isDefault : undefined,
     displayOrder: typeof body.displayOrder === 'number' ? body.displayOrder : undefined,
   })
+  // After the service committed: the language switcher is in every cached page's HTML.
+  await purgePublicPageCacheAfterWrite('languages.update')
 
   return { ok: true }
 })

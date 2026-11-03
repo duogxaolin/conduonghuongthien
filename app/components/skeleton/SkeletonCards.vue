@@ -9,15 +9,15 @@
       v-for="n in count"
       :key="n"
       aria-hidden="true"
-      class="flex flex-col overflow-hidden rounded-xl border border-[#e2ece3] bg-white"
+      class="flex flex-col overflow-hidden rounded-xl border border-line bg-white"
     >
-      <div class="h-[140px] w-full animate-pulse bg-[#f8faf8] motion-reduce:animate-none"></div>
+      <div class="h-[140px] w-full animate-pulse bg-surface motion-reduce:animate-none"></div>
       <div class="flex flex-1 flex-col gap-1 p-3">
-        <div class="h-4 w-4/5 animate-pulse rounded bg-[#dfe9e0] motion-reduce:animate-none"></div>
-        <div class="h-3 w-1/2 animate-pulse rounded bg-[#edf3ed] motion-reduce:animate-none"></div>
+        <div class="h-4 w-4/5 animate-pulse rounded bg-line motion-reduce:animate-none"></div>
+        <div class="h-3 w-1/2 animate-pulse rounded bg-surface-tint motion-reduce:animate-none"></div>
         <div class="mt-1 flex gap-2">
-          <div class="h-6 flex-1 animate-pulse rounded-md bg-[#edf3ed] motion-reduce:animate-none"></div>
-          <div class="h-6 flex-1 animate-pulse rounded-md bg-[#edf3ed] motion-reduce:animate-none"></div>
+          <div class="h-6 flex-1 animate-pulse rounded-md bg-surface-tint motion-reduce:animate-none"></div>
+          <div class="h-6 flex-1 animate-pulse rounded-md bg-surface-tint motion-reduce:animate-none"></div>
         </div>
       </div>
     </div>

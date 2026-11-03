@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
 
 /**
- * Khung SSE khi lớp chặn đầu ra thay câu trả lời (sovereignty-guard.ts, CHANGELOG § 28): handler thật
+ * Khung SSE khi lớp chặn đầu ra thay câu trả lời (sovereignty-guard.ts, docs/decisions/chatbot.md § Chủ quyền biển, đảo): handler thật
  * của `/api/public/chatbot`, `answerChat` giả gọi `onChunk` rồi `onReplace` như policy làm.
  *
  * - Widget mới (`parseSseLine` thật) cuối cùng chỉ còn đúng lập trường chính thức.
@@ -13,7 +13,8 @@ import test, { mock } from 'node:test'
  */
 
 const OFFICIAL = 'Quần đảo Hoàng Sa và quần đảo Trường Sa là lãnh thổ của Việt Nam.'
-const script = { before: [] as string[], writingAfterMs: 0 }
+// `replace: false` = lớp chặn đang giữ chữ (cụm yêu sách chưa có đảo/biển) mà không thay: đường truyền cũng im.
+const script = { before: [] as string[], writingAfterMs: 0, replace: true }
 const persisted: string[] = []
 
 mock.module('h3', {
@@ -29,10 +30,10 @@ mock.module('../server/utils/chatbot/chat', {
     answerChat: async (_event: unknown, _settings: unknown, _messages: unknown,
       onChunk?: (chunk: string) => Promise<void> | void, _onTool?: unknown, onReplace?: (answer: string) => Promise<void> | void) => {
       for (const chunk of script.before) await onChunk?.(chunk)
-      await onReplace?.(OFFICIAL)
+      if (script.replace) await onReplace?.(OFFICIAL)
       // Model viết nốt phần bị nuốt.
       if (script.writingAfterMs) await new Promise(resolve => setTimeout(resolve, script.writingAfterMs))
-      return { answer: OFFICIAL, kind: 'curated', sources: [] }
+      return script.replace ? { answer: OFFICIAL, kind: 'curated', sources: [] } : { answer: script.before.join(''), kind: 'provider', sources: [] }
     },
   },
 })
@@ -53,8 +54,9 @@ mock.module('../server/utils/runtime-config', { namedExports: { analyticsHmacSec
 mock.module('../server/services/moderation-worker', {
   namedExports: {
     fastPreModerate: async () => ({ blocked: false }),
-    matchInstantRule: async () => null,
     checkAndModerateContent: async () => ({ blocked: false }),
+    // Lượt cũ quét trong một lượt gộp, không ghi hàng chờ (wave3: thay `matchInstantRule` từng lượt).
+    earlierTurnsToWithhold: async () => new Set<string>(),
   },
 })
 
@@ -118,5 +120,28 @@ test('while the model keeps writing after the replace, the line still carries a 
   } finally {
     mock.timers.reset()
     script.writingAfterMs = 0
+  }
+})
+
+test('after a chunk, while the guard holds the rest back (no replace), the line still carries a heartbeat', async () => {
+  mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+  try {
+    script.before = ['Thời gian anh chấp hành án ']
+    script.replace = false
+    script.writingAfterMs = 40_000
+    const wire = { text: '' }
+    const done = send(wire)
+    for (let turn = 0; turn < 5; turn++) await new Promise(resolve => setImmediate(resolve))
+    mock.timers.tick(15_000)
+    mock.timers.tick(15_000)
+    mock.timers.tick(10_000)
+    await done
+    assert.ok(!wire.text.includes('"replace"'), wire.text)
+    const afterChunk = wire.text.slice(wire.text.indexOf('chấp hành án'))
+    assert.equal(afterChunk.split(': ping').length - 1, 2, `two pings over 40 s of silence after a chunk: ${wire.text}`)
+  } finally {
+    mock.timers.reset()
+    script.writingAfterMs = 0
+    script.replace = true
   }
 })

@@ -2,7 +2,7 @@ import { asc, eq, gt } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { articleTranslations, pageBlocks } from '../db/schema'
 import { sanitizeBlockData, sanitizeHtml } from '../utils/sanitize-html'
-import type { BlockData } from '../../app/utils/blocks/types'
+import type { BlockData } from '../../shared/blocks/types'
 
 /**
  * Dọn một lần HTML đã lưu trong DB trước khi có lớp lọc lúc ghi.

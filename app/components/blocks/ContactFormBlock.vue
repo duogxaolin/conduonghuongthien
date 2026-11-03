@@ -1,30 +1,31 @@
 <template>
-  <section class="section bg-[#F8FAF7]" id="tro-giup">
+  <section class="section bg-surface" id="tro-giup">
     <div class="container" :class="hasInfo ? '' : 'max-w-[720px] mx-auto'">
       <!-- Two-column layout when an info panel is configured; single centered column otherwise. -->
       <div :class="hasInfo ? 'grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-[60px] items-start' : ''">
         <!-- Left: contact info panel (only when configured) -->
         <div v-if="hasInfo" class="flex flex-col gap-8">
           <div v-if="d.infoTitle || infoRows.length">
-            <h3 class="text-[1.4rem] font-bold text-[#4A6741] mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ (currentLang !== 'vi' ? t('contact_info') : '') || d.infoTitle || 'Thông tin liên hệ' }}</h3>
-            <p v-for="(row, i) in infoRows" :key="i" class="text-[0.95rem] text-[#4A5545] mb-3 leading-relaxed">
-              <strong v-if="row.label" class="text-[#1E251C]">{{ row.label }}</strong>
-              <template v-if="row.label"> </template>{{ row.value }}
+            <h3 class="text-[1.4rem] font-bold text-brand-600 mb-5 border-b-2 border-line pb-2">{{ (currentLang !== 'vi' ? t('contact_info') : '') || d.infoTitle || 'Thông tin liên hệ' }}</h3>
+            <p v-for="(row, i) in infoRows" :key="i" class="text-[0.95rem] text-ink-secondary mb-3 leading-relaxed">
+              <!-- Khoảng trắng là một nội suy: `<template v-if> </template>` chỉ có khoảng
+                   trắng bị trình biên dịch Vue bỏ hẳn → "Địa chỉ:Thôn…" (tests/contact-form-labels). -->
+              <strong v-if="row.label" class="text-ink">{{ row.label }}</strong>{{ row.label ? ' ' : '' }}{{ row.value }}
             </p>
           </div>
           <div v-if="d.noteTitle || d.noteText">
-            <h3 v-if="d.noteTitle" class="text-[1.4rem] font-bold text-[#4A6741] mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ (currentLang !== 'vi' ? t('support_mechanism_title') : '') || d.noteTitle }}</h3>
-            <p v-if="d.noteText" class="text-[0.95rem] text-[#4A5545] leading-relaxed text-justify">{{ (currentLang !== 'vi' ? t('support_mechanism_desc') : '') || d.noteText }}</p>
+            <h3 v-if="d.noteTitle" class="text-[1.4rem] font-bold text-brand-600 mb-5 border-b-2 border-line pb-2">{{ (currentLang !== 'vi' ? t('support_mechanism_title') : '') || d.noteTitle }}</h3>
+            <p v-if="d.noteText" class="text-[0.95rem] text-ink-secondary leading-relaxed text-justify">{{ (currentLang !== 'vi' ? t('support_mechanism_desc') : '') || d.noteText }}</p>
           </div>
         </div>
 
         <!-- Right: the form -->
         <div>
           <div v-if="!hasInfo" class="text-center mb-8">
-            <h2 class="text-[2rem] md:text-[1.5rem] font-extrabold text-[#1E251C]">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h2>
+            <h2 class="text-[2rem] md:text-[1.5rem] font-extrabold text-ink">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h2>
           </div>
-          <form @submit.prevent="submitForm" class="bg-white p-5 sm:p-8 lg:p-10 rounded-lg shadow-md border border-[#E2E8DF]">
-            <h3 v-if="hasInfo" class="text-[1.3rem] font-bold text-[#4A6741] mb-6">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h3>
+          <form @submit.prevent="submitForm" class="bg-white p-5 sm:p-8 lg:p-10 rounded-lg shadow-md border border-line">
+            <h3 v-if="hasInfo" class="text-[1.3rem] font-bold text-brand-600 mb-6">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h3>
 
             <!-- Dynamic fields -->
             <!--
@@ -35,7 +36,7 @@
               trình đọc màn hình. Viền lỗi #b71c1c đạt 6.57:1 trên nền trắng (≥3:1).
             -->
             <div v-for="(field, fi) in renderFields" :key="field.id" class="mb-5">
-              <label :for="controlId(uid, fi)" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">
+              <label :for="controlId(uid, fi)" class="block text-[0.85rem] font-bold text-ink mb-[6px]">
                 {{ field.label }}<span v-if="field.required" class="text-[#b71c1c]" aria-hidden="true"> *</span>
               </label>
 
@@ -50,7 +51,7 @@
                 :aria-required="field.required ? 'true' : undefined"
                 :aria-invalid="errors[field.id] ? 'true' : undefined"
                 :aria-describedby="errors[field.id] ? errorId(uid, fi) : undefined"
-                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"
+                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-brand-600"
                 :class="errors[field.id] ? 'border-[#b71c1c]' : 'border-[#E2E8DF]'"
               ></textarea>
 
@@ -63,7 +64,7 @@
                 :aria-required="field.required ? 'true' : undefined"
                 :aria-invalid="errors[field.id] ? 'true' : undefined"
                 :aria-describedby="errors[field.id] ? errorId(uid, fi) : undefined"
-                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741] bg-white"
+                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-brand-600 bg-white"
                 :class="errors[field.id] ? 'border-[#b71c1c]' : 'border-[#E2E8DF]'"
               >
                 <option value="">{{ t('form_select_placeholder') }}</option>
@@ -82,7 +83,7 @@
                 :aria-required="field.required ? 'true' : undefined"
                 :aria-invalid="errors[field.id] ? 'true' : undefined"
                 :aria-describedby="errors[field.id] ? errorId(uid, fi) : undefined"
-                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"
+                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-brand-600"
                 :class="errors[field.id] ? 'border-[#b71c1c]' : 'border-[#E2E8DF]'"
               />
 
@@ -99,7 +100,7 @@
             <div
               v-if="submitMessage"
               class="mt-4 px-[18px] py-[14px] rounded-lg text-[0.9rem] font-semibold leading-[1.5]"
-              :class="submitStatus === 'success' ? 'bg-[#e8f5e9] text-[#2e6b32] border border-[#b6d7b8]' : 'bg-[#fdecea] text-[#b71c1c] border border-[#f5c6cb]'"
+              :class="submitStatus === 'success' ? 'bg-[#e8f5e9] text-[#2e6b32] border border-[#b6d7b8]' : 'bg-danger-bg text-[#b71c1c] border border-[#f5c6cb]'"
               :role="submitStatus === 'error' ? 'alert' : 'status'"
             >
               {{ submitMessage }}
@@ -115,7 +116,9 @@
 import { reactive, ref, computed, nextTick, useId } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
 import { useI18n } from '~/composables/useI18n'
-import { autocompleteFor, controlId, errorId, validateFormField } from '~/utils/form-a11y'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicSubmissionResponse } from '~/types/public-site-api'
+import { autocompleteFor, controlId, errorId, labelWithColon, validateFormField, withoutRequiredMark } from '~/utils/form-a11y'
 
 const { t, currentLang } = useI18n()
 // Duy nhất theo thể hiện (hai block cùng trang không đụng id), ổn định SSR↔hydrate.
@@ -150,16 +153,19 @@ const infoRows = computed<InfoRow[]>(() => {
     ? (d.value.infoRows as InfoRow[]).filter((r) => r && (r.label || r.value))
     : []
   if (currentLang.value === 'vi') return rows
+  // Khối có bản dịch riêng cho ngôn ngữ này (BlockNode đã trộn vào `d`): dùng nguyên văn.
+  // "Hotline:"/"Email:" viết giống tiếng Việt, ánh xạ dưới đây từng đè chúng thành "Phone".
+  if (Array.isArray(d.value.translations?.[currentLang.value]?.infoRows)) return rows
   const labelMap: Record<string, string> = {
     'Đơn vị chủ quản:': t('footer_agency') || 'Supervisory Authority:',
     'Địa chỉ:': t('address') || 'Address:',
     'Hotline:': t('phone') || 'Hotline:',
     'Email:': t('email') || 'Email:',
   }
-  return rows.map((r) => ({
-    label: labelMap[r.label?.trim() || ''] || r.label,
-    value: r.value,
-  }))
+  return rows.map((r) => {
+    const mapped = labelMap[r.label?.trim() || '']
+    return { label: mapped ? labelWithColon(mapped) : r.label, value: r.value }
+  })
 })
 const hasInfo = computed(() => !!d.value.showInfo && (!!d.value.infoTitle || infoRows.value.length > 0 || !!d.value.noteTitle || !!d.value.noteText))
 
@@ -197,21 +203,22 @@ const renderFields = computed<RenderField[]>(() => {
   const raw = configured.filter((f) => f && f.label)
   const source: Partial<RenderField>[] = raw.length ? raw : LEGACY_FIELDS.value
   return source.map((f, i) => {
-    const rawLabel = String(f.label || '')
+    // Dấu sao là của template (chỉ cho trường bắt buộc), không bao giờ của chữ nhãn: bỏ nó ở
+    // nhãn cán bộ gõ ("Họ và tên *") TRƯỚC khi tra bảng dịch, và ở bản dịch (hàng DB
+    // `form_city` = "Province / City *") — kể cả trường tuỳ chọn, nơi nó từng hiện một dấu
+    // sao không có `aria-required` (kiểm chứng độc lập W4).
+    const rawLabel = withoutRequiredMark(String(f.label || '').trim())
     let localizedLabel = rawLabel
     if (currentLang.value !== 'vi') {
-      const key = FIELD_LABEL_MAP[rawLabel.trim()]
-      if (key) {
-        localizedLabel = t(key) || rawLabel
-      } else {
-        localizedLabel = t(rawLabel) || rawLabel
-      }
+      const key = FIELD_LABEL_MAP[rawLabel]
+      localizedLabel = (key ? t(key) : t(rawLabel)) || rawLabel
     }
+    const required = !!f.required
     return {
       id: String(f.id || `f_${i}`),
-      label: localizedLabel,
+      label: withoutRequiredMark(localizedLabel),
       type: toFieldType(f.type),
-      required: !!f.required,
+      required,
       placeholder: f.placeholder || '',
       map: f.map || 'none',
       optionsText: f.optionsText || '',
@@ -293,7 +300,7 @@ const submitForm = async () => {
       type: field.type,
       required: field.required,
     }))
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/submissions', {
+    await publicFetch<PublicSubmissionResponse>('/api/submissions', {
       method: 'POST',
       body: {
         type: 'support',

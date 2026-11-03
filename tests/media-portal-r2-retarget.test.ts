@@ -171,6 +171,38 @@ test('a secret row stored under another settings group still counts as stored', 
   assert.equal(value('media_video_r2_account_id'), ACCOUNT)
 })
 
+/**
+ * The GET now reports a stored secret as `********` (spec admin-settings-secrets).
+ * A client that sends that mask back must keep the stored secret — and the mask
+ * is not "the secret typed again", so it unlocks no change of account or bucket.
+ */
+test('the mask sent back keeps the stored secret and changes nothing else about it', async () => {
+  seed(SAVED)
+  await save({ ...UNTOUCHED, videoR2SecretKey: '********', videoR2PublicUrl: 'https://cdn.example.vn' })
+  assert.equal(value('media_video_r2_secret_key'), SECRET_ENVELOPE, 'the mask replaced the stored secret')
+  assert.equal(value('media_video_r2_public_url'), 'https://cdn.example.vn', 'the rest of the form is saved')
+})
+
+test('the audit row records that the secret changed, never any part of it', async () => {
+  seed(SAVED)
+  await save({ ...UNTOUCHED, videoR2SecretKey: 'new-secret-value-9876' })
+  assert.equal(audits.length, 1)
+  const text = JSON.stringify(audits[0])
+  assert.match(text, /media_video_r2_secret_key/)
+  assert.doesNotMatch(text, /ABCD|9876|new-secret/, 'part of a secret reached activity_logs')
+})
+
+test('the mask is not a retyped secret: it cannot move the stored secret to another account or bucket', async () => {
+  for (const change of [{ videoR2AccountId: OTHER_ACCOUNT }, { videoR2Bucket: 'attacker-bucket' }]) {
+    seed(SAVED)
+    const error = await rejection(save({ ...UNTOUCHED, ...change, videoR2SecretKey: '********' }))
+    assert.equal(error.statusCode, 400)
+    assert.equal(value('media_video_r2_account_id'), ACCOUNT)
+    assert.equal(value('media_video_r2_bucket'), 'cdkt-video')
+    assert.equal(value('media_video_r2_secret_key'), SECRET_ENVELOPE)
+  }
+})
+
 test('first-time setup (nothing stored) needs no retype and validates formats', async () => {
   seed([])
   await save({ videoStorageProvider: 'r2', videoR2AccountId: ACCOUNT, videoR2AccessKey: 'AKID', videoR2SecretKey: 'first-secret', videoR2Bucket: 'cdkt-video', videoR2PublicUrl: '' })

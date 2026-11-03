@@ -3,7 +3,8 @@ import { getChatbotSettings } from '../services/chatbot-settings'
 import { answerChat } from '../utils/chatbot/chat'
 import { CHAT_RATE_LIMITED_MESSAGE, chargeChatRateLimit } from '../utils/chatbot/chat-policy'
 import { assertChatInputLength } from '../utils/chatbot/input-length'
-import { fastPreModerate, matchInstantRule } from '../services/moderation-worker'
+import { earlierTurnsToWithhold, fastPreModerate } from '../services/moderation-worker'
+import { createModerationRegexBudget } from '../services/moderation-regex'
 import { getClientIp } from '../utils/client-ip'
 import { chatHistoryShapeOk, chatTextsToScreen, withoutUserTurns } from '../utils/chatbot/chat-turns'
 
@@ -33,7 +34,11 @@ export default defineEventHandler(async (event) => {
 
   // The new question is screened and refused (one review-queue row); an EARLIER user
   // turn that trips a rule is only withheld from the model — refusing for it locked
-  // the conversation and re-filed the old line on every message.
+  // the conversation and re-filed the old line on every message. One regex budget for
+  // the whole request (moderation-regex-runtime.ts), the new question first so the
+  // history cannot spend it; the history turns in one batched pass, and an earlier
+  // turn that pass never reached is withheld too, never sent unscreened.
+  const regexBudget = createModerationRegexBudget()
   const [latest, ...earlier] = screenedTexts
   if (latest) {
     const fastCheck = await fastPreModerate(latest, {
@@ -42,6 +47,7 @@ export default defineEventHandler(async (event) => {
       contextTitle: 'Chatbot trực tuyến',
       contextUrl: '/admin/chatbot/sessions',
       capQueuePerSource: true,
+      regexBudget,
     }).catch(() => null)
 
     if (fastCheck?.blocked) {
@@ -53,10 +59,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const withheld = new Set<string>()
-  for (const turn of earlier) {
-    if (await matchInstantRule(turn).catch(() => null)) withheld.add(turn)
-  }
+  const withheld = await earlierTurnsToWithhold(earlier, { regexBudget }).catch(() => new Set(earlier))
 
   let result
   try { result = await answerChat(event, settings, withoutUserTurns(rawMessages, withheld)) }

@@ -39,10 +39,14 @@ export default defineEventHandler(async (event) => {
 
   const activeCount = factors.filter(f => f.state === 'active').length
   const emailUsable = usable.includes('email_otp')
+  // Named, not inferred: `event.context` is untyped, and the profile page derives this
+  // response's type from the handler (app/types/admin-profile.ts) — an `any` field drops
+  // out of that type. Types only; the value is the same.
+  const email: string | null = admin.email ?? null
 
   return {
     ok: true,
-    email: admin.email ?? null,
+    email,
     smtpReady,
     factors,
     recoveryCodesEnabled: recoveryCodesRemaining > 0,

@@ -492,6 +492,43 @@ describe('12.6 — gửi: lưu trước, phát sau', () => {
       sse.releaseStream(stream.stream)
     }
   })
+
+  it('AI kiểm duyệt nền quyết định ẩn: phát sự kiện gỡ, KHÔNG xoá hàng — hàng còn lại làm bằng chứng', async () => {
+    // `applyAutoHide` (moderation-worker.ts) đã đánh dấu `is_deleted = 1` cho hàng
+    // này. Một lệnh `DELETE` chạy song song từng xoá luôn tin nhắn — mất tác giả, IP,
+    // thời điểm mà hàng chờ duyệt trỏ tới (wave1 D13).
+    const fake = makeFake()
+    const stream = makeStream()
+    sse.registerStream(stream.stream, SESSION_ID)
+    const moderated: Array<{ targetType: string, targetId: number }> = []
+    const moderate = (async (input: { targetType: string, targetId: number }) => {
+      moderated.push({ targetType: input.targetType, targetId: input.targetId })
+      return { flagged: true, action: 'auto_hide', severity: 'high', reasons: ['spam'], matchedRules: [] }
+    }) as unknown as NonNullable<Parameters<typeof chat.sendChatMessage>[1]>['moderate']
+
+    try {
+      const result = await chat.sendChatMessage(
+        { sender, ip: '203.0.113.9', content: 'chào cả nhà', sessionId: SESSION_ID },
+        { db: fake.db, rateLimit: memoryLimiter(), moderate },
+      )
+      assert.equal(result.ok, true)
+      // Kiểm duyệt chạy nền (fire-and-forget): chờ chuỗi promise của nó chạy hết.
+      for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve))
+
+      assert.deepEqual(moderated, [{ targetType: 'livestream_chat', targetId: 555 }])
+      assert.deepEqual(
+        stream.pushed.map(message => message.event),
+        [sse.SSE_EVENT_MESSAGE, sse.SSE_EVENT_REMOVAL],
+        'người xem vẫn phải thấy tin biến mất',
+      )
+      const deletes = [...fake.log, ...fake.poolLog].filter(sql => /^delete\b/i.test(sql))
+      assert.deepEqual(deletes, [], 'quyết định ẩn của AI không được xoá hàng khỏi CSDL')
+      const rows = fake.inserts.filter(row => /^insert into `livestream_messages`/i.test(row.sql))
+      assert.equal(rows.length, 1, 'hàng tin nhắn phải còn nguyên (đã chèn, không bị xoá)')
+    } finally {
+      sse.releaseStream(stream.stream)
+    }
+  })
 })
 
 describe('12.6 — lịch sử: có trần, theo thứ tự thời gian, bỏ tin đã gỡ', () => {

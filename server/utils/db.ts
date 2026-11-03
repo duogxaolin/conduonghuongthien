@@ -23,22 +23,35 @@ let _pool: mysql.Pool | null = null
 export function getDb(): Database {
   if (_db) return _db
 
-  const config = tryRuntimeConfig() ?? {}
-
   const pool = mysql.createPool({
-    host:     config.dbHost     || process.env.DB_HOST     || '127.0.0.1',
-    port:     Number(config.dbPort || process.env.DB_PORT  || 3306),
-    user:     config.dbUser     || process.env.DB_USER     || 'root',
-    password: config.dbPassword || process.env.DB_PASSWORD || '',
-    database: config.dbName     || process.env.DB_NAME     || 'cdkt_admin',
+    ...dbConnectionOptions(),
     waitForConnections: true,
     connectionLimit: 10,
-    timezone: '+07:00',
   })
 
   _pool = pool
   _db = createDb(pool)
   return _db
+}
+
+/**
+ * Where and how to connect — the ONE place that resolves it, for the shared pool
+ * above and for the short-lived connection the ops-alert path opens and closes
+ * itself (`ops-alert.ts`: it also runs inside the boot CLI `server/db/init.ts`, where
+ * creating this module's pool would keep the process — and the container start —
+ * alive forever). `timezone` must be the same on both: the rate-limit counters they
+ * share store DATETIMEs.
+ */
+export function dbConnectionOptions() {
+  const config = tryRuntimeConfig() ?? {}
+  return {
+    host:     config.dbHost     || process.env.DB_HOST     || '127.0.0.1',
+    port:     Number(config.dbPort || process.env.DB_PORT  || 3306),
+    user:     config.dbUser     || process.env.DB_USER     || 'root',
+    password: config.dbPassword || process.env.DB_PASSWORD || '',
+    database: config.dbName     || process.env.DB_NAME     || 'cdkt_admin',
+    timezone: '+07:00',
+  }
 }
 
 /**

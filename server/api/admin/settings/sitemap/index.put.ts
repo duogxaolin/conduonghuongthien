@@ -5,7 +5,7 @@ import { requireResourcePermission } from '../../../../utils/permissions'
 
 /**
  * Lưu sitemap admin đã sửa. Cặp ghi + audit trong một transaction — tiền lệ
- * `navigation.put.ts`: `activity_logs.user_id` là FK tới `users` và `meta` là
+ * `navigation/navbar.put.ts`: `activity_logs.user_id` là FK tới `users` và `meta` là
  * cột JSON, nên viết rời có cách hỏng riêng (hàng đã xong, không còn gì ghi ai
  * đã làm). Chạy trên `tx`, không phải `db`.
  *

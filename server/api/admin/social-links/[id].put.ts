@@ -1,5 +1,6 @@
 import { createError } from 'h3'
 import { updateSocialLink } from '../../../services/social-links'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -12,5 +13,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Thiếu dữ liệu.' })
   }
   await updateSocialLink(adminUser, id, body as Parameters<typeof updateSocialLink>[2])
+  // After the service committed (same reason as index.post.ts).
+  await purgePublicPageCacheAfterWrite('social_links.update')
   return { ok: true }
 })

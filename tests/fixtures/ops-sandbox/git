@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # FAKE `git` for tests/ops-scripts-sandbox.test.ts: records argv, performs nothing.
-#   FAKE_GIT_DIFF_RC   exit code of `git diff --quiet ...` (1 = docker-compose.yml modified)
-#   FAKE_GIT_PULL_RC   exit code of `git pull`
+#   FAKE_GIT_DIFF_RC       exit code of `git diff --quiet ...` (1 = docker-compose.yml modified)
+#   FAKE_GIT_PULL_RC       exit code of `git pull`
+#   FAKE_GIT_PULL_APPEND   a successful `git pull` appends this line to
+#                          $SANDBOX/production/manage.sh (the pull brought a new manage.sh)
 set -u
 : "${SANDBOX:?}"
 n=$(( $(cat "$SANDBOX/.n" 2>/dev/null || echo 0) + 1 ))
@@ -13,6 +15,11 @@ case "${1:-}" in
     if [[ "$*" == *--quiet* ]]; then exit "${FAKE_GIT_DIFF_RC:-0}"; fi
     echo ' docker-compose.yml | 2 +-'; exit 0 ;;
   checkout) exit 0 ;;
-  pull) exit "${FAKE_GIT_PULL_RC:-0}" ;;
+  pull)
+    rc="${FAKE_GIT_PULL_RC:-0}"
+    if [ "$rc" = 0 ] && [ -n "${FAKE_GIT_PULL_APPEND:-}" ]; then
+      printf '%s\n' "$FAKE_GIT_PULL_APPEND" >> "$SANDBOX/production/manage.sh"
+    fi
+    exit "$rc" ;;
 esac
 exit 0

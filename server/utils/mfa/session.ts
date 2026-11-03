@@ -8,6 +8,8 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '../db'
 import { users, roles, permissions, activityLogs } from '../../db/schema'
 import { signToken, signMfaChallenge, MFA_CHALLENGE_TTL_SECONDS } from '../auth'
+import { isSecureRequest } from '../request-secure'
+import { mfaEnrollmentFields, resolveMfaEnrollment } from './policy'
 
 export const SESSION_COOKIE = 'cdkt_admin'
 /** Deliberately a different name from the session cookie: every existing
@@ -17,10 +19,8 @@ export const CHALLENGE_COOKIE = 'cdkt_mfa'
 
 const SESSION_MAX_AGE = 8 * 60 * 60
 
-export function requestIsHttps(event: H3Event): boolean {
-  return getRequestHeader(event, 'x-forwarded-proto') === 'https'
-    || getRequestURL(event).protocol === 'https:'
-}
+// `Secure` on both cookies is decided by `isSecureRequest` (request-secure.ts),
+// shared with the reader and OAuth-state cookies so the four cannot drift.
 
 export interface SessionUser {
   id: number
@@ -42,7 +42,7 @@ export function setSessionCookie(event: H3Event, user: SessionUser): string {
   })
   setCookie(event, SESSION_COOKIE, token, {
     httpOnly: true,
-    secure:   requestIsHttps(event),
+    secure:   isSecureRequest(event),
     sameSite: 'lax',
     maxAge:   SESSION_MAX_AGE,
     path:     '/',
@@ -58,7 +58,7 @@ export function setChallengeCookie(event: H3Event, user: SessionUser): void {
   })
   setCookie(event, CHALLENGE_COOKIE, token, {
     httpOnly: true,
-    secure:   requestIsHttps(event),
+    secure:   isSecureRequest(event),
     sameSite: 'lax',
     maxAge:   MFA_CHALLENGE_TTL_SECONDS,
     path:     '/',
@@ -100,6 +100,16 @@ export async function completeLogin(
 
   setSessionCookie(event, user)
 
+  // Cùng hai trường `auth/me` trả (chính sách MFA): giao diện lấy `user` từ phản hồi
+  // đăng nhập mà không gọi `me`, nên thiếu chúng thì tài khoản đã quá hạn bật MFA
+  // vào thẳng trang quản trị và chỉ gặp 403 ở từng lượt gọi API.
+  const enrollment = await resolveMfaEnrollment({
+    id: user.id,
+    tokenVersion: user.tokenVersion,
+    isSuperAdmin: user.isSystem === true,
+    permissions: userPermissions,
+  })
+
   return {
     ok: true as const,
     user: {
@@ -109,6 +119,7 @@ export async function completeLogin(
       roleName:     user.roleName,
       isSuperAdmin: user.isSystem === true,
       permissions:  userPermissions,
+      ...mfaEnrollmentFields(enrollment),
     },
   }
 }

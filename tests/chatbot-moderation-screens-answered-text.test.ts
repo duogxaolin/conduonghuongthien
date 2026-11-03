@@ -19,7 +19,13 @@ import test, { mock } from 'node:test'
  */
 
 const PROHIBITED = 'nội dung cấm'
-const seen = { screened: [] as string[], matched: [] as string[], answered: 0, persisted: [] as string[], answeredWith: [] as unknown[] }
+const seen = {
+  screened: [] as string[], matched: [] as string[], answered: 0, persisted: [] as string[], answeredWith: [] as unknown[],
+  /** The `regexBudget` each moderation call was handed: the newest turn's check, the history batch. */
+  budgets: { newest: [] as unknown[], history: [] as unknown[] },
+  /** Make the history check throw (a database or regex failure), as a real one can. */
+  historyThrows: false,
+}
 
 mock.module('h3', {
   namedExports: {
@@ -48,9 +54,19 @@ mock.module('../server/utils/client-ip', { namedExports: { getClientIp: () => '2
 mock.module('../server/utils/runtime-config', { namedExports: { analyticsHmacSecret: () => 'secret' } })
 mock.module('../server/services/moderation-worker', {
   namedExports: {
-    fastPreModerate: async (text: string) => { seen.screened.push(text); return { blocked: text.includes(PROHIBITED) } },
-    // Same decision, no review row: what earlier history turns go through.
-    matchInstantRule: async (text: string) => { seen.matched.push(text); return text.includes(PROHIBITED) ? { category: 'x', severity: 'high', label: 'x' } : null },
+    fastPreModerate: async (text: string, context?: { regexBudget?: unknown }) => {
+      seen.screened.push(text)
+      seen.budgets.newest.push(context?.regexBudget)
+      return { blocked: text.includes(PROHIBITED) }
+    },
+    // Same decision, no review row: what earlier history turns go through (one batched call) —
+    // the turns to keep from the model.
+    earlierTurnsToWithhold: async (texts: string[], options?: { regexBudget?: unknown }) => {
+      seen.budgets.history.push(options?.regexBudget)
+      seen.matched.push(...texts)
+      if (seen.historyThrows) throw new Error('ai_moderation_rules: connection lost')
+      return new Set(texts.filter(text => text.includes(PROHIBITED)))
+    },
     checkAndModerateContent: async () => ({ blocked: false }),
   },
 })
@@ -69,7 +85,11 @@ const kindOf = (reply: string) => {
   const frames = reply.split('\n').filter(line => line.startsWith('data: {')).map(line => JSON.parse(line.slice(6)))
   return frames.map(frame => frame.chatbot?.kind).find(Boolean) as string | undefined
 }
-function reset() { seen.screened.length = 0; seen.matched.length = 0; seen.answered = 0; seen.persisted.length = 0; seen.answeredWith = [] }
+function reset() {
+  seen.screened.length = 0; seen.matched.length = 0; seen.answered = 0; seen.persisted.length = 0; seen.answeredWith = []
+  seen.budgets.newest.length = 0; seen.budgets.history.length = 0
+  seen.historyThrows = false
+}
 
 for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/chat', legacyHandler]] as const) {
   test(`${name}: a harmless \`text\` cannot carry a prohibited \`content\` past moderation`, async () => {
@@ -102,6 +122,32 @@ for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/ch
     const sent = JSON.stringify(seen.answeredWith)
     assert.ok(!sent.includes(PROHIBITED), 'the flagged turn never reaches the model')
     assert.ok(sent.includes('tiếp tục đi') && sent.includes('Trả lời.'), 'the rest of the history does')
+  })
+
+  /**
+   * The history check failing (rules unreadable, a regex pass that throws) must fail CLOSED for
+   * the history: every earlier user turn is withheld — the flagged one and the harmless one alike,
+   * since none of them was screened — while the new question, which passed its own check, is
+   * still answered. Failing open sent unscreened turns to the model (verify of the wave3 4.3c
+   * follow-ups, mutant V9 `.catch(() => new Set<string>())`, survived every suite).
+   */
+  test(`${name}: a history check that throws withholds EVERY earlier user turn and still answers the new question`, async () => {
+    reset()
+    seen.historyThrows = true
+    const reply = await send(handler, [
+      { role: 'user', content: `câu đầu ${PROHIBITED}` },
+      { role: 'assistant', content: 'Trả lời một.' },
+      { role: 'user', content: 'câu hai vô hại' },
+      { role: 'assistant', content: 'Trả lời hai.' },
+      { role: 'user', content: 'câu mới' },
+    ])
+    assert.notEqual(kindOf(reply), 'moderation_blocked', 'the new question passed its own check')
+    assert.equal(seen.answered, 1)
+    assert.deepEqual([...seen.matched].sort(), ['câu hai vô hại', `câu đầu ${PROHIBITED}`].sort(), 'the history check did run, and threw')
+    const sent = JSON.stringify(seen.answeredWith)
+    assert.ok(!sent.includes(PROHIBITED), 'the flagged earlier turn reached the model')
+    assert.ok(!sent.includes('câu hai vô hại'), 'an unscreened earlier turn reached the model')
+    assert.ok(sent.includes('câu mới'), 'the new question is what the model answers')
   })
 
   test(`${name}: the bot's own earlier answer is not screened, so a keyword in it never refuses the visitor`, async () => {
@@ -192,5 +238,28 @@ for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/ch
       (error: { statusCode?: number }) => error.statusCode === 400)
     assert.deepEqual(seen.screened, [])
     assert.deepEqual(seen.persisted, [])
+  })
+
+  /**
+   * ONE regex budget per request (`moderation-regex-runtime.ts`, mức 3): the newest turn's check
+   * and the history batch are handed the SAME object — by identity, never by shape (every budget
+   * is a frozen `{ limitMs: 250 }`, so `deepEqual` also passes on a second budget, or on none
+   * vs. none). Dropping it from the newest turn's call (verify of 4.3c follow-up, W2 / mutant
+   * M11) left that check unbounded; the time bound itself is pinned through the real moderation
+   * in `moderation-regex-total-bound.test.ts` ("newest turn slow on several rules").
+   */
+  test(`${name}: the newest turn's check and the history batch share ONE regex budget; a new request gets a new one`, async () => {
+    const { MODERATION_REQUEST_BUDGET_MS } = await import('../server/services/moderation-regex.ts')
+    reset()
+    const history = [{ role: 'user', content: 'câu cũ' }, { role: 'assistant', content: 'Trả lời.' }, { role: 'user', content: 'câu mới' }]
+    await send(handler, history)
+    await send(handler, history)
+    assert.equal(seen.budgets.newest.length, 2)
+    assert.equal(seen.budgets.history.length, 2)
+    const [first, second] = seen.budgets.newest as Array<{ limitMs?: number } | undefined>
+    assert.equal(first?.limitMs, MODERATION_REQUEST_BUDGET_MS, 'the newest turn is checked on the request budget')
+    assert.strictEqual(seen.budgets.history[0], first, 'request 1: the history batch runs on the newest turn\'s budget object')
+    assert.strictEqual(seen.budgets.history[1], second, 'request 2: the same')
+    assert.notStrictEqual(first, second, 'each request has its own')
   })
 }

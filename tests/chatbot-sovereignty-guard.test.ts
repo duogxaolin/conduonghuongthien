@@ -118,9 +118,9 @@ test('the incident questions and their variants are recognised', () => {
 test('everyday questions that share syllables or characters are not caught', () => {
   for (const text of [
     'Thủ tục xóa án tích như thế nào?',
-    'Tôi sợ môi trường sa ngã lôi kéo lại',
+    // ("môi trường sa ngã", "trường sa đà vào game": vòng 5 bỏ ngoại lệ "sa + động từ" trừ "sa thải" — chặn oan có
+    // chủ đích, ghim ở chatbot-sovereignty-recall.test.ts.)
     'Nhà trường sa thải giáo viên có tiền án được không?',
-    'Học sinh bỏ trường sa đà vào game, tôi phải làm sao?',
     'Giá cả biến động, tôi cần vay vốn',
     'Hôm nay biển động có đi biển được không',
     'bãi biển đông người quá',

@@ -3,6 +3,7 @@ import { articles, users, categories } from '../../../db/schema'
 import { eq, desc, inArray } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { articleResource } from '../../../services/articles'
+import { vietnamDateString } from '../../../utils/vn-day-range'
 import archiver from 'archiver'
 import { Readable } from 'node:stream'
 
@@ -34,8 +35,7 @@ function buildArticleHtml(row: {
   publishedAt: Date | null
   createdAt: Date | null
 }): string {
-  const date = row.publishedAt ?? row.createdAt ?? new Date()
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const dateStr = vietnamDateString(row.publishedAt ?? row.createdAt ?? new Date())
   const meta = [
     `Tiêu đề: ${row.title}`,
     row.categoryName ? `Danh mục: ${row.categoryName}` : '',
@@ -122,7 +122,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Bạn không có quyền đọc bài nào trong danh sách đã chọn.' })
   }
 
-  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const stamp = vietnamDateString(new Date()).replace(/-/g, '')
   const zip = archiver('zip', { zlib: { level: 6 } })
   for (const r of allowed) {
     const safeSlug = (r.slug || `bai-viet-${r.id}`).replace(/[^\w-]/g, '_')

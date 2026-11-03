@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Restore a database dump made by backup-db.sh into the MySQL container.
+# Restore a database dump made by backup-db.sh — or by the app itself
+# (backups/cdkt-<stamp>-<trigger>.sql.gz, e.g. the `pre-restore` safety dump a failed
+# in-app restore names) — into the MySQL container.
 #
 # This is DESTRUCTIVE: the dump carries `DROP TABLE IF EXISTS` for every table, so
 # every table in it replaces the live one.  Hence the guards below — the target
@@ -83,10 +85,23 @@ command -v docker >/dev/null 2>&1 || fail config "docker is not on PATH" 1
 docker inspect "$CONTAINER" >/dev/null 2>&1 || fail config "container $CONTAINER is not running" 1
 
 # ── The dump must be a complete mysqldump of ONE database ────────────────────
-# Same completion rule backup-db.sh enforces when it writes the file: a truncated
-# dump restored over live tables is worse than no restore.
+# The completion rule backup-db.sh enforces when it writes the file — the block
+# below is byte-for-byte the one in backup-db.sh (tests/ops-scripts.test.ts compares
+# them): a dump backup-db.sh keeps is one this script accepts, and a truncated dump
+# restored over live tables is worse than no restore.
+# >>> dump-completion-marker (identical in backup-db.sh and restore-db.sh)
+# The marker is mysqldump's own line, at the START of one of the last lines
+# ("-- Dump completed on …"; the app's dumps end the same way).  Anchored: a dump cut
+# off inside an INSERT whose data happens to contain "Dump completed" is truncated.
+# `grep -c` reads to the end — `grep -q` exits at the first match, and under pipefail
+# the `tail` it leaves behind can die of SIGPIPE and make the pipeline lie.
+DUMP_MARKER='^-- Dump completed'
+has_completion_marker() {
+  [[ "$(gzip -dc -- "$1" 2>/dev/null | tail -5 | grep -c -e "$DUMP_MARKER" || true)" -ge 1 ]]
+}
+# <<< dump-completion-marker
 gzip -t "$ARCHIVE" 2>/dev/null || fail archive "gzip archive is corrupt" 2
-gzip -dc "$ARCHIVE" | tail -5 | grep -q 'Dump completed' || fail archive "dump has no completion marker — it is truncated" 2
+has_completion_marker "$ARCHIVE" || fail archive "dump has no completion marker — it is truncated" 2
 TABLE_COUNT="$(gzip -dc "$ARCHIVE" | grep -c '^CREATE TABLE' || true)"
 [[ "$TABLE_COUNT" -ge 20 ]] || fail archive "only $TABLE_COUNT tables in the dump; expected at least 20 — wrong file?" 2
 # A dump that selects its own database would write somewhere other than the name the
@@ -176,7 +191,7 @@ if [[ "$EXISTING_TABLES" -gt 0 ]]; then
         --single-transaction --quick --routines --triggers --events \
         --default-character-set=utf8mb4 "$DATABASE" 2>"$ERR_FILE" | gzip -9 > "$PRE_DUMP" \
      || ! gzip -t "$PRE_DUMP" 2>/dev/null \
-     || ! gzip -dc "$PRE_DUMP" | tail -5 | grep -q 'Dump completed'; then
+     || ! has_completion_marker "$PRE_DUMP"; then
     ERR="$(tr -d '"' < "$ERR_FILE" | tail -c 300 | tr '\n' ' ')"
     rm -f "$PRE_DUMP"
     fail pre_dump "could not take a verified dump of $DATABASE before overwriting it; nothing was restored. ${ERR}" 3

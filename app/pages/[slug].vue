@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-[#F8FAF7]">
+  <div class="bg-surface">
     <!-- Branch 4 (2-segment /<type>/<X>): dishwasher — category list | article detail -->
     <template v-if="idParam">
       <ContentTypeListSection
@@ -35,22 +35,26 @@
       />
     </template>
 
-    <!-- Branch 1: Page Builder page (existing behavior) — render blocks khi có -->
-    <PageRenderer
-      v-else-if="isPageBranch && (pending || loadError || blocks.length)"
-      :blocks="blocks"
-      :interactive="isPreview"
-      :selected-id="selectedId"
-      :pending="pending"
-      :load-error="loadError"
-      :on-retry="retryLookup"
-    />
+    <!-- Branch 1: Page Builder page (existing behavior) — render blocks khi có.
+         Một trang đúng một <h1> (D22): khi không khối nào tự có <h1> (hero),
+         trang đặt một <h1> cho trình đọc màn hình mang tiêu đề trang. -->
+    <template v-else-if="isPageBranch && (pending || loadError || blocks.length)">
+      <h1 v-if="blocks.length && !pageHasOwnH1" class="sr-only">{{ page?.title }}</h1>
+      <PageRenderer
+        :blocks="blocks"
+        :interactive="isPreview"
+        :selected-id="selectedId"
+        :pending="pending"
+        :load-error="loadError"
+        :on-retry="retryLookup"
+      />
+    </template>
 
     <!-- Page exists but has no visible blocks yet. -->
     <section v-else-if="isPageBranch && page" class="section">
       <div class="container text-center py-20">
-        <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">{{ page?.title }}</h1>
-        <p class="text-[#4A5545]">Nội dung đang được cập nhật.</p>
+        <h1 class="text-[1.8rem] font-extrabold text-ink mb-3">{{ page?.title }}</h1>
+        <p class="text-ink-secondary">Nội dung đang được cập nhật.</p>
       </div>
     </section>
 
@@ -72,6 +76,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
 import { resolveCategoryRoute } from '~/utils/category-route-decision'
+import { blocksRenderOwnH1 } from '~/utils/blocks/page-heading'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicCategoriesResponse, PublicContentTypesResponse, PublicPageResponse } from '~/types/public-content-api'
 // Import tường minh: tên tự động của Nuxt là `BlocksBlockLoadError` — `<BlockLoadError>`
 // không import sẽ dựng ra thẻ rỗng (đã gặp ở `news/[category]/index.vue`).
 import BlockLoadError from '~/components/blocks/BlockLoadError.vue'
@@ -86,7 +93,7 @@ const idParam = computed(() => (route.params.id ? String(route.params.id) : ''))
 
 const asyncData = useAsyncData(
   () => `page-${slug.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; page: { title?: string; slug?: string; seoTitle?: string | null; seoDescription?: string | null } | null; blocks: import('~/utils/blocks/types').RenderableNode[] }>)(`/api/public/pages/${slug.value}`),
+  () => publicFetch<PublicPageResponse>(`/api/public/pages/${slug.value}`),
   {
     lazy: true,
     default: () => ({ ok: false, page: null, blocks: [] }),
@@ -99,10 +106,9 @@ const { data, pending, error, refresh, status } = asyncData
 // block, slug có thể là `slug` của một content-type custom (vd /video_tuyen_truyen).
 // Fetch danh sách content-types công khai để khớp. useAsyncData riêng để không
 // phụ thuộc vào cache key của page fetch — chỉ thực sự fetch khi page miss.
-interface PublicContentType { slug: string; name: string; icon: string | null; description: string | null }
 const typesAsync = useAsyncData(
   () => `content-types-catchall-${slug.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicContentType[] }>)(`/api/public/content-types`),
+  () => publicFetch<PublicContentTypesResponse>(`/api/public/content-types`),
   {
     lazy: true,
     default: () => ({ ok: false, items: [] }),
@@ -124,10 +130,10 @@ const seoDescription = computed(() => currentType.value?.description || 'Con Đ�
 const typeLabels = computed(() => ({ [slug.value]: typeName.value }))
 
 // Branch 4: 2-segment `/<type>/<X>` — kiểm `X` trùng category slug trong type.
-interface PublicCategory { id: number; name: string; slug: string; parentId: number | null }
+type PublicCategory = PublicCategoriesResponse['items'][number]
 const catAsync = useAsyncData(
   () => `cat-check-${slug.value}-${idParam.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicCategory[] }>)('/api/public/categories', { query: { type: slug.value } }),
+  () => publicFetch<PublicCategoriesResponse>('/api/public/categories', { query: { type: slug.value } }),
   { lazy: true, default: () => ({ ok: true, items: [] as PublicCategory[] }), watch: [slug, idParam] },
 )
 const { data: catData, status: catStatus } = catAsync
@@ -287,6 +293,7 @@ onMounted(() => {
 })
 const page = computed(() => data.value?.page || null)
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
+const pageHasOwnH1 = computed(() => blocksRenderOwnH1(blocks.value))
 
 useSeoMeta({
   title: () => {

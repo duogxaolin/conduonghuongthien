@@ -24,8 +24,41 @@ function activeLevel(): number {
 /**
  * Keys whose values must never reach a log file. Matched case-insensitively on
  * substrings, so `passwordHash`, `x-api-key` and `Authorization` are all caught.
+ * `bearer` too (a `bearer: '…'` field carried the credential unredacted; no log key
+ * in the repo contains it, so nothing that was readable becomes redacted). And the
+ * names that plainly hold a credential but matched nothing (verifier Low 6, 2026-10-30):
+ * `jwt`, a private key, a recovery or MFA code, an access key id — no log key in the
+ * repo contains them either. Deliberately NOT here, being ambiguous in this code base:
+ * `code` (error codes), `key` (`r2Key` and other storage object keys), `session`/`sid`
+ * (`sessionId` is an id), `salt`, `nonce` (tests/logging-redaction.test.ts).
  */
-const SECRET_KEY_PATTERN = /pass|secret|token|authorization|cookie|api[-_]?key|credential|hash/i
+const SECRET_KEY_PATTERN = /pass|secret|token|bearer|authorization|cookie|api[-_]?key|credential|hash|jwt|private[-_]?key|recovery[-_]?code|mfa[-_]?code|access[-_]?key[-_]?id/i
+
+/**
+ * One-time codes as a WORD of the key (`otp`, `otpCode`, `emailOtp`, `EMAIL_OTP`, `x-otp`,
+ * `totp`): as a substring "otp" is inside ordinary words (`footprint`, `hotpath`).
+ */
+const SECRET_KEY_WORDS: ReadonlySet<string> = new Set(['otp', 'totp'])
+
+function keyWords(key: string): string[] {
+  return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/)
+}
+
+/**
+ * The one exception to the pattern: COUNTS whose names carry "token" — the AI gateway's usage on
+ * `ai_gateway.call_succeeded` (server/services/ai-gateway-record.ts), which the pattern turned into
+ * `[redacted]` on every line (the usage table kept them; the log lost them). Exact names, and only
+ * while the value is a finite number: a count is never text, so a string — or a bigint, NaN or
+ * Infinity — put under one of these names is still redacted. A list, not a looser pattern:
+ * `accessTokens`, `refreshTokens`, `prompt_tokens` and every other spelling stay redacted
+ * (tests/logging-redaction.test.ts).
+ */
+const TOKEN_COUNT_KEYS: ReadonlySet<string> = new Set(['promptTokens', 'completionTokens', 'totalTokens'])
+
+function isRedactedKey(key: string, value: unknown): boolean {
+  if (TOKEN_COUNT_KEYS.has(key) && Number.isFinite(value)) return false
+  return SECRET_KEY_PATTERN.test(key) || keyWords(key).some(word => SECRET_KEY_WORDS.has(word))
+}
 
 export const REDACTED = '[redacted]'
 
@@ -47,14 +80,22 @@ function scrub(value: unknown, depth = 0): unknown {
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : scrub(nested, depth + 1)
+      out[key] = isRedactedKey(key, nested) ? REDACTED : scrub(nested, depth + 1)
     }
     return out
   }
   return String(value)
 }
 
-export type LogFields = Record<string, unknown> & { event: string }
+/**
+ * Marks a line written BY the ops-alert path (`ops-alert.ts`): it is never itself
+ * dispatched as an alert, whatever its event name — the logger cannot recurse
+ * through its own alerting. A symbol, so it never reaches the JSON line (`scrub`
+ * walks string keys only) and no caller-supplied field can set it by accident.
+ */
+export const SKIP_OPS_ALERT: unique symbol = Symbol('cdkt.skipOpsAlert')
+
+export type LogFields = Record<string, unknown> & { event: string, [SKIP_OPS_ALERT]?: true }
 
 /** Build the record without emitting it — the shape the tests assert on. */
 export function buildLogRecord(level: LogLevel, fields: LogFields, at: Date): Record<string, unknown> {
@@ -62,9 +103,43 @@ export function buildLogRecord(level: LogLevel, fields: LogFields, at: Date): Re
   return { level, time: at.toISOString(), event, ...(scrub(rest) as Record<string, unknown>) }
 }
 
+const pendingOpsAlerts = new Set<Promise<void>>()
+
+/**
+ * Hand an allowlisted event to `ops-alert.ts` (wave2 D-ALERT), fire-and-forget.
+ * Decided BEFORE the LOG_LEVEL filter: verbosity is about what is printed, not about
+ * what an operator must hear of. With OPS_ALERT_EMAIL unset nothing is imported and
+ * no database is touched. The import is dynamic so this module stays free of the
+ * mailer/database graph that every other module imports it alongside.
+ */
+function dispatchOpsAlert(level: LogLevel, fields: LogFields, at: Date): void {
+  if (fields[SKIP_OPS_ALERT] === true) return
+  if (!ALERT_EVENT_SET.has(fields.event)) return
+  if (!(process.env.OPS_ALERT_EMAIL ?? '').trim()) return
+  const record = buildLogRecord(level, fields, at)
+  const pending: Promise<void> = import('./ops-alert')
+    .then(({ opsAlerts }) => opsAlerts.dispatch(record))
+    .catch((error: unknown) => {
+      log('error', { event: 'ops.alert_failed', stage: 'load', alertEvent: fields.event, error, [SKIP_OPS_ALERT]: true })
+    })
+    .finally(() => { pendingOpsAlerts.delete(pending) })
+  pendingOpsAlerts.add(pending)
+}
+
+/**
+ * Resolves once every alert started so far has finished. Alerts are fire-and-forget
+ * for the request that logged them; this is for whoever must not exit first (tests,
+ * a shutdown hook).
+ */
+export async function settleOpsAlerts(): Promise<void> {
+  while (pendingOpsAlerts.size > 0) await Promise.allSettled([...pendingOpsAlerts])
+}
+
 export function log(level: LogLevel, fields: LogFields): void {
+  const at = new Date()
+  dispatchOpsAlert(level, fields, at)
   if (LEVEL_ORDER[level] < activeLevel()) return
-  const line = JSON.stringify(buildLogRecord(level, fields, new Date()))
+  const line = JSON.stringify(buildLogRecord(level, fields, at))
   // error and warn to stderr so a container runtime can split the streams.
   if (level === 'error' || level === 'warn') console.error(line)
   else console.log(line)
@@ -106,4 +181,90 @@ export const SECURITY_EVENTS = {
   // or neither is configured so the Host is used unchecked (logged once per process).
   linkHostRejected: 'security.link_host_rejected',
   linkHostUnchecked: 'security.link_host_unchecked',
+  // A state-changing request a browser sent on behalf of another site
+  // (`server/middleware/00.origin-gate.ts`). Payload: path (no query), origin
+  // host, reason — never cookies or the full Origin URL.
+  crossSiteRefused: 'security.cross_site_refused',
+  // A browser reported a Content-Security-Policy violation (`server/api/csp-report.post.ts`,
+  // wave3 D-CSP). Aggregated in memory (`csp-report-log.ts`): `kind: "first"` once per key
+  // per process, `kind: "repeats"` with `count` and `sources` at the end of each hour.
+  // Payload: directive name, blocked host or tag (`inline`, `eval`, `data`), page path
+  // without query (or `foreign:<host>`), path group, disposition, a 12-hex SHA-256 prefix of
+  // the script sample — never URLs, sample text, IPs or user agents.
+  // Deliberately NOT in ALERT_EVENTS: the Report-Only phase reports every inline script
+  // on every page view by design, and the endpoint is public — a report flood must
+  // never become an e-mail flood. Bounded by aggregation and a per-source limit instead.
+  cspViolation: 'security.csp_violation',
+  // Moderation regex layer 2 (`server/services/moderation-regex-budget.ts`, verify of wave3 4.3c
+  // follow-up W8). A rule turned off for 10 minutes for running slow (`reason: 'window'` — one
+  // window over 200 ms; `'cumulative'` — 1 s of CPU in 60 s): while it is off it judges nothing,
+  // and crafted input can be what slowed it. Payload: pattern (≤ 200 chars), reason, elapsedMs,
+  // inputLength — never the text. In ALERT_EVENTS: someone must look at the rule.
+  moderationRuleSlowDisabled: 'ai_moderation.rule_slow_disabled',
+  // A request used up its 250-ms regex budget; the rules it did not reach did not judge it (the
+  // newest chat turn, a comment: fail-open; earlier chat turns: withheld from the model). Once per
+  // request, anyone can trigger it — logged for alert rules, NOT e-mailed. Payload: budgetMs,
+  // spentMs, topPattern, topPatternMs, texts.
+  moderationRequestBudgetExhausted: 'ai_moderation.request_budget_exhausted',
 } as const
+
+/**
+ * Events from the schema migrations that run on every container start
+ * (`init.ts` → `migrations-additive.ts`). Kept apart from SECURITY_EVENTS: they
+ * mean "the schema could not reach its intended shape without destroying data",
+ * not an attack. Error level, one line per boot, counts only — never row data.
+ */
+export const BOOT_MIGRATION_EVENTS = {
+  // `media_items.category_id` has no correct FK and some rows point at no
+  // `media_categories` row. The FK is left as it is (adding it would fail and
+  // crash-loop the container) and the values are kept (clearing them is the
+  // 2026-09-22 boot-wipe bug). Payload: `{ danglingRows }`.
+  mediaCategoryFkBlocked: 'db.migration.media_category_fk_blocked',
+  // A stored credential (`smtp_pass`, `r2_secret_key`, `backup_drive_service_account`)
+  // is an envelope this CHATBOT_ENCRYPTION_SECRET cannot open. Left untouched; it
+  // must be re-entered on its settings page. Payload: `{ keys }` — names only.
+  settingsSecretUnreadable: 'db.migration.settings_secret_unreadable',
+  // A credential is still plaintext but the process has no usable encryption key,
+  // so it could not be converted this boot. Payload: `{ keys }`.
+  settingsSecretNoKey: 'db.migration.settings_secret_no_key',
+  // `repairLegacyMediaUrls` left `…/uploads/migrated/media/<name>` links alone
+  // because more than one `media` row carries that file name (wave2 D-SCAN) —
+  // pointing them at either row could show the wrong picture. Payload:
+  // `{ filenames (≤ 20), filenameCount, articles }`.
+  legacyMediaAmbiguous: 'db.migration.legacy_media_ambiguous',
+  // `media.url` rows still carry a `localhost:3000/` prefix but no R2 public
+  // domain is configured (`settings.r2_public_url`), so the steps that need the
+  // domain were skipped. Payload: none.
+  legacyMediaDomainUnknown: 'db.migration.legacy_media_domain_unknown',
+} as const
+
+/**
+ * Events e-mailed to OPS_ALERT_EMAIL (wave2 D-ALERT; `ops-alert.ts`, at most one per
+ * event per window). Kept short on purpose: each one means an operator must act —
+ * a restore failed or was refused, someone holding a valid password is guessing
+ * second factors, an e-mail link was asked for on a forged Host, a browser posted to
+ * the API on behalf of another site (the origin gate, wave2 2A), a moderation rule was
+ * turned off for running slow (it judges nothing for 10 minutes), a scheduled backup
+ * slot was given up, a scheduled slot was lost to "busy" refusals (another backup or a
+ * restore held the lock past the slot's window — `busyStreakDeadline`), the boot
+ * migration cannot reach its schema without losing data.
+ * Routine noise (failed logins, throttled forms) stays in the log.
+ *
+ * `backup.slot_abandoned` is a literal in `services/backup-scheduler.ts`,
+ * `backup.scheduler_blocked` in `services/backup-scheduler-busy.ts`;
+ * tests/ops-alert.test.ts checks every name here is really emitted under server/.
+ * To add one: append it here (and give it a window in `OPS_ALERT_WINDOW_SECONDS` if
+ * 15 minutes is wrong for it — `security.cross_site_refused` has six hours there).
+ */
+export const ALERT_EVENTS: readonly string[] = [
+  SECURITY_EVENTS.backupRestoreFailed,
+  SECURITY_EVENTS.backupRestoreRefused,
+  SECURITY_EVENTS.mfaChallengeLocked,
+  SECURITY_EVENTS.linkHostRejected,
+  SECURITY_EVENTS.crossSiteRefused,
+  SECURITY_EVENTS.moderationRuleSlowDisabled,
+  'backup.slot_abandoned',
+  'backup.scheduler_blocked',
+  BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked,
+]
+const ALERT_EVENT_SET: ReadonlySet<string> = new Set(ALERT_EVENTS)

@@ -3,7 +3,7 @@ import { activityLogs, chatbotSettings, type ChatbotSettings, aiServiceConfigs }
 import { getDb } from '../utils/db'
 import { buildChatbotSettingsAudit } from '../utils/chatbot/audit'
 import { decryptChatbotSecret } from '../utils/chatbot/crypto'
-import { buildChatbotApiKeyClearPatch, buildChatbotSettingsPatch, CHATBOT_SETTINGS_ID, CHATBOT_DEFAULTS, chatbotDestinationChanged, validateChatbotSettingsUpdate, type ChatbotSettingsUpdate } from '../utils/chatbot/settings'
+import { buildChatbotSettingsPatch, CHATBOT_SETTINGS_ID, CHATBOT_DEFAULTS, chatbotDestinationChanged, validateChatbotSettingsUpdate, type ChatbotSettingsUpdate } from '../utils/chatbot/settings'
 import { serializeChatbotSettings } from '../utils/chatbot/serializers'
 
 export async function getChatbotSettings(): Promise<ChatbotSettings> {
@@ -68,15 +68,6 @@ export async function updateChatbotSettings(
     }
   })
   return getChatbotSettings()
-}
-
-export async function clearChatbotApiKey(actorId: number, requestId?: unknown) {
-  const db = getDb(); const current = await getChatbotSettings()
-  await db.transaction(async (tx) => {
-    await tx.update(chatbotSettings).set({ ...buildChatbotApiKeyClearPatch(), updatedBy: actorId }).where(eq(chatbotSettings.id, CHATBOT_SETTINGS_ID))
-    await tx.insert(activityLogs).values(buildChatbotSettingsAudit({ actorId, operation: 'clear_key', configured: false, outcome: 'success', requestId }))
-  })
-  return current
 }
 
 export function configuredChatbotSecret(settings: ChatbotSettings, secret = process.env.CHATBOT_ENCRYPTION_SECRET): string | null {

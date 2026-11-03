@@ -1,6 +1,6 @@
 import { getDb } from '../utils/db'
 import { submissions, pages, pageBlocks, settings } from '../db/schema'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
 import { escapeHtml } from '../utils/escape-html'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
@@ -70,54 +70,82 @@ function validateAnswer(a: Answer): string | null {
   return null
 }
 
+const FORM_BLOCK_TYPES = ['contact_form', 'support_form']
+
+function addRecipient(value: unknown, out: Set<string>): void {
+  const to = String(value || '').trim().toLowerCase()
+  if (to && EMAIL_RE.test(to)) out.add(to)
+}
+
 /**
- * Walk a nested block tree (pages.published_blocks / draft_blocks) collecting the
- * data.recipientEmail of every contact_form block. Recurses into children[].
+ * Walk a PUBLISHED block tree collecting the `data.recipientEmail` of every
+ * VISIBLE contact/support form. A node with `isVisible === false` is skipped
+ * together with its whole subtree — exactly what `pages/[slug].get.ts`
+ * (`pruneHiddenTree`) does — so a form nobody can see on the site cannot receive
+ * what citizens type into the form they can see.
  */
 function collectFromTree(nodes: unknown, out: Set<string>): void {
   if (!Array.isArray(nodes)) return
   for (const item of nodes) {
     if (!item || typeof item !== 'object') continue
-    const n = item as { blockType?: unknown, data?: { recipientEmail?: unknown }, children?: unknown }
-    if (n.blockType === 'contact_form' || n.blockType === 'support_form') {
-      const to = String(n.data?.recipientEmail || '').trim().toLowerCase()
-      if (to && EMAIL_RE.test(to)) out.add(to)
-    }
+    const n = item as { blockType?: unknown, isVisible?: unknown, data?: { recipientEmail?: unknown }, children?: unknown }
+    if (n.isVisible === false) continue
+    if (typeof n.blockType === 'string' && FORM_BLOCK_TYPES.includes(n.blockType)) addRecipient(n.data?.recipientEmail, out)
     if (Array.isArray(n.children)) collectFromTree(n.children, out)
   }
 }
 
+/** The public read's own test for "this page is served from its published tree". */
+function hasPublishedTree(tree: unknown): boolean {
+  return Array.isArray(tree) && tree.length > 0
+}
+
 /**
- * Server-side allow-list of mail recipients: the set of recipientEmail values
- * actually configured on stored contact_form/support_form blocks across all
- * pages (both the published/draft node trees and the legacy flat page_blocks
- * table). The client-supplied recipient is only honored if it appears here —
- * this removes the arbitrary-recipient / open-relay capability while keeping the
- * recipient editable through the page builder (the source of truth).
+ * Server-side allow-list of mail recipients (spec public-submissions, design D2):
+ * the `recipientEmail` of the contact/support forms that are LIVE on the public
+ * site — the same rule `pages/[slug].get.ts` uses to decide what it renders:
+ *
+ *  - a page with a published tree (non-empty `published_blocks`): the visible
+ *    nodes of that tree, and nothing else — not its draft, and not its legacy flat
+ *    rows, which stay in `page_blocks` as a rollback fallback but are not shown;
+ *  - a page without one (`NULL`, or `[]` — the public read falls back for both):
+ *    its visible `page_blocks` rows.
+ *
+ * `draft_blocks` is never read: anyone with `pages.update` can write a draft, and
+ * a draft is by definition what nobody has reviewed yet. The old version read
+ * drafts, hidden nodes and stale flat rows, so a planted address in any of them
+ * was "configured" and the public form's request for it was honoured.
+ *
+ * The client-supplied recipient is only honoured if it appears here — and since
+ * the public page no longer publishes `recipientEmail`, the form normally asks
+ * for nothing and `resolveSubmissionRecipient` takes the single configured one or
+ * `settings.email`.
  *
  * ⚠️ Truy vấn bảng phẳng phải nhận **cả hai** loại block. Bản cũ chỉ lọc
  * `contact_form`, nên một `support_form` (biểu mẫu ở trang chủ) có cấu hình email
- * nhận vẫn không bao giờ vào được allowlist — và `collectFromTree` ngay bên trên
- * thì đã nhận cả hai, nên hai đường đọc cùng một thứ nói hai điều khác nhau.
+ * nhận vẫn không bao giờ vào được allowlist.
  */
 async function getConfiguredRecipients(db: ReturnType<typeof getDb>): Promise<Set<string>> {
   const out = new Set<string>()
-  // Node trees stored as JSON on pages.
+  // One JSON column per page, not two: the draft tree is never needed.
   const pageRows = await db
-    .select({ published: pages.publishedBlocks, draft: pages.draftBlocks })
+    .select({ id: pages.id, published: pages.publishedBlocks })
     .from(pages)
+  const flatPageIds: number[] = []
   for (const row of pageRows) {
-    collectFromTree(row.published, out)
-    collectFromTree(row.draft, out)
+    if (hasPublishedTree(row.published)) collectFromTree(row.published, out)
+    else flatPageIds.push(row.id)
   }
-  // Legacy flat blocks.
-  const flat = await db
-    .select({ blockType: pageBlocks.blockType, data: pageBlocks.data })
-    .from(pageBlocks)
-    .where(inArray(pageBlocks.blockType, ['contact_form', 'support_form']))
-  for (const b of flat) {
-    const to = String(b.data?.recipientEmail || '').trim().toLowerCase()
-    if (to && EMAIL_RE.test(to)) out.add(to)
+  if (flatPageIds.length) {
+    const flat = await db
+      .select({ data: pageBlocks.data })
+      .from(pageBlocks)
+      .where(and(
+        inArray(pageBlocks.pageId, flatPageIds),
+        inArray(pageBlocks.blockType, FORM_BLOCK_TYPES),
+        eq(pageBlocks.isVisible, true),
+      ))
+    for (const b of flat) addRecipient(b.data?.recipientEmail, out)
   }
   return out
 }

@@ -6,15 +6,13 @@
  * their own audit row. `ALLOWED_SETTING_KEYS` in settings/index.put.ts does not
  * list them, so the generic form cannot reach them either.
  *
- * A change is audited with before/after values. "Who shortened the audit-log
- * retention window, and from what" is exactly the question this table has to be
- * able to answer about itself.
+ * A change is audited with before/after values, in the same transaction as the
+ * keys themselves — inside `saveRetentionPolicy`. This handler used to save and
+ * then write the audit row on the pool, so a failed audit left the changed
+ * deletion window in force with nothing recording who changed it (FINDING-R3-1).
  */
-import { getDb } from '../../../utils/db'
-import { activityLogs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import {
-  resolveRetentionPolicy,
   saveRetentionPolicy,
   RetentionPolicyValidationError,
 } from '../../../services/retention-policy'
@@ -29,9 +27,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Dữ liệu không hợp lệ.' })
   }
 
-  const before = await resolveRetentionPolicy()
-
-  let keys: string[]
   try {
     // The body is handed over whole rather than copied field by field. The
     // hand-written copy that used to be here listed ten option names, so a scope
@@ -40,29 +35,12 @@ export default defineEventHandler(async (event) => {
     // silently dropped by this file, which is the one place nobody would look.
     // `saveRetentionPolicy` reads only the keys it knows and skips `undefined`,
     // so an unknown key in the body is inert rather than trusted.
-    keys = await saveRetentionPolicy(body)
+    const { after } = await saveRetentionPolicy(body, { userId: admin.id })
+    return { ok: true, policy: after }
   } catch (error) {
     if (error instanceof RetentionPolicyValidationError) {
       throw createError({ statusCode: 400, statusMessage: error.message })
     }
     throw error
   }
-
-  const after = await resolveRetentionPolicy()
-
-  const summarise = (policy: typeof before) => ({
-    autoEnabled: policy.autoEnabled,
-    runHour: policy.runHour,
-    scopes: policy.scopes.map(scope => ({ scope: scope.scope, days: scope.days, maxRows: scope.maxRows })),
-  })
-
-  const db = getDb()
-  await db.insert(activityLogs).values({
-    userId: admin.id,
-    action: 'update',
-    resource: 'data_retention',
-    meta: { keysUpdated: keys, before: summarise(before), after: summarise(after) },
-  })
-
-  return { ok: true, policy: after }
 })

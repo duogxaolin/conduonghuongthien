@@ -3,8 +3,9 @@
  * `Content-Type` client khai.
  *
  * Tách ra vì có **hai** đường cần đúng phép kiểm này: đường nhận từng phần của
- * tải lên (ghép xong mới kiểm, xem `server/services/chunked-upload.ts`) và đường
- * xử lý nền trước khi gọi FFmpeg. Hai bản riêng là hai danh sách định dạng sẽ
+ * tải lên (ghép xong mới kiểm — `completeUpload` trong
+ * `server/services/chunked-upload-completion.ts`) và đường xử lý nền trước khi gọi
+ * FFmpeg (`sniffFile` trong `server/services/video-processing-job.ts`). Hai bản riêng là hai danh sách định dạng sẽ
  * lệch nhau — và dự án vừa trả giá cho đúng hình dạng đó ở `.ico`: đường tải lên
  * nhận nó trong khi đường phục vụ không, tệp lưu thành công rồi không bao giờ
  * hiện được.

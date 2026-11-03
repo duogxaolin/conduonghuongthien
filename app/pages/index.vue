@@ -2,8 +2,9 @@
   <div>
     <!-- h1 sr-only cho trang chủ khi render Page blocks — block mở bằng <h2>
          (SectionBar/section header), nên cần <h1> cha để trình tự tiêu đề hợp
-         lệ. Visually hidden, chỉ trình đọc màn hình + SEO nhìn thấy. -->
-    <h1 v-if="blocks.length" class="sr-only">{{ page?.seoTitle || t('home_seo_title') }}</h1>
+         lệ. Visually hidden, chỉ trình đọc màn hình + SEO nhìn thấy. Chỉ khi
+         không block nào tự có <h1> (hero) — một trang đúng một <h1> (D22). -->
+    <h1 v-if="blocks.length && !pageHasOwnH1" class="sr-only">{{ page?.seoTitle || t('home_seo_title') }}</h1>
     <PageRenderer
       v-if="pending || loadError || blocks.length"
       :blocks="blocks"
@@ -17,8 +18,8 @@
     <!-- Graceful fallback if the page has no blocks. -->
     <section v-else class="section bg-white">
       <div class="container text-center py-20">
-        <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">{{ t('home_fallback_title') }}</h1>
-        <p class="text-[#4A5545]">{{ t('home_fallback_desc') }}</p>
+        <h1 class="text-[1.8rem] font-extrabold text-ink mb-3">{{ t('home_fallback_title') }}</h1>
+        <p class="text-ink-secondary">{{ t('home_fallback_desc') }}</p>
       </div>
     </section>
   </div>
@@ -28,6 +29,9 @@
 import { computed, onMounted, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
+import { blocksRenderOwnH1 } from '~/utils/blocks/page-heading'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicPageResponse } from '~/types/public-content-api'
 
 const { currentLang, t } = useI18n()
 
@@ -37,7 +41,7 @@ const { currentLang, t } = useI18n()
 // dữ liệu về, trông y hệt bấm hụt.
 const homeAsync = useAsyncData(
   `page-home-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; page: { title?: string; slug?: string; seoTitle?: string | null; seoDescription?: string | null } | null; blocks: import('~/utils/blocks/types').RenderableNode[] }>)(`/api/public/pages/home?lang=${currentLang.value}`),
+  () => publicFetch<PublicPageResponse>(`/api/public/pages/home?lang=${currentLang.value}`),
   { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
 const { data, pending, error, refresh } = homeAsync
@@ -65,6 +69,7 @@ const page = computed(() => data.value?.page || null)
 // pushed via postMessage override the fetched ones (see usePagePreview).
 const { isPreview, previewBlocks, selectedId } = usePagePreview()
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
+const pageHasOwnH1 = computed(() => blocksRenderOwnH1(blocks.value))
 
 // SEO: prefer page meta, fall back to the original homepage defaults.
 useSeoMeta({

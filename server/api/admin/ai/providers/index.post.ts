@@ -82,7 +82,7 @@ export default defineEventHandler(async (event) => {
       action: 'create',
       resource: 'ai',
       resourceId: newId ?? null,
-      meta: JSON.stringify({ provider, hasApiKey: apiKey !== '' }),
+      meta: { provider, hasApiKey: apiKey !== '' },
     })
     return newId
   })

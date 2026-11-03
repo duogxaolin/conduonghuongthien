@@ -21,6 +21,7 @@ import { requireResourcePermission, requireSuperAdmin } from '../../../../utils/
 import { getUsableDriveOauthConfig } from '../../../../services/backup-drive-oauth-config'
 import { DRIVE_SCOPE, GOOGLE_AUTH_ENDPOINT, resolveDriveRedirectUri } from '../../../../utils/google-oauth/config'
 import { issueState, stateSigningKey } from '../../../../utils/google-oauth/state'
+import { isSecureRequest } from '../../../../utils/request-secure'
 
 const DRIVE_OAUTH_STATE_COOKIE = 'cdkt_drive_oauth_state'
 const DRIVE_OAUTH_STATE_COOKIE_PATH = '/api/admin/backup/drive'
@@ -42,7 +43,8 @@ export default defineEventHandler(async (event) => {
 
   setCookie(event, DRIVE_OAUTH_STATE_COOKIE, signedState, {
     httpOnly: true,
-    secure:   getRequestURL(event).protocol === 'https:' || getRequestHeader(event, 'x-forwarded-proto') === 'https',
+    // One rule with the session cookies — see request-secure.ts.
+    secure:   isSecureRequest(event),
     // 'lax' for the same reason the reader cookie is: the callback is a
     // cross-site navigation from Google and 'strict' would withhold this cookie
     // on exactly the hop that needs it.

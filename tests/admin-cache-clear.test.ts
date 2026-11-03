@@ -32,7 +32,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
-import { parse } from '@vue/compiler-sfc'
+import { ADMIN_LAYOUT_FAMILY, familyTemplate, readAppFile } from './_component-family.ts'
 
 const ROOT = new URL('../', import.meta.url)
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, ROOT)), 'utf8')
@@ -61,12 +61,21 @@ describe('POST /api/admin/cache-clear — the guards are the endpoint', () => {
   })
 
   it('clears ONLY the nitro/routes group, not the whole cache namespace', () => {
-    assert.match(source, /getKeys\('nitro\/routes'\)/, 'must list only the route cache group')
-    assert.doesNotMatch(
-      source,
-      /getKeys\(\s*\)/,
-      'a bare getKeys() sweeps every cache group — favicon settings and future function caches have their own invalidation paths',
-    )
+    // The purge itself moved to server/utils/public-page-cache.ts so the article,
+    // menu and settings write paths run the very same one after commit. That it
+    // leaves the other groups alone is run for real (real unstorage, three groups)
+    // in tests/public-page-cache-behavior.test.ts; here: the button uses it.
+    assert.match(source, /await purgePublicPageCache\(\)/, 'the button must run the shared purge')
+    const util = read('server/utils/public-page-cache.ts')
+    assert.match(util, /ROUTE_CACHE_GROUP = 'nitro\/routes'/, 'the shared purge must name only the route cache group')
+    assert.match(util, /getKeys\(ROUTE_CACHE_GROUP\)/, 'must list only the route cache group')
+    for (const text of [source, util]) {
+      assert.doesNotMatch(
+        text,
+        /getKeys\(\s*\)/,
+        'a bare getKeys() sweeps every cache group — favicon settings and future function caches have their own invalidation paths',
+      )
+    }
   })
 
   it('writes one audit row naming who flushed and how much', () => {
@@ -77,8 +86,11 @@ describe('POST /api/admin/cache-clear — the guards are the endpoint', () => {
 })
 
 describe('the layout surfaces the action where officers look for it', () => {
-  const { descriptor } = parse(read('app/layouts/admin.vue'))
-  const template = descriptor?.template?.content || ''
+  // The admin layout was split (wave3 D-SPLIT): the top bar is `components/admin/layout/AdminTopBar.vue`,
+  // so these read the templates of the whole layout family (tests/_component-family.ts). The
+  // behaviour — one request, both buttons busy, the server's sentence — is mounted in
+  // tests/admin-layout.test.ts.
+  const template = familyTemplate(ADMIN_LAYOUT_FAMILY)
 
   it('topbar has the clear-cache button next to the user chip', () => {
     assert.match(template, /clearPublicCache/, 'no button calls the handler')
@@ -96,5 +108,15 @@ describe('the layout surfaces the action where officers look for it', () => {
 
   it('the button is disabled while a purge is in flight', () => {
     assert.match(template, /:disabled="isClearingCache"/, 'double-click can fire two purges')
+  })
+
+  it('proof: the family template is what is read — a second dropdown entry in a part, or the label gone, is caught', () => {
+    const topBar = 'components/admin/layout/AdminTopBar.vue'
+    const doubled = readAppFile(topBar).replace('<span>Đăng xuất</span>', '<span>Đăng xuất</span><span>Xoá cache Website</span>')
+    assert.equal((familyTemplate(ADMIN_LAYOUT_FAMILY, { [topBar]: doubled }).match(/Xoá cache Website/g) || []).length, 2)
+    const unlabelled = readAppFile(topBar).replaceAll('Xoá cache Website', 'Làm mới')
+    assert.equal((familyTemplate(ADMIN_LAYOUT_FAMILY, { [topBar]: unlabelled }).match(/Xoá cache Website/g) || []).length, 0)
+    const enabled = readAppFile(topBar).replaceAll(':disabled="isClearingCache"', '')
+    assert.doesNotMatch(familyTemplate(ADMIN_LAYOUT_FAMILY, { [topBar]: enabled }), /:disabled="isClearingCache"/)
   })
 })

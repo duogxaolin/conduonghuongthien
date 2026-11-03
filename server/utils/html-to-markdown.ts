@@ -10,6 +10,7 @@
  * style, class) không có tương đương Markdown và được giữ nguyên HTML. Mục
  * tiêu là ra một file .md đọc được, không phải ra Markdown sạch 100%.
  */
+import { headingLevel, htmlFragmentToText } from './html-fragment-text'
 
 /**
  * Escape ký tự đặc biệt Markdown trong text thuần (không phải HTML).
@@ -26,24 +27,43 @@ function escapeMd(text: string): string {
     .replace(/^(\s*)\d+\.\s/gm, '$1\\$&')
 }
 
-/** Lấy text thuần của một node HTML (bỏ tag). */
-function stripTags(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&[a-z]+;/g, '')
-    .trim()
+/**
+ * Text ĐÃ GIẢI MÃ (từ `htmlFragmentToText`) đặt vào ngữ cảnh inline của Markdown —
+ * dòng tiêu đề. Escape bằng `\` mọi ký tự CommonMark sẽ đọc thành cú pháp: `\`, `` ` ``,
+ * `*`, `_`, `[`, `]`, `<` (`&lt;b&gt;` giải mã ra `<b>` sẽ thành thẻ HTML thật trong
+ * trình xem), và `&` đứng đầu một chuỗi có dạng entity (`&amp;lt;` giải mã ra chữ
+ * `&lt;`; để trần thì trình xem lại hiện `<`). `&` trần như `R&D` không phải cú pháp,
+ * giữ nguyên. Khoảng trắng gộp thành một dấu cách: tiêu đề ATX chỉ có một dòng.
+ */
+function escapeMdText(text: string): string {
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/[\\`*_[\]<]/g, '\\$&')
+    .replace(/&(?=#[0-9]{1,7};|#[xX][0-9a-fA-F]{1,6};|[A-Za-z][A-Za-z0-9]*;)/g, '\\&')
 }
 
-/** Mức tiêu đề từ tag h1-h6. */
-function headingLevel(tag: string): number {
-  const m = tag.match(/^h([1-6])$/i)
-  return m ? Number(m[1]) : 0
+function longestBacktickRun(text: string): number {
+  return Math.max(0, ...(text.match(/`+/g) ?? []).map(run => run.length))
+}
+
+/**
+ * Text đã giải mã thành code span. CommonMark đọc nội dung code span theo nghĩa đen
+ * (không giải entity, không xử lý `\`), nên KHÔNG escape gì — chỉ cần hàng rào dài
+ * hơn chuỗi backtick dài nhất bên trong, kèm dấu cách đệm khi nội dung mở/đóng bằng
+ * backtick. Xuống dòng thành dấu cách (trình xem cũng hiện như vậy), để một dòng mở
+ * bằng `#`/`>` không cắt đôi đoạn văn giữa code span.
+ */
+function mdCodeSpan(text: string): string {
+  const oneLine = text.replace(/\s*\n\s*/g, ' ')
+  const fence = '`'.repeat(longestBacktickRun(oneLine) + 1)
+  const pad = /^`|`$/.test(oneLine) ? ' ' : ''
+  return `${fence}${pad}${oneLine}${pad}${fence}`
+}
+
+/** Text đã giải mã thành khối code có rào: nội dung nguyên văn, rào dài hơn mọi chuỗi backtick bên trong (tối thiểu 3). */
+function mdCodeBlock(text: string): string {
+  const fence = '`'.repeat(Math.max(3, longestBacktickRun(text) + 1))
+  return `\n${fence}\n${text}\n${fence}\n`
 }
 
 /**
@@ -102,11 +122,10 @@ function convertBlock(html: string): string {
 
 /** Chuyển nội dung của một tag cụ thể sang Markdown. */
 function convertTag(tag: string, inner: string): string {
-  const text = stripTags(inner)
   switch (tag) {
     case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6': {
       const level = headingLevel(tag)
-      return `\n${'#'.repeat(level)} ${text}\n`
+      return `\n${'#'.repeat(level)} ${escapeMdText(htmlFragmentToText(inner))}\n`
     }
     case 'p':
       return `\n${convertInline(inner)}\n`
@@ -139,14 +158,13 @@ function convertTag(tag: string, inner: string): string {
       return convertInline(inner)
     case 'blockquote':
       return `\n${convertBlock(inner).trim().split('\n').map(l => `> ${l}`).join('\n')}\n`
-    case 'pre': {
-      const code = stripTags(inner)
-      return `\n\`\`\`\n${code}\n\`\`\`\n`
-    }
+    case 'pre':
+      return mdCodeBlock(htmlFragmentToText(inner))
     case 'code':
-      return `\`${stripTags(inner)}\``
+      return mdCodeSpan(htmlFragmentToText(inner))
     case 'table': case 'thead': case 'tbody': case 'tr': case 'td': case 'th':
-      // Table giữ nguyên HTML — Markdown không có ngữ nghĩa tương đương.
+      // Table giữ nguyên HTML — Markdown không có ngữ nghĩa tương đương. Vì là HTML,
+      // entity ở đây PHẢI giữ dạng mã hoá: giải mã sẽ biến `&lt;script&gt;` thành thẻ.
       return `\n${inner}\n`
     case 'iframe': case 'script': case 'style': case 'div': case 'span': case 'figure': case 'figcaption':
     default:

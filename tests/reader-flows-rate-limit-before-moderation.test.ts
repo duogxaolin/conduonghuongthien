@@ -38,8 +38,9 @@ mock.module(new URL('../server/services/moderation-worker.ts', import.meta.url),
       order.push('moderation')
       moderationContexts.push(context)
       return moderatorBlocks
-        ? { blocked: true, action: 'block', severity: 'high', reason: 'Nội dung vi phạm tiêu chuẩn (thử).', matchedRule: 'thử' }
-        : { blocked: false, action: 'allow', severity: 'low', reason: '', matchedRule: '' }
+        // `publicMessage` is what the reader is told (verify of 4.3c follow-up, W8): never `reason`.
+        ? { blocked: true, action: 'block', severity: 'high', reason: 'Nội dung vi phạm tiêu chuẩn (thử).', matchedRule: 'thử', publicMessage: 'Nội dung vi phạm tiêu chuẩn.' }
+        : { blocked: false, action: 'allow', severity: 'low', reason: '', matchedRule: '', publicMessage: '' }
     },
     checkAndModerateContent: async (input: Record<string, unknown>) => {
       backgroundChecks.push(input)

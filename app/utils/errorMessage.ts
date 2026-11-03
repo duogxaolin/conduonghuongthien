@@ -105,9 +105,31 @@ export function errorStatus(error: unknown): number | null {
  * trước lúc lượt cũ về. Đối xử với nó như lỗi sẽ hiện một thông báo đỏ cho một
  * thao tác đã thành công, và tệ hơn: thông báo đó thuộc về lượt fetch **cũ**,
  * nên nó đè lên kết quả của lượt mới vừa hiện ra.
+ *
+ * `$fetch` (ofetch) KHÔNG ném lại lỗi huỷ nguyên trạng: nó bọc thành `FetchError`
+ * (`name: 'FetchError'`, "[GET] …: <no response> This operation was aborted") và giữ
+ * lỗi gốc ở `cause`; `useFetch`/`useAsyncData` còn bọc thêm một lớp. Nên hàm đi dọc
+ * chuỗi `cause` (tối đa `ABORT_CAUSE_DEPTH` lớp, không lặp vòng) tìm `AbortError`
+ * (`abort()` không lý do) hoặc `CanceledError` (axios). Chỉ đọc `name` của lớp ngoài
+ * cùng thì một lượt huỷ thật của ofetch không bao giờ được nhận ra. `TimeoutError`
+ * (hết `timeout` của ofetch, `AbortSignal.timeout`) KHÔNG phải lượt tự huỷ: đó là lượt
+ * hỏng người dùng phải thấy. (`tests/error-abort-detection.test.ts`, ofetch thật.)
  */
 export function isAbortError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const name = (error as { name?: unknown }).name
-  return name === 'AbortError' || name === 'CanceledError'
+  const seen = new Set<object>()
+  let current: unknown = error
+  for (let depth = 0; depth <= ABORT_CAUSE_DEPTH; depth += 1) {
+    if (!current || typeof current !== 'object' || seen.has(current)) return false
+    seen.add(current)
+    const name = (current as { name?: unknown }).name
+    if (name === 'AbortError' || name === 'CanceledError') return true
+    current = (current as { cause?: unknown }).cause
+  }
+  return false
 }
+
+/**
+ * Số lớp `cause` tối đa phía dưới lỗi bắt được: ofetch bọc một lớp, Nuxt thêm một —
+ * dư cho vài lớp nữa của chính trang, chặn một chuỗi vô tận.
+ */
+const ABORT_CAUSE_DEPTH = 4

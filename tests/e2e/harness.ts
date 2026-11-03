@@ -6,7 +6,15 @@
  * chosen at setup time could never reach the config.
  */
 export const E2E_PORT = 3123
-export const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`
+/**
+ * `localhost`, not `127.0.0.1`. The server runs as production, where session
+ * cookies carry `Secure` (server/utils/request-secure.ts). Chromium keeps a
+ * `Secure` cookie over plain HTTP on both loopback names, but Playwright's
+ * request context (`page.request`) only sends one to `localhost`/`*.localhost`
+ * (its `isLocalHostname`) — on `127.0.0.1` every API call after a browser login
+ * was a 401. The server itself still binds 127.0.0.1 only (global-setup.ts).
+ */
+export const E2E_BASE_URL = `http://localhost:${E2E_PORT}`
 
 /** Env keys globalSetup exports for the workers to read. */
 export const E2E_ADMIN_USERNAME = 'admin'

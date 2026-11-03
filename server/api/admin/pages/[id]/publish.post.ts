@@ -1,9 +1,10 @@
 import { getDb } from '../../../../utils/db'
 import { pages, pageBlocks, pageVersions, activityLogs } from '../../../../db/schema'
 import { normalizeBlocks, VERSION_LIMITS } from '../../../../utils/page-versions'
-import type { BlockNode } from '../../../../../app/utils/blocks/types'
+import type { BlockNode } from '../../../../../shared/blocks/types'
 import { and, asc, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { purgePublicPageCacheAfterWrite } from '../../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -38,7 +39,9 @@ export default defineEventHandler(async (event) => {
 
     let snapshot: BlockNode[] | null = null
     if (Array.isArray(prevTree) && prevTree.length) {
-      snapshot = normalizeBlocks(prevTree)
+      // `links: 'keep'`: a snapshot of what is live, as it is. A legacy unsafe
+      // link in the OLD tree must not 400 the publish that replaces it.
+      snapshot = normalizeBlocks(prevTree, { links: 'keep' })
     } else if (current.length) {
       snapshot = current.map((b) => ({
         blockType: b.blockType,
@@ -132,6 +135,10 @@ export default defineEventHandler(async (event) => {
       meta: { pageId, action: 'publish', blockCount: nextBlocks.length, tree: isTree },
     })
   })
+
+  // After the commit: the published blocks of `/`, `/about`, `/contact` are in their
+  // `swr`-cached HTML — without this a publish showed up ≥ 60 s later (public-page-cache.ts).
+  await purgePublicPageCacheAfterWrite('pages.publish')
 
   // Return the freshly-published state so the client can re-key.
   // Tree pages return the normalized tree (tmp ids preserved — the builder always

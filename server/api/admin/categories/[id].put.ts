@@ -1,9 +1,7 @@
-import { getDb } from '../../../utils/db'
-import { categories } from '../../../db/schema'
-import { uniqueCategorySlug } from '../../../utils/slug'
-import { eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateCategoryUpdate } from '../../../services/i18n-auto-translate'
+import { readCategoryName, readDisplayOrder, readParentId, updateCategory, type CategoryUpdateInput } from '../../../services/category-writes'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -12,64 +10,33 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid category ID' })
 
-  const db = getDb()
-  const [existing] = await db.select().from(categories).where(eq(categories.id, id)).limit(1)
-  if (!existing) {
-    throw createError({ statusCode: 404, statusMessage: 'Danh mục không tồn tại.' })
-  }
-
   const body = await readBody(event).catch(() => ({}))
-  const updateFields: Partial<typeof categories.$inferInsert> = {}
+  const input: CategoryUpdateInput = {}
+  // `name: null` used to be stored as the text "null"; a parent that is not an id or an order
+  // that is not a number reached MySQL as a 500 — all 400 now (services/category-writes.ts).
+  if (body.name !== undefined) input.name = readCategoryName(body.name)
+  if (body.type !== undefined) input.type = String(body.type).trim()
+  if (body.description !== undefined) { const d = String(body.description).trim(); input.description = (!d || d.toLowerCase() === 'null') ? null : d }
+  if (body.displayOrder !== undefined) input.displayOrder = readDisplayOrder(body.displayOrder, 0)
+  if (body.slug !== undefined) input.rawSlug = String(body.slug).trim()
+  if ('parentId' in body) input.parentId = readParentId(body.parentId)
 
-  if (body.name !== undefined) updateFields.name = String(body.name).trim()
-  if (body.type !== undefined) updateFields.type = String(body.type).trim()
-  if (body.description !== undefined) { const d = String(body.description).trim(); updateFields.description = (!d || d.toLowerCase() === 'null') ? null : d }
-  if (body.displayOrder !== undefined) updateFields.displayOrder = Number(body.displayOrder)
-
-  // Slug: regenerate/validate on name or slug change, excluding the current row from collision check
-  if (body.slug !== undefined || body.name !== undefined) {
-    const rawSlug = body.slug !== undefined ? String(body.slug).trim() : ''
-    const base = rawSlug || updateFields.name || existing.name
-    updateFields.slug = await uniqueCategorySlug(db, base, id)
-  }
-
-  // parentId update
-  if ('parentId' in body) {
-    const parentId = body.parentId ? Number(body.parentId) : null
-    if (parentId) {
-      if (parentId === id) {
-        throw createError({ statusCode: 400, statusMessage: 'Không thể đặt danh mục làm cha của chính nó.' })
-      }
-      const [parent] = await db.select().from(categories).where(eq(categories.id, parentId)).limit(1)
-      if (!parent) {
-        throw createError({ statusCode: 400, statusMessage: 'Danh mục cha không tồn tại.' })
-      }
-      if (parent.parentId !== null) {
-        throw createError({ statusCode: 400, statusMessage: 'Chỉ cho phép 1 cấp cha-con.' })
-      }
-      // Cannot set parent if this category itself has children
-      const children = await db.select({ id: categories.id }).from(categories).where(eq(categories.parentId, id)).limit(1)
-      if (children.length > 0) {
-        throw createError({ statusCode: 400, statusMessage: 'Không thể đặt danh mục cha cho danh mục đã có con.' })
-      }
-    }
-    updateFields.parentId = parentId
-  }
-
-  if (Object.keys(updateFields).length === 0) {
+  // Existence, parent rules, same-name check (where the category will be) and the update in
+  // one transaction — services/category-writes.ts.
+  const result = await updateCategory(adminUser, id, input)
+  if (!result.written) {
     return { ok: true }
   }
 
-  await db.update(categories).set(updateFields).where(eq(categories.id, id))
-
-  // Non-blocking i18n auto-translate update khi name/description đổi.
-  if (updateFields.name !== undefined || updateFields.description !== undefined) {
-    const trSlug = updateFields.slug ?? existing.slug
-    const trName = (updateFields.name ?? existing.name) as string
-    const trDesc = (updateFields.description !== undefined ? updateFields.description : existing.description) as string | null
-    void autoTranslateCategoryUpdate(adminUser, trSlug, trName, trDesc).catch(() => {})
+  // Non-blocking i18n auto-translate update khi name/description đổi, after the commit.
+  if (result.textChanged) {
+    void autoTranslateCategoryUpdate(adminUser, result.slug, result.name, result.description).catch(() => {})
   }
 
-  const resultSlug = updateFields.slug ?? existing.slug
-  return { ok: true, slug: resultSlug }
+  // After the commit, only when something was written: a renamed or re-slugged category
+  // changes `/news/<category>` (the old slug now renders 404) and every cached list that
+  // shows it (server/utils/public-page-cache.ts).
+  await purgePublicPageCacheAfterWrite('categories.update')
+
+  return { ok: true, slug: result.slug }
 })

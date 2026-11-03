@@ -161,16 +161,81 @@ test('the statement is ordered and limited so one run cannot lock the table', as
   assert.match(pool.calls[0].sql, /ORDER BY id LIMIT \?$/)
 })
 
-test('lapsed rate-limit buckets are swept in the same nightly pass', async () => {
-  // Otherwise the table keeps one row per source IP for the life of the deploy.
+// ─── Rate-limit counters: their own pass, not a tail of this one ─────────────
+//
+// The counter sweep used to be the LAST statement of `runDataRetention`: a scope
+// that threw before it returned 'failed' and skipped it, and with auto-cleanup
+// switched off the pass never ran at all — the table only grew (design D16).
+
+/** A pool that grants the named lock and models the counter DELETE. */
+function lockingCounterPool(affected: number[]) {
+  const statements: string[] = []
+  const queue = [...affected]
+  const connection = {
+    release() {},
+    async query(sql: string, _params: unknown[] = []) {
+      statements.push(sql)
+      if (sql.startsWith('SELECT GET_LOCK')) return [[{ acquired: 1 }]]
+      if (sql.startsWith('SELECT RELEASE_LOCK')) return [[{ released: 1 }]]
+      if (sql.startsWith('DELETE FROM rate_limit_counters')) return [{ affectedRows: queue.shift() ?? 0 }]
+      throw new Error(`unexpected statement: ${sql}`)
+    },
+  }
+  return { statements, async getConnection() { return connection } }
+}
+
+test('the retention pass no longer touches rate-limit counters', async () => {
   const pool = fakePool({ activity_logs: [0], rate_limit_counters: [42] })
   const result = await runDataRetention({ now: NOW, activityLogDays: 365, connection: pool as never })
 
-  const sweep = pool.calls.find(c => c.sql.includes('rate_limit_counters'))
-  assert.ok(sweep, 'expired lockout counters are never removed')
-  assert.match(sweep!.sql, /window_expires_at <= \?/)
-  assert.equal((sweep!.params[0] as Date).toISOString(), NOW.toISOString())
-  assert.equal(result.purgedRateLimits, 42)
+  assert.equal(result.status, 'success')
+  assert.ok(!pool.calls.some(c => c.sql.includes('rate_limit_counters')), 'the counter sweep is still a tail of the retention pass')
+  assert.ok(!('purgedRateLimits' in result), 'a field that is always 0 would read as "nothing to purge"')
+})
+
+test('a failed retention run leaves the separate, separately locked counter purge able to run', async () => {
+  const { runRateLimitPurgePass, RATE_LIMIT_PURGE_LOCK } = await import('../server/services/rate-limit-purge-scheduler')
+  const failing = {
+    calls: [] as string[],
+    async getConnection() {
+      return {
+        release() {},
+        query: async (sql: string) => {
+          failing.calls.push(sql)
+          throw new Error('Lock wait timeout exceeded')
+        },
+      }
+    },
+    async end() {},
+  }
+  const retention = await runDataRetention({ now: NOW, activityLogDays: 365, connection: failing as never })
+  assert.equal(retention.status, 'failed')
+
+  // The purge is its own pass under its own lock: the failure above has nothing
+  // to skip, and the next tick of the purge timer still drains the table.
+  const pool = lockingCounterPool([5000, 1234])
+  const purge = await runRateLimitPurgePass({ pool: pool as never, now: () => NOW.getTime() })
+  assert.equal(purge.ran, true)
+  assert.equal(purge.ran && purge.result.deleted, 6234)
+  assert.ok(pool.statements.some(sql => sql.startsWith('SELECT GET_LOCK')), 'the purge must hold a named lock')
+  assert.ok(RATE_LIMIT_PURGE_LOCK !== 'cdkt:data:retention', 'sharing the retention lock would make a long purge skip the counter sweep')
+})
+
+test('the counter purge runs whether or not auto-cleanup is switched on', () => {
+  const service = readFileSync(new URL('../server/services/rate-limit-purge-scheduler.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+  // The admin switch lives in the retention policy; the purge must never read it.
+  assert.doesNotMatch(service, /retention-policy|resolveRetentionPolicy|autoEnabled/)
+  assert.match(service, /withNamedLock\(/)
+  assert.match(service, /LOCK_TIMEOUT_SECONDS = 0/)
+  assert.equal((service.match(/\.unref\?\.\(\)/g) ?? []).length, 2, 'both the interval and the warm-up must be unref\'d')
+
+  const plugin = readFileSync(new URL('../server/plugins/retention-scheduler.ts', import.meta.url), 'utf8')
+  assert.match(plugin, /startRateLimitPurgeScheduler\(\)/, 'nothing starts the counter purge timer')
+  // The cron entry point covers deployments that run RETENTION_SCHEDULER=0.
+  // Behaviour of that path: tests/analytics-maintenance-script.test.ts.
+  const script = readFileSync(new URL('../scripts/analytics-maintenance.ts', import.meta.url), 'utf8')
+  assert.match(script, /await reportRateLimitPurge\(\)/)
 })
 
 test('a database failure is reported rather than thrown at cron', async () => {
@@ -321,12 +386,15 @@ test('the nightly script runs retention as well as analytics', () => {
   assert.match(script, /ignoreSchedule: true/)
   assert.match(script, /trigger: 'cron'/)
   assert.doesNotMatch(script, /force: true/)
-  // A stale aggregate must not stop a retention purge that is a policy obligation.
-  assert.match(script, /result\.status === 'failed'\s*\?\s*null/)
-  assert.match(script, /retention\.result\.status === 'failed'/)
+  // A stale aggregate must not stop a retention purge that is a policy obligation:
+  // only a FAILED analytics run (or one that threw) skips retention.
+  assert.match(script, /const analyticsFailed = !result \|\| result\.status === 'failed'/)
+  assert.match(script, /analyticsFailed\s*\?\s*null/)
+  assert.match(script, /retentionRun\?\.status === 'failed'/)
   // An open pool keeps the event loop alive, so the cron job would print its
-  // result and then hang instead of exiting.
-  assert.match(script, /closeDb\(\)/)
+  // result and then hang instead of exiting — hence `finally`. Behaviour of every
+  // failure path: tests/analytics-maintenance-script.test.ts.
+  assert.match(script, /finally \{[\s\S]*await closeDb\(\)/)
 })
 
 // ─── chat_sessions scope ──────────────────────────────────────────────────────
@@ -459,3 +527,36 @@ test('the fifth scope is absent from the run only when its window is disabled', 
   assert.equal(entry.deleted, 11)
   assert.equal(result.tables.length, 5, 'the run silently purged fewer tables than the policy declares')
 })
+
+// ─── Every table's age and order column, in one place ───────────────────────
+/**
+ * `TABLE_COLUMNS` (server/services/data-retention.ts) decides WHICH rows each scope deletes: a
+ * table aged on the wrong column deletes live data (a reader who commented yesterday, aged by
+ * `created_at`, is gone with an account opened two years ago) or nothing at all. Three tables
+ * were pinned one by one above; `reader_accounts.last_seen_at` was not pinned anywhere
+ * (verify of the wave3 test slices, S9). Pinned here for all five, age pass AND row cap, on
+ * the exact statements the engine sends — the map itself stays private.
+ */
+const AGE_AND_ORDER: Array<{ table: string, days: string, maxRows: string, age: string, order: string, nullableOrder?: true }> = [
+  { table: 'activity_logs', days: 'activityLogDays', maxRows: 'activityLogMaxRows', age: 'created_at', order: 'id' },
+  { table: 'submissions', days: 'submissionDays', maxRows: 'submissionMaxRows', age: 'created_at', order: 'id' },
+  { table: 'chat_sessions', days: 'chatSessionDays', maxRows: 'chatSessionMaxRows', age: 'last_message_at', order: 'last_message_at' },
+  { table: 'reader_accounts', days: 'readerAccountDays', maxRows: 'readerAccountMaxRows', age: 'last_seen_at', order: 'last_seen_at' },
+  { table: 'livestream_sessions', days: 'livestreamSessionDays', maxRows: 'livestreamSessionMaxRows', age: 'ended_at', order: 'ended_at', nullableOrder: true },
+]
+const EVERY_WINDOW_OFF = Object.fromEntries(AGE_AND_ORDER.flatMap(({ days, maxRows }) => [[days, 0], [maxRows, 0]]))
+
+for (const { table, days, maxRows, age, order, nullableOrder } of AGE_AND_ORDER) {
+  test(`${table}: ages on ${age} and trims oldest-first by ${order} — the exact statements`, async () => {
+    const aged = fakePool({ [table]: [3] })
+    await runDataRetention({ now: NOW, ...EVERY_WINDOW_OFF, [days]: 90, batchSize: 1000, connection: aged as never })
+    const deletes = aged.calls.filter(call => call.sql.startsWith('DELETE FROM'))
+    assert.deepEqual(deletes.map(call => call.sql), [`DELETE FROM ${table} WHERE ${age} IS NOT NULL AND ${age} < ? ORDER BY ${order} LIMIT ?`])
+    assert.equal((deletes[0]!.params[0] as Date).toISOString(), '2026-04-27T03:00:00.000Z', '90 days before the run, on that column')
+
+    const capped = fakePool({ [table]: [100] }, { [table]: 1_100 })
+    await runDataRetention({ now: NOW, ...EVERY_WINDOW_OFF, [maxRows]: 1_000, batchSize: 1000, connection: capped as never })
+    const guard = nullableOrder ? ` WHERE ${order} IS NOT NULL` : ''
+    assert.deepEqual(capped.calls.filter(call => call.sql.startsWith('DELETE FROM')).map(call => call.sql), [`DELETE FROM ${table}${guard} ORDER BY ${order} LIMIT ?`])
+  })
+}

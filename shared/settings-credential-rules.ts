@@ -27,9 +27,10 @@ export const MASKED_SECRET = '********'
 
 // ─── SMTP ─────────────────────────────────────────────────────────────────────
 //
-// Bản SMTP dưới đây PHẢI trùng `server/utils/smtp-test-config.ts` (nơi endpoint
-// "gửi thử" dùng). `tests/settings-credential-rules.test.ts` chạy cả hai bản trên
-// cùng một bảng đầu vào và đỏ nếu chúng lệch nhau.
+// Luật SMTP dưới đây là bản DUY NHẤT: endpoint "gửi thử" dùng chính các hàm này qua
+// `server/utils/smtp-test-config.ts` (import + re-export, không chép). Trước đây tệp
+// đó giữ một bản chép riêng; thêm cổng ở một bên thì nút "gửi thử" và nút "lưu"
+// quyết khác nhau. `tests/settings-credential-rules.test.ts` đỏ nếu bản chép quay lại.
 
 /**
  * Cổng SMTP được phép: 25 (relay), 465 (TLS ngầm), 587 (submission), 2525 (cổng
@@ -55,7 +56,8 @@ export function isAllowedSmtpPort(port: number | null): boolean {
   return port !== null && SMTP_ALLOWED_PORTS.includes(port)
 }
 
-const isTruthy = (value: unknown) => ['true', '1', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase())
+/** Giá trị cờ `smtp_secure` (chuỗi trong bảng `settings` hoặc thân request) có bật không. */
+export const isTruthy = (value: unknown) => ['true', '1', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase())
 
 /** Đích kết nối SMTP hiệu lực — chuẩn hoá giống `getSmtpConfig` để so "có đổi máy chủ không". */
 export interface SmtpTarget {
@@ -178,6 +180,18 @@ export function credentialRetargetViolation(body: SettingsBody, current: Readonl
 
 // ─── Quyết định cho biểu mẫu Media Portal (R2 riêng cho video) ─────────────────
 
+/**
+ * Ô Secret Key R2 video mang một bí mật MỚI thật sự không. Rỗng/khoảng trắng =
+ * "giữ nguyên" (trang để trống); `MASKED_SECRET` cũng vậy — GET trả dấu che cho bí
+ * mật đã lưu, nên một client gửi lại nguyên văn không được lưu chuỗi `********` đè
+ * lên bí mật thật, và cũng không được coi là đã nhập lại để đổi account/bucket.
+ * Dùng chung với `settings/media-portal.put.ts` (bước "giữ nguyên").
+ */
+export function isRetypedVideoSecret(value: unknown): boolean {
+  const typed = text(value).trim()
+  return typed !== '' && typed !== MASKED_SECRET
+}
+
 /** Giá trị R2 video đang lưu. `secretStored` = đã có một bí mật (kể cả không giải mã được). */
 export interface StoredVideoR2 {
   accountId: string
@@ -199,7 +213,9 @@ export interface StoredVideoR2 {
  * từ trước gửi lại nguyên văn không chặn việc lưu các ô khác.
  */
 export function videoR2RetargetViolation(fields: SettingsBody, stored: StoredVideoR2): string | null {
-  const retyped = has(fields, 'videoR2SecretKey') && text(fields.videoR2SecretKey).trim() !== ''
+  // Blank or the mask (`MASKED_SECRET`, what the GET reports for a saved secret)
+  // both mean "keep the saved one" — neither is the secret typed again.
+  const retyped = has(fields, 'videoR2SecretKey') && isRetypedVideoSecret(fields.videoR2SecretKey)
 
   let destinationChanged = false
   if (has(fields, 'videoR2AccountId')) {

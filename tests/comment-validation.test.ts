@@ -2,7 +2,9 @@
  * Comment body validation, the one-level reply rule, and the public projection's
  * field list.
  *
- * All three are pure functions in server/services/comments.ts, and that is
+ * All three are pure functions of the comment service (exported from
+ * server/services/comments.ts; the code is in comments-rules.ts and
+ * comments-thread.ts), and that is
  * deliberate: they are the rules most likely to be "simplified" in a later
  * refactor, and a rule only exercisable against a live MySQL server is a rule
  * nobody exercises.
@@ -15,8 +17,8 @@
  * keys are present.
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
+import { fileDeclaring } from './_comments-service-source'
 
 const {
   COMMENT_MAX_LENGTH,
@@ -202,9 +204,11 @@ describe('the deletion impact counts every row the cascade takes', () => {
   /**
    * The counting rule, extracted from `countImpact` and exercised directly.
    *
-   * This mirrors the loop in server/services/comments.ts rather than calling it,
-   * because that function issues two queries. That is a real limit — a divergence
-   * between this copy and the source would not be caught here — but the bug it
+   * This mirrors the loop in `countImpact` (server/services/comments-deletion.ts)
+   * rather than calling it, because that function issues two queries. That is a
+   * real limit — a divergence between this copy and the source would not be
+   * caught here (the real function is driven against a fake database in
+   * tests/comments-service-behavior.test.ts) — but the bug it
    * guards against is a *rule* bug, not a query bug, and the rule is what shipped
    * wrong: the first version counted only `comments` + `adminReplies`, so a dialog
    * could truthfully say "2" while four rows disappeared.
@@ -271,7 +275,14 @@ describe('the deletion impact counts every row the cascade takes', () => {
     // The copy above tests the RULE; this anchors it to the source, so a refactor
     // that drops the third counter or stops distinguishing authors fails here even
     // though the copy would keep passing happily on its own.
-    const source = readFileSync(new URL('../server/services/comments.ts', import.meta.url), 'utf8')
+    //
+    // Read from whichever comment-service file declares `countImpact` (the barrel
+    // `comments.ts` holds no code since the wave2 split), and only from that
+    // function's own text — `adminUserId !== null` also appears in deleteComment.
+    const { source: file } = fileDeclaring('countImpact')
+    const start = file.indexOf('async function countImpact')
+    const next = file.indexOf('\nexport ', start)
+    const source = next === -1 ? file.slice(start) : file.slice(start, next)
     assert.match(source, /otherReaderReplies/, 'countImpact no longer counts other readers\' replies')
     assert.match(
       source,

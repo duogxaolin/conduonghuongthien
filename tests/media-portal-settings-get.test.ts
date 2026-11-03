@@ -92,3 +92,39 @@ test('the secret itself never leaves the server', async () => {
   const res = await get()
   assert.ok(!JSON.stringify(res).includes(STORED.media_video_r2_secret_key!))
 })
+
+/**
+ * Spec admin-settings-secrets: a stored `media_video_r2_secret_key` is reported as
+ * `********`, for every role — not `••••` + its last four characters, which is a
+ * piece of the credential. `secretStored` stays the page's "is one saved" signal.
+ */
+test('a stored video secret is reported as ******** — no last-four characters', async () => {
+  rows = { ...STORED }
+  const resolved = LOCAL_RESOLVED as { videoStorageSecretLastFour: string | null }
+  resolved.videoStorageSecretLastFour = 'WXYZ'
+  try {
+    for (const isSuperAdmin of [true, false]) {
+      const res = await handler({ context: { adminUser: { id: 1, isSuperAdmin, permissions: [] } } }) as unknown as { videoStorage: { secretMasked: string, secretStored: boolean } }
+      assert.equal(res.videoStorage.secretMasked, '********')
+      assert.equal(res.videoStorage.secretStored, true)
+      assert.doesNotMatch(JSON.stringify(res), /WXYZ|ABCD/, 'part of the secret left the server')
+    }
+  } finally {
+    resolved.videoStorageSecretLastFour = null
+  }
+})
+
+test('a secret that only the environment provides (nothing in the table) still reads as configured, masked', async () => {
+  rows = {}
+  const resolved = LOCAL_RESOLVED as { videoStorageSecretLastFour: string | null }
+  resolved.videoStorageSecretLastFour = 'WXYZ'
+  try {
+    const res = await get() as unknown as { videoStorage: { secretMasked: string, secretStored: boolean } }
+    assert.equal(res.videoStorage.secretMasked, '********')
+    assert.equal(res.videoStorage.secretStored, false)
+  } finally {
+    resolved.videoStorageSecretLastFour = null
+  }
+  const none = await get() as unknown as { videoStorage: { secretMasked: string } }
+  assert.equal(none.videoStorage.secretMasked, '', 'nothing configured anywhere → empty')
+})

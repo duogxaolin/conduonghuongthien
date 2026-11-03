@@ -224,7 +224,7 @@ test('văn bản dài được quét theo cửa sổ: nội dung sau ký tự th
   assert.equal(testModerationRegex('từ cấm', /từ cấm/iu, 'x'.repeat(MODERATION_REGEX_WINDOW * 2)), false)
 })
 
-test('văn bản dài + luật rẻ: KHÔNG tắt luật (đo theo từng cửa sổ, không cộng dồn) — tin dài không là công tắc tắt luật', async () => {
+test('văn bản dài + luật rẻ: KHÔNG tắt luật (200 ms trên 20 cửa sổ ≪ ngân sách cộng dồn 1 s/60 s) — một tin dài không là công tắc tắt luật', async () => {
   const mod = await import('../server/services/moderation-regex.ts')
   const { mock } = await import('node:test')
   const clock = { t: 0 }
@@ -234,7 +234,7 @@ test('văn bản dài + luật rẻ: KHÔNG tắt luật (đo theo từng cửa 
   try {
     mod.resetSlowModerationRules()
     const step = mod.MODERATION_REGEX_WINDOW - mod.MODERATION_REGEX_WINDOW_OVERLAP
-    // 20 cửa sổ, mỗi cửa sổ "tốn" 10 ms: tổng 200 ms > mọi ngưỡng cộng dồn cũ (50 ms).
+    // 20 cửa sổ, mỗi cửa sổ "tốn" 10 ms: tổng 200 ms > ngưỡng cộng dồn cũ (50 ms), dưới ngân sách 1 s.
     const text = `${'x'.repeat(step * 19 + mod.MODERATION_REGEX_WINDOW - 3)}cấm`
     let calls = 0
     const fake = { test: (s: string) => { calls += 1; clock.t += 10; return s.includes('cấm') } } as unknown as RegExp
@@ -249,7 +249,10 @@ test('văn bản dài + luật rẻ: KHÔNG tắt luật (đo theo từng cửa 
   }
 })
 
-test('văn bản cực dài: dừng quét khi luật dùng quá tổng thời gian cho một văn bản, không tắt luật, log một lần', async () => {
+// Trước wave3 4.3c-tiếp: "dừng quét khi luật dùng quá 1 s cho một văn bản, KHÔNG tắt luật" — trần
+// đó chỉ chặn một văn bản, luật vẫn chạy mãi trên văn bản kế tiếp (C1). Nay ngân sách cộng dồn
+// 1 s/60 s mỗi luật chặn cả hai: dừng ở 1 s và tắt luật 10 phút.
+test('văn bản cực dài: luật dùng hết 1 s thì dừng quét trước cửa sổ kế VÀ bị tắt (lý do cumulative), log một lần', async () => {
   const mod = await import('../server/services/moderation-regex.ts')
   const { mock } = await import('node:test')
   const clock = { t: 0 }
@@ -263,10 +266,12 @@ test('văn bản cực dài: dừng quét khi luật dùng quá tổng thời gi
     let calls = 0
     const fake = { test: () => { calls += 1; clock.t += 10; return false } } as unknown as RegExp
     assert.equal(mod.testModerationRegex('cấm', fake, text), false)
-    assert.ok(calls < 300 && calls <= mod.MODERATION_RULE_CALL_BUDGET_MS / 10 + 1, `dừng sớm, đã chạy ${calls} cửa sổ`)
-    assert.equal(mod.isModerationRuleDisabled('cấm'), false)
+    assert.equal(calls, mod.MODERATION_RULE_CUMULATIVE_BUDGET_MS / 10, `dừng đúng ở 1 s, đã chạy ${calls} cửa sổ`)
+    assert.equal(mod.isModerationRuleDisabled('cấm'), true)
     mod.testModerationRegex('cấm', fake, text)
-    assert.equal(lines.filter(l => l.event === 'ai_moderation.rule_scan_truncated').length, 1, 'log tối đa một lần mỗi khoảng chờ')
+    assert.equal(calls, mod.MODERATION_RULE_CUMULATIVE_BUDGET_MS / 10, 'đang tắt → không chạy')
+    const logged = lines.filter(l => l.event === 'ai_moderation.rule_slow_disabled')
+    assert.deepEqual(logged.map(l => [l.reason, l.elapsedMs]), [['cumulative', 1000]], 'log đúng một lần')
   } finally {
     spy.mock.restore()
     mod.setModerationRegexTimingForTests(null)

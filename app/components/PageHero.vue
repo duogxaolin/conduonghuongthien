@@ -10,7 +10,7 @@
   tự đặt breadcrumb, badge, tiêu đề, mô tả theo cấu trúc riêng nhưng cùng style.
 -->
 <template>
-  <section class="border-b border-[#DDE6DC] bg-gradient-to-b from-[#EEF5EB] via-[#F5FAF3] to-[#F7FAF6]">
+  <section class="border-b border-line bg-gradient-to-b from-surface-tint via-surface-tint to-surface">
     <div class="container pt-6 sm:pt-8 pb-6 sm:pb-7">
       <slot />
     </div>

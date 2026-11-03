@@ -19,6 +19,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { mock } from 'node:test'
+import { restoreRefusalStubs } from './_restore-refusal-stubs'
 
 import { MySqlDialect } from 'drizzle-orm/mysql-core'
 
@@ -213,6 +214,7 @@ mock.module(new URL('../server/services/backup.ts', import.meta.url), {
       if (rec.backupFails) throw new Error('backup down')
       return { stamp: 'stamp-1' }
     },
+    ...restoreRefusalStubs(),
   },
 })
 mock.module(new URL('../server/utils/media-r2.ts', import.meta.url), {

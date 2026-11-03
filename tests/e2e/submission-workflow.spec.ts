@@ -15,7 +15,7 @@
  * rollback, `affectedRows` đọc sai, `insertId` undefined, state machine chặc
  * phép chuyển cấm — đều làm spec đỏ, kể cả dạng chưa ai gặp.
  *
- * State machine (`app/utils/submission-status.ts`): `new` là trạng thái gốc và
+ * State machine (`shared/submission-status.ts`): `new` là trạng thái gốc và
  * **không** nằm trong đích đến của bất kỳ trạng thái nào (một đơn đã xem không
  * "chưa tiếp nhận" lại được). Mọi trạng thái khác đến được lẫn nhau. Spec đi
  * `new → in_progress → resolved` và `new → rejected` để chạm cả nhánh đóng.

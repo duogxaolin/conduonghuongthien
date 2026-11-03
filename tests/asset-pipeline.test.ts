@@ -37,6 +37,8 @@ function familiesUsedInSource(): Set<string> {
     }
   }
   walk('app')
+  // shared/ cũng mang lớp icon mà giao diện vẽ (registry block, huy hiệu trạng thái đơn).
+  walk('shared')
   return used
 }
 

@@ -20,6 +20,8 @@
  * anything they see.
  */
 import { computed, ref } from 'vue'
+import type { ReaderNotificationsReadResponse, ReaderNotificationsResponse } from '../types/public-reader-api'
+import { publicFetch } from './publicFetch'
 
 export type NotificationTarget = {
   articleTitle: string
@@ -36,16 +38,6 @@ export type NotificationItem = {
   /** Null when the reply can no longer be reached — unpublished article, or
    *  comments turned off (which hides a thread without deleting rows). */
   target:       NotificationTarget | null
-}
-
-type NotificationResponse = {
-  ok:          boolean
-  items:       NotificationItem[]
-  total:       number
-  unreadCount: number
-  page:        number
-  perPage:     number
-  totalPages:  number
 }
 
 /** Module-level: one list per page, not one per component. */
@@ -90,7 +82,7 @@ export function useReaderNotifications() {
       pending.value = true
       failed.value = false
       try {
-        const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<NotificationResponse>)('/api/public/reader/notifications', {
+        const response = await publicFetch<ReaderNotificationsResponse>('/api/public/reader/notifications', {
           query: { page: targetPage },
         })
         items.value = response?.items ?? []
@@ -140,7 +132,7 @@ export function useReaderNotifications() {
     unreadCount.value = Math.max(0, unreadCount.value - changed)
 
     try {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/notifications/read', {
+      await publicFetch<ReaderNotificationsReadResponse>('/api/public/reader/notifications/read', {
         method: 'POST',
         body: { ids: wanted },
       })
@@ -156,7 +148,7 @@ export function useReaderNotifications() {
     unreadCount.value = 0
 
     try {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/notifications/read', {
+      await publicFetch<ReaderNotificationsReadResponse>('/api/public/reader/notifications/read', {
         method: 'POST',
         body: { all: true },
       })

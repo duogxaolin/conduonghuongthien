@@ -28,7 +28,11 @@ dump() {
   for i in $(seq 1 25); do printf 'CREATE TABLE `t%s` (id int);\n' "$i"; done
   head -c 60000 /dev/zero | tr '\0' 'x'
   printf '\n'
-  if [ "${FAKE_DUMP_TRUNCATED:-0}" != 1 ]; then echo '-- Dump completed on 2026-01-01 00:00:00'; fi
+  # FAKE_DUMP_MARKER_MIDLINE=1: cut off inside an INSERT whose data holds the marker
+  # text — the last lines contain "Dump completed", but not at the start of a line.
+  if [ "${FAKE_DUMP_MARKER_MIDLINE:-0}" = 1 ]; then
+    echo "INSERT INTO \`t1\` VALUES (1,'see -- Dump completed on 2026-01-01 00:00:00 in the log');"
+  elif [ "${FAKE_DUMP_TRUNCATED:-0}" != 1 ]; then echo '-- Dump completed on 2026-01-01 00:00:00'; fi
 }
 
 case "$cmd" in
@@ -76,6 +80,17 @@ case "$cmd" in
     exit 0 ;;
   logs)
     echo 'fake app log line'; exit 0 ;;
+  info)
+    # FAKE_LOG_PLUGINS: `docker info --format {{json .Plugins.Log}}` (default: the
+    # daemon has the journald driver). Any other format: FAKE_DOCKER_ROOT.
+    case "$*" in
+      *Plugins.Log*) echo "${FAKE_LOG_PLUGINS-[\"awslogs\",\"fluentd\",\"journald\",\"json-file\",\"local\"]}" ;;
+      *) echo "${FAKE_DOCKER_ROOT:-}" ;;
+    esac
+    exit 0 ;;
+  run)
+    # The throwaway journald probe. FAKE_JOURNALD_RUN_RC forces its exit code.
+    exit "${FAKE_JOURNALD_RUN_RC:-0}" ;;
   cp)
     src="${1:-}"
     path="${src#*:}"
@@ -91,7 +106,18 @@ case "$cmd" in
     case "$sub" in
       pull)  exit "${FAKE_COMPOSE_PULL_RC:-0}" ;;
       build) exit "${FAKE_BUILD_RC:-0}" ;;
-      up|stop|config|down) exit 0 ;;
+      config)
+        # `config -q` validates only; plain `config` prints the merged model, whose
+        # services.app.logging.driver is FAKE_COMPOSE_APP_LOG_DRIVER — unset: json-file
+        # when docker-compose.override.yml sets it, else journald (docker-compose.yml).
+        case " $* " in *' -q '*) exit 0 ;; esac
+        driver="${FAKE_COMPOSE_APP_LOG_DRIVER:-}"
+        if [ -z "$driver" ]; then
+          if grep -s 'driver: json-file' "$SANDBOX/docker-compose.override.yml" >/dev/null; then driver=json-file; else driver=journald; fi
+        fi
+        printf 'name: sandbox\nservices:\n  app:\n    image: x\n    logging:\n      driver: %s\n  mysql:\n    logging:\n      driver: json-file\n' "$driver"
+        exit 0 ;;
+      up|stop|down) exit 0 ;;
       ps)
         # FAKE_COMPOSE_PS_RC: `compose ps` itself fails (old Compose without --status,
         # broken compose file) — prints nothing, exits non-zero.

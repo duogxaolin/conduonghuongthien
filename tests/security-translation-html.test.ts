@@ -10,7 +10,9 @@ import { sanitizeTranslationFields, stripMarkup } from '../server/utils/translat
  * được lọc lúc ghi còn bản dịch thì không — ở bài viết (`article_translations`,
  * cả sửa tay lẫn AI dịch) và ở khối trang (`data.translations[lang]`, mà lớp lọc
  * khối chỉ nhìn cấp ngoài). Các test này giữ cả ba đường đã đóng, và chặn một đường
- * ghi mới bỏ sót.
+ * ghi mới bỏ sót. Lọc lúc ĐỌC ở hai endpoint công khai (`articles/[slug]`,
+ * `pages/[slug]`) được kiểm bằng cách chạy handler thật trên hàng độc hại đã lưu:
+ * `tests/public-translation-sanitize-behavior.test.ts`.
  */
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -102,13 +104,6 @@ test('the one-off cleanup writes only content that went through sanitizeHtml', (
   assert.match(source, /set\(\{ content: fix\.content \}\)/, 'it writes the planned (sanitized) content and nothing else')
 })
 
-test('the public article endpoint sanitizes a stored translation when serving it', () => {
-  // Rows written before the write-side filter existed are still in the database.
-  const source = read('../server/api/public/articles/[slug].get.ts')
-  assert.match(source, /sanitizeHtml\(translation\.content\)/)
-  assert.doesNotMatch(source, /content:\s*translation\.content\s*(\?\?|,)/, 'the stored value is served as-is again')
-})
-
 // ─── Khối trang: bản dịch lồng trong data.translations ───────────────────────
 
 test('block translations are sanitized, not only the top-level fields', () => {
@@ -135,12 +130,6 @@ test('a hostile translations value cannot break the sanitizer', () => {
     assert.doesNotThrow(() => sanitizeBlockData({ html: '<p>ok</p>', translations: bad }))
   }
   assert.deepEqual(sanitizeBlockData({ translations: [1] }).translations, [1])
-})
-
-test('the public page endpoint sanitizes the merged block data at read time', () => {
-  const source = read('../server/api/public/pages/[slug].get.ts')
-  assert.equal((source.match(/data:\s*sanitizeBlockData\(\{ \.\.\.rawData, \.\.\.langOverrides \}\)/g) ?? []).length, 2, 'both the tree and the flat path')
-  assert.doesNotMatch(source, /data:\s*\{ \.\.\.rawData, \.\.\.langOverrides \}/, 'an unsanitized merge is back')
 })
 
 test('sanitizeHtml itself still drops every payload used above', () => {

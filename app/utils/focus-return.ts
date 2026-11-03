@@ -18,7 +18,7 @@ export interface FocusReturn {
   /**
    * Gọi lúc đóng. Chỉ trả focus khi `shouldRestore` — nơi gọi truyền `false` nếu
    * người dùng đã tự chuyển focus sang chỗ khác (không giật focus của họ).
-   * Trả `true` nếu thực sự đã focus lại.
+   * Trả `true` nếu focus THỰC SỰ đã tới phần tử (kiểm `activeElement` sau `focus()`).
    */
   restore: (shouldRestore?: boolean) => boolean
 }
@@ -38,6 +38,45 @@ export function trapTabTarget(count: number, activeIndex: number, backwards: boo
   if (!backwards && activeIndex === count - 1) return 0
   if (backwards && activeIndex === 0) return count - 1
   return null
+}
+
+/**
+ * Một bộ chọn "có thể Tab tới" dùng chung cho hộp thoại công khai (design D24).
+ * Bản viết tay trong `ChatWidget` thiếu `select`, `summary` và phần tử có
+ * `tabindex` dương/0 — bẫy Tab bỏ sót chúng, focus lọt ra trang phía sau.
+ */
+export const TABBABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'summary',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+/** Phần DOM tối thiểu để xét một phần tử có đang hiện và Tab tới được không. */
+export interface TabbableLike {
+  tabIndex: number
+  offsetParent: unknown
+  getClientRects?: () => { length: number }
+  hasAttribute: (name: string) => boolean
+}
+
+/**
+ * Đang hiện + Tab tới được. `offsetParent === null` là "không được vẽ"
+ * (`display:none`, kể cả qua lớp `hidden md:flex` ở màn hẹp) — trừ phần tử
+ * `position: fixed`, vốn không có offsetParent dù đang hiện, nên kiểm thêm
+ * `getClientRects()`. `tabindex="-1"` (ô honeypot) và `disabled` bị loại.
+ */
+export function isVisibleTabbable(el: TabbableLike): boolean {
+  if (el.tabIndex < 0 || el.hasAttribute('disabled')) return false
+  return el.offsetParent !== null || (el.getClientRects?.().length ?? 0) > 0
+}
+
+/** Các phần tử Tab tới được đang hiện trong `root`, theo thứ tự tài liệu. */
+export function visibleTabbables<T extends TabbableLike>(root: { querySelectorAll: (selector: string) => ArrayLike<T> }): T[] {
+  return Array.from(root.querySelectorAll(TABBABLE_SELECTOR)).filter(isVisibleTabbable)
 }
 
 /** Phần DOM tối thiểu `inertOutside` cần — kiểm được bằng đối tượng giả, không cần DOM thật. */
@@ -103,7 +142,20 @@ export function inertOutside(root: InertNodeLike): () => void {
   }
 }
 
-export function createFocusReturn(isBody: (el: FocusTargetLike) => boolean = () => false): FocusReturn {
+/** Phần tử đang giữ focus của tài liệu (không có DOM — chạy test bằng đối tượng giả — thì không biết). */
+const documentActiveElement = (): unknown =>
+  typeof document === 'undefined' ? undefined : document.activeElement
+
+/**
+ * `restore()` trả `true` CHỈ KHI focus thực sự đã tới phần tử: `focus()` lên một nút
+ * `disabled`, đang ẩn hay đã mất `tabindex` là lặng lẽ không làm gì — báo "đã trả" thì
+ * nơi gọi bỏ qua đường dự phòng và focus nằm lại ở `<body>`. Không có DOM (đối tượng
+ * giả trong test) thì không kiểm được, coi như đã tới.
+ */
+export function createFocusReturn(
+  isBody: (el: FocusTargetLike) => boolean = () => false,
+  activeElement: () => unknown = documentActiveElement,
+): FocusReturn {
   let opener: FocusTargetLike | null = null
   return {
     remember(active) {
@@ -116,7 +168,8 @@ export function createFocusReturn(isBody: (el: FocusTargetLike) => boolean = () 
       if (!shouldRestore || !target) return false
       if (target.isConnected === false) return false
       target.focus()
-      return true
+      const now = activeElement()
+      return now === undefined || now === target
     },
   }
 }

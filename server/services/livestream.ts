@@ -235,6 +235,8 @@ export async function startLivestream(
     return { ok: false, statusCode: 409, message: 'Đang có một buổi phát trực tiếp. Hãy dừng buổi phát đó trước.' }
   }
 
+  // Committed: the next public read must not answer from the 3-second cache.
+  invalidateActiveLivestreamCache()
   return { ok: true, sessionId: outcome.value.created }
 }
 
@@ -306,6 +308,9 @@ export async function stopLivestream(
   if (outcome.kind === 'not_active') {
     return { ok: false, statusCode: 409, message: 'Buổi phát này đã dừng.' }
   }
+
+  // Committed: drop the 3-second cache before anyone is told the broadcast ended.
+  invalidateActiveLivestreamCache()
 
   // The database transition is authoritative.  Only after it commits do we end
   // the sockets that belong to this session; closing them first would tell
@@ -445,8 +450,51 @@ export type ActiveLivestream = {
   startedAt: Date | null
 }
 
-export async function getActiveLivestream(): Promise<ActiveLivestream | null> {
-  const [row] = await getDb()
+/**
+ * Cache ngắn trong tiến trình cho trạng thái công khai (spec live-status-polling,
+ * design D20).
+ *
+ * `/api/public/livestream/active` được mọi trang công khai hỏi định kỳ — trước
+ * đây mỗi lượt là một truy vấn. Endpoint đó đọc qua `getActiveLivestreamCached`:
+ * câu trả lời (chính **promise**, nên một loạt yêu cầu đồng thời trước khi truy
+ * vấn đầu tiên xong cũng chỉ tốn một truy vấn) được giữ 3 giây.
+ *
+ * `startLivestream`/`stopLivestream` xoá cache ngay sau khi giao dịch commit, nên
+ * trong cùng tiến trình thay đổi hiện ra ở lượt đọc kế tiếp; thay đổi từ ngoài
+ * tiến trình hiện ra sau tối đa 3 giây. Lượt đọc hỏng KHÔNG được giữ — một lần
+ * CSDL chập chờn không được phát lại cho mọi người hỏi trong 3 giây.
+ *
+ * `getActiveLivestream()` (luồng HLS, SSE chat) vẫn đọc thẳng: một luồng mở trên
+ * buổi phát vừa dừng là sai về nội dung, không chỉ trễ — đặc tả chỉ đòi cache cho
+ * lượt hỏi trạng thái.
+ */
+export const ACTIVE_LIVESTREAM_CACHE_MS = 3_000
+
+type ActiveLivestreamCacheEntry = { promise: Promise<ActiveLivestream | null>, expiresAt: number }
+let activeLivestreamCache: ActiveLivestreamCacheEntry | null = null
+
+export function invalidateActiveLivestreamCache(): void {
+  activeLivestreamCache = null
+}
+
+export function getActiveLivestreamCached(deps: { db?: Database, now?: () => number } = {}): Promise<ActiveLivestream | null> {
+  const now = (deps.now ?? Date.now)()
+  const cached = activeLivestreamCache
+  if (cached && now < cached.expiresAt) return cached.promise
+
+  const entry: ActiveLivestreamCacheEntry = {
+    promise: getActiveLivestream(deps.db),
+    expiresAt: now + ACTIVE_LIVESTREAM_CACHE_MS,
+  }
+  activeLivestreamCache = entry
+  entry.promise.catch(() => {
+    if (activeLivestreamCache === entry) activeLivestreamCache = null
+  })
+  return entry.promise
+}
+
+export async function getActiveLivestream(db: Database = getDb()): Promise<ActiveLivestream | null> {
+  const [row] = await db
     .select({
       id: livestreamSessions.id,
       title: livestreamSessions.title,

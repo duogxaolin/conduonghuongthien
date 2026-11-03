@@ -10,6 +10,13 @@
 
   `LiveHero` và `LiveTickerBar` cùng hỏi một endpoint, cùng poll 8 giây — cố ý
   tách: thanh thông báo là tiện ích phụ, hỏng không được làm hỏng khối hero chính.
+
+  ## Chỉ hỏi khi có thể hiện (design D20)
+
+  Thanh này nằm trong layout, tức là trên MỌI trang công khai. Trước đây nó hỏi
+  8 giây/lần cả ở `/media` (nơi nó không bao giờ hiện) lẫn trong tab đang ẩn.
+  Nay `createVisiblePoller`: không hỏi ở `/media`, dừng khi tab ẩn, hỏi ngay một
+  lần khi tab hiện lại hoặc khi rời `/media`.
 -->
 <template>
   <NuxtLink
@@ -31,7 +38,7 @@
             {{ session.title }}
           </span>
           <span class="block overflow-hidden text-[0.76rem] font-medium text-white/90 sm:hidden">
-            <span class="inline-block whitespace-nowrap animate-[ticker_18s_linear_infinite]" aria-hidden="true">
+            <span class="inline-block whitespace-nowrap animate-[ticker_18s_linear_infinite] motion-reduce:animate-none" aria-hidden="true">
               {{ session.title }}&nbsp;&nbsp;&nbsp;&nbsp;&bull;&nbsp;&nbsp;&nbsp;&nbsp;{{ session.title }}&nbsp;&nbsp;&nbsp;&nbsp;&bull;&nbsp;&nbsp;&nbsp;&nbsp;
             </span>
           </span>
@@ -44,7 +51,7 @@
           <i class="fa-regular fa-clock text-[0.6rem]" aria-hidden="true"></i>
           {{ startedLabel }}
         </span>
-        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#7CB342] text-[#122815] text-[0.68rem] font-bold transition-colors group-hover:bg-[#8BC34A]">
+        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-accent text-brand-950 text-[0.68rem] font-bold transition-colors group-hover:bg-[#8BC34A]">
           Xem ngay
           <i class="fa-solid fa-arrow-right text-[0.55rem]" aria-hidden="true"></i>
         </span>
@@ -54,8 +61,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { browserPollerEnv, createVisiblePoller, type VisiblePoller } from '~/utils/visible-poller'
+import { publicFetch } from '~/composables/publicFetch'
+import type { LivestreamActiveResponse } from '~/types/public-site-api'
 
 const route = useRoute()
 /** Ẩn ticker khi đang ở chính trang /media — ở đó LiveHero đã hiển thị buổi phát. */
@@ -84,7 +94,7 @@ const startedLabel = computed(() => {
 
 async function loadActive() {
   try {
-    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, active: boolean, session: ActiveSession | null }>)(
+    const response = await publicFetch<LivestreamActiveResponse>(
       '/api/public/livestream/active',
       { retry: 0, timeout: 4000 },
     )
@@ -104,13 +114,17 @@ async function loadActive() {
 }
 
 const ACTIVE_POLL_MS = 8_000
-let activePollTimer: number | undefined
+let poller: VisiblePoller | null = null
 
 onMounted(() => {
-  void loadActive()
-  activePollTimer = window.setInterval(() => { void loadActive() }, ACTIVE_POLL_MS)
+  poller = createVisiblePoller(() => { void loadActive() }, ACTIVE_POLL_MS, browserPollerEnv())
+  poller.start(!isOnMedia.value)
 })
+// The ticker is part of the layout and survives navigation: entering /media
+// stops the polling, leaving it polls once at once and resumes.
+watch(isOnMedia, (onMedia) => { poller?.setEnabled(!onMedia) })
 onBeforeUnmount(() => {
-  if (activePollTimer) window.clearInterval(activePollTimer)
+  poller?.stop()
+  poller = null
 })
 </script>

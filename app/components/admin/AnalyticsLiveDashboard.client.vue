@@ -5,37 +5,11 @@ import {
   type AnalyticsPanelPoller,
   type AnalyticsPanelPollingState,
 } from '~/utils/analytics-live-polling'
+// Suy từ handler (D-FETCH lô H) — thay ba kiểu viết tay cùng hình.
+import type { AnalyticsBreakdownResponse as BreakdownResponse, AnalyticsLiveResponse as LiveResponse, AnalyticsNocResponse as NocResponse } from '~/types/admin-dashboard-api'
 
 type BreakdownScope = 'path' | 'source_category' | 'device_class' | 'country_code' | 'region_code'
-type Freshness = 'current' | 'stale' | 'empty'
-type UniqueVisitorSemantics = 'approximate_minute_token'
-type LiveResponse = {
-  points: { bucketStart: string; pageViews: number; approximateUniqueVisitors: number; uniqueVisitorSemantics: UniqueVisitorSemantics }[]
-  fiveMinuteTotals: { pageViews: number; approximateUniqueVisitors: number; eventsPerMinute: number; uniqueVisitorSemantics: UniqueVisitorSemantics }
-  generatedAt: string
-  latestBucketStart: string | null
-  nextPollAfterSeconds: number
-  freshness: Freshness
-  stale: boolean
-}
-type BreakdownResponse = {
-  scope: BreakdownScope
-  rows: { rank: number; value: string; pageViews: number; approximateUniqueVisitors: number; share: number; uniqueVisitorSemantics: UniqueVisitorSemantics }[]
-  totalPageViews: number
-  generatedAt: string
-  latestBucketStart: string | null
-  nextPollAfterSeconds: number
-  freshness: Freshness
-  stale: boolean
-}
-type NocResponse = {
-  rows: NocRow[]
-  generatedAt: string
-  latestBucketStart: string | null
-  nextPollAfterSeconds: number
-  freshness: Freshness
-  stale: boolean
-}
+type Freshness = LiveResponse['freshness']
 
 type PanelKey = 'live' | 'breakdown' | 'noc'
 type UiConnectionState = 'denied' | 'hidden' | 'loading' | 'disconnected' | 'partial' | 'connected'
@@ -122,7 +96,7 @@ function createBreakdownPoller() {
   const scope = selectedScope.value
   const filter = selectedFilter.value
   return createAnalyticsPanelPoller<BreakdownResponse>({
-    request: signal => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<BreakdownResponse>)('/api/admin/analytics/live/breakdown', {
+    request: signal => adminFetch<BreakdownResponse>('/api/admin/analytics/live/breakdown', {
       signal,
       query: { scope, window: 60, limit: 10, value: filter || undefined },
     }),
@@ -134,7 +108,7 @@ function createBreakdownPoller() {
 }
 
 const livePoller = createAnalyticsPanelPoller<LiveResponse>({
-  request: signal => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<LiveResponse>)('/api/admin/analytics/live', { signal, query: { window: 60 } }),
+  request: signal => adminFetch<LiveResponse>('/api/admin/analytics/live', { signal, query: { window: 60 } }),
   onSuccess: response => { liveData.value = response },
   isStale: response => response.stale,
   onStateChange: state => { livePollingSnapshot.value = state },
@@ -142,7 +116,7 @@ const livePoller = createAnalyticsPanelPoller<LiveResponse>({
 })
 let breakdownPoller: AnalyticsPanelPoller = createBreakdownPoller()
 const nocPoller = createAnalyticsPanelPoller<NocResponse>({
-  request: signal => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<NocResponse>)('/api/admin/analytics/noc', { signal, query: { limit: 50 } }),
+  request: signal => adminFetch<NocResponse>('/api/admin/analytics/noc', { signal, query: { limit: 50 } }),
   onSuccess: response => { nocData.value = response },
   isStale: response => response.stale,
   onStateChange: state => { nocPollingSnapshot.value = state },
@@ -371,25 +345,25 @@ onBeforeUnmount(() => {
   <section class="flex flex-col gap-6" :aria-busy="refreshing">
 
     <!-- ── Header ── -->
-    <header class="flex flex-col gap-3 rounded-xl border border-[#e2ece3] bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    <header class="flex flex-col gap-3 rounded-xl border border-line bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div class="flex items-center gap-3">
-        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0f7f1]">
-          <i class="fa-solid fa-signal text-[#2c6e33]" aria-hidden="true"></i>
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-tint">
+          <i class="fa-solid fa-signal text-brand-700" aria-hidden="true"></i>
         </div>
         <div>
-          <h2 class="m-0 text-[1.05rem] font-extrabold text-[#122815]">Phân tích thời gian thực</h2>
-          <p class="m-0 mt-0.5 text-[0.8rem] text-[#667768]" aria-live="polite">
+          <h2 class="m-0 text-[1.05rem] font-extrabold text-brand-950">Phân tích thời gian thực</h2>
+          <p class="m-0 mt-0.5 text-[0.8rem] text-ink-muted" aria-live="polite">
             <span class="inline-flex items-center gap-1.5">
               <span class="inline-block h-2 w-2 rounded-full" :class="connectionState === 'connected' ? 'bg-[#2c6e33] animate-pulse' : connectionState === 'disconnected' ? 'bg-red-500' : 'bg-amber-400'"></span>
               {{ connectionLabel }}
             </span>
-            <span v-if="nextPollAt" class="ml-2 text-[#667768]">· cập nhật sau <strong class="text-[#122815]">{{ countdown }}s</strong></span>
+            <span v-if="nextPollAt" class="ml-2 text-ink-muted">· cập nhật sau <strong class="text-brand-950">{{ countdown }}s</strong></span>
           </p>
         </div>
       </div>
       <button
         type="button"
-        class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#245b2a] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#245b2a] focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="refreshing || hidden"
         @click="manualRefresh"
       >
@@ -422,50 +396,50 @@ onBeforeUnmount(() => {
           { label: 'Lượt xem (5 phút)', value: liveData?.fiveMinuteTotals.pageViews ?? '—', icon: 'fa-eye', color: 'text-[#2c6e33]', bg: 'bg-[#f0f7f1]' },
           { label: 'Khách ước tính (5 phút)', value: liveData?.fiveMinuteTotals.approximateUniqueVisitors ?? '—', icon: 'fa-users', color: 'text-[#2c6e33]', bg: 'bg-[#f0f7f1]' },
           { label: 'Sự kiện / phút', value: liveData?.fiveMinuteTotals.eventsPerMinute ?? '—', icon: 'fa-bolt', color: 'text-[#5a9e60]', bg: 'bg-[#f4fbf4]' },
-          { label: 'Độ trễ dữ liệu', value: liveDelaySeconds, icon: 'fa-clock', color: 'text-[#667768]', bg: 'bg-[#f7f9f7]' },
+          { label: 'Độ trễ dữ liệu', value: liveDelaySeconds, icon: 'fa-clock', color: 'text-ink-muted', bg: 'bg-surface' },
         ]"
         :key="card.label"
-        class="rounded-xl border border-[#e2ece3] bg-white p-5 shadow-sm"
+        class="rounded-xl border border-line bg-white p-5 shadow-sm"
       >
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" :class="card.bg">
             <i class="fa-solid text-base" :class="[card.icon, card.color]" aria-hidden="true"></i>
           </div>
-          <p class="m-0 text-[0.78rem] font-semibold text-[#667768]">{{ card.label }}</p>
+          <p class="m-0 text-[0.78rem] font-semibold text-ink-muted">{{ card.label }}</p>
         </div>
-        <p class="m-0 mt-3 text-[1.7rem] font-extrabold tabular-nums text-[#122815] leading-none">{{ card.value }}</p>
+        <p class="m-0 mt-3 text-[1.7rem] font-extrabold tabular-nums text-brand-950 leading-none">{{ card.value }}</p>
       </article>
     </div>
 
     <!-- ── Live 60-min chart panel ── -->
-    <article class="rounded-xl border border-[#e2ece3] bg-white shadow-sm" :aria-busy="livePanelState.inFlight" aria-labelledby="live-panel-title">
+    <article class="rounded-xl border border-line bg-white shadow-sm" :aria-busy="livePanelState.inFlight" aria-labelledby="live-panel-title">
       <!-- Panel header -->
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2ece3] px-5 py-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
         <div class="flex items-center gap-3">
-          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#f0f7f1]">
-            <i class="fa-solid fa-chart-bar text-[#2c6e33] text-sm" aria-hidden="true"></i>
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-tint">
+            <i class="fa-solid fa-chart-bar text-brand-700 text-sm" aria-hidden="true"></i>
           </div>
           <div>
-            <h3 id="live-panel-title" class="m-0 text-[0.95rem] font-extrabold text-[#122815]">Biểu đồ 60 phút gần nhất</h3>
-            <p class="m-0 text-[0.72rem] text-[#667768]">Mốc mới nhất: {{ formatUtc(liveData?.latestBucketStart) }}</p>
+            <h3 id="live-panel-title" class="m-0 text-[0.95rem] font-extrabold text-brand-950">Biểu đồ 60 phút gần nhất</h3>
+            <p class="m-0 text-[0.72rem] text-ink-muted">Mốc mới nhất: {{ formatUtc(liveData?.latestBucketStart) }}</p>
           </div>
         </div>
         <div class="flex items-center gap-2">
           <span
             v-if="liveData && liveData.freshness === 'empty'"
-            class="inline-flex items-center gap-1.5 rounded-full bg-[#f0f7f1] px-2.5 py-1 text-[0.7rem] font-bold text-[#667768]"
+            class="inline-flex items-center gap-1.5 rounded-full bg-surface-tint px-2.5 py-1 text-[0.7rem] font-bold text-ink-muted"
           >
             <i class="fa-solid fa-circle-minus" aria-hidden="true"></i>
             Chưa có dữ liệu
           </span>
-          <span v-if="livePanelState.inFlight" class="text-[0.72rem] text-[#667768]"><i class="fa-solid fa-spinner fa-spin mr-1" aria-hidden="true"></i>Đang cập nhật</span>
+          <span v-if="livePanelState.inFlight" class="text-[0.72rem] text-ink-muted"><i class="fa-solid fa-spinner fa-spin mr-1" aria-hidden="true"></i>Đang cập nhật</span>
         </div>
       </div>
 
       <div class="p-5">
         <!-- Status messages -->
         <div class="mb-4" role="status" aria-live="polite" aria-atomic="true">
-          <div v-if="livePanelState.loading && !liveData" class="flex items-center gap-2 rounded-lg bg-[#f0f7f1] px-4 py-3 text-sm text-[#2c6e33]">
+          <div v-if="livePanelState.loading && !liveData" class="flex items-center gap-2 rounded-lg bg-surface-tint px-4 py-3 text-sm text-brand-700">
             <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Đang tải dữ liệu…
           </div>
           <div v-else-if="livePanelState.denied" class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -486,14 +460,14 @@ onBeforeUnmount(() => {
         </p>
 
         <!-- Legend -->
-        <div class="mb-3 flex flex-wrap gap-4 text-[0.75rem] font-semibold text-[#667768]">
-          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-sm bg-[#2c6e33]"></span>Lượt xem / mốc phút</span>
+        <div class="mb-3 flex flex-wrap gap-4 text-[0.75rem] font-semibold text-ink-muted">
+          <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-sm bg-brand-700"></span>Lượt xem / mốc phút</span>
           <span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-sm bg-[#5b8fce]"></span>Khách ước tính / mốc phút</span>
         </div>
 
         <!-- Bar chart -->
         <div class="relative overflow-x-auto pb-2">
-          <div class="flex h-48 min-w-[700px] items-end gap-px border-b border-l border-[#dbe7dc] bg-[#fafcfa] px-2 pt-4" role="img" :aria-label="`Biểu đồ ${liveData?.points.length || 0} mốc phút: lượt xem và khách ước tính`">
+          <div class="flex h-48 min-w-[700px] items-end gap-px border-b border-l border-line bg-surface px-2 pt-4" role="img" :aria-label="`Biểu đồ ${liveData?.points.length || 0} mốc phút: lượt xem và khách ước tính`">
             <template v-if="liveData?.points.length">
               <div
                 v-for="(point, index) in liveData.points"
@@ -502,14 +476,14 @@ onBeforeUnmount(() => {
                 :title="`${formatUtc(point.bucketStart)}: ${point.pageViews} lượt xem, ${point.approximateUniqueVisitors} khách`"
               >
                 <span class="flex h-40 items-end justify-center gap-px">
-                  <span class="w-1/2 rounded-t bg-[#2c6e33] transition-opacity group-hover:opacity-80" :style="{ height: point.pageViews === 0 ? '0%' : `${Math.max(3, point.pageViews / maxLiveMetric * 100)}%` }"><span class="sr-only">{{ point.pageViews }} lượt xem</span></span>
+                  <span class="w-1/2 rounded-t bg-brand-700 transition-opacity group-hover:opacity-80" :style="{ height: point.pageViews === 0 ? '0%' : `${Math.max(3, point.pageViews / maxLiveMetric * 100)}%` }"><span class="sr-only">{{ point.pageViews }} lượt xem</span></span>
                   <span class="w-1/2 rounded-t bg-[#5b8fce] transition-opacity group-hover:opacity-80" :style="{ height: point.approximateUniqueVisitors === 0 ? '0%' : `${Math.max(3, point.approximateUniqueVisitors / maxLiveMetric * 100)}%` }"><span class="sr-only">{{ point.approximateUniqueVisitors }} khách</span></span>
                 </span>
                 <time v-if="index === 0 || index === (liveData?.points.length || 0) - 1 || index % 10 === 0" :datetime="point.bucketStart" class="mt-1 block whitespace-nowrap text-[9px] text-[#8ea98f]">{{ formatUtc(point.bucketStart).slice(0, 16) }}</time>
                 <span v-else class="h-3.5" aria-hidden="true"></span>
               </div>
             </template>
-            <p v-else class="m-auto text-sm text-[#667768]">Chưa có dữ liệu theo phút.</p>
+            <p v-else class="m-auto text-sm text-ink-muted">Chưa có dữ liệu theo phút.</p>
           </div>
         </div>
 
@@ -538,33 +512,33 @@ onBeforeUnmount(() => {
 
         <!-- Table -->
         <div class="mt-5">
-          <div class="overflow-x-auto rounded-lg border border-[#e2ece3]">
+          <div class="overflow-x-auto rounded-lg border border-line">
             <table class="min-w-full text-left text-sm">
               <caption class="sr-only">Dữ liệu chi tiết biểu đồ trực tiếp</caption>
-              <thead class="bg-[#f4f7f4]">
-                <tr class="text-[0.72rem] font-bold uppercase tracking-wide text-[#667768]">
+              <thead class="bg-surface">
+                <tr class="text-[0.72rem] font-bold uppercase tracking-wide text-ink-muted">
                   <th class="px-4 py-2.5">Mốc UTC</th>
                   <th class="px-4 py-2.5 text-right">Lượt xem</th>
                   <th class="px-4 py-2.5 text-right">Khách ước tính</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-[#f0f4f0]">
-                <tr v-for="point in liveTableRows" :key="`lp-${point.bucketStart}`" class="hover:bg-[#fafcfa]">
+              <tbody class="divide-y divide-surface">
+                <tr v-for="point in liveTableRows" :key="`lp-${point.bucketStart}`" class="hover:bg-surface">
                   <td class="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-[#334e36]">{{ formatUtc(point.bucketStart) }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-semibold" :class="point.pageViews > 0 ? 'text-[#2c6e33]' : 'text-[#afc8b1]'">{{ point.pageViews }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-semibold" :class="point.approximateUniqueVisitors > 0 ? 'text-[#5b8fce]' : 'text-[#afc8b1]'">{{ point.approximateUniqueVisitors }}</td>
                 </tr>
                 <tr v-if="!liveData?.points.length">
-                  <td colspan="3" class="px-4 py-6 text-center text-sm text-[#667768]">Chưa có dữ liệu.</td>
+                  <td colspan="3" class="px-4 py-6 text-center text-sm text-ink-muted">Chưa có dữ liệu.</td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <div v-if="liveTotalPages > 1" class="mt-3 flex items-center justify-between text-[0.8rem] text-[#667768]">
+          <div v-if="liveTotalPages > 1" class="mt-3 flex items-center justify-between text-[0.8rem] text-ink-muted">
             <span>Trang {{ liveTablePage }} / {{ liveTotalPages }} &nbsp;·&nbsp; {{ liveData?.points.length || 0 }} mốc</span>
             <div class="flex gap-2">
-              <button type="button" class="rounded-lg border border-[#e2ece3] px-3 py-1.5 font-semibold hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" :disabled="liveTablePage === 1" @click="liveTablePage--">← Trước</button>
-              <button type="button" class="rounded-lg border border-[#e2ece3] px-3 py-1.5 font-semibold hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" :disabled="liveTablePage === liveTotalPages" @click="liveTablePage++">Sau →</button>
+              <button type="button" class="rounded-lg border border-line px-3 py-1.5 font-semibold hover:bg-surface-tint disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700" :disabled="liveTablePage === 1" @click="liveTablePage--">← Trước</button>
+              <button type="button" class="rounded-lg border border-line px-3 py-1.5 font-semibold hover:bg-surface-tint disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700" :disabled="liveTablePage === liveTotalPages" @click="liveTablePage++">Sau →</button>
             </div>
           </div>
         </div>
@@ -572,22 +546,22 @@ onBeforeUnmount(() => {
     </article>
 
     <!-- ── Breakdown panel ── -->
-    <article class="rounded-xl border border-[#e2ece3] bg-white shadow-sm" :aria-busy="breakdownPanelState.inFlight" aria-labelledby="breakdown-panel-title">
+    <article class="rounded-xl border border-line bg-white shadow-sm" :aria-busy="breakdownPanelState.inFlight" aria-labelledby="breakdown-panel-title">
       <!-- Panel header -->
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2ece3] px-5 py-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
         <div class="flex items-center gap-3">
-          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#f0f7f1]">
-            <i class="fa-solid fa-chart-pie text-[#2c6e33] text-sm" aria-hidden="true"></i>
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-tint">
+            <i class="fa-solid fa-chart-pie text-brand-700 text-sm" aria-hidden="true"></i>
           </div>
           <div>
-            <h3 id="breakdown-panel-title" class="m-0 text-[0.95rem] font-extrabold text-[#122815]">Phân tích chi tiết (60 phút)</h3>
-            <p class="m-0 text-[0.72rem] text-[#667768]">Mốc mới nhất: {{ formatUtc(breakdownData?.latestBucketStart) }}</p>
+            <h3 id="breakdown-panel-title" class="m-0 text-[0.95rem] font-extrabold text-brand-950">Phân tích chi tiết (60 phút)</h3>
+            <p class="m-0 text-[0.72rem] text-ink-muted">Mốc mới nhất: {{ formatUtc(breakdownData?.latestBucketStart) }}</p>
           </div>
         </div>
         <div class="flex items-center gap-2">
           <span
             v-if="breakdownData && breakdownData.freshness === 'empty'"
-            class="inline-flex items-center gap-1.5 rounded-full bg-[#f0f7f1] px-2.5 py-1 text-[0.7rem] font-bold text-[#667768]"
+            class="inline-flex items-center gap-1.5 rounded-full bg-surface-tint px-2.5 py-1 text-[0.7rem] font-bold text-ink-muted"
           >
             <i class="fa-solid fa-circle-minus" aria-hidden="true"></i>
             Chưa có
@@ -602,23 +576,23 @@ onBeforeUnmount(() => {
             v-for="scope in scopes"
             :key="scope.value"
             type="button"
-            class="rounded-lg border px-3 py-1.5 text-[0.82rem] font-semibold transition focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
-            :class="selectedScope === scope.value ? 'border-[#2c6e33] bg-[#2c6e33] text-white shadow-sm' : 'border-[#e2ece3] bg-white text-[#334e36] hover:bg-[#f0f7f1]'"
+            class="rounded-lg border px-3 py-1.5 text-[0.82rem] font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
+            :class="selectedScope === scope.value ? 'border-brand-700 bg-brand-700 text-white shadow-sm' : 'border-line bg-white text-[#334e36] hover:bg-surface-tint'"
             :aria-pressed="selectedScope === scope.value"
             @click="changeScope(scope.value)"
           >{{ scope.label }}</button>
         </div>
 
         <!-- Active filter badge -->
-        <div v-if="selectedFilter" class="mt-3 flex items-center gap-2 rounded-lg bg-[#edf7ee] border border-[#c8ddc9] px-3 py-2 text-[0.82rem] text-[#1e4620]">
-          <i class="fa-solid fa-filter text-[#2c6e33]" aria-hidden="true"></i>
+        <div v-if="selectedFilter" class="mt-3 flex items-center gap-2 rounded-lg bg-surface-tint border border-[#c8ddc9] px-3 py-2 text-[0.82rem] text-brand-900">
+          <i class="fa-solid fa-filter text-brand-700" aria-hidden="true"></i>
           <span>Đang lọc: <strong>{{ selectedFilter }}</strong></span>
-          <button type="button" class="ml-auto rounded px-2 py-0.5 font-bold text-[#2c6e33] hover:underline focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="clearFilter">Xóa bộ lọc</button>
+          <button type="button" class="ml-auto rounded px-2 py-0.5 font-bold text-brand-700 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-700" @click="clearFilter">Xóa bộ lọc</button>
         </div>
 
         <!-- Status messages -->
         <div class="mt-4" role="status" aria-live="polite" aria-atomic="true">
-          <div v-if="breakdownPanelState.loading && !breakdownData" class="flex items-center gap-2 rounded-lg bg-[#f0f7f1] px-4 py-3 text-sm text-[#2c6e33]">
+          <div v-if="breakdownPanelState.loading && !breakdownData" class="flex items-center gap-2 rounded-lg bg-surface-tint px-4 py-3 text-sm text-brand-700">
             <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Đang tải…
           </div>
           <div v-else-if="breakdownPanelState.denied" class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -665,7 +639,7 @@ onBeforeUnmount(() => {
               <li v-for="(arc, i) in donutArcs" :key="arc.row.value" class="flex items-center gap-2 text-[0.78rem]">
                 <span class="shrink-0 h-3 w-3 rounded-full" :style="`background:${arc.color}`" aria-hidden="true"></span>
                 <span class="truncate font-semibold text-[#334e36]">{{ scopeLabel(arc.row.value) }}</span>
-                <span class="ml-auto shrink-0 font-bold text-[#122815]">{{ Math.round(arc.row.share * 100) }}%</span>
+                <span class="ml-auto shrink-0 font-bold text-brand-950">{{ Math.round(arc.row.share * 100) }}%</span>
               </li>
             </ul>
           </div>
@@ -674,15 +648,15 @@ onBeforeUnmount(() => {
           <div class="flex-1 min-w-0 space-y-2.5" role="img" :aria-label="`Biểu đồ thanh phân tích chi tiết theo ${selectedScope}`">
             <div v-for="row in breakdownData.rows" :key="`bar-${row.rank}-${row.value}`" class="group">
               <div class="flex items-center justify-between gap-2 text-[0.78rem] mb-1">
-                <span class="font-semibold text-[#122815] truncate" :title="row.value">#{{ row.rank }} {{ scopeLabel(row.value) }}</span>
-                <span class="shrink-0 text-[#667768]">
-                  <span class="font-bold text-[#2c6e33]">{{ row.pageViews }}</span> lượt ·
+                <span class="font-semibold text-brand-950 truncate" :title="row.value">#{{ row.rank }} {{ scopeLabel(row.value) }}</span>
+                <span class="shrink-0 text-ink-muted">
+                  <span class="font-bold text-brand-700">{{ row.pageViews }}</span> lượt ·
                   <span class="font-bold text-[#5b8fce]">{{ row.approximateUniqueVisitors }}</span> khách
                 </span>
               </div>
-              <div class="h-5 rounded-full bg-[#f0f7f1] overflow-hidden">
+              <div class="h-5 rounded-full bg-surface-tint overflow-hidden">
                 <div
-                  class="h-full rounded-full bg-[#2c6e33] transition-all"
+                  class="h-full rounded-full bg-brand-700 transition-all"
                   :style="{ width: row.pageViews === 0 ? '1%' : `${Math.max(3, row.pageViews / maxBreakdownMetric * 100)}%` }"
                   :title="`${row.pageViews} lượt xem`"
                 ></div>
@@ -693,11 +667,11 @@ onBeforeUnmount(() => {
 
         <!-- Table -->
         <div class="mt-5">
-          <div class="overflow-x-auto rounded-lg border border-[#e2ece3]">
+          <div class="overflow-x-auto rounded-lg border border-line">
             <table class="min-w-[700px] w-full text-left text-sm">
               <caption class="sr-only">Bảng xếp hạng phân tích chi tiết</caption>
-              <thead class="bg-[#f4f7f4]">
-                <tr class="text-[0.72rem] font-bold uppercase tracking-wide text-[#667768]">
+              <thead class="bg-surface">
+                <tr class="text-[0.72rem] font-bold uppercase tracking-wide text-ink-muted">
                   <th class="px-4 py-2.5 w-12">Hạng</th>
                   <th class="px-4 py-2.5">Giá trị</th>
                   <th class="px-4 py-2.5 text-right">Lượt xem</th>
@@ -706,30 +680,30 @@ onBeforeUnmount(() => {
                   <th class="px-4 py-2.5"></th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-[#f0f4f0]">
-                <tr v-for="row in breakdownTableRows" :key="`bd-${row.rank}-${row.value}`" class="hover:bg-[#fafcfa]">
+              <tbody class="divide-y divide-surface">
+                <tr v-for="row in breakdownTableRows" :key="`bd-${row.rank}-${row.value}`" class="hover:bg-surface">
                   <td class="px-4 py-2.5 font-bold text-[#8ea98f]">{{ row.rank }}</td>
                   <td class="px-4 py-2.5 max-w-xs truncate font-semibold text-[#233c26]" :title="row.value">{{ row.value }}</td>
-                  <td class="px-4 py-2.5 text-right tabular-nums font-semibold text-[#2c6e33]">{{ row.pageViews }}</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums font-semibold text-brand-700">{{ row.pageViews }}</td>
                   <td class="px-4 py-2.5 text-right tabular-nums font-semibold text-[#5b8fce]">{{ row.approximateUniqueVisitors }}</td>
-                  <td class="px-4 py-2.5 text-right tabular-nums text-[#667768]">{{ Math.round(row.share * 100) }}%</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums text-ink-muted">{{ Math.round(row.share * 100) }}%</td>
                   <td class="px-4 py-2.5">
-                    <button type="button" class="rounded-md border border-[#e2ece3] px-2.5 py-1 text-xs font-bold text-[#2c6e33] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="applyFilter(row.value)">
+                    <button type="button" class="rounded-md border border-line px-2.5 py-1 text-xs font-bold text-brand-700 hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700" @click="applyFilter(row.value)">
                       <i class="fa-solid fa-filter mr-1" aria-hidden="true"></i>Lọc
                     </button>
                   </td>
                 </tr>
                 <tr v-if="!breakdownData?.rows.length">
-                  <td colspan="6" class="px-4 py-6 text-center text-sm text-[#667768]">Chưa có dữ liệu phân tích.</td>
+                  <td colspan="6" class="px-4 py-6 text-center text-sm text-ink-muted">Chưa có dữ liệu phân tích.</td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <div v-if="breakdownTotalPages > 1" class="mt-3 flex items-center justify-between text-[0.8rem] text-[#667768]">
+          <div v-if="breakdownTotalPages > 1" class="mt-3 flex items-center justify-between text-[0.8rem] text-ink-muted">
             <span>Trang {{ breakdownTablePage }} / {{ breakdownTotalPages }} &nbsp;·&nbsp; {{ breakdownData?.rows.length || 0 }} hàng</span>
             <div class="flex gap-2">
-              <button type="button" class="rounded-lg border border-[#e2ece3] px-3 py-1.5 font-semibold hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" :disabled="breakdownTablePage === 1" @click="breakdownTablePage--">← Trước</button>
-              <button type="button" class="rounded-lg border border-[#e2ece3] px-3 py-1.5 font-semibold hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" :disabled="breakdownTablePage === breakdownTotalPages" @click="breakdownTablePage++">Sau →</button>
+              <button type="button" class="rounded-lg border border-line px-3 py-1.5 font-semibold hover:bg-surface-tint disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700" :disabled="breakdownTablePage === 1" @click="breakdownTablePage--">← Trước</button>
+              <button type="button" class="rounded-lg border border-line px-3 py-1.5 font-semibold hover:bg-surface-tint disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700" :disabled="breakdownTablePage === breakdownTotalPages" @click="breakdownTablePage++">Sau →</button>
             </div>
           </div>
         </div>
@@ -737,21 +711,21 @@ onBeforeUnmount(() => {
     </article>
 
     <!-- ── NOC panel ── -->
-    <article class="rounded-xl border border-[#e2ece3] bg-white shadow-sm" :aria-busy="nocPanelState.inFlight" aria-labelledby="noc-panel-title">
+    <article class="rounded-xl border border-line bg-white shadow-sm" :aria-busy="nocPanelState.inFlight" aria-labelledby="noc-panel-title">
       <!-- Panel header -->
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2ece3] px-5 py-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
         <div class="flex items-center gap-3">
-          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#f0f7f1]">
-            <i class="fa-solid fa-server text-[#2c6e33] text-sm" aria-hidden="true"></i>
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-tint">
+            <i class="fa-solid fa-server text-brand-700 text-sm" aria-hidden="true"></i>
           </div>
           <div>
-            <h3 id="noc-panel-title" class="m-0 text-[0.95rem] font-extrabold text-[#122815]">Sự kiện vận hành (NOC)</h3>
-            <p class="m-0 text-[0.72rem] text-[#667768]">Mốc mới nhất: {{ formatUtc(nocData?.latestBucketStart) }}</p>
+            <h3 id="noc-panel-title" class="m-0 text-[0.95rem] font-extrabold text-brand-950">Sự kiện vận hành (NOC)</h3>
+            <p class="m-0 text-[0.72rem] text-ink-muted">Mốc mới nhất: {{ formatUtc(nocData?.latestBucketStart) }}</p>
           </div>
         </div>
         <span
           v-if="nocData && nocData.freshness === 'empty'"
-          class="inline-flex items-center gap-1.5 rounded-full bg-[#f0f7f1] px-2.5 py-1 text-[0.7rem] font-bold text-[#667768]"
+          class="inline-flex items-center gap-1.5 rounded-full bg-surface-tint px-2.5 py-1 text-[0.7rem] font-bold text-ink-muted"
         >
           <i class="fa-solid fa-circle-minus" aria-hidden="true"></i>
           Chưa có
@@ -761,7 +735,7 @@ onBeforeUnmount(() => {
       <div class="p-5">
         <!-- Status messages -->
         <div class="mb-4" role="status" aria-live="polite" aria-atomic="true">
-          <div v-if="nocPanelState.loading && !nocData" class="flex items-center gap-2 rounded-lg bg-[#f0f7f1] px-4 py-3 text-sm text-[#2c6e33]">
+          <div v-if="nocPanelState.loading && !nocData" class="flex items-center gap-2 rounded-lg bg-surface-tint px-4 py-3 text-sm text-brand-700">
             <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Đang tải sự kiện NOC…
           </div>
           <div v-else-if="nocPanelState.denied" class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -798,7 +772,7 @@ onBeforeUnmount(() => {
             { label: 'Thời lượng tối đa', value: nocSummary.maxDuration + ' ms', icon: 'fa-stopwatch', color: 'text-[#667768]', bg: 'bg-[#f7f9f7]', clickable: false },
             { label: 'Trạng thái mới nhất', value: nocSummary.latestStatus, icon: 'fa-circle-info', color: 'text-[#5b8fce]', bg: 'bg-[#f0f6ff]', clickable: false },
           ]" :key="card.label"
-            class="rounded-xl border border-[#e2ece3] bg-[#fafcfa] p-4 transition"
+            class="rounded-xl border border-line bg-[#fafcfa] p-4 transition"
             :class="card.clickable ? 'cursor-pointer select-none hover:border-amber-300 hover:bg-amber-50/50' : ''"
             :role="card.clickable ? 'button' : undefined"
             :tabindex="card.clickable ? 0 : undefined"
@@ -811,10 +785,10 @@ onBeforeUnmount(() => {
               <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" :class="card.bg">
                 <i class="fa-solid text-sm" :class="[card.icon, card.color]" aria-hidden="true"></i>
               </div>
-              <p class="m-0 text-[0.72rem] font-semibold uppercase tracking-wide text-[#667768]">{{ card.label }}</p>
+              <p class="m-0 text-[0.72rem] font-semibold uppercase tracking-wide text-ink-muted">{{ card.label }}</p>
               <i v-if="card.clickable && nocSeverityFilter" class="fa-solid fa-filter ml-auto text-amber-600 text-xs" aria-hidden="true"></i>
             </div>
-            <p class="m-0 text-[1.1rem] font-extrabold text-[#122815]">{{ card.value }}</p>
+            <p class="m-0 text-[1.1rem] font-extrabold text-brand-950">{{ card.value }}</p>
           </div>
         </div>
 
@@ -825,19 +799,19 @@ onBeforeUnmount(() => {
             Chỉ hiện cảnh báo / lỗi
             <button type="button" class="ml-1 rounded px-1 font-extrabold hover:text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400" @click="toggleNocSeverityFilter" aria-label="Xóa bộ lọc">✕</button>
           </span>
-          <span v-if="dismissedNocIds.size > 0" class="inline-flex items-center gap-2 rounded-full border border-[#e2ece3] bg-[#f7f9f7] px-3 py-1 text-xs font-bold text-[#667768]">
+          <span v-if="dismissedNocIds.size > 0" class="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-bold text-ink-muted">
             <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
             Đã ẩn {{ dismissedNocIds.size }} mục
-            <button type="button" class="ml-1 rounded px-1 font-semibold text-[#2c6e33] hover:underline focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="undismissAll">Hiện lại</button>
+            <button type="button" class="ml-1 rounded px-1 font-semibold text-brand-700 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-700" @click="undismissAll">Hiện lại</button>
           </span>
         </div>
 
         <!-- NOC table -->
-        <div class="overflow-x-auto rounded-lg border border-[#e2ece3]">
+        <div class="overflow-x-auto rounded-lg border border-line">
           <table class="min-w-[900px] w-full text-left text-sm">
             <caption class="sr-only">Danh sách sự kiện vận hành NOC</caption>
-            <thead class="bg-[#f4f7f4]">
-              <tr class="text-[0.72rem] font-bold uppercase tracking-wide text-[#667768]">
+            <thead class="bg-surface">
+              <tr class="text-[0.72rem] font-bold uppercase tracking-wide text-ink-muted">
                 <th class="px-4 py-2.5 w-6"></th>
                 <th class="px-4 py-2.5">Thời gian UTC</th>
                 <th class="px-4 py-2.5">Mức độ</th>
@@ -853,9 +827,9 @@ onBeforeUnmount(() => {
               <template v-for="row in nocTableRows" :key="row.id">
                 <!-- Main row -->
                 <tr
-                  class="border-b border-[#f0f4f0] cursor-pointer transition-colors"
+                  class="border-b border-surface cursor-pointer transition-colors"
                   :class="[
-                    expandedNocId === row.id ? 'bg-[#f0f7f1]' : 'hover:bg-[#fafcfa]',
+                    expandedNocId === row.id ? 'bg-surface-tint' : 'hover:bg-surface',
                     isWarningOrError(row.severity) ? 'border-l-2 border-l-amber-300' : ''
                   ]"
                   :aria-expanded="expandedNocId === row.id"
@@ -863,7 +837,7 @@ onBeforeUnmount(() => {
                   @click="toggleNocRow(row.id)"
                 >
                   <td class="px-3 py-2.5 text-center">
-                    <i class="fa-solid text-xs text-[#667768]" :class="expandedNocId === row.id ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true"></i>
+                    <i class="fa-solid text-xs text-ink-muted" :class="expandedNocId === row.id ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true"></i>
                   </td>
                   <td class="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-[#334e36]">{{ formatUtc(row.bucketStart) }}</td>
                   <td class="px-4 py-2.5">
@@ -875,13 +849,13 @@ onBeforeUnmount(() => {
                   </td>
                   <td class="px-4 py-2.5 text-[#334e36] font-semibold">{{ row.component }}</td>
                   <td class="px-4 py-2.5 text-[#334e36]">{{ row.eventType }}</td>
-                  <td class="px-4 py-2.5 text-[#667768]">{{ row.status }}</td>
-                  <td class="px-4 py-2.5 text-right tabular-nums font-bold text-[#122815]">{{ row.eventCount }}</td>
-                  <td class="px-4 py-2.5 text-right tabular-nums text-[#667768]">{{ row.duration.maxMs }}</td>
+                  <td class="px-4 py-2.5 text-ink-muted">{{ row.status }}</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums font-bold text-brand-950">{{ row.eventCount }}</td>
+                  <td class="px-4 py-2.5 text-right tabular-nums text-ink-muted">{{ row.duration.maxMs }}</td>
                   <td class="px-4 py-2.5 text-right">
                     <button
                       type="button"
-                      class="inline-flex items-center gap-1 rounded-lg border border-[#e2ece3] bg-white px-2.5 py-1 text-xs font-bold text-[#2c6e33] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
+                      class="inline-flex items-center gap-1 rounded-lg border border-line bg-white px-2.5 py-1 text-xs font-bold text-brand-700 hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700"
                       aria-label="Đánh dấu đã xử lý"
                       title="Đánh dấu đã xử lý"
                       @click.stop="dismissNocRow(row.id)"
@@ -894,7 +868,7 @@ onBeforeUnmount(() => {
 
                 <!-- Expandable detail row -->
                 <tr v-if="expandedNocId === row.id" :id="`noc-detail-${row.id}`" role="region" :aria-label="`Chi tiết sự kiện ${row.eventType}`">
-                  <td colspan="9" class="px-6 py-4 bg-[#f7fbf7] border-b border-[#e2ece3]">
+                  <td colspan="9" class="px-6 py-4 bg-surface border-b border-line">
                     <!-- Khung giải thích chi tiết & hướng dẫn xử lý NOC -->
                     <div
                       class="mb-4 rounded-xl border p-4 transition-all"
@@ -924,7 +898,7 @@ onBeforeUnmount(() => {
                         </span>
                         <div class="flex-1 min-w-0">
                           <div class="flex flex-wrap items-center justify-between gap-2">
-                            <h4 class="text-sm font-bold text-[#122815] m-0">
+                            <h4 class="text-sm font-bold text-brand-950 m-0">
                               {{ explainNocEvent(row).title }}
                             </h4>
                             <span
@@ -942,33 +916,33 @@ onBeforeUnmount(() => {
                           <div class="mt-3 grid gap-3 text-xs sm:grid-cols-3">
                             <!-- Khối 1: Nguyên nhân -->
                             <div class="bg-white/90 rounded-lg p-3 border border-black/5 shadow-2xs flex flex-col">
-                              <p class="font-bold text-[#1e4620] mb-1.5 flex items-center gap-1.5 text-[0.75rem] uppercase tracking-wide">
-                                <i class="fa-solid fa-magnifying-glass text-[0.7rem] text-[#2c6e33]" aria-hidden="true"></i>
+                              <p class="font-bold text-brand-900 mb-1.5 flex items-center gap-1.5 text-[0.75rem] uppercase tracking-wide">
+                                <i class="fa-solid fa-magnifying-glass text-[0.7rem] text-brand-700" aria-hidden="true"></i>
                                 Nguyên nhân
                               </p>
-                              <p class="m-0 leading-relaxed text-[#2c3e2d] flex-1">
+                              <p class="m-0 leading-relaxed text-ink-admin flex-1">
                                 {{ explainNocEvent(row).cause }}
                               </p>
                             </div>
 
                             <!-- Khối 2: Đánh giá ảnh hưởng -->
                             <div class="bg-white/90 rounded-lg p-3 border border-black/5 shadow-2xs flex flex-col">
-                              <p class="font-bold text-[#1e4620] mb-1.5 flex items-center gap-1.5 text-[0.75rem] uppercase tracking-wide">
-                                <i class="fa-solid fa-shield-halved text-[0.7rem] text-[#2c6e33]" aria-hidden="true"></i>
+                              <p class="font-bold text-brand-900 mb-1.5 flex items-center gap-1.5 text-[0.75rem] uppercase tracking-wide">
+                                <i class="fa-solid fa-shield-halved text-[0.7rem] text-brand-700" aria-hidden="true"></i>
                                 Đánh giá mức độ
                               </p>
-                              <p class="m-0 leading-relaxed text-[#2c3e2d] flex-1">
+                              <p class="m-0 leading-relaxed text-ink-admin flex-1">
                                 {{ explainNocEvent(row).impact }}
                               </p>
                             </div>
 
                             <!-- Khối 3: Khuyến nghị hành động -->
                             <div class="bg-white/90 rounded-lg p-3 border border-black/5 shadow-2xs flex flex-col">
-                              <p class="font-bold text-[#1e4620] mb-1.5 flex items-center gap-1.5 text-[0.75rem] uppercase tracking-wide">
-                                <i class="fa-solid fa-hand-holding-hand text-[0.7rem] text-[#2c6e33]" aria-hidden="true"></i>
+                              <p class="font-bold text-brand-900 mb-1.5 flex items-center gap-1.5 text-[0.75rem] uppercase tracking-wide">
+                                <i class="fa-solid fa-hand-holding-hand text-[0.7rem] text-brand-700" aria-hidden="true"></i>
                                 Khuyến nghị xử lý
                               </p>
-                              <p class="m-0 leading-relaxed text-[#2c3e2d] flex-1">
+                              <p class="m-0 leading-relaxed text-ink-admin flex-1">
                                 {{ explainNocEvent(row).action }}
                               </p>
                             </div>
@@ -979,42 +953,42 @@ onBeforeUnmount(() => {
 
                     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                       <div>
-                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-[#667768] mb-1">Thời gian</p>
-                        <p class="font-mono text-sm text-[#122815]">{{ formatUtc(row.bucketStart) }}</p>
+                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-ink-muted mb-1">Thời gian</p>
+                        <p class="font-mono text-sm text-brand-950">{{ formatUtc(row.bucketStart) }}</p>
                       </div>
                       <div>
-                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-[#667768] mb-1">Thành phần</p>
-                        <p class="font-semibold text-[#122815]">{{ row.component }}</p>
+                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-ink-muted mb-1">Thành phần</p>
+                        <p class="font-semibold text-brand-950">{{ row.component }}</p>
                       </div>
                       <div>
-                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-[#667768] mb-1">Loại sự kiện</p>
+                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-ink-muted mb-1">Loại sự kiện</p>
                         <p class="text-[#334e36]">{{ row.eventType }}</p>
                       </div>
                       <div>
-                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-[#667768] mb-1">Trạng thái</p>
+                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-ink-muted mb-1">Trạng thái</p>
                         <p class="text-[#334e36]">{{ row.status }}</p>
                       </div>
                       <div>
-                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-[#667768] mb-1">Mã lỗi</p>
+                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-ink-muted mb-1">Mã lỗi</p>
                         <p class="font-mono text-sm" :class="row.errorCode ? 'text-red-700 font-bold' : 'text-[#afc8b1]'">{{ row.errorCode || '(không có)' }}</p>
                       </div>
                       <div>
-                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-[#667768] mb-1">Thời lượng</p>
+                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-ink-muted mb-1">Thời lượng</p>
                         <p class="tabular-nums text-[#334e36]">TB: <strong>{{ row.duration.averageMs }} ms</strong> · Max: <strong>{{ row.duration.maxMs }} ms</strong> · N={{ row.duration.count }}</p>
                       </div>
                       <div v-if="row.details" class="sm:col-span-2 xl:col-span-3">
-                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-[#667768] mb-1">Chi tiết kỹ thuật</p>
+                        <p class="text-[0.68rem] font-bold uppercase tracking-wide text-ink-muted mb-1">Chi tiết kỹ thuật</p>
                         <!-- Native disclosure: keyboard-operable without JS; content is escaped by safeDetails(). -->
                         <details v-if="row.details">
-                          <summary class="cursor-pointer text-[0.8rem] font-semibold text-[#2c6e33] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]">Xem chi tiết an toàn</summary>
-                          <pre class="mt-2 rounded-lg bg-[#122815] text-[#8ed694] px-4 py-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">{{ safeDetails(row.details) }}</pre>
+                          <summary class="cursor-pointer text-[0.8rem] font-semibold text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-700">Xem chi tiết an toàn</summary>
+                          <pre class="mt-2 rounded-lg bg-brand-950 text-brand-300 px-4 py-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">{{ safeDetails(row.details) }}</pre>
                         </details>
                       </div>
                     </div>
                     <div class="mt-4 flex gap-2">
                       <button
                         type="button"
-                        class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2 text-sm font-bold text-white hover:bg-[#245b2a] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
+                        class="inline-flex items-center gap-2 rounded-lg bg-brand-700 px-4 py-2 text-sm font-bold text-white hover:bg-[#245b2a] focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
                         @click.stop="dismissNocRow(row.id)"
                       >
                         <i class="fa-solid fa-check-circle" aria-hidden="true"></i>
@@ -1022,7 +996,7 @@ onBeforeUnmount(() => {
                       </button>
                       <button
                         type="button"
-                        class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] bg-white px-4 py-2 text-sm font-semibold text-[#334e36] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
+                        class="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-[#334e36] hover:bg-surface-tint focus:outline-none focus:ring-2 focus:ring-brand-700"
                         @click.stop="toggleNocRow(row.id)"
                       >
                         <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
@@ -1034,11 +1008,11 @@ onBeforeUnmount(() => {
               </template>
 
               <tr v-if="!filteredNocRows.length">
-                <td colspan="9" class="px-4 py-8 text-center text-sm text-[#667768]">
-                  <i class="fa-regular fa-circle-check text-2xl text-[#8ed694] block mb-2" aria-hidden="true"></i>
+                <td colspan="9" class="px-4 py-8 text-center text-sm text-ink-muted">
+                  <i class="fa-regular fa-circle-check text-2xl text-brand-300 block mb-2" aria-hidden="true"></i>
                   <span v-if="nocSeverityFilter">Không có cảnh báo / lỗi nào.</span>
                   <span v-else-if="dismissedNocIds.size > 0">Tất cả sự kiện đã được xử lý.
-                    <button type="button" class="ml-2 text-[#2c6e33] font-bold underline focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="undismissAll">Hiện lại</button>
+                    <button type="button" class="ml-2 text-brand-700 font-bold underline focus:outline-none focus:ring-2 focus:ring-brand-700" @click="undismissAll">Hiện lại</button>
                   </span>
                   <span v-else>Không có sự kiện NOC nào.</span>
                 </td>
@@ -1046,11 +1020,11 @@ onBeforeUnmount(() => {
             </tbody>
           </table>
         </div>
-        <div v-if="nocTotalPages > 1" class="mt-3 flex items-center justify-between text-[0.8rem] text-[#667768]">
+        <div v-if="nocTotalPages > 1" class="mt-3 flex items-center justify-between text-[0.8rem] text-ink-muted">
           <span>Trang {{ nocTablePage }} / {{ nocTotalPages }} &nbsp;·&nbsp; {{ filteredNocRows.length }} sự kiện</span>
           <div class="flex gap-2">
-            <button type="button" class="rounded-lg border border-[#e2ece3] px-3 py-1.5 font-semibold hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" :disabled="nocTablePage === 1" @click="nocTablePage--">← Trước</button>
-            <button type="button" class="rounded-lg border border-[#e2ece3] px-3 py-1.5 font-semibold hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" :disabled="nocTablePage === nocTotalPages" @click="nocTablePage++">Sau →</button>
+            <button type="button" class="rounded-lg border border-line px-3 py-1.5 font-semibold hover:bg-surface-tint disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700" :disabled="nocTablePage === 1" @click="nocTablePage--">← Trước</button>
+            <button type="button" class="rounded-lg border border-line px-3 py-1.5 font-semibold hover:bg-surface-tint disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700" :disabled="nocTablePage === nocTotalPages" @click="nocTablePage++">Sau →</button>
           </div>
         </div>
       </div>

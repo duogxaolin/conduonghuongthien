@@ -6,6 +6,7 @@ import { articleResource } from '../../../services/articles'
 import { getUsableDriveLink } from '../../../services/backup-drive-oauth'
 import { getUsableDriveOauthConfig } from '../../../services/backup-drive-oauth-config'
 import { exportArticlesToGoogle, EXPORT_GOOGLE_MAX, type ExportArticleInput } from '../../../services/article-export-google'
+import { vietnamDateString } from '../../../utils/vn-day-range'
 
 /**
  * Xuất bài viết → Google Sheets + Google Docs (tạo file Google thật trên Drive
@@ -24,8 +25,10 @@ import { exportArticlesToGoogle, EXPORT_GOOGLE_MAX, type ExportArticleInput } fr
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
 
-  const body = await readBody<{ ids?: number[] }>(event).catch(() => ({ ids: [] }))
-  const ids = Array.isArray(body.ids) ? body.ids.filter((n: number) => Number.isFinite(n) && n > 0) : []
+  // A request with no body reads as `undefined`, not a rejection: `body.ids` was a
+  // TypeError and a 500 instead of the 400 below (FINDING-R6-18).
+  const body = await readBody<{ ids?: number[] } | undefined>(event).catch(() => undefined)
+  const ids = Array.isArray(body?.ids) ? body.ids.filter((n: number) => Number.isFinite(n) && n > 0) : []
   if (ids.length === 0) {
     throw createError({ statusCode: 400, statusMessage: 'Thiếu danh sách bài viết.' })
   }
@@ -88,7 +91,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const stamp = vietnamDateString(new Date()).replace(/-/g, '')
   const input: ExportArticleInput[] = allowed.map(r => ({
     id: r.id,
     title: r.title ?? '',

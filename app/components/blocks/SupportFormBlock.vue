@@ -1,34 +1,34 @@
 <template>
-  <section class="section bg-[#F8FAF7]" id="tro-giup">
+  <section class="section bg-surface" id="tro-giup">
     <div class="container">
       <div class="grid grid-cols-1 items-center gap-[50px] sm:grid-cols-2">
         <div>
-          <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-4">{{ (currentLang !== 'vi' ? t('support_form_title') : '') || d.title || 'Đăng Ký Tư Vấn & Hỗ Trợ Tái Hòa Nhập' }}</h2>
-          <p class="text-[#4A5545] leading-[1.6] mb-[30px]">{{ (currentLang !== 'vi' ? t('support_form_subtitle') : '') || d.subtitle || 'Điền thông tin để cán bộ chuyên môn liên hệ tư vấn miễn phí trong vòng 24 giờ.' }}</p>
+          <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-ink mb-4">{{ (currentLang !== 'vi' ? t('support_form_title') : '') || d.title || 'Đăng Ký Tư Vấn & Hỗ Trợ Tái Hòa Nhập' }}</h2>
+          <p class="text-ink-secondary leading-[1.6] mb-[30px]">{{ (currentLang !== 'vi' ? t('support_form_subtitle') : '') || d.subtitle || 'Điền thông tin để cán bộ chuyên môn liên hệ tư vấn miễn phí trong vòng 24 giờ.' }}</p>
           <div class="flex flex-col gap-3">
-            <div class="text-[0.95rem] text-[#4A5545]">📞 <span>{{ t('hotline_support_lbl') || 'Hotline hỗ trợ:' }} <strong>{{ d.hotline || '0903.480.985' }}</strong></span></div>
-            <div class="text-[0.95rem] text-[#4A5545]">✉ <span>Email: <strong><PublicEmail :email="d.email || 'contact@conduonghuongthien.com.vn'" /></strong></span></div>
+            <div class="text-[0.95rem] text-ink-secondary">📞 <span>{{ t('hotline_support_lbl') || 'Hotline hỗ trợ:' }} <strong>{{ d.hotline || '0903.480.985' }}</strong></span></div>
+            <div class="text-[0.95rem] text-ink-secondary">✉ <span>Email: <strong><PublicEmail :email="d.email || 'contact@conduonghuongthien.com.vn'" /></strong></span></div>
           </div>
         </div>
         <div>
-          <form @submit.prevent="submitForm" class="bg-white p-10 sm:p-6 rounded-lg shadow-md border border-[#E2E8DF]">
+          <form @submit.prevent="submitForm" class="bg-white p-10 sm:p-6 rounded-lg shadow-md border border-line">
             <div class="mb-5">
-              <label :for="`${uid}-name`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_name') || 'Họ và tên' }}</label>
-              <input :id="`${uid}-name`" type="text" autocomplete="name" v-model="form.name" required :placeholder="t('form_name_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+              <label :for="`${uid}-name`" class="block text-[0.85rem] font-bold text-ink mb-[6px]">{{ t('form_name') || 'Họ và tên' }}</label>
+              <input :id="`${uid}-name`" type="text" autocomplete="name" v-model="form.name" required :placeholder="t('form_name_ph')" class="w-full px-[14px] py-[10px] border border-line rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-brand-600" />
             </div>
             <div class="grid grid-cols-1 gap-5 mb-5 sm:grid-cols-2">
               <div>
-                <label :for="`${uid}-phone`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_phone') || 'Số điện thoại' }}</label>
-                <input :id="`${uid}-phone`" type="tel" autocomplete="tel" v-model="form.phone" required :placeholder="t('form_phone_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+                <label :for="`${uid}-phone`" class="block text-[0.85rem] font-bold text-ink mb-[6px]">{{ t('form_phone') || 'Số điện thoại' }}</label>
+                <input :id="`${uid}-phone`" type="tel" autocomplete="tel" v-model="form.phone" required :placeholder="t('form_phone_ph')" class="w-full px-[14px] py-[10px] border border-line rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-brand-600" />
               </div>
               <div>
-                <label :for="`${uid}-city`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_city') || 'Tỉnh / Thành phố' }}</label>
-                <input :id="`${uid}-city`" type="text" autocomplete="address-level1" v-model="form.city" required :placeholder="t('form_city_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+                <label :for="`${uid}-city`" class="block text-[0.85rem] font-bold text-ink mb-[6px]">{{ t('form_city') || 'Tỉnh / Thành phố' }}</label>
+                <input :id="`${uid}-city`" type="text" autocomplete="address-level1" v-model="form.city" required :placeholder="t('form_city_ph')" class="w-full px-[14px] py-[10px] border border-line rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-brand-600" />
               </div>
             </div>
             <div class="mb-5">
-              <label :for="`${uid}-message`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_message') || 'Nội dung cần hỗ trợ' }}</label>
-              <textarea :id="`${uid}-message`" rows="4" v-model="form.message" required :placeholder="t('form_message_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"></textarea>
+              <label :for="`${uid}-message`" class="block text-[0.85rem] font-bold text-ink mb-[6px]">{{ t('form_message') || 'Nội dung cần hỗ trợ' }}</label>
+              <textarea :id="`${uid}-message`" rows="4" v-model="form.message" required :placeholder="t('form_message_ph')" class="w-full px-[14px] py-[10px] border border-line rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-brand-600"></textarea>
             </div>
             <button type="submit" class="btn btn-primary w-full text-lg" :disabled="submitStatus === 'loading'">
               {{ submitStatus === 'loading' ? (t('form_sending') || 'Đang gửi...') : (t('form_submit') || 'Gửi đăng ký tư vấn') }}
@@ -36,7 +36,7 @@
             <div
               v-if="submitMessage"
               class="mt-4 px-[18px] py-[14px] rounded-lg text-[0.9rem] font-semibold leading-[1.5]"
-              :class="submitStatus === 'success' ? 'bg-[#e8f5e9] text-[#2e6b32] border border-[#b6d7b8]' : 'bg-[#fdecea] text-[#b71c1c] border border-[#f5c6cb]'"
+              :class="submitStatus === 'success' ? 'bg-[#e8f5e9] text-[#2e6b32] border border-[#b6d7b8]' : 'bg-danger-bg text-[#b71c1c] border border-[#f5c6cb]'"
               :role="submitStatus === 'error' ? 'alert' : 'status'"
             >
               {{ submitMessage }}
@@ -52,6 +52,8 @@
 import { reactive, ref, computed, useId } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
 import { useI18n } from '~/composables/useI18n'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicSubmissionResponse } from '~/types/public-site-api'
 
 const { t, currentLang } = useI18n()
 // id/for duy nhất theo thể hiện (hai block cùng trang không đụng id), ổn định SSR↔hydrate.
@@ -76,7 +78,7 @@ const submitForm = async () => {
     // đơn, người dân vẫn thấy lời cảm ơn, và không cán bộ nào được báo. Máy chủ
     // nay có nhánh dự phòng (`settings.email`) nhưng vẫn tôn trọng email nhận
     // cấu hình trên block — nên trường này vẫn phải đi cùng.
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/submissions', {
+    await publicFetch<PublicSubmissionResponse>('/api/submissions', {
       method: 'POST',
       body: {
         type: 'support',

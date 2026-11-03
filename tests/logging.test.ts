@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync, readdirSync } from 'node:fs'
-import { REDACTED, SECURITY_EVENTS, buildLogRecord } from '../server/utils/logger'
+import { BOOT_MIGRATION_EVENTS, REDACTED, SECURITY_EVENTS, buildLogRecord } from '../server/utils/logger'
 
 /**
  * The server had three bare console.error calls and nothing else. Nothing
@@ -118,7 +118,25 @@ test('no server route falls back to a bare console call', () => {
 })
 
 test('the event names are one enumerated list, not scattered strings', () => {
-  // So an operator can write one alert rule and know what to match on.
-  assert.ok(Object.values(SECURITY_EVENTS).every(name => /^[a-z]+\.[a-z_]+$/.test(name)))
+  // So an operator can write one alert rule and know what to match on. The namespace may hold an
+  // underscore: the moderation events have been `ai_moderation.*` since before this list had them.
+  assert.ok(Object.values(SECURITY_EVENTS).every(name => /^[a-z]+(?:_[a-z]+)*\.[a-z_]+$/.test(name)))
   assert.equal(new Set(Object.values(SECURITY_EVENTS)).size, Object.values(SECURITY_EVENTS).length)
+})
+
+test('a moderation rule turned off for running slow, and a request out of regex budget, are security events — logged through the list', () => {
+  // Verify of wave3 4.3c follow-up (W8b): while a rule is off it judges nothing, and crafted input
+  // can be what slowed it; the names are what operators' alert rules match on.
+  assert.equal(SECURITY_EVENTS.moderationRuleSlowDisabled, 'ai_moderation.rule_slow_disabled')
+  assert.equal(SECURITY_EVENTS.moderationRequestBudgetExhausted, 'ai_moderation.request_budget_exhausted')
+  const books = read('server/services/moderation-regex-budget.ts')
+  assert.match(books, /event: SECURITY_EVENTS\.moderationRuleSlowDisabled\b/)
+  assert.match(books, /event: SECURITY_EVENTS\.moderationRequestBudgetExhausted\b/)
+  assert.doesNotMatch(books, /event: 'ai_moderation\.(rule_slow_disabled|request_budget_exhausted)'/, 'a literal would let the list and the code drift apart')
+})
+
+test('the blocked media-category boot migration keeps its alert event name', () => {
+  // Operators alert on this exact string; the integration suite only runs on
+  // MySQL, so pin it in the unit job too.
+  assert.equal(BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked, 'db.migration.media_category_fk_blocked')
 })

@@ -21,6 +21,7 @@ import { readerAccounts } from '../db/schema'
 import { verifyReaderToken } from './auth'
 import { getClientIp } from './client-ip'
 import { logWarn } from './logger'
+import { isSecureRequest } from './request-secure'
 
 /** Distinct from cdkt_admin and cdkt_mfa: no admin route reads this name. */
 const READER_COOKIE = 'cdkt_reader'
@@ -44,6 +45,8 @@ export interface ReaderIdentity {
    * disagree with the others about what somebody is called.
    */
   customDisplayName: string | null
+  /** The Google name is a reserved term — shown as "Bạn đọc" (spec reader-display-names-google). */
+  displayNameReserved: boolean
   /**
    * Whether the portal emails this reader when somebody answers their comment.
    *
@@ -54,17 +57,12 @@ export interface ReaderIdentity {
   tokenVersion: number
 }
 
-/** Same detection as server/utils/mfa/session.ts — kept identical so the two
- *  cookie families cannot drift on the `secure` flag. */
-function requestIsHttps(event: H3Event): boolean {
-  return getRequestHeader(event, 'x-forwarded-proto') === 'https'
-    || getRequestURL(event).protocol === 'https:'
-}
-
 export function setReaderCookie(event: H3Event, token: string): void {
   setCookie(event, READER_COOKIE, token, {
     httpOnly: true,
-    secure:   requestIsHttps(event),
+    // The same rule as the admin session (request-secure.ts), so the two cookie
+    // families cannot drift on the `secure` flag.
+    secure:   isSecureRequest(event),
     // MANDATORY 'lax', never 'strict': the Google OAuth callback arrives as a
     // top-level navigation from accounts.google.com, so it is cross-site. Under
     // 'strict' the browser withholds the cookie on exactly that hop — the reader
@@ -99,6 +97,7 @@ async function resolveReader(event: H3Event): Promise<ReaderLookup> {
       email:        readerAccounts.email,
       displayName:  readerAccounts.displayName,
       customDisplayName: readerAccounts.customDisplayName,
+      displayNameReserved: readerAccounts.displayNameReserved,
       emailNotifications: readerAccounts.emailNotifications,
       isBanned:     readerAccounts.isBanned,
       tokenVersion: readerAccounts.tokenVersion,
@@ -120,6 +119,7 @@ async function resolveReader(event: H3Event): Promise<ReaderLookup> {
       email:        row.email,
       displayName:  row.displayName,
       customDisplayName: row.customDisplayName,
+      displayNameReserved: Boolean(row.displayNameReserved),
       // Normalised here, once. Drizzle maps a TINYINT(1) through the driver and
       // callers should never have to wonder whether they hold `1` or `true` —
       // `=== false` on a numeric 0 is the kind of comparison that silently

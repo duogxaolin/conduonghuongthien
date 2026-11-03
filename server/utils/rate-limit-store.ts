@@ -116,11 +116,7 @@ export async function peekRateLimit(key: string, rule: RateLimitRule, deps: Rate
     )
     return stateFromRow(firstRow(result), rule, now)
   } catch (error) {
-    logWarn({
-      event: 'rate_limit.database_read_failed',
-      error,
-      consequence: 'falling back to in-process counter for this request',
-    })
+    logStoreFailure('read', error, now)
     return readMemory(deps, key, rule, now)
   }
 }
@@ -133,24 +129,33 @@ export async function peekRateLimit(key: string, rule: RateLimitRule, deps: Rate
  * does get written carries how many were skipped (`suppressed`). Only the log is
  * throttled: every request still falls back to the memory counter.
  *
+ * Reads (`peekRateLimit`, which login, MFA, captcha and password change call before
+ * they record) failed the same way and logged `rate_limit.database_read_failed` with a
+ * stack on every request; they now go through the same throttle. Reads and writes keep
+ * separate state, so a read failure just logged never mutes the first write failure.
+ *
  * Clock is the caller's `now` (same clock as the counters, so tests drive it). A
  * clock that went backwards counts as "interval elapsed" — otherwise one far-future
  * timestamp would mute the line for good.
  */
-export const RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS = 60_000
-const writeFailureLog = { lastLoggedAt: null as number | null, suppressed: 0 }
+export const RATE_LIMIT_FAILURE_LOG_INTERVAL_MS = 60_000
+const failureLogs = {
+  read: { lastLoggedAt: null as number | null, suppressed: 0 },
+  write: { lastLoggedAt: null as number | null, suppressed: 0 },
+}
 
-function logWriteFailure(error: unknown, now: number): void {
-  const last = writeFailureLog.lastLoggedAt
-  if (last !== null && now >= last && now - last < RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS) {
-    writeFailureLog.suppressed += 1
+function logStoreFailure(kind: 'read' | 'write', error: unknown, now: number): void {
+  const state = failureLogs[kind]
+  const last = state.lastLoggedAt
+  if (last !== null && now >= last && now - last < RATE_LIMIT_FAILURE_LOG_INTERVAL_MS) {
+    state.suppressed += 1
     return
   }
-  const suppressed = writeFailureLog.suppressed
-  writeFailureLog.lastLoggedAt = now
-  writeFailureLog.suppressed = 0
+  const suppressed = state.suppressed
+  state.lastLoggedAt = now
+  state.suppressed = 0
   logWarn({
-    event: 'rate_limit.database_write_failed',
+    event: kind === 'read' ? 'rate_limit.database_read_failed' : 'rate_limit.database_write_failed',
     error,
     consequence: 'falling back to in-process counter for this request',
     ...(suppressed > 0 ? { suppressed } : {}),
@@ -182,7 +187,7 @@ export async function recordRateLimitHit(key: string, rule: RateLimitRule, deps:
     )
     return stateFromRow(firstRow(result), rule, now)
   } catch (error) {
-    logWriteFailure(error, now)
+    logStoreFailure('write', error, now)
     return bumpMemory(deps, key, rule, now)
   }
 }
@@ -198,16 +203,52 @@ export async function clearRateLimit(key: string, deps: RateLimitDeps = {}): Pro
   }
 }
 
-/** Remove lapsed buckets. Called by the nightly maintenance job. */
-export async function purgeExpiredRateLimits(deps: RateLimitDeps = {}): Promise<number> {
+/**
+ * Batch size and per-run ceiling for the purge. One bounded statement keeps each
+ * DELETE short (the table is written on every login, form post and article
+ * view); the ceiling keeps one run from monopolising a connection when a backlog
+ * has built up. 5 000 × 10 = 50 000 rows per run.
+ */
+export const RATE_LIMIT_PURGE_BATCH_SIZE = 5_000
+export const RATE_LIMIT_PURGE_MAX_BATCHES = 10
+
+export type RateLimitPurgeResult = {
+  /** Database rows removed in this run (memory entries are not counted). */
+  deleted: number
+  /** DELETE statements issued. */
+  batches: number
+  /** true when the batch ceiling was reached with rows possibly left over. */
+  bounded: boolean
+}
+
+/**
+ * Remove lapsed buckets, in batches, until a short batch says the backlog is
+ * gone or the per-run ceiling is reached.
+ *
+ * It used to issue ONE `LIMIT 5000` statement from the nightly retention pass.
+ * Article views alone write a bucket per (article, visitor, day), so on a busy
+ * day the table grew faster than one batch a night could shrink it — and the
+ * call sat at the END of `runDataRetention`, so a scope that threw before it
+ * (or retention switched off) skipped it entirely. It now runs on its own timer
+ * (`services/rate-limit-purge-scheduler.ts`).
+ */
+export async function purgeExpiredRateLimits(deps: RateLimitDeps = {}): Promise<RateLimitPurgeResult> {
   const now = deps.now?.() ?? Date.now()
   for (const [key, entry] of memoryStore(deps)) {
     if (entry.expiresAt <= now) memoryStore(deps).delete(key)
   }
-  if (!deps.execute) return 0
-  const result = await deps.execute(
-    `DELETE FROM ${RATE_LIMIT_TABLE} WHERE window_expires_at <= ? LIMIT 5000`,
-    [new Date(now)],
-  )
-  return affectedRowsOrZero(result)
+  if (!deps.execute) return { deleted: 0, batches: 0, bounded: false }
+
+  const cutoff = new Date(now)
+  let deleted = 0
+  for (let batch = 1; batch <= RATE_LIMIT_PURGE_MAX_BATCHES; batch += 1) {
+    const result = await deps.execute(
+      `DELETE FROM ${RATE_LIMIT_TABLE} WHERE window_expires_at <= ? LIMIT ?`,
+      [cutoff, RATE_LIMIT_PURGE_BATCH_SIZE],
+    )
+    const affected = affectedRowsOrZero(result)
+    deleted += affected
+    if (affected < RATE_LIMIT_PURGE_BATCH_SIZE) return { deleted, batches: batch, bounded: false }
+  }
+  return { deleted, batches: RATE_LIMIT_PURGE_MAX_BATCHES, bounded: true }
 }

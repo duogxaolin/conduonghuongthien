@@ -238,3 +238,48 @@ test('roles: a role within the actor\'s rights is still edited; a SuperAdmin edi
   await updateRole(put(superadmin, ROLE_SETTINGS, { permissions: [{ resource: 'news', canRead: true }] }))
   assert.deepEqual(writes, ['delete permissions', 'insert permissions', 'insert activity_logs'])
 })
+
+// ─── Retired cells (CHANGELOG § 66) ──────────────────────────────────────────
+// The role editor no longer shows "Trang chủ" (`home_sections`) or "Kiểm thử" (`canTest`): no
+// handler checks them and nobody can be granted them now. A role still carrying one — the
+// seeded `editor` has `home_sections:read` — must stay manageable by a delegated manager who
+// holds everything REAL it grants; counting the hidden cells locked them out for good.
+
+const ROLE_LEGACY = 14
+const legacyRows = (): Row[] => [
+  { resource: 'news', canCreate: false, canRead: true, canUpdate: false, canDelete: false, canPublish: false, canArchive: false, canTest: true },
+  { resource: 'home_sections', canCreate: false, canRead: true, canUpdate: false, canDelete: false, canPublish: false, canArchive: false, canTest: false },
+]
+function resetLegacy() {
+  reset()
+  roleRows[ROLE_LEGACY] = { isSystem: false }
+  rolePerms[ROLE_LEGACY] = legacyRows()
+  accounts[22] = { id: 22, username: 'bientapcu', roleId: ROLE_LEGACY, isSystem: false }
+}
+
+test('retired cells: an account in a role carrying them is still managed, moved and created by a user manager', async () => {
+  resetLegacy()
+  await updateUser(put(manager, 22, { email: 'bientapcu@example.com', password: STRONG_PASSWORD }))
+  await setUserActive(manager, 22, false)
+  await updateUser(put(manager, 20, { roleId: ROLE_LEGACY }))
+  await createUser(put(manager, 0, { username: 'moi-tao', password: STRONG_PASSWORD, roleId: ROLE_LEGACY }))
+  await deleteUserById(manager, 22)
+  assert.deepEqual(writes, [
+    'update users', 'insert activity_logs', 'update users', 'insert activity_logs', 'update users', 'insert activity_logs',
+    'insert users', 'insert activity_logs', 'delete users', 'insert activity_logs',
+  ])
+})
+
+test('retired cells: the role editor\'s save — hidden cells sent back as stored — goes through', async () => {
+  resetLegacy()
+  await updateRole(put(roleEditor, ROLE_LEGACY, { permissions: legacyRows() }))
+  assert.deepEqual(writes, ['delete permissions', 'insert permissions', 'insert activity_logs'])
+})
+
+test('retired cells: a real right beside them still counts', async () => {
+  resetLegacy()
+  rolePerms[ROLE_LEGACY]![0]!.canPublish = true
+  assert.equal(await statusOf(() => updateUser(put(manager, 22, { email: 'x@example.com' }))), 403)
+  assert.equal(await statusOf(() => updateRole(put(roleEditor, ROLE_LEGACY, { permissions: legacyRows() }))), 403)
+  assert.deepEqual(writes, [])
+})

@@ -4,7 +4,7 @@ import { getDb } from '../../../utils/db'
 import { submissions, users } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { countSubmissionsByStatus } from '../../../services/submission-workflow'
-import { isSubmissionStatus, type SubmissionStatus } from '../../../../app/utils/submission-status'
+import { isSubmissionStatus, type SubmissionStatus } from '../../../../shared/submission-status'
 
 /**
  * Danh sách đơn đăng ký, kèm trạng thái xử lý và số đếm theo trạng thái.

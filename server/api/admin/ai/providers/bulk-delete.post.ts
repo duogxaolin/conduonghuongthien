@@ -19,8 +19,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Danh sách ID nhà cung cấp không hợp lệ.' })
   }
 
-  const ids = body.ids
-    .filter((id: unknown): id is number => typeof id === 'number' && Number.isFinite(id) && id > 0)
+  const ids: number[] = [...new Set<number>(body.ids
+    .filter((id: unknown): id is number => typeof id === 'number' && Number.isFinite(id) && id > 0))]
 
   if (ids.length === 0) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn ít nhất 1 nhà cung cấp để xoá.' })
@@ -36,6 +36,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Không tìm thấy nhà cung cấp nào.' })
   }
 
+  // What is deleted and audited: the providers found, not the ids sent (an id sent
+  // twice, or one that does not exist, is not a deletion).
+  const providerIds = providersToDelete.map(p => p.id)
   const providerNames = providersToDelete.map(p => p.provider)
 
   // Check if any of these providers are assigned to any service config
@@ -59,7 +62,7 @@ export default defineEventHandler(async (event) => {
     await tx.delete(aiModelPricing).where(inArray(aiModelPricing.provider, providerNames))
 
     // 2. Delete the providers
-    await tx.delete(aiProviders).where(inArray(aiProviders.id, ids))
+    await tx.delete(aiProviders).where(inArray(aiProviders.id, providerIds))
 
     // 3. Write audit log
     await tx.insert(activityLogs).values({
@@ -67,11 +70,11 @@ export default defineEventHandler(async (event) => {
       action: 'delete',
       resource: 'ai',
       resourceId: null,
-      meta: JSON.stringify({
+      meta: {
         type: 'provider_bulk_delete',
-        count: ids.length,
+        count: providerIds.length,
         providers: providerNames,
-      }),
+      },
     })
   })
 

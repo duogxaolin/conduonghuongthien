@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { MfaMethod } from '~/composables/useAdminAuth'
-
+import type { AdminMfaSendCodeResponse, LoginPublicSettingsResponse } from '~/types/admin-auth-api'
 definePageMeta({ layout: false, middleware: 'admin-auth' })
 
 const { login, fetchCaptcha, verifyMfa, user, fetchUser } = useAdminAuth()
@@ -23,10 +23,9 @@ onMounted(async () => {
   }
 })
 
-type PublicSettingsResponse = { settings?: Record<string, string | null>; faviconUrl?: string | null }
-const { data: publicSettingsData } = await useAsyncData<PublicSettingsResponse | null>(
+const { data: publicSettingsData } = await useAsyncData<LoginPublicSettingsResponse | null>(
   'public-settings-login',
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  () => adminFetch<LoginPublicSettingsResponse>('/api/public/settings'),
   { default: () => null },
 )
 const siteLogo = computed(() => {
@@ -137,7 +136,7 @@ const handleLogin = async () => {
       ? { captchaId: captchaId.value, captchaCode: captchaCode.value }
       : undefined
     const res = await login(username.value, password.value, captcha)
-    if (res.ok && res.mfaRequired) {
+    if (res.ok && 'mfaRequired' in res && res.mfaRequired) {
       methods.value = res.methods ?? []
       recoveryAvailable.value = res.recoveryCodesAvailable === true
       selectedMethod.value = methods.value[0] ?? 'recovery_code'
@@ -216,8 +215,8 @@ const handleSendCode = async () => {
   errorMsg.value = ''
   infoMsg.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sentTo?: string }>)(`/api/admin/auth/mfa/send-code`, { method: 'POST' })
-    if (res.ok) infoMsg.value = `Đã gửi mã tới ${res.sentTo || 'email của bạn'}. Mã có hiệu lực 10 phút.`
+    const res = await adminFetch<AdminMfaSendCodeResponse>(`/api/admin/auth/mfa/send-code`, { method: 'POST' })
+    if (res.ok) infoMsg.value = 'Đã gửi mã tới email của bạn. Mã có hiệu lực 10 phút.'
     nextTick(() => codeInput.value?.focus())
   } catch (err: unknown) {
     errorMsg.value = errorMessage(err, 'Không gửi được mã. Vui lòng thử cách khác.')
@@ -237,9 +236,9 @@ function backToPassword() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0d1e10] to-[#1e4620] p-5 font-[Inter,system-ui,sans-serif]">
+  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0d1e10] to-brand-900 p-5 font-[Inter,system-ui,sans-serif]">
     <div class="w-full max-w-[420px] bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden">
-      <div class="px-8 pt-8 pb-6 text-center bg-[#f8faf8] border-b border-[#eef2ee]">
+      <div class="px-8 pt-8 pb-6 text-center bg-surface border-b border-surface-tint">
         <div v-if="siteMainLogo || siteLogo" class="flex items-center justify-center gap-3 mb-4 flex-wrap">
           <img
             v-if="siteMainLogo"
@@ -248,7 +247,7 @@ function backToPassword() {
             class="w-auto object-contain"
             :class="siteLogo ? 'h-12' : 'h-12'"
           />
-          <span v-if="siteMainLogo && siteLogo" class="h-8 w-px bg-[#c8d6c9]" aria-hidden="true"></span>
+          <span v-if="siteMainLogo && siteLogo" class="h-8 w-px bg-line-strong" aria-hidden="true"></span>
           <img
             v-if="siteLogo"
             :src="siteLogo"
@@ -257,57 +256,57 @@ function backToPassword() {
             :class="siteMainLogo ? 'h-9' : 'h-12'"
           />
         </div>
-        <div v-else class="w-14 h-14 bg-[#e4f2e5] text-[#2c6e33] text-3xl rounded-full flex items-center justify-center mx-auto mb-4">
+        <div v-else class="w-14 h-14 bg-[#e4f2e5] text-brand-700 text-3xl rounded-full flex items-center justify-center mx-auto mb-4">
           <i class="fa-solid fa-leaf"></i>
         </div>
-        <h2 class="text-[1.15rem] font-extrabold text-[#122815] m-0 mb-1.5 tracking-[0.5px]">CON ĐƯỜNG HƯỚNG THIỆN</h2>
-        <p class="text-[0.82rem] text-[#667768] m-0">Hệ thống Quản trị Nội dung (Admin Panel)</p>
+        <h2 class="text-[1.15rem] font-extrabold text-brand-950 m-0 mb-1.5 tracking-[0.5px]">CON ĐƯỜNG HƯỚNG THIỆN</h2>
+        <p class="text-[0.82rem] text-ink-muted m-0">Hệ thống Quản trị Nội dung (Admin Panel)</p>
       </div>
 
       <form v-if="step === 'password'" @submit.prevent="handleLogin" class="px-8 py-8">
-        <div v-if="errorMsg" class="flex items-center gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-[#d12420] px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-5" role="alert">
+        <div v-if="errorMsg" class="flex items-center gap-2 bg-danger-bg border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-5" role="alert">
           <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i>
           {{ errorMsg }}
         </div>
 
         <div class="mb-5">
-          <label class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">Tài khoản</label>
+          <label class="block text-[0.82rem] font-bold text-ink-admin mb-2">Tài khoản</label>
           <input
             type="text"
             v-model="username"
             placeholder="Nhập tên đăng nhập"
             required
             autocomplete="username"
-            class="w-full px-3.5 py-3 border border-[#c8d6c9] rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border"
+            class="w-full px-3.5 py-3 border border-line-strong rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border"
           />
         </div>
 
         <div class="mb-5">
-          <label class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">Mật khẩu</label>
+          <label class="block text-[0.82rem] font-bold text-ink-admin mb-2">Mật khẩu</label>
           <input
             type="password"
             v-model="password"
             placeholder="Nhập mật khẩu"
             required
             autocomplete="current-password"
-            class="w-full px-3.5 py-3 border border-[#c8d6c9] rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border"
+            class="w-full px-3.5 py-3 border border-line-strong rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border"
           />
         </div>
 
         <div v-if="captchaRequired" class="mb-5">
-          <label class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">Mã captcha</label>
+          <label class="block text-[0.82rem] font-bold text-ink-admin mb-2">Mã captcha</label>
           <div class="flex items-center gap-3">
             <div
               v-if="captchaSvg"
               v-html="captchaSvg"
-              class="shrink-0 rounded-lg border border-[#c8d6c9] bg-[#f0f9ff] overflow-hidden"
+              class="shrink-0 rounded-lg border border-line-strong bg-[#f0f9ff] overflow-hidden"
               aria-label="Hình captcha"
             />
             <button
               type="button"
               @click="loadCaptcha"
               :disabled="captchaLoading"
-              class="shrink-0 flex items-center gap-1.5 px-3 py-2 text-[0.82rem] font-bold text-[#2c6e33] border border-[#c8d6c9] rounded-lg hover:bg-[#e4f2e5] disabled:opacity-60"
+              class="shrink-0 flex items-center gap-1.5 px-3 py-2 text-[0.82rem] font-bold text-brand-700 border border-line-strong rounded-lg hover:bg-[#e4f2e5] disabled:opacity-60"
               :title="captchaLoading ? 'Đang tải...' : 'Tải ảnh captcha khác'"
             >
               <i class="fa-solid fa-rotate-right" :class="captchaLoading ? 'animate-spin' : ''" aria-hidden="true" />
@@ -320,14 +319,14 @@ function backToPassword() {
             placeholder="Nhập mã trong hình"
             required
             autocomplete="off"
-            class="mt-2 w-full px-3.5 py-3 border border-[#c8d6c9] rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border"
+            class="mt-2 w-full px-3.5 py-3 border border-line-strong rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border"
           />
         </div>
 
         <button
           type="submit"
           :disabled="loading"
-          class="w-full py-3.5 bg-[#1e4620] hover:bg-[#2c6e33] text-white border-0 rounded-lg text-[0.95rem] font-bold cursor-pointer transition-colors mt-2 disabled:opacity-70 disabled:cursor-not-allowed"
+          class="w-full py-3.5 bg-brand-900 hover:bg-brand-700 text-white border-0 rounded-lg text-[0.95rem] font-bold cursor-pointer transition-colors mt-2 disabled:opacity-70 disabled:cursor-not-allowed"
         >
           {{ loading ? 'Đang xác thực...' : 'Đăng nhập hệ thống' }}
         </button>
@@ -336,52 +335,52 @@ function backToPassword() {
       <!-- ── Bước 2: xác thực hai bước ─────────────────────────────────── -->
       <form v-else @submit.prevent="handleVerify" class="px-8 py-8">
         <div class="flex items-start gap-3 mb-5">
-          <div class="w-10 h-10 rounded-full bg-[#e4f2e5] text-[#2c6e33] flex items-center justify-center shrink-0">
+          <div class="w-10 h-10 rounded-full bg-[#e4f2e5] text-brand-700 flex items-center justify-center shrink-0">
             <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
           </div>
           <div>
-            <h3 class="text-[0.95rem] font-extrabold text-[#122815] m-0">Xác thực hai bước</h3>
-            <p class="text-[0.8rem] text-[#667768] m-0 mt-0.5">Mật khẩu đã đúng. Còn một bước nữa để vào hệ thống.</p>
+            <h3 class="text-[0.95rem] font-extrabold text-brand-950 m-0">Xác thực hai bước</h3>
+            <p class="text-[0.8rem] text-ink-muted m-0 mt-0.5">Mật khẩu đã đúng. Còn một bước nữa để vào hệ thống.</p>
           </div>
         </div>
 
-        <div v-if="errorMsg" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-[#d12420] px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="alert">
+        <div v-if="errorMsg" class="flex items-start gap-2 bg-danger-bg border border-[#ffc1ba] text-danger px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="alert">
           <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>
           <span>{{ errorMsg }}</span>
         </div>
-        <div v-if="infoMsg" class="flex items-start gap-2 bg-[#eef7ee] border border-[#cce5cd] text-[#1e4620] px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="status">
+        <div v-if="infoMsg" class="flex items-start gap-2 bg-surface-tint border border-[#cce5cd] text-brand-900 px-3.5 py-2.5 rounded-lg text-[0.84rem] mb-4" role="status">
           <i class="fa-solid fa-circle-check shrink-0 mt-0.5" aria-hidden="true"></i>
           <span>{{ infoMsg }}</span>
         </div>
 
         <!-- Chọn cách xác thực (chỉ hiện khi có nhiều hơn một cách) -->
         <div v-if="methodChoices.length > 1" class="mb-4">
-          <span class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">Chọn cách xác thực</span>
+          <span class="block text-[0.82rem] font-bold text-ink-admin mb-2">Chọn cách xác thực</span>
           <div class="flex flex-col gap-2">
             <button
               v-for="m in methodChoices"
               :key="m"
               type="button"
-              class="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border text-left text-[0.85rem] font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-1"
-              :class="selectedMethod === m ? 'bg-[#e4f2e5] border-[#2c6e33] text-[#1e4620]' : 'bg-white border-[#c8d6c9] text-[#334e36] hover:bg-[#f0f7f1]'"
+              class="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border text-left text-[0.85rem] font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-1"
+              :class="selectedMethod === m ? 'bg-[#e4f2e5] border-brand-700 text-[#1e4620]' : 'bg-white border-line-strong text-[#334e36] hover:bg-surface-tint'"
               :aria-pressed="selectedMethod === m"
               @click="selectMethod(m)"
             >
               <i :class="METHOD_META[m].icon" class="w-4 text-center shrink-0" aria-hidden="true"></i>
               <span class="flex-1">{{ METHOD_META[m].label }}</span>
               <!-- Dấu chọn bằng ký hiệu, không chỉ bằng màu -->
-              <i v-if="selectedMethod === m" class="fa-solid fa-check text-[#2c6e33]" aria-hidden="true"></i>
+              <i v-if="selectedMethod === m" class="fa-solid fa-check text-brand-700" aria-hidden="true"></i>
             </button>
           </div>
         </div>
 
-        <p class="text-[0.8rem] text-[#667768] mb-4 m-0">{{ currentMeta.hint }}</p>
+        <p class="text-[0.8rem] text-ink-muted mb-4 m-0">{{ currentMeta.hint }}</p>
 
         <button
           v-if="selectedMethod === 'email_otp'"
           type="button"
           :disabled="sendingCode"
-          class="inline-flex items-center gap-2 mb-4 px-3.5 py-2 rounded-lg border border-[#2c6e33] bg-white text-[0.84rem] font-bold text-[#2c6e33] hover:bg-[#f0f7f1] disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-1"
+          class="inline-flex items-center gap-2 mb-4 px-3.5 py-2 rounded-lg border border-brand-700 bg-white text-[0.84rem] font-bold text-brand-700 hover:bg-surface-tint disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-1"
           @click="handleSendCode"
         >
           <i class="fa-solid" :class="sendingCode ? 'fa-spinner fa-spin' : 'fa-paper-plane'" aria-hidden="true"></i>
@@ -389,7 +388,7 @@ function backToPassword() {
         </button>
 
         <div class="mb-5">
-          <label for="mfa-code" class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">{{ currentMeta.inputLabel }}</label>
+          <label for="mfa-code" class="block text-[0.82rem] font-bold text-ink-admin mb-2">{{ currentMeta.inputLabel }}</label>
           <input
             id="mfa-code"
             ref="codeInput"
@@ -399,21 +398,21 @@ function backToPassword() {
             :inputmode="selectedMethod === 'totp' || selectedMethod === 'email_otp' ? 'numeric' : 'text'"
             maxlength="32"
             required
-            class="w-full px-3.5 py-3 border border-[#c8d6c9] rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border tracking-[0.15em] font-semibold"
+            class="w-full px-3.5 py-3 border border-line-strong rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 box-border tracking-[0.15em] font-semibold"
           />
         </div>
 
         <button
           type="submit"
           :disabled="loading"
-          class="w-full py-3.5 bg-[#1e4620] hover:bg-[#2c6e33] text-white border-0 rounded-lg text-[0.95rem] font-bold cursor-pointer transition-colors disabled:opacity-70 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
+          class="w-full py-3.5 bg-brand-900 hover:bg-brand-700 text-white border-0 rounded-lg text-[0.95rem] font-bold cursor-pointer transition-colors disabled:opacity-70 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
         >
           {{ loading ? 'Đang xác thực...' : 'Xác nhận & Đăng nhập' }}
         </button>
 
         <button
           type="button"
-          class="w-full mt-3 py-2 bg-transparent border-0 text-[0.82rem] font-semibold text-[#667768] hover:text-[#2c6e33] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2c6e33] rounded-lg"
+          class="w-full mt-3 py-2 bg-transparent border-0 text-[0.82rem] font-semibold text-ink-muted hover:text-brand-700 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-700 rounded-lg"
           @click="backToPassword"
         >
           <i class="fa-solid fa-arrow-left mr-1.5" aria-hidden="true"></i>
@@ -421,7 +420,7 @@ function backToPassword() {
         </button>
       </form>
 
-      <div class="px-8 py-4 bg-[#f8faf8] border-t border-[#eef2ee] text-center text-[0.75rem] text-[#88998a]">
+      <div class="px-8 py-4 bg-surface border-t border-surface-tint text-center text-[0.75rem] text-ink-faint">
         Cổng thông tin Hỗ trợ Tái hòa nhập Cộng đồng — Bộ Công an
       </div>
     </div>

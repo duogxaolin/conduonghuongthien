@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
       action: 'create',
       resource: 'ai',
       resourceId: id,
-      meta: JSON.stringify({ type: 'create_moderation_rule', category, pattern, action }),
+      meta: { type: 'create_moderation_rule', category, pattern, action },
     })
 
     return id

@@ -3,6 +3,7 @@ import { contentTypes } from '../../../db/schema'
 import { uniqueContentTypeSlug } from '../../../utils/slug'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateContentType } from '../../../services/i18n-auto-translate'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -35,6 +36,9 @@ export default defineEventHandler(async (event) => {
 
   // Non-blocking i18n auto-translate (vi gốc + AI dịch 5 lang).
   void autoTranslateContentType(adminUser, uniqueSlug, name, description).catch(() => {})
+
+  // After the insert: content types feed the menus and lists of the cached public pages.
+  await purgePublicPageCacheAfterWrite('content_types.create')
 
   return { ok: true, id: res.insertId, slug: uniqueSlug }
 })

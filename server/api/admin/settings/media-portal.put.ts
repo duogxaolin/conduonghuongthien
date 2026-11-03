@@ -27,6 +27,7 @@ import {
   MEDIA_BOUNDS,
 } from '../../../utils/media-config'
 import { encryptVideoR2Secret } from '../../../utils/media-r2-secret'
+import { MASKED_SECRET, isRetypedVideoSecret } from '../../../../shared/settings-credential-rules'
 
 type FieldSpec = {
   dbKey: string
@@ -59,14 +60,15 @@ function validateR2String(label: string, raw: string, maxLen: number): string {
 }
 
 /**
- * Validate + mã hoá R2 secret key. Rỗng = giữ nguyên (không xoá) — xử lý ở niveau
- * caller: nếu `validated` rỗng thì skip update. Có giá trị → mã hoá AES-256-GCM
- * bằng `CHATBOT_ENCRYPTION_SECRET` (nhãn `cdkt-video-r2-secret:v1`), lưu dạng
- * JSON envelope.
+ * Validate + mã hoá R2 secret key. Rỗng **hoặc dấu che** (`********`, thứ GET trả
+ * cho bí mật đã lưu) = giữ nguyên (không xoá, không lưu chuỗi dấu che đè lên bí
+ * mật thật) — xử lý ở niveau caller: nếu `validated` rỗng thì skip update. Có giá
+ * trị → mã hoá AES-256-GCM bằng `CHATBOT_ENCRYPTION_SECRET` (nhãn
+ * `cdkt-video-r2-secret:v1`), lưu dạng JSON envelope.
  */
 function validateAndEncryptR2Secret(raw: string): string {
+  if (!isRetypedVideoSecret(raw)) return ''
   const text = raw.trim()
-  if (!text) return ''
   if (text.length > 256) {
     throw new Error('R2 secret key không được quá 256 ký tự')
   }
@@ -235,19 +237,14 @@ export default defineEventHandler(async (event) => {
   }
 
   /**
-   * Mask giá trị audit cho secret key. `from` từ CSDL là JSON envelope — đọc
-   * `lastFour` ra để mask, không lộ envelope. `to` là envelope mới (đã mã hoá)
-   * cũng mask tương tự. Trường khác ghi giá trị thật.
+   * Giá trị audit cho secret key: `********` khi có, '' khi không — không lộ
+   * envelope, và (spec admin-settings-secrets) cũng không lộ 4 ký tự cuối, vì
+   * `activity_logs` được đọc lại qua `/admin/users/activity`. Dòng audit vẫn cho
+   * biết bí mật đã đổi (khoá có mặt trong `changes`). Trường khác ghi giá trị thật.
    */
   function maskForAudit(dbKey: string, value: string): string {
     if (dbKey !== R2_SECRET_DB_KEY_LOCAL) return value
-    if (!value) return ''
-    try {
-      const env = JSON.parse(value) as { lastFour?: string }
-      return env.lastFour ? `••••${env.lastFour}` : '••••'
-    } catch {
-      return '••••'
-    }
+    return value ? MASKED_SECRET : ''
   }
 
   try {

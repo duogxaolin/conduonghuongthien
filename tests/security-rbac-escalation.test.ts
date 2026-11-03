@@ -94,12 +94,41 @@ test('typed flags cannot exploit coercion, even as superadmin', () => {
   }
 })
 
-test('publish, archive and test grants cannot escalate privileges', () => {
-  for (const flag of ['canPublish', 'canArchive', 'canTest']) {
+test('publish and archive grants cannot escalate privileges', () => {
+  for (const flag of ['canPublish', 'canArchive']) {
     assert.equal(statusOf(() => assertAssignablePermissions(actor(), [{ resource: 'chatbot_knowledge', [flag]: true }])), 403)
     const owner = actor({ permissions: [{ resource: 'chatbot_knowledge', canCreate: false, canRead: false, canUpdate: false, canDelete: false, [flag]: true }] })
     assert.equal(statusOf(() => assertAssignablePermissions(owner, [{ resource: 'chatbot_knowledge', [flag]: true }])), null)
   }
+})
+
+/**
+ * Retired cells (shared/permissions.ts `RETIRED_PERMISSION_*`, CHANGELOG § 66): `canTest` on any
+ * resource and any flag of `home_sections`. No handler checks them, the role editor no longer
+ * shows them and sends their stored value back, and nobody can obtain them now — so they are
+ * stored (and type-checked) like any cell, but never compared against what the actor holds.
+ * Counting them locked delegated managers out of the seeded `editor` (`home_sections:read`).
+ */
+test('retired cells are stored as sent but never need holding; real cells beside them still do', () => {
+  assert.deepEqual(assertAssignablePermissions(actor(), [
+    { resource: 'news', canRead: true, canTest: true },
+    { resource: 'home_sections', canCreate: true, canRead: true, canUpdate: true, canDelete: true, canPublish: true, canArchive: true, canTest: true },
+  ]), [
+    { resource: 'news', canCreate: false, canRead: true, canUpdate: false, canDelete: false, canPublish: false, canArchive: false, canTest: true },
+    { resource: 'home_sections', canCreate: true, canRead: true, canUpdate: true, canDelete: true, canPublish: true, canArchive: true, canTest: true },
+  ])
+  assert.equal(statusOf(() => assertAssignablePermissions(actor(), [{ resource: 'chatbot_knowledge', canTest: true, canPublish: true }])), 403,
+    'a retired flag does not excuse a real one in the same row')
+  assert.equal(statusOf(() => assertAssignablePermissions(actor(), [{ resource: 'home_sections', canRead: true }, { resource: 'users', canRead: true }])), 403)
+})
+
+test('a role is within the actor whatever its retired cells say', () => {
+  const check = (rows: Parameters<typeof assertRoleWithinActor>[1]) => statusOf(() => assertRoleWithinActor(actor(), rows, 'x'))
+  // The seeded editor as stored on an upgraded database: home_sections:read, plus a canTest box ticked back when it showed.
+  assert.equal(check([{ resource: 'news', canRead: true, canTest: true }, { resource: 'home_sections', canRead: true, canUpdate: true }]), null)
+  assert.equal(check([{ resource: 'settings', canTest: true }]), null, 'a canTest-only row grants nothing')
+  assert.equal(check([{ resource: 'news', canTest: true, canDelete: true }]), 403, 'a real flag beside a retired one still counts')
+  assert.equal(check([{ resource: 'home_sections', canRead: true }, { resource: 'settings', canRead: true }]), 403)
 })
 
 test('duplicate resources are rejected and omissions normalize to denied', () => {
@@ -127,6 +156,9 @@ test('a role is within the actor only if every flag it grants is one the actor h
   assert.equal(check([{ resource: 'settings', canUpdate: true }], superadmin), null, 'a superadmin is not limited')
 })
 
+// `home_sections` stays in the allow-list though retired: the role editor still sends its row
+// back on every save, and a name outside the list is a 400 — the save would fail on every role
+// that carries one (the seeded `editor`).
 test('the resource allow-list covers every resource the admin UI manages', () => {
   for (const resource of [
     'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',

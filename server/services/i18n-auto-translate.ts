@@ -2,8 +2,8 @@
  * I18n auto-translate khi tạo/sửa content-type & category.
  *
  * - Tạo: sinh key i18n (`ct_<slug>` / `cat_<slug>` cho name, `*_desc` cho
- *   description), ghi vi (gốc, không AI), rồi background AI dịch sang 5 ngôn ngữ
- *   còn lại (en/zh/fr/ru/lo) qua `callAi('translation_ui', ...)`.
+ *   description), ghi vi (gốc, không AI), rồi background AI dịch sang các ngôn ngữ
+ *   đang hoạt động trong CSDL (trừ vi) qua `callAi('translation_ui', ...)`.
  * - Sửa: re-upsert vi + re-dịch non-vi (overwrite AI value).
  *
  * Non-blocking: caller `void` promise này, không await, không chặn response.
@@ -12,10 +12,11 @@
  * Reuse:
  * - `upsertTranslations` (server/services/languages.ts:225) — ghi/cập nhật 1 key.
  * - `callAi('translation_ui', ...)` (server/services/ai-gateway.ts:558) — AI dịch.
- * - `DEFAULT_LANGUAGES` (server/services/languages.ts:296) — 6 lang (vi + 5 khác).
+ * - `listActiveTranslationTargets` (server/services/languages.ts) — ngôn ngữ đích từ CSDL.
  */
 import { callAi } from './ai-gateway'
-import { upsertTranslations, DEFAULT_LANGUAGES } from './languages'
+import { listActiveTranslationTargets, upsertTranslations } from './languages'
+import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../utils/ai/model-translations'
 import { logWarn } from '../utils/logger'
 import type { ActorLike } from '../utils/permissions'
 
@@ -46,27 +47,18 @@ async function translateBatchForLang(
 ): Promise<Array<{ group: string; key: string; value: string }>> {
   const promptLines = viItems.map((it, i) => `[${i + 1}] key=${it.key} value=${it.value}`)
   const prompt = `Dịch các chuỗi giao diện sau sang ${langName}.
-Giữ nguyên placeholder như {name}, {0}, %s. Trả về JSON array, mỗi phần tử {"key":"...", "value":"..."}:
+Giữ nguyên placeholder như {name}, {0}, %s. Trả về JSON array, mỗi phần tử ${MODEL_TRANSLATION_ANSWER_FORMAT} — n là số trong ngoặc vuông [n] của dòng đó:
 ${promptLines.join('\n')}`
 
   const result = await callAi('translation_ui', { prompt, userId })
   if (!result.ok || !result.text) return []
-
-  try {
-    const raw = result.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
-    const parsed = JSON.parse(raw) as Array<{ key: string; value: string }>
-    const map = new Map(parsed.map((p) => [p.key, p.value]))
-    return viItems
-      .map((it) => ({ group: it.group, key: it.key, value: map.get(it.key) ?? '' }))
-      .filter((it) => it.value.trim() !== '')
-  } catch {
-    return []
-  }
+  // Only text for the keys asked for — a model "null" is not a translation.
+  return readModelTranslations(result.text, viItems)
 }
 
 /**
  * Auto-translate cho 1 entity (content-type hoặc category).
- * Ghi vi trước, rồi background AI dịch 5 lang còn lại.
+ * Ghi vi trước, rồi background AI dịch sang các ngôn ngữ đang hoạt động khác.
  */
 async function autoTranslate(
   actor: ActorLike,
@@ -81,8 +73,10 @@ async function autoTranslate(
     // 1. Ghi vi (gốc, không AI)
     await upsertTranslations(actor, 'vi', viItems, false)
 
-    // 2. Background AI dịch 5 lang còn lại — không await, không chặn caller.
-    const nonViLangs = DEFAULT_LANGUAGES.filter((l) => l.code !== 'vi')
+    // 2. Background AI dịch sang các ngôn ngữ ĐANG HOẠT ĐỘNG trong CSDL — không await,
+    //    không chặn caller. Trước đây lặp `DEFAULT_LANGUAGES` cứng: một ngôn ngữ mặc định
+    //    đã bị xoá vẫn tốn một lượt AI rồi ghi lỗi 404 vào log mỗi lần tạo/sửa danh mục.
+    const nonViLangs = await listActiveTranslationTargets()
     void Promise.all(
       nonViLangs.map(async (lang) => {
         try {

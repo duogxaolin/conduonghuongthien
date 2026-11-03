@@ -1,6 +1,7 @@
 import { createError } from 'h3'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { reorderLanguages } from '../../../services/languages'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -23,6 +24,8 @@ export default defineEventHandler(async (event) => {
   }
 
   await reorderLanguages(adminUser, orders)
+  // After the service committed: the language switcher is in every cached page's HTML.
+  await purgePublicPageCacheAfterWrite('languages.reorder')
 
   return { ok: true, message: 'Đã cập nhật thứ tự ngôn ngữ thành công.' }
 })

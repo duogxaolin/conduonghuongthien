@@ -54,7 +54,7 @@ export default defineEventHandler(async (event) => {
       action: 'update',
       resource: 'ai',
       resourceId: id,
-      meta: JSON.stringify({ type: 'update_moderation_rule', changedFields: Object.keys(patch) }),
+      meta: { type: 'update_moderation_rule', changedFields: Object.keys(patch) },
     })
   })
 

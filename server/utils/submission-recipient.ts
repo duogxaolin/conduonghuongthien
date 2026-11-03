@@ -10,7 +10,7 @@
  * 1. `SupportFormBlock.vue` (biểu mẫu ở **trang chủ**) không gửi `recipientEmail`
  *    lẫn `formTitle` trong thân request — nên nhánh gửi mail ở
  *    `submissions.post.ts` không bao giờ được vào.
- * 2. `support_form` trong `app/utils/blocks/registry.ts` **không có** trường
+ * 2. `support_form` trong registry block (nay `shared/blocks/registry.ts`) **không có** trường
  *    `recipientEmail` để cấu hình. Nó chỉ có `email` — địa chỉ **hiện trên trang**
  *    cho người dân đọc, không phải địa chỉ nhận đơn. Máy chủ thì đi tìm
  *    `data.recipientEmail` trên đúng loại block đó.
