@@ -312,7 +312,8 @@ function reload() {
 // ─── Video cùng chuyên mục ───────────────────────────────────────────────────
 
 const related = ref<PublicMediaListItem[]>([])
-const relatedPending = ref(false)
+// `true` từ đầu: client đặt nó ngay lúc setup (watch immediate) → máy chủ cũng phải vẽ khung chờ, nếu không hydration lệch (tests/media-related-hydration.test.ts).
+const relatedPending = ref(true)
 const relatedError = ref(false)
 
 /**
@@ -328,10 +329,7 @@ const relatedError = ref(false)
  */
 async function loadRelated() {
   const current = item.value
-  if (!current) {
-    related.value = []
-    return
-  }
+  if (!current) { related.value = []; relatedPending.value = false; return }
   relatedPending.value = true
   relatedError.value = false
   try {
