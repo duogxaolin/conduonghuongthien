@@ -25,7 +25,7 @@ import {
   canResetUserMfa, mfaResetConfirmed, mfaResetPrompt, resetUserMfa, userMfaResetPath,
   type MfaResetDeps,
 } from '../app/utils/admin-user-mfa-reset.ts'
-import { click, findAll, textOf, type MiniElement } from './_sfc-mount.ts'
+import { click, findAll, fire, textOf, type MiniElement } from './_sfc-mount.ts'
 import {
   h3Error, json, mountAdminPage, OFETCH_LINE, OpenModal, routes, sent, settle, unmountAll, wire,
   type MountedAdminPage, type NetCall,
@@ -83,6 +83,8 @@ describe('the dialog and the request', () => {
       // lockout example, not this consequence.
       /và mọi mã dự phòng của tài khoản "target"/,
       /đăng xuất khỏi mọi phiên/,
+      // When to use it at all — the break-glass case, not a routine reset.
+      /Chỉ dùng khi người này bị khoá ngoài \(mất thiết bị, mất mã dự phòng\)\./,
       /Không thể hoàn tác/,
       /nhật ký hoạt động của cả hai tài khoản/,
     ]) {
@@ -114,6 +116,9 @@ describe('the dialog and the request', () => {
     assert.equal(mfaResetConfirmed(vi.username, { ...vi, username: nfd }), true, 'typed composed, stored decomposed')
     assert.equal(mfaResetConfirmed('Nguyễn.văn'.normalize('NFD'), vi), false, 'case still counts')
     assert.equal(mfaResetConfirmed('nguyen.van', vi), false, 'no diacritics folding')
+    // NFC, not NFKC: compatibility look-alikes are other characters, not the same name.
+    assert.equal(mfaResetConfirmed('ｔａｒｇｅｔ', TARGET), false, 'full-width letters')
+    assert.equal(mfaResetConfirmed('ﬁle', { id: 3, username: 'file' }), false, 'the "ﬁ" ligature')
   })
 
   function recorder(answer: string | null, response: (url: string) => Promise<{ message?: string }>) {
@@ -188,8 +193,8 @@ const RESET_OK = { ok: true, message: 'Đã xoá toàn bộ xác thực hai bư�
 const ROW = { id: 5, username: 'bientap' }
 
 const mfaServer = (answer = () => json(RESET_OK)) => routes({ 'DELETE /api/admin/users/5/mfa': answer })
-const openButton = (options: { user?: Record<string, unknown>, compact?: boolean, server?: ReturnType<typeof mfaServer> } = {}) =>
-  mountAdminPage(BUTTON, options.server ?? mfaServer(), { props: { user: ROW, compact: options.compact ?? true }, user: options.user })
+const openButton = (options: { user?: Record<string, unknown>, compact?: boolean, server?: ReturnType<typeof mfaServer>, auto?: Record<string, unknown> } = {}) =>
+  mountAdminPage(BUTTON, options.server ?? mfaServer(), { props: { user: ROW, compact: options.compact ?? true }, user: options.user, auto: options.auto })
 const resetButtons = (opened: MountedAdminPage) => findAll(opened.page.root, el => el.tag === 'button')
 
 describe('components/admin/UserMfaResetButton.vue', () => {
@@ -231,7 +236,7 @@ describe('components/admin/UserMfaResetButton.vue', () => {
     assert.match(String(opened.prompts[0]!.message), /"bientap"/)
     assert.deepEqual(sent(opened.calls), ['DELETE /api/admin/users/5/mfa'])
     assert.equal(opened.lastToast('success'), RESET_OK.message)
-    assert.equal(resetButtons(opened)[0]!.props.disabled, false, 'usable again afterwards')
+    assert.equal(resetButtons(opened)[0]!.props['aria-disabled'], false, 'usable again afterwards')
   })
 
   it('"Hủy" or a wrong name sends nothing', async () => {
@@ -257,24 +262,62 @@ describe('components/admin/UserMfaResetButton.vue', () => {
     for (const t of opened.toasts) assert.doesNotMatch(t.message, OFETCH_LINE)
   })
 
-  it('both variants: disabled and aria-busy while the request is in flight, neither before nor after', async () => {
+  it('both variants: aria-disabled + aria-busy while the DELETE is in flight, neither before nor after — never `disabled` (it would drop focus)', async () => {
     for (const compact of [true, false]) {
       const pending: NetCall[] = []
       const opened = await openButton({ compact, server: routes({ 'DELETE /api/admin/users/5/mfa': (call) => { pending.push(call); return undefined } }) })
       opened.answers.prompt = 'bientap'
       const idle = resetButtons(opened)[0]!
       assert.equal(idle.props['aria-busy'], false, `compact=${compact}: idle`)
-      assert.equal(idle.props.disabled, false)
+      assert.equal(idle.props['aria-disabled'], false)
       void click(idle)
       await settle()
       assert.equal(pending.length, 1)
       const busy = resetButtons(opened)[0]!
       assert.equal(busy.props['aria-busy'], true, `compact=${compact}: in flight`)
-      assert.equal(busy.props.disabled, true)
+      assert.equal(busy.props['aria-disabled'], true)
+      assert.equal('disabled' in busy.props, false, 'focusable throughout: the dialog gave focus back to it')
+      void fire(busy, 'click') // what a second activation does while sending: nothing
+      await settle()
+      assert.equal(pending.length, 1)
+      assert.equal(opened.prompts.length, 1)
       pending[0]!.respond(json(RESET_OK))
       await settle()
       assert.equal(resetButtons(opened)[0]!.props['aria-busy'], false, `compact=${compact}: done`)
-      assert.equal(resetButtons(opened)[0]!.props.disabled, false)
+      assert.equal(resetButtons(opened)[0]!.props['aria-disabled'], false)
+      unmountAll()
+    }
+  })
+
+  it('while the dialog is open the button is untouched — so the dialog can give focus back to it on close (W1)', async () => {
+    for (const compact of [true, false]) {
+      let answer: (typed: string | null) => void = () => {}
+      const prompts: unknown[] = []
+      const opened = await openButton({
+        compact,
+        auto: { useConfirm: () => ({ confirm: async () => true, prompt: (options: unknown) => { prompts.push(options); return new Promise<string | null>((resolve) => { answer = resolve }) } }) },
+      })
+      const button = resetButtons(opened)[0]!
+      void click(button)
+      await settle()
+      assert.equal(prompts.length, 1, 'the question is open')
+      const asking = resetButtons(opened)[0]!
+      assert.equal(asking, button, 'the same element: nothing re-rendered while asking')
+      assert.equal('disabled' in asking.props, false, `compact=${compact}: not disabled while asking`)
+      assert.equal(asking.props['aria-disabled'], false)
+      assert.equal(asking.props['aria-busy'], false)
+      void fire(asking, 'click') // a second activation while asking asks nothing more
+      await settle()
+      assert.equal(prompts.length, 1)
+      answer(null) // Esc / "Hủy"
+      await settle()
+      assert.deepEqual(opened.calls, [])
+      assert.equal(resetButtons(opened)[0]!.props['aria-disabled'], false)
+      void click(resetButtons(opened)[0]!) // and it asks again afterwards
+      await settle()
+      assert.equal(prompts.length, 2)
+      answer(null)
+      await settle()
       unmountAll()
     }
   })
