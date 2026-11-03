@@ -24,7 +24,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 | Tệp import `rateLimitDeps` | 22 |
 | Suite `*-integration` (so matrix CI) | 22 (khớp) |
 | Dòng `default.vue` · `init.ts` · `useI18n.ts` · `useChatbot.ts` · `admin/profile.vue` | 399 · 80 · 265 · 132 · 277 |
-| i18n seed: key · hàng · fallback `vi` | 685 · 733 · 529 |
+| i18n seed: key · hàng · fallback `vi` | 688 · 736 · 532 |
 | Page Builder: section · content · layout | 9 · 7 · 3 |
 | Mục small talk mặc định | 122 |
 <!-- facts:end -->

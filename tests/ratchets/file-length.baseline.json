@@ -1,7 +1,7 @@
 {
   "app/components/ContentTypeListSection.vue": 522,
   "app/components/ModelArticlesListPage.vue": 535,
-  "app/components/SocialBubble.client.vue": 515,
+  "app/components/SocialBubble.client.vue": 510,
   "app/components/admin/AnalyticsLiveDashboard.client.vue": {
     "value": 1034,
     "reason": "Unsplittable: tests/analytics-live-dashboard-ui.test.ts greps ~30 patterns in this file's template and runs its script through Function() (docs/decisions/refactor-large-files.md). Allowed above the 400-line default, but capped: it may only shrink."
@@ -12,7 +12,6 @@
     "exempt": true,
     "reason": "Content, not logic: the hardcoded Vietnamese fallback dictionary used when the translations API is unreachable. It grows by one line per i18n key, so growth is not a regression."
   },
-  "app/layouts/default.vue": 401,
   "app/pages/admin/chatbot/settings.vue": 448,
   "app/pages/admin/comments/index.vue": 437,
   "app/pages/admin/content/articles/index.vue": {
@@ -33,10 +32,10 @@
   "app/pages/admin/settings/media-portal.vue": 612,
   "app/pages/admin/settings/social-links.vue": 503,
   "app/pages/admin/users/index.vue": 415,
-  "app/pages/assistant.vue": 470,
+  "app/pages/assistant.vue": 459,
   "app/pages/in-bai/[slug].vue": 477,
   "app/pages/qa-documents.vue": 479,
-  "app/pages/search.vue": 423,
+  "app/pages/search.vue": 419,
   "app/utils/docs/admin-docs-system.ts": 526,
   "nuxt.config.ts": 412,
   "scripts/deploy-remote.sh": 587,
