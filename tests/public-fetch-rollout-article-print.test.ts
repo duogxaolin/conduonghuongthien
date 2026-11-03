@@ -46,7 +46,9 @@ async function openPrint(t: Parameters<typeof mountPublic>[0], table: Record<str
     route: { path: '/in-bai/hanh-trinh', params: { slug: 'hanh-trinh' }, query: { back: '/news' } },
     lang,
     responder: routes(table),
-    auto: { useBrokenImageFallback: () => {} },
+    // `useRequestURL` (Nuxt auto-import): the page's source URL comes from it, not `window`
+    // (tests/print-page-hydration.test.ts).
+    auto: { useBrokenImageFallback: () => {}, useRequestURL: () => new URL('http://portal.test/in-bai/hanh-trinh?back=/news') },
     components: { PublicEmail: Stub },
     globals: { window: { print: () => { printed += 1 }, location: { origin: 'http://portal.test' } } },
   })

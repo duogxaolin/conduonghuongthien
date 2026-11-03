@@ -25,7 +25,7 @@ import { defineEventHandler, readBody, createError } from 'h3'
 
 import { requireResourcePermission } from '../../../utils/permissions'
 import { updateMediaItem, MediaValidationError } from '../../../services/media-portal'
-import { purgeMediaListCache } from '../../../utils/media-cache-purge'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -60,15 +60,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Mục media không tồn tại.' })
   }
 
-  // Làm mới bộ đệm SWR của trang **danh sách** `/media` ngay khi xuất bản, để khách
-  // thấy video mới ngay lập tức thay vì đợi cửa sổ 60 giây. Chỉ `/media` (danh
-  // sách công khai, không state người đọc), KHÔNG `/media/**` (trang chi tiết —
-  // phải giữ `swr: 60` vì mang danh tính người đọc). Purge sau commit, nuốt lỗi:
-  // cache tự hết hạn sau 60 giây bất cách, không được làm hỏng lượt xuất bản.
-  if (result.status === 'published') {
-    try { await purgeMediaListCache(event) }
-    catch { /* cache sẽ tự hết hạn; không làm hỏng lượt xuất bản */ }
-  }
+  // Xoá bộ đệm trang công khai sau commit, nuốt lỗi (chỉ log) — để khách thấy ngay video
+  // vừa xuất bản, VÀ thấy ngay một video vừa gỡ xuất bản (bản cũ chỉ xoá khi kết quả là
+  // `published`, nên gỡ xuất bản không làm mới gì). Bản cũ (`purgeMediaListCache`, đã xoá) lọc
+  // khoá dạng `nitro/routes:/media:GET.json` mà Nitro không bao giờ sinh ra (khoá thật:
+  // `nitro:routes:_:media.<hash>.json`), nên chưa từng xoá được gì. `/media/**` vẫn
+  // `swr: 60`: xoá một bản đệm không đụng gì tới việc danh tính người đọc chỉ nạp sau mount.
+  await purgePublicPageCacheAfterWrite('media_portal.update')
 
   return { ok: true, slug: result.slug, status: result.status }
 })

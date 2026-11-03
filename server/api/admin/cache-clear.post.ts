@@ -7,12 +7,10 @@
  * tường minh: bấm là mọi bản cache route (nhóm `nitro/routes`) biến mất, lượt
  * truy cập sau dựng lại từ CSDL.
  *
- * Cách hoạt động: Nitro giữ các entry này trong unstorage dưới namespace
- * `cache:`, mỗi khoá có dạng `cache:nitro/routes:<tên>:<đường>.json`. Ta liệt kê
- * `getKeys('cache:nitro/routes')` rồi `removeItem` từng khoá — KHÔNG xoá cả
- * namespace `cache:` vì các entry `nitro/functions` (nếu sau này có) và các
- * nhóm khác không thuộc đường này. Chỉ có nhóm `nitro/routes` là chứa HTML
- * trang công khai, tức đúng thứ cán bộ muốn làm mới.
+ * Cách hoạt động: `purgePublicPageCache()` (`server/utils/public-page-cache.ts`) —
+ * cùng một hàm mà mọi đường ghi bài/menu/cài đặt giao diện gọi sau commit. Nó chỉ
+ * xoá nhóm `nitro/routes` của storage `cache` (HTML + `_payload.json` của trang
+ * công khai), KHÔNG cả namespace `cache:` — các nhóm khác không thuộc đường này.
  *
  * Ba lớp canh giữ, cùng khuôn với `retention-run.post.ts`:
  *   • POST duy nhất — một lệnh xoá cache không bao giờ đạt được bằng cách bấm
@@ -28,6 +26,7 @@
 import { getDb } from '../../utils/db'
 import { activityLogs } from '../../db/schema'
 import { requireResourcePermission } from '../../utils/permissions'
+import { purgePublicPageCache } from '../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -39,9 +38,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Cần xác nhận trước khi xoá cache.' })
   }
 
-  const storage = useStorage('cache')
-  const keys = await storage.getKeys('nitro/routes')
-  await Promise.all(keys.map(key => storage.removeItem(key)))
+  const cleared = await purgePublicPageCache()
 
   const db = getDb()
   await db.insert(activityLogs).values({
@@ -51,9 +48,9 @@ export default defineEventHandler(async (event) => {
     meta: {
       trigger: 'manual',
       operation: 'clear_swr_cache',
-      clearedKeys: keys.length,
+      clearedKeys: cleared,
     },
   })
 
-  return { ok: true, cleared: keys.length, message: `Đã xoá ${keys.length} mục cache. Trang công khai sẽ dựng lại từ dữ liệu mới.` }
+  return { ok: true, cleared, message: `Đã xoá ${cleared} mục cache. Trang công khai sẽ dựng lại từ dữ liệu mới.` }
 })

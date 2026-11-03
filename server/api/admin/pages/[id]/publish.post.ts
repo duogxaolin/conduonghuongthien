@@ -4,6 +4,7 @@ import { normalizeBlocks, VERSION_LIMITS } from '../../../../utils/page-versions
 import type { BlockNode } from '../../../../../shared/blocks/types'
 import { and, asc, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { purgePublicPageCacheAfterWrite } from '../../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -134,6 +135,10 @@ export default defineEventHandler(async (event) => {
       meta: { pageId, action: 'publish', blockCount: nextBlocks.length, tree: isTree },
     })
   })
+
+  // After the commit: the published blocks of `/`, `/about`, `/contact` are in their
+  // `swr`-cached HTML — without this a publish showed up ≥ 60 s later (public-page-cache.ts).
+  await purgePublicPageCacheAfterWrite('pages.publish')
 
   // Return the freshly-published state so the client can re-key.
   // Tree pages return the normalized tree (tmp ids preserved — the builder always

@@ -90,6 +90,7 @@
  * lọt chỉ mục tìm kiếm. Tuyến chỉ phục vụ nút "In bài" ở `ArticleDetail.vue`.
  */
 import { safeInternalPath } from '~/utils/safe-path'
+import { formatPortalDate } from '~/utils/formatDate'
 import { publicFetch } from '~/composables/publicFetch'
 import type { PublicArticleDetailResponse } from '~/types/public-content-api'
 import type { PublicSettingsPayload } from '~/types/public-site-api'
@@ -110,15 +111,16 @@ const slug = computed(() => String(route.params.slug || ''))
 // `//evil.example` hay `/\evil.example` sẽ thành liên kết ra ngoài dưới tên miền chính thức.
 const backPath = computed(() => safeInternalPath(route.query.back, '/'))
 
+// URL bài gốc — dựng từ backPath + slug (bỏ /in-bai/), trên origin của chính request.
+// `useRequestURL()` cho cùng origin ở máy chủ (Host + X-Forwarded-Proto mà nginx chuyển
+// tiếp) và ở trình duyệt (`location`). Bản cũ đọc `window` nên HTML máy chủ có chuỗi rỗng,
+// trình duyệt có URL → lệch hydrate ở MỌI múi giờ. Trang không đệm (`cache: false`) nên Host
+// do request tự khai chỉ quay lại chính nó.
+const requestOrigin = useRequestURL().origin
 const pageUrl = computed(() => {
-  if (typeof window !== 'undefined') {
-    // URL bài gốc — reconstruct từ backPath + slug (bỏ /in-bai/).
-    const base = window.location.origin
-    const back = backPath.value
-    const articleUrl = back === '/' ? `/${slug.value}` : `${back}/${slug.value}`
-    return `${base}${articleUrl.startsWith('/') ? articleUrl : '/' + articleUrl}`
-  }
-  return ''
+  const back = backPath.value
+  const articleUrl = back === '/' ? `/${slug.value}` : `${back}/${slug.value}`
+  return `${requestOrigin}${articleUrl.startsWith('/') ? articleUrl : '/' + articleUrl}`
 })
 
 // SSR fetch để HTML có sẵn khi in — không lazy. Kiểu suy từ handler (D-FETCH lô G).
@@ -150,13 +152,11 @@ const siteAddress = computed(() => sitePublicSettings.value.address?.trim() || '
 
 const categoryLabel = computed(() => article.value?.categoryName || '')
 const authorDisplay = computed(() => article.value?.authorName || t('a_author_default'))
+// Giờ Việt Nam ở cả máy chủ lẫn trình duyệt (`formatPortalDate`) — cùng lỗi lệch hydrate
+// với trang chi tiết bài khi trình duyệt ở múi giờ khác.
 const formattedDate = computed(() => {
-  const d = article.value?.publishedAt || article.value?.createdAt
-  if (!d) return ''
-  const date = new Date(d)
-  if (Number.isNaN(date.getTime())) return ''
   const locale = currentLang.value === 'vi' ? 'vi-VN' : currentLang.value === 'en' ? 'en-US' : currentLang.value
-  return date.toLocaleDateString(locale, { day: '2-digit', month: 'long', year: 'numeric' })
+  return formatPortalDate(article.value?.publishedAt || article.value?.createdAt, locale, { day: '2-digit', month: 'long', year: 'numeric' })
 })
 const formattedViews = computed(() => {
   if (!article.value?.viewTotal) return ''
@@ -167,7 +167,7 @@ const formattedViews = computed(() => {
 // Ngày xuất bản masthead — ngày hôm nay (ngày in).
 const publicationDate = computed(() => {
   const locale = currentLang.value === 'vi' ? 'vi-VN' : currentLang.value === 'en' ? 'en-US' : currentLang.value
-  return new Date().toLocaleDateString(locale, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+  return formatPortalDate(new Date(), locale, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
 })
 
 // SEO: không index trang in.

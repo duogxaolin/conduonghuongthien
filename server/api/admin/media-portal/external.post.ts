@@ -28,6 +28,7 @@ import { defineEventHandler, readBody, setResponseStatus } from 'h3'
 
 import { requireResourcePermission } from '../../../utils/permissions'
 import { MediaValidationError, createMediaItem } from '../../../services/media-portal'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -50,6 +51,8 @@ export default defineEventHandler(async (event) => {
       createdBy:      adminUser.id,
     })
 
+    // After the service committed: the `/media` list (and home blocks) are `swr`-cached.
+    await purgePublicPageCacheAfterWrite('media_portal.create_external')
     setResponseStatus(event, 201)
     return { ok: true, id: result.mediaItemId, slug: result.slug, shortId: result.shortId }
   } catch (error) {

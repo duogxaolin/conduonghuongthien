@@ -38,6 +38,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { formatPortalDate } from '~/utils/formatDate'
 
 const props = defineProps<{
   article: {
@@ -65,13 +66,11 @@ const { currentLang, t } = useI18n()
  */
 const metaIconIsFa = computed(() => /^fa-(solid|regular|brands|duotone)(\s|$)/.test(String(props.metaIcon).trim()))
 
+// Theo giờ Việt Nam ở CẢ HAI phía (`formatPortalDate`): không ghim múi giờ thì máy chủ
+// (TZ=Asia/Ho_Chi_Minh) và trình duyệt ở múi giờ khác ra hai ngày khác nhau → lệch hydrate.
 const formattedDate = computed(() => {
-  const d = props.article.publishedAt || props.article.createdAt
-  if (!d) return ''
-  const date = new Date(d)
-  if (Number.isNaN(date.getTime())) return ''
   const locale = currentLang.value === 'vi' ? 'vi-VN' : currentLang.value === 'en' ? 'en-US' : currentLang.value
-  return date.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' })
+  return formatPortalDate(props.article.publishedAt || props.article.createdAt, locale, { day: '2-digit', month: '2-digit', year: 'numeric' })
 })
 
 // Bài viết cũ có thể không còn tác giả (`author_id` nullable, tài khoản đã xoá).
