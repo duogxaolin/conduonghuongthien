@@ -45,7 +45,7 @@
                 class="rounded px-1.5 py-px text-[0.65rem] font-bold"
                 :class="tool.status === 'calling' ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-[#e8efe8] text-[#2c6e33]'"
               >
-                {{ tool.status === 'calling' ? t('cw_tool_calling') : fillPlaceholders(t('cw_tool_results'), { n: tool.count || 0 }) }}
+                {{ tool.status === 'calling' ? t('cw_tool_calling') : fillPlaceholders(t(countKey('cw_tool_results', tool.count || 0)), { n: tool.count || 0 }) }}
               </span>
             </div>
             <div v-if="tool.query" class="text-ink-muted truncate">
@@ -67,7 +67,7 @@ import { computed } from 'vue'
 import { renderChatMarkdownBlocks } from '~/utils/markdown'
 import type { ToolCallExecution } from '~/utils/chatbot-storage'
 import { useI18n } from '~/composables/useI18n'
-import { fillPlaceholders } from '~/utils/i18n-placeholders'
+import { countKey, fillPlaceholders } from '~/utils/i18n-placeholders'
 
 const { t } = useI18n()
 

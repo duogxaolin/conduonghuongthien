@@ -59,7 +59,7 @@
             <h2 class="text-lg font-black text-ink-strong m-0">
               {{ t('sp_results_for') }} <span class="text-[#2D5A27]">&laquo;{{ searchQuery }}&raquo;</span>
             </h2>
-            <p class="text-xs text-ink-soft mt-1 m-0"><I18nStrong :text="t('sp_found')" :values="{ n: searchData?.total ?? 0 }" /></p>
+            <p class="text-xs text-ink-soft mt-1 m-0"><I18nStrong :text="t(countKey('sp_found', searchData?.total ?? 0))" :values="{ n: searchData?.total ?? 0 }" /></p>
           </div>
 
           <div v-if="pending" class="text-xs text-brand-600 font-semibold flex items-center gap-2">
@@ -305,6 +305,7 @@
 import { formatDateVN } from '../utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
 import I18nStrong from '~/components/I18nStrong.vue'
+import { countKey } from '~/utils/i18n-placeholders'
 
 // Mọi chữ giao diện qua `t()` (trang không cache: máy chủ render đúng ngôn ngữ của cookie
 // từ từ điển hardcoded, trình duyệt đổi sang bản DB). Bản tiếng Anh từng hiện toàn tiếng Việt.

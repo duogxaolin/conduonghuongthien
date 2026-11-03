@@ -388,6 +388,8 @@ describe('i18n keys of these surfaces: vi + en in the seed AND in the hardcoded 
     for (const m of source.matchAll(/\bt\('([a-z0-9_]+)'\)/g)) keys.add(m[1]!)
     // Keys held in tables (`labelKey: 'sp_tab_all'`, `'cw_kind_curated'`, `'nav_law'`) and picked at runtime.
     for (const m of source.matchAll(/'((?:cw|sp|asst|nav)_[a-z0-9_]+)'/g)) keys.add(m[1]!)
+    // `countKey('sp_found', n)` reads `sp_found_one` when n is 1.
+    for (const m of source.matchAll(/countKey\('([a-z0-9_]+)'/g)) keys.add(`${m[1]}_one`)
   }
   for (const key of ['faq', 'search', 'home', 'view_detail', 'close']) keys.add(key)
 

@@ -9,7 +9,7 @@
  * tests/public-ui-english.test.ts.
  */
 import { CHATBOT_UNTITLED, type StoredConversation } from './chatbot-storage'
-import { fillPlaceholders } from './i18n-placeholders'
+import { countKey, fillPlaceholders } from './i18n-placeholders'
 
 type Translate = (key: string) => string
 
@@ -54,5 +54,5 @@ export function conversationMetaText(conversation: StoredConversation, t: Transl
   const count = conversation.messages.filter(item => item.id !== 'welcome').length
   const when = new Date(conversation.createdAt)
   const date = Number.isNaN(when.getTime()) ? '' : when.toLocaleDateString('vi-VN')
-  return fillPlaceholders(t(count ? 'cw_meta_count' : 'cw_meta_empty'), { n: count, date })
+  return fillPlaceholders(t(count ? countKey('cw_meta_count', count) : 'cw_meta_empty'), { n: count, date })
 }
