@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { readValidated } from '../../../../../utils/request-body'
 import { upsertTranslations } from '../../../../../services/languages'
+import { purgePublicPageCacheAfterWrite } from '../../../../../utils/public-page-cache'
 
 /**
  * Save UI translations of one language (the "Bản dịch UI" tab sends one item per save).
@@ -37,6 +38,10 @@ export default defineEventHandler(async (event) => {
 
   const { items } = await readValidated(event, bodySchema)
   await upsertTranslations(adminUser, code, items, false)
+  // After the service committed: cached pages are rendered in Vietnamese WITH the `vi`
+  // strings from the database, so an edited `vi` label stayed old ≥ 60 s. Other languages
+  // are read after hydration from `/api/**` (not cached); purging for them costs one render.
+  await purgePublicPageCacheAfterWrite('translations.update')
 
   return { ok: true, count: items.length }
 })

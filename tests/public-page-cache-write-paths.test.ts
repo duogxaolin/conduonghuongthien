@@ -70,7 +70,30 @@ mock.module('../server/services/media-portal', {
   namedExports: {
     updateMediaItem: async () => { events.push('commit media'); return { ok: true, slug: 'video-a', status: 'archived' } },
     deleteMediaItem: async () => { events.push('commit media'); return mediaDelete },
+    createMediaItem: async () => { events.push('commit media'); return { mediaItemId: 9, slug: 'video-b', shortId: 'abc' } },
     MediaValidationError: class MediaValidationError extends Error {},
+  },
+})
+// The same for the services that own their transactions: "the service returned" = committed.
+const committed = (what: string, value: unknown = undefined) => async () => { events.push(`commit ${what}`); return value }
+mock.module('../server/services/pages', { namedExports: { deletePageById: committed('pages') } })
+mock.module('../server/services/content-types', { namedExports: { deleteContentTypeById: committed('content_types') } })
+mock.module('../server/services/i18n-auto-translate', { namedExports: { autoTranslateContentType: async () => {}, autoTranslateContentTypeUpdate: async () => {} } })
+mock.module('../server/services/social-links', {
+  namedExports: {
+    createSocialLink: committed('social_links', { id: 4 }),
+    updateSocialLink: committed('social_links'),
+    deleteSocialLink: committed('social_links'),
+    reorderSocialLinks: committed('social_links'),
+  },
+})
+mock.module('../server/services/languages', {
+  namedExports: {
+    createLanguage: committed('languages', { id: 6 }),
+    updateLanguage: committed('languages'),
+    deleteLanguage: committed('languages'),
+    reorderLanguages: committed('languages'),
+    upsertTranslations: committed('languages'),
   },
 })
 
@@ -111,19 +134,38 @@ const handlers = {
   layout: await load('../server/api/admin/settings/layout.put.ts'),
   mediaUpdate: await load('../server/api/admin/media-portal/[id].put.ts'),
   mediaDelete: await load('../server/api/admin/media-portal/[id].delete.ts'),
+  mediaExternal: await load('../server/api/admin/media-portal/external.post.ts'),
+  pageUpdate: await load('../server/api/admin/pages/[id].put.ts'),
+  pagePublish: await load('../server/api/admin/pages/[id]/publish.post.ts'),
+  pageDelete: await load('../server/api/admin/pages/[id].delete.ts'),
+  pageBulkDelete: await load('../server/api/admin/pages/bulk-delete.post.ts'),
+  typeCreate: await load('../server/api/admin/content-types/index.post.ts'),
+  typeUpdate: await load('../server/api/admin/content-types/[id].put.ts'),
+  typeDelete: await load('../server/api/admin/content-types/[id].delete.ts'),
+  typeBulkDelete: await load('../server/api/admin/content-types/bulk-delete.post.ts'),
+  socialCreate: await load('../server/api/admin/social-links/index.post.ts'),
+  socialUpdate: await load('../server/api/admin/social-links/[id].put.ts'),
+  socialDelete: await load('../server/api/admin/social-links/[id].delete.ts'),
+  socialReorder: await load('../server/api/admin/social-links/reorder.post.ts'),
+  languageCreate: await load('../server/api/admin/languages/index.post.ts'),
+  languageUpdate: await load('../server/api/admin/languages/[code].put.ts'),
+  languageDelete: await load('../server/api/admin/languages/[code].delete.ts'),
+  languageReorder: await load('../server/api/admin/languages/reorder.post.ts'),
+  translations: await load('../server/api/admin/languages/[code]/translations/index.put.ts'),
 }
 const { DEFAULT_LAYOUT_CONFIG } = await import('../server/services/layout-settings.ts')
 
 const SUPERADMIN = { id: 1, isSuperAdmin: true, permissions: [] }
 const ARTICLE = { id: 31, type: 'news', title: 'Bài thử', status: 'published', publishedAt: new Date(), commentsEnabled: false }
+const CONTENT_TYPE = { id: 3, name: 'Tin tức', slug: 'news', description: null, isSystem: true }
 // `body` for the auto-imported `readBody` stand-in above; `method` + `node.req` for the media
 // handlers, which import h3's own `readBody` (it reads `node.req.body` when one is there).
 const call = (handler: Handler, body: unknown = {}, id = '31') => handler({
   body,
-  params: { id },
+  params: { id, code: 'vi' },
   context: { adminUser: SUPERADMIN, params: { id } },
   method: 'PUT',
-  node: { req: { method: 'PUT', headers: { 'content-type': 'application/json' }, body: Buffer.from(JSON.stringify(body)) } },
+  node: { req: { method: 'PUT', headers: { 'content-type': 'application/json' }, body: Buffer.from(JSON.stringify(body)) }, res: {} },
 } as Event)
 
 /** Real-shaped route entries: a public article page, its payload, the home page. */
@@ -134,7 +176,10 @@ beforeEach(async () => {
   storageFails = false
   for (const key of CACHED) await storage.setItem(`cache:${key}`, { value: { code: 200, body: 'cũ' } })
   await storage.setItem('cache:favicon:current', 'f')
-  selectRows = { articles: [ARTICLE], settings: [] }
+  selectRows = {
+    articles: [ARTICLE], settings: [], pageBlocks: [], contentTypes: [CONTENT_TYPE],
+    pages: [{ id: 5, slug: 'home', title: 'Trang chủ', isSystem: true, draftBlocks: [], publishedBlocks: null }],
+  }
   mediaDelete = { removed: true, fromStatus: 'published' }
 })
 const routeKeys = () => storage.getKeys('cache:nitro:routes')
@@ -254,6 +299,80 @@ test('media delete: purge when the item was public, not when it was a draft', as
   mediaDelete = { removed: true, fromStatus: 'draft' }
   await call(handlers.mediaDelete, {}, '6')
   assert.ok(!events.includes('purge'))
+})
+
+test('media created from a YouTube link: purge after the service committed', async () => {
+  await call(handlers.mediaExternal, { title: 'Video', youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ' })
+  await assertPurgedAfter('commit media')
+})
+
+// ─── Page Builder, content types, social links, languages ──────────────────────────
+// (`/`, `/about`, `/contact` are Page Builder pages; types, footer links, the language
+// switcher and the `vi` strings are in the HTML of every cached page.)
+
+test('page: update (title/SEO) and publish purge after commit', async () => {
+  await call(handlers.pageUpdate, { title: 'Trang chủ mới' }, '5')
+  await assertPurgedAfter('commit')
+  events.length = 0
+  for (const key of CACHED) await storage.setItem(`cache:${key}`, { value: 1 })
+  await call(handlers.pagePublish, { blocks: [] }, '5')
+  await assertPurgedAfter('commit')
+})
+
+test('page: delete and bulk delete purge after the service committed', async () => {
+  await call(handlers.pageDelete, {}, '5')
+  await assertPurgedAfter('commit pages')
+  events.length = 0
+  for (const key of CACHED) await storage.setItem(`cache:${key}`, { value: 1 })
+  await call(handlers.pageBulkDelete, { ids: [5, 6] })
+  assert.equal(events.filter(e => e === 'commit pages').length, 2)
+  await assertPurgedAfter('commit pages')
+})
+
+test('content type: create, update, delete, bulk delete purge after their writes', async () => {
+  const cases: Array<[Handler, unknown, string]> = [
+    [handlers.typeCreate, { name: 'Thể loại mới' }, 'insert contentTypes'],
+    [handlers.typeUpdate, { name: 'Tin tức (sửa)' }, 'update contentTypes'],
+    [handlers.typeDelete, {}, 'commit content_types'],
+    [handlers.typeBulkDelete, { ids: [3] }, 'commit content_types'],
+  ]
+  for (const [handler, body, lastWrite] of cases) {
+    events.length = 0
+    for (const key of CACHED) await storage.setItem(`cache:${key}`, { value: 1 })
+    await call(handler, body, '3')
+    await assertPurgedAfter(lastWrite)
+  }
+})
+
+test('social links: create, update, delete, reorder purge after the service committed', async () => {
+  const cases: Array<[Handler, unknown]> = [
+    [handlers.socialCreate, { platform: 'facebook', url: 'https://facebook.com/c11' }],
+    [handlers.socialUpdate, { url: 'https://facebook.com/c11-moi' }],
+    [handlers.socialDelete, {}],
+    [handlers.socialReorder, { orderedIds: [2, 1] }],
+  ]
+  for (const [handler, body] of cases) {
+    events.length = 0
+    for (const key of CACHED) await storage.setItem(`cache:${key}`, { value: 1 })
+    await call(handler, body, '2')
+    await assertPurgedAfter('commit social_links')
+  }
+})
+
+test('languages and translations: every write purges after the service committed', async () => {
+  const cases: Array<[Handler, unknown]> = [
+    [handlers.languageCreate, { code: 'ko', name: 'Korean', nativeName: '한국어' }],
+    [handlers.languageUpdate, { isActive: false }],
+    [handlers.languageDelete, {}],
+    [handlers.languageReorder, { orders: [{ code: 'vi', displayOrder: 0 }] }],
+    [handlers.translations, { items: [{ group: 'general', key: 'home', value: 'Trang chủ' }] }],
+  ]
+  for (const [handler, body] of cases) {
+    events.length = 0
+    for (const key of CACHED) await storage.setItem(`cache:${key}`, { value: 1 })
+    await call(handler, body)
+    await assertPurgedAfter('commit languages')
+  }
 })
 
 // ─── A purge that fails never fails the write ──────────────────────────────────────
