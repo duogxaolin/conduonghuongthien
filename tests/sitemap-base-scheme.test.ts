@@ -60,3 +60,26 @@ describe('/sitemap.xml base (pinned as designed — KNOWN, not a code bug)', () 
     assert.equal(locs(xml)[0], 'https://other.example/')
   })
 })
+
+// `/robots.txt` names the sitemap of the domain the crawler asked (multi-domain, computed per
+// request, never stored) — `requestBase`, deliberately NOT `publicLinkBase` (that one is for
+// the copy the admin page saves: tests/sitemap-generate-link-base.test.ts).
+const robots = (await import('../server/routes/robots.txt')).default as unknown as (event: unknown) => string
+const sitemapLine = (text: string) => text.split('\n').find(line => line.startsWith('Sitemap:'))
+
+describe('/robots.txt: the Sitemap line follows the request, per domain', () => {
+  it('a second domain (not PUBLIC_BASE_URL\'s, no allowlist) gets its own sitemap, not the configured one', () => {
+    assert.equal(sitemapLine(robots(eventFrom('203.0.113.9', { host: 'other.example' }))), 'Sitemap: https://other.example/sitemap.xml')
+    assert.equal(headersSet['Content-Type'], 'text/plain; charset=utf-8')
+  })
+
+  it('production shape: nginx on loopback, https, the public host', () => {
+    assert.equal(sitemapLine(robots(eventFrom('127.0.0.1', { host: 'conduonghuongthien.vn', 'x-forwarded-proto': 'https' }))), 'Sitemap: https://conduonghuongthien.vn/sitemap.xml')
+  })
+
+  it('keeps the admin and admin API out of the index', () => {
+    const text = robots(eventFrom('127.0.0.1', { host: 'conduonghuongthien.vn' }))
+    assert.match(text, /^Disallow: \/admin$/m)
+    assert.match(text, /^Disallow: \/api\/admin$/m)
+  })
+})
