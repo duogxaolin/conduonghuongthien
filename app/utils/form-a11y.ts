@@ -37,11 +37,12 @@ export function leadContactInvalid(lead: { error?: string; phone?: string; email
 }
 
 /**
- * Nhãn của một trường BẮT BUỘC, bỏ dấu sao chính nhãn mang ở cuối ("Họ và tên *").
- * Dấu sao là của component (`<span aria-hidden> *</span>` theo `required`); hàng DB
+ * Nhãn bỏ dấu sao chính nó mang ở cuối ("Họ và tên *"). Dấu sao là của component
+ * (`<span aria-hidden> *</span>`, chỉ khi `required`, kèm `aria-required`); hàng DB
  * `form_name`/`form_phone`/`form_city` của seed — và nhãn cán bộ tự gõ — đã có sẵn một
- * cái, nên trang hiện "Họ và tên … * *" sau hydrate. Không áp cho trường tuỳ chọn: ở đó
- * không có dấu sao thứ hai, và chữ là của cán bộ.
+ * cái, nên trường bắt buộc hiện "Họ và tên … * *" sau hydrate, còn trường TUỲ CHỌN mang
+ * nhãn đó hiện một dấu sao nói dối (không bắt buộc, không `aria-required`). Áp cho mọi
+ * trường, ở cả nhãn gốc lẫn bản dịch.
  */
 export function withoutRequiredMark(label: string): string {
   return label.replace(/\s*\*+\s*$/, '')

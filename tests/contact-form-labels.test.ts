@@ -95,16 +95,52 @@ describe('ContactFormBlock — one required marker, whatever the label text says
     ])
   })
 
-  it('a label an officer typed with its own star ("Họ và tên *", required) shows one; an optional one keeps its words', async (t) => {
+  it('a label an officer typed with its own star ("Họ và tên *", required) shows one; an optional one shows none', async (t) => {
     const ctx = await mountContact(t, 'vi', {
       ...CONTACT_BLOCK,
       fields: [
         { id: 'a', label: 'Họ và tên *', type: 'text', required: true, map: 'name' },
         { id: 'b', label: 'Ghi chú', type: 'textarea', required: false },
         { id: 'c', label: 'Số điện thoại**', type: 'tel', required: true, map: 'phone' },
+        { id: 'd', label: 'Ghi chú thêm *', type: 'textarea', required: false },
       ],
     })
-    assert.deepEqual(labels(ctx.page.root), ['Họ và tên *', 'Ghi chú', 'Số điện thoại *'])
+    assert.deepEqual(labels(ctx.page.root), ['Họ và tên *', 'Ghi chú', 'Số điện thoại *', 'Ghi chú thêm'])
+    // The one star left on a required field is the component's, next to `aria-required`.
+    const controls = findAll(ctx.page.root, el => el.tag === 'input' || el.tag === 'textarea')
+    assert.deepEqual(controls.map(el => el.props['aria-required'] ?? null), ['true', null, 'true', null])
+  })
+
+  // Kiểm chứng độc lập W4: an OPTIONAL field labelled like a default one ("Tỉnh / Thành phố") is
+  // translated through FIELD_LABEL_MAP into the seeded row "Province / City *" — a star with no
+  // `aria-required` behind it. The star is the template's alone; the label never brings one.
+  for (const lang of ['en', 'lo', 'vi']) {
+    it(`${lang}: an optional field mapped to a seeded key shows no star; a required one shows the template's`, async (t) => {
+      const ctx = await mountContact(t, lang, {
+        ...CONTACT_BLOCK,
+        fields: [
+          { id: 'city', label: 'Tỉnh / Thành phố', type: 'text', required: false, map: 'address' },
+          { id: 'name', label: 'Họ và tên', type: 'text', required: true, map: 'name' },
+        ],
+      })
+      const [city, name] = labels(ctx.page.root)
+      assert.equal(stars(city!), 0, `optional "${city}"`)
+      assert.equal(stars(name!), 1, `required "${name}"`)
+      const controls = findAll(ctx.page.root, el => el.tag === 'input')
+      assert.deepEqual(controls.map(el => el.props['aria-required'] ?? null), [null, 'true'])
+      if (lang === 'en') assert.deepEqual([city, name], ['Province / City', 'Full Name of Applicant *'])
+    })
+  }
+
+  it('en: a label an officer typed with its own star is still found in the translation table ("Họ và tên *" → "Full Name of Applicant")', async (t) => {
+    const ctx = await mountContact(t, 'en', {
+      ...CONTACT_BLOCK,
+      fields: [
+        { id: 'a', label: 'Họ và tên *', type: 'text', required: true, map: 'name' },
+        { id: 'b', label: ' Tỉnh / Thành phố * ', type: 'text', required: false, map: 'address' },
+      ],
+    })
+    assert.deepEqual(labels(ctx.page.root), ['Full Name of Applicant *', 'Province / City'])
   })
 
   it('before the DB answers (hardcoded dictionary) the labels already read with one star', async (t) => {

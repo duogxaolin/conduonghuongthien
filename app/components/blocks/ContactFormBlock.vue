@@ -203,21 +203,20 @@ const renderFields = computed<RenderField[]>(() => {
   const raw = configured.filter((f) => f && f.label)
   const source: Partial<RenderField>[] = raw.length ? raw : LEGACY_FIELDS.value
   return source.map((f, i) => {
-    const rawLabel = String(f.label || '')
+    // Dấu sao là của template (chỉ cho trường bắt buộc), không bao giờ của chữ nhãn: bỏ nó ở
+    // nhãn cán bộ gõ ("Họ và tên *") TRƯỚC khi tra bảng dịch, và ở bản dịch (hàng DB
+    // `form_city` = "Province / City *") — kể cả trường tuỳ chọn, nơi nó từng hiện một dấu
+    // sao không có `aria-required` (kiểm chứng độc lập W4).
+    const rawLabel = withoutRequiredMark(String(f.label || '').trim())
     let localizedLabel = rawLabel
     if (currentLang.value !== 'vi') {
-      const key = FIELD_LABEL_MAP[rawLabel.trim()]
-      if (key) {
-        localizedLabel = t(key) || rawLabel
-      } else {
-        localizedLabel = t(rawLabel) || rawLabel
-      }
+      const key = FIELD_LABEL_MAP[rawLabel]
+      localizedLabel = (key ? t(key) : t(rawLabel)) || rawLabel
     }
     const required = !!f.required
     return {
       id: String(f.id || `f_${i}`),
-      // Dấu sao của trường bắt buộc là của template, không phải của chữ nhãn.
-      label: required ? withoutRequiredMark(localizedLabel) : localizedLabel,
+      label: withoutRequiredMark(localizedLabel),
       type: toFieldType(f.type),
       required,
       placeholder: f.placeholder || '',
