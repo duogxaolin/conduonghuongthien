@@ -16,49 +16,20 @@ import {
   formatVnd,
 } from '~/utils/ai-service-labels'
 
-import type { AdminAiUsageResponse } from '~/types/admin-ai-api'
+import type { AdminAiUsageResponse, DelifyStatusResponse } from '~/types/admin-ai-api'
 import AiBudgetEditor from '~/components/admin/ai/AiBudgetEditor.vue'
+import { delifyKeyState } from '~/utils/ai-budget-form'
+import { latestOnly } from '~/utils/latest-only'
 
+const toast = useToast()
 const usageError = ref(null as string | null)
 const usageLoading = ref(false)
 const usageSummary = ref<AdminAiUsageResponse['usage'] | null>(null)
 const byService = ref<AdminAiUsageResponse['byService']>([])
 const dailyData = ref<AdminAiUsageResponse['daily']>([])
 const budgetInfo = ref<AdminAiUsageResponse['budget'] | null>(null)
-
-/**
- * `GET /api/admin/ai/delify/status` — stated here, not derived: the router's own fields are
- * picked by `plainFields` as "any plain value" (string | number | boolean), so their types are
- * the router's, which the handler does not know (named gap, docs/decisions/fetch-rollout-d-fetch.md).
- */
-interface DelifyStatusResponse {
-  ok: boolean
-  configured: boolean
-  host?: string | null // the host the server asked: the delify provider's base URL
-  error?: string
-  keyInfo?: {
-    name: string
-    groupName: string
-    active: boolean
-    budgetUsd: number | null
-    budgetVnd?: number | null
-    usedCostUsd: number
-    usedCostVnd?: number
-    remainingBudgetUsd: number | null
-    remainingBudgetVnd?: number | null
-    totalRequests: number
-    allowedModels: string[]
-    rpm: number | null
-    windowStartedAt: string | null
-  }
-  period: string
-  periodSummary?: {
-    items?: Array<{ model: string; input: number; output: number; requests: number; cost: number }>
-    totals?: { input: number; output: number; requests: number; cost: number }
-  } | null
-  recentHistory?: Array<{ timestamp: string; model: string; status: string; cost: number; input: number; output: number; tok: number }>
-  availableModels?: Array<{ name: string; input: number; output: number }>
-}
+// Of overlapping reads (two budget saves inside one round trip), only the newest one's answer lands.
+const readUsage = latestOnly(() => adminFetch<AdminAiUsageResponse>('/api/admin/ai/usage'))
 
 const delifyPeriod = ref<'1h' | '24h' | '7d' | '30d' | 'all'>('7d')
 const delifyStatus = ref<DelifyStatusResponse | null>(null)
@@ -133,18 +104,27 @@ const budgetColor = computed(() => {
   return 'bg-green-500'
 })
 
-/** `refresh`: re-read without the loading state, so the cards stay mounted (the budget editor keeps its focus). */
+// What a cap of 0 would hand the decision to — the editor states the outcome from it.
+const delifyKey = computed(() => delifyKeyState(delifyStatus.value))
+
+/**
+ * `refresh`: re-read without the loading state, so the cards stay mounted (the budget editor keeps
+ * its focus) — and a failed re-read keeps them too: the save it follows succeeded and is already on
+ * the card, so the failure is said in a toast instead of replacing the whole tab with an error.
+ */
 async function loadUsage(options: { refresh?: boolean } = {}) {
   usageError.value = null
   if (!options.refresh) usageLoading.value = true
   try {
-    const data = await adminFetch<AdminAiUsageResponse>('/api/admin/ai/usage')
+    const data = await readUsage()
     usageSummary.value = data.usage
     byService.value = data.byService
     dailyData.value = data.daily
     budgetInfo.value = data.budget
   } catch (err: unknown) {
-    usageError.value = errorMessage(err, 'Không thể tải dữ liệu sử dụng.')
+    const message = errorMessage(err, 'Không thể tải dữ liệu sử dụng.')
+    if (options.refresh) toast.error(`Không tải lại được số liệu chi phí: ${message}`)
+    else usageError.value = message
   } finally {
     usageLoading.value = false
   }
@@ -220,6 +200,7 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
         :monthly-budget-vnd="budgetInfo?.monthlyBudgetVnd ?? 0"
         :warning-threshold-pct="budgetInfo?.warningThresholdPct ?? 80"
         :month-spend-vnd="usageSummary?.monthlyCostVnd ?? 0"
+        :delify-key="delifyKey"
         @saved="budgetSaved"
       />
 

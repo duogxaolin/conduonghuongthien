@@ -15,11 +15,18 @@
  * server's sentence in `role="alert"`; the button is the retry.
  *
  * Focus: opening moves it to the first field; closing (Hủy, saved, "Không có thay đổi.") gives it
- * back to "Sửa hạn mức" — the control that opened the form, shown again in its place.
+ * back to "Sửa hạn mức" — the control that opened the form, shown again in its place. A save that
+ * asks first (0, or a cap that blocks at once) opens a dialog from "Lưu hạn mức", which gives focus
+ * back to it on close: so nothing is marked "saving" until the question is answered, and while the
+ * PUT is on the wire the button says so with `aria-disabled` + `aria-busy`, never `disabled`
+ * (Chromium moves focus off a focused button that becomes disabled — a failed save would leave the
+ * officer at `<body>`).
  */
 import type { AdminAiBudgetUpdateResponse } from '~/types/admin-ai-api'
-import type { BudgetPayload } from '~/utils/ai-budget-form'
-import { BUDGET_REACHED_EFFECTS, budgetBlocksAiNow, parseBudgetVnd, saveAiBudget, ZERO_BUDGET_WARNING } from '~/utils/ai-budget-form'
+import type { BudgetPayload, DelifyKeyState } from '~/utils/ai-budget-form'
+import {
+  BUDGET_REACHED_EFFECTS, budgetBlocksAiNow, parseBudgetVnd, saveAiBudget, ZERO_BUDGET_RULE, zeroBudgetBlocks, zeroBudgetWarning,
+} from '~/utils/ai-budget-form'
 import { formatVnd } from '~/utils/ai-service-labels'
 
 const props = defineProps<{
@@ -28,6 +35,8 @@ const props = defineProps<{
   warningThresholdPct: number
   /** This Vietnam month's spend — the total `checkBudget` compares the cap with. */
   monthSpendVnd: number
+  /** The Delify key a cap of 0 hands the decision to, as the dashboard read it. */
+  delifyKey: DelifyKeyState
 }>()
 const emit = defineEmits<{ saved: [saved: BudgetPayload] }>()
 
@@ -48,6 +57,13 @@ const typedBudget = computed(() => parseBudgetVnd(form.budget))
 const budgetPreview = computed(() => (typedBudget.value.ok ? formatVnd(typedBudget.value.value) : ''))
 const blocksNow = computed(() => typedBudget.value.ok && budgetBlocksAiNow(typedBudget.value.value, props.monthSpendVnd))
 const zeroTyped = computed(() => typedBudget.value.ok && typedBudget.value.value === 0)
+const zeroBlocks = computed(() => zeroBudgetBlocks(props.delifyKey) === true)
+// The cap field is described by its hint/error AND by whichever warning its value raises.
+const budgetDescribedBy = computed(() => [
+  errors.budget ? 'ai-budget-vnd-error' : 'ai-budget-vnd-hint',
+  zeroTyped.value ? 'ai-budget-zero-warning' : '',
+  blocksNow.value ? 'ai-budget-blocking-warning' : '',
+].filter(Boolean).join(' '))
 
 const editButton = ref<HTMLButtonElement | null>(null)
 const budgetField = ref<HTMLInputElement | null>(null)
@@ -69,17 +85,25 @@ async function close() {
   editButton.value?.focus()
 }
 
+// One save at a time, the question included. Not rendered (see the focus note above).
+let submitting = false
+
 async function save() {
-  if (saving.value) return
+  if (submitting) return
+  submitting = true
   errors.budget = ''
   errors.threshold = ''
   saveError.value = ''
-  saving.value = true
   try {
     const outcome = await saveAiBudget(form, {
       monthSpendVnd: props.monthSpendVnd,
+      delifyKey: props.delifyKey,
       confirm,
-      request: (url, options) => adminFetch<AdminAiBudgetUpdateResponse>(url, options),
+      // Called only once the question (if any) is answered: "Đang lưu…" is the PUT, never the dialog.
+      request: (url, options) => {
+        saving.value = true
+        return adminFetch<AdminAiBudgetUpdateResponse>(url, options)
+      },
     })
     if (outcome.status === 'invalid') {
       errors.budget = outcome.errors.budget ?? ''
@@ -96,6 +120,7 @@ async function save() {
     }
   } finally {
     saving.value = false
+    submitting = false
   }
 }
 </script>
@@ -130,7 +155,7 @@ async function save() {
             inputmode="numeric"
             autocomplete="off"
             :aria-invalid="errors.budget ? 'true' : undefined"
-            :aria-describedby="errors.budget ? 'ai-budget-vnd-error' : 'ai-budget-vnd-hint'"
+            :aria-describedby="budgetDescribedBy"
             class="w-full rounded-lg border border-line-strong px-3 py-2.5 text-sm outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/30"
           />
           <p v-if="errors.budget" id="ai-budget-vnd-error" class="m-0 text-xs font-semibold text-danger">{{ errors.budget }}</p>
@@ -155,15 +180,20 @@ async function save() {
 
       <div class="rounded-lg border border-line bg-surface p-3 text-xs leading-relaxed text-ink-admin">
         <p class="m-0">Khi chi phí AI trong tháng (theo lịch Việt Nam) chạm hạn mức, {{ BUDGET_REACHED_EFFECTS }}</p>
-        <p class="m-0 mt-1">Đặt 0: cổng không đặt hạn mức. Khi đó, nếu khoá Delify có ngân sách riêng, máy chủ dùng ngân sách đó (so với tổng chi từ trước tới nay).</p>
+        <p class="m-0 mt-1">{{ ZERO_BUDGET_RULE }}</p>
       </div>
 
-      <p v-if="zeroTyped" class="m-0 flex items-start gap-2 rounded-lg border border-line-strong bg-surface p-3 text-xs font-semibold text-warn-ink">
+      <p
+        v-if="zeroTyped"
+        id="ai-budget-zero-warning"
+        class="m-0 flex items-start gap-2 rounded-lg border p-3 text-xs font-semibold"
+        :class="zeroBlocks ? 'border-danger bg-danger-bg text-danger' : 'border-line-strong bg-surface text-warn-ink'"
+      >
         <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
-        <span>{{ ZERO_BUDGET_WARNING }}</span>
+        <span>{{ zeroBudgetWarning(delifyKey) }}</span>
       </p>
 
-      <p v-if="blocksNow" class="m-0 flex items-start gap-2 rounded-lg border border-danger bg-danger-bg p-3 text-xs font-semibold text-danger">
+      <p v-if="blocksNow" id="ai-budget-blocking-warning" class="m-0 flex items-start gap-2 rounded-lg border border-danger bg-danger-bg p-3 text-xs font-semibold text-danger">
         <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
         <span>Tháng này đã chi {{ formatVnd(monthSpendVnd) }} — hạn mức này chặn mọi lượt gọi AI ngay khi lưu.</span>
       </p>
@@ -179,8 +209,8 @@ async function save() {
         >Hủy</button>
         <button
           type="submit"
-          class="inline-flex items-center gap-2 rounded-lg bg-brand-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="saving"
+          class="inline-flex items-center gap-2 rounded-lg bg-brand-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+          :aria-disabled="saving"
           :aria-busy="saving"
         >{{ saving ? 'Đang lưu…' : 'Lưu hạn mức' }}</button>
       </div>
