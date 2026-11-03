@@ -619,3 +619,136 @@ test.describe('hộp thoại admin (AdminModal)', () => {
     await expect.poll(() => focusIsNotBody(page)).toBe(true)
   })
 })
+
+/**
+ * Nút mở một hộp xác nhận (`ConfirmModal`, qua `useConfirm`) phải nhận lại focus khi hộp đóng —
+ * nên nó KHÔNG được bị khoá trong lúc hộp hỏi (verifier vòng 2, CHANGELOG § 68: W1 nút "Xoá xác
+ * thực hai bước" ở /admin/users, W2 nút "Lưu hạn mức" ở /admin/ai — cả hai từng `disabled` từ lúc
+ * bấm, focus rơi về `<main>`). Nút "Xóa" có sẵn trên cùng trang là mẫu đúng.
+ */
+test.describe('hộp xác nhận mở từ nút: đóng hộp trả focus về đúng nút đó', () => {
+  const TARGET = { id: 987_654, username: 'e2e_mfa_target' }
+
+  test.beforeEach(async ({ page }) => {
+    await login(page)
+  })
+
+  /**
+   * /admin/users với một hàng tài khoản KHÁC (SuperAdmin không thấy nút trên hàng của mình; CSDL
+   * e2e chỉ có admin): danh sách thật cộng một hàng giả; DELETE của hàng đó trả lời giả — không
+   * ghi gì vào CSDL.
+   */
+  async function usersWithAnotherAccount(page: Page, deleteAnswer: { status: number, body: unknown }) {
+    const deletes: string[] = []
+    await page.route(url => url.pathname === '/api/admin/users', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      const response = await route.fetch()
+      const body = (await response.json()) as { users: Array<Record<string, unknown>> }
+      const roleId = body.users[0]?.roleId ?? 1
+      body.users.push({ id: TARGET.id, username: TARGET.username, email: null, isActive: true, roleId, roleName: 'editor', createdAt: null, lastLoginAt: null })
+      await route.fulfill({ response, json: body })
+    })
+    await page.route(url => url.pathname === `/api/admin/users/${TARGET.id}/mfa`, async (route) => {
+      deletes.push(route.request().method())
+      await route.fulfill({ status: deleteAnswer.status, contentType: 'application/json', body: JSON.stringify(deleteAnswer.body) })
+    })
+    await page.goto('/admin/users')
+    await page.waitForLoadState('networkidle')
+    return deletes
+  }
+
+  async function openPrompt(page: Page, opener: Locator) {
+    await opener.focus()
+    await page.keyboard.press('Enter')
+    const dialog = page.getByRole('dialog', { name: 'Xoá xác thực hai bước' })
+    await expect(dialog).toBeVisible()
+    await expect.poll(() => focusInside(dialog), { message: 'hộp hỏi phải giữ focus' }).toBe(true)
+    await expect(opener, 'W1: nút mở không bị khoá trong lúc hộp hỏi').toBeEnabled()
+    return dialog
+  }
+
+  // Attribute locators, not role queries: the opener is read while the dialog is open and the page
+  // behind it is `inert`. Desktop: the table's icon button carries the aria-label; phone: the card's
+  // text button, inside the `md:hidden` card list.
+  const deskOpener = (page: Page) => page.locator(`button[aria-label="Xoá xác thực hai bước của ${TARGET.username}"]`)
+  const phoneOpener = (page: Page) => page.locator(`.md\\:hidden button[title="Xoá xác thực hai bước của ${TARGET.username}"]`)
+  const confirmButton = (dialog: Locator) => dialog.getByRole('button', { name: 'Xoá xác thực hai bước', exact: true })
+
+  test('xoá xác thực hai bước (bảng): Escape, "Hủy", gõ sai tên, xoá xong — focus về nút khiên của hàng', async ({ page }) => {
+    const deletes = await usersWithAnotherAccount(page, { status: 200, body: { ok: true, message: `Đã xoá toàn bộ xác thực hai bước của tài khoản "${TARGET.username}".` } })
+    const inertBefore = await inertElements(page)
+    const opener = deskOpener(page)
+    await expect(opener).toBeVisible()
+
+    let dialog = await openPrompt(page, opener)
+    await page.keyboard.press('Escape')
+    await expectClosedCleanly(page, dialog, opener, inertBefore)
+
+    dialog = await openPrompt(page, opener)
+    await dialog.getByRole('button', { name: 'Hủy' }).click()
+    await expectClosedCleanly(page, dialog, opener, inertBefore)
+
+    dialog = await openPrompt(page, opener)
+    await dialog.getByRole('textbox').fill('khong-phai-ten-nay')
+    await confirmButton(dialog).click()
+    await expectClosedCleanly(page, dialog, opener, inertBefore)
+    expect(deletes, 'gõ sai tên: không gửi gì').toEqual([])
+
+    dialog = await openPrompt(page, opener)
+    await dialog.getByRole('textbox').fill(TARGET.username)
+    await confirmButton(dialog).click()
+    await expect(dialog).toHaveCount(0)
+    await expect.poll(() => deletes.length).toBe(1)
+    await expect(page.getByText(`Đã xoá toàn bộ xác thực hai bước của tài khoản "${TARGET.username}".`).first()).toBeVisible()
+    await expect(opener, 'xoá xong: focus vẫn ở nút (không disabled trong lúc gửi)').toBeFocused()
+    await expect(opener).not.toHaveAttribute('aria-busy', 'true')
+  })
+
+  test('xoá xác thực hai bước bị từ chối (403): focus về nút khiên, câu máy chủ trong toast', async ({ page }) => {
+    await usersWithAnotherAccount(page, { status: 403, body: { statusCode: 403, statusMessage: 'Chỉ quản trị viên cấp cao được xoá xác thực hai bước của tài khoản khác.' } })
+    const opener = deskOpener(page)
+    const dialog = await openPrompt(page, opener)
+    await dialog.getByRole('textbox').fill(TARGET.username)
+    await confirmButton(dialog).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByText('Chỉ quản trị viên cấp cao được xoá xác thực hai bước của tài khoản khác.').first()).toBeVisible()
+    await expect(opener).toBeFocused()
+  })
+
+  test('xoá xác thực hai bước (thẻ điện thoại): Escape trả focus về nút chữ của thẻ', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await usersWithAnotherAccount(page, { status: 200, body: { ok: true } })
+    const inertBefore = await inertElements(page)
+    const opener = phoneOpener(page)
+    await expect(opener).toHaveCount(1)
+    await expect(opener).toBeVisible()
+    const dialog = await openPrompt(page, opener)
+    await page.keyboard.press('Escape')
+    await expectClosedCleanly(page, dialog, opener, inertBefore)
+  })
+
+  test('lưu hạn mức 0 ở /admin/ai: hộp hỏi mở từ "Lưu hạn mức" — Escape/"Hủy" trả focus về nút đó, không gửi gì (W2)', async ({ page }) => {
+    const puts: string[] = []
+    page.on('request', r => { if (r.method() === 'PUT' && new URL(r.url()).pathname === '/api/admin/ai/budget') puts.push(r.url()) })
+    await page.goto('/admin/ai')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: 'Sửa hạn mức' }).click()
+    const field = page.locator('#ai-budget-vnd')
+    await expect(field).toBeFocused()
+    await field.fill('0')
+    const inertBefore = await inertElements(page)
+    const save = page.locator('form button[type="submit"]', { hasText: 'Lưu hạn mức' })
+    for (const close of ['Escape', 'Hủy'] as const) {
+      await save.focus()
+      await page.keyboard.press('Enter')
+      const dialog = page.getByRole('dialog', { name: /^(Lưu hạn mức 0|Hạn mức 0)/ })
+      await expect(dialog).toBeVisible()
+      await expect(save, 'W2: không "đang lưu" trong lúc hộp hỏi').not.toHaveAttribute('aria-busy', 'true')
+      if (close === 'Escape') await page.keyboard.press('Escape')
+      else await dialog.getByRole('button', { name: 'Hủy' }).click()
+      await expectClosedCleanly(page, dialog, save, inertBefore)
+    }
+    await networkBarrier(page)
+    expect(puts, 'Hủy/Escape: không lưu gì').toEqual([])
+  })
+})
