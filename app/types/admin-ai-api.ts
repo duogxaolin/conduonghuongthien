@@ -18,9 +18,16 @@ type LogsHandler = typeof import('~~/server/api/admin/ai/logs/index.get').defaul
 type ProvidersHandler = typeof import('~~/server/api/admin/ai/providers/index.get').default
 type PricingHandler = typeof import('~~/server/api/admin/ai/pricing/index.get').default
 type EditorialHandler = typeof import('~~/server/api/admin/ai/editorial.post').default
+type BudgetUpdateHandler = typeof import('~~/server/api/admin/ai/budget/index.put').default
 
 /** `GET /api/admin/ai/usage` — the dashboard's month: totals, per service, per day, the budget. */
 export type AdminAiUsageResponse = Payload<UsageHandler>
+/**
+ * `PUT /api/admin/ai/budget` — the dashboard's budget editor (`AiBudgetEditor.vue`). `{ ok }` when
+ * the row was written; `{ ok, message: 'Không có thay đổi.' }` when the body held nothing usable
+ * (the handler ignores a non-number instead of refusing it), so the editor never reads that as saved.
+ */
+export type AdminAiBudgetUpdateResponse = Payload<BudgetUpdateHandler>
 /** `GET /api/admin/ai/logs` — one page of the call log (AiLogsTab). */
 export type AdminAiLogsResponse = Payload<LogsHandler>
 /** `GET /api/admin/ai/providers` and `/pricing` — the parent's fallback read for the Services/Logs tabs. */
@@ -51,3 +58,39 @@ type TestCallVariant = Payload<TestCallHandler>
 type TestCallSuccess = Extract<TestCallVariant, { reply: string }>
 type TestCallFailure = Extract<TestCallVariant, { error: string }>
 export type AdminAiTestCallResponse = Partial<TestCallSuccess & TestCallFailure> & { ok: boolean, model?: string }
+
+/**
+ * `GET /api/admin/ai/delify/status` (the dashboard tab, `AiDashboardTab.vue`) — STATED, not
+ * derived: the router's own fields are picked by `plainFields` as "any plain value" (string |
+ * number | boolean), so their types are the router's, which the handler does not know (named gap,
+ * docs/decisions/fetch-rollout-d-fetch.md). Moved here from the tab unchanged, so the tab stays
+ * under its 400-line cap.
+ */
+export interface DelifyStatusResponse {
+  ok: boolean
+  configured: boolean
+  host?: string | null // the host the server asked: the delify provider's base URL
+  error?: string
+  keyInfo?: {
+    name: string
+    groupName: string
+    active: boolean
+    budgetUsd: number | null
+    budgetVnd?: number | null
+    usedCostUsd: number
+    usedCostVnd?: number
+    remainingBudgetUsd: number | null
+    remainingBudgetVnd?: number | null
+    totalRequests: number
+    allowedModels: string[]
+    rpm: number | null
+    windowStartedAt: string | null
+  }
+  period: string
+  periodSummary?: {
+    items?: Array<{ model: string; input: number; output: number; requests: number; cost: number }>
+    totals?: { input: number; output: number; requests: number; cost: number }
+  } | null
+  recentHistory?: Array<{ timestamp: string; model: string; status: string; cost: number; input: number; output: number; tok: number }>
+  availableModels?: Array<{ name: string; input: number; output: number }>
+}

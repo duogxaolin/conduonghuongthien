@@ -187,8 +187,7 @@ onMounted(() => { fetchUsers() })
 
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-line overflow-hidden">
-      <!-- Loading: two placeholders at the SAME breakpoints as the two real
-           layouts below, so the shape does not change when the rows arrive. -->
+      <!-- Loading: two placeholders at the SAME breakpoints as the two real layouts below, so the shape does not change when the rows arrive. -->
       <template v-if="loading">
         <!-- Mobile card list (matches the md:hidden branch) -->
         <div class="md:hidden divide-y divide-surface-tint" role="status" aria-busy="true">
@@ -209,8 +208,7 @@ onMounted(() => { fetchUsers() })
         </div>
       </template>
 
-      <!-- Empty — one branch for both layouts, so an empty list never reads as a
-           bare table header. -->
+      <!-- Error, then empty — one branch each for both layouts, so neither reads as a bare table header. -->
       <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-danger-soft text-[0.95rem]">
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
         {{ loadError }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchUsers()">thử lại</button>.
@@ -248,12 +246,13 @@ onMounted(() => { fetchUsers() })
             </span>
           </div>
           <p class="text-[0.8rem] text-ink-muted m-0">{{ u.email || 'Chưa có email' }}</p>
-          <div class="flex items-center gap-3 mt-2.5">
+          <div class="flex flex-wrap items-center gap-3 mt-2.5">
             <button class="inline-flex items-center gap-1 text-brand-700 font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`user-${u.id}`" @click="openEditModal(u)"><i class="fa-solid fa-pen-to-square"></i> Sửa</button>
             <button class="inline-flex items-center gap-1 text-danger font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" @click="deleteUser(u)"><i class="fa-solid fa-trash-can"></i> Xóa</button>
             <button class="inline-flex items-center gap-1 font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" :class="u.isActive ? 'text-[#b78103]' : 'text-[#2c6e33]'" @click="toggleActive(u)">
               <i :class="u.isActive ? 'fa-solid fa-lock' : 'fa-solid fa-lock-open'"></i> {{ u.isActive ? 'Khóa' : 'Mở khóa' }}
             </button>
+            <AdminUserMfaResetButton :user="u" />
           </div>
         </div>
       </div>
@@ -336,6 +335,7 @@ onMounted(() => { fetchUsers() })
                     @click="deleteUser(u)"
                     title="Xóa tài khoản"
                   ><i class="fa-solid fa-trash-can text-xs"></i></button>
+                  <AdminUserMfaResetButton :user="u" compact />
                 </div>
               </td>
             </tr>

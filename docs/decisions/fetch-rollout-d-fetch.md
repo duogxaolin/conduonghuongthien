@@ -376,8 +376,9 @@ F-4), `backup.vue` → `useAdminList` (**không chuyển**, mã lượt — bả
 - `POST /api/admin/ai/test-call`: ba object literal với `ok: boolean` (không phân biệt được) và
   `model`/`provider` vọng lại từ `readBody` (`any`) — kiểu là hợp các biến thể của handler, mọi trường
   tuỳ chọn, cộng `model?: string`. Gốc: handler đọc body không kiểu (đợt máy chủ).
-- `GET /api/admin/ai/delify/status` giữ `DelifyStatusResponse` khai trong tab (bỏ ép kiểu, không suy
+- `GET /api/admin/ai/delify/status` giữ `DelifyStatusResponse` khai tay (bỏ ép kiểu, không suy
   kiểu): các trường của router bị `plainFields` nhặt là "giá trị phẳng bất kỳ", kiểu thật là của router.
+  Khai ở tab tới CHANGELOG § 68, nay nguyên văn ở `app/types/admin-ai-api.ts` (tab giữ dưới trần 400 dòng).
 
 Kiểu viết tay bị thay **lộ hai sai lệch không ai đọc** (không phải lỗi hiển thị): `MediaItem.provider`
 (`'local'|'r2'`, cột là `varchar`) và `uploadedBy` (`number`, danh sách trả USERNAME) — `app/types/media.ts`

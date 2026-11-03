@@ -227,6 +227,13 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // "Lưu thành mục media" (CHANGELOG § 67): không tải gì lúc mount — chỉ POST khi bấm
   // nút; nút mang trạng thái chờ ("Đang lưu…", bị vô hiệu), kết quả hiện ngay dưới nút.
   'components/admin/livestream/LivestreamRecordingCard.vue': 'submit-time fetch; the button shows pending and the result is inline',
+  // Nút break-glass "Xoá xác thực hai bước" (§ 68): chỉ gửi khi bấm + gõ đúng tên; nút bị
+  // vô hiệu (`aria-busy`) trong lúc hỏi/gửi, kết quả ở toast. Không tải gì để làm khung chờ.
+  'components/admin/UserMfaResetButton.vue': 'submit-time fetch; the button is disabled while it asks and sends, the result lands in a toast',
+  // Trình sửa hạn mức chi AI (§ 68): không tải gì — giá trị là props từ lượt đọc usage của
+  // AiDashboardTab (khung chờ của nó đã ghim ở trên). Chỉ `PUT` khi bấm "Lưu"; nút mang
+  // "Đang lưu…" + `aria-busy`.
+  'components/admin/ai/AiBudgetEditor.vue': 'submit-time fetch; values arrive as props from the dashboard\'s usage read, the Save button shows pending',
   // `MediaProcessingTimeline.vue` bị bỏ khỏi exemption list vì nó KHÔNG tự fetch
   // — chỉ nhận dữ liệu từ parent qua props. Gate "stale exemption" bắt đúng:
   // một component không fetch thì không cần được miễn skeleton.
