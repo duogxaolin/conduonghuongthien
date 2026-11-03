@@ -12,13 +12,23 @@
  * official reply could end up under a question that no longer resembles the one
  * it answered. Correcting a comment means deleting it and posting again.
  */
+/**
+ * Tên tệp là `[articleSlug]` dù ở đây giá trị là id bình luận — CÓ CHỦ ĐÍCH.
+ *
+ * Bộ định tuyến (radix3) giữ MỘT tên tham số cho mỗi vị trí đường dẫn, của tệp được đăng ký
+ * trước, bất kể phương thức. `[articleSlug].get.ts` đứng cạnh đây; khi tệp này còn tên
+ * `[id]`, trên bản build tham số tên `id` luôn là `undefined` → mọi lượt xoá
+ * bình luận trả 400 "Bình luận không hợp lệ" (2026-11-03, chỉ lộ ở production vì thử bằng
+ * tay mới đi tới đây). `tests/api-route-param-names.test.ts` chặn hai tên khác nhau ở cùng
+ * một vị trí trong `server/api`.
+ */
 import { requireReader } from '../../../utils/reader-auth'
 import { deleteComment } from '../../../services/comments'
 
 export default defineEventHandler(async (event) => {
   const reader = await requireReader(event)
 
-  const raw = getRouterParam(event, 'id')
+  const raw = getRouterParam(event, 'articleSlug')
   const id = Number(raw)
   if (!Number.isFinite(id) || id <= 0) {
     throw createError({ statusCode: 400, statusMessage: 'Bình luận không hợp lệ.' })

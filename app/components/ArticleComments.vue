@@ -151,6 +151,11 @@
         @submit="submit(null)"
       />
     </template>
+
+    <!-- Hộp xác nhận xoá (useConfirm). Teleport ra <body> nên chỉ dựng ở client: trang SWR không đổi. -->
+    <ClientOnly>
+      <AdminConfirmModal />
+    </ClientOnly>
   </section>
 </template>
 

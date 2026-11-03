@@ -395,7 +395,7 @@ So với 2026-10-24 (663 tệp, 299 chưa nạp, 70,50 %): Wave 2 thêm tệp m�
 | 189 | `server/api/admin/readers/[id].delete.ts` | R5 | 13 | Xoá tài khoản người đọc. Handler mỏng — service `readers.ts` phủ 36 %. | — |
 | 190 | `server/api/admin/readers/[id]/comments.delete.ts` | R5 | 13 | Xoá mọi bình luận của một người đọc. Handler mỏng — service `readers.ts` phủ 36 %. | — |
 | 191 | `server/api/admin/readers/[id]/unban.post.ts` | R5 | 13 | Mở khoá một người đọc. Handler mỏng — service `readers.ts` phủ 36 %. | — |
-| 192 | `server/api/public/comments/[id].delete.ts` | R5 | 13 | Người đọc xoá bình luận của mình. Handler mỏng — service `comments.ts` phủ 100 %. Rủi ro thật thấp hơn lớp. | qua `comments.ts`: `notification-email`, `notification-page` |
+| 192 | `server/api/public/comments/[articleSlug].delete.ts` | R5 | 13 | Người đọc xoá bình luận của mình. Handler mỏng — service `comments.ts` phủ 100 %. Rủi ro thật thấp hơn lớp. | qua `comments.ts`: `notification-email`, `notification-page` |
 | 193 | `server/api/admin/social-links/reorder.post.ts` | R5 | 12 | Sắp xếp liên kết MXH. Handler mỏng — service `social-links.ts` chưa nạp (0 %). Rủi ro nằm ở service. | — |
 | 194 | `server/api/admin/submissions/[id]/contact.post.ts` | R5 | 12 | Ghi nhận đã liên hệ người dân. Handler mỏng — service `submission-workflow.ts` 0 % ở unit nhưng có suite integration riêng. | qua `submission-workflow.ts`: `submission-workflow` |
 | 195 | `server/api/admin/languages/[code].delete.ts` | R5 | 11 | Xoá một ngôn ngữ. Handler mỏng — service `languages.ts` chưa nạp (0 %). Rủi ro nằm ở service. | — |

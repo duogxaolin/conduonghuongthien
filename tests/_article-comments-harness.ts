@@ -13,7 +13,7 @@
  *   - `useI18n()` — the real Vietnamese fallback dictionary (`hardcodedDictionary.vi`),
  *     key name when missing, exactly the real `t()`'s last two steps;
  *   - `useRoute()` — `hash` and `query` the test sets before mounting;
- *   - `window.sessionStorage` (a Map; every write/remove logged), `window.confirm` (answer
+ *   - `window.sessionStorage` (a Map; every write/remove logged), the `useConfirm` modal (answer
  *     set by the test, questions recorded), `window.setTimeout` (late-bound to the global,
  *     so node:test's mock timers drive it), `window.matchMedia` (reduced motion on/off),
  *     `window.location.href`, `window.history.replaceState` (recorded);
@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url'
 import { createFetch } from 'ofetch'
 import * as Vue from 'vue'
 
+import { useConfirm, type ConfirmOptions } from '../app/composables/useConfirm.ts'
 import { hardcodedDictionary } from '../app/composables/i18n-default-dictionary.ts'
 import { byText, findAll, mountSfc, textOf, type MiniElement, type MountedSfc } from './_sfc-mount.ts'
 
@@ -226,7 +227,19 @@ export async function mountThread(t_: TestContext, server = commentsServer(), op
   const storage = new Map<string, string>(Object.entries(options.storage ?? {}))
   const storageLog: string[] = []
   const confirms: string[] = []
+  const confirmDialogs: ConfirmOptions[] = []
   const confirmAnswer = { value: true }
+  // The delete question is the site's own modal (`useConfirm`), not `window.confirm`: answer it
+  // the moment it opens (sync flush), the way a click on its button would.
+  const { confirmState, accept, cancel } = useConfirm()
+  const stopConfirmWatch = Vue.watch(() => confirmState.visible, (visible) => {
+    if (!visible) return
+    confirms.push(confirmState.options.message)
+    confirmDialogs.push({ ...confirmState.options })
+    if (confirmAnswer.value) accept()
+    else cancel()
+  }, { flush: 'sync' })
+  restore.push(stopConfirmWatch)
   const replacedUrls: string[] = []
   const location = { href: `http://portal.test/news/${options.slug ?? 'bai-viet'}${options.hash ?? ''}` }
   restore.push(replaceGlobal('window', {
@@ -237,7 +250,6 @@ export async function mountThread(t_: TestContext, server = commentsServer(), op
       setItem: (key: string, value: string) => { storageLog.push(`set ${key}`); storage.set(key, value) },
       removeItem: (key: string) => { storageLog.push(`remove ${key}`); storage.delete(key) },
     },
-    confirm: (question: string) => { confirms.push(question); return confirmAnswer.value },
     matchMedia: (query: string) => ({ matches: query.includes('reduce') && options.reducedMotion === true }),
     location,
     history: { replaceState: (_state: unknown, _title: string, url: string) => { replacedUrls.push(url) } },
@@ -307,7 +319,7 @@ export async function mountThread(t_: TestContext, server = commentsServer(), op
   /** Unmount without restoring the globals — what leaving the page does; `close()` restores later. */
   const leave = () => thread.unmount()
 
-  return { thread, server, calls, reader, isSignedIn, route, storage, storageLog, confirms, confirmAnswer, replacedUrls, scrolls, clipboard, clipboardAnswer, location, settle, close, leave }
+  return { thread, server, calls, reader, isSignedIn, route, storage, storageLog, confirms, confirmDialogs, confirmAnswer, replacedUrls, scrolls, clipboard, clipboardAnswer, location, settle, close, leave }
 }
 
 export type ThreadCtx = Awaited<ReturnType<typeof mountThread>>

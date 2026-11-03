@@ -493,6 +493,14 @@ describe('reply and delete', () => {
     await click(buttons(commentEl(ctx.thread, 3), 'Xóa')[0]!)
     await ctx.settle()
     assert.deepEqual(ctx.confirms, [vi('c_delete_confirm')])
+    // The site's modal, not window.confirm: titled, a "Delete" button, the shared "Cancel", danger tone.
+    assert.deepEqual(ctx.confirmDialogs, [{
+      title: vi('c_delete_title'),
+      message: vi('c_delete_confirm'),
+      confirmLabel: vi('c_delete_action'),
+      cancelLabel: vi('c_cancel'),
+      danger: true,
+    }])
     assert.deepEqual(sent(ctx.calls, from), [])
 
     ctx.confirmAnswer.value = true
