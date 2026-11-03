@@ -1,6 +1,7 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateCategory } from '../../../services/i18n-auto-translate'
 import { createCategory, readCategoryName, readDisplayOrder, readParentId } from '../../../services/category-writes'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -22,6 +23,10 @@ export default defineEventHandler(async (event) => {
 
   // Non-blocking i18n auto-translate (vi gốc + AI dịch 5 lang), after the commit.
   void autoTranslateCategory(adminUser, created.slug, name, description).catch(() => {})
+
+  // After the commit: category pills and lists are in the `swr`-cached public pages
+  // (server/utils/public-page-cache.ts).
+  await purgePublicPageCacheAfterWrite('categories.create')
 
   return { ok: true, id: created.id, slug: created.slug }
 })
