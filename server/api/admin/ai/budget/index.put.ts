@@ -50,10 +50,10 @@ export default defineEventHandler(async (event) => {
       action: 'update',
       resource: 'ai',
       resourceId: 1,
-      meta: JSON.stringify({
+      meta: {
         type: 'budget_update',
         changedFields: Object.keys(patch),
-      }),
+      },
     })
   })
 

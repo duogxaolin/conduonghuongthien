@@ -45,7 +45,6 @@ test('chatbot authorization denies missing grants and separates resources and ac
   })
   assert.equal(requireChatbotSettingsPermission(settingsReader, 'read').id, 2)
   assert.throws(() => requireChatbotSettingsPermission(settingsReader, 'update'), hasStatus(403))
-  assert.throws(() => requireChatbotSettingsPermission(settingsReader, 'test'), hasStatus(403))
   assert.throws(() => requireChatbotKnowledgePermission(settingsReader, 'read'), hasStatus(403))
 
   const knowledgeEditor = event({
@@ -92,19 +91,25 @@ test('knowledge lifecycle actions require independent dedicated grants', () => {
   assert.throws(() => requireChatbotKnowledgePermission(archiver, 'publish'), hasStatus(403))
 })
 
-test('connection test is independently granted while key rotation and clear require superadmin', () => {
-  const tester = event({
+test('key rotation and clear require superadmin; canTest (retired, CHANGELOG § 66) grants nothing', () => {
+  const editor = event({
     id: 4,
     isSuperAdmin: false,
     permissions: [permission(CHATBOT_RESOURCES.settings, { canTest: true, canUpdate: true })],
   })
-  assert.equal(requireChatbotSettingsPermission(tester, 'test').id, 4)
-  assert.equal(requireChatbotSettingsPermission(tester, 'update').id, 4)
-  assert.throws(() => requireChatbotSettingsPermission(tester, 'rotate_key'), hasStatus(403))
-  assert.throws(() => requireChatbotSettingsPermission(tester, 'clear'), hasStatus(403))
+  assert.equal(requireChatbotSettingsPermission(editor, 'update').id, 4)
+  assert.throws(() => requireChatbotSettingsPermission(editor, 'rotate_key'), hasStatus(403))
+  assert.throws(() => requireChatbotSettingsPermission(editor, 'clear'), hasStatus(403))
+
+  // The `'test'` action — the only reader of `canTest` — went with its route (§ 64/§ 66): a
+  // role holding only the old "Kiểm thử" box can do nothing with the chatbot settings.
+  const testerOnly = event({ id: 14, isSuperAdmin: false, permissions: [permission(CHATBOT_RESOURCES.settings, { canTest: true })] })
+  for (const action of ['read', 'update', 'clear', 'rotate_key'] as const) {
+    assert.throws(() => requireChatbotSettingsPermission(testerOnly, action), hasStatus(403), action)
+  }
 
   const superadmin = event({ id: 1, isSuperAdmin: true, permissions: [] })
-  for (const action of ['read', 'update', 'clear', 'test', 'rotate_key'] as const) {
+  for (const action of ['read', 'update', 'clear', 'rotate_key'] as const) {
     assert.equal(requireChatbotSettingsPermission(superadmin, action).id, 1)
   }
   for (const action of ['read', 'create', 'update', 'delete', 'publish', 'archive'] as const) {

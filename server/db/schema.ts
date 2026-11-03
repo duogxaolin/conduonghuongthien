@@ -7,6 +7,7 @@ import { ANALYTICS_LIVE_SCOPE_TYPES } from '../utils/analytics-live'
 import type { BlockData, BlockNode } from '../../shared/blocks/types'
 import type { ContactChannel, SubmissionEventType, SubmissionStatus } from '../../shared/submission-status'
 import type { OffsiteStatus } from '../../shared/backup-offsite-status'
+import type { QueueAiVerdict } from '../../shared/moderation-ai-verdict'
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 export const roles = mysqlTable('roles', {
@@ -1060,6 +1061,11 @@ export const livestreamMessages = mysqlTable('livestream_messages', {
   // Soft delete: a moderated message leaves the public history but its row
   // remains, because the moderation action is itself auditable.
   isDeleted:   boolean('is_deleted').notNull().default(false),
+  // Set only by the automatic hide (`applyAutoHide`): the review-queue row's
+  // reason, cut to 255. It is what lets "Bỏ ẩn" on that queue row show the
+  // message again — an officer's removal (`removeChatMessage`) writes none, so
+  // it is never undone by an approve. NULL on rows hidden before the column.
+  flagReason:  varchar('flag_reason', { length: 255 }),
   // DATETIME(3) — chat ordering needs millisecond resolution, and two messages
   // in the same second are ordinary.
   createdAt:   datetime('created_at', { mode: 'date', fsp: 3 }).notNull(),
@@ -1410,6 +1416,12 @@ export const aiModerationQueue = mysqlTable('ai_moderation_queue', {
   reviewedBy:     int('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
   reviewedAt:     datetime('reviewed_at', { mode: 'date' }),
   createdAt:      timestamp('created_at').defaultNow(),
+  /**
+   * What the AI judged when its automatic hide reused THIS pending row's mark (no row of its own
+   * was filed — `insertQueueRowOnce`); NULL otherwise. Display only: `flagged_reason` stays the
+   * mark. Written and read through `shared/moderation-ai-verdict.ts`.
+   */
+  aiVerdict:      json('ai_verdict').$type<QueueAiVerdict>(),
 }, (t) => ({
   statusCreatedIdx: index('ai_moderation_queue_status_created_idx').on(t.status, t.createdAt),
   targetIdx: index('ai_moderation_queue_target_idx').on(t.targetType, t.targetId),

@@ -1,23 +1,23 @@
 <template>
-  <section class="section bg-[#F8FAF7] border-t border-[#E2E8DF] py-12 sm:py-16">
+  <section class="section bg-surface border-t border-line py-12 sm:py-16">
     <div class="container">
       <!-- Section Header with Left-Right Layout -->
-      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 sm:mb-10 pb-4 border-b border-[#E2E8DF]">
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 sm:mb-10 pb-4 border-b border-line">
         <div>
-          <span class="block text-[0.78rem] font-extrabold text-[#4A6741] uppercase tracking-[1.2px] mb-1.5">
+          <span class="block text-[0.78rem] font-extrabold text-brand-600 uppercase tracking-[1.2px] mb-1.5">
             {{ t('guidance_and_direction') || 'Chỉ đạo & Điều hành' }}
           </span>
-          <h2 class="text-2xl sm:text-3xl font-black text-[#172516] tracking-tight m-0 mb-2">
+          <h2 class="text-2xl sm:text-3xl font-black text-ink-strong tracking-tight m-0 mb-2">
             {{ d.title || t('block_docs_title') }}
           </h2>
-          <p class="text-sm text-[#556450] max-w-2xl m-0 leading-relaxed">
+          <p class="text-sm text-ink-soft max-w-2xl m-0 leading-relaxed">
             {{ d.description || t('block_docs_desc') }}
           </p>
         </div>
 
         <nuxt-link
           :to="d.btnLink || '/documents'"
-          class="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-[#D5E1D3] hover:border-[#4A6741] hover:bg-[#F2F7F0] text-[#385932] text-xs font-extrabold transition-all no-underline shrink-0 shadow-sm group/btn"
+          class="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-[#D5E1D3] hover:border-brand-600 hover:bg-surface-tint text-brand-800 text-xs font-extrabold transition-all no-underline shrink-0 shadow-sm group/btn"
         >
           <span>{{ d.btnText || t('block_docs_btn') }}</span>
           <i class="fa-solid fa-arrow-right text-[0.7rem] transition-transform duration-200 group-hover/btn:translate-x-1" aria-hidden="true"></i>
@@ -30,13 +30,13 @@
         <div
           v-for="n in 3"
           :key="n"
-          class="bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none flex flex-col"
+          class="bg-white rounded-2xl overflow-hidden border border-line shadow-sm animate-pulse motion-reduce:animate-none flex flex-col"
         >
-          <div class="aspect-video bg-[#EEF2EC]"></div>
+          <div class="aspect-video bg-surface-tint"></div>
           <div class="p-4 sm:p-5 flex flex-col gap-3 flex-1">
-            <div class="h-3.5 w-24 bg-[#EEF2EC] rounded"></div>
-            <div class="h-5 w-full bg-[#EEF2EC] rounded"></div>
-            <div class="h-3.5 w-full bg-[#EEF2EC] rounded"></div>
+            <div class="h-3.5 w-24 bg-surface-tint rounded"></div>
+            <div class="h-5 w-full bg-surface-tint rounded"></div>
+            <div class="h-3.5 w-full bg-surface-tint rounded"></div>
           </div>
         </div>
       </div>
@@ -46,10 +46,10 @@
         <article
           v-for="doc in docs"
           :key="doc.id"
-          class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
+          class="group bg-white rounded-2xl overflow-hidden border border-line shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-accent transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
         >
           <!-- Thumbnail: strictly 16:9 với hover zoom -->
-          <nuxt-link :to="`/news/${doc.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
+          <nuxt-link :to="`/news/${doc.slug}`" class="block relative w-full aspect-video overflow-hidden bg-surface-tint no-underline shrink-0">
             <SafeImg
               :src="doc.thumbnailUrl || '/assets/hero_banner.jpg'"
               :alt="doc.title" img-class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
@@ -63,33 +63,33 @@
           <!-- Card Content: flex-1 justify-between -->
           <div class="p-4 sm:p-5 flex flex-col flex-1">
             <!-- Meta row -->
-            <div class="flex items-center gap-2 text-xs text-[#5A6C58] font-medium mb-2">
-              <span class="inline-block bg-[#EEF4EC] text-[#2D5A27] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
+            <div class="flex items-center gap-2 text-xs text-ink-soft font-medium mb-2">
+              <span class="inline-block bg-surface-tint text-[#2D5A27] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
                 {{ doc.categoryName }}
               </span>
-              <span class="flex items-center gap-1 text-[#5a6c58] text-[0.75rem]">
+              <span class="flex items-center gap-1 text-ink-soft text-[0.75rem]">
                 <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
                 <span>{{ doc.date }}</span>
               </span>
             </div>
 
             <!-- Title: line-clamp-2 min-h -->
-            <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-[#172516] group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
-              <nuxt-link :to="`/news/${doc.slug}`" class="text-[#172516] hover:text-[#2D5A27] no-underline">
+            <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-ink-strong group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
+              <nuxt-link :to="`/news/${doc.slug}`" class="text-ink-strong hover:text-[#2D5A27] no-underline">
                 {{ doc.title }}
               </nuxt-link>
             </h3>
 
             <!-- Excerpt: line-clamp-2 -->
-            <p v-if="doc.excerpt" class="text-[0.84rem] text-[#556450] leading-relaxed line-clamp-2 mb-3 m-0">
+            <p v-if="doc.excerpt" class="text-[0.84rem] text-ink-soft leading-relaxed line-clamp-2 mb-3 m-0">
               {{ doc.excerpt }}
             </p>
 
             <!-- Footer: pinned with mt-auto -->
-            <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#5A6C58]">
+            <div class="mt-auto pt-3 border-t border-surface-tint flex items-center justify-between text-xs text-ink-soft">
               <nuxt-link
                 :to="`/news/${doc.slug}`"
-                class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
+                class="inline-flex items-center gap-1.5 font-bold text-brand-800 hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
               >
                 <span>{{ t('view_details') || 'Chi tiết' }}</span>
                 <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
@@ -111,7 +111,7 @@
       />
 
       <!-- Empty State -->
-      <div v-else class="bg-white rounded-2xl border border-[#E2E8DF] p-8 text-center text-sm text-[#5A6C58] italic shadow-sm">
+      <div v-else class="bg-white rounded-2xl border border-line p-8 text-center text-sm text-ink-soft italic shadow-sm">
         <i class="fa-regular fa-folder-open text-2xl mb-2 text-[#BAC8B6] block" aria-hidden="true"></i>
         <span>{{ t('block_docs_empty') }}</span>
       </div>
@@ -120,7 +120,7 @@
       <div class="mt-7 text-center sm:hidden">
         <nuxt-link
           :to="d.btnLink || '/documents'"
-          class="inline-flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-[#4A6741] text-white text-xs font-extrabold no-underline shadow-sm"
+          class="inline-flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-brand-600 text-white text-xs font-extrabold no-underline shadow-sm"
         >
           <span>{{ d.btnText || t('block_docs_btn') }}</span>
           <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
@@ -134,7 +134,8 @@
 import { computed, onMounted, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
-import type { PublicArticleListItem } from '~/utils/public-types'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicArticlesResponse } from '~/types/public-content-api'
 import BlockLoadError from './BlockLoadError.vue'
 
 const { t, currentLang } = useI18n()
@@ -147,7 +148,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, pending, error, refresh } = await useAsyncData(
   `block-documents-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
+  () => publicFetch<PublicArticlesResponse>('/api/public/articles', {
     params: {
       type: 'document',
       limit: maxItems.value,
@@ -175,7 +176,7 @@ onMounted(() => {
 const loadError = computed(() => !!error.value)
 
 const docs = computed(() =>
-  ((data.value as { articles?: PublicArticleListItem[] })?.articles || []).map(a => ({
+  (data.value?.articles || []).map(a => ({
     id: a.id,
     slug: a.slug,
     title: a.title,

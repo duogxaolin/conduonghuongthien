@@ -2,14 +2,16 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { ADMIN_LAYOUT_FAMILY, familySource, readAppFile } from './_component-family.ts'
 
-const layoutPath = new URL('../app/layouts/admin.vue', import.meta.url)
 const settingsPath = new URL('../app/pages/admin/chatbot/settings.vue', import.meta.url)
 const validatorPath = new URL('../server/utils/chatbot/settings.ts', import.meta.url)
 const patchRoutePath = new URL('../server/api/admin/chatbot/settings/index.patch.ts', import.meta.url)
 
-const [layoutSource, settingsSource, validatorSource, patchRouteSource] = await Promise.all([
-  readFile(layoutPath, 'utf8'),
+// The admin layout was split (wave3 D-SPLIT): its menu lives in `useAdminLayoutMenu`, so the
+// navigation guard reads the layout's whole family (tests/_component-family.ts).
+const layoutSource = familySource(ADMIN_LAYOUT_FAMILY)
+const [settingsSource, validatorSource, patchRouteSource] = await Promise.all([
   readFile(settingsPath, 'utf8'),
   readFile(validatorPath, 'utf8'),
   readFile(patchRoutePath, 'utf8'),
@@ -82,6 +84,15 @@ test('admin navigation targets actual chatbot pages and keeps dedicated read per
   // Builder; the sidebar now links to that instead.
   assert.match(layoutSource, /path: '\/admin\/content\/pages'/)
   assert.match(layoutSource, /path: '\/admin\/settings\/general'/)
+})
+
+test('proof: the navigation guard reads the split layout — a legacy chatbot path planted in a new part is caught', () => {
+  const planted = { 'components/admin/layout/AdminExtra.vue': '<template><nuxt-link to="/admin/settings/chatbot">x</nuxt-link></template>' }
+  assert.match(familySource(ADMIN_LAYOUT_FAMILY, planted), /\/admin\/content\/chatbot-knowledge|\/admin\/settings\/chatbot/)
+  const menu = 'composables/useAdminLayoutMenu.ts'
+  const ungated = readAppFile(menu).replace("...(hasPermission('chatbot_settings', 'read') ? [", '...(true ? [')
+  assert.notEqual(ungated, readAppFile(menu), 'the planted change must apply')
+  assert.doesNotMatch(familySource(ADMIN_LAYOUT_FAMILY, { [menu]: ungated }), /hasPermission\('chatbot_settings', 'read'\)[^\n]+path: '\/admin\/chatbot\/settings'/)
 })
 
 test('settings SFC parses and keeps explicit loading, error, success, test, masked, focus, and mobile states', () => {

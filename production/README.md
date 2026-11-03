@@ -15,6 +15,13 @@ Yêu cầu trên VPS:
 - **Git** (để pull code khi update)
 - **openssl** (để sinh bí mật ngẫu nhiên — có sẵn hầu hết VPS)
 
+> **`manage.sh` không đứng một mình.** Nó chỉ là cửa vào; mã nằm ở `production/lib/*.sh`
+> (xem *Cấu trúc thư mục*), nạp theo vị trí **thật** của `manage.sh` — chạy
+> `cd production && ./manage.sh`, đường dẫn tuyệt đối, terminal web aaPanel hay qua symlink
+> đều như nhau. `lib/` **phải nằm cạnh** `manage.sh`: cập nhật bằng `git pull` (hoặc chép
+> **cả thư mục** `production/`), không bao giờ `scp` riêng `manage.sh`. Thiếu một tệp
+> `lib/` thì `manage.sh` dừng ngay, chưa làm gì, và in tên tệp thiếu.
+
 ---
 
 ## Menu
@@ -80,7 +87,7 @@ Chạy khi muốn kéo code/image mới lên VPS đang chạy:
 
 1. **Hiển thị trạng thái cũ**: image, port, domain, container status (trước đó Update chỉ siết quyền `.env` về 600 — không đổi nội dung)
 2. **Sao lưu DB trước khi cập nhật? [Y/n]** (mặc định **có**) — câu hỏi **đầu tiên**, trước khi Update đổi bất cứ thứ gì: trước `git pull` (đổi `docker-compose.yml`), trước các câu hỏi ghi `.env`, trước khi kéo/đổi image — đúng chỗ của lượt CI deploy. `scripts/backup-db.sh --prefix cdkt-predeploy` → `.deploy-db-backups/` — cùng bản dump, cùng thư mục, cùng vòng xoay 5 bản với lượt CI deploy (xem *Bản dump CSDL trước deploy*); dùng `backup-db.sh` của chính bản checkout đang chạy `manage.sh` (chưa pull). Dump hỏng → Update **dừng**: chưa pull code, chưa sửa `.env`, chưa kéo image hay khởi động lại gì. Chỉ trả lời `n` khi vừa có bản sao lưu mới, hoặc chính bước sao lưu đang hỏng mà phải cập nhật gấp
-3. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó). Pull mà đổi chính `production/manage.sh` → Update **tự chạy tiếp bằng bản vừa kéo về** (`exec`, không hỏi lại sao lưu/pull; bản sao lưu compose của lượt này đi theo cho đường lùi) — phần còn lại luôn là mã mới
+3. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó). Pull mà đổi `production/manage.sh` **hoặc bất kỳ tệp `production/lib/*.sh` nào** → Update **tự chạy tiếp bằng bản vừa kéo về** (`exec`, không hỏi lại sao lưu/pull; bản sao lưu compose của lượt này đi theo cho đường lùi) — phần còn lại là mã mới. Bước tự chạy tiếp đó nằm trong **bản đang chạy**, không phải bản kéo về: nó có từ bản `manage.sh` một tệp ngày 2026-10-24 (`5e9e14b`) trở đi. VPS còn chạy `manage.sh` cũ hơn — như bản trên `main` trước đợt tách `lib/` (`7dfed8c`, 1251 dòng) — thì lượt Update kéo bản tách `lib/` về **chạy hết bằng mã cũ** (thoát 0, không hỏng gì: hàm của bản cũ đã nạp sẵn, `git pull` thay tệp bằng inode mới); **chạy Update thêm một lần** sau lượt đó để phần sửa `.env`/kiểm journald/đổi image dùng mã mới (`tests/ops-scripts-sandbox.test.ts`, ca `(a0)`)
 4. **Sửa cấu hình**: port, `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST` (gõ enter giữ giá trị cũ, hoặc sửa; `.env` cũ chưa có `PUBLIC_HOST_ALLOWLIST` thì gợi ý host của `PUBLIC_BASE_URL`), `OPS_ALERT_EMAIL` (địa chỉ nhận thư cảnh báo, phẩy ngăn cách; enter = giữ nguyên, `-` = xoá; giá trị không phải danh sách địa chỉ bị từ chối), `HEALTHCHECK_PING_URL` (chỉ báo *đang đặt*/*chưa đặt* — **không in URL**; enter = giữ nguyên, `-` = xoá; URL có `?`/`&`/`#` bị từ chối). Ngay trước bước 5, Update kiểm journald và đặt/gỡ override log dự phòng (xem *Log của app*) — không hỏi; cấu hình log hiệu lực không chạy được trên máy này thì **dừng** trước khi kéo image hay khởi động lại
 
 > **`PUBLIC_HOST_ALLOWLIST`** — mọi tên miền thật của cổng, phẩy ngăn cách
@@ -221,11 +228,47 @@ Mất VPS là mất `.env`: `JWT_SECRET`, `CHATBOT_ENCRYPTION_SECRET` (khoá gi�
 
 ```
 production/
-├─ manage.sh           # script chính (menu 1/2/3/4)
+├─ manage.sh           # cửa vào (menu 1–6 / tham số) — nạp lib/ bên cạnh, không tự chạy được một mình
+├─ lib/                # mã của manage.sh — PHẢI nằm cạnh manage.sh
+│  ├─ common.sh        #   biến toàn cục, màu, prompt/confirm, helper .env/MySQL/healthcheck (nạp đầu tiên)
+│  ├─ log-driver.sh    #   journald hay json-file dự phòng (giống hệt scripts/deploy-remote.sh)
+│  ├─ menu.sh          #   menu tương tác
+│  ├─ deploy.sh        #   1) Deploy
+│  ├─ update.sh        #   2) Update: sao lưu DB, pull code (+ tự chạy tiếp bằng bản mới), sửa .env
+│  ├─ update-image.sh  #   2) Update: kéo/áp image, tự lùi khi hỏng, dọn image cũ
+│  ├─ migrate.sh       #   3) Migrate + máy quét lệnh phá dữ liệu
+│  ├─ media.sh         #   4) Media tuning
+│  ├─ backup-cron.sh   #   5) Cài cron sao lưu
+│  └─ export-env.sh    #   6) Xuất .env đã mã hoá
 ├─ README.md           # tệp này
 └─ migrations/          # thả file .sql vào đây (INSERT-only, không DROP)
    └─ .imported-*       # đánh dấu đã import (tự tạo)
 ```
+
+`lib/*.sh` không có quyền chạy và không chạy riêng được — chỉ `manage.sh` nạp chúng.
+Thêm một tệp `lib/` mới: thêm nó vào **cả** vòng kiểm và các dòng `.` trong `manage.sh`
+lẫn `EXPECTED_MANAGE_LIBS` (`tests/_manage-sh-source.ts`) — `tests/ops-scripts.test.ts`
+đỏ cho tới khi ba chỗ khớp thư mục.
+
+**Quyền và chủ sở hữu của `lib/` trên VPS** — hai cách làm `git pull` (kể cả bước pull
+của Update) dừng lại:
+
+- **Đổi quyền tệp.** git lưu `lib/*.sh` với quyền **644** (chỉ `manage.sh` là 755). Một lần
+  `chmod +x production/lib/*.sh`, hay "đặt quyền 755 đệ quy" cho thư mục site trong aaPanel,
+  làm git thấy các tệp đó "đã sửa"; lượt `git pull` kế tiếp đổi một trong các tệp ấy dừng
+  với *"Your local changes to the following files would be overwritten by merge"* (Update
+  in `git pull thất bại — dừng`, container không bị đụng). Cách sửa an toàn — chỉ trả lại
+  quyền, không đụng nội dung: `chmod 644 production/lib/*.sh`, rồi
+  `git status --short production/` phải trống. Đừng `git checkout --`/`git reset --hard`
+  (xoá luôn mọi sửa tay chưa commit) và đừng tắt `core.fileMode` (che luôn lần mất `+x`
+  của `manage.sh`).
+- **Pull bằng root.** Lượt `git pull` đầu tiên kéo `lib/` về — trực tiếp, hoặc qua
+  `sudo ./manage.sh` → Update — mà chạy bằng **root** trong bản clone thuộc user khác (user
+  deploy, xem *User deploy không phải root*) thì `production/lib/` và các tệp trong nó thuộc
+  root; lượt pull sau bằng user kia không thay được chúng (*Permission denied*). Cách sửa:
+  ở gốc repo, trao lại cho chủ thư mục repo —
+  `sudo chown -R "$(stat -c '%u:%g' .)" production/lib` (cùng quy tắc `manage.sh` dùng cho
+  `.env` và `.deploy-db-backups/`) — và về sau pull bằng chính user sở hữu repo.
 
 Ở **root repo** trên VPS, các thư mục deploy tự tạo (đều trong `.gitignore` — bản dump
 CSDL chứa toàn bộ dữ liệu production, không bao giờ được commit):
@@ -339,6 +382,66 @@ docker exec -it cdkt_app npm run db:decode-excerpts -- --apply   # 3. ghi
 - `unstable`: các trường **không** được ghi. Đó là chữ entity viết nguyên văn (`&amp;agrave;`), loại mà ghi xong thì trang công khai lại giải mã thêm một lần. Sửa tay nếu cần.
 
 Chạy lại được: lượt sau chỉ báo những hàng còn ở dạng entity.
+
+---
+
+## Xoá chữ "null" lưu nhầm làm bản dịch giao diện (làm một lần, `db:repair-null-translations`)
+
+Trước bản vá, bấm "Lưu" trên một ô trống chưa sửa ở `/admin/languages` → "Bản dịch UI" làm máy chủ lưu **chữ** `null` (không phải ô trống), và các đường dịch AI cũng lưu được `undefined`, `[object Object]`, chữ `NULL` nguyên văn của model hay một con số — trang công khai hiện đúng các chữ đó. Đường ghi đã chặn; lệnh này đưa các hàng đã lưu nhầm về trạng thái "chưa dịch" (NULL, như một khoá mới sau "Đồng bộ key"). Không đụng hàng khác, giữ nguyên `updated_at`. Sau khi CI đã deploy bản có `db:repair-null-translations`:
+
+```bash
+cd /www/wwwroot/conduonghuongthien
+docker exec -it cdkt_app npm run db:repair-null-translations                                # 1. xem trước: liệt kê, KHÔNG ghi
+./scripts/backup-db.sh                                                                       # 2. sao lưu (chỉ hoàn tác được bằng bản này)
+docker exec -it cdkt_app npm run db:repair-null-translations -- --apply                     # 3. ghi nhóm `exact`
+docker exec -it cdkt_app npm run db:repair-null-translations -- --apply --include-review    # 4. (tuỳ) ghi cả nhóm `review` sau khi đã xem
+```
+
+Báo cáo có hai nhóm, mỗi hàng kèm ngôn ngữ, nhóm, khoá, giá trị và lý do:
+- `exact`: đúng chữ `null`/`undefined` — chắc chắn là lỗi, bước 3 ghi.
+- `review`: `NULL`/` null`/`Undefined`… (`null_like`), `[object Object]` (`object_text`), và con số trần khác với bản gốc tiếng Việt (`numeric`) — gần như chắc là lỗi, nhưng đọc danh sách trước; chỉ bước 4 ghi. Thấy hàng nào là bản dịch thật (vd. một con số đúng) thì sửa tay hàng đó trong admin trước khi chạy bước 4.
+- `skipped`: hàng có người vừa sửa giữa lúc đọc và lúc ghi (so từng byte) — không bị đè.
+
+Sau khi ghi, các khoá đó hiện "(chưa dịch)" trong admin: dịch lại bằng tay hoặc "Dịch AI". Chạy lại được: lượt sau không còn gì để đổi.
+
+---
+
+## Xoá hàng chi phí AI bị đếm hai lần do "Đồng bộ" Delify (làm một lần, `db:repair-ai-usage-duplicates`)
+
+Trước bản vá 2026-10-31, nút "Đồng bộ" Delify (tab AI → Nhà cung cấp) nhập lịch sử của router vào nhật ký AI thành hàng `delify_router` — trong khi mỗi lượt gọi đó **đã có** một hàng do cổng AI ghi. Chi phí bị cộng hai lần: ngân sách AI (khi ngân sách tháng = 0, giới hạn là ngân sách khoá Delify và máy chủ cộng **mọi** hàng từ trước tới nay), dashboard, thẻ khoá Delify; trước bản vá R5-8 mỗi lần bấm còn chèn lại cả lịch sử. Bản vá đã ngừng nhập; lệnh này xoá các hàng `delify_router` mà phép ghép bên dưới coi là bản chép. Phép ghép **không chắc chắn tuyệt đối** — hai hàng không có mã chung (xem "Rủi ro còn lại"). Nó **không bao giờ** xoá hàng do cổng AI hay "Gọi thử" ghi.
+
+**Chỉ chạy SAU khi CI đã deploy bản có `db:repair-ai-usage-duplicates`** — bản cũ còn nhập lịch sử: một lần bấm "Đồng bộ" trên bản cũ sẽ nhập lại đúng các hàng vừa xoá.
+
+```bash
+cd /www/wwwroot/conduonghuongthien
+docker exec -it cdkt_app npm run db:repair-ai-usage-duplicates                                # 1. xem trước: liệt kê, KHÔNG ghi
+./scripts/backup-db.sh                                                                         # 2. sao lưu (chỉ hoàn tác được bằng bản này)
+docker exec -it cdkt_app npm run db:repair-ai-usage-duplicates -- --apply                     # 3. xoá nhóm `exact`
+docker exec -it cdkt_app npm run db:repair-ai-usage-duplicates                                # 3b. xem trước LẠI: đọc lại danh sách `review`
+docker exec -it cdkt_app npm run db:repair-ai-usage-duplicates -- --apply --include-review    # 4. (tuỳ) xoá cả nhóm `review` — chỉ sau bước 3b
+```
+
+**Bắt buộc chạy lại xem trước (3b) giữa bước 3 và bước 4:** bước 3 xoá hàng router, nên các hàng cổng AI được "giải phóng" và danh sách `review` ở lượt sau có thể **khác** danh sách đã đọc ở bước 1 (thêm hàng mới chưa ai xem — verifier A29). Bước 4 xoá đúng danh sách của lượt chạy bước 4, không phải danh sách đã đọc trước đó. `--include-review` không kèm `--apply` chỉ là xem trước.
+
+Một hàng router và hàng cổng AI của cùng lượt gọi không có mã chung, nên phép ghép dựa trên: cùng model, cùng số token vào **và** ra (hoặc token vào của hàng cổng AI = của router + 2000 — chỉ với hàng cổng ghi trước thời điểm commit `5adab79a`, 2026-09-24 10:51:36 UTC, khi cổng còn giữ phần phụ phí của Delify; hàng sau mốc không bao giờ ghép theo luật này — kể cả hàng cổng ghi **sau commit nhưng trước khi bản đó được deploy** mà vẫn còn phụ phí +2000: hàng router tương ứng **không** được ghép, được giữ lại (an toàn — bản chép thật đó chỉ tiếp tục bị đếm hai lần, nằm trong `kept`); trên CSDL dev không có hàng như vậy), cả hai thành công, độ lệch giờ nằm trong **dải lệch đồng hồ** router ↔ máy chủ, và ghép **một-một**. Dải lệch đọc từ dữ liệu: trung vị độ lệch của các cặp "neo" (mỗi bên chỉ có đúng một ứng viên trong ±15 phút) ± 30 giây; cần ít nhất 3 cặp neo và quá nửa số neo nằm trong dải, không thì không ghép gì (CSDL dev: hàng cổng AI ghi sau mốc giờ của router 137–152 giây). Bước 3 ghi dải vào nhật ký hoạt động và các lượt sau (bước 4, chạy lại) **dùng lại dải đó** (`bandSource: previous_run`) — các cặp neo đã bị xoá ở bước 3.
+
+Đọc báo cáo bước 1 trước khi ghi:
+- `band` + `bandSource` + `anchorHistogram`: **đọc trước tiên**. Dải lệch dùng lần này, lấy từ đâu (`anchors` / `previous_run`), và độ lệch của mọi cặp neo (nhóm 10 giây). Dải đúng khi phần lớn cặp neo dồn vào một nhóm hẹp và `anchors` đủ lớn (dev: 76 neo, cùng 130–159 s). Ít neo, hay neo rải nhiều nhóm xa nhau → dải có thể sai (xem rủi ro bên dưới): đừng `--apply`, gửi báo cáo cho người phát triển. `band: null` = không ghép được gì — đừng ép.
+- `exact` (bước 3 xoá): hàng router có đúng một hàng cổng AI trong dải (`gateway_twin`, `gateway_twin_overhead` — kèm `twinId` và `offsetSeconds`), và bản sao y hệt của chính hàng đó do các lần đồng bộ sau chèn lại (`repeat_import`, `copyOf`).
+- `review` (chỉ bước 4 xoá): `near_twin` — không có hàng cổng AI cùng token, nhưng có đúng một hàng trong dải cùng model, cùng token ra, token vào **ít hơn** của router 1–256 token (`promptDelta`; cổng AI trừ cố định 2000 token phụ phí, router có lúc tính phụ phí thấp hơn — CSDL dev: 77 hàng lệch đúng 96 hoặc 128), ghép một-một; và bản sao y hệt của một hàng không nằm trong `exact` (`repeat_import`). Gần như chắc là bản chép, nhưng đọc danh sách trước.
+- `kept`: **không bao giờ xoá**, kèm lý do — `no_twin` (không hàng cổng AI nào cùng token: lượt vòng công cụ là hai request router nhưng một hàng cổng; lượt từ nơi khác dùng chung khoá), `ambiguous` (nhiều ứng viên trong dải), `outside_band`, `no_band`, `failed_request` (router từ chối). Mỗi hàng kèm tối đa 5 ứng viên. Các hàng này vẫn được cộng vào chi phí — số tiền ở dòng cuối của báo cáo (`kept … VND`).
+- `costVnd`: tổng tiền của từng nhóm.
+
+Bước 3/4 xoá và ghi một dòng nhật ký hoạt động (`repair-ai-usage-duplicates`, danh sách id) trong **một** transaction, dưới khoá `cdkt:ai:usage-duplicates-repair` (đang có lượt khác → từ chối, không ghi gì). Sau khi xoá, chi phí tháng 9–10/2026 trên dashboard và "đã dùng" của thẻ khoá giảm đúng bằng `costVnd` đã xoá. Chạy lại được: lượt sau không còn gì trong `exact`.
+
+**Rủi ro còn lại (đo bằng kịch bản đối kháng của verifier độc lập — nhóm `exact` không phải "chắc chắn"):**
+- Một request **ngoài app** (cùng khoá Delify, hoặc lượt cổng hỏng trước bản vá nên không có hàng) nằm cạnh một hàng cổng **cùng model, cùng token vào/ra** trong dải: nó có thể được ghép thay cho bản chép thật (A03 — bản chép thật của hàng cổng đó không được nhập; A05 — bản chép thật lệch ngoài dải vì lượt gọi chậm, hàng ngoài app lọt vào dải) hoặc hai request trùng đúng giây, đúng token, cùng thời gian chạy bị coi là bản sao y hệt (A13). Khi đó một chi phí thật bị xoá. Xác suất thấp (phải trùng cả model + hai số token + độ lệch ±30 s), không loại trừ được.
+- Dải lệch sai khi ít neo: 3 neo trong đó 2 cặp trùng hợp → dải đặt ở chỗ trùng hợp (A06); dải của lượt `--apply` đầu được dùng lại cho mọi lượt sau, kể cả khi nó sai (A11). Vì vậy: đọc `band`/`bandSource`/`anchorHistogram` ở bước 1 **trước** khi `--apply`.
+- Danh sách `review` có thể trôi sau bước 3 (A29) — vì thế có bước 3b.
+
+**Tác dụng phụ đã biết của bản vá (không do lệnh dọn):**
+- Chi tiêu của **request ngoài app** dùng chung khoá Delify không còn được nhập, nên không vào tổng `loadTotalSpend` (giới hạn ngân sách khi ngân sách tháng = 0) và "đã dùng"/"còn lại" của thẻ khoá: số "còn lại" có thể **cao hơn** thực tế. Router vẫn tự chặn khi khoá hết ngân sách (cổng AI đọc `active` của khoá).
+- Chatbot: khi `callAi` lỗi (`provider_error`/`parse_error`), `chat-policy-provider.ts` rơi xuống đường gọi thẳng cũ (nếu còn cấu hình khoá trong cài đặt chatbot). Lượt đó vẫn ghi **một hàng lỗi** dù khách nhận được câu trả lời từ đường cũ, và lượt gọi đường cũ không ghi hàng nào.
 
 ---
 
@@ -640,7 +743,7 @@ docker logs cdkt_app / docker compose logs -f app              # vẫn dùng đ�
 - Có journald mà tệp có dấu đó còn → tự gỡ (lượt deploy kế tiếp app chuyển sang journald).
 - Đã có `docker-compose.override.yml` **không** mang dấu (của anh) → không bao giờ sửa. Script hỏi `docker compose config` driver log **hiệu lực** của app: nếu override của anh đã đặt `json-file` (hay driver khác) thì đi tiếp; nếu app vẫn ghi vào journald thì **dừng trước khi chạm container** (CI: trả `docker-compose.yml` cũ về, `.env` không đổi) và in khối `logging` cần thêm vào override.
 - Tệp này (và tệp tạm `.docker-compose.override.*` của nó) nằm trong `.gitignore`/`.dockerignore` — `git pull` không vướng.
-- **Update tay lần đầu sau bản này** trên máy **không** có journald mà CI deploy chưa chạy (CI deploy tự ghi override nên thường đã có): `manage.sh` cũ trên VPS chưa biết kiểm journald. Từ bản này, Update thấy `git pull` vừa đổi `manage.sh` thì **tự chạy tiếp bằng bản mới** (không hỏi lại sao lưu/pull) — nhưng bản *cũ* không có bước đó, nên lần đầu có thể hỏng ở `up` (tự lùi lại như mọi lượt hỏng). Chạy lại Update một lần: bản mới ghi override rồi khởi động bình thường.
+- **Update tay lần đầu sau bản này** trên máy **không** có journald mà CI deploy chưa chạy (CI deploy tự ghi override nên thường đã có): `manage.sh` cũ trên VPS chưa biết kiểm journald. Từ bản này, Update thấy `git pull` vừa đổi `manage.sh` (từ bản tách `lib/`: `manage.sh` hoặc bất kỳ `lib/*.sh`) thì **tự chạy tiếp bằng bản mới** (không hỏi lại sao lưu/pull) — nhưng bản *cũ* không có bước đó, nên lần đầu có thể hỏng ở `up` (tự lùi lại như mọi lượt hỏng). Chạy lại Update một lần: bản mới ghi override rồi khởi động bình thường.
 
 ## Thư cảnh báo vận hành (`OPS_ALERT_EMAIL` — wave2 D-ALERT)
 

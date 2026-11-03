@@ -248,7 +248,9 @@ test('every lifecycle action that mints material bumps the session generation', 
     'server/api/admin/profile/mfa/disable.post.ts',
     'server/api/admin/profile/mfa/recovery-codes.post.ts',
   ]) {
-    assert.match(read(file), /revokeSessions\(admin\.id\)/, `${file} must revoke sessions`)
+    // `, tx`: `disable.post.ts` bumps the generation inside its transaction (the effect is
+    // pinned on a real request in tests/admin-mfa-disable-behavior.test.ts).
+    assert.match(read(file), /revokeSessions\(admin\.id(?:, tx)?\)/, `${file} must revoke sessions`)
     assert.match(read(file), /setSessionCookie\(event, \{/, `${file} must keep the caller signed in`)
   }
   assert.match(
@@ -368,12 +370,14 @@ test('break-glass clears both factors and codes, revokes the target, and logs bo
    * Sessions are revoked by bumping `tokenVersion`, asserted on the effect
    * rather than on a call to `revokeSessions()`.
    *
-   * The helper opens its own `getDb()` handle, so it cannot join this endpoint's
-   * transaction — and the four writes here have to commit together, or a
-   * break-glass override can leave factors cleared with sessions still live, or
-   * (worse) leave no audit trail for an override that stood. The one statement
-   * is therefore inlined on `tx`. What matters is that the target's live
-   * sessions still die, so that is what this checks.
+   * When this endpoint was written the helper always opened its own `getDb()`
+   * handle and could not join a transaction — and the four writes here have to
+   * commit together, or a break-glass override can leave factors cleared with
+   * sessions still live, or (worse) leave no audit trail for an override that
+   * stood. The one statement was therefore inlined on `tx`. (Since 2026-10-28
+   * `revokeSessions(userId, tx)` takes an executor — `profile/mfa/disable.post.ts`
+   * uses it; the inline form here is still correct.) What matters is that the
+   * target's live sessions still die, so that is what this checks.
    */
   assert.match(src, /tokenVersion: sql`\$\{users\.tokenVersion\} \+ 1`/,
     "the target's live sessions are no longer revoked")

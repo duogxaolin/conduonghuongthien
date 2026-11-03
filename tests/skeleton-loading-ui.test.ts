@@ -18,7 +18,9 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
-import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+import { fetchesData } from './_admin-fetch-call.ts'
+import { ARTICLE_COMMENTS_FAMILY, ARTICLE_DETAIL_FAMILY, NEWS_PAGE_FAMILY, familyVueFiles, readAppFile } from './_component-family.ts'
+import { COLOR_TOKENS, type ColorToken } from '../shared/color-tokens.ts'
 
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
@@ -222,6 +224,16 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // không có khung danh sách nào để thay thế bằng skeleton. Form vẫn dùng được
   // trong lúc fetch.
   'components/admin/MediaPortalForm.vue': 'submit-time fetch; the button shows pending and the result is inline preview',
+  // "Lưu thành mục media" (CHANGELOG § 67): không tải gì lúc mount — chỉ POST khi bấm
+  // nút; nút mang trạng thái chờ ("Đang lưu…", bị vô hiệu), kết quả hiện ngay dưới nút.
+  'components/admin/livestream/LivestreamRecordingCard.vue': 'submit-time fetch; the button shows pending and the result is inline',
+  // Nút break-glass "Xoá xác thực hai bước" (§ 68): chỉ gửi khi bấm + gõ đúng tên; nút bị
+  // vô hiệu (`aria-busy`) trong lúc hỏi/gửi, kết quả ở toast. Không tải gì để làm khung chờ.
+  'components/admin/UserMfaResetButton.vue': 'submit-time fetch; the button is disabled while it asks and sends, the result lands in a toast',
+  // Trình sửa hạn mức chi AI (§ 68): không tải gì — giá trị là props từ lượt đọc usage của
+  // AiDashboardTab (khung chờ của nó đã ghim ở trên). Chỉ `PUT` khi bấm "Lưu"; nút mang
+  // "Đang lưu…" + `aria-busy`.
+  'components/admin/ai/AiBudgetEditor.vue': 'submit-time fetch; values arrive as props from the dashboard\'s usage read, the Save button shows pending',
   // `MediaProcessingTimeline.vue` bị bỏ khỏi exemption list vì nó KHÔNG tự fetch
   // — chỉ nhận dữ liệu từ parent qua props. Gate "stale exemption" bắt đúng:
   // một component không fetch thì không cần được miễn skeleton.
@@ -271,21 +283,39 @@ function tagsWithPulse(template: string): string[] {
   return (template.match(/<[^>]*animate-pulse[^>]*>/g) ?? [])
 }
 
+/**
+ * The dashboard's "Live" badge dot (the one decorative pulse in `pages/admin/index.vue`):
+ * a round dot in the admin primary green — by token name (`bg-brand-700`) or by that
+ * token's value in an arbitrary class. The hex is read from COLOR_TOKENS and the name is
+ * checked against its keys (`satisfies ColorToken`), so neither form can drift from the
+ * token table.
+ */
+const LIVE_DOT_TOKEN = 'brand-700' satisfies ColorToken
+const LIVE_DOT = new RegExp(
+  `(?:^|[\\s"'])rounded-full bg-(?:${LIVE_DOT_TOKEN}|\\[${COLOR_TOKENS[LIVE_DOT_TOKEN]}\\])(?=[\\s"']|$)`,
+  'i',
+)
+
 test('every animated placeholder stops animating under prefers-reduced-motion', async () => {
   const files = [
     ...SKELETON_COMPONENTS,
     ...VIEWS_WITH_LOADING_BRANCH.map((v) => v.file),
     // Public placeholders that predate this change and were retrofitted with the guard.
     'components/NewsCategoryList.vue',
-    'components/ArticleDetail.vue',
-    // The public comment thread's loading state.
-    'components/ArticleComments.vue',
+    // The article page and the public comment thread: the parents (which draw both
+    // skeletons) AND every display part split out of them in wave3 4.2 — derived from
+    // components/article/ and components/comments/, so a part added later with a pulse of
+    // its own is checked too (tests/_component-family.ts).
+    ...familyVueFiles(ARTICLE_DETAIL_FAMILY).map(f => f.file),
+    ...familyVueFiles(ARTICLE_COMMENTS_FAMILY).map(f => f.file),
     'pages/legal-qa/index.vue',
     'pages/role-models/index.vue',
     'pages/reintegration-models/index.vue',
     // Hai trang trên nay chỉ bọc component này — khung chờ của chúng nằm ở đây.
     'components/ModelArticlesListPage.vue',
-    'pages/news/index.vue',
+    // `/news`: the page (list skeleton, filter-bar chips, "Đọc nhiều" skeleton) AND every part
+    // of its wave3 4.2 split — the hero's live badge dot moved into components/news/.
+    ...familyVueFiles(NEWS_PAGE_FAMILY).map(f => f.file),
     'pages/documents/index.vue',
     // NOTE: `pages/admin/index.vue` used to be appended here by hand. It is now in
     // VIEWS_WITH_LOADING_BRANCH above, so it arrives through the spread and must
@@ -295,6 +325,7 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
     // keeps the dot out of the assertion.
   ]
 
+  let exemptLiveDots = 0
   for (const file of files) {
     assert.ok(
       !(file in DECORATIVE_PULSE_FILES) || file === 'pages/admin/index.vue',
@@ -308,7 +339,10 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
     for (const tag of tagsWithPulse(template)) {
       // The one exempt element in this file is the "Live" badge dot, which is a
       // status indicator rather than a placeholder.
-      if (file === 'pages/admin/index.vue' && tag.includes('rounded-full bg-[#2c6e33]')) continue
+      if (file === 'pages/admin/index.vue' && LIVE_DOT.test(tag)) {
+        exemptLiveDots += 1
+        continue
+      }
 
       assert.ok(
         tag.includes('motion-reduce:animate-none'),
@@ -316,6 +350,24 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
       )
     }
   }
+  // Exactly the one dot: 0 means the pattern no longer finds it (the exemption guards
+  // nothing), 2+ means it is now waving real placeholders through.
+  assert.equal(exemptLiveDots, 1, 'pages/admin/index.vue: the "Live" badge dot exemption must match exactly one element')
+})
+
+test('the reduced-motion rule reaches every part of a split public page (injection proof)', () => {
+  // The family is read from the parts directory, so a pulse planted in a part — or in a part
+  // added later — is caught by the per-tag rule above, not only one left in the page.
+  const unguarded = (overrides?: Record<string, string>) => familyVueFiles(NEWS_PAGE_FAMILY, overrides)
+    .flatMap(f => tagsWithPulse(parse(f.source, { filename: f.file }).descriptor.template?.content ?? '')
+      .filter(tag => !tag.includes('motion-reduce:animate-none'))
+      .map(() => f.file))
+  assert.deepEqual(unguarded(), [])
+  const hero = 'components/news/NewsListHero.vue'
+  assert.match(readAppFile(hero), /animate-pulse motion-reduce:animate-none/, 'the hero badge dot is where this proof plants')
+  assert.deepEqual(unguarded({ [hero]: readAppFile(hero).replace('animate-pulse motion-reduce:animate-none', 'animate-pulse') }), [hero])
+  const added = 'components/news/NewsLater.vue'
+  assert.deepEqual(unguarded({ [added]: '<template><div class="h-4 animate-pulse" aria-hidden="true"></div></template>' }), [added])
 })
 
 test('the decorative pulses stay exempt and stay documented', async () => {
@@ -392,8 +444,9 @@ test('placeholder containers announce themselves as busy', async () => {
  * EITHER pinned above OR named in `NO_SKELETON_NEEDED` with its reason.
  */
 // Shared with tests/admin-error-retry-ui.test.ts — includes adminFetch/useAdminList,
-// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan.
-const FETCH_CALL = ADMIN_FETCH_CALL
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan;
+// decided on code with comments dropped (`fetchesData`, tests/_admin-fetch-call.ts).
+const FETCH_CALL = { test: fetchesData }
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const found: string[] = []

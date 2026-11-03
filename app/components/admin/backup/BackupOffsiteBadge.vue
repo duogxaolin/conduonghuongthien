@@ -14,5 +14,5 @@ const display = computed(() => offsiteStatusDisplay(props.item))
   <span v-if="display" data-testid="backup-offsite-status" class="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[0.72rem] font-bold" :class="display.className">
     <i :class="display.icon" aria-hidden="true"></i>{{ display.label }}
   </span>
-  <span v-else class="text-[#667768]">—</span>
+  <span v-else class="text-ink-muted">—</span>
 </template>

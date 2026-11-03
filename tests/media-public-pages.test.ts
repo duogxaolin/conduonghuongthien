@@ -390,7 +390,10 @@ test('hero mặc định thuần trình bày, không tự đi lấy dữ liệu'
   // Tách đôi để mỗi bên kiểm được một mình: khối này là hình dạng của một tiêu đề
   // trang, bên kia là một lượt gọi mạng có ba nhánh.
   const source = code(DEFAULT_HERO)
-  assert.doesNotMatch(source, /\$fetch|useFetch\(|useAsyncData\(/, 'hero mặc định tự đi lấy dữ liệu')
+  // `publicFetch` (D-FETCH lô G) là `$fetch` có kiểu của phía công khai — gọi nó cũng là tự đi lấy dữ liệu.
+  const FETCHES = /\$fetch|\bpublicFetch\b|useFetch\(|useAsyncData\(/
+  assert.doesNotMatch(source, FETCHES, 'hero mặc định tự đi lấy dữ liệu')
+  assert.match(`${source}\nvoid publicFetch<unknown>('/api/public/livestream/active')`, FETCHES, 'bằng chứng: một lượt publicFetch cấy vào bị bắt')
   // Từng thẻ một, không theo cả tệp: đây là nội dung thật, không phải khung chờ, và
   // một khối trang trí nhấp nháy trong khi không tải gì là dạy người đọc rằng chuyển
   // động trên trang này không mang thông tin gì.

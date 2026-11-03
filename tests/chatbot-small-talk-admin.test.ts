@@ -99,7 +99,10 @@ test('deleteSmallTalk refuses system rows and maps duplicate keys to a validatio
   const source = readFileSync(new URL('../server/services/chatbot-small-talk.ts', import.meta.url), 'utf8')
   assert.match(source, /if \(current\.isSystem\) throw new ChatbotSmallTalkValidationError/u, 'system rows must not be deletable')
   assert.match(source, /isDuplicateKeyError\(error\)/u, 'duplicate key must be caught')
-  assert.match(source, /ER_DUP_ENTRY/u)
+  // Through the shared walker: the literal `code === 'ER_DUP_ENTRY'` this used to pin read only the
+  // top level of Drizzle's wrapper and never matched (FINDING-R7-6 — the behaviour, create and
+  // update, is in tests/mysql-error-predicates.test.ts).
+  assert.match(source, /isDuplicateEntry\(error\)/u)
   // sanitizeHtml applied on the shared write-validation path (create + update).
   assert.match(source, /sanitizeHtml/u)
 })
@@ -112,7 +115,8 @@ test('every small-talk endpoint gates through requireChatbotSmallTalkPermission'
   }
   // the [id]/toggle.patch.ts nested route
   files.push({ path: new URL('[id]/toggle.patch.ts', dir), label: '[id]/toggle.patch.ts' })
-  assert.ok(files.length >= 8, `expected at least 8 endpoints, found ${files.length}`)
+  // Seven since `[id].get.ts` (no caller) was deleted — CHANGELOG § 64.
+  assert.ok(files.length >= 7, `expected at least 7 endpoints, found ${files.length}`)
   for (const file of files) {
     const source = readFileSync(file.path, 'utf8')
     assert.match(source, /requireChatbotSmallTalkPermission\(event, '(read|create|update|delete)'\)/u, `${file.label} must gate`)

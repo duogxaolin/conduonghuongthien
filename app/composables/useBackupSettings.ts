@@ -1,10 +1,23 @@
 /**
  * Trạng thái + thao tác của khối "Cài đặt backup" (lịch tự động, Google Drive OAuth,
  * Service Account). Tách nguyên văn từ pages/admin/settings/backup.vue. Composable không
- * nằm trong phạm vi quét `$fetch` của guard error/retry (chỉ pages/admin + components/admin);
+ * nằm trong phạm vi quét lượt gọi mạng của guard error/retry (chỉ pages/admin + components/admin);
  * khối danh sách backup — nơi có nhánh lỗi + nút thử lại — vẫn ở trang cha.
+ *
+ * Kiểu phản hồi suy từ handler (`app/types/admin-backup-api.ts`), gọi qua `adminFetch`.
+ * `vue`/`adminFetch`/`errorMessage`/`backupSettingsPayload` import tường minh, đường dẫn
+ * tương đối (bộ nạp test chỉ biết `~~/`): tests/use-backup-settings-behavior.test.ts chạy
+ * composable thật; chỉ `useToast`/`useConfirm`/`useAdminAuth`/`useRoute` còn là auto-import.
  */
+import { computed, ref } from 'vue'
 import { isBackupLocalOnly } from '~~/shared/backup-offsite-status'
+import { adminFetch } from './adminFetch'
+import { errorMessage } from '../utils/errorMessage'
+import { backupSettingsPayload, type BackupSettingsForm } from '../utils/backup-settings-payload'
+import type {
+  BackupSettingsResponse, BackupSettingsSaveResponse, DriveClearSecretResponse, DriveConfig,
+  DriveConfigResponse, DriveConfigSaveResponse, DriveDisconnectResponse, DriveLink, DriveStatusResponse,
+} from '../types/admin-backup-api'
 
 export function useBackupSettings() {
   const toast = useToast()
@@ -38,26 +51,24 @@ export function useBackupSettings() {
   })
 
   // ─── Google Drive OAuth link ────────────────────────────────────────────────
-  interface DriveLink {
-    linked: boolean
-    linkedEmail: string | null
-    linkedSub: string | null
-    linkedAt: string | null
-    status: 'not_linked' | 'linked' | 'secret_unreadable'
-  }
   const driveLink = ref<DriveLink | null>(null)
   const driveRedirectUri = ref('')
   const driveLinkLoading = ref(false)
   const disconnecting = ref(false)
+  // Lượt đọc trạng thái liên kết hỏng: câu của máy chủ, hiện cho MỌI cán bộ (BackupSettingsPanel).
   const driveToast = ref('')
 
   async function loadDriveStatus() {
     driveLinkLoading.value = true
+    driveToast.value = ''
     try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; link: DriveLink; redirectUri: string }>)(`/api/admin/backup/drive/status`)
+      const res = await adminFetch<DriveStatusResponse>(`/api/admin/backup/drive/status`)
       driveLink.value = res.link
       driveRedirectUri.value = res.redirectUri
     } catch (err: unknown) {
+      // Không biết trạng thái thì không giữ trạng thái cũ: sau "Hủy liên kết", một lượt đọc
+      // lại hỏng từng để nguyên "Đã liên kết". `null` = chưa biết (như `backupsLocalOnly` đọc).
+      driveLink.value = null
       driveToast.value = errorMessage(err, 'Không tải được trạng thái liên kết Drive.')
     } finally {
       driveLinkLoading.value = false
@@ -73,7 +84,7 @@ export function useBackupSettings() {
     if (!ok) return
     disconnecting.value = true
     try {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/drive/disconnect`, { method: 'POST' })
+      await adminFetch<DriveDisconnectResponse>(`/api/admin/backup/drive/disconnect`, { method: 'POST' })
       toast.success('Đã hủy liên kết Google Drive.')
       await loadDriveStatus()
     } catch (err: unknown) {
@@ -91,16 +102,6 @@ export function useBackupSettings() {
   }
 
   // ─── Google Drive OAuth config (Client ID/Secret riêng cho Drive) ──────────
-  interface DriveConfig {
-    clientId: string
-    hasClientSecret: boolean
-    clientSecretMasked: string | null
-    clientSecretStatus: 'not_configured' | 'configured' | 'secret_unreadable'
-    isEnabled: boolean
-    redirectUri: string
-    missing: string[]
-    updatedAt: string | null
-  }
   const driveConfig = ref<DriveConfig | null>(null)
   const driveConfigLoading = ref(false)
   const savingDriveConfig = ref(false)
@@ -112,7 +113,7 @@ export function useBackupSettings() {
   async function loadDriveConfig() {
     driveConfigLoading.value = true
     try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: DriveConfig }>)(`/api/admin/backup/drive/config`)
+      const res = await adminFetch<DriveConfigResponse>(`/api/admin/backup/drive/config`)
       driveConfig.value = res.config
       driveClientId.value = res.config.clientId
       driveEnabled.value = res.config.isEnabled
@@ -135,7 +136,7 @@ export function useBackupSettings() {
       }
       // Chỉ gửi clientSecret khi cán bộ nhập mới — bỏ trống = giữ cũ.
       if (driveClientSecret.value.trim()) body.clientSecret = driveClientSecret.value.trim()
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: DriveConfig }>)(`/api/admin/backup/drive/config`, {
+      const res = await adminFetch<DriveConfigSaveResponse>(`/api/admin/backup/drive/config`, {
         method: 'PUT',
         body,
       })
@@ -160,7 +161,7 @@ export function useBackupSettings() {
     if (!ok) return
     clearingDriveSecret.value = true
     try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: DriveConfig }>)(`/api/admin/backup/drive/clear-secret`, { method: 'POST' })
+      const res = await adminFetch<DriveClearSecretResponse>(`/api/admin/backup/drive/clear-secret`, { method: 'POST' })
       driveConfig.value = res.config
       driveEnabled.value = res.config.isEnabled
       driveClientSecret.value = ''
@@ -180,7 +181,7 @@ export function useBackupSettings() {
   async function loadSettings() {
     settingsLoadError.value = ''
     try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null>; schedulerDisabledByServer?: boolean; needsReentry?: string[] }>)(`/api/admin/settings/backup`)
+      const res = await adminFetch<BackupSettingsResponse>(`/api/admin/settings/backup`)
       const s = res.settings || {}
       schedulerDisabledByServer.value = res.schedulerDisabledByServer === true
       serviceAccountNeedsReentry.value = (res.needsReentry ?? []).includes('backup_drive_service_account')
@@ -207,7 +208,7 @@ export function useBackupSettings() {
     try {
       backupSettings.value.backup_auto_days = JSON.stringify(selectedDays.value)
       const body = backupSettingsPayload(backupSettings.value, selectedDays.value, isSuperAdmin.value)
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/backup`, { method: 'PUT', body })
+      await adminFetch<BackupSettingsSaveResponse>(`/api/admin/settings/backup`, { method: 'PUT', body })
       toast.success('Đã lưu cấu hình backup.')
     } catch (err: unknown) {
       toast.error(errorMessage(err, 'Lỗi lưu cấu hình'))

@@ -2,6 +2,8 @@
 import { useI18n } from '~/composables/useI18n'
 import { computed } from 'vue'
 import { usePublicArticleList, usePublicMostRead } from '~/composables/usePublicArticleList'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicCategoriesResponse } from '~/types/public-content-api'
 import { ALL_CATEGORIES } from '~/utils/public-article-list'
 import { formatDateVN } from '~/utils/formatDate'
 import { cleanExcerpt } from '~/utils/article-excerpt'
@@ -41,17 +43,12 @@ const props = defineProps({
 
 const { t, currentLang } = useI18n()
 
-interface PublicCategory {
-  id: number
-  name: string
-  slug: string
-  parentId: number | null
-}
+type PublicCategory = PublicCategoriesResponse['items'][number]
 
 // ─── Category pills (DB-driven via /api/public/categories?type=<slug>) ─────────
 const { data: catData, pending: catPending } = await useAsyncData(
   () => `content-type-cats-${props.typeSlug}-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicCategory[] }>)('/api/public/categories', {
+  () => publicFetch<PublicCategoriesResponse>('/api/public/categories', {
     query: { type: props.typeSlug, lang: currentLang.value },
   }),
   {
@@ -140,36 +137,36 @@ const typeLink = (slug: string) => `/${props.typeSlug}/${slug}`
 
 // Visual pill classes (tham chiếu news/index.vue)
 const pillClass = (active: boolean) => [
-  'inline-flex items-center gap-2 shrink-0 whitespace-nowrap rounded-full border cursor-pointer px-4 py-2 text-[0.82rem] font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]',
+  'inline-flex items-center gap-2 shrink-0 whitespace-nowrap rounded-full border cursor-pointer px-4 py-2 text-[0.82rem] font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
   active
-    ? 'bg-[#4A6741] border-[#4A6741] text-white shadow-sm shadow-[#4A6741]/25'
-    : 'bg-white border-[#D5E1D3] text-[#485645] hover:border-[#4A6741] hover:text-[#385932] hover:bg-[#F2F7F0]',
+    ? 'bg-brand-600 border-[#4A6741] text-white shadow-sm shadow-brand-600/25'
+    : 'bg-white border-[#D5E1D3] text-ink-secondary hover:border-brand-600 hover:text-brand-800 hover:bg-surface-tint',
 ]
 const subPillClass = (active: boolean) => [
   'shrink-0 whitespace-nowrap rounded-lg border cursor-pointer px-3 py-1 font-bold transition-all duration-200 text-xs',
   active
-    ? 'bg-[#385932] border-[#385932] text-white shadow-sm'
-    : 'bg-white border-[#DDE6DC] text-[#556350] hover:border-[#385932] hover:text-[#385932] hover:bg-[#F0F5EE]',
+    ? 'bg-brand-800 border-brand-800 text-white shadow-sm'
+    : 'bg-white border-line text-[#556350] hover:border-brand-800 hover:text-brand-800 hover:bg-surface-tint',
 ]
 const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#F7FAF6]">
+  <div class="min-h-screen bg-surface">
     <!-- Page Header & Hero Section -->
     <PageHero>
       <nav aria-label="Đường dẫn trang" class="mb-4">
-        <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
+        <ol class="flex items-center gap-1.5 text-xs text-ink-muted m-0 p-0 list-none flex-wrap">
           <li class="flex items-center gap-1.5">
-            <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1 no-underline text-[#556450]">
-              <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
+            <nuxt-link to="/" class="hover:text-brand-800 transition-colors flex items-center gap-1 no-underline text-ink-soft">
+              <i class="fa-solid fa-house text-[0.7rem] text-brand-600" aria-hidden="true"></i>
               <span>{{ t('home') }}</span>
             </nuxt-link>
           </li>
           <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
           <li class="font-bold text-[#2A3B27] flex items-center gap-1">
             <span>{{ typeName || typeSlug }}</span>
-            <span v-if="activeCategory !== 'all' && activeCategoryName" class="font-normal text-[#6B7967]">
+            <span v-if="activeCategory !== 'all' && activeCategoryName" class="font-normal text-ink-muted">
               &rsaquo; <span class="font-bold text-[#2A3B27]">{{ activeCategoryName }}</span>
             </span>
           </li>
@@ -177,14 +174,14 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
       </nav>
 
       <div class="max-w-2xl">
-        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
-          <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-line border border-[#D0DFCE] text-brand-800 text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-brand-600 animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
           <span>{{ t('n_portal_badge') }}</span>
         </div>
-        <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
+        <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-ink-strong tracking-tight leading-[1.2] m-0">
           {{ pageTitle }}
         </h1>
-        <p v-if="heroDescription" class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
+        <p v-if="heroDescription" class="text-[0.92rem] sm:text-base text-ink-soft mt-2 mb-0 leading-relaxed">
           {{ heroDescription }}
         </p>
       </div>
@@ -205,19 +202,19 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                 type="text"
                 :placeholder="t('n_search_placeholder')"
                 :aria-label="t('n_search_placeholder')"
-                class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-[#1E251C] placeholder-[#8A9986] focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/30 focus:outline-none transition-all shadow-sm"
+                class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-ink placeholder-[#8A9986] focus:border-brand-600 focus:ring-2 focus:ring-brand-600/30 focus:outline-none transition-all shadow-sm"
               />
               <button
                 v-if="searchInput"
                 type="button"
                 @click="clearSearchInput"
-                class="absolute right-12 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-[#97A593] hover:text-[#4A5545] text-xs transition-colors"
+                class="absolute right-12 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-[#97A593] hover:text-ink-secondary text-xs transition-colors"
                 :title="t('clear_search')"
                 :aria-label="t('clear_search')"
               >✕</button>
               <button
                 type="submit"
-                class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-[#4A6741] hover:bg-[#365130] text-white text-xs font-bold transition-all shadow-sm"
+                class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-800 text-white text-xs font-bold transition-all shadow-sm"
               >{{ t('n_search_btn_short') }}</button>
             </form>
           </div>
@@ -226,7 +223,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
           <nav :aria-label="`Lọc ${typeName} theo danh mục`" class="flex-1 min-w-0">
             <div v-if="catPending" role="status" aria-busy="true" class="flex gap-2 py-1">
               <span class="sr-only">{{ t('n_loading_categories') }}</span>
-              <div v-for="n in 5" :key="n" aria-hidden="true" class="h-[34px] w-28 rounded-full bg-[#E2EBE0] animate-pulse motion-reduce:animate-none"></div>
+              <div v-for="n in 5" :key="n" aria-hidden="true" class="h-[34px] w-28 rounded-full bg-line animate-pulse motion-reduce:animate-none"></div>
             </div>
             <template v-else>
               <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none flex-wrap">
@@ -252,7 +249,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                 </button>
               </div>
               <div v-if="activeChildren.length" class="flex items-center gap-2 overflow-x-auto pt-2.5 pb-1 sm:flex-wrap text-xs">
-                <span class="text-[#5A6C58] font-semibold flex items-center gap-1 shrink-0">
+                <span class="text-ink-soft font-semibold flex items-center gap-1 shrink-0">
                   <i class="fa-solid fa-turn-down text-[0.65rem] rotate-[-90deg]" aria-hidden="true"></i>
                   {{ t('n_subtopic') }}
                 </span>
@@ -281,20 +278,20 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
           <!-- Active Search Filter Banner -->
           <div
             v-if="searchQuery"
-            class="bg-white border-l-4 border-l-[#4A6741] border border-[#DDE6DC] p-4 rounded-xl shadow-sm flex items-center justify-between gap-3 flex-wrap"
+            class="bg-white border-l-4 border-l-brand-600 border border-line p-4 rounded-xl shadow-sm flex items-center justify-between gap-3 flex-wrap"
           >
             <div class="flex items-center gap-2.5">
-              <span class="w-7 h-7 rounded-lg bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center text-xs">
+              <span class="w-7 h-7 rounded-lg bg-line text-brand-600 flex items-center justify-center text-xs">
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
               </span>
               <span class="text-sm text-[#3E4D3C]">
                 {{ t('n_search_result') }} <strong>&laquo;{{ searchQuery }}&raquo;</strong>
-                <span v-if="!pending" class="text-[#5A6C58] ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
+                <span v-if="!pending" class="text-ink-soft ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
               </span>
             </div>
             <button
               type="button"
-              class="text-xs font-bold text-[#4A6741] hover:text-[#2D5A27] flex items-center gap-1 cursor-pointer"
+              class="text-xs font-bold text-brand-600 hover:text-[#2D5A27] flex items-center gap-1 cursor-pointer"
               @click="clearSearchInput"
             >
               <i class="fa-solid fa-xmark" aria-hidden="true"></i>
@@ -306,24 +303,24 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
           <div v-if="pending" role="status" aria-busy="true" class="flex flex-col gap-5">
             <span class="sr-only">{{ t('n_list_loading') }}</span>
             <!-- Featured skeleton -->
-            <div class="bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-sm flex flex-col sm:flex-row animate-pulse motion-reduce:animate-none">
-              <div class="sm:w-[45%] aspect-video sm:aspect-auto bg-[#EEF2EC]"></div>
+            <div class="bg-white rounded-2xl overflow-hidden border border-line shadow-sm flex flex-col sm:flex-row animate-pulse motion-reduce:animate-none">
+              <div class="sm:w-[45%] aspect-video sm:aspect-auto bg-surface-tint"></div>
               <div class="p-5 sm:p-6 flex flex-col gap-3 flex-1">
-                <div class="h-3 w-20 bg-[#EEF2EC] rounded"></div>
-                <div class="h-6 w-full bg-[#EEF2EC] rounded"></div>
-                <div class="h-3.5 w-full bg-[#EEF2EC] rounded"></div>
-                <div class="h-3.5 w-2/3 bg-[#EEF2EC] rounded"></div>
+                <div class="h-3 w-20 bg-surface-tint rounded"></div>
+                <div class="h-6 w-full bg-surface-tint rounded"></div>
+                <div class="h-3.5 w-full bg-surface-tint rounded"></div>
+                <div class="h-3.5 w-2/3 bg-surface-tint rounded"></div>
               </div>
             </div>
             <!-- Grid skeleton (6 cards) -->
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              <div v-for="n in 6" :key="n" class="bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none flex flex-col">
-                <div class="aspect-video bg-[#EEF2EC]"></div>
+              <div v-for="n in 6" :key="n" class="bg-white rounded-2xl overflow-hidden border border-line shadow-sm animate-pulse motion-reduce:animate-none flex flex-col">
+                <div class="aspect-video bg-surface-tint"></div>
                 <div class="p-4 sm:p-5 flex flex-col gap-3 flex-1">
-                  <div class="h-3.5 w-24 bg-[#EEF2EC] rounded"></div>
-                  <div class="h-5 w-full bg-[#EEF2EC] rounded"></div>
-                  <div class="h-3.5 w-full bg-[#EEF2EC] rounded"></div>
-                  <div class="h-3.5 w-2/3 bg-[#EEF2EC] rounded"></div>
+                  <div class="h-3.5 w-24 bg-surface-tint rounded"></div>
+                  <div class="h-5 w-full bg-surface-tint rounded"></div>
+                  <div class="h-3.5 w-full bg-surface-tint rounded"></div>
+                  <div class="h-3.5 w-2/3 bg-surface-tint rounded"></div>
                 </div>
               </div>
             </div>
@@ -335,14 +332,14 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
             role="alert"
             class="bg-white border border-[#E2A0A0] rounded-2xl p-8 text-center shadow-sm"
           >
-            <div class="w-14 h-14 rounded-full bg-[#FDECEC] text-[#D14040] flex items-center justify-center mx-auto mb-3 text-2xl">
+            <div class="w-14 h-14 rounded-full bg-danger-bg text-[#D14040] flex items-center justify-center mx-auto mb-3 text-2xl">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
-            <h3 class="text-base font-extrabold text-[#172516] m-0 mb-2">{{ t('n_load_error') }}</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">{{ t('n_load_error_desc') }}</p>
+            <h3 class="text-base font-extrabold text-ink-strong m-0 mb-2">{{ t('n_load_error') }}</h3>
+            <p class="text-sm text-ink-muted m-0 mb-4">{{ t('n_load_error_desc') }}</p>
             <button
               type="button"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-800 transition-all cursor-pointer border-none"
               @click="() => refresh()"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -353,18 +350,18 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
           <!-- Empty State -->
           <div
             v-else-if="articles.length === 0"
-            class="bg-white border border-[#E2E8DF] rounded-2xl p-10 text-center shadow-sm"
+            class="bg-white border border-line rounded-2xl p-10 text-center shadow-sm"
           >
-            <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-2xl">
+            <div class="w-16 h-16 rounded-full bg-line text-brand-600 flex items-center justify-center mx-auto mb-4 text-2xl">
               <i :class="typeIcon || 'fa-regular fa-newspaper'" aria-hidden="true"></i>
             </div>
             <template v-if="pageOutOfRange">
               <!-- `?page=` vượt trang cuối (link cũ, gõ tay): không phải "chưa có bài" —
                    đưa người đọc về trang đầu thay vì để kẹt ở một trang trắng. -->
-              <p class="text-sm text-[#556450] m-0 mb-4">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
+              <p class="text-sm text-ink-soft m-0 mb-4">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
               <button
                 type="button"
-                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-800 transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
                 @click="goFirstPage"
               >
                 <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
@@ -372,8 +369,8 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
               </button>
             </template>
             <template v-else>
-              <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">{{ t('n_empty') }}</h3>
-              <p class="text-sm text-[#556450] m-0">{{ t('n_empty_desc') }}</p>
+              <h3 class="text-lg font-extrabold text-ink-strong m-0 mb-2">{{ t('n_empty') }}</h3>
+              <p class="text-sm text-ink-soft m-0">{{ t('n_empty_desc') }}</p>
             </template>
           </div>
 
@@ -382,9 +379,9 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
             <!-- Featured / Lead Article -->
             <article
               v-if="featured"
-              class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_3px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_10px_28px_rgba(74,103,65,0.14)] transition-all duration-300 flex flex-col sm:flex-row"
+              class="group bg-white rounded-2xl overflow-hidden border border-line shadow-[0_3px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_10px_28px_rgba(74,103,65,0.14)] transition-all duration-300 flex flex-col sm:flex-row"
             >
-              <nuxt-link :to="typeLink(featured.slug)" class="block relative sm:w-[45%] aspect-video sm:aspect-auto overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
+              <nuxt-link :to="typeLink(featured.slug)" class="block relative sm:w-[45%] aspect-video sm:aspect-auto overflow-hidden bg-surface-tint no-underline shrink-0">
                 <SafeImg
                   :src="featured.thumbnailUrl"
                   :alt="featured.title"
@@ -399,23 +396,23 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                     <i class="fa-solid fa-star" aria-hidden="true"></i>
                     {{ t('n_featured_badge') }}
                   </span>
-                  <span v-if="featured.categoryName" class="inline-block bg-[#EEF4EC] text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
+                  <span v-if="featured.categoryName" class="inline-block bg-surface-tint text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
                     {{ featured.categoryName }}
                   </span>
-                  <span class="text-[#5a6c58] text-[0.75rem] flex items-center gap-1">
+                  <span class="text-ink-soft text-[0.75rem] flex items-center gap-1">
                     <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
                     {{ formatDate(featured) }}
                   </span>
                 </div>
-                <h2 class="text-lg sm:text-xl lg:text-[1.5rem] font-extrabold leading-[1.3] text-[#172516] group-hover:text-[#2D5A27] transition-colors duration-200 mb-2 m-0">
+                <h2 class="text-lg sm:text-xl lg:text-[1.5rem] font-extrabold leading-[1.3] text-ink-strong group-hover:text-[#2D5A27] transition-colors duration-200 mb-2 m-0">
                   <nuxt-link :to="typeLink(featured.slug)" class="text-inherit no-underline">{{ featured.title }}</nuxt-link>
                 </h2>
-                <p v-if="featured.excerpt" class="text-[0.88rem] text-[#556450] leading-relaxed m-0 line-clamp-2 mb-3">
+                <p v-if="featured.excerpt" class="text-[0.88rem] text-ink-soft leading-relaxed m-0 line-clamp-2 mb-3">
                   {{ cleanExcerpt(featured.excerpt) }}
                 </p>
                 <nuxt-link
                   :to="typeLink(featured.slug)"
-                  class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] text-sm group-hover:translate-x-0.5 transition-all no-underline w-fit"
+                  class="inline-flex items-center gap-1.5 font-bold text-brand-800 hover:text-[#1B3617] text-sm group-hover:translate-x-0.5 transition-all no-underline w-fit"
                 >
                   <span>{{ t('view_details') }}</span>
                   <i class="fa-solid fa-arrow-right text-[0.72rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
@@ -424,13 +421,13 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
             </article>
 
             <!-- Section Title Divider -->
-            <div v-if="restArticles.length" class="flex items-center justify-between pt-1 pb-3 border-b-2 border-[#E1EADF] mb-1">
+            <div v-if="restArticles.length" class="flex items-center justify-between pt-1 pb-3 border-b-2 border-line mb-1">
               <div class="flex items-center gap-2.5">
-                <span class="w-2.5 h-6 rounded-sm bg-[#4A6741]" aria-hidden="true"></span>
+                <span class="w-2.5 h-6 rounded-sm bg-brand-600" aria-hidden="true"></span>
                 <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
                   {{ pageTitle }}
                 </h2>
-                <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-[#EBF3E8] text-[#385932]">
+                <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-line text-brand-800">
                   {{ t('n_count_suffix').replace('{n}', String(restArticles.length)) }}
                 </span>
               </div>
@@ -441,9 +438,9 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
               <article
                 v-for="item in restArticles"
                 :key="item.id"
-                class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
+                class="group bg-white rounded-2xl overflow-hidden border border-line shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-accent transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
               >
-                <nuxt-link :to="typeLink(item.slug)" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
+                <nuxt-link :to="typeLink(item.slug)" class="block relative w-full aspect-video overflow-hidden bg-surface-tint no-underline shrink-0">
                   <SafeImg
                     :src="item.thumbnailUrl"
                     :alt="item.title"
@@ -454,27 +451,27 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                   />
                 </nuxt-link>
                 <div class="p-4 sm:p-5 flex flex-col flex-1">
-                  <div class="flex items-center gap-2 text-xs text-[#5A6C58] font-medium mb-2">
-                    <span class="inline-block bg-[#EEF4EC] text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
+                  <div class="flex items-center gap-2 text-xs text-ink-soft font-medium mb-2">
+                    <span class="inline-block bg-surface-tint text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
                       {{ item.categoryName || typeName || typeSlug }}
                     </span>
-                    <span class="flex items-center gap-1 text-[#5a6c58] text-[0.75rem]">
+                    <span class="flex items-center gap-1 text-ink-soft text-[0.75rem]">
                       <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
                       <span>{{ formatDate(item) }}</span>
                     </span>
                   </div>
-                  <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-[#172516] group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
-                    <nuxt-link :to="typeLink(item.slug)" class="text-[#172516] hover:text-[#2D5A27] no-underline">
+                  <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-ink-strong group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
+                    <nuxt-link :to="typeLink(item.slug)" class="text-ink-strong hover:text-[#2D5A27] no-underline">
                       {{ item.title }}
                     </nuxt-link>
                   </h3>
-                  <p v-if="item.excerpt" class="text-[0.84rem] text-[#556450] leading-relaxed line-clamp-2 mb-3 m-0">
+                  <p v-if="item.excerpt" class="text-[0.84rem] text-ink-soft leading-relaxed line-clamp-2 mb-3 m-0">
                     {{ item.excerpt }}
                   </p>
-                  <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#5A6C58]">
+                  <div class="mt-auto pt-3 border-t border-surface-tint flex items-center justify-between text-xs text-ink-soft">
                     <nuxt-link
                       :to="typeLink(item.slug)"
-                      class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
+                      class="inline-flex items-center gap-1.5 font-bold text-brand-800 hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
                     >
                       <span>{{ t('view_details') }}</span>
                       <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
@@ -490,19 +487,19 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
               <nuxt-link
                 v-if="page > 1"
                 :to="pagePath(page - 1)"
-                class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-[#DCE5DB] text-[#4A5545] text-xs font-bold hover:bg-[#F2F7F0] no-underline"
+                class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-line text-ink-secondary text-xs font-bold hover:bg-surface-tint no-underline"
               >
                 <i class="fa-solid fa-arrow-left text-[0.65rem]" aria-hidden="true"></i>
                 <span>{{ t('page_prev') }}</span>
               </nuxt-link>
-              <span class="px-3 py-2 text-xs font-bold text-[#4A6741]">
+              <span class="px-3 py-2 text-xs font-bold text-brand-600">
                 <span class="sr-only">{{ t('n_pagination_summary').replace('{current}', String(page)).replace('{total}', String(pagination.totalPages)) }} </span>
                 {{ page }} / {{ pagination.totalPages }}
               </span>
               <nuxt-link
                 v-if="page < pagination.totalPages"
                 :to="pagePath(page + 1)"
-                class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-[#DCE5DB] text-[#4A5545] text-xs font-bold hover:bg-[#F2F7F0] no-underline"
+                class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-line text-ink-secondary text-xs font-bold hover:bg-surface-tint no-underline"
               >
                 <span>{{ t('page_next') }}</span>
                 <i class="fa-solid fa-arrow-right text-[0.65rem]" aria-hidden="true"></i>

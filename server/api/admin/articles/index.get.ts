@@ -2,6 +2,7 @@ import { finitePositive, MAX_PAGE } from '../../../utils/query-number'
 import { getDb } from '../../../utils/db'
 import { articles, users, categories } from '../../../db/schema'
 import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
+import { likeContains } from '../../../utils/like-pattern'
 import { eq, like, desc, sql, count, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'
 import { articleReadScope } from '../../../services/articles'
@@ -11,7 +12,9 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event)
   const page = finitePositive(query.page, 1, MAX_PAGE)
-  const perPage = Math.min(100, Math.max(10, Number(query.perPage || 20)))
+  // finitePositive before the floor of 10: `?perPage=abc` was NaN through both clamps (Drizzle then
+  // drops LIMIT/OFFSET — every row) and `?perPage=12.5` a LIMIT MySQL refuses, a 500 (FINDING-R7-8).
+  const perPage = Math.max(10, finitePositive(query.perPage || 20, 20, 100))
   const offset = (page - 1) * perPage
   const search = String(query.search || '').trim()
   const typeFilter = String(query.type || '').trim()
@@ -38,7 +41,8 @@ export default defineEventHandler(async (event) => {
 
   const conditions = [articleReadScope(adminUser, typeFilter)]
   if (search) {
-    conditions.push(like(articles.title, `%${search}%`))
+    // The text as typed: `_` and `%` are not wildcards (FINDING-R7-7, as R6-8 for readers).
+    conditions.push(like(articles.title, likeContains(search)))
   }
   if (typeFilter) {
     conditions.push(eq(articles.type, typeFilter))
@@ -107,7 +111,9 @@ export default defineEventHandler(async (event) => {
     .leftJoin(categories, eq(articles.categoryId, categories.id))
     .leftJoin(parentCategories, eq(categories.parentId, parentCategories.id))
     .where(whereClause)
-    .orderBy(desc(articles.createdAt))
+    // `id` breaks ties: articles imported in one second share `created_at`, and MySQL returns tied
+    // rows in any order — two pages could share or skip one (FINDING-R7-9, as R6-9).
+    .orderBy(desc(articles.createdAt), desc(articles.id))
     .limit(perPage)
     .offset(offset)
 

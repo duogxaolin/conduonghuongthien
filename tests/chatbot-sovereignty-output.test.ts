@@ -6,7 +6,7 @@ import { FOLLOW_UP_MARKER } from '../server/utils/chatbot/follow-ups'
 import type { RetrievalEntry } from '../server/utils/chatbot/retrieval'
 
 /**
- * Lớp đầu ra của bản vá chủ quyền (sự cố 2026-10-27, CHANGELOG § 28): câu hỏi lách được
+ * Lớp đầu ra của bản vá chủ quyền (sự cố 2026-10-27, docs/decisions/chatbot.md § Chủ quyền biển, đảo): câu hỏi lách được
  * `mentionsSovereignty` vẫn tới model. Câu trả lời nhắc chủ đề hoặc nêu yêu sách bị chặn ngay trên
  * luồng — không mẩu nào của cụm đó tới khách, kể cả khi cụm bị cắt giữa hai chunk — và được thay
  * bằng lập trường chính thức, cả phần đang hiện (`onReplace`) lẫn câu trả lời trả về/lưu.
@@ -15,11 +15,12 @@ import type { RetrievalEntry } from '../server/utils/chatbot/retrieval'
 // `callAi` giả phát từng chunk qua `onChunk`, như gateway thật khi stream; có thể báo một lượt gọi công cụ
 // trước, hoặc đứt kết nối sau khi phát xong.
 type ToolEvent = { name: string, query?: string, status: 'calling' | 'done', count?: number }
-const script = { chunks: [] as string[], calls: 0, toolEvents: [] as ToolEvent[], throwAfter: false }
+const script = { chunks: [] as string[], calls: 0, toolEvents: [] as ToolEvent[], throwAfter: false, systemPrompt: '' }
 mock.module('../server/services/ai-gateway', {
   namedExports: {
-    callAi: async (_service: string, input: { onChunk?: (chunk: string) => void | Promise<void>, onToolCall?: (event: ToolEvent) => void | Promise<void> }) => {
+    callAi: async (_service: string, input: { systemPrompt?: string, onChunk?: (chunk: string) => void | Promise<void>, onToolCall?: (event: ToolEvent) => void | Promise<void> }) => {
       script.calls += 1
+      script.systemPrompt = input.systemPrompt ?? ''
       for (const event of script.toolEvents) await input.onToolCall?.(event)
       for (const chunk of script.chunks) await input.onChunk?.(chunk)
       if (script.throwAfter) throw new Error('provider dropped the connection')
@@ -71,7 +72,7 @@ test('words that only look like the topic stream through untouched', async () =>
   // Chunk dừng ngay sau cụm, trước từ quyết định nó ("trường sa |thải"): giữa luồng chưa biết từ đó.
   for (const chunks of [
     [LEAD, 'Anh Hoàng Sa', 'ng đã hoàn lương và mở xưởng mộc.'],
-    [LEAD, 'Hãy tránh xa môi trường sa ', 'ngã và bạn bè xấu.'],
+    // ("môi trường sa | ngã": vòng 5 bỏ ngoại lệ "sa ngã" — chặn oan có chủ đích, ghim ở chatbot-sovereignty-recall.test.ts.)
     [LEAD, 'Nhà trường sa ', 'thải giáo viên vì có tiền án là trái luật.'],
     [LEAD, 'Bãi biển đông ', 'người vào cuối tuần.'],
     [LEAD, 'Lãnh đạo nam sa ', 'thải nhân viên phải có lý do.'],
@@ -223,8 +224,9 @@ const dependencies: ChatDependencies = {
   providerRequest: async () => { throw new Error('the gateway answers in these tests') },
 }
 
-// Đảo Ba Bình (Itu Aba) không có trong bộ khớp câu hỏi — câu này tới model.
-const DODGE = 'Đảo Ba Bình hiện do ai quản lý?'
+// Câu mô tả không có tên quần đảo/đảo nào — bộ khớp câu hỏi không nhận ra, câu này tới model. (Trước đợt gia cố
+// 2026-10-28 ví dụ là "Đảo Ba Bình hiện do ai quản lý?"; nay bộ khớp đầu vào bắt tên đảo lẻ — chỉ đổi tiền điều kiện.)
+const DODGE = 'Quần đảo phía đông Đà Nẵng hiện do ai quản lý?'
 const PRC_REPLY = ['Đảo Ba Bình thuộc quần đảo ', 'Nam', ' Sa (', 'Trường Sa) và là ', 'lãnh thổ Trung Quốc', ' từ thời xa xưa.']
 
 test('a question that dodges the input matcher: the streamed reply is withheld and replaced by the official answer', async () => {
@@ -308,6 +310,25 @@ test('a follow-up suggestion the model writes about the topic is dropped, even w
   assert.equal(result.kind, 'provider')
   assert.ok(result.followUps?.includes('Hồ sơ xóa án tích gồm những gì?'), JSON.stringify(result.followUps))
   assert.ok(!result.followUps?.some(question => question.includes('Hoàng Sa')), JSON.stringify(result.followUps))
+})
+
+test('a grounded answer (the bank matched the question) is withheld and replaced the same way', async () => {
+  // Nhánh có tham chiếu kho: câu hỏi thường, khớp kho, model vẫn trả lời vào chủ đề.
+  const question = 'Hồ sơ xóa án tích gồm những gì?'
+  const bank = [entry(7, question, ['hồ sơ xóa án tích'])]
+  script.chunks = PRC_REPLY
+  script.calls = 0
+  let shown = ''
+  const replacements: string[] = []
+  const result = await answerGroundedChat(event(), settingsOf(), [{ role: 'user', content: question }], { ...dependencies, loadPublishedEntries: async () => bank },
+    (chunk) => { shown += chunk }, undefined, (answer) => { replacements.push(answer) })
+  assert.equal(script.calls, 1)
+  assert.match(script.systemPrompt, /\[REFERENCE 1\]\nQuestion: Hồ sơ xóa án tích gồm những gì\?/, 'precondition: the grounded branch, not freeform')
+  assert.deepEqual(replacements, [sovereigntyAnswer(question)])
+  assert.equal(result.answer, sovereigntyAnswer(question))
+  assert.equal(result.kind, 'curated')
+  assert.deepEqual(result.sources, [], 'the bank row is not listed as the source of the official answer')
+  for (const fragment of ['Nam Sa', 'Trường', 'Trung Quốc']) assert.ok(!shown.includes(fragment), `"${fragment}" leaked: ${shown}`)
 })
 
 test('a tool query the model writes about the topic is not shown under the answer', async () => {

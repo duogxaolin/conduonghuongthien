@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, inArray, like, or } from 'drizzle-orm'
 import { chatbotKnowledge, chatbotKnowledgeTerms, activityLogs, type ChatbotKnowledge } from '../db/schema'
 import { getDb } from '../utils/db'
+import { likeContains } from '../utils/like-pattern'
 import { buildChatbotKnowledgeAudit, type KnowledgeAuditInput } from '../utils/chatbot/audit'
 import { serializeAdminKnowledge } from '../utils/chatbot/serializers'
 
@@ -120,9 +121,11 @@ export async function listKnowledge(params: { page?: number; perPage?: number; s
   if ((params.topic || '').length > 128) throw new ChatbotKnowledgeValidationError('topic exceeds 128 characters')
   const conditions = []
   if (search) {
-    const termRows = await db.select({ knowledgeId: chatbotKnowledgeTerms.knowledgeId }).from(chatbotKnowledgeTerms).where(like(chatbotKnowledgeTerms.value, `%${search}%`)).limit(1000)
+    // The text as typed — `_` and `%` are not wildcards (FINDING-R7-7).
+    const needle = likeContains(search)
+    const termRows = await db.select({ knowledgeId: chatbotKnowledgeTerms.knowledgeId }).from(chatbotKnowledgeTerms).where(like(chatbotKnowledgeTerms.value, needle)).limit(1000)
     const termIds = [...new Set(termRows.map(row => row.knowledgeId))]
-    conditions.push(or(like(chatbotKnowledge.canonicalQuestion, `%${search}%`), like(chatbotKnowledge.approvedAnswer, `%${search}%`), like(chatbotKnowledge.topic, `%${search}%`), ...(termIds.length ? [inArray(chatbotKnowledge.id, termIds)] : []))!)
+    conditions.push(or(like(chatbotKnowledge.canonicalQuestion, needle), like(chatbotKnowledge.approvedAnswer, needle), like(chatbotKnowledge.topic, needle), ...(termIds.length ? [inArray(chatbotKnowledge.id, termIds)] : []))!)
   }
   if (params.topic) conditions.push(eq(chatbotKnowledge.topic, params.topic))
   if (params.status) { if (!(KNOWLEDGE_STATUSES as readonly string[]).includes(params.status)) throw new ChatbotKnowledgeValidationError('status is invalid'); conditions.push(eq(chatbotKnowledge.status, params.status as KnowledgeStatus)) }

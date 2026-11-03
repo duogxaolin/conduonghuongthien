@@ -24,8 +24,41 @@ function activeLevel(): number {
 /**
  * Keys whose values must never reach a log file. Matched case-insensitively on
  * substrings, so `passwordHash`, `x-api-key` and `Authorization` are all caught.
+ * `bearer` too (a `bearer: '…'` field carried the credential unredacted; no log key
+ * in the repo contains it, so nothing that was readable becomes redacted). And the
+ * names that plainly hold a credential but matched nothing (verifier Low 6, 2026-10-30):
+ * `jwt`, a private key, a recovery or MFA code, an access key id — no log key in the
+ * repo contains them either. Deliberately NOT here, being ambiguous in this code base:
+ * `code` (error codes), `key` (`r2Key` and other storage object keys), `session`/`sid`
+ * (`sessionId` is an id), `salt`, `nonce` (tests/logging-redaction.test.ts).
  */
-const SECRET_KEY_PATTERN = /pass|secret|token|authorization|cookie|api[-_]?key|credential|hash/i
+const SECRET_KEY_PATTERN = /pass|secret|token|bearer|authorization|cookie|api[-_]?key|credential|hash|jwt|private[-_]?key|recovery[-_]?code|mfa[-_]?code|access[-_]?key[-_]?id/i
+
+/**
+ * One-time codes as a WORD of the key (`otp`, `otpCode`, `emailOtp`, `EMAIL_OTP`, `x-otp`,
+ * `totp`): as a substring "otp" is inside ordinary words (`footprint`, `hotpath`).
+ */
+const SECRET_KEY_WORDS: ReadonlySet<string> = new Set(['otp', 'totp'])
+
+function keyWords(key: string): string[] {
+  return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/)
+}
+
+/**
+ * The one exception to the pattern: COUNTS whose names carry "token" — the AI gateway's usage on
+ * `ai_gateway.call_succeeded` (server/services/ai-gateway-record.ts), which the pattern turned into
+ * `[redacted]` on every line (the usage table kept them; the log lost them). Exact names, and only
+ * while the value is a finite number: a count is never text, so a string — or a bigint, NaN or
+ * Infinity — put under one of these names is still redacted. A list, not a looser pattern:
+ * `accessTokens`, `refreshTokens`, `prompt_tokens` and every other spelling stay redacted
+ * (tests/logging-redaction.test.ts).
+ */
+const TOKEN_COUNT_KEYS: ReadonlySet<string> = new Set(['promptTokens', 'completionTokens', 'totalTokens'])
+
+function isRedactedKey(key: string, value: unknown): boolean {
+  if (TOKEN_COUNT_KEYS.has(key) && Number.isFinite(value)) return false
+  return SECRET_KEY_PATTERN.test(key) || keyWords(key).some(word => SECRET_KEY_WORDS.has(word))
+}
 
 export const REDACTED = '[redacted]'
 
@@ -47,7 +80,7 @@ function scrub(value: unknown, depth = 0): unknown {
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : scrub(nested, depth + 1)
+      out[key] = isRedactedKey(key, nested) ? REDACTED : scrub(nested, depth + 1)
     }
     return out
   }
@@ -152,6 +185,27 @@ export const SECURITY_EVENTS = {
   // (`server/middleware/00.origin-gate.ts`). Payload: path (no query), origin
   // host, reason — never cookies or the full Origin URL.
   crossSiteRefused: 'security.cross_site_refused',
+  // A browser reported a Content-Security-Policy violation (`server/api/csp-report.post.ts`,
+  // wave3 D-CSP). Aggregated in memory (`csp-report-log.ts`): `kind: "first"` once per key
+  // per process, `kind: "repeats"` with `count` and `sources` at the end of each hour.
+  // Payload: directive name, blocked host or tag (`inline`, `eval`, `data`), page path
+  // without query (or `foreign:<host>`), path group, disposition, a 12-hex SHA-256 prefix of
+  // the script sample — never URLs, sample text, IPs or user agents.
+  // Deliberately NOT in ALERT_EVENTS: the Report-Only phase reports every inline script
+  // on every page view by design, and the endpoint is public — a report flood must
+  // never become an e-mail flood. Bounded by aggregation and a per-source limit instead.
+  cspViolation: 'security.csp_violation',
+  // Moderation regex layer 2 (`server/services/moderation-regex-budget.ts`, verify of wave3 4.3c
+  // follow-up W8). A rule turned off for 10 minutes for running slow (`reason: 'window'` — one
+  // window over 200 ms; `'cumulative'` — 1 s of CPU in 60 s): while it is off it judges nothing,
+  // and crafted input can be what slowed it. Payload: pattern (≤ 200 chars), reason, elapsedMs,
+  // inputLength — never the text. In ALERT_EVENTS: someone must look at the rule.
+  moderationRuleSlowDisabled: 'ai_moderation.rule_slow_disabled',
+  // A request used up its 250-ms regex budget; the rules it did not reach did not judge it (the
+  // newest chat turn, a comment: fail-open; earlier chat turns: withheld from the model). Once per
+  // request, anyone can trigger it — logged for alert rules, NOT e-mailed. Payload: budgetMs,
+  // spentMs, topPattern, topPatternMs, texts.
+  moderationRequestBudgetExhausted: 'ai_moderation.request_budget_exhausted',
 } as const
 
 /**
@@ -189,7 +243,8 @@ export const BOOT_MIGRATION_EVENTS = {
  * event per window). Kept short on purpose: each one means an operator must act —
  * a restore failed or was refused, someone holding a valid password is guessing
  * second factors, an e-mail link was asked for on a forged Host, a browser posted to
- * the API on behalf of another site (the origin gate, wave2 2A), a scheduled backup
+ * the API on behalf of another site (the origin gate, wave2 2A), a moderation rule was
+ * turned off for running slow (it judges nothing for 10 minutes), a scheduled backup
  * slot was given up, a scheduled slot was lost to "busy" refusals (another backup or a
  * restore held the lock past the slot's window — `busyStreakDeadline`), the boot
  * migration cannot reach its schema without losing data.
@@ -207,6 +262,7 @@ export const ALERT_EVENTS: readonly string[] = [
   SECURITY_EVENTS.mfaChallengeLocked,
   SECURITY_EVENTS.linkHostRejected,
   SECURITY_EVENTS.crossSiteRefused,
+  SECURITY_EVENTS.moderationRuleSlowDisabled,
   'backup.slot_abandoned',
   'backup.scheduler_blocked',
   BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked,

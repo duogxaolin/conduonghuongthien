@@ -1,4 +1,5 @@
 import type { MediaItem } from '~/types/media'
+import type { AdminMediaUploadResult } from '~/types/admin-api'
 
 export type UploadStatus = 'pending' | 'uploading' | 'success' | 'error'
 
@@ -26,7 +27,7 @@ export const useUpload = () => {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; media: MediaItem }>)('/api/admin/media/upload', {
+      const res = await adminFetch<AdminMediaUploadResult>('/api/admin/media/upload', {
         method: 'POST',
         body: formData,
       })
@@ -82,7 +83,7 @@ export const useUpload = () => {
         // $fetch (ofetch) does not expose byte-level upload progress, so per-file
         // progress jumps to a small "uploading" marker then to 100% on success.
         // The real UX win here is *parallelism* + status, not a byte count.
-        const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; media: MediaItem }>)('/api/admin/media/upload', {
+        const res = await adminFetch<AdminMediaUploadResult>('/api/admin/media/upload', {
           method: 'POST',
           body: formData,
         })

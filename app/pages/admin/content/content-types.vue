@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { AdminContentTypeRow, AdminCategoryRow } from '~/types/admin-api'
+import type { AdminCategoriesResponse, AdminContentTypeDeleteResponse, AdminContentTypeSaveResponse, AdminContentTypesResponse } from '~/types/admin-taxonomy-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
+import { slugify, slugifyDraft } from '~~/shared/slugify'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -14,6 +16,7 @@ const types = ref<AdminContentTypeRow[]>([])
 const allCategories = ref<AdminCategoryRow[]>([])
 const loading = ref(true)
 const error = ref('')
+const categoriesError = ref('')
 const showTree = ref(true)
 
 // ─── Modal state ──────────────────────────────────────────────────────────────
@@ -31,32 +34,25 @@ const form = reactive({
   displayOrder: 0,
 })
 
-// Auto-fill slug from name — gạch ngang chuẩn (giống category). System types
-// (isSystem) giữ `_` do seed built-in, nhưng type custom tạo qua UI luôn `-`.
-const slugifyLocal = (text: string): string =>
-  text.toString().toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-
+// Slug (`shared/slugify.ts`, cùng luật máy chủ lưu) — gạch ngang chuẩn (giống
+// category): sinh từ tên, rời ô và lúc lưu dùng bản chuẩn `slugify`; đang gõ dùng
+// `slugifyDraft` — giữ gạch cuối để gõ tiếp. System types (isSystem) giữ `_` do seed
+// built-in và không sửa được, nên không chuẩn hoá chúng (`role_model` ≠ `rolemodel`).
 watch(() => form.name, (val) => {
   if (modalMode.value === 'create') {
-    form.slug = slugifyLocal(val)
+    form.slug = slugify(val)
   }
 })
 
 /**
  * Validate slug real-time: nếu admin nhập tay ký tự không hợp lệ (dấu, space,
  * ký tự lạ) → slug sau slugify khác input → báo lỗi + auto-clean để admin thấy
- * slug tự đổi. Nút Lưu disabled khi slugError truthy.
+ * slug tự đổi. Nút Lưu disabled khi slugError truthy. Đo bằng bản "đang gõ": gạch
+ * cuối chưa gõ xong không phải lỗi (rời ô/lưu sẽ cắt nó).
  */
 const slugError = computed(() => {
-  if (!form.slug) return ''
-  const cleaned = slugifyLocal(form.slug)
+  if (!form.slug || editingIsSystem.value) return ''
+  const cleaned = slugifyDraft(form.slug)
   if (cleaned !== form.slug) {
     return 'Định danh chỉ chứa chữ thường, số, gạch ngang. Không dấu, không khoảng trắng, không ký tự lạ.'
   }
@@ -65,36 +61,40 @@ const slugError = computed(() => {
 
 // Auto-clean slug khi admin paste/thủ công ký tự sai — slug tự đổi + lỗi biến mất.
 watch(() => form.slug, (val) => {
-  if (val && slugifyLocal(val) !== val) {
-    form.slug = slugifyLocal(val)
+  if (val && !editingIsSystem.value && slugifyDraft(val) !== val) {
+    form.slug = slugifyDraft(val)
   }
 })
 
+const onSlugBlur = () => {
+  if (!editingIsSystem.value) form.slug = slugify(form.slug)
+}
+
 // ─── Fetch ────────────────────────────────────────────────────────────────────
+// Mỗi lượt tải một mã, chỉ lượt mới nhất được ghi: lượt cũ về sau xoá hàng vừa tạo (fetch-rollout-d-fetch.md).
+let typesRequest = 0, categoriesRequest = 0
 const fetchTypes = async () => {
+  const ticket = ++typesRequest
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)('/api/admin/content-types')
-    if (res.ok) {
-      types.value = res.items
-      selection.keepOnly(visibleIds.value)
-    } else {
-      error.value = 'Không tải được danh sách thể loại.'
-    }
+    const { items } = await adminFetch<AdminContentTypesResponse>('/api/admin/content-types')
+    if (ticket === typesRequest) { types.value = items; selection.keepOnly(visibleIds.value) }
   } catch (err: unknown) {
-    error.value = errorMessage(err, 'Không tải được danh sách thể loại.')
+    if (ticket === typesRequest) error.value = errorMessage(err, 'Không tải được danh sách thể loại.')
   } finally {
-    loading.value = false
+    if (ticket === typesRequest) loading.value = false
   }
 }
 
 const fetchCategories = async () => {
+  const ticket = ++categoriesRequest
+  categoriesError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminCategoryRow[] }>)('/api/admin/categories')
-    if (res.ok) allCategories.value = res.items
+    const { items } = await adminFetch<AdminCategoriesResponse>('/api/admin/categories')
+    if (ticket === categoriesRequest) allCategories.value = items
   } catch (err: unknown) {
-    // Non-blocking: tree preview just shows types without children
+    if (ticket === categoriesRequest) categoriesError.value = errorMessage(err, 'Không tải được danh mục của các thể loại.')
   }
 }
 
@@ -150,18 +150,17 @@ const handleSave = async () => {
       displayOrder: form.displayOrder,
     }
     // Only send slug when editable (create, or edit of a non-system type)
-    if (modalMode.value === 'create' || !editingIsSystem.value) {
-      payload.slug = form.slug.trim()
-    }
+    if (modalMode.value === 'create' || !editingIsSystem.value) payload.slug = slugify(form.slug)
     if (modalMode.value === 'create') {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)("/api/admin/content-types", { method: "POST", body: payload })
+      await adminFetch<AdminContentTypeSaveResponse>("/api/admin/content-types", { method: "POST", body: payload })
       toast.success('Đã tạo thể loại thành công!')
     } else {
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/content-types/${editingId.value}`, { method: "PUT", body: payload })
+      await adminFetch<AdminContentTypeSaveResponse>(`/api/admin/content-types/${editingId.value}`, { method: "PUT", body: payload })
       toast.success('Đã cập nhật thể loại thành công!')
     }
     showModal.value = false
-    await fetchTypes()
+    // Đổi slug thì máy chủ chuyển danh mục sang slug mới (content-types/[id].put.ts) — tải cả hai.
+    await Promise.all([fetchTypes(), fetchCategories()])
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu thể loại'))
   } finally {
@@ -196,7 +195,7 @@ const deleteType = async (ct: AdminContentTypeRow) => {
   const ok = await confirm({ title: 'Xóa thể loại', message: `Bạn có chắc muốn xóa thể loại "${ct.name}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/content-types/${ct.id}`, { method: "DELETE" })
+    await adminFetch<AdminContentTypeDeleteResponse>(`/api/admin/content-types/${ct.id}`, { method: "DELETE" })
     toast.success('Đã xóa thể loại thành công!')
     await fetchTypes()
   } catch (err: unknown) {
@@ -204,10 +203,7 @@ const deleteType = async (ct: AdminContentTypeRow) => {
   }
 }
 
-onMounted(() => {
-  fetchTypes()
-  fetchCategories()
-})
+onMounted(() => { fetchTypes(); fetchCategories() })
 </script>
 
 <template>
@@ -215,19 +211,19 @@ onMounted(() => {
     <!-- Page Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Quản lý Thể loại</h1>
-        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Cấp phân loại cao nhất — mỗi thể loại chứa các danh mục và bài viết riêng</p>
+        <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">Quản lý Thể loại</h1>
+        <p class="text-[0.85rem] text-ink-muted mt-1 mb-0">Cấp phân loại cao nhất — mỗi thể loại chứa các danh mục và bài viết riêng</p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <button
-          class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] text-[#2c6e33] font-bold px-3.5 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-[#f8faf8]"
+          class="inline-flex items-center gap-2 bg-white border border-line-strong text-brand-700 font-bold px-3.5 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-surface"
           @click="showTree = !showTree"
         >
           <i :class="showTree ? 'fa-solid fa-list' : 'fa-solid fa-sitemap'"></i>
           {{ showTree ? 'Xem bảng' : 'Xem cây' }}
         </button>
         <button
-          class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
+          class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
           @click="openCreate()"
         >
           <i class="fa-solid fa-plus"></i> Tạo Thể Loại Mới
@@ -242,31 +238,31 @@ onMounted(() => {
       noun="thể loại"
       @clear="selection.clear()"
     >
-      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+      <button type="button" class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
 
     <!-- Loading -->
-    <div v-if="loading" role="status" aria-busy="true" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+    <div v-if="loading" role="status" aria-busy="true" class="bg-white rounded-xl border border-line p-6">
       <span class="sr-only">Đang tải danh sách thể loại</span>
       <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
         <div v-for="n in 6" :key="n" class="flex gap-3">
-          <div v-for="c in 7" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+          <div v-for="c in 7" :key="c" class="h-10 bg-surface-tint rounded flex-1" aria-hidden="true"></div>
         </div>
       </div>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-danger-soft text-[0.95rem]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-      {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchTypes()">thử lại</button>.
+      {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchTypes()">thử lại</button>.
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="types.length === 0" class="bg-white rounded-xl border border-[#e2ece3] py-14 flex flex-col items-center gap-3 text-center">
-      <i class="fa-solid fa-layer-group text-4xl text-[#c8d6c9]"></i>
-      <p class="text-[#667768] text-[0.9rem] m-0">Chưa có thể loại nào. Hãy tạo thể loại đầu tiên!</p>
+    <div v-else-if="types.length === 0" class="bg-white rounded-xl border border-line py-14 flex flex-col items-center gap-3 text-center">
+      <i class="fa-solid fa-layer-group text-4xl text-line-strong"></i>
+      <p class="text-ink-muted text-[0.9rem] m-0">Chưa có thể loại nào. Hãy tạo thể loại đầu tiên!</p>
       <button
-        class="inline-flex items-center gap-2 bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 hover:bg-[#2c6e33] transition-colors"
+        class="inline-flex items-center gap-2 bg-brand-900 text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 hover:bg-brand-700 transition-colors"
         @click="openCreate()"
       >
         <i class="fa-solid fa-plus"></i> Tạo Thể Loại
@@ -274,26 +270,28 @@ onMounted(() => {
     </div>
 
     <!-- Tree preview: Thể loại → Danh mục → Danh mục con -->
-    <div v-else-if="showTree" class="bg-white rounded-xl border border-[#e2ece3] p-4 sm:p-6">
+    <div v-else-if="showTree" class="bg-white rounded-xl border border-line p-4 sm:p-6">
+      <!-- Tải danh mục hỏng: nói ra, đừng để mỗi thể loại ghi "Chưa có danh mục nào". -->
+      <p v-if="categoriesError" role="alert" class="m-0 mb-4 text-[0.85rem] text-danger-soft">{{ categoriesError }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchCategories()">thử lại</button>.</p>
       <div class="flex flex-col gap-4">
-        <div v-for="ct in tree" :key="ct.id" class="rounded-xl border border-[#e2ece3] overflow-hidden">
+        <div v-for="ct in tree" :key="ct.id" class="rounded-xl border border-line overflow-hidden">
           <!-- Level 1: Thể loại -->
-          <div class="flex items-center gap-3 px-4 py-3 bg-[#f0f7f1] border-b border-[#e2ece3]">
-            <span class="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg bg-[#1e4620] text-white">
+          <div class="flex items-center gap-3 px-4 py-3 bg-surface-tint border-b border-line">
+            <span class="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg bg-brand-900 text-white">
               <i :class="ct.icon || 'fa-solid fa-folder'"></i>
             </span>
             <div class="flex flex-col min-w-0 flex-1">
-              <span class="font-extrabold text-[#122815] flex items-center gap-2 flex-wrap">
+              <span class="font-extrabold text-brand-950 flex items-center gap-2 flex-wrap">
                 {{ ct.name }}
                 <span v-if="ct.isSystem" class="text-[0.68rem] bg-[#eef2ff] text-[#3050b0] px-1.5 py-0.5 rounded font-semibold">Hệ thống</span>
-                <code class="text-[0.72rem] text-[#667768] bg-white/70 px-1.5 py-0.5 rounded font-normal">{{ ct.slug }}</code>
+                <code class="text-[0.72rem] text-ink-muted bg-white/70 px-1.5 py-0.5 rounded font-normal">{{ ct.slug }}</code>
               </span>
-              <span class="text-[0.75rem] text-[#667768]">{{ ct.categoryCount }} danh mục · {{ ct.articleCount }} bài viết</span>
+              <span class="text-[0.75rem] text-ink-muted">{{ ct.categoryCount }} danh mục · {{ ct.articleCount }} bài viết</span>
             </div>
             <div class="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-white hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg border border-[#e2ece3] cursor-pointer transition-colors"
+                class="inline-flex items-center gap-1 text-xs font-bold text-brand-700 bg-white hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg border border-line cursor-pointer transition-colors"
                 :data-admin-modal-opener="`content-type-${ct.id}`"
                 @click="openEdit(ct)"
                 :aria-label="`Sửa thể loại ${ct.name}`"
@@ -303,7 +301,7 @@ onMounted(() => {
               <button
                 v-if="!ct.isSystem"
                 type="button"
-                class="inline-flex items-center gap-1 text-xs font-bold text-[#d12420] bg-white hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg border border-[#e2ece3] cursor-pointer transition-colors"
+                class="inline-flex items-center gap-1 text-xs font-bold text-danger bg-white hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg border border-line cursor-pointer transition-colors"
                 @click="deleteType(ct)"
                 :aria-label="`Xóa thể loại ${ct.name}`"
               >
@@ -314,31 +312,31 @@ onMounted(() => {
 
           <!-- Levels 2 & 3: Danh mục → Danh mục con -->
           <div class="px-4 py-3">
-            <p v-if="ct.children.length === 0" class="text-[0.82rem] text-[#8a9a8c] italic m-0">
+            <p v-if="!categoriesError && ct.children.length === 0" class="text-[0.82rem] text-ink-faint italic m-0">
               Chưa có danh mục nào trong thể loại này.
             </p>
             <ul v-else class="flex flex-col gap-2 m-0 p-0 list-none">
               <li v-for="cat in ct.children" :key="cat.id" class="flex flex-col gap-1.5">
                 <!-- Level 2: Danh mục gốc -->
                 <div class="flex items-center gap-2 text-[0.88rem]">
-                  <i class="fa-solid fa-folder text-[#2c6e33]"></i>
-                  <span class="font-bold text-[#2c3e2e]">{{ cat.name }}</span>
-                  <code class="text-[0.72rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ cat.slug }}</code>
-                  <span v-if="cat.children.length" class="text-[0.7rem] bg-[#f0f7f1] text-[#2c6e33] px-1.5 py-0.5 rounded font-semibold">{{ cat.children.length }} con</span>
+                  <i class="fa-solid fa-folder text-brand-700"></i>
+                  <span class="font-bold text-ink-admin">{{ cat.name }}</span>
+                  <code class="text-[0.72rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded">{{ cat.slug }}</code>
+                  <span v-if="cat.children.length" class="text-[0.7rem] bg-surface-tint text-brand-700 px-1.5 py-0.5 rounded font-semibold">{{ cat.children.length }} con</span>
                 </div>
                 <!-- Level 3: Danh mục con -->
-                <ul v-if="cat.children.length" class="flex flex-col gap-1 m-0 p-0 list-none pl-6 border-l-2 border-[#e2ece3] ml-2">
+                <ul v-if="cat.children.length" class="flex flex-col gap-1 m-0 p-0 list-none pl-6 border-l-2 border-line ml-2">
                   <li v-for="sub in cat.children" :key="sub.id" class="flex items-center gap-2 text-[0.84rem] text-[#3a4a3c]">
-                    <i class="fa-regular fa-folder text-[#8ed694]"></i>
+                    <i class="fa-regular fa-folder text-brand-300"></i>
                     <span>{{ sub.name }}</span>
-                    <code class="text-[0.7rem] text-[#8a9a8c] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ sub.slug }}</code>
+                    <code class="text-[0.7rem] text-ink-faint bg-surface px-1.5 py-0.5 rounded">{{ sub.slug }}</code>
                   </li>
                 </ul>
               </li>
             </ul>
             <nuxt-link
               :to="`/admin/content/categories?type=${ct.slug}`"
-              class="inline-flex items-center gap-1.5 mt-3 text-[#2c6e33] no-underline font-bold text-[0.8rem] hover:underline"
+              class="inline-flex items-center gap-1.5 mt-3 text-brand-700 no-underline font-bold text-[0.8rem] hover:underline"
             >
               <i class="fa-solid fa-folder-plus text-xs"></i> Quản lý danh mục của thể loại này
             </nuxt-link>
@@ -348,55 +346,55 @@ onMounted(() => {
     </div>
 
     <!-- Table -->
-    <div v-else class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden shadow-xs">
+    <div v-else class="bg-white rounded-xl border border-line overflow-hidden shadow-xs">
       <!-- Mobile Card View: Thẻ thể loại tiện thao tác ngón cái trên điện thoại -->
-      <div class="md:hidden divide-y divide-[#eef2ee]">
+      <div class="md:hidden divide-y divide-surface-tint">
         <div
           v-for="ct in types"
           :key="'m-'+ct.id"
           class="p-4 flex flex-col gap-2.5"
-          :class="selection.isSelected(Number(ct.id)) ? 'bg-[#f0f7f1]' : ''"
+          :class="selection.isSelected(Number(ct.id)) ? 'bg-surface-tint' : ''"
         >
           <div class="flex items-start justify-between gap-2.5">
             <div class="flex items-center gap-2.5 min-w-0">
               <input
                 v-if="!ct.isSystem"
                 type="checkbox"
-                class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                class="h-4 w-4 shrink-0 accent-brand-700"
                 :checked="selection.isSelected(Number(ct.id))"
                 :aria-label="`Chọn thể loại ${ct.name}`"
                 @change="selection.toggle(Number(ct.id))"
               />
               <div class="flex items-center gap-2 min-w-0">
-                <i :class="ct.icon || 'fa-solid fa-folder'" class="text-[#2c6e33] text-base shrink-0"></i>
-                <span class="font-bold text-[#122815] text-[0.92rem] truncate">{{ ct.name }}</span>
+                <i :class="ct.icon || 'fa-solid fa-folder'" class="text-brand-700 text-base shrink-0"></i>
+                <span class="font-bold text-brand-950 text-[0.92rem] truncate">{{ ct.name }}</span>
               </div>
             </div>
             <span v-if="ct.isSystem" class="text-[0.68rem] bg-[#eef2ff] text-[#3050b0] px-2 py-0.5 rounded font-bold shrink-0">Hệ thống</span>
             <span v-else class="text-[0.68rem] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-bold shrink-0">Thứ tự: {{ ct.displayOrder }}</span>
           </div>
 
-          <div class="flex flex-wrap items-center gap-2 text-xs text-[#667768]">
-            <code class="text-[0.75rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded font-mono">{{ ct.slug }}</code>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+            <code class="text-[0.75rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded font-mono">{{ ct.slug }}</code>
             <span>•</span>
             <span>{{ ct.categoryCount }} danh mục</span>
             <span>•</span>
             <span>{{ ct.articleCount }} bài viết</span>
           </div>
 
-          <p v-if="ct.description" class="m-0 text-xs text-[#8a9a8c] line-clamp-2">{{ ct.description }}</p>
+          <p v-if="ct.description" class="m-0 text-xs text-ink-faint line-clamp-2">{{ ct.description }}</p>
 
           <!-- Thao tác -->
-          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-surface">
             <nuxt-link
               :to="`/admin/content/categories?type=${ct.slug}`"
-              class="inline-flex items-center gap-1 text-xs font-bold text-[#667768] bg-[#f4f7f4] hover:bg-[#eef2ee] px-2.5 py-1.5 rounded-lg no-underline transition-colors"
+              class="inline-flex items-center gap-1 text-xs font-bold text-ink-muted bg-surface hover:bg-surface-tint px-2.5 py-1.5 rounded-lg no-underline transition-colors"
             >
               <i class="fa-regular fa-folder-open text-[0.7rem]"></i> Danh mục
             </nuxt-link>
             <button
               type="button"
-              class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-[#f0f7f1] hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg border-0 cursor-pointer transition-colors"
+              class="inline-flex items-center gap-1 text-xs font-bold text-brand-700 bg-surface-tint hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg border-0 cursor-pointer transition-colors"
               :data-admin-modal-opener="`content-type-${ct.id}`"
                 @click="openEdit(ct)"
             >
@@ -405,7 +403,7 @@ onMounted(() => {
             <button
               v-if="!ct.isSystem"
               type="button"
-              class="inline-flex items-center gap-1 text-xs font-bold text-[#d12420] bg-[#fff4f3] hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg border-0 cursor-pointer transition-colors"
+              class="inline-flex items-center gap-1 text-xs font-bold text-danger bg-[#fff4f3] hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg border-0 cursor-pointer transition-colors"
               @click="deleteType(ct)"
             >
               <i class="fa-regular fa-trash text-[0.65rem]"></i> Xóa
@@ -419,76 +417,76 @@ onMounted(() => {
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
-              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-[#e2ece3]">
+              <th class="bg-surface w-10 px-4 py-3 border-b border-line">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.allSelected(visibleIds)"
                   :indeterminate="selection.someSelected(visibleIds)"
                   aria-label="Chọn tất cả thể loại có thể xóa"
                   @change="selection.toggleAll(visibleIds)"
                 />
               </th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Thể loại</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Định danh (slug)</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Danh mục</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Bài viết</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thứ tự</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line">Thể loại</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Định danh (slug)</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Danh mục</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Bài viết</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thứ tự</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="ct in types"
               :key="ct.id"
-              class="hover:bg-[#fafcfa]"
-              :class="selection.isSelected(Number(ct.id)) ? 'bg-[#f0f7f1]' : ''"
+              class="hover:bg-surface"
+              :class="selection.isSelected(Number(ct.id)) ? 'bg-surface-tint' : ''"
             >
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <!-- A system type can never be deleted, so it gets no checkbox: an
                      operator should not be able to tick a row that is certain to
                      come back as a failure. -->
                 <input
                   v-if="!ct.isSystem"
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.isSelected(Number(ct.id))"
                   :aria-label="`Chọn thể loại ${ct.name}`"
                   @change="selection.toggle(Number(ct.id))"
                 />
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <div class="flex items-center gap-2.5">
-                  <i :class="ct.icon || 'fa-solid fa-folder'" class="text-[#2c6e33] w-5 text-center"></i>
+                  <i :class="ct.icon || 'fa-solid fa-folder'" class="text-brand-700 w-5 text-center"></i>
                   <div class="flex flex-col">
-                    <span class="font-bold text-[#122815] flex items-center gap-2">
+                    <span class="font-bold text-brand-950 flex items-center gap-2">
                       {{ ct.name }}
                       <span v-if="ct.isSystem" class="text-[0.68rem] bg-[#eef2ff] text-[#3050b0] px-1.5 py-0.5 rounded font-semibold">Hệ thống</span>
                     </span>
-                    <span v-if="ct.description" class="text-[0.75rem] text-[#8a9a8c]">{{ ct.description }}</span>
+                    <span v-if="ct.description" class="text-[0.75rem] text-ink-faint">{{ ct.description }}</span>
                   </div>
                 </div>
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
-                <code class="text-[0.78rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ ct.slug }}</code>
+              <td class="px-4 py-3 border-b border-surface-tint">
+                <code class="text-[0.78rem] text-ink-muted bg-surface px-1.5 py-0.5 rounded">{{ ct.slug }}</code>
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768]">{{ ct.categoryCount }}</td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768]">{{ ct.articleCount }}</td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768]">{{ ct.displayOrder }}</td>
-              <td class="px-4 py-3 border-b border-[#eef2ee]">
+              <td class="px-4 py-3 border-b border-surface-tint text-ink-muted">{{ ct.categoryCount }}</td>
+              <td class="px-4 py-3 border-b border-surface-tint text-ink-muted">{{ ct.articleCount }}</td>
+              <td class="px-4 py-3 border-b border-surface-tint text-ink-muted">{{ ct.displayOrder }}</td>
+              <td class="px-4 py-3 border-b border-surface-tint">
                 <div class="flex items-center gap-3 flex-wrap">
                   <nuxt-link
                     :to="`/admin/content/categories?type=${ct.slug}`"
-                    class="inline-flex items-center gap-1 text-[#667768] no-underline font-bold text-[0.82rem] hover:underline"
+                    class="inline-flex items-center gap-1 text-ink-muted no-underline font-bold text-[0.82rem] hover:underline"
                   ><i class="fa-regular fa-folder-open text-xs"></i> Danh mục</nuxt-link>
                   <button
-                    class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
+                    class="inline-flex items-center gap-1 bg-none border-0 text-brand-700 cursor-pointer font-bold text-[0.82rem] hover:underline"
                     :data-admin-modal-opener="`content-type-${ct.id}`"
                 @click="openEdit(ct)"
                   ><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
                   <button
                     v-if="!ct.isSystem"
-                    class="inline-flex items-center gap-1 bg-none border-0 text-[#d12420] cursor-pointer font-bold text-[0.82rem] hover:underline"
+                    class="inline-flex items-center gap-1 bg-none border-0 text-danger cursor-pointer font-bold text-[0.82rem] hover:underline"
                     @click="deleteType(ct)"
                   ><i class="fa-regular fa-trash text-xs"></i> Xóa</button>
                 </div>
@@ -511,79 +509,80 @@ onMounted(() => {
           <div class="flex flex-col gap-4">
             <!-- Tên -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tên thể loại (*)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Tên thể loại (*)</label>
               <input
                 v-model="form.name"
                 type="text"
                 placeholder="Vd: Video tuyên truyền"
-                class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+                class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
               />
             </div>
             <!-- Slug -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Định danh — slug</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Định danh — slug</label>
               <input
                 v-model="form.slug"
                 type="text"
                 :disabled="editingIsSystem"
                 placeholder="video-tuyen-truyen"
-                class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2c6e33]/15 font-mono disabled:bg-[#f4f7f4] disabled:text-[#8a9a8c] disabled:cursor-not-allowed"
-                :class="slugError ? 'border-[#d12420] focus:border-[#d12420]' : 'border-[#c8d6c9] focus:border-[#2c6e33]'"
+                class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-brand-700/15 font-mono disabled:bg-surface disabled:text-ink-faint disabled:cursor-not-allowed"
+                :class="slugError ? 'border-[#d12420] focus:border-danger' : 'border-[#c8d6c9] focus:border-brand-700'"
                 :aria-invalid="!!slugError"
+                @blur="onSlugBlur"
               />
               <p v-if="editingIsSystem" class="text-[0.73rem] text-[#b06a20] m-0">Thể loại hệ thống — không thể đổi định danh.</p>
-              <p v-else-if="slugError" role="alert" class="text-[0.73rem] text-[#d12420] m-0 font-semibold flex items-center gap-1.5">
+              <p v-else-if="slugError" role="alert" class="text-[0.73rem] text-danger m-0 font-semibold flex items-center gap-1.5">
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
                 {{ slugError }}
               </p>
-              <p v-else class="text-[0.73rem] text-[#667768] m-0">Tự động điền từ tên. Đây là mã định danh dùng để liên kết danh mục và bài viết.</p>
+              <p v-else class="text-[0.73rem] text-ink-muted m-0">Tự động điền từ tên. Đây là mã định danh dùng để liên kết danh mục và bài viết.</p>
             </div>
             <!-- Icon -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Icon (FontAwesome)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Icon (FontAwesome)</label>
               <div class="flex items-center gap-2.5">
-                <span class="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg border border-[#c8d6c9] bg-[#f8faf8]">
-                  <i :class="form.icon || 'fa-solid fa-folder'" class="text-[#2c6e33]"></i>
+                <span class="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg border border-line-strong bg-surface">
+                  <i :class="form.icon || 'fa-solid fa-folder'" class="text-brand-700"></i>
                 </span>
                 <input
                   v-model="form.icon"
                   type="text"
                   placeholder="fa-solid fa-video"
-                  class="flex-1 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 font-mono"
+                  class="flex-1 px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15 font-mono"
                 />
               </div>
-              <p class="text-[0.73rem] text-[#667768] m-0">Vd: fa-solid fa-newspaper, fa-solid fa-award...</p>
+              <p class="text-[0.73rem] text-ink-muted m-0">Vd: fa-solid fa-newspaper, fa-solid fa-award...</p>
             </div>
             <!-- Mô tả -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Mô tả (tùy chọn)</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Mô tả (tùy chọn)</label>
               <textarea
                 v-model="form.description"
                 rows="2"
                 placeholder="Ghi chú ngắn về thể loại này..."
-                class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] resize-none font-[inherit]"
+                class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 resize-none font-[inherit]"
               ></textarea>
             </div>
             <!-- Thứ tự -->
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Thứ tự hiển thị</label>
+              <label class="text-[0.82rem] font-bold text-ink-admin">Thứ tự hiển thị</label>
               <input
                 v-model.number="form.displayOrder"
                 type="number"
                 min="0"
-                class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
+                class="w-full px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700"
               />
             </div>
           </div>
     <template #footer>
             <button
               type="button"
-              class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#667768] font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors"
+              class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-surface transition-colors"
               @click="showModal = false"
             >Hủy</button>
             <button
               type="button"
-              class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2 rounded-lg cursor-pointer border-0 transition-colors disabled:opacity-60 disabled:cursor-not-allowed text-sm"
+              class="inline-flex items-center gap-2 bg-brand-900 hover:bg-brand-700 text-white font-bold px-5 py-2 rounded-lg cursor-pointer border-0 transition-colors disabled:opacity-60 disabled:cursor-not-allowed text-sm"
               :disabled="saving || !!slugError"
               @click="handleSave"
             >

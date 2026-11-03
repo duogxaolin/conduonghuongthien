@@ -28,15 +28,15 @@
                chỉ xuất hiện ở cột phải — tức dữ liệu đã về đủ mà giao diện bỏ
                phí. Dùng hết 5 = không thêm một lượt đi mạng nào. -->
           <div class="grid grid-cols-1 gap-[14px] sm:grid-cols-2 sm:gap-5" role="list">
-            <div v-for="item in subCards" :key="item.id" role="listitem" class="flex gap-4 py-3 border-t border-dashed border-[#E2E8DF] group">
+            <div v-for="item in subCards" :key="item.id" role="listitem" class="flex gap-4 py-3 border-t border-dashed border-line group">
               <nuxt-link :to="`/news/${item.slug}`" class="w-[130px] h-[85px] rounded-lg overflow-hidden flex-shrink-0 shadow-sm" :title="item.title">
                 <SafeImg :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="item.title" img-class="w-full h-full object-cover transition group-hover:scale-[1.05]" loading="lazy" decoding="async" sizes="130px" />
               </nuxt-link>
               <div class="flex flex-col flex-1 min-w-0 justify-between py-0.5">
                 <div>
-                  <span class="text-[0.72rem] text-[#5A6C58] font-bold block mb-1">{{ formatDate(item.publishedAt || item.createdAt) }}</span>
+                  <span class="text-[0.72rem] text-ink-soft font-bold block mb-1">{{ formatDate(item.publishedAt || item.createdAt) }}</span>
                   <h3 class="text-[0.88rem] font-bold leading-[1.35] m-0 line-clamp-3">
-                    <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ item.title }}</nuxt-link>
+                    <nuxt-link :to="`/news/${item.slug}`" class="text-ink no-underline transition hover:text-brand-600" :title="item.title">{{ item.title }}</nuxt-link>
                   </h3>
                 </div>
               </div>
@@ -54,7 +54,7 @@
         />
 
         <!-- Chỉ nói "chưa có" khi đã tải xong: lúc đang tải câu đó là một lời sai. -->
-        <p v-else-if="!pending" class="text-[0.9rem] text-[#5A6C58] italic py-6">{{ t('block_news_empty') }}</p>
+        <p v-else-if="!pending" class="text-[0.9rem] text-ink-soft italic py-6">{{ t('block_news_empty') }}</p>
       </div>
 
       <!-- Right column -->
@@ -62,13 +62,13 @@
         <SectionBar :title="t('block_news_side_title')" icon="⚑" />
 
         <div class="flex flex-col" role="list">
-          <div v-for="item in trending" :key="item.id" role="listitem" class="flex gap-3 py-[14px] border-b border-[#E2E8DF] last:border-b-0">
-            <div class="w-[6px] h-[6px] rounded-full bg-[#4A6741] mt-2 flex-shrink-0"></div>
+          <div v-for="item in trending" :key="item.id" role="listitem" class="flex gap-3 py-[14px] border-b border-line last:border-b-0">
+            <div class="w-[6px] h-[6px] rounded-full bg-brand-600 mt-2 flex-shrink-0"></div>
             <div class="flex-1 min-w-0">
               <h3 class="text-[0.88rem] font-bold leading-[1.4] m-0 mb-[6px] line-clamp-2">
-                <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ item.title }}</nuxt-link>
+                <nuxt-link :to="`/news/${item.slug}`" class="text-ink no-underline transition hover:text-brand-600" :title="item.title">{{ item.title }}</nuxt-link>
               </h3>
-              <span class="text-[0.72rem] text-[#5A6C58] font-semibold"><span aria-hidden="true">📅</span> {{ formatDate(item.publishedAt || item.createdAt) }}</span>
+              <span class="text-[0.72rem] text-ink-soft font-semibold"><span aria-hidden="true">📅</span> {{ formatDate(item.publishedAt || item.createdAt) }}</span>
             </div>
           </div>
         </div>
@@ -92,6 +92,8 @@
 import { computed, onMounted, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicArticlesResponse } from '~/types/public-content-api'
 import BlockLoadError from './BlockLoadError.vue'
 
 const { t, currentLang } = useI18n()
@@ -105,7 +107,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, pending, error, refresh } = await useAsyncData(
   `block-news-${props.block.id}-${currentLang.value}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
+  () => publicFetch<PublicArticlesResponse>('/api/public/articles', {
     params: {
       type: 'news',
       limit: maxItems.value,

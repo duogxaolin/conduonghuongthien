@@ -16,10 +16,12 @@
  * transaction).
  */
 
-import { and, desc, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
-import { activityLogs, articleComments, articles, mediaItems, readerAccounts, users } from '../db/schema'
+import { activityLogs, aiModerationQueue, articleComments, articles, mediaItems, readerAccounts, users } from '../db/schema'
 import { effectiveDisplayName } from '../utils/display-name'
+import { autoHideFlagReason } from '../utils/moderation-flag-reason'
+import { readQueueAiVerdict, type QueueAiVerdict } from '../../shared/moderation-ai-verdict'
 import type { CommentSource } from './comments-rules'
 import { COMMENT_MAX_PER_PAGE } from './comments-thread'
 
@@ -51,6 +53,12 @@ export type AdminCommentRow = {
   ip:           string | null
   isHidden:     boolean
   flagReason:   string | null
+  /**
+   * What the AI judged, when this comment is hidden by an automatic hide that reused a pending
+   * queue row's mark (`flag_reason` = that row's reason) and the AI's verdict was noted on that
+   * row (`ai_verdict`). `null` otherwise — shown, hidden by an officer, or no verdict.
+   */
+  aiVerdict:    QueueAiVerdict | null
 }
 
 export type AdminCommentList = {
@@ -164,6 +172,8 @@ export async function listCommentsForAdmin(params: {
     .limit(perPage)
     .offset((page - 1) * perPage)
 
+  const verdicts = await hiddenCommentVerdicts(rows)
+
   return {
     // `readerName` is resolved to the name the PUBLIC sees, not the raw Google
     // column. An officer acting on a report about "Bác Ba" has to be able to find
@@ -174,12 +184,46 @@ export async function listCommentsForAdmin(params: {
       readerName: row.readerId === null
         ? null
         : effectiveDisplayName({ customDisplayName: row.readerCustomName, displayName: row.readerName, displayNameReserved: row.readerNameReserved }),
+      aiVerdict: verdicts.get(row.id) ?? null,
     })),
     total,
     page,
     perPage,
     totalPages,
   }
+}
+
+/**
+ * The AI verdict behind each HIDDEN comment of the page whose hide is an automatic one — keyed by
+ * comment id. A second read, not a join: a join on the queue would repeat a comment per queue row
+ * and the count above would no longer describe the page.
+ *
+ * The queue row is the one the hide belongs to, found the way "Bỏ ẩn" finds it
+ * (`restoreAutoHidden`): a PENDING row about the comment whose reason is the comment's mark
+ * (`autoHideFlagReason(flagged_reason) === flag_reason`), the newest if two are. An officer's hide
+ * (their reason, or none) matches no row, so it never borrows a verdict; once the row is resolved
+ * the comment is shown again or deleted, and the verdict stays on the row (the queue tab). No
+ * hidden comment with a reason on the page → no query.
+ */
+async function hiddenCommentVerdicts(rows: Array<{ id: number, isHidden: boolean, flagReason: string | null }>): Promise<Map<number, QueueAiVerdict>> {
+  const marks = new Map<number, string>()
+  for (const row of rows) if (row.isHidden && row.flagReason) marks.set(row.id, row.flagReason)
+  const verdicts = new Map<number, QueueAiVerdict>()
+  if (!marks.size) return verdicts
+  const queueRows = await getDb()
+    .select({ targetId: aiModerationQueue.targetId, flaggedReason: aiModerationQueue.flaggedReason, aiVerdict: aiModerationQueue.aiVerdict })
+    .from(aiModerationQueue)
+    .where(and(eq(aiModerationQueue.targetType, 'comment'), inArray(aiModerationQueue.targetId, [...marks.keys()]), eq(aiModerationQueue.status, 'pending')))
+    .orderBy(desc(aiModerationQueue.id))
+  const decided = new Set<number>()
+  for (const queueRow of queueRows) {
+    const commentId = Number(queueRow.targetId)
+    if (decided.has(commentId) || autoHideFlagReason(queueRow.flaggedReason) !== marks.get(commentId)) continue
+    decided.add(commentId)
+    const verdict = readQueueAiVerdict(queueRow.aiVerdict)
+    if (verdict) verdicts.set(commentId, verdict)
+  }
+  return verdicts
 }
 
 /**

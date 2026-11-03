@@ -30,16 +30,16 @@
   video về, và khung xương bên dưới **không bao giờ được vẽ**.
 -->
 <template>
-  <div class="bg-[#F8FAF7]">
-    <section class="border-b border-[#E2E8DF] bg-white">
+  <div class="bg-surface">
+    <section class="border-b border-line bg-white">
       <div class="container pt-7 sm:pt-9 pb-5">
-        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-[#5A6C58] mb-3">
-          <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
+        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-ink-soft mb-3">
+          <nuxt-link to="/" class="hover:text-brand-600 transition-colors flex items-center gap-1.5 no-underline text-ink-soft">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
             <span>{{ t('home') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
-          <nuxt-link to="/media" class="hover:text-[#4A6741] transition-colors no-underline text-[#556450]">
+          <nuxt-link to="/media" class="hover:text-brand-600 transition-colors no-underline text-ink-soft">
             {{ t('m_video_library') }}
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
@@ -54,12 +54,12 @@
           <!-- 1. Đang tải -->
           <div v-if="pending" role="status" aria-busy="true" class="flex flex-col gap-4">
             <span class="sr-only">{{ t('m_detail_loading') }}</span>
-            <div aria-hidden="true" class="w-full aspect-video bg-[#EEF2EC] rounded-xl animate-pulse motion-reduce:animate-none"></div>
+            <div aria-hidden="true" class="w-full aspect-video bg-surface-tint rounded-xl animate-pulse motion-reduce:animate-none"></div>
             <div aria-hidden="true" class="flex flex-col gap-2.5 animate-pulse motion-reduce:animate-none">
-              <div class="h-5 w-3/4 bg-[#EEF2EC] rounded"></div>
-              <div class="h-3.5 w-40 bg-[#EEF2EC] rounded"></div>
-              <div class="h-3.5 w-full bg-[#EEF2EC] rounded"></div>
-              <div class="h-3.5 w-2/3 bg-[#EEF2EC] rounded"></div>
+              <div class="h-5 w-3/4 bg-surface-tint rounded"></div>
+              <div class="h-3.5 w-40 bg-surface-tint rounded"></div>
+              <div class="h-3.5 w-full bg-surface-tint rounded"></div>
+              <div class="h-3.5 w-2/3 bg-surface-tint rounded"></div>
             </div>
           </div>
 
@@ -71,14 +71,14 @@
             role="alert"
             class="bg-white border-2 border-dashed border-[#F0B8B8] px-6 py-12 rounded-2xl text-center shadow-sm"
           >
-            <div class="w-12 h-12 rounded-full bg-[#FCE8E8] text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
+            <div class="w-12 h-12 rounded-full bg-danger-bg text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
             <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('m_detail_error_title') }}</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">{{ t('m_detail_error_desc') }}</p>
+            <p class="text-sm text-ink-muted m-0 mb-4">{{ t('m_detail_error_desc') }}</p>
             <button
               type="button"
-              class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2"
+              class="bg-brand-600 hover:bg-brand-800 text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2"
               @click="reload"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -88,15 +88,15 @@
 
           <!-- 3. Không tìm thấy. Không có nút thử lại: một slug không tồn tại sẽ
                không tồn tại ở lần thử sau, và mời thử lại là mời một việc vô ích. -->
-          <div v-else-if="!item" class="bg-white border border-[#E2E8DF] rounded-2xl px-6 py-14 text-center shadow-sm">
-            <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-xl">
+          <div v-else-if="!item" class="bg-white border border-line rounded-2xl px-6 py-14 text-center shadow-sm">
+            <div class="w-14 h-14 rounded-full bg-surface-tint text-brand-600 flex items-center justify-center mx-auto mb-4 text-xl">
               <i class="fa-solid fa-video-slash" aria-hidden="true"></i>
             </div>
-            <h3 class="text-base font-extrabold text-[#1E251C] m-0 mb-1">{{ t('m_not_found_title') }}</h3>
+            <h3 class="text-base font-extrabold text-ink m-0 mb-1">{{ t('m_not_found_title') }}</h3>
             <p class="text-sm text-[#5A6655] m-0 mb-5">{{ t('m_not_found_desc') }}</p>
             <nuxt-link
               to="/media"
-              class="inline-flex items-center gap-2 bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold no-underline transition-all"
+              class="inline-flex items-center gap-2 bg-brand-600 hover:bg-brand-800 text-white px-6 py-2.5 rounded-lg text-xs font-extrabold no-underline transition-all"
             >
               <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
               <span>{{ t('m_back_to_library') }}</span>
@@ -107,11 +107,11 @@
           <template v-else>
             <MediaPlayer :item="item" />
 
-            <div class="bg-white border border-[#E2E8DF] rounded-2xl p-5 sm:p-6 shadow-sm">
+            <div class="bg-white border border-line rounded-2xl p-5 sm:p-6 shadow-sm">
               <div class="flex flex-wrap items-center gap-2 mb-3">
                 <span
                   v-if="item.categoryName"
-                  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#EBF3E8] text-[#385932] text-[0.72rem] font-extrabold uppercase tracking-wide"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-line text-brand-800 text-[0.72rem] font-extrabold uppercase tracking-wide"
                 >
                   <i class="fa-solid fa-tag text-[0.65rem]" aria-hidden="true"></i>
                   {{ item.categoryName }}
@@ -129,18 +129,18 @@
                 -->
                 <span
                   v-if="item.source === 'youtube'"
-                  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#FDECEC] text-[#B03A3A] text-[0.72rem] font-extrabold uppercase tracking-wide"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-danger-bg text-[#B03A3A] text-[0.72rem] font-extrabold uppercase tracking-wide"
                 >
                   <i class="fa-solid fa-arrow-up-right-from-square text-[0.65rem]" aria-hidden="true"></i>
                   {{ t('m_external_source') }}
                 </span>
               </div>
 
-              <h1 class="text-[1.35rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] leading-[1.3] m-0">
+              <h1 class="text-[1.35rem] sm:text-[1.6rem] font-extrabold text-ink leading-[1.3] m-0">
                 {{ item.title }}
               </h1>
 
-              <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-xs text-[#5A6C58] font-medium">
+              <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-xs text-ink-soft font-medium">
                 <span v-if="publishedLabel" class="inline-flex items-center gap-1.5">
                   <i class="fa-regular fa-calendar" aria-hidden="true"></i>
                   {{ publishedLabel }}
@@ -177,9 +177,9 @@
 
         <!-- Cột phụ: video cùng chuyên mục -->
         <aside class="flex flex-col gap-5 min-w-0">
-          <div class="bg-white border border-[#E2E8DF] rounded-2xl p-5 shadow-sm">
+          <div class="bg-white border border-line rounded-2xl p-5 shadow-sm">
             <h2 class="text-sm font-black text-[#1A2A17] uppercase tracking-tight m-0 mb-4 flex items-center gap-2">
-              <i class="fa-solid fa-film text-[#7CB342]" aria-hidden="true"></i>
+              <i class="fa-solid fa-film text-accent" aria-hidden="true"></i>
               {{ t('m_related') }}
             </h2>
 
@@ -191,10 +191,10 @@
                 aria-hidden="true"
                 class="flex gap-3 animate-pulse motion-reduce:animate-none"
               >
-                <div class="w-24 h-14 rounded-lg bg-[#EEF2EC] shrink-0"></div>
+                <div class="w-24 h-14 rounded-lg bg-surface-tint shrink-0"></div>
                 <div class="flex-grow flex flex-col gap-2 pt-1">
-                  <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
-                  <div class="h-3 w-2/3 bg-[#EEF2EC] rounded"></div>
+                  <div class="h-3 w-full bg-surface-tint rounded"></div>
+                  <div class="h-3 w-2/3 bg-surface-tint rounded"></div>
                 </div>
               </div>
             </div>
@@ -206,10 +206,10 @@
               là dạy người đọc bỏ đi khi video họ muốn vẫn đang ở đó.
             -->
             <div v-else-if="relatedError" role="alert" class="text-center py-3">
-              <p class="text-xs text-[#B04A4A] m-0 mb-2">{{ t('m_related_error') }}</p>
+              <p class="text-xs text-danger-soft m-0 mb-2">{{ t('m_related_error') }}</p>
               <button
                 type="button"
-                class="text-xs font-extrabold text-[#4A6741] hover:text-[#385132] bg-transparent border-none cursor-pointer inline-flex items-center gap-1.5"
+                class="text-xs font-extrabold text-brand-600 hover:text-brand-800 bg-transparent border-none cursor-pointer inline-flex items-center gap-1.5"
                 @click="loadRelated"
               >
                 <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -217,7 +217,7 @@
               </button>
             </div>
 
-            <p v-else-if="!related.length" class="text-xs text-[#8A9A88] m-0">
+            <p v-else-if="!related.length" class="text-xs text-ink-faint m-0">
               {{ t('m_related_empty') }}
             </p>
 
@@ -227,7 +227,7 @@
                   :to="`/media/${entry.shortId}`"
                   class="flex gap-3 no-underline group"
                 >
-                  <span class="w-24 h-14 rounded-lg bg-[#EEF2EC] shrink-0 overflow-hidden">
+                  <span class="w-24 h-14 rounded-lg bg-surface-tint shrink-0 overflow-hidden">
                     <img
                       v-if="entry.thumbnailUrl"
                       :src="entry.thumbnailUrl"
@@ -237,10 +237,10 @@
                     />
                   </span>
                   <span class="flex-grow min-w-0">
-                    <span class="block text-[0.8rem] font-bold text-[#1E251C] leading-snug line-clamp-2 group-hover:text-[#4A6741] transition-colors">
+                    <span class="block text-[0.8rem] font-bold text-ink leading-snug line-clamp-2 group-hover:text-brand-600 transition-colors">
                       {{ entry.title }}
                     </span>
-                    <span v-if="formatMediaDuration(entry.durationSeconds)" class="block text-[0.7rem] text-[#8A9A88] mt-1">
+                    <span v-if="formatMediaDuration(entry.durationSeconds)" class="block text-[0.7rem] text-ink-faint mt-1">
                       {{ formatMediaDuration(entry.durationSeconds) }}
                     </span>
                   </span>
@@ -260,7 +260,8 @@ import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { formatMediaDuration } from '~/utils/media-duration'
 import { useI18n } from '~/composables/useI18n'
-import type { PublicMediaItem, PublicMediaListItem } from '~/types/public-api'
+import { publicFetch } from '~/composables/publicFetch'
+import type { MediaDetailPayload, MediaListPayload, PublicMediaItem, PublicMediaListItem } from '~/types/public-api'
 
 const { t } = useI18n()
 
@@ -273,8 +274,7 @@ const shortId = computed(() => String(route.params.shortId || ''))
  */
 const { data, pending, error, refresh } = useAsyncData(
   () => `media-detail-${shortId.value}`,
-  () =>
-    ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; item: PublicMediaItem | null }>)(`/api/public/media/${encodeURIComponent(shortId.value)}`),
+  () => publicFetch<MediaDetailPayload>(`/api/public/media/${encodeURIComponent(shortId.value)}`),
   {
     lazy: true,
     default: () => ({ ok: false, item: null }),
@@ -336,7 +336,7 @@ async function loadRelated() {
   relatedError.value = false
   try {
     const query = current.categorySlug ? { category: current.categorySlug, limit: 6 } : { limit: 6 }
-    const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicMediaListItem[] }>)(
+    const response = await publicFetch<MediaListPayload>(
       '/api/public/media',
       { query, retry: 0 },
     )
@@ -366,7 +366,7 @@ const countedSlug = ref('')
 function pingView(target: string) {
   if (!target || countedSlug.value === target) return
   countedSlug.value = target
-  void ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/public/media/${encodeURIComponent(target)}/view`, {
+  void publicFetch<import('~/types/public-content-api').PublicMediaViewResponse>(`/api/public/media/${encodeURIComponent(target)}/view`, {
     method: 'POST',
     keepalive: true,
     retry: 0,

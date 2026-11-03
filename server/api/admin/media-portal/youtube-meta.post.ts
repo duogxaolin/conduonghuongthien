@@ -53,14 +53,14 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event).catch(() => null)
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { ok: false, reason: 'invalid' as const }
+    return { ok: false as const, reason: 'invalid' as const }
   }
 
   const fields = body as Record<string, unknown>
   const raw = typeof fields.url === 'string' ? fields.url : (typeof fields.youtubeVideoId === 'string' ? fields.youtubeVideoId : '')
   const videoId = extractYouTubeVideoId(raw)
   if (!videoId) {
-    return { ok: false, reason: 'invalid' as const }
+    return { ok: false as const, reason: 'invalid' as const }
   }
 
   const controller = new AbortController()
@@ -75,18 +75,18 @@ export default defineEventHandler(async (event) => {
 
     if (!res.ok) {
       logWarn({ event: 'media.youtube_meta_failed', status: res.status, videoId })
-      return { ok: false, reason: 'fetch_failed' as const }
+      return { ok: false as const, reason: 'fetch_failed' as const }
     }
 
     const contentType = res.headers.get('content-type') ?? ''
     if (!contentType.includes('application/json')) {
       logWarn({ event: 'media.youtube_meta_failed', reason: 'not_json', contentType })
-      return { ok: false, reason: 'fetch_failed' as const }
+      return { ok: false as const, reason: 'fetch_failed' as const }
     }
 
     const data = await res.json().catch(() => null)
     if (!data || typeof data !== 'object') {
-      return { ok: false, reason: 'fetch_failed' as const }
+      return { ok: false as const, reason: 'fetch_failed' as const }
     }
 
     const o = data as Record<string, unknown>
@@ -95,7 +95,7 @@ export default defineEventHandler(async (event) => {
     const thumbnailUrl = typeof o.thumbnail_url === 'string' ? o.thumbnail_url : ''
 
     if (!title || !thumbnailUrl) {
-      return { ok: false, reason: 'fetch_failed' as const }
+      return { ok: false as const, reason: 'fetch_failed' as const }
     }
 
     return {
@@ -110,7 +110,7 @@ export default defineEventHandler(async (event) => {
       event: 'media.youtube_meta_failed',
       reason: error instanceof Error ? error.name : 'unknown',
     })
-    return { ok: false, reason: 'fetch_failed' as const }
+    return { ok: false as const, reason: 'fetch_failed' as const }
   } finally {
     clearTimeout(timer)
   }

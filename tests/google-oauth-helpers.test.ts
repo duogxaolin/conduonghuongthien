@@ -168,10 +168,47 @@ describe('validateBanValue', () => {
     assert.deepEqual(validateBanValue('::ffff:203.0.113.5'), { ok: true, value: '203.0.113.5' })
   })
 
-  it('accepts IPv4 CIDR at both boundaries', () => {
+  it('accepts IPv4 CIDR at both boundaries — /8 is the widest range stored', () => {
     assert.deepEqual(validateBanValue('10.0.0.0/8'), { ok: true, value: '10.0.0.0/8' })
     assert.deepEqual(validateBanValue('203.0.113.5/32'), { ok: true, value: '203.0.113.5/32' })
-    assert.deepEqual(validateBanValue('0.0.0.0/0'), { ok: true, value: '0.0.0.0/0' })
+    assert.deepEqual(validateBanValue('1.2.3.4/32'), { ok: true, value: '1.2.3.4/32' })
+    assert.deepEqual(validateBanValue(' 10.0.0.0 / 8 '), { ok: true, value: '10.0.0.0/8' })
+    assert.deepEqual(validateBanValue('10.0.0.0/08'), { ok: true, value: '10.0.0.0/8' })
+    assert.deepEqual(validateBanValue('::ffff:10.0.0.0/8'), { ok: true, value: '10.0.0.0/8' })
+  })
+
+  // A range wider than /8 bans tens of millions of addresses at once — `0.0.0.0/0` is every
+  // visitor of the portal. The ban list is for one abuser or one network, so the save refuses it.
+  it('refuses an IPv4 range wider than /8 (/0–/7), naming the range and its size', () => {
+    assert.deepEqual(validateBanValue('0.0.0.0/0'), { ok: false, error: 'Dải /0 quá rộng (4.294.967.296 địa chỉ). Chỉ nhận dải IPv4 từ /8 đến /32.' })
+    assert.deepEqual(validateBanValue('10.0.0.0/7'), { ok: false, error: 'Dải /7 quá rộng (33.554.432 địa chỉ). Chỉ nhận dải IPv4 từ /8 đến /32.' })
+    assert.deepEqual(validateBanValue(' 0.0.0.0 / 0 '), validateBanValue('0.0.0.0/0'))
+    assert.deepEqual(validateBanValue('10.0.0.0/07'), validateBanValue('10.0.0.0/7'))
+    // IPv4-mapped IPv6 is the IPv4 address it carries — the same limit, not a way around it.
+    assert.deepEqual(validateBanValue('::ffff:10.0.0.0/7'), validateBanValue('10.0.0.0/7'))
+    assert.deepEqual(validateBanValue('::FFFF:0.0.0.0/0'), validateBanValue('0.0.0.0/0'))
+    for (const bits of [0, 1, 2, 3, 4, 5, 6, 7]) {
+      const result = validateBanValue(`1.0.0.0/${bits}`)
+      assert.equal(result.ok, false, `/${bits}`)
+      assert.match(result.ok === false ? result.error : '', /quá rộng/, `/${bits}`)
+    }
+  })
+
+  it('refuses a prefix that is not a whole number from 8 to 32', () => {
+    for (const bad of ['10.0.0.0/-1', '10.0.0.0/+8', '10.0.0.0/7.5', '10.0.0.0/NaN', '10.0.0.0/８', '10.0.0.0/8/8', '10.0.0.0/1e1', '10.0.0.0/0x8', '10.0.0.0/33', '10.0.0.0/100', '::ffff:0.0.0.0/96']) {
+      assert.deepEqual(validateBanValue(bad), { ok: false, error: 'Độ dài dải (prefix) phải là số từ 8 đến 32.' }, bad)
+    }
+  })
+
+  it('refuses every IPv6 range — one wider than /32 as too wide, the rest as unsupported', () => {
+    for (const wide of ['::/0', '2001:db8::/31', '2001:DB8::/16']) {
+      const result = validateBanValue(wide)
+      assert.equal(result.ok, false, wide)
+      assert.match(result.ok === false ? result.error : '', /^Dải \/\d+ quá rộng\. Chỉ nhận dải IPv6 từ \/32/, wide)
+    }
+    for (const narrow of ['2001:db8::/32', '2001:db8::/64', '2001:db8::/128', '2001:db8::/129', '2001:db8::/abc', '::/-1']) {
+      assert.deepEqual(validateBanValue(narrow), { ok: false, error: 'Chưa hỗ trợ dải IPv6, hãy nhập địa chỉ đầy đủ.' }, narrow)
+    }
   })
 
   it('accepts a bare IPv6 literal, which is matched exactly', () => {

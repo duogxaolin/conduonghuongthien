@@ -131,6 +131,7 @@ export async function createAiI18nTables(db: Connection): Promise<void> {
       \`reviewed_by\` INT NULL,
       \`reviewed_at\` DATETIME NULL,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`ai_verdict\` JSON NULL,
       KEY \`ai_moderation_queue_status_created_idx\` (\`status\`, \`created_at\`),
       KEY \`ai_moderation_queue_target_idx\` (\`target_type\`, \`target_id\`),
       CONSTRAINT \`fk_ai_mod_queue_reviewer\` FOREIGN KEY (\`reviewed_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL

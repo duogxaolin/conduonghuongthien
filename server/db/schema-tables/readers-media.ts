@@ -158,6 +158,7 @@ export async function createReadersMediaTables(db: Connection): Promise<void> {
       \`display_name\` VARCHAR(100) NOT NULL,
       \`content\` VARCHAR(200) NOT NULL,
       \`is_deleted\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`flag_reason\` VARCHAR(255) NULL,
       \`created_at\` DATETIME(3) NOT NULL,
       KEY \`livestream_messages_session_created_idx\` (\`session_id\`, \`created_at\`),
       KEY \`livestream_messages_reader_id_idx\` (\`reader_id\`),

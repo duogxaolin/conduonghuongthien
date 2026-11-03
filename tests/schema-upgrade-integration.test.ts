@@ -2059,6 +2059,32 @@ test('boot 1 on the previous release keeps every row except the declared one-tim
   current.ddlAfterBoot1 = await withConnection(readDdl)
 })
 
+// The row diffs above compare the columns both snapshots share, so a column the boot never adds
+// is invisible to them: a column put in schema.ts and its CREATE TABLE but given no ensureColumn
+// left boot 1 and boot 2 green (mutant N22 of wave3/queue-restore, `livestream_messages.flag_reason`
+// — every automatic hide of a livestream message then fails on the upgraded database). ⊇, not
+// equality: the previous release may keep a column schema.ts no longer declares.
+// tests/schema-upgrade-added-columns.test.ts checks the same rule on the source, without MySQL.
+test('boot 1 brings the previous release to every table and column schema.ts declares', { skip: !enabled, timeout: 60_000 }, async () => {
+  const current = requireState('schema after boot 1')
+  assert.ok(current.afterBoot1, 'boot 1 did not complete')
+  const booted = await withConnection(readSchema)
+  const missing: string[] = []
+  let checked = 0
+  for (const value of Object.values(schema)) {
+    if (!value || typeof value !== 'object' || !(Symbol.for('drizzle:Name') in (value as object))) continue
+    const table = getTableName(value as Table)
+    const columns = new Set(booted.tables.get(table)?.columns.map(column => column.name))
+    if (columns.size === 0) { missing.push(`${table} (the whole table)`); continue }
+    for (const column of Object.values(getTableColumns(value as Table))) {
+      checked++
+      if (!columns.has(column.name)) missing.push(`${table}.${column.name}`)
+    }
+  }
+  assert.ok(checked > 600, `only ${checked} declared columns were checked — schema.ts was not read`)
+  assert.deepEqual(missing, [], 'declared in schema.ts but absent from the database boot 1 upgraded — a CREATE TABLE line reaches new databases only; add an ensureColumn in server/db/migrations-additive.ts')
+})
+
 test('boot 2 changes nothing at all — no row, no column, no table, no schema', { skip: !enabled, timeout: 300_000 }, async () => {
   const current = requireState('boot 2')
   assert.ok(current.afterBoot1 && current.ddlAfterBoot1, 'boot 1 did not complete')

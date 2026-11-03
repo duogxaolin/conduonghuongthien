@@ -21,8 +21,11 @@ import { createReplyNotification } from './notifications'
 import { sendReplyEmail } from './notification-email'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { checkAndModerateContent, fastPreModerate, type ModerationCheckOutput } from './moderation-worker'
+import { createModerationRegexBudget } from './moderation-regex'
 import { logError } from '../utils/logger'
 import { checkParentEligibility, resolveCommentTarget } from './comments-rules'
+import { missingCommentTarget } from '../utils/fk-error'
+import { withDeadlockRetry } from '../utils/deadlock-retry'
 import { logReplyEmailHeld, MODERATION_FAILED, replyEmailHoldReason, type ModerationFailure } from './comments-reply-email'
 
 /** Per reader. Window 1 phút — chặn spam nhanh thay vì khoá dài. */
@@ -200,7 +203,10 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
 
   // ── Kiểm duyệt tức thì (< 1ms): chặn ngay từ ngữ thô tục, chống phá, cờ bạc ──
   // AFTER the limits: a block writes a review row (see the function comment).
-  // The row cap is per account AND per address — MODERATION_QUEUE_CAP.
+  // The row cap is per account AND per address — MODERATION_QUEUE_CAP. One regex
+  // budget for this comment: this check AND the full moderation below (which runs on
+  // the same event loop after the response) together match for at most its limit.
+  const regexBudget = createModerationRegexBudget()
   const preCheck = await fastPreModerate(input.body, {
     authorName: (reader ? effectiveDisplayName(reader) : null) || 'Người đọc',
     authorIp: input.ip ?? undefined,
@@ -209,9 +215,11 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     contextTitle: contextTitle || undefined,
     contextUrl: contextUrl || undefined,
     capQueuePerSource: true,
+    regexBudget,
   })
   if (preCheck.blocked) {
-    return { ok: false, statusCode: 400, message: preCheck.reason }
+    // Never `reason`: it names the rule (pattern, keyword) — the review row keeps it for admins.
+    return { ok: false, statusCode: 400, message: preCheck.publicMessage }
   }
 
   /**
@@ -222,10 +230,13 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
    * page that its author is never told about — which is the exact state this
    * feature exists to prevent, and it fails silently: the thread looks correct to
    * everyone except the one person waiting for an answer.
+   *
+   * A deadlock victim (a reply holds comment → reader; a ban or account deletion holds
+   * reader → comment) is run again whole, outside the rolled-back transaction: the limits and
+   * the instant check ran once above, moderation and e-mail run once below, nothing in the
+   * transaction acts outside it. Its values are returned, never left in outer variables.
    */
-  let id = 0
-  let notifiedReaderId: number | null = null
-  await db.transaction(async (tx) => {
+  const written = await withDeadlockRetry(() => db.transaction(async (tx) => {
     const inserted = await tx.insert(articleComments).values({
       articleId:   target.kind === 'article' ? target.articleId : null,
       mediaItemId: target.kind === 'media' ? target.mediaItemId : null,
@@ -243,16 +254,28 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     // — silently. Same trap as callback.get.ts and ip-bans.ts, guarded by
     // tests/insert-id-integration.test.ts.
     const [header] = inserted
-    id = Number(header?.insertId ?? 0)
+    const id = Number(header?.insertId ?? 0)
 
     // No-op for a top-level comment, and for a reader answering themselves.
-    notifiedReaderId = await createReplyNotification({
+    const notifiedReaderId = await createReplyNotification({
       commentId:     id,
       parentId:      input.parentId,
       actorReaderId: input.readerId,
       tx,
     })
+    return { id, notifiedReaderId }
+  })).then(row => row, (error: unknown) => {
+    // What the comment hangs on went (a ban or purge took the parent, the article or video was
+    // deleted) between the checks above and the insert: the checks' own answer, not a 500. Only
+    // those keys (utils/fk-error.ts) — the author's own row, say, is not "the thing replied to".
+    const gone = missingCommentTarget(error)
+    if (gone) return gone
+    throw error
   })
+  if (written === 'parent') return { ok: false, statusCode: 400, message: 'Bình luận gốc không tồn tại.' }
+  if (written === 'article') return { ok: false, statusCode: 404, message: 'Bài viết không tồn tại.' }
+  if (written === 'media') return { ok: false, statusCode: 404, message: 'Video không tồn tại.' }
+  const { id, notifiedReaderId } = written
 
   if (id <= 0) return { ok: true, id }
 
@@ -267,7 +290,7 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     authorIp: input.ip ?? undefined,
     contextTitle: contextTitle || undefined,
     contextUrl: contextUrl || undefined,
-  }).catch((error: unknown) => {
+  }, { regexBudget }).catch((error: unknown) => {
     logError({ event: 'comment.moderation_failed', commentId: id, error })
     return MODERATION_FAILED
   })

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { COLOR_TOKENS } from '../shared/color-tokens.ts'
 
 const source = await readFile(new URL('../app/pages/admin/chatbot/knowledge/index.vue', import.meta.url), 'utf8')
 const sfc = parse(source, { filename: 'app/pages/admin/chatbot/knowledge/index.vue' })
@@ -89,7 +90,8 @@ test('summary distinguishes clean, partial, and failed imports', () => {
   assert.match(template, /importResult\.errors\?\.length/)
   assert.match(template, /importResult\.imported \? 'border-\[#e8c56f\]/)
   assert.match(template, /border-\[#f1b8b5\]/)
-  assert.match(template, /border-\[#8ed694\]/)
+  // The clean-import green is the `brand-300` token (D-T1): by name, or its hex from COLOR_TOKENS.
+  assert.match(template, new RegExp(`border-(?:brand-300|\\[${COLOR_TOKENS['brand-300']}\\])(?![\\w-])`))
   assert.match(template, /chưa nhập/)
 })
 

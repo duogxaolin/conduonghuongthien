@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { parse } from '@vue/compiler-sfc'
 import { TABBABLE_SELECTOR, visibleTabbables, type TabbableLike } from '../app/utils/focus-return'
+import { CHAT_WIDGET_FAMILY, familyTemplate, readAppFile } from './_component-family.ts'
 
 /**
  * The chat dialog keeps focus inside while open (spec public-accessibility,
@@ -57,17 +59,64 @@ test('only controls that are actually shown count — the first one gets focus o
 })
 
 // ─── ChatWidget wires it ─────────────────────────────────────────────────────
+//
+// Since the wave3 split the dialog ELEMENT stays in `ChatWidget.vue`, the open/close
+// mechanics are `composables/useChatWidgetDialog.ts`, and the header buttons (the first
+// focus targets) are `components/chat-widget/ChatWidgetHeader.vue`. Each rule reads the
+// file that carries it; every slice must be found (an index of -1 would make an empty
+// slice and a vacuous pass), and the proofs at the end break each rule in its file.
 
+const stripComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
 const source = readFileSync(new URL('../app/components/ChatWidget.vue', import.meta.url), 'utf8')
-const script = source.slice(source.indexOf('<script setup'))
-  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+const script = stripComments(source.slice(source.indexOf('<script setup')))
 const template = source.slice(0, source.indexOf('<script setup'))
+const DIALOG_MODULE = 'composables/useChatWidgetDialog.ts'
+const HEADER_PART = 'components/chat-widget/ChatWidgetHeader.vue'
+const dialogModule = (code = readAppFile(DIALOG_MODULE)) => stripComments(code)
+const headerTemplate = (code = readAppFile(HEADER_PART)) => parse(code, { filename: HEADER_PART }).descriptor.template?.content ?? ''
 
-test('opening focuses the first VISIBLE control, not a hard-coded desktop button', () => {
-  const open = script.slice(script.indexOf('const openChatbot'), script.indexOf('const closeChatbot'))
-  assert.match(open, /visibleTabbables(?:<\w+>)?\(chatbotDialog\.value\)\[0\]\?\.focus\(\)/)
-  assert.doesNotMatch(open, /chatCloseButton\.value\?\.focus\(\)/, 'the desktop-only close button cannot take focus on a phone')
-  assert.match(open, /focusReturn\.remember\(/, 'the opener (bottom-nav button on phones) is not remembered')
+/** `code` from the first `from` up to the first `to` after it; throws when either is missing. */
+function between(code: string, from: string, to: string): string {
+  const start = code.indexOf(from)
+  const end = code.indexOf(to, start + from.length)
+  if (start === -1 || end === -1) throw new Error(`slice ${from} … ${to} not found`)
+  return code.slice(start, end)
+}
+
+/** The open/close/keyboard rules, read from the dialog module. */
+function dialogProblems(code: string): string[] {
+  const problems: string[] = []
+  const open = between(code, 'const openChatbot', 'const closeChatbot')
+  if (!/visibleTabbables(?:<\w+>)?\(chatbotDialog\.value\)\[0\]\?\.focus\(\)/.test(open)) problems.push('opening focuses the first visible control')
+  if (/chatCloseButton\.value\?\.focus\(\)/.test(open)) problems.push('the desktop-only close button cannot take focus on a phone')
+  if (!/focusReturn\.remember\(/.test(open)) problems.push('the opener (bottom-nav button on phones) is remembered')
+  if (!/import \{[^}]*createFocusReturn[^}]*\} from '(?:~|\.\.)\/utils\/focus-return'/.test(code)) problems.push('uses the shared focus-return helpers')
+  if (!/inertOutside\(chatbotDialog\.value\)/.test(code)) problems.push('the page behind goes inert')
+  const close = between(code, 'const closeChatbot', 'const toggleChatbot')
+  if (!(close.indexOf('releasePage()') !== -1 && close.indexOf('releasePage()') < close.indexOf('focusReturn.restore('))) problems.push('focus cannot land on an opener that is still inert')
+  if (!/onUnmounted\([\s\S]*releasePage\(\)/.test(code)) problems.push('unmount releases the page')
+  if (!/window\.addEventListener\('keydown', onWindowKeydown\)/.test(code)) problems.push('a window keydown listener while open')
+  if (!/window\.removeEventListener\('keydown', onWindowKeydown\)/.test(code)) problems.push('the listener is removed')
+  const handler = between(code, 'const onWindowKeydown', 'const openChatbot')
+  if (!/event\.key === 'Escape'/.test(handler)) problems.push('Escape closes from anywhere')
+  if (!/trapTabTarget\(/.test(handler)) problems.push('Tab from outside (e.g. the launcher) must land inside the dialog')
+  return problems
+}
+
+test('opening focuses the first VISIBLE control; the page behind is inert and released before focus returns; Escape from anywhere', () => {
+  assert.deepEqual(dialogProblems(dialogModule()), [])
+})
+
+test('the widget hands the dialog module its dialog element and its launcher', () => {
+  assert.match(template, /id="public-chatbot-dialog"\s+ref="chatbotDialog"/)
+  assert.match(script, /useChatWidgetDialog\(\{[\s\S]*?chatbotDialog[\s\S]*?chatToggleButton[\s\S]*?\}\)/)
+  assert.match(template, /<ChatWidgetLauncher[^>]*ref="chatToggleButton"/)
+  // The launcher part hands focus to its own button.
+  const launcher = readAppFile('components/chat-widget/ChatWidgetLauncher.vue')
+  assert.match(launcher, /ref="toggleButton"[\s\S]*?class="chatbot-toggle-btn/)
+  assert.match(launcher, /defineExpose\(\{ focus: \(\) => toggleButton\.value\?\.focus\(\) \}\)/)
+  // The old element-level handler only heard keys while focus was inside.
+  assert.doesNotMatch(familyTemplate(CHAT_WIDGET_FAMILY), /@keydown="handleChatbotDialogKeydown"/)
 })
 
 test('opening does not transition visibility, so the first control can take focus at once', () => {
@@ -75,6 +124,7 @@ test('opening does not transition visibility, so the first control can take focu
   // transition the dialog is still hidden when focus() runs, and the browser
   // ignores focus() on a hidden tree. Same rule as DefaultMobileDrawer.vue.
   const dialog = template.match(/id="public-chatbot-dialog"[\s\S]*?\n\s*>/)?.[0] ?? ''
+  assert.ok(dialog, 'the dialog element is in ChatWidget.vue')
   const staticClass = /\sclass="([^"]*)"/.exec(dialog)?.[1] ?? ''
   const boundClass = /:class="([^"]*)"/.exec(dialog)?.[1] ?? ''
   assert.doesNotMatch(staticClass, /transition-\[[^\]]*visibility/, 'visibility must not transition in every state')
@@ -83,31 +133,34 @@ test('opening does not transition visibility, so the first control can take focu
   assert.doesNotMatch(openBranch, /visibility|transition-all/, 'opening transitions visibility')
   assert.match(boundClass, /: '[^']*transition-\[opacity,transform,visibility\]/, 'closing should still hide after the fade')
   // Header controls (the first focus targets) must not transition inherited visibility.
-  const header = template.slice(template.indexOf('<!-- Header -->'), template.indexOf('<!-- Conversation list'))
+  const header = headerTemplate()
+  assert.match(header, /t\('cw_back'\)/, 'the header part holds the first focus target')
   assert.doesNotMatch(header, /transition-all/)
 })
 
-test('the page behind is inert while the dialog is open, and released before focus returns', () => {
-  assert.match(script, /import \{[^}]*createFocusReturn[^}]*\} from '~\/utils\/focus-return'/)
-  assert.match(script, /inertOutside\(chatbotDialog\.value\)/)
-  const close = script.slice(script.indexOf('const closeChatbot'), script.indexOf('const toggleChatbot'))
-  assert.ok(close.indexOf('releasePage()') !== -1 && close.indexOf('releasePage()') < close.indexOf('focusReturn.restore('),
-    'focus cannot land on an opener that is still inert')
-  assert.match(script, /onUnmounted\([\s\S]*releasePage\(\)/)
-})
-
-test('Escape closes from anywhere while open, through a window listener that exists only while open', () => {
-  assert.match(script, /window\.addEventListener\('keydown', onWindowKeydown\)/)
-  assert.match(script, /window\.removeEventListener\('keydown', onWindowKeydown\)/)
-  const handler = script.slice(script.indexOf('const onWindowKeydown'), script.indexOf('const openChatbot'))
-  assert.match(handler, /event\.key === 'Escape'/)
-  assert.match(handler, /trapTabTarget\(/, 'Tab from outside (e.g. the launcher) must land inside the dialog')
-  // The old element-level handler only heard keys while focus was inside.
-  assert.doesNotMatch(template, /@keydown="handleChatbotDialogKeydown"/)
-})
-
 test('opening the full page closes through the same path, so focus and inert are restored', () => {
-  const full = script.slice(script.indexOf('const openFullPage'), script.indexOf('const onWindowKeydown') > script.indexOf('const openFullPage') ? script.indexOf('const onWindowKeydown') : undefined)
+  const full = between(script, 'const openFullPage', '}')
   assert.match(full, /await closeChatbot\(\)/)
   assert.match(full, /navigateTo\('\/assistant'\)/)
+})
+
+test('injection proof: each rule breaks in the file that carries it', () => {
+  const code = readAppFile(DIALOG_MODULE)
+  const broken = (from: string, to: string) => {
+    assert.ok(code.includes(from), `${DIALOG_MODULE} no longer contains ${from}`)
+    return dialogProblems(dialogModule(code.replace(from, to)))
+  }
+  // Restore focus first, release the page after: the order the rule exists for.
+  assert.deepEqual(
+    broken('    releasePage()\n    await nextTick()\n    // No remembered opener (opened programmatically): the launcher, where shown.\n    if (!focusReturn.restore(shouldRestore) && shouldRestore) chatToggleButton.value?.focus()',
+      '    await nextTick()\n    if (!focusReturn.restore(shouldRestore) && shouldRestore) chatToggleButton.value?.focus()\n    releasePage()'),
+    ['focus cannot land on an opener that is still inert'],
+  )
+  assert.deepEqual(broken("if (event.key === 'Escape') {", "if (event.key === 'Esc') {"), ['Escape closes from anywhere'])
+  assert.deepEqual(broken('visibleTabbables<HTMLElement>(chatbotDialog.value)[0]?.focus()', 'chatToggleButton.value?.focus()'), ['opening focuses the first visible control'])
+  assert.deepEqual(broken("    window.addEventListener('keydown', onWindowKeydown)\n", ''), ['a window keydown listener while open'])
+  assert.throws(() => dialogProblems(dialogModule(code.replace('const closeChatbot', 'const shutChatbot'))), /not found/, 'a renamed function is red, not an empty slice')
+  // A header that transitions everything again is caught in the header part.
+  const header = readAppFile(HEADER_PART)
+  assert.match(headerTemplate(header.replace('transition-[background-color,transform]', 'transition-all')), /transition-all/)
 })

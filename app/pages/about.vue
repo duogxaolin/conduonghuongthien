@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-[#F8FAF7]">
+  <div class="bg-surface">
     <!-- Một trang đúng một <h1> (D22): khối "heading" mở bằng <h2>, nên khi không
          khối nào tự có <h1> (hero) thì trang đặt một <h1> cho trình đọc màn hình. -->
     <h1 v-if="blocks.length && !pageHasOwnH1" class="sr-only">{{ t('about_fallback_title') }}</h1>
@@ -16,8 +16,8 @@
     <!-- Fallback if the page has no blocks yet. -->
     <section v-else class="section">
       <div class="container text-center py-20">
-        <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">{{ t('about_fallback_title') }}</h1>
-        <p class="text-[#4A5545]">{{ t('about_fallback_desc') }}</p>
+        <h1 class="text-[1.8rem] font-extrabold text-ink mb-3">{{ t('about_fallback_title') }}</h1>
+        <p class="text-ink-secondary">{{ t('about_fallback_desc') }}</p>
       </div>
     </section>
   </div>
@@ -28,6 +28,8 @@ import { computed, onMounted, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
 import { blocksRenderOwnH1 } from '~/utils/blocks/page-heading'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicPageResponse } from '~/types/public-content-api'
 
 const { currentLang, t } = useI18n()
 
@@ -35,7 +37,7 @@ const { currentLang, t } = useI18n()
 // liệu nên HTML đầu tiên và thẻ SEO không đổi (design.md D2).
 const aboutAsync = useAsyncData(
   `page-about-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; page: { title?: string; slug?: string; seoTitle?: string | null; seoDescription?: string | null } | null; blocks: import('~/utils/blocks/types').RenderableNode[] }>)(`/api/public/pages/about?lang=${currentLang.value}`),
+  () => publicFetch<PublicPageResponse>(`/api/public/pages/about?lang=${currentLang.value}`),
   { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
 const { data, pending, error, refresh } = aboutAsync

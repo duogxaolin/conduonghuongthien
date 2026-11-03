@@ -3,11 +3,14 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { ADMIN_LAYOUT_FAMILY, familySource } from './_component-family.ts'
 
 const panelSource = await readFile(new URL('../app/components/admin/ChatbotSmallTalkPanel.vue', import.meta.url), 'utf8')
 const knowledgeSource = await readFile(new URL('../app/pages/admin/chatbot/knowledge/index.vue', import.meta.url), 'utf8')
 const legacySource = await readFile(new URL('../app/pages/admin/chatbot/small-talk/index.vue', import.meta.url), 'utf8')
-const layoutSource = await readFile(new URL('../app/layouts/admin.vue', import.meta.url), 'utf8')
+// The admin layout was split (wave3 D-SPLIT): its menu lives in `useAdminLayoutMenu`, so the
+// navigation guard reads — and counts across — the layout's whole family (tests/_component-family.ts).
+const layoutSource = familySource(ADMIN_LAYOUT_FAMILY)
 const settingsSource = await readFile(new URL('../app/pages/admin/chatbot/settings.vue', import.meta.url), 'utf8')
 const panelSfc = parse(panelSource, { filename: 'ChatbotSmallTalkPanel.vue' })
 const panelScript = panelSfc.descriptor.scriptSetup?.content ?? ''
@@ -29,6 +32,12 @@ for (const [filename, source] of [
 test('one admin navigation item opens the combined chatbot content page', () => {
   assert.match(layoutSource, /label: 'Kho nội dung Chatbot'[^\n]+path: '\/admin\/chatbot\/knowledge'/)
   assert.equal((layoutSource.match(/path: '\/admin\/chatbot\/(?:knowledge|small-talk)'/g) || []).length, 1)
+})
+
+test('proof: the one-entry count spans the split layout — a second chatbot entry in a part or a new part is caught', () => {
+  const count = (overrides: Record<string, string>) => (familySource(ADMIN_LAYOUT_FAMILY, overrides).match(/path: '\/admin\/chatbot\/(?:knowledge|small-talk)'/g) || []).length
+  assert.equal(count({ 'components/admin/layout/AdminExtra.vue': "<script setup lang=\"ts\">\nconst extra = [{ label: 'Small talk', path: '/admin/chatbot/small-talk' }]\n</script>" }), 2)
+  assert.equal(count({ 'utils/admin-layout-menu.ts': "export const EXTRA = { path: '/admin/chatbot/knowledge' }\n" }), 2)
 })
 
 test('the combined page exposes accessible knowledge and small-talk tabs through a deep-linkable query', () => {

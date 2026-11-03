@@ -325,7 +325,7 @@ TRUSTED_PROXY_IPS=172.16.0.0/12
 đúng dòng `CDKT_IMAGE=`, ghi qua tệp tạm rồi `mv` nguyên tử và giữ nguyên chủ sở hữu
 lẫn quyền. `JWT_SECRET`, mật khẩu CSDL và các bí mật khác **ở lại trên VPS** — GitHub
 không biết chúng, và đúng ra là phải vậy: xoay `JWT_SECRET` sẽ vô hiệu hoá **toàn bộ
-secret TOTP đã lưu** (xem runbook trong `CLAUDE.md`), nên nó không được phép là thứ
+secret TOTP đã lưu** (xem runbook ở `docs/decisions/realm-safety.md` § *MFA bắt buộc — khoá ngoài & break-glass*, mục 4; tóm tắt ở `CLAUDE.md` § MFA), nên nó không được phép là thứ
 một pipeline tự sinh ra.
 
 `TRUSTED_PROXY_IPS` sai là một lỗi **im lặng**: giới hạn tần suất theo IP gộp lại
@@ -789,15 +789,28 @@ workflow — cổng có thể bị tắt là cổng không chặn gì):
 
 ### Phạm vi shellcheck
 
-Bước shellcheck trong `hygiene` chỉ quét `./scripts` (`scandir: ./scripts`).
-`production/manage.sh` **không** được CI quét — action chỉ nhận một `scandir`, và đổi nó
-thành `.` sẽ quét cả cây (kể cả fixture test) — nên nó được kiểm **tay**: hiện sạch ở mức
-`-S warning` (2026-10-14). Khi sửa `manage.sh`, chạy
-`shellcheck -S warning production/manage.sh` (không cài được thì
-`docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -S warning production/manage.sh`)
-và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừng để nó tích lại. Hành vi của nó được kiểm bằng
+Job `hygiene` có **hai** bước shellcheck (cùng action, ghim cùng SHA, `severity: warning`):
+
+1. `scandir: ./scripts` — mỗi script một lượt.
+2. `scandir: ./production`, `ignore_paths: production/lib`, `env: SHELLCHECK_OPTS: -x -a` —
+   kiểm `production/manage.sh` và **mọi** `production/lib/*.sh` như MỘT chương trình, bắt đầu
+   từ cửa vào. `manage.sh` nạp `lib/` bằng các dòng `.` có chỉ thị
+   `# shellcheck source=lib/…` (+ `source-path=SCRIPTDIR`): `-x` **chỉ theo** các dòng đó
+   để biết định nghĩa (biến của `common.sh` dùng ở lib khác không bị báo nhầm), còn cảnh
+   báo **nằm trong** một lib chỉ được báo khi có thêm `-a` (`--check-sourced`). Thiếu `-a`
+   thì một lỗi trong `lib/` im lặng — `-x` một mình trả 0 (đã thử: SC2128 cài vào
+   `lib/deploy.sh`). Action không tự thêm hai cờ đó; chính shellcheck đọc `SHELLCHECK_OPTS`.
+   `lib/` bị loại khỏi lượt tìm tệp vì kiểm một lib **một mình** là kiểm nó thiếu biến của
+   `common.sh`. `.shellcheckrc` không thay được `-a` (đã thử `check-sourced=true`: không có tác dụng).
+
+Kiểm tay khi sửa `manage.sh` hay một tệp `lib/` (cùng lệnh với CI):
+`shellcheck -x -a -S warning production/manage.sh`, không cài được thì
+`docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -x -a -S warning production/manage.sh`
+— hiện sạch cả ở mức `-S style` (2026-10-25). `tests/ops-scripts.test.ts` chạy đúng lệnh đó
+khi máy có `shellcheck` (không có thì bỏ qua, in lệnh docker ở trên), chạy `bash -n` trên
+từng tệp, và khoá cấu hình bước 2 ở trên. Hành vi được kiểm bằng
 `tests/ops-scripts-sandbox.test.ts` / `tests/ops-migrate-scanner.test.ts` (chạy thật với
-`docker`/`git`/`crontab` giả).
+`docker`/`git`/`crontab` giả; Update tự chạy tiếp bằng bản mới qua `git pull` thật).
 
 ### Quyết định đã chốt (wave2): D2 và D-CI
 

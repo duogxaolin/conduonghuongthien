@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { layoutSource, readPart } from './_layout-parts'
+import { ARTICLE_DETAIL_FAMILY, familyFiles } from './_component-family.ts'
 
 /**
  * The public pages were built by copy-and-paste: four article-detail pages and
@@ -107,22 +108,28 @@ test('the shared detail component resolves the category label by precedence', ()
  * day about the same article. That argument needs two things to be true: the
  * value comes from the database, and the markup is rendered on both sides.
  *
- * `pages/profile.vue` is the one place where neither holds. Its reading-history
- * timestamps are epoch milliseconds produced by `Date.now()` in this very browser
- * and stored only in this browser's localStorage (see
+ * The reader's reading history on `/profile` is the one place where neither holds.
+ * Its timestamps are epoch milliseconds produced by `Date.now()` in this very
+ * browser and stored only in this browser's localStorage (see
  * app/composables/useReadingHistory.ts for why they are deliberately NOT on the
  * server), and the whole block sits inside `<client-only>`. Formatting those with
  * `formatDateVN` — which reads `getUTC*` — is the bug rather than the fix: it
  * shifts every stamp back 7 hours, so an article read at 6am in Vietnam is
  * reported as having been read the previous day.
  *
+ * The block (and `formatReadAt`) moved out of pages/profile.vue into
+ * components/reader-profile/ReaderProfileHistory.vue in the wave3 4.2 split; the
+ * exemption moved with the code, and the test below now also pins that the part is
+ * rendered by that page only, inside its `<client-only>`.
+ *
  * The count is pinned, not just the filename: a second local-time formatter added
- * to this page would be a real regression, and a bare allowlist entry would hide
+ * to this file would be a real regression, and a bare allowlist entry would hide
  * it. Adding an entry here is meant to require justifying it.
  */
+const READING_HISTORY_PART = 'components/reader-profile/ReaderProfileHistory.vue'
 const LOCAL_TIME_EXEMPTIONS: Record<string, number> = {
   // getDate() + getMonth() + getFullYear(), all inside formatReadAt().
-  'pages/profile.vue': 3,
+  [READING_HISTORY_PART]: 3,
 }
 
 test('no public page formats a date in local time', () => {
@@ -150,29 +157,97 @@ test('the exempted local-time formatter is still confined to client-only, device
   // The exemption above is only defensible while both of its premises hold. If the
   // reading history ever moves to the server, or the block leaves <client-only>,
   // the SSR-vs-browser mismatch becomes real and the exemption has to go.
-  const source = read('pages/profile.vue')
+  assert.deepEqual(readingHistoryConfinement(), [])
+})
+
+/**
+ * What would make the local-time exemption indefensible, as a list (empty = holds):
+ * the part loses its formatter or switches to `formatDateVN`; the page stops
+ * deferring to the client; the part is rendered outside the page's `<client-only>`,
+ * or by any other file (where nothing guarantees a client-only render).
+ */
+function readingHistoryConfinement(overrides: Record<string, string> = {}): string[] {
+  const at = (path: string) => overrides[path] ?? read(path)
+  const page = at('pages/profile.vue')
+  const part = at(READING_HISTORY_PART)
+  const problems: string[] = []
+  if (!/function formatReadAt\(/.test(part)) problems.push('the exempted formatter was renamed or removed — revisit LOCAL_TIME_EXEMPTIONS')
+  if (/formatDateVN\(item\.readAt\)/.test(part)) problems.push('reading-history stamps are epoch ms from this browser; formatDateVN reads getUTC* and shifts them back 7 hours')
   // Anchored to a line that IS the tag, not merely a line mentioning it. A bare
   // /<client-only>/ also matches the prose above the template explaining why the
   // tag is there — so deleting the tag while keeping the comment would leave this
   // test green, and the comment would go on describing a guard that was gone.
-  assert.match(source, /^\s*<client-only>\s*$/m, 'the profile page no longer defers rendering to the client')
-  assert.match(source, /^\s*<\/client-only>\s*$/m, 'the client-only wrapper is no longer closed')
-  assert.match(
-    source,
-    /function formatReadAt\(/,
-    'the exempted formatter was renamed or removed — revisit LOCAL_TIME_EXEMPTIONS',
-  )
-  assert.doesNotMatch(
-    source,
-    /formatDateVN\(item\.readAt\)/,
-    'reading-history stamps are epoch ms from this browser; formatDateVN reads getUTC* and shifts them back 7 hours',
-  )
+  const open = page.search(/^\s*<client-only>\s*$/m)
+  const close = page.search(/^\s*<\/client-only>\s*$/m)
+  if (open < 0) problems.push('the profile page no longer defers rendering to the client')
+  if (close < 0) problems.push('the client-only wrapper is no longer closed')
+  const uses = [...page.matchAll(/<ReaderProfileHistory\b/g)].map(m => m.index ?? 0)
+  if (uses.length !== 1) problems.push(`the profile page renders the reading history ${uses.length} times`)
+  if (uses.some(at => open < 0 || at < open || close < 0 || at > close)) problems.push('the reading history is rendered outside <client-only>')
+  // No other file may render it — or import, resolve or reference it by name.
+  const others: string[] = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(new URL(dir, appRoot), { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) walk(`${path}/`)
+      else if (/\.(vue|ts)$/.test(entry.name) && path !== 'pages/profile.vue' && path !== READING_HISTORY_PART
+        && /ReaderProfileHistory|reader-profile-history/.test(at(path))) others.push(path)
+    }
+  }
+  walk('pages/')
+  walk('components/')
+  walk('layouts/')
+  for (const path of Object.keys(overrides)) {
+    if (!others.includes(path) && path !== 'pages/profile.vue' && path !== READING_HISTORY_PART && /ReaderProfileHistory|reader-profile-history/.test(overrides[path]!)) others.push(path)
+  }
+  if (others.length) problems.push(`rendered outside /profile: ${others.join(', ')}`)
+  return problems
+}
+
+test('proof: the confinement check catches each way the exemption could stop holding', () => {
+  const page = read('pages/profile.vue')
+  const part = read(READING_HISTORY_PART)
+  const tag = page.match(/^\s*<ReaderProfileHistory\b.*$/m)?.[0]
+  assert.ok(tag, 'the page renders <ReaderProfileHistory> on a line of its own')
+  // Moved out of client-only (after the closing tag).
+  const outside = page.replace(tag, '').replace(/^(\s*)<\/client-only>\s*$/m, m => `${m}\n${tag}`)
+  assert.deepEqual(readingHistoryConfinement({ 'pages/profile.vue': outside }), ['the reading history is rendered outside <client-only>'])
+  // Client-only removed.
+  assert.ok(readingHistoryConfinement({ 'pages/profile.vue': page.replace(/^\s*<client-only>\s*$/m, '') }).includes('the profile page no longer defers rendering to the client'))
+  // Rendered by another page too.
+  assert.deepEqual(readingHistoryConfinement({ 'pages/about.vue': `${read('pages/about.vue')}\n<!-- --><template><ReaderProfileHistory :entries="[]" /></template>` }), ['rendered outside /profile: pages/about.vue'])
+  // The formatter switched to the UTC helper.
+  assert.ok(readingHistoryConfinement({ [READING_HISTORY_PART]: part.replace('{{ formatReadAt(item.readAt) }}', '{{ formatDateVN(item.readAt) }}') })
+    .some(p => p.startsWith('reading-history stamps')))
 })
 
+/**
+ * ArticleDetail is a family since wave3 4.2 (tests/_component-family.ts): the date it
+ * formats with `formatDateVN` (the related list) lives in a part. Every file of the family
+ * that formats a date with it must import it from the helper, and at least one does — so a
+ * part that drops the helper for a local formatter of its own fails here, as the
+ * local-time scan above fails on `getDate()`.
+ */
+function utcHelperProblems(files: Array<{ file: string, source: string }>): string[] {
+  const IMPORT = /import \{ formatDateVN \} from '~\/utils\/formatDate'/
+  const users = files.filter(f => /formatDateVN\(/.test(f.source))
+  if (!users.length) return ['no file of the family formats a date with formatDateVN']
+  return users.filter(f => !IMPORT.test(f.source)).map(f => `${f.file} calls formatDateVN without importing the helper`)
+}
+
 test('the shared components format dates through the UTC-safe helper', () => {
-  for (const file of ['components/ArticleDetail.vue', 'components/NewsCategoryList.vue']) {
-    assert.match(read(file), /import \{ formatDateVN \} from '~\/utils\/formatDate'/, `${file} stopped using formatDateVN`)
-  }
+  assert.match(read('components/NewsCategoryList.vue'), /import \{ formatDateVN \} from '~\/utils\/formatDate'/, 'NewsCategoryList stopped using formatDateVN')
+  assert.deepEqual(utcHelperProblems(familyFiles(ARTICLE_DETAIL_FAMILY)), [], 'ArticleDetail stopped using formatDateVN')
+})
+
+test('the UTC-helper check bites on a part of ArticleDetail (injection proof)', () => {
+  const list = 'components/article/ArticleRelatedList.vue'
+  const source = read(list)
+  const dropped = source.replace("import { formatDateVN } from '~/utils/formatDate'\n", '')
+  assert.notEqual(dropped, source)
+  assert.equal(utcHelperProblems(familyFiles(ARTICLE_DETAIL_FAMILY, { [list]: dropped })).length, 1)
+  const noUser = source.replace(/formatDateVN\(/g, 'localDate(')
+  assert.deepEqual(utcHelperProblems(familyFiles(ARTICLE_DETAIL_FAMILY, { [list]: noUser })), ['no file of the family formats a date with formatDateVN'])
 })
 
 // ─── News category consolidation ─────────────────────────────────────────────

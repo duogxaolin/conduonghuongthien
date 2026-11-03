@@ -23,11 +23,14 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { ADMIN_LAYOUT_FAMILY, familySource, readAppFile } from './_component-family.ts'
 
 const listSource = await readFile(new URL('../server/api/admin/activity-logs/index.get.ts', import.meta.url), 'utf8')
 const retentionSource = await readFile(new URL('../server/api/admin/activity-logs/retention.get.ts', import.meta.url), 'utf8')
 const pageSource = await readFile(new URL('../app/pages/admin/users/activity.vue', import.meta.url), 'utf8')
-const layoutSource = await readFile(new URL('../app/layouts/admin.vue', import.meta.url), 'utf8')
+// The admin layout was split (wave3 D-SPLIT): its menu lives in `useAdminLayoutMenu`, so the
+// menu guard reads the layout's whole family (tests/_component-family.ts).
+const layoutSource = familySource(ADMIN_LAYOUT_FAMILY)
 
 /** Comments explain what the code must NOT do, so they are stripped before
  *  asserting absence — otherwise the prose trips its own assertion. */
@@ -75,7 +78,7 @@ test('pagination is deterministic when rows share a timestamp', () => {
 
 test('only allowlisted meta keys are surfaced from free-form JSON', () => {
   assert.match(listSource, /function readMeta/)
-  for (const key of ["'ip'", "'userAgent'", "'mfaMethod'"]) {
+  for (const key of ["'ip'", "'userAgent'", "'mfaMethod'", "'phase'"]) {
     assert.match(listSource, new RegExp(`readMeta\\(row\\.meta, ${key}\\)`))
   }
   // The raw meta column must not be handed to the client wholesale.
@@ -147,6 +150,15 @@ test('the page renders the log, its filters, and the retention warning', () => {
   }
 })
 
+const ACTIVITY_MENU_GATE = /hasPermission\('users', 'read'\).*\/admin\/users\/activity/s
+
 test('the menu entry is hidden without the grant that the endpoint requires', () => {
-  assert.match(layoutSource, /hasPermission\('users', 'read'\).*\/admin\/users\/activity/s)
+  assert.match(layoutSource, ACTIVITY_MENU_GATE)
+})
+
+test('proof: the guard reads the split layout — the grant dropped from the menu composable is caught', () => {
+  const menu = 'composables/useAdminLayoutMenu.ts'
+  const ungated = readAppFile(menu).replace("...(hasPermission('users', 'read') ? [{ label: 'Lịch sử hoạt động'", "...(true ? [{ label: 'Lịch sử hoạt động'")
+  assert.notEqual(ungated, readAppFile(menu), 'the planted change must apply')
+  assert.doesNotMatch(familySource(ADMIN_LAYOUT_FAMILY, { [menu]: ungated }), ACTIVITY_MENU_GATE)
 })

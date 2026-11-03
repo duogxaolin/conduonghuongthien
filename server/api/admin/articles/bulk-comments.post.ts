@@ -1,6 +1,7 @@
 import { createError } from 'h3'
 import { setArticleCommentsEnabled } from '../../../services/articles'
 import { parseBulkIds, runBulk } from '../../../utils/bulk'
+import { purgeAfterBulk } from '../../../utils/public-page-cache'
 
 /**
  * Open or close comments on several articles at once.
@@ -27,9 +28,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const ids = parseBulkIds(body)
+  // The comment section is part of the server-rendered (and `swr`-cached) article page.
   return runBulk(
     ids,
     id => setArticleCommentsEnabled(actor, id, enabled),
     'Không thể đổi trạng thái bình luận của bài viết này.',
-  )
+  ).then(outcome => purgeAfterBulk(outcome, 'articles.bulk_comments'))
 })

@@ -6,7 +6,7 @@
  * `settings` RBAC resource — no new resource needed.
  */
 import { createError } from 'h3'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, ne, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
 import { languages, langTranslations, articleTranslations, pageBlocks, activityLogs } from '../db/schema'
 import type { ActorLike } from '../utils/permissions'
@@ -199,37 +199,44 @@ export async function reorderLanguages(
 
 // ─── UI Translations ─────────────────────────────────────────────────────
 
-export async function listTranslations(
-  code: string,
-  opts: { group?: string; search?: string; limit?: number; offset?: number },
-  db: Database = getDb(),
-) {
-  const conditions = [eq(langTranslations.langCode, code)]
-  if (opts.group && opts.group !== 'all') {
-    conditions.push(eq(langTranslations.group, opts.group))
-  }
+// The tab's list (`listTranslations`, `listTranslationGroups`) is in `translation-list.ts`.
 
-  let query = db.select().from(langTranslations).where(and(...conditions))
-  if (opts.limit) query = query.limit(opts.limit) as typeof query
-  if (opts.offset) query = query.offset(opts.offset) as typeof query
-
-  const rows = await query
-  if (!opts.search) return rows
-
-  const s = opts.search.toLowerCase()
-  return rows.filter(
-    (r) => r.key.toLowerCase().includes(s) || (r.value ?? '').toLowerCase().includes(s),
-  )
+/**
+ * 404 unless `code` has a `languages` row. The translation list would otherwise answer an
+ * unknown code with a virtual row per vi key, and a write would leave orphan rows that no
+ * language owns (every write path goes through `upsertTranslations`, which checks).
+ *
+ * `lock`: inside a write transaction, read the row `FOR UPDATE`: a concurrent
+ * `deleteLanguage` then waits for the write to commit instead of deleting the language
+ * between this check and the inserts. `FOR UPDATE`, not `FOR SHARE`: MariaDB (which
+ * aaPanel installs may run) rejects `FOR SHARE`, and the rest of the codebase locks with
+ * `.for('update')` too. It also serialises concurrent writers of the same language —
+ * acceptable, translation writes are rare admin actions. Read-only callers (the list GET,
+ * the early refusal before AI calls) take no lock.
+ */
+export async function requireLanguage(code: string, db: Pick<Database, 'select'> = getDb(), options: { lock?: boolean } = {}): Promise<void> {
+  const query = db.select({ id: languages.id }).from(languages).where(eq(languages.code, code)).limit(1)
+  const [lang] = await (options.lock ? query.for('update') : query)
+  if (!lang) throw createError({ statusCode: 404, statusMessage: 'Ngôn ngữ không tồn tại.' })
 }
 
+/** The languages UI strings are machine-translated into: active ones in the database, vi excluded (it is the source). */
+export async function listActiveTranslationTargets(db: Database = getDb()): Promise<Array<{ code: string; name: string }>> {
+  return db.select({ code: languages.code, name: languages.name }).from(languages)
+    .where(and(eq(languages.isActive, true), ne(languages.code, 'vi')))
+    .orderBy(languages.displayOrder, languages.id)
+}
+
+/** `value: null` clears the row (SQL NULL = untranslated); see the PUT handler. */
 export async function upsertTranslations(
   actor: ActorLike,
   code: string,
-  items: Array<{ group: string; key: string; value: string }>,
+  items: Array<{ group: string; key: string; value: string | null }>,
   isAiTranslated: boolean = false,
   db: Database = getDb(),
 ) {
   return db.transaction(async (tx) => {
+    await requireLanguage(code, tx, { lock: true })
     for (const item of items) {
       const [existing] = await tx
         .select()
@@ -266,15 +273,6 @@ export async function upsertTranslations(
       meta: { operation: 'update_translations', langCode: code, count: items.length, isAiTranslated },
     })
   })
-}
-
-export async function listTranslationGroups(code: string, db: Database = getDb()) {
-  const rows = await db
-    .select({ group: langTranslations.group })
-    .from(langTranslations)
-    .where(eq(langTranslations.langCode, code))
-    .groupBy(langTranslations.group)
-  return rows.map((r) => r.group)
 }
 
 /** Get all translations for a language as a flat key→value map, grouped. */

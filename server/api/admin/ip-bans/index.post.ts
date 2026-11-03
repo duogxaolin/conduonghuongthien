@@ -1,10 +1,11 @@
 /**
- * Add an address or IPv4 CIDR block to the ban list.
+ * Add an address or IPv4 CIDR block (`/8`–`/32`) to the ban list.
  *
  * The value goes through `validateBanValue` inside the service, before the insert
  * — a stored value that can never match produces a ban the officer believes is in
  * force (design.md D11). An IPv6 range is refused with a message naming the
- * limitation rather than stored and silently ignored.
+ * limitation rather than stored and silently ignored; a range wider than `/8`
+ * (`0.0.0.0/0` is every visitor) is refused as too wide.
  */
 import { requireResourcePermission } from '../../../utils/permissions'
 import { createIpBan } from '../../../services/ip-bans'

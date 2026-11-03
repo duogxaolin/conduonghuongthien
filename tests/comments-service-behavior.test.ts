@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it, mock } from 'node:test'
+import { DrizzleQueryError } from 'drizzle-orm'
 import { MySqlDialect } from 'drizzle-orm/mysql-core'
 
 /**
@@ -39,6 +40,8 @@ type SelectCall = {
   where: unknown
   limit?: number
   offset?: number
+  /** `.for('update')` — a locking read. */
+  lock?: string
 }
 type WriteCall = { handle: Handle, op: 'insert' | 'delete', table: unknown, values?: Row, where?: unknown }
 
@@ -62,6 +65,7 @@ function selectOn(handle: Handle) {
       orderBy() { return chain },
       limit(limit: number) { call.limit = limit; return chain },
       offset(offset: number) { call.offset = offset; return chain },
+      for(strength: string) { call.lock = strength; return chain },
       then(resolve: (value: Row[]) => unknown, reject?: (reason: unknown) => unknown) {
         return Promise.resolve(rows).then(resolve, reject)
       },
@@ -70,9 +74,21 @@ function selectOn(handle: Handle) {
   }
 }
 
+/** Errors the next inserts on the transaction throw, in order (a 1452, a deadlock …). */
+let txInsertFailures: unknown[] = []
+
+/** As on MySQL: Drizzle's "Failed query" error, the driver's error as its `cause` (message shape verbatim, MySQL 8.0.46). */
+function driverError(errno: number, code: string, sqlMessage: string) {
+  return new DrizzleQueryError('insert into `article_comments` …', [], Object.assign(new Error(sqlMessage), { errno, code, sqlMessage }))
+}
+const fkError = (table: string, constraint: string, column: string, references: string) => driverError(1452, 'ER_NO_REFERENCED_ROW_2',
+  `Cannot add or update a child row: a foreign key constraint fails (\`db\`.\`${table}\`, CONSTRAINT \`${constraint}\` FOREIGN KEY (\`${column}\`) REFERENCES \`${references}\` (\`id\`) ON DELETE CASCADE)`)
+const deadlockError = () => driverError(1213, 'ER_LOCK_DEADLOCK', 'Deadlock found when trying to get lock; try restarting transaction')
+
 function insertOn(handle: Handle) {
   return (table: unknown) => ({
     values: async (values: Row) => {
+      if (handle === 'tx' && txInsertFailures.length) throw txInsertFailures.shift()
       writes.push({ handle, op: 'insert', table, values })
       events.push(`${handle}:insert:${table === activityLogs ? 'activity_logs' : table === articleComments ? 'article_comments' : 'other'}`)
       return [{ insertId: nextInsertId }]
@@ -91,16 +107,24 @@ function deleteOn(handle: Handle) {
 }
 
 const txHandle = { select: selectOn('tx'), insert: insertOn('tx'), delete: deleteOn('tx') }
-const executorHandle = { delete: deleteOn('executor') }
+const executorHandle = { select: selectOn('executor'), delete: deleteOn('executor') }
 const fakeDb = {
   select: selectOn('pool'),
   insert: insertOn('pool'),
   delete: deleteOn('pool'),
   transaction: async (callback: (tx: typeof txHandle) => Promise<unknown>) => {
     events.push('tx:begin')
-    const result = await callback(txHandle)
-    events.push('tx:commit')
-    return result
+    // A throw rolls the transaction's writes back, as the database does.
+    const mark = writes.length
+    try {
+      const result = await callback(txHandle)
+      events.push('tx:commit')
+      return result
+    } catch (error) {
+      writes.length = mark
+      events.push('tx:rollback')
+      throw error
+    }
   },
 }
 
@@ -109,6 +133,8 @@ mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb, getPool
 // ─── Notification + e-mail recorders (both mocked: notification-email imports notifications) ──
 
 let notifyResult: number | null = 77
+/** The notification's insert fails with this (it runs on the reply's transaction). */
+let notifyError: unknown = null
 const notifyCalls: Row[] = []
 const mailCalls: Row[] = []
 mock.module('../server/services/notifications', {
@@ -116,6 +142,7 @@ mock.module('../server/services/notifications', {
     createReplyNotification: async (args: Row) => {
       notifyCalls.push(args)
       events.push(args.tx === txHandle ? 'notify:tx' : 'notify:not-tx')
+      if (notifyError) throw notifyError
       return notifyResult
     },
   },
@@ -155,6 +182,8 @@ beforeEach(() => {
   events = []
   nextInsertId = 500
   notifyResult = 77
+  txInsertFailures = []
+  notifyError = null
   notifyCalls.length = 0
   mailCalls.length = 0
 })
@@ -268,6 +297,10 @@ describe('the reader comment impact, measured before anything is removed', () =>
     const impact = await deleteReaderComments(42, executorHandle as never)
     assert.deepEqual(impact, { comments: 3, adminReplies: 1, otherReaderReplies: 2 })
     assert.deepEqual(writes.map(w => [w.handle, w.op, w.table === articleComments]), [['executor', 'delete', true]])
+    // The base's two counting reads, on the executor (never a second pool connection inside a
+    // transaction — verifier H2) and plain: no locking read (rounds 3–4 locked them and moved
+    // deadlocks onto unrelated readers — verifier round 4, H-A).
+    assert.deepEqual(selects.map(s => [s.handle, s.lock ?? null]), [['executor', null], ['executor', null]])
     const where = compile(writes[0]!.where)!
     assert.match(where.sql, /`article_comments`\.`reader_id` = \?/)
     assert.deepEqual(where.params, [42])
@@ -277,6 +310,8 @@ describe('the reader comment impact, measured before anything is removed', () =>
     selectQueue = [[{ id: 1, parentId: null }], []]
     await deleteReaderComments(42)
     assert.deepEqual(writes.map(w => [w.handle, w.op]), [['pool', 'delete']])
+    // On the pool (no transaction to hold them) nothing is locked.
+    assert.deepEqual(selects.map(s => [s.handle, s.lock ?? null]), [['pool', null], ['pool', null]])
   })
 })
 
@@ -400,6 +435,61 @@ describe('createAdminReply — the portal replying in public', () => {
     assert.deepEqual(await createAdminReply(base), { ok: false, statusCode: 404, message: 'Bình luận gốc không tồn tại.' })
     assert.equal(writes.length, 0)
     assert.equal(mailCalls.length, 0)
+  })
+
+  it('a parent removed between the read and the insert (FK 1452) is the same 404, not a 500; any other key, or error, is thrown', async () => {
+    const parentRow = [{ id: 30, articleId: 3, mediaItemId: null, parentId: null }]
+    // A ban / purge / account deletion committed in between (verifier round 4, M1: 4–7 of 12
+    // admin replies next to 12 bans on MySQL answered 500). On MySQL the 1452 is the `cause` of
+    // Drizzle's error — V4-08: without walking the chain, still a 500 there and green here.
+    for (const gone of [
+      fkError('article_comments', 'fk_article_comments_parent', 'parent_id', 'article_comments'),
+      // Its article (or video) deleted: the parent went with it.
+      fkError('article_comments', 'fk_article_comments_article', 'article_id', 'articles'),
+    ]) {
+      selectQueue = [parentRow]
+      txInsertFailures = [gone]
+      assert.deepEqual(await createAdminReply(base), { ok: false, statusCode: 404, message: 'Bình luận gốc không tồn tại.' })
+      assert.deepEqual([writes.length, mailCalls.length, notifyCalls.length], [0, 0, 0])
+    }
+
+    // Another key (verifier L-3): the officer's own account row — not "the parent is gone".
+    const officerGone = fkError('article_comments', 'fk_article_comments_admin_user', 'admin_user_id', 'users')
+    selectQueue = [parentRow]
+    txInsertFailures = [officerGone]
+    await assert.rejects(createAdminReply(base), (thrown: unknown) => thrown === officerGone)
+
+    // V4-20: the reply and its audit row went in, the NOTIFICATION broke a key — thrown, the
+    // transaction rolled back whole (reply and audit row with it), nobody mailed.
+    selectQueue = [parentRow]
+    notifyError = fkError('reader_notifications', 'fk_reader_notifications_reader', 'reader_id', 'reader_accounts')
+    await assert.rejects(createAdminReply(base), (thrown: unknown) => thrown === notifyError)
+    assert.deepEqual([writes.length, mailCalls.length, events.at(-1)], [0, 0, 'tx:rollback'])
+    notifyError = null
+
+    selectQueue = [parentRow]
+    const timeout = driverError(1205, 'ER_LOCK_WAIT_TIMEOUT', 'Lock wait timeout exceeded; try restarting transaction')
+    txInsertFailures = [timeout]
+    await assert.rejects(createAdminReply(base), (thrown: unknown) => thrown === timeout)
+  })
+
+  it('a reply chosen as a deadlock victim is written again in a NEW transaction — twice, then the third attempt; the e-mail once', async () => {
+    // A reply holds its parent comment, then the parent author's reader row; a ban or an account
+    // deletion holds them the other way round. Before: a 500 (verifier round 4, H-B — 10 of 10
+    // next to a reader with 200–1000 comments).
+    selectQueue = [[{ id: 30, articleId: 3, mediaItemId: null, parentId: null }]]
+    txInsertFailures = [deadlockError(), deadlockError()]
+    assert.deepEqual(await createAdminReply(base), { ok: true, id: 500 })
+    // Each attempt its own transaction (V4-10: a retry inside the rolled-back one), exactly three
+    // (V4-17: two), one reply and one audit row, the e-mail once and after the commit.
+    assert.deepEqual(events, ['tx:begin', 'tx:rollback', 'tx:begin', 'tx:rollback', 'tx:begin', 'tx:insert:article_comments', 'tx:insert:activity_logs', 'notify:tx', 'tx:commit', 'mail'])
+    assert.deepEqual(writes.map(w => w.table === articleComments ? 'reply' : 'audit'), ['reply', 'audit'])
+
+    events = []
+    selectQueue = [[{ id: 30, articleId: 3, mediaItemId: null, parentId: null }]]
+    txInsertFailures = [deadlockError(), deadlockError(), deadlockError()]
+    await assert.rejects(createAdminReply(base), /Failed query/)
+    assert.deepEqual([events.filter(e => e === 'tx:begin').length, events.includes('mail')], [3, false])
   })
 
   it('a parent belonging to no item is refused (409) rather than producing an orphan', async () => {

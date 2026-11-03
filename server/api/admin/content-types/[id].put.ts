@@ -4,6 +4,7 @@ import { uniqueContentTypeSlug } from '../../../utils/slug'
 import { eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateContentTypeUpdate } from '../../../services/i18n-auto-translate'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -59,6 +60,10 @@ export default defineEventHandler(async (event) => {
   if (updateFields.name !== undefined || updateFields.description !== undefined) {
     void autoTranslateContentTypeUpdate(adminUser, finalSlug, finalName, finalDesc).catch(() => {})
   }
+
+  // After the writes (the slug rename cascades to categories and articles): cached public
+  // pages list the type by name and link it by slug (server/utils/public-page-cache.ts).
+  await purgePublicPageCacheAfterWrite('content_types.update')
 
   return { ok: true, slug: finalSlug }
 })

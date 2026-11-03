@@ -527,3 +527,36 @@ test('the fifth scope is absent from the run only when its window is disabled', 
   assert.equal(entry.deleted, 11)
   assert.equal(result.tables.length, 5, 'the run silently purged fewer tables than the policy declares')
 })
+
+// ─── Every table's age and order column, in one place ───────────────────────
+/**
+ * `TABLE_COLUMNS` (server/services/data-retention.ts) decides WHICH rows each scope deletes: a
+ * table aged on the wrong column deletes live data (a reader who commented yesterday, aged by
+ * `created_at`, is gone with an account opened two years ago) or nothing at all. Three tables
+ * were pinned one by one above; `reader_accounts.last_seen_at` was not pinned anywhere
+ * (verify of the wave3 test slices, S9). Pinned here for all five, age pass AND row cap, on
+ * the exact statements the engine sends — the map itself stays private.
+ */
+const AGE_AND_ORDER: Array<{ table: string, days: string, maxRows: string, age: string, order: string, nullableOrder?: true }> = [
+  { table: 'activity_logs', days: 'activityLogDays', maxRows: 'activityLogMaxRows', age: 'created_at', order: 'id' },
+  { table: 'submissions', days: 'submissionDays', maxRows: 'submissionMaxRows', age: 'created_at', order: 'id' },
+  { table: 'chat_sessions', days: 'chatSessionDays', maxRows: 'chatSessionMaxRows', age: 'last_message_at', order: 'last_message_at' },
+  { table: 'reader_accounts', days: 'readerAccountDays', maxRows: 'readerAccountMaxRows', age: 'last_seen_at', order: 'last_seen_at' },
+  { table: 'livestream_sessions', days: 'livestreamSessionDays', maxRows: 'livestreamSessionMaxRows', age: 'ended_at', order: 'ended_at', nullableOrder: true },
+]
+const EVERY_WINDOW_OFF = Object.fromEntries(AGE_AND_ORDER.flatMap(({ days, maxRows }) => [[days, 0], [maxRows, 0]]))
+
+for (const { table, days, maxRows, age, order, nullableOrder } of AGE_AND_ORDER) {
+  test(`${table}: ages on ${age} and trims oldest-first by ${order} — the exact statements`, async () => {
+    const aged = fakePool({ [table]: [3] })
+    await runDataRetention({ now: NOW, ...EVERY_WINDOW_OFF, [days]: 90, batchSize: 1000, connection: aged as never })
+    const deletes = aged.calls.filter(call => call.sql.startsWith('DELETE FROM'))
+    assert.deepEqual(deletes.map(call => call.sql), [`DELETE FROM ${table} WHERE ${age} IS NOT NULL AND ${age} < ? ORDER BY ${order} LIMIT ?`])
+    assert.equal((deletes[0]!.params[0] as Date).toISOString(), '2026-04-27T03:00:00.000Z', '90 days before the run, on that column')
+
+    const capped = fakePool({ [table]: [100] }, { [table]: 1_100 })
+    await runDataRetention({ now: NOW, ...EVERY_WINDOW_OFF, [maxRows]: 1_000, batchSize: 1000, connection: capped as never })
+    const guard = nullableOrder ? ` WHERE ${order} IS NOT NULL` : ''
+    assert.deepEqual(capped.calls.filter(call => call.sql.startsWith('DELETE FROM')).map(call => call.sql), [`DELETE FROM ${table}${guard} ORDER BY ${order} LIMIT ?`])
+  })
+}

@@ -18,6 +18,7 @@ import test from 'node:test'
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
 import * as Vue from 'vue'
 import { renderSfcTemplate } from './_render-sfc-template.ts'
+import { moderationPageSource, readModerationPart } from './_moderation-page-parts.ts'
 
 const FILE = new URL('../app/components/admin/ai/AiModerationTab.vue', import.meta.url)
 const source = readFileSync(FILE, 'utf8')
@@ -98,8 +99,8 @@ async function mountModerationTab(fetchImpl: (url: string, opts?: Record<string,
       return `const {${names.replace(/\s+as\s+/g, ': ')}} = __modules[${JSON.stringify(from)}];`
     })
     .replace(/export default/, 'return')
-  // Auto-import của Nuxt (`ref`, `onMounted`) và `$fetch` toàn cục, cấp qua tham số.
-  const component = new Function('__modules', 'ref', 'onMounted', '$fetch', code)(modules, Vue.ref, () => {}, fetchImpl) as {
+  // Auto-import của Nuxt (`ref`, `onMounted`, `adminFetch` — lô F D-FETCH) và `$fetch` toàn cục, cấp qua tham số.
+  const component = new Function('__modules', 'ref', 'onMounted', '$fetch', 'adminFetch', code)(modules, Vue.ref, () => {}, fetchImpl, fetchImpl) as {
     setup: (props: object, ctx: object) => Record<string, unknown>
   }
   const bindings = component.setup({}, { expose: () => {}, emit: () => {}, attrs: {}, slots: {} })
@@ -139,7 +140,8 @@ test('bấm "Thử lại" thật sự tải lại: lỗi được xoá, hai endp
   const calls: Array<{ url: string; params?: unknown }> = []
   let mode: 'fail' | 'pass' = 'fail'
   const { bindings, tree } = await mountModerationTab(async (url, opts) => {
-    calls.push({ url, params: opts?.params })
+    // `params:` became `query:` (D-FETCH lô F: `AdminFetchOptions` has `query` only) — the same wire.
+    calls.push({ url, params: opts?.query ?? opts?.params })
     if (mode === 'fail') throw Object.assign(new Error('500'), { data: { statusMessage: 'Máy chủ kiểm duyệt không phản hồi.' } })
     if (url === '/api/admin/ai/moderation/queue') return { ok: true, total: 7, items: [] }
     return { ok: true, rules: [{ isEnabled: true }, { isEnabled: false }, { isEnabled: true }] }
@@ -180,20 +182,31 @@ test('trang kiểm duyệt: huy hiệu "chờ đối soát" là tổng của má
   assert.equal(pendingBadgeCount({ queueTotal: 90, queueTotalFilter: 'all', workerPending: null }), null)
   assert.equal(pendingBadgeCount({ queueTotal: 0, queueTotalFilter: null, workerPending: null }), null)
 
-  const page = readFileSync(new URL('../app/pages/admin/ai/moderation.vue', import.meta.url), 'utf8')
-  assert.doesNotMatch(page, /queue\.value\.filter\(q => q\.status === 'pending'\)/, 'đếm trên trang 20 dòng là lỗi trần 20')
+  // Trang đã tách (wave3 4.1): trang giữ huy hiệu + hàng đợi, worker-status nằm ở
+  // composables/useModerationWorker.ts (tests/_moderation-page-parts.ts). Hành vi của
+  // huy hiệu khi đổi bộ lọc: tests/admin-moderation-page.test.ts.
+  const page = readModerationPart('page')
+  const worker = readModerationPart('worker')
+  const between = (source: string, from: string, to: string) => {
+    const start = source.indexOf(from)
+    const end = source.indexOf(to, start)
+    assert.ok(start >= 0 && end > start, `không tìm thấy "${from}" … "${to}" — đoạn kiểm sẽ rỗng`)
+    return source.slice(start, end)
+  }
+  assert.doesNotMatch(moderationPageSource(), /queue\.value\.filter\(q => q\.status === 'pending'\)/, 'đếm trên trang 20 dòng là lỗi trần 20')
   assert.match(page, /pendingBadgeCount\(\{ queueTotal: queueTotal\.value, queueTotalFilter: queueTotalFilter\.value, workerPending: workerPendingCount\.value \}\)/)
-  // `queueTotalFilter` chỉ đổi khi phản hồi của chính bộ lọc đó về (trong loadQueue).
-  const loadQueueFn = page.slice(page.indexOf('async function loadQueue'), page.indexOf('async function loadRules'))
-  assert.match(loadQueueFn, /queueTotalFilter\.value = filter/)
+  // `queueTotalFilter` là bộ lọc của PHẢN HỒI đã tải, không phải của nút vừa bấm: mỗi lượt
+  // tải mang theo bộ lọc lúc gửi, và chỉ lượt mới nhất được ghi `result` (useAdminList).
+  assert.match(page, /return \{ \.\.\.res, status: filters\.status \}/)
+  assert.match(page, /const queueTotalFilter = computed\(\(\) => queueList\.result\.value\?\.status \?\? null\)/)
   // worker-status hỏng thì xoá số "pending" cũ — huy hiệu ẩn thay vì hiện số lỗi thời.
-  const workerFn = page.slice(page.indexOf('async function loadWorkerStatus'), page.indexOf('function applyRescanStatus'))
+  const workerFn = between(worker, 'async function loadWorkerStatus', 'function applyRescanStatus')
   assert.match(workerFn, /workerPendingCount\.value = res\.worker\.pendingQueueCount/)
   assert.match(workerFn, /catch \{[\s\S]*workerPendingCount\.value = null/)
   // Huy hiệu `null` = ẩn (không phải "0").
   assert.match(page, /v-if="t\.badge !== null && t\.badge > 0"/)
   // Xử lý một hàng đợi xong thì số "pending" của worker cũng được làm mới.
-  const resolveFn = page.slice(page.indexOf('async function resolveItem'), page.indexOf('// ─── TAB 4'))
+  const resolveFn = between(page, 'async function resolveItem', 'onMounted(loadData)')
   assert.match(resolveFn, /loadWorkerStatus\(\)/)
 })
 

@@ -56,16 +56,16 @@ if (import.meta.client) {
         v-if="isInitialLoad"
         :id="BOOT_OVERLAY_ID"
         data-allow-mismatch
-        class="fixed inset-0 bg-[#F8FAF7] z-[99999] flex items-center justify-center"
+        class="fixed inset-0 bg-surface z-[99999] flex items-center justify-center"
         aria-live="polite"
         aria-busy="true"
       >
         <div class="flex flex-col items-center gap-4">
           <div
-            class="w-12 h-12 border-4 border-[#E2E8DF] border-t-[#4A6741] rounded-full animate-spin motion-reduce:animate-none"
+            class="w-12 h-12 border-4 border-line border-t-brand-600 rounded-full animate-spin motion-reduce:animate-none"
             aria-hidden="true"
           ></div>
-          <span class="text-[#4A6741] text-sm font-semibold">Đang tải...</span>
+          <span class="text-brand-600 text-sm font-semibold">Đang tải...</span>
         </div>
       </div>
     </Transition>
@@ -104,13 +104,13 @@ if (import.meta.client) {
         >
           <div class="relative" aria-hidden="true">
             <!-- Vòng ngoài mờ trang trí -->
-            <div class="absolute inset-0 rounded-full bg-[#4A6741]/10 blur-md animate-pulse motion-reduce:animate-none"></div>
+            <div class="absolute inset-0 rounded-full bg-brand-600/10 blur-md animate-pulse motion-reduce:animate-none"></div>
             <!-- Spinner chính: to hơn trên mobile để dễ thấy -->
             <div
-              class="relative w-12 h-12 sm:w-14 sm:h-14 border-[3.5px] border-[#D7E5D2] border-t-[#4A6741] rounded-full animate-spin motion-reduce:animate-none"
+              class="relative w-12 h-12 sm:w-14 sm:h-14 border-[3.5px] border-[#D7E5D2] border-t-brand-600 rounded-full animate-spin motion-reduce:animate-none"
             ></div>
           </div>
-          <span class="text-[#385130] text-sm font-bold tracking-wide">Đang chuyển trang</span>
+          <span class="text-brand-800 text-sm font-bold tracking-wide">Đang chuyển trang</span>
         </div>
       </div>
     </Transition>

@@ -47,9 +47,13 @@ export default defineEventHandler(async (event) => {
    * `activity_logs.user_id` is a foreign key and `meta` is JSON, so the audit
    * insert has its own ways to fail independently of the deletes above it.
    *
-   * `revokeSessions()` is not called here because it opens its own `getDb()`
-   * handle and so cannot join this transaction; its one statement is inlined on
-   * `tx` instead. Everything runs on `tx` rather than `db` — a `db.insert()`
+   * The session bump is inlined on `tx` (the `tokenVersion + 1` update below)
+   * rather than a call to `revokeSessions()`: when this was written that helper
+   * always opened its own `getDb()` handle and could not join a transaction.
+   * Since 2026-10-28 it takes an optional executor (`revokeSessions(id, tx)`, as
+   * `profile/mfa/disable.post.ts` uses it); the inline statement is equivalent
+   * and stays, pinned by `tests/mfa-codes-endpoints.test.ts`. Everything runs on
+   * `tx` rather than `db` — a `db.insert()`
    * sitting inside a transaction block still commits on the pool independently,
    * which is this same bug wearing a transaction's clothes.
    */

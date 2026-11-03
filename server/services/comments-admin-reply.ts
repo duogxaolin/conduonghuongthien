@@ -14,6 +14,8 @@ import { activityLogs, articleComments } from '../db/schema'
 import { createReplyNotification } from './notifications'
 import { sendReplyEmail } from './notification-email'
 import { checkParentEligibility, resolveCommentTarget } from './comments-rules'
+import { missingCommentTarget } from '../utils/fk-error'
+import { withDeadlockRetry } from '../utils/deadlock-retry'
 
 export type AdminReplyResult =
   | { ok: true, id: number }
@@ -78,10 +80,11 @@ export async function createAdminReply(params: {
   // Reply and audit row commit together: a reply that exists with no logged
   // record of which admin posted it is the same unaccountable gap deleteComment
   // (comments-deletion.ts) guards against, just on the write side instead of the
-  // delete side.
-  let id = 0
-  let notifiedReaderId: number | null = null
-  await db.transaction(async (tx) => {
+  // delete side. A deadlock victim (the reply holds comment → reader; a ban or account
+  // deletion holds reader → comment) is run again whole, outside the rolled-back
+  // transaction: nothing in it acts outside it, and the e-mail goes after the commit.
+  // Its values are returned, never left in outer variables a failed attempt could set.
+  const written = await withDeadlockRetry(() => db.transaction(async (tx) => {
     const inserted = await tx.insert(articleComments).values({
       articleId:   target.kind === 'article' ? target.articleId : null,
       mediaItemId: target.kind === 'media' ? target.mediaItemId : null,
@@ -101,7 +104,7 @@ export async function createAdminReply(params: {
     // row below, an official reply in force whose audit entry points at no row.
     // Exactly what wrapping these two writes in a transaction exists to prevent.
     const [header] = inserted
-    id = Number(header?.insertId ?? 0)
+    const id = Number(header?.insertId ?? 0)
 
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
@@ -124,13 +127,22 @@ export async function createAdminReply(params: {
     // official reply the citizen has been waiting for. `actorReaderId: null`
     // because the author is an officer, not a reader — so the self-reply guard
     // never suppresses it.
-    notifiedReaderId = await createReplyNotification({
+    const notifiedReaderId = await createReplyNotification({
       commentId:     id,
       parentId:      parent.id,
       actorReaderId: null,
       tx,
     })
+    return { id, notifiedReaderId }
+  })).then(row => row, (error: unknown) => {
+    // The parent went (ban, purge, account deletion — or its article / video, which takes it)
+    // between the read above and the insert: the same answer as when it was already gone, not a
+    // 500. Only those keys (utils/fk-error.ts): any other failure is thrown.
+    if (missingCommentTarget(error)) return null
+    throw error
   })
+  if (!written) return { ok: false, statusCode: 404, message: 'Bình luận gốc không tồn tại.' }
+  const { id, notifiedReaderId } = written
 
   // After the commit, never inside it — an unreachable SMTP host must not hold
   // this reply's row locks open for a network timeout. See createComment.

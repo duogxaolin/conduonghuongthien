@@ -13,7 +13,7 @@ definePageMeta({
 })
 
 const submissions = ref<AdminSubmissionRow[]>([])
-const counts = ref<Record<string, number>>({})
+const counts = ref<Partial<Record<SubmissionStatus, number>>>({})
 const loading = ref(true)
 const error = ref('')
 const search = ref('')
@@ -29,7 +29,16 @@ const initialViewed = route.query.viewed === 'yes' || route.query.viewed === 'no
 const statusFilter = ref<'' | SubmissionStatus>(initialStatus)
 const viewedFilter = ref<'' | 'yes' | 'no'>(initialViewed)
 
+/**
+ * Only the LATEST load writes rows, counts, error and loading (the ticket of
+ * docs/decisions/fetch-rollout-d-fetch.md): a filter change, a bulk action and the detail
+ * dialog all reload, and an older answer landing last showed the previous filter's rows
+ * (tests/admin-fetch-rollout-submissions-list.test.ts). `$fetch` stays bare: its type is
+ * inferred from the Nitro route, which `adminFetch<T>` would replace with an unchecked one.
+ */
+let listRequest = 0
 const fetchSubmissions = async () => {
+  const ticket = ++listRequest
   loading.value = true
   error.value = ''
   try {
@@ -39,6 +48,7 @@ const fetchSubmissions = async () => {
         viewed: viewedFilter.value || undefined,
       },
     })
+    if (ticket !== listRequest) return
     if (res.ok) {
       submissions.value = res.submissions
       counts.value = res.counts
@@ -46,9 +56,10 @@ const fetchSubmissions = async () => {
       error.value = 'Không tải được danh sách đơn đăng ký.'
     }
   } catch (err: unknown) {
+    if (ticket !== listRequest) return
     error.value = errorMessage(err, 'Không tải được danh sách đơn đăng ký.')
   } finally {
-    loading.value = false
+    if (ticket === listRequest) loading.value = false
   }
 }
 
@@ -129,8 +140,8 @@ onMounted(() => { fetchSubmissions() })
   <div class="flex flex-col gap-5">
     <!-- Page Header -->
     <div>
-      <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Danh sách Đơn đăng ký Hỗ trợ</h1>
-      <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Tiếp nhận và xử lý thông tin từ người dân đăng ký tư vấn tái hòa nhập cộng đồng</p>
+      <h1 class="text-[1.3rem] font-extrabold text-brand-950 m-0">Danh sách Đơn đăng ký Hỗ trợ</h1>
+      <p class="text-[0.85rem] text-ink-muted mt-1 mb-0">Tiếp nhận và xử lý thông tin từ người dân đăng ký tư vấn tái hòa nhập cộng đồng</p>
     </div>
 
     <!-- Status tiles. Con số đọc từ CẢ BẢNG, không theo bộ lọc đang áp: ô tổng trả
@@ -139,44 +150,44 @@ onMounted(() => { fetchSubmissions() })
     <div v-if="!loading && !error" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       <button
         type="button"
-        class="flex flex-col items-start gap-1 rounded-xl border bg-white p-3 text-left transition-shadow hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/25"
-        :class="statusFilter === '' ? 'border-[#2c6e33]' : 'border-[#e2ece3]'"
+        class="flex flex-col items-start gap-1 rounded-xl border bg-white p-3 text-left transition-shadow hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-700/25"
+        :class="statusFilter === '' ? 'border-brand-700' : 'border-line'"
         :aria-pressed="statusFilter === ''"
         @click="statusFilter = ''"
       >
-        <span class="text-[0.75rem] font-bold text-[#667768]">Tất cả</span>
-        <span class="text-[1.15rem] font-extrabold text-[#122815]">{{ totalCount }}</span>
+        <span class="text-[0.75rem] font-bold text-ink-muted">Tất cả</span>
+        <span class="text-[1.15rem] font-extrabold text-brand-950">{{ totalCount }}</span>
       </button>
       <button
         v-for="key in SUBMISSION_STATUSES"
         :key="key"
         type="button"
-        class="flex flex-col items-start gap-1 rounded-xl border bg-white p-3 text-left transition-shadow hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/25"
-        :class="statusFilter === key ? 'border-[#2c6e33]' : 'border-[#e2ece3]'"
+        class="flex flex-col items-start gap-1 rounded-xl border bg-white p-3 text-left transition-shadow hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-700/25"
+        :class="statusFilter === key ? 'border-brand-700' : 'border-line'"
         :aria-pressed="statusFilter === key"
         :title="SUBMISSION_STATUS_META[key].description"
         @click="statusFilter = statusFilter === key ? '' : key"
       >
-        <span class="flex items-center gap-1.5 text-[0.75rem] font-bold text-[#667768]">
+        <span class="flex items-center gap-1.5 text-[0.75rem] font-bold text-ink-muted">
           <i :class="SUBMISSION_STATUS_META[key].icon" aria-hidden="true"></i>
           {{ SUBMISSION_STATUS_META[key].label }}
         </span>
-        <span class="text-[1.15rem] font-extrabold text-[#122815]">{{ counts[key] ?? 0 }}</span>
+        <span class="text-[1.15rem] font-extrabold text-brand-950">{{ counts[key] ?? 0 }}</span>
       </button>
     </div>
 
     <!-- Filter Bar -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row gap-3">
+    <div class="bg-white rounded-xl border border-line p-4 flex flex-col sm:flex-row gap-3">
       <input
         type="text"
         v-model="search"
         placeholder="Tìm theo họ tên, số điện thoại, địa chỉ, tiêu đề biểu mẫu..."
-        class="flex-1 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+        class="flex-1 px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
       />
       <select
         v-model="viewedFilter"
         aria-label="Lọc theo lượt xem"
-        class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+        class="px-3.5 py-2.5 border border-line-strong rounded-lg text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
       >
         <option value="">Tất cả đơn</option>
         <option value="no">Chưa ai xem</option>
@@ -202,34 +213,34 @@ onMounted(() => { fetchSubmissions() })
       >
         {{ SUBMISSION_STATUS_META[key].label }}
       </button>
-      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+      <button type="button" class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
 
     <!-- Table Card -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
+    <div class="bg-white rounded-xl border border-line overflow-hidden">
       <!-- Loading -->
       <div v-if="loading" role="status" aria-busy="true" class="p-6">
         <span class="sr-only">Đang tải danh sách đơn đăng ký</span>
         <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
           <div v-for="n in 6" :key="n" class="flex gap-3">
-            <div v-for="c in 8" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+            <div v-for="c in 8" :key="c" class="h-10 bg-surface-tint rounded flex-1" aria-hidden="true"></div>
           </div>
         </div>
       </div>
 
       <!-- Error -->
-      <div v-else-if="error" role="alert" class="px-6 py-10 text-center text-[#B04A4A] text-[0.95rem]">
+      <div v-else-if="error" role="alert" class="px-6 py-10 text-center text-danger-soft text-[0.95rem]">
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-        {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchSubmissions()">thử lại</button>.
+        {{ error }} Vui lòng <button type="button" class="text-brand-600 font-bold underline" @click="fetchSubmissions()">thử lại</button>.
       </div>
 
       <!-- Mobile Card View -->
-      <div v-else class="md:hidden divide-y divide-[#eef2ee]">
+      <div v-else class="md:hidden divide-y divide-surface-tint">
         <div
           v-for="s in filteredSubmissions"
           :key="'m-'+s.id"
           class="p-4"
-          :class="selection.isSelected(Number(s.id)) ? 'bg-[#f0f7f1]' : ''"
+          :class="selection.isSelected(Number(s.id)) ? 'bg-surface-tint' : ''"
           @click="openId = Number(s.id)"
         >
           <div class="flex items-center justify-between mb-1">
@@ -238,15 +249,15 @@ onMounted(() => { fetchSubmissions() })
                    must not also open it. -->
               <input
                 type="checkbox"
-                class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                class="h-4 w-4 shrink-0 accent-brand-700"
                 :checked="selection.isSelected(Number(s.id))"
                 :aria-label="`Chọn đơn của ${s.fullName || 'người gửi không tên'}`"
                 @click.stop
                 @change="selection.toggle(Number(s.id))"
               />
-              <span class="truncate font-bold text-[#122815] text-[0.9rem]">{{ s.fullName || 'Không tên' }}</span>
+              <span class="truncate font-bold text-brand-950 text-[0.9rem]">{{ s.fullName || 'Không tên' }}</span>
             </span>
-            <span class="text-[0.72rem] text-[#667768]">{{ fmtDate(s.createdAt) }}</span>
+            <span class="text-[0.72rem] text-ink-muted">{{ fmtDate(s.createdAt) }}</span>
           </div>
           <div class="flex flex-wrap items-center gap-2 text-[0.8rem] text-[#445546]">
             <span
@@ -257,12 +268,12 @@ onMounted(() => { fetchSubmissions() })
               {{ SUBMISSION_STATUS_META[statusOf(s)].label }}
             </span>
             <span v-if="!s.firstViewedAt" class="text-[0.7rem] font-bold text-[#8a5a12]">Chưa ai xem</span>
-            <span v-if="s.phone"><i class="fa-solid fa-phone text-[0.65rem] text-[#667768]"></i> {{ s.phone }}</span>
-            <span v-if="s.address" class="truncate max-w-[180px]"><i class="fa-solid fa-location-dot text-[0.65rem] text-[#667768]"></i> {{ s.address }}</span>
+            <span v-if="s.phone"><i class="fa-solid fa-phone text-[0.65rem] text-ink-muted"></i> {{ s.phone }}</span>
+            <span v-if="s.address" class="truncate max-w-[180px]"><i class="fa-solid fa-location-dot text-[0.65rem] text-ink-muted"></i> {{ s.address }}</span>
           </div>
-          <p v-if="s.formTitle" class="text-[0.75rem] text-[#2c6e33] font-medium m-0 mt-1">{{ s.formTitle }}</p>
+          <p v-if="s.formTitle" class="text-[0.75rem] text-brand-700 font-medium m-0 mt-1">{{ s.formTitle }}</p>
         </div>
-        <div v-if="filteredSubmissions.length === 0" class="p-8 text-center text-[#667768] text-sm">Không có đơn đăng ký nào.</div>
+        <div v-if="filteredSubmissions.length === 0" class="p-8 text-center text-ink-muted text-sm">Không có đơn đăng ký nào.</div>
       </div>
 
       <!-- Desktop Table View -->
@@ -275,43 +286,43 @@ onMounted(() => { fetchSubmissions() })
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
-              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-[#e2ece3]">
+              <th class="bg-surface w-10 px-4 py-3 border-b border-line">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.allSelected(visibleIds)"
                   :indeterminate="selection.someSelected(visibleIds)"
                   aria-label="Chọn tất cả đơn đăng ký đang hiển thị"
                   @change="selection.toggleAll(visibleIds)"
                 />
               </th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">ID</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Họ và tên</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Số điện thoại</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Trạng thái</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Biểu mẫu</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Ngày gửi</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">ID</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Họ và tên</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Số điện thoại</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Trạng thái</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Biểu mẫu</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Ngày gửi</th>
+              <th class="bg-surface px-4 py-3 text-ink-muted font-bold border-b border-line whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="s in filteredSubmissions"
               :key="s.id"
-              class="hover:bg-[#fafcfa]"
-              :class="selection.isSelected(Number(s.id)) ? 'bg-[#f0f7f1]' : ''"
+              class="hover:bg-surface"
+              :class="selection.isSelected(Number(s.id)) ? 'bg-surface-tint' : ''"
             >
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+              <td class="px-4 py-3.5 border-b border-surface-tint">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.isSelected(Number(s.id))"
                   :aria-label="`Chọn đơn của ${s.fullName || 'người gửi không tên'}`"
                   @change="selection.toggle(Number(s.id))"
                 />
               </td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#667768]">#{{ s.id }}</td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] font-bold text-[#122815]">
+              <td class="px-4 py-3.5 border-b border-surface-tint text-ink-muted">#{{ s.id }}</td>
+              <td class="px-4 py-3.5 border-b border-surface-tint font-bold text-brand-950">
                 {{ s.fullName || '—' }}
                 <!-- "Chưa ai xem" là một câu hỏi KHÁC với trạng thái `new`: một đơn
                      có thể đã được đọc mà chưa ai bấm đổi gì, và một đơn đang "Đang
@@ -319,8 +330,8 @@ onMounted(() => { fetchSubmissions() })
                      đầu giờ là câu thứ nhất. -->
                 <span v-if="!s.firstViewedAt" class="ml-1.5 rounded bg-[#fdf3e2] px-1.5 py-0.5 text-[0.68rem] font-bold text-[#8a5a12]">chưa xem</span>
               </td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]"><code class="bg-[#f4f7f4] px-1.5 py-0.5 rounded text-xs">{{ s.phone || '—' }}</code></td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+              <td class="px-4 py-3.5 border-b border-surface-tint"><code class="bg-surface px-1.5 py-0.5 rounded text-xs">{{ s.phone || '—' }}</code></td>
+              <td class="px-4 py-3.5 border-b border-surface-tint">
                 <span
                   class="inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[0.72rem] font-bold"
                   :class="SUBMISSION_STATUS_META[statusOf(s)].badgeClass"
@@ -329,17 +340,17 @@ onMounted(() => { fetchSubmissions() })
                   {{ SUBMISSION_STATUS_META[statusOf(s)].label }}
                 </span>
               </td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#2c3e2e]">{{ s.formTitle || '—' }}</td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">
+              <td class="px-4 py-3.5 border-b border-surface-tint text-ink-admin">{{ s.formTitle || '—' }}</td>
+              <td class="px-4 py-3.5 border-b border-surface-tint text-ink-muted text-[0.82rem] whitespace-nowrap">
                 {{ fmtDate(s.createdAt) }}
               </td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+              <td class="px-4 py-3.5 border-b border-surface-tint">
                 <!-- Khoá ổn định: thao tác trong hộp chi tiết tải lại bảng (nút này bị gỡ
                      và vẽ lại) — AdminModal tìm lại đúng nút này để trả focus. -->
                 <button
                   type="button"
                   :data-admin-modal-opener="`submission-${s.id}`"
-                  class="inline-flex items-center gap-1.5 bg-[#f0f7f1] text-[#2c6e33] border border-[#8ed694] px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
+                  class="inline-flex items-center gap-1.5 bg-surface-tint text-brand-700 border border-brand-300 px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
                   @click="openId = Number(s.id)"
                 >
                   <i class="fa-solid fa-eye"></i> Xem & xử lý
@@ -347,7 +358,7 @@ onMounted(() => { fetchSubmissions() })
               </td>
             </tr>
             <tr v-if="filteredSubmissions.length === 0">
-              <td colspan="8" class="px-4 py-8 text-center text-[#667768] text-sm">Không có đơn đăng ký nào.</td>
+              <td colspan="8" class="px-4 py-8 text-center text-ink-muted text-sm">Không có đơn đăng ký nào.</td>
             </tr>
           </tbody>
         </table>

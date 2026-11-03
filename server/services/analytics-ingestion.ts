@@ -7,6 +7,7 @@ import { getDb } from '../utils/db'
 import { buildMinimalPageViewRow, type MinimalPageViewRow, type TrustedGeography } from '../utils/analytics-collection'
 import type { AnalyticsLiveScopeType } from '../utils/analytics-live'
 import { getClientIp } from '../utils/client-ip'
+import { isDeadlock } from '../utils/deadlock-retry'
 import {
   formatUtcDateTime,
   recordAnalyticsNocBestEffort,
@@ -206,16 +207,8 @@ export const INGESTION_DEADLOCK_ATTEMPTS = 3
 /** Jittered pause before a retry, so two victims of one deadlock do not collide again. */
 const INGESTION_RETRY_MIN_MS = 5
 const INGESTION_RETRY_MAX_MS = 25
-
-/** ER_LOCK_DEADLOCK (1213), on the error or anywhere down its `cause` chain (Drizzle wraps the driver's error). */
-function isDeadlock(error: unknown): boolean {
-  for (let current: unknown = error, depth = 0; current && typeof current === 'object' && depth < 5; depth++) {
-    const { code, errno, cause } = current as { code?: unknown, errno?: unknown, cause?: unknown }
-    if (code === 'ER_LOCK_DEADLOCK' || errno === 1213) return true
-    current = cause
-  }
-  return false
-}
+// `isDeadlock` (1213 / ER_LOCK_DEADLOCK down the `cause` chain) is the one in
+// `server/utils/deadlock-retry.ts` — this file had a byte-identical copy until slice R7.
 
 export async function ingestAnalyticsPageView(options: {
   event: H3Event

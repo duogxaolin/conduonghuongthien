@@ -303,14 +303,14 @@ onBeforeUnmount(deactivate)
         @click="onBackdropClick"
       >
         <div data-admin-modal-panel :class="panelClass">
-          <div class="flex shrink-0 items-start justify-between gap-3 border-b border-[#e2ece3] bg-[#f8faf8] px-6 py-4">
-            <h2 :id="titleId" class="m-0 min-w-0 text-[1.05rem] font-extrabold leading-normal text-[#122815] break-words">
-              <i v-if="icon" :class="icon" class="mr-2 text-[#2c6e33]" aria-hidden="true"></i>{{ title }}
+          <div class="flex shrink-0 items-start justify-between gap-3 border-b border-line bg-surface px-6 py-4">
+            <h2 :id="titleId" class="m-0 min-w-0 text-[1.05rem] font-extrabold leading-normal text-brand-950 break-words">
+              <i v-if="icon" :class="icon" class="mr-2 text-brand-700" aria-hidden="true"></i>{{ title }}
             </h2>
             <button
               ref="closeBtn"
               type="button"
-              class="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-[#667768] transition-colors hover:bg-[#e2ece3] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-ink-muted transition-colors hover:bg-line focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Đóng"
               :disabled="busy"
               @click="requestClose"
@@ -324,7 +324,7 @@ onBeforeUnmount(deactivate)
           <footer
             v-if="$slots.footer"
             ref="footerEl"
-            class="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-[#e2ece3] px-6 py-4"
+            class="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-line px-6 py-4"
           >
             <slot name="footer" />
           </footer>

@@ -5,6 +5,7 @@ import { parse } from '@vue/compiler-sfc'
 import * as shared from '../shared/settings-credential-rules'
 import * as smtp from '../server/utils/smtp-test-config'
 import * as guard from '../server/utils/settings-credential-guard'
+import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
 
 /**
  * `shared/settings-credential-rules.ts` is the "change the destination → retype the
@@ -15,49 +16,42 @@ import * as guard from '../server/utils/settings-credential-guard'
  * reason next to the field instead of a bare 400.
  *
  * What this file pins:
- *  1. the SMTP pieces copied into `shared/` agree with `server/utils/smtp-test-config.ts`
- *     (the "send test email" endpoint) on every input — the two must not drift;
+ *  1. `server/utils/smtp-test-config.ts` (the "send test email" endpoint) uses the
+ *     SMTP rules of `shared/` itself — the same bindings, no copy. It used to keep its
+ *     own copy of the port list, the target normaliser and the mask, held equal only
+ *     by a parity test (rà soát trùng lặp 2026-10-25, T1): a port added on one side
+ *     would have made "send test" and "save" decide differently;
  *  2. the page's view of "what is stored" (secrets MASKED, as the GET returns them)
  *     gives the same verdict as the server's view (real secrets) for every form;
  *  3. the three pages actually call the guard before their save request, and the
  *     email page no longer tells officers that a blank password "keeps" it.
  */
 
-// ─── 1. SMTP parity with the test-email endpoint's helpers ────────────────────
-test('SMTP: allowed ports, message and mask token are identical to smtp-test-config', () => {
-  assert.deepEqual([...shared.SMTP_ALLOWED_PORTS], [...smtp.SMTP_ALLOWED_PORTS])
-  assert.equal(shared.SMTP_PORT_NOT_ALLOWED_MESSAGE, smtp.SMTP_PORT_NOT_ALLOWED_MESSAGE)
-  assert.equal(shared.MASKED_SECRET, smtp.MASKED_SMTP_PASSWORD)
+// ─── 1. The test-email endpoint uses the shared SMTP rules, not a copy ────────
+test('SMTP: smtp-test-config exports the shared bindings themselves', () => {
+  assert.equal(smtp.SMTP_ALLOWED_PORTS, shared.SMTP_ALLOWED_PORTS, 'the port list must be the same array, not an equal copy')
+  assert.equal(smtp.effectiveSmtpPort, shared.effectiveSmtpPort)
+  assert.equal(smtp.isAllowedSmtpPort, shared.isAllowedSmtpPort)
+  assert.equal(smtp.smtpTargetOf, shared.smtpTargetOf)
+  assert.equal(smtp.sameSmtpTarget, shared.sameSmtpTarget)
+  assert.equal(smtp.SMTP_PORT_NOT_ALLOWED_MESSAGE, shared.SMTP_PORT_NOT_ALLOWED_MESSAGE)
+  assert.equal(smtp.MASKED_SMTP_PASSWORD, shared.MASKED_SECRET)
 })
 
-const PORT_INPUTS: unknown[] = ['', ' ', '25', '465', '587', '2525', ' 587 ', '0587', '6379', '3306', '0', '65536', '99999', '123456', 'abc', '587x', '-1', '5 87', null, undefined, 587, 25.5]
-test('SMTP: effectiveSmtpPort / isAllowedSmtpPort agree on every input', () => {
-  for (const input of PORT_INPUTS) {
-    assert.equal(shared.effectiveSmtpPort(input), smtp.effectiveSmtpPort(input), String(input))
-    assert.equal(shared.isAllowedSmtpPort(shared.effectiveSmtpPort(input)), smtp.isAllowedSmtpPort(smtp.effectiveSmtpPort(input)), String(input))
-  }
+test('SMTP: smtp-test-config defines no SMTP port list or target rule of its own', () => {
+  const source = readFileSync(new URL('../server/utils/smtp-test-config.ts', import.meta.url), 'utf8')
+  assert.match(source, /from '\.\.\/\.\.\/shared\/settings-credential-rules'/, 'imports the rules from shared/')
+  assert.doesNotMatch(source, /\[[^\]]*\b465\b[^\]]*\b587\b[^\]]*\]/, 'a port list literal is a second copy of the allowlist')
+  assert.doesNotMatch(source, /\b(SMTP_ALLOWED_PORTS|SMTP_PORT_NOT_ALLOWED_MESSAGE|MASKED_SMTP_PASSWORD|isTruthy)\s*(:[^=\n]*)?=/)
+  assert.doesNotMatch(source, /function\s+(effectiveSmtpPort|isAllowedSmtpPort|smtpTargetOf|sameSmtpTarget)\b/)
+  assert.doesNotMatch(source, /interface\s+SmtpTarget\b/)
 })
 
-const TARGETS = [
-  { smtp_host: 'smtp.real.vn', smtp_port: '587', smtp_user: 'a@real.vn', smtp_secure: 'false' },
-  { smtp_host: 'SMTP.Real.VN ', smtp_port: ' 587', smtp_user: ' a@real.vn ', smtp_secure: false },
-  { smtp_host: 'smtp.real.vn', smtp_port: '', smtp_user: 'a@real.vn', smtp_secure: '0' },
-  { smtp_host: 'smtp.real.vn', smtp_port: '465', smtp_user: 'a@real.vn', smtp_secure: 'true' },
-  { smtp_host: 'smtp.real.vn', smtp_port: '465', smtp_user: 'a@real.vn', smtp_secure: 'yes' },
-  { smtp_host: 'mail.attacker.example', smtp_port: '587', smtp_user: 'a@real.vn', smtp_secure: 'false' },
-  { smtp_host: 'smtp.real.vn', smtp_port: '587', smtp_user: 'b@real.vn', smtp_secure: 'false' },
-  {},
-]
-test('SMTP: smtpTargetOf / sameSmtpTarget agree on every pair', () => {
-  for (const a of TARGETS) {
-    assert.deepEqual(shared.smtpTargetOf(a), smtp.smtpTargetOf(a))
-    for (const b of TARGETS) {
-      assert.equal(
-        shared.sameSmtpTarget(shared.smtpTargetOf(a), shared.smtpTargetOf(b)),
-        smtp.sameSmtpTarget(smtp.smtpTargetOf(a), smtp.smtpTargetOf(b)),
-        `${JSON.stringify(a)} vs ${JSON.stringify(b)}`,
-      )
-    }
+test('SMTP: the test-email body\'s "secure" uses the shared truthiness rule', () => {
+  for (const [value, secure] of [['true', true], [' ON ', true], ['1', true], ['yes', true], ['false', false], ['0', false], ['', false], [undefined, false]] as const) {
+    const decision = smtp.resolveSmtpTestConfig({ smtp_host: 'smtp.new.vn', smtp_user: 'u@new.vn', smtp_pass: 'typed', smtp_secure: value }, null)
+    assert.equal(decision.config?.secure, secure, String(value))
+    assert.equal(shared.isTruthy(value), secure, String(value))
   }
 })
 
@@ -150,7 +144,8 @@ for (const [file, guardCall, saveFn] of [
     assert.ok(start >= 0, `defines ${saveFn}`)
     const body = src.slice(start)
     const guardAt = body.search(/if \((formViolation|r2Violation)\.value\)/)
-    const fetchAt = body.indexOf('$fetch')
+    // The save request, bare `$fetch` or `adminFetch<T>()` (D-FETCH) — one definition with the error/skeleton gates.
+    const fetchAt = body.search(ADMIN_FETCH_CALL)
     assert.ok(guardAt >= 0 && fetchAt > guardAt, 'the guard runs before the save request')
   })
 }

@@ -131,9 +131,9 @@ const isPending = computed(() => props.item.processingStatus === 'pending' || pr
           <p
             class="text-sm font-medium"
             :class="{
-              'text-[#1e251c]': stage.status === 'done' || stage.status === 'active',
+              'text-ink': stage.status === 'done' || stage.status === 'active',
               'text-red-700': stage.status === 'failed',
-              'text-[#8a9a8d]': stage.status === 'pending',
+              'text-ink-faint': stage.status === 'pending',
             }"
           >
             {{ stage.label }}
@@ -158,13 +158,13 @@ const isPending = computed(() => props.item.processingStatus === 'pending' || pr
           </div>
           <!-- Thanh % FFmpeg thật — chỉ hiện khi pipeline đang nén một bản cụ thể -->
           <div v-if="stage.key === 'transcode' && liveProgress" class="mt-2" role="status" aria-live="polite">
-            <div class="flex items-center justify-between text-xs font-medium text-[#1e251c]">
+            <div class="flex items-center justify-between text-xs font-medium text-ink">
               <span>Đang nén <strong class="font-semibold">{{ liveProgress.rendition }}</strong></span>
               <span class="tabular-nums">{{ liveProgress.percent }}%</span>
             </div>
             <div class="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-100">
               <div
-                class="h-full rounded-full bg-[#2c6e33] transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                class="h-full rounded-full bg-brand-700 transition-[width] duration-300 ease-out motion-reduce:transition-none"
                 :style="{ width: `${liveProgress.percent}%` }"
               ></div>
             </div>

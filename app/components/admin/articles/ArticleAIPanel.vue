@@ -12,6 +12,8 @@
  * TinyMCE editor state sống ở cha — `TINYMCE_EDITOR_ID` + `tinymceReady`). Con
  * emit `update:title` / `update:excerpt` khi áp dụng gợi ý.
  */
+import type { AdminAiEditorialResponse } from '~/types/admin-ai-api'
+
 interface PolishChangeItem {
   original: string
   suggested: string
@@ -113,17 +115,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
   else aiLoadingText.value = 'Trợ lý AI đang rà soát chính tả và văn phong...'
 
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      action: string
-      options?: string[]
-      titles?: string[]
-      polishedContent?: string
-      notes?: string[]
-      rawText?: string
-      changes?: PolishChangeItem[]
-      summaryNotes?: string
-    }>)('/api/admin/ai/editorial', {
+    const res = await adminFetch<AdminAiEditorialResponse>('/api/admin/ai/editorial', {
       method: 'POST',
       body: { action, title: props.formTitle, content },
     })
@@ -156,18 +148,18 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
 </script>
 
 <template>
-  <div class="rounded-xl border border-[#c8dcc9] bg-[#f0f7f1] p-3.5 flex flex-col gap-2.5">
+  <div class="rounded-xl border border-[#c8dcc9] bg-surface-tint p-3.5 flex flex-col gap-2.5">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center gap-2">
-        <span class="w-6 h-6 rounded-md bg-[#1e4620] text-white flex items-center justify-center text-xs shadow-xs">
+        <span class="w-6 h-6 rounded-md bg-brand-900 text-white flex items-center justify-center text-xs shadow-xs">
           <i class="fa-solid fa-wand-magic-sparkles"></i>
         </span>
-        <span class="text-xs font-bold text-[#1e4620] uppercase tracking-wide">Trợ lý AI Biên tập & Dịch thuật</span>
+        <span class="text-xs font-bold text-brand-900 uppercase tracking-wide">Trợ lý AI Biên tập & Dịch thuật</span>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         <button
           type="button"
-          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-[#1e4620] hover:bg-[#e4ece4] transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
+          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-brand-900 hover:bg-line transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
           :disabled="aiLoading"
           @click="callAiEditorial('suggest_titles')"
         >
@@ -176,7 +168,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
         </button>
         <button
           type="button"
-          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-[#1e4620] hover:bg-[#e4ece4] transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
+          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-brand-900 hover:bg-line transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
           :disabled="aiLoading"
           @click="callAiEditorial('summary')"
         >
@@ -185,7 +177,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
         </button>
         <button
           type="button"
-          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-[#1e4620] hover:bg-[#e4ece4] transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
+          class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-brand-900 hover:bg-line transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
           :disabled="aiLoading"
           @click="callAiEditorial('polish')"
         >
@@ -197,23 +189,23 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
     </div>
 
     <!-- Loading state -->
-    <div v-if="aiLoading" class="flex items-center gap-2 py-1 text-xs text-[#2c6e33] font-semibold animate-pulse motion-reduce:animate-none">
+    <div v-if="aiLoading" class="flex items-center gap-2 py-1 text-xs text-brand-700 font-semibold animate-pulse motion-reduce:animate-none">
       <i class="fa-solid fa-circle-notch fa-spin"></i>
       <span>{{ aiLoadingText }}</span>
     </div>
 
     <!-- Suggested Titles Drawer -->
-    <div v-if="suggestedTitles.length > 0" class="rounded-lg bg-white border border-[#c8d6c9] p-3 flex flex-col gap-2">
+    <div v-if="suggestedTitles.length > 0" class="rounded-lg bg-white border border-line-strong p-3 flex flex-col gap-2">
       <div class="flex items-center justify-between">
-        <span class="text-xs font-bold text-[#1e4620]">💡 Đề xuất tiêu đề từ AI (Bấm vào tiêu đề để chọn):</span>
-        <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer" @click="suggestedTitles = []">Đóng</button>
+        <span class="text-xs font-bold text-brand-900">💡 Đề xuất tiêu đề từ AI (Bấm vào tiêu đề để chọn):</span>
+        <button type="button" class="text-xs text-ink-muted hover:text-danger border-none bg-transparent cursor-pointer" @click="suggestedTitles = []">Đóng</button>
       </div>
       <div class="flex flex-col gap-1.5">
         <button
           v-for="(t, idx) in suggestedTitles"
           :key="idx"
           type="button"
-          class="w-full text-left p-2 rounded-lg border border-[#e2ece3] hover:border-[#2c6e33] hover:bg-[#f0f7f1] text-xs font-semibold text-[#122815] transition-colors cursor-pointer"
+          class="w-full text-left p-2 rounded-lg border border-line hover:border-brand-700 hover:bg-surface-tint text-xs font-semibold text-brand-950 transition-colors cursor-pointer"
           @click="applyTitle(t)"
         >
           {{ t }}
@@ -222,21 +214,21 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
     </div>
 
     <!-- Suggested Summaries Drawer -->
-    <div v-if="suggestedSummaries.length > 0" class="rounded-lg bg-white border border-[#c8d6c9] p-3.5 flex flex-col gap-2.5">
+    <div v-if="suggestedSummaries.length > 0" class="rounded-lg bg-white border border-line-strong p-3.5 flex flex-col gap-2.5">
       <div class="flex items-center justify-between">
-        <span class="text-xs font-bold text-[#1e4620]">📝 Đề xuất tóm tắt từ AI (Chọn phương án bạn ưng ý nhất):</span>
-        <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer" @click="suggestedSummaries = []">Đóng</button>
+        <span class="text-xs font-bold text-brand-900">📝 Đề xuất tóm tắt từ AI (Chọn phương án bạn ưng ý nhất):</span>
+        <button type="button" class="text-xs text-ink-muted hover:text-danger border-none bg-transparent cursor-pointer" @click="suggestedSummaries = []">Đóng</button>
       </div>
       <div class="flex flex-col gap-2">
         <div
           v-for="(s, idx) in suggestedSummaries"
           :key="idx"
-          class="p-3 rounded-lg border border-[#e2ece3] hover:border-[#2c6e33] bg-[#fcfdfc] hover:bg-[#f0f7f1] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          class="p-3 rounded-lg border border-line hover:border-brand-700 bg-surface hover:bg-surface-tint transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
         >
           <p class="m-0 text-xs text-[#2d3748] leading-relaxed flex-1">{{ s }}</p>
           <button
             type="button"
-            class="px-3 py-1.5 rounded-md bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold shrink-0 transition-colors border-none cursor-pointer self-start sm:self-auto"
+            class="px-3 py-1.5 rounded-md bg-brand-900 hover:bg-[#153317] text-white text-xs font-bold shrink-0 transition-colors border-none cursor-pointer self-start sm:self-auto"
             @click="applySummary(s)"
           >
             <i class="fa-solid fa-check mr-1"></i> Áp dụng vào Tóm tắt
@@ -246,25 +238,25 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
     </div>
 
     <!-- Polished Content Preview Drawer -->
-    <div v-if="polishedPreview" class="rounded-xl bg-white border border-[#c8d6c9] p-4 flex flex-col gap-3 shadow-md">
-      <div class="flex items-center justify-between border-b border-[#e2ece3] pb-2.5">
+    <div v-if="polishedPreview" class="rounded-xl bg-white border border-line-strong p-4 flex flex-col gap-3 shadow-md">
+      <div class="flex items-center justify-between border-b border-line pb-2.5">
         <div class="flex items-center gap-2">
-          <span class="w-7 h-7 rounded-lg bg-[#f0f7f1] text-[#2c6e33] flex items-center justify-center text-xs">
+          <span class="w-7 h-7 rounded-lg bg-surface-tint text-brand-700 flex items-center justify-center text-xs">
             <i class="fa-solid fa-spell-check"></i>
           </span>
-          <span class="text-sm font-extrabold text-[#122815]">Kết quả rà soát & đề xuất sửa lỗi:</span>
-          <span v-if="polishedPreview.changes?.length" class="text-xs font-bold px-2 py-0.5 rounded-full bg-[#f0f7f1] text-[#2c6e33]">
+          <span class="text-sm font-extrabold text-brand-950">Kết quả rà soát & đề xuất sửa lỗi:</span>
+          <span v-if="polishedPreview.changes?.length" class="text-xs font-bold px-2 py-0.5 rounded-full bg-surface-tint text-brand-700">
             {{ polishedPreview.changes.length }} điểm cần sửa
           </span>
         </div>
-        <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer p-1" @click="polishedPreview = null">
+        <button type="button" class="text-xs text-ink-muted hover:text-danger border-none bg-transparent cursor-pointer p-1" @click="polishedPreview = null">
           <i class="fa-solid fa-xmark text-sm"></i>
         </button>
       </div>
 
       <!-- Summary note -->
-      <div v-if="polishedPreview.summaryNotes" class="text-xs font-medium text-[#2c6e33] bg-[#f0f7f1] p-2.5 rounded-lg border border-[#c8d6c9] flex items-start gap-2">
-        <i class="fa-solid fa-lightbulb text-sm mt-0.5 shrink-0 text-[#7CB342]"></i>
+      <div v-if="polishedPreview.summaryNotes" class="text-xs font-medium text-brand-700 bg-surface-tint p-2.5 rounded-lg border border-line-strong flex items-start gap-2">
+        <i class="fa-solid fa-lightbulb text-sm mt-0.5 shrink-0 text-accent"></i>
         <span>{{ polishedPreview.summaryNotes }}</span>
       </div>
 
@@ -274,17 +266,17 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
           v-for="(change, idx) in polishedPreview.changes"
           :key="idx"
           class="rounded-xl border p-3 flex flex-col gap-2 transition-all text-xs"
-          :class="change.applied ? 'border-green-300 bg-green-50/50 opacity-75' : 'border-[#e2ece3] bg-white hover:border-[#2c6e33]/40 shadow-xs'"
+          :class="change.applied ? 'border-green-300 bg-green-50/50 opacity-75' : 'border-[#e2ece3] bg-white hover:border-brand-700/40 shadow-xs'"
         >
           <div class="flex items-center justify-between gap-2 flex-wrap">
-            <span class="font-bold text-[#667768] text-[0.72rem]">Lỗi #{{ idx + 1 }}: {{ change.reason || 'Chuẩn hóa câu từ' }}</span>
+            <span class="font-bold text-ink-muted text-[0.72rem]">Lỗi #{{ idx + 1 }}: {{ change.reason || 'Chuẩn hóa câu từ' }}</span>
             <span v-if="change.applied" class="text-[0.7rem] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1">
               <i class="fa-solid fa-check"></i> Đã áp dụng
             </span>
             <button
               v-else
               type="button"
-              class="px-2.5 py-1 rounded-md bg-[#2c6e33] hover:bg-[#1e4620] text-white text-[0.72rem] font-bold cursor-pointer border-none flex items-center gap-1 transition-all active:scale-95"
+              class="px-2.5 py-1 rounded-md bg-brand-700 hover:bg-brand-900 text-white text-[0.72rem] font-bold cursor-pointer border-none flex items-center gap-1 transition-all active:scale-95"
               @click="applySingleChange(change)"
             >
               <i class="fa-solid fa-check"></i> Áp dụng sửa đổi này
@@ -312,23 +304,23 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
       </div>
 
       <!-- Nếu không có danh sách chi tiết mà chỉ có nội dung đã sửa -->
-      <div v-else class="max-h-60 overflow-y-auto p-3 rounded-lg border border-[#e2ece3] bg-[#fcfdfc] text-xs leading-relaxed text-[#2d3748]">
+      <div v-else class="max-h-60 overflow-y-auto p-3 rounded-lg border border-line bg-surface text-xs leading-relaxed text-[#2d3748]">
         <!-- eslint-disable-next-line vue/no-v-html -- đầu ra AI, đã sanitizeHtml ở server/api/admin/ai/editorial.post.ts -->
         <div v-html="polishedPreview.content"></div>
       </div>
 
       <!-- Footer actions -->
-      <div class="flex items-center justify-between pt-2 border-t border-[#e2ece3] flex-wrap gap-2">
+      <div class="flex items-center justify-between pt-2 border-t border-line flex-wrap gap-2">
         <button
           type="button"
-          class="px-3 py-1.5 rounded-md border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-[#f8faf8] cursor-pointer"
+          class="px-3 py-1.5 rounded-md border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-surface cursor-pointer"
           @click="polishedPreview = null"
         >
           Đóng
         </button>
         <button
           type="button"
-          class="px-4 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer border-none flex items-center gap-2 shadow-xs transition-all active:scale-95"
+          class="px-4 py-2 rounded-lg bg-brand-900 hover:bg-[#153317] text-white text-xs font-bold cursor-pointer border-none flex items-center gap-2 shadow-xs transition-all active:scale-95"
           @click="applyAllPolishedChanges"
         >
           <i class="fa-solid fa-check-double"></i> Áp dụng tất cả sửa đổi vào bài viết

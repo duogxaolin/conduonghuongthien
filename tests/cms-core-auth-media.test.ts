@@ -131,20 +131,8 @@ test('the stored extension comes from the validated MIME, not the filename', () 
   assert.doesNotMatch(upload, /const ext = path\.extname\(originalName\)/)
 })
 
-test('uploaded files are never served as inline SVG', () => {
-  const route = read('server/routes/uploads/[...path].ts')
-  const mimeTable = route.match(/const mimeMap[^{]*\{([\s\S]*?)\}/)?.[1] || ''
-  assert.ok(mimeTable, 'mime table not found')
-  assert.doesNotMatch(mimeTable, /svg/i, 'svg is mapped to a renderable content type')
-  assert.match(route, /X-Content-Type-Options.*nosniff/s)
-  assert.match(route, /Content-Disposition.*attachment/s)
-})
-
-test('the uploads route still refuses to escape its root', () => {
-  const route = read('server/routes/uploads/[...path].ts')
-  assert.match(route, /replace\(\/\\\.\\\.\/g, ''\)/, 'traversal stripping removed')
-  assert.match(route, /startsWith\(uploadsRoot \+ path\.sep\)/, 'root containment check removed')
-})
+// Serving /uploads/** (no SVG rendered inline, no path outside public/uploads) is
+// run against a real file tree in tests/uploads-route-confinement-behavior.test.ts.
 
 // ─── Public submissions ──────────────────────────────────────────────────────
 test('the public form is rate-limited and cannot pick an arbitrary recipient', () => {

@@ -15,6 +15,7 @@
  */
 import { errorMessage } from '~/utils/errorMessage'
 import { summarizeModeration, type ModerationSummary } from '~/utils/moderation-summary'
+import type { ModerationQueueResponse, ModerationRulesResponse } from '~/types/moderation'
 
 const moderationLoading = ref(false)
 const moderationError = ref('')
@@ -26,10 +27,10 @@ async function loadModeration() {
   try {
     const [queue, rules] = await Promise.all([
       // Chỉ cần tổng: xin 1 dòng, đọc `total` (đếm trước LIMIT ở máy chủ).
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ total?: unknown }>)('/api/admin/ai/moderation/queue', {
-        params: { status: 'pending', perPage: 1 },
+      adminFetch<ModerationQueueResponse>('/api/admin/ai/moderation/queue', {
+        query: { status: 'pending', perPage: 1 },
       }),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ rules?: Array<{ isEnabled?: unknown }> }>)('/api/admin/ai/moderation/rules'),
+      adminFetch<ModerationRulesResponse>('/api/admin/ai/moderation/rules'),
     ])
     summary.value = summarizeModeration(queue, rules)
   } catch (err: unknown) {
@@ -49,11 +50,11 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
 
 <template>
   <section class="flex flex-col gap-4" aria-labelledby="moderation-summary-title">
-    <h2 id="moderation-summary-title" class="m-0 text-base font-bold text-[#122815]">Tóm tắt kiểm duyệt an ninh</h2>
+    <h2 id="moderation-summary-title" class="m-0 text-base font-bold text-brand-950">Tóm tắt kiểm duyệt an ninh</h2>
 
     <div v-if="moderationLoading" role="status" aria-busy="true" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <span class="sr-only">Đang tải số liệu kiểm duyệt an ninh</span>
-      <div v-for="n in 2" :key="n" class="h-24 rounded-xl bg-[#EEF2EC] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+      <div v-for="n in 2" :key="n" class="h-24 rounded-xl bg-surface-tint animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
     </div>
 
     <div
@@ -64,37 +65,37 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
       <span><strong>Lỗi:</strong> {{ moderationError }}</span>
       <button
         type="button"
-        class="cursor-pointer rounded font-bold text-[#4A6741] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] sm:ml-auto"
+        class="cursor-pointer rounded font-bold text-brand-600 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 sm:ml-auto"
         @click="loadModeration()"
       >Thử lại</button>
     </div>
 
     <dl v-else-if="summary" class="m-0 grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <div class="rounded-xl border border-[#e2ece3] bg-white p-4">
-        <dt class="text-sm text-[#667768]">
+      <div class="rounded-xl border border-line bg-white p-4">
+        <dt class="text-sm text-ink-muted">
           <i class="fa-solid fa-inbox mr-1.5" aria-hidden="true"></i>Nội dung đang chờ đối soát
         </dt>
-        <dd class="m-0 mt-1 text-2xl font-extrabold text-[#122815]">
+        <dd class="m-0 mt-1 text-2xl font-extrabold text-brand-950">
           <span data-moderation-count="pending">{{ summary.pendingCount }}</span>
         </dd>
       </div>
-      <div class="rounded-xl border border-[#e2ece3] bg-white p-4">
-        <dt class="text-sm text-[#667768]">
+      <div class="rounded-xl border border-line bg-white p-4">
+        <dt class="text-sm text-ink-muted">
           <i class="fa-solid fa-list-check mr-1.5" aria-hidden="true"></i>Quy tắc an ninh đang bật
         </dt>
-        <dd class="m-0 mt-1 text-2xl font-extrabold text-[#122815]">
+        <dd class="m-0 mt-1 text-2xl font-extrabold text-brand-950">
           <span data-moderation-count="active-rules">{{ summary.activeRuleCount }}</span>
-          <span class="text-sm font-semibold text-[#667768]"> / {{ summary.totalRuleCount }} quy tắc</span>
+          <span class="text-sm font-semibold text-ink-muted"> / {{ summary.totalRuleCount }} quy tắc</span>
         </dd>
       </div>
     </dl>
 
-    <p class="m-0 text-sm text-[#667768]">
+    <p class="m-0 text-sm text-ink-muted">
       Xử lý nội dung bị ẩn, cài đặt kiểm duyệt AI và sửa quy tắc đều thực hiện trên trang Kiểm duyệt An ninh.
     </p>
     <NuxtLink
       to="/admin/ai/moderation"
-      class="inline-flex items-center gap-2 self-start rounded-lg bg-[#2c6e33] px-4 py-2 text-sm font-semibold text-white no-underline transition-colors hover:bg-[#1e4620] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+      class="inline-flex items-center gap-2 self-start rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white no-underline transition-colors hover:bg-brand-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
     >
       <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
       Mở trang Kiểm duyệt An ninh

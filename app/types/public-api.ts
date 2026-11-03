@@ -18,9 +18,7 @@
  * Chỉ khai những kiểu **có nơi dùng thật**. Một kiểu dự phòng không ai import là
  * một lời khẳng định chưa bao giờ được đối chiếu với gì.
  */
-import type { Serialize } from 'nitropack/types'
-
-type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
+import type { Payload } from './handler-payload'
 
 // ─── Luồng bình luận công khai ───────────────────────────────────────────────
 type CommentThreadHandler = typeof import('~~/server/api/public/comments/[articleSlug].get').default

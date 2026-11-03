@@ -110,8 +110,10 @@ Trả về đúng định dạng JSON thuần túy (không bọc trong markdown 
   //    literal entity into `original`/`suggested`, which Vue text interpolation would
   //    render as `&acirc;`). We deliberately do NOT escapeHtml here — it would re-mangle
   //    the diacritics, and it does not guard against markdown-fence prompt injection
-  //    (backtick is not an HTML metacharacter). The gateway template wraps `variables`
-  //    in its own fenced block; the inline prompt is context-only.
+  //    (backtick is not an HTML metacharacter). The article is staff-written and goes in
+  //    unfenced, and `variables` are substituted raw into a stored system prompt
+  //    (`substituteVariables` adds no fence); what protects the officer is the server-side
+  //    sanitising of everything the model returns, below.
   const aiResult = await callAi('editorial_assistant', {
     prompt: `${taskPrompt}\n\nTiêu đề bài viết: ${decodedTitle || '(Chưa có tiêu đề)'}\n\nNội dung bài viết:\n${content.slice(0, 10000)}`,
     variables: {

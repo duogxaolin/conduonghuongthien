@@ -63,8 +63,12 @@ test('tác vụ ném lỗi đồng bộ vẫn trở thành promise bị từ ch�
 
 test('useI18n tải bản dịch và danh sách ngôn ngữ qua singleFlight, không gọi $fetch trần', () => {
   const source = readFileSync(new URL('../app/composables/useI18n.ts', import.meta.url), 'utf8')
-  const fetchCalls = source.match(/\$fetch as/g) ?? []
+  // D-FETCH lô G: hai đường tải là `publicFetch<…>(…)` (trước là hai ép kiểu `$fetch`); không
+  // còn `$fetch` nào khác trong tệp. Hành vi (mỗi đường MỘT lượt, kể cả gọi chồng) chạy thật ở
+  // tests/public-fetch-rollout-i18n.test.ts.
+  const fetchCalls = source.match(/\bpublicFetch<[^>]+>\(/g) ?? []
   assert.equal(fetchCalls.length, 2, 'đúng hai đường tải: languages + translations')
+  assert.doesNotMatch(source, /\$fetch\b/, 'không còn $fetch trần/ép kiểu')
   assert.match(source, /singleFlight\('languages'/)
   assert.match(source, /singleFlight\(`translations:\$\{lang\}`/)
 })

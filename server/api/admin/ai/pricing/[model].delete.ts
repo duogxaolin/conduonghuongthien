@@ -11,7 +11,8 @@ export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'ai', 'update')
 
-  const modelParam = getRouterParam(event, 'model')
+  // Decoded: `org/flash` arrives as `org%2Fflash` (see `[model].put.ts`).
+  const modelParam = getRouterParam(event, 'model', { decode: true })
   if (!modelParam || typeof modelParam !== 'string') {
     throw createError({ statusCode: 400, statusMessage: 'Model không hợp lệ.' })
   }
@@ -30,11 +31,11 @@ export default defineEventHandler(async (event) => {
       action: 'delete',
       resource: 'ai',
       resourceId: null,
-      meta: JSON.stringify({
+      meta: {
         type: 'pricing_delete',
         model: modelParam,
         provider: existing.provider,
-      }),
+      },
     })
   })
 

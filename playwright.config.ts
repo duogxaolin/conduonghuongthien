@@ -28,7 +28,10 @@ export default defineConfig({
   // batch, 6.4's `admin-list-pilot`): 112 tests took 298 s locally before 6.4 and
   // runs longer on CI runners, so it is 600 s, the same ~2× margin. Raise it again
   // with the next batch of specs rather than let one slow runner fail every test at once.
-  globalTimeout: 600_000,
+  // wave3 `public-cache-invalidation` (one case waits out the 60 s swr window): 121
+  // tests took 438 s locally (2026-11-02, machine shared with other runs) — 900 s keeps
+  // the ~2× margin.
+  globalTimeout: 900_000,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   reporter: process.env.CI ? [['github'], ['list']] : [['list']],
