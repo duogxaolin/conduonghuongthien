@@ -27,14 +27,13 @@ const loaded = ref(false)
 const root = ref<HTMLElement | null>(null)
 
 // Cột nút tròn (floating) mở rộng / bảng (popup) mở: khởi tạo ĐÓNG. Tự mở (cài đặt
-// `socialAutoOpen`) là việc của `useSocialAutoOpen`: một lần mỗi phiên, không đè lên đầu
-// trang chủ. `isExpanded` từng khởi tạo `true`: nút tròn mở rộng cả khi đã tắt tự mở.
+// `socialAutoOpen`) là việc của `useSocialAutoOpen`: một lần mỗi phiên, chỉ sau khi khách cuộn
+// qua đầu trang — không đè lên h1/hero. `isExpanded` từng khởi tạo `true`: nút tròn mở rộng cả
+// khi đã tắt tự mở.
 const isExpanded = ref(false)
-const route = useRoute()
 const autoOpen = useSocialAutoOpen({
   enabled: () => config.value.socialAutoOpen !== false,
   floating: () => isFloating.value,
-  path: () => route.path,
   reveal: () => { if (isFloating.value) isExpanded.value = true; else open.value = true },
 })
 
@@ -82,7 +81,7 @@ onMounted(() => {
   void load()
   document.addEventListener('click', onClickOutside)
   document.addEventListener('keydown', onKeydown)
-  // Kiểu bảng nổi: chỉ PC; nút tròn rời: cả điện thoại; trang chủ: đợi cuộn qua hero.
+  // Kiểu bảng nổi: chỉ PC; nút tròn rời: cả điện thoại; mọi trang: đợi cuộn qua đầu trang.
   autoOpen.start()
 })
 

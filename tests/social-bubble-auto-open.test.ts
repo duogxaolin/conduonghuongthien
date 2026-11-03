@@ -1,21 +1,24 @@
 /**
  * Bảng "Kênh mạng xã hội" (`app/components/SocialBubble.client.vue`) tự mở — chủ đích, nhưng
- * không được che đầu trang chủ và không được mở lại trong cùng phiên.
+ * không được che đầu trang và không được mở lại trong cùng phiên.
  *
  * Người dùng báo (2026-11-02, bản build): vào trang là bảng tự bật, che nút ở đầu trang chủ,
  * và đổi ngôn ngữ (= tải lại trang, `setLang` → `location.reload()`) là nó bật lại. Đo trên
  * app của người dùng ở 1366×768: bảng chiếm x 24–339, y 304–688; nút "Về chúng tôi" của hero
- * ở x 95–269, y 615–668 — bị che hẳn.
+ * ở x 95–269, y 615–668 — bị che hẳn. Kiểm chứng độc lập (W1): bản sửa đầu chỉ đợi ở trang
+ * chủ — /news, /about, /contact vẫn mở ngay và che h1, ô tìm kiếm, dòng thông tin ở 1366–1440.
  *
  * Tự mở là chủ đích: cài đặt `socialAutoOpen` (/admin/settings/social-links, "Tự mở khi tải
  * trang"), mặc định bật. Nhưng `openspec/ui-dna.md`: nút nổi "mặc định đóng để không che chắn
  * nội dung trang". Hợp đồng sau sửa, giữ cả hai:
+ *   - MỌI trang: chỉ mở khi khách đã cuộn qua 60% màn hình đầu (đầu trang trôi khỏi vùng bảng);
+ *     điều hướng phía client không mở — trang mới về đầu, khách cuộn ở đó thì mở; tải lại ở vị
+ *     trí đã cuộn quá ngưỡng thì mở;
  *   - tối đa MỘT lần mỗi phiên (sessionStorage `cdkt_social_auto_opened`) — tải lại, đổi ngôn
  *     ngữ, mở tab cùng phiên đều không bật lại; khách tự mở/đóng/thu gọn cũng tính là xong;
- *   - trên trang chủ chỉ mở khi khách đã cuộn qua phần lớn màn hình đầu (hero), hoặc khi rời
- *     trang chủ; trang khác mở ngay khi tải;
- *   - kiểu bảng nổi: điện thoại không bao giờ tự mở (như trước); tắt `socialAutoOpen` thì không
- *     tự mở ở đâu — kể cả kiểu nút tròn rời, trước đây vẫn mở rộng vì `isExpanded` khởi tạo `true`;
+ *   - kiểu bảng nổi: điện thoại không bao giờ tự mở; tắt `socialAutoOpen` thì không tự mở ở đâu
+ *     (kể cả khi cài đặt tới SAU lúc gắn) — kể cả kiểu nút tròn rời, trước đây vẫn mở rộng vì
+ *     `isExpanded` khởi tạo `true`;
  *   - sessionStorage hỏng/bị chặn: không lỗi, coi như đã mở (không làm phiền).
  */
 import assert from 'node:assert/strict'
@@ -30,6 +33,8 @@ const LINKS = { ok: true, items: [
   { id: 2, platform: 'youtube', label: 'Kênh YouTube', url: 'https://youtube.com/x', icon: 'fa-brands fa-youtube', iconType: 'fontawesome', color: '#ff0000', sortOrder: 2 },
 ] }
 const KEY = 'cdkt_social_auto_opened'
+/** 60% of 768: the first screen is passed at scrollY ≥ 460.8. */
+const PAST = 900
 
 type Mode = 'popup' | 'floating'
 type Env = {
@@ -74,7 +79,9 @@ function browser(env: Env) {
 
 async function mountBubble(t: TestContext, env: Env = {}) {
   const b = browser(env)
-  const config = Vue.computed(() => ({ socialDisplayMode: env.mode ?? 'popup', socialAutoOpen: env.autoOpen ?? true }))
+  // A ref, so a test can deliver the layout settings after mount (they are fetched).
+  const autoOpen = Vue.ref(env.autoOpen ?? true)
+  const config = Vue.computed(() => ({ socialDisplayMode: env.mode ?? 'popup', socialAutoOpen: autoOpen.value }))
   const ctx = await mountPublic(t, {
     file: 'components/SocialBubble.client.vue',
     responder: routes({ 'GET /api/public/social-links': () => json(LINKS) }),
@@ -89,7 +96,7 @@ async function mountBubble(t: TestContext, env: Env = {}) {
   for (const el of findAll(ctx.page.root, e => typeof e.props.class === 'string' && e.props.class.startsWith('fixed '))) {
     Object.defineProperty(el, 'contains', { value: () => false, configurable: true, writable: true })
   }
-  return { ...ctx, browser: b }
+  return { ...ctx, browser: b, autoOpen }
 }
 
 /**
@@ -111,54 +118,79 @@ const byAria = (root: MiniElement, label: string) => {
   assert.ok(found.length >= 1, `no button "${label}"`)
   return found[0]!
 }
+/** Mount at the top of `path`, then scroll past the first screen: auto-opened (it has to be). */
+async function opened(t: TestContext, env: Env) {
+  const ctx = await mountBubble(t, env)
+  await ctx.browser.scrollTo(PAST)
+  assert.equal(env.mode === 'floating' ? floatingExpanded(ctx.page.root) : panelOpen(ctx.page.root), true, 'did not auto-open after the scroll')
+  return ctx
+}
 
-describe('SocialBubble popup (desktop): not over the home hero, once per session', () => {
-  it('home, top of the page: stays closed on load; scrolling past most of the first screen opens it once', async (t) => {
-    const ctx = await mountBubble(t, { path: '/' })
-    assert.equal(panelOpen(ctx.page.root), false, 'opened over the hero')
-    assert.equal(ctx.browser.scroll.size, 1, 'waits for the visitor to scroll')
-    await ctx.browser.scrollTo(200)
-    assert.equal(panelOpen(ctx.page.root), false, 'a small scroll still has the hero buttons under it')
-    await ctx.browser.scrollTo(500)
-    assert.equal(panelOpen(ctx.page.root), true)
-    assert.equal(ctx.browser.storage instanceof Map && ctx.browser.storage.get(KEY), '1')
-    assert.equal(ctx.browser.scroll.size, 0, 'the scroll listener is gone once it opened')
+describe('SocialBubble popup (desktop): never over the top of a page, once per session', () => {
+  for (const path of ['/', '/news/activity-news', '/about', '/contact']) {
+    it(`${path}, top of the page: stays closed on load; scrolling past most of the first screen opens it once`, async (t) => {
+      const ctx = await mountBubble(t, { path })
+      assert.equal(panelOpen(ctx.page.root), false, 'opened over the top of the page')
+      assert.equal(ctx.browser.scroll.size, 1, 'waits for the visitor to scroll')
+      await ctx.browser.scrollTo(200)
+      assert.equal(panelOpen(ctx.page.root), false, 'a small scroll still has the top of the page under it')
+      await ctx.browser.scrollTo(500)
+      assert.equal(panelOpen(ctx.page.root), true)
+      assert.equal(ctx.browser.storage instanceof Map && ctx.browser.storage.get(KEY), '1')
+      assert.equal(ctx.browser.scroll.size, 0, 'the scroll listener is gone once it opened')
+    })
+  }
+
+  it('the threshold is 60% of the window height: 0.59 does not open, 0.61 does (768 px and 1080 px)', async (t) => {
+    for (const height of [768, 1080]) {
+      const ctx = await mountBubble(t, { path: '/news', height })
+      await ctx.browser.scrollTo(Math.floor(height * 0.59))
+      assert.equal(panelOpen(ctx.page.root), false, `${height}: opened at 59%`)
+      await ctx.browser.scrollTo(Math.ceil(height * 0.61))
+      assert.equal(panelOpen(ctx.page.root), true, `${height}: still closed at 61%`)
+      ctx.close()
+    }
   })
 
-  it('another page: opens on load (the admin setting), and marks the session', async (t) => {
-    const ctx = await mountBubble(t, { path: '/news' })
+  it('already scrolled down on load (a reload keeps the position): opens on load', async (t) => {
+    const ctx = await mountBubble(t, { path: '/news', scrollY: PAST })
     assert.equal(panelOpen(ctx.page.root), true)
     assert.equal(ctx.browser.scroll.size, 0)
   })
 
-  it('home already scrolled down on load (a reload keeps the position): opens on load', async (t) => {
-    const ctx = await mountBubble(t, { path: '/', scrollY: 900 })
+  it('client-side navigation while waiting does not open it at the top of the next page; a scroll there does', async (t) => {
+    const ctx = await mountBubble(t, { path: '/' })
+    ctx.route.path = '/news'
+    await settle()
+    assert.equal(panelOpen(ctx.page.root), false, 'opened on arrival, over the next page\'s h1')
+    assert.equal(ctx.browser.scroll.size, 1, 'stopped waiting')
+    await ctx.browser.scrollTo(0) // the router puts the new page at its top
+    assert.equal(panelOpen(ctx.page.root), false)
+    await ctx.browser.scrollTo(PAST)
     assert.equal(panelOpen(ctx.page.root), true)
   })
 
   it('closed with X, then the page reloads (a language change does): it stays closed', async (t) => {
     const storage = new Map<string, string>()
-    const first = await mountBubble(t, { path: '/news', storage })
-    assert.equal(panelOpen(first.page.root), true)
+    const first = await opened(t, { path: '/news', storage })
     await click(byAria(first.page.root, 'Đóng bảng mạng xã hội'))
     await settle()
     assert.equal(panelOpen(first.page.root), false)
     first.close()
     const again = await mountBubble(t, { path: '/news', storage })
+    assert.equal(again.browser.scroll.size, 0, 'waits to auto-open again in the same session')
+    await again.browser.scrollTo(PAST)
     assert.equal(panelOpen(again.page.root), false, 'reopened after a reload in the same session')
-    // Nor on the home page after a scroll.
     again.close()
-    const home = await mountBubble(t, { path: '/', storage })
-    await home.browser.scrollTo(900)
+    const home = await mountBubble(t, { path: '/', storage, scrollY: PAST })
     assert.equal(panelOpen(home.page.root), false)
   })
 
   it('auto-opened and left open, the next load does not open it again (one auto-open per session)', async (t) => {
     const storage = new Map<string, string>()
-    const first = await mountBubble(t, { path: '/news', storage })
-    assert.equal(panelOpen(first.page.root), true)
+    const first = await opened(t, { path: '/news', storage })
     first.close()
-    const again = await mountBubble(t, { path: '/about', storage })
+    const again = await mountBubble(t, { path: '/about', storage, scrollY: PAST })
     assert.equal(panelOpen(again.page.root), false)
   })
 
@@ -168,12 +200,11 @@ describe('SocialBubble popup (desktop): not over the home hero, once per session
   ] as const) {
     it(`closed with ${how}: remembered for the session too`, async (t) => {
       const storage = new Map<string, string>()
-      const first = await mountBubble(t, { path: '/news', storage })
-      assert.equal(panelOpen(first.page.root), true)
+      const first = await opened(t, { path: '/news', storage })
       await act(first)
       assert.equal(panelOpen(first.page.root), false)
       first.close()
-      const again = await mountBubble(t, { path: '/news', storage })
+      const again = await mountBubble(t, { path: '/news', storage, scrollY: PAST })
       assert.equal(panelOpen(again.page.root), false)
     })
   }
@@ -187,15 +218,15 @@ describe('SocialBubble popup (desktop): not over the home hero, once per session
     await click(byAria(ctx.page.root, 'Kênh mạng xã hội C11'))
     await settle()
     assert.equal(panelOpen(ctx.page.root), false)
-    await ctx.browser.scrollTo(900)
+    await ctx.browser.scrollTo(PAST)
     assert.equal(panelOpen(ctx.page.root), false, 'auto-opened after the visitor had closed it')
     assert.equal(ctx.browser.scroll.size, 0)
     // It never auto-opened, so only the visitor's own close marks the session: a reload (a
-    // language change) back at the top of home must not wait to pop it open again.
+    // language change) back at the top of the page must not wait to pop it open again.
     ctx.close()
     const again = await mountBubble(t, { path: '/', storage })
     assert.equal(again.browser.scroll.size, 0, 'waits to auto-open after the visitor already closed it')
-    await again.browser.scrollTo(900)
+    await again.browser.scrollTo(PAST)
     assert.equal(panelOpen(again.page.root), false)
   })
 
@@ -210,34 +241,42 @@ describe('SocialBubble popup (desktop): not over the home hero, once per session
     await settle()
     ctx.close()
     const again = await mountBubble(t, { mode: 'floating', path: '/', storage })
-    await again.browser.scrollTo(900)
+    await again.browser.scrollTo(PAST)
     assert.equal(floatingExpanded(again.page.root), false)
   })
 
-  it('leaving the home page before scrolling (client-side navigation) opens it on the next page', async (t) => {
-    const ctx = await mountBubble(t, { path: '/' })
+  it('a phone never auto-opens the popup panel (it would cover the page), not even scrolled', async (t) => {
+    const ctx = await mountBubble(t, { path: '/news', width: 390, height: 844, scrollY: PAST })
     assert.equal(panelOpen(ctx.page.root), false)
-    ctx.route.path = '/news'
-    await settle()
-    assert.equal(panelOpen(ctx.page.root), true)
     assert.equal(ctx.browser.scroll.size, 0)
   })
 
-  it('a phone never auto-opens the popup panel (it would cover the page)', async (t) => {
-    const ctx = await mountBubble(t, { path: '/news', width: 390, height: 844 })
+  it('the window shrinks to a phone width while waiting: the scroll past the threshold does not open the panel', async (t) => {
+    const ctx = await mountBubble(t, { path: '/news' })
+    ctx.browser.window.innerWidth = 390
+    await ctx.browser.scrollTo(PAST)
     assert.equal(panelOpen(ctx.page.root), false)
-    assert.equal(ctx.browser.scroll.size, 0)
   })
 
   it('socialAutoOpen off: never opens, not even after a scroll', async (t) => {
     const ctx = await mountBubble(t, { path: '/', autoOpen: false })
-    await ctx.browser.scrollTo(900)
+    await ctx.browser.scrollTo(PAST)
     assert.equal(panelOpen(ctx.page.root), false)
     assert.equal(ctx.browser.scroll.size, 0)
   })
 
+  it('socialAutoOpen turned off by settings that arrive after mount: the scroll does not open it', async (t) => {
+    const ctx = await mountBubble(t, { path: '/news' })
+    assert.equal(ctx.browser.scroll.size, 1)
+    ctx.autoOpen.value = false
+    await settle()
+    await ctx.browser.scrollTo(PAST)
+    assert.equal(panelOpen(ctx.page.root), false)
+    assert.equal(ctx.browser.storage instanceof Map && ctx.browser.storage.has(KEY), false, 'a refusal is not an auto-open')
+  })
+
   it('sessionStorage blocked: no error, and no auto-open (it could not be remembered)', async (t) => {
-    const ctx = await mountBubble(t, { path: '/news', storage: 'throws' })
+    const ctx = await mountBubble(t, { path: '/news', storage: 'throws', scrollY: PAST })
     assert.deepEqual(ownErrors(ctx.page.errors), [])
     assert.equal(panelOpen(ctx.page.root), false)
     await click(byAria(ctx.page.root, 'Kênh mạng xã hội C11'))
@@ -247,7 +286,7 @@ describe('SocialBubble popup (desktop): not over the home hero, once per session
   })
 
   it('unmounting while it waits for a scroll removes the listener', async (t) => {
-    const ctx = await mountBubble(t, { path: '/' })
+    const ctx = await mountBubble(t, { path: '/news' })
     assert.equal(ctx.browser.scroll.size, 1)
     const { scroll } = ctx.browser
     ctx.close()
@@ -256,27 +295,28 @@ describe('SocialBubble popup (desktop): not over the home hero, once per session
 })
 
 describe('SocialBubble floating buttons: the same rules', () => {
-  it('home on a phone: collapsed until the visitor scrolls, then expanded once', async (t) => {
-    const ctx = await mountBubble(t, { mode: 'floating', path: '/', width: 390, height: 844 })
-    assert.equal(floatingExpanded(ctx.page.root), false, 'expanded over the hero')
-    await ctx.browser.scrollTo(600)
-    assert.equal(floatingExpanded(ctx.page.root), true)
-  })
+  for (const path of ['/', '/news']) {
+    it(`${path} on a phone: collapsed until the visitor scrolls, then expanded once`, async (t) => {
+      const ctx = await mountBubble(t, { mode: 'floating', path, width: 390, height: 844 })
+      assert.equal(floatingExpanded(ctx.page.root), false, 'expanded over the top of the page')
+      await ctx.browser.scrollTo(600)
+      assert.equal(floatingExpanded(ctx.page.root), true)
+    })
+  }
 
   it('collapsed by the visitor, then reloaded: stays collapsed', async (t) => {
     const storage = new Map<string, string>()
-    const first = await mountBubble(t, { mode: 'floating', path: '/news', storage })
-    assert.equal(floatingExpanded(first.page.root), true)
+    const first = await opened(t, { mode: 'floating', path: '/news', storage })
     await click(byAria(first.page.root, 'Thu gọn mạng xã hội'))
     await settle()
     assert.equal(floatingExpanded(first.page.root), false)
     first.close()
-    const again = await mountBubble(t, { mode: 'floating', path: '/news', storage })
+    const again = await mountBubble(t, { mode: 'floating', path: '/news', storage, scrollY: PAST })
     assert.equal(floatingExpanded(again.page.root), false)
   })
 
   it('socialAutoOpen off: collapsed (it used to start expanded whatever the setting said)', async (t) => {
-    const ctx = await mountBubble(t, { mode: 'floating', path: '/news', autoOpen: false })
+    const ctx = await mountBubble(t, { mode: 'floating', path: '/news', autoOpen: false, scrollY: PAST })
     assert.equal(floatingExpanded(ctx.page.root), false)
   })
 })
