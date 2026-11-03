@@ -138,6 +138,21 @@ describe(CATEGORIES, () => {
     assert.equal(dialog(opened), undefined)
   })
 
+  it('create refused as a duplicate name (409): the server\'s sentence, the form stays open with the typing, no reload', async () => {
+    const sentence = 'Đã có danh mục cùng tên trong mục này: “Thông báo”.'
+    const opened = await openCategories(server({ [`POST ${CAT_URL}`]: () => h3Error(409, sentence) }))
+    await click(byText(opened.page.root, 'button', 'Tạo Danh Mục Mới'))
+    await input(field(dialog(opened)!, 'Vd: Tin hoạt động C11'), 'thông BÁO')
+    const before = opened.calls.length
+    await click(button(dialog(opened)!, 'Tạo Danh Mục'))
+    await settle()
+    assert.deepEqual(opened.calls.slice(before).map(wire), [`POST ${CAT_URL}`])
+    assert.equal(opened.lastToast('error'), sentence)
+    assert.ok(dialog(opened), 'the form stays open')
+    assert.equal(field(dialog(opened)!, 'Vd: Tin hoạt động C11').model?.value, 'thông BÁO')
+    assertOnlyServerSentences(opened)
+  })
+
   it('edit: PUT the row; a refusal keeps the modal open and says the server\'s sentence', async () => {
     const opened = await openCategories()
     await click(button(catRowOf(opened, 'Thông báo'), 'Sửa'))
