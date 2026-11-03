@@ -64,11 +64,14 @@ type Page = { status: number, body: string, throws?: boolean }
 const pages = new Map<string, Page>()
 const renders: string[] = []
 const seenKeys: string[] = []
+let gate: Promise<void> | null = null
 const render = defineRenderHandler(async (event) => {
   renders.push(event.path)
   const options = (event.context as { cache?: { options?: { getKey: (e: H3Event) => Promise<string> } & Record<string, unknown> } }).cache?.options
   if (options) seenKeys.push(routeCacheStorageKey(options, await options.getKey(event)))
   const page = pages.get(event.path.split('?')[0]!)
+  // A render that has read its data and is still running (the race test holds it here).
+  if (gate) await gate
   if (!page) throw createError({ statusCode: 404, statusMessage: 'Page not found' })
   if (page.throws) throw createError({ statusCode: page.status, statusMessage: 'thrown' })
   return { body: page.body, statusCode: page.status, headers: { 'content-type': 'text/html;charset=utf-8' } }
@@ -98,6 +101,7 @@ beforeEach(() => {
   pages.clear()
   renders.length = 0
   seenKeys.length = 0
+  gate = null
   activeHooks = pluginHooks
 })
 
@@ -180,6 +184,65 @@ test('plugin: only the gone page is evicted; other cached pages stay cached', as
   await staleThenRevalidate('/news/bai-xoa', { status: 404, body: 'Không tìm thấy' })
   assert.deepEqual(await routeKeys(), [keptKey], 'exactly the other page\'s entry is left')
   assert.deepEqual(await get('/news/bai-con'), { status: 200, body: 'còn' })
+})
+
+test('plugin: only "gone" — a 403 render keeps the stale copy', async () => {
+  await staleThenRevalidate('/news/bai-cam', { status: 403, body: 'Cấm' })
+  assert.equal((await routeKeys()).length, 1)
+  assert.deepEqual(await get('/news/bai-cam'), { status: 200, body: 'bài viết v1' })
+})
+
+test('plugin: a THROWN 500 during the background render keeps the stale copy (error hook looks at the status)', async () => {
+  const quiet = mock.method(console, 'error', () => {})
+  try {
+    await staleThenRevalidate('/news/bai-nem-500', { status: 500, body: '', throws: true })
+  } finally {
+    quiet.mock.restore()
+  }
+  assert.equal((await routeKeys()).length, 1, 'a thrown 5xx is a blip, not "gone"')
+  assert.deepEqual(await get('/news/bai-nem-500'), { status: 200, body: 'bài viết v1' })
+})
+
+test('plugin: a storage failure while evicting never turns the visitor\'s 404 into a 500, and is logged', async () => {
+  pages.set('/news/bai-loi-kho', { status: 404, body: 'Không tìm thấy' })
+  const realRemove = storage.removeItem
+  storage.removeItem = (async () => { throw new Error('storage down') }) as typeof storage.removeItem
+  const lines: string[] = []
+  const capture = mock.method(console, 'error', (line: unknown) => { lines.push(String(line)) })
+  try {
+    // A cold render: the visitor waits for this very render, hook included.
+    assert.deepEqual(await get('/news/bai-loi-kho'), { status: 404, body: 'Không tìm thấy' })
+  } finally {
+    storage.removeItem = realRemove
+    capture.mock.restore()
+  }
+  const record = lines.map(line => { try { return JSON.parse(line) as Record<string, unknown> } catch { return null } }).find(r => r?.event === 'public_cache.evict_failed')
+  assert.ok(record, `no public_cache.evict_failed line in ${JSON.stringify(lines)}`)
+  assert.equal(record.source, 'render')
+})
+
+test('the bound, not a closure: a render that read the data BEFORE the commit stores a 200 AFTER the purge — public until maxAge + one visit, then the plugin drops it', async () => {
+  const path = '/news/bai-dua'
+  pages.set(path, { status: 200, body: 'bài viết v1' })
+  let release!: () => void
+  gate = new Promise<void>(resolve => { release = resolve })
+  const inFlight = get(path) // cold render: reads v1, then held
+  await new Promise(r => setTimeout(r, 20))
+  pages.set(path, { status: 404, body: 'Không tìm thấy' }) // the delete commits…
+  await purgePublicPageCache() // …and the write path purges (nothing stored yet)
+  release()
+  gate = null
+  assert.deepEqual(await inFlight, { status: 200, body: 'bài viết v1' })
+  await new Promise(r => setTimeout(r, 20))
+  assert.equal((await routeKeys()).length, 1, 'the held render stored its 200 after the purge')
+  const count = renders.length
+  assert.deepEqual(await get(path), { status: 200, body: 'bài viết v1' }, 'fresh entry: no render, the plugin cannot fire')
+  assert.equal(renders.length, count)
+  await expireAll()
+  const before = renders.length
+  assert.deepEqual(await get(path), { status: 200, body: 'bài viết v1' }, 'after 60 s: one more stale answer while it re-renders')
+  await settle(before)
+  assert.deepEqual(await get(path), { status: 404, body: 'Không tìm thấy' })
 })
 
 test('plugin: a 404 on a page that was never cached removes nothing', async () => {
