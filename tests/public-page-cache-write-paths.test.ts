@@ -78,7 +78,15 @@ mock.module('../server/services/media-portal', {
 const committed = (what: string, value: unknown = undefined) => async () => { events.push(`commit ${what}`); return value }
 mock.module('../server/services/pages', { namedExports: { deletePageById: committed('pages') } })
 mock.module('../server/services/content-types', { namedExports: { deleteContentTypeById: committed('content_types') } })
-mock.module('../server/services/i18n-auto-translate', { namedExports: { autoTranslateContentType: async () => {}, autoTranslateContentTypeUpdate: async () => {} } })
+mock.module('../server/services/i18n-auto-translate', {
+  namedExports: {
+    autoTranslateContentType: async () => {}, autoTranslateContentTypeUpdate: async () => {},
+    autoTranslateCategory: async () => {}, autoTranslateCategoryUpdate: async () => {},
+  },
+})
+// Categories: create/update run the REAL services/category-writes.ts on the recorded DB (its
+// transaction is the `commit` event); delete goes through services/categories.ts.
+mock.module('../server/services/categories', { namedExports: { deleteCategoryById: committed('categories') } })
 mock.module('../server/services/social-links', {
   namedExports: {
     createSocialLink: committed('social_links', { id: 4 }),
@@ -152,12 +160,17 @@ const handlers = {
   languageDelete: await load('../server/api/admin/languages/[code].delete.ts'),
   languageReorder: await load('../server/api/admin/languages/reorder.post.ts'),
   translations: await load('../server/api/admin/languages/[code]/translations/index.put.ts'),
+  categoryCreate: await load('../server/api/admin/categories/index.post.ts'),
+  categoryUpdate: await load('../server/api/admin/categories/[id].put.ts'),
+  categoryDelete: await load('../server/api/admin/categories/[id].delete.ts'),
+  categoryBulkDelete: await load('../server/api/admin/categories/bulk-delete.post.ts'),
 }
 const { DEFAULT_LAYOUT_CONFIG } = await import('../server/services/layout-settings.ts')
 
 const SUPERADMIN = { id: 1, isSuperAdmin: true, permissions: [] }
 const ARTICLE = { id: 31, type: 'news', title: 'Bài thử', status: 'published', publishedAt: new Date(), commentsEnabled: false }
 const CONTENT_TYPE = { id: 3, name: 'Tin tức', slug: 'news', description: null, isSystem: true }
+const CATEGORY = { id: 8, name: 'Tin nổi bật', slug: 'tin-noi-bat', type: 'news', parentId: null, description: null, displayOrder: 0 }
 // `body` for the auto-imported `readBody` stand-in above; `method` + `node.req` for the media
 // handlers, which import h3's own `readBody` (it reads `node.req.body` when one is there).
 const call = (handler: Handler, body: unknown = {}, id = '31') => handler({
@@ -177,7 +190,7 @@ beforeEach(async () => {
   for (const key of CACHED) await storage.setItem(`cache:${key}`, { value: { code: 200, body: 'cũ' } })
   await storage.setItem('cache:favicon:current', 'f')
   selectRows = {
-    articles: [ARTICLE], settings: [], pageBlocks: [], contentTypes: [CONTENT_TYPE],
+    articles: [ARTICLE], settings: [], pageBlocks: [], contentTypes: [CONTENT_TYPE], categories: [CATEGORY],
     pages: [{ id: 5, slug: 'home', title: 'Trang chủ', isSystem: true, draftBlocks: [], publishedBlocks: null }],
   }
   mediaDelete = { removed: true, fromStatus: 'published' }
@@ -357,6 +370,25 @@ test('social links: create, update, delete, reorder purge after the service comm
     await call(handler, body, '2')
     await assertPurgedAfter('commit social_links')
   }
+})
+
+test('categories: create, update, delete, bulk delete purge after the commit (an update that writes nothing does not)', async () => {
+  const cases: Array<[Handler, unknown, string, string]> = [
+    [handlers.categoryCreate, { name: 'Chuyên mục mới', type: 'news' }, 'insert categories', 'commit'],
+    [handlers.categoryUpdate, { description: 'Mô tả mới' }, 'update categories', 'commit'],
+    [handlers.categoryDelete, {}, 'commit categories', 'commit categories'],
+    [handlers.categoryBulkDelete, { ids: [8] }, 'commit categories', 'commit categories'],
+  ]
+  for (const [handler, body, write, lastWrite] of cases) {
+    events.length = 0
+    for (const key of CACHED) await storage.setItem(`cache:${key}`, { value: 1 })
+    await call(handler, body, '8')
+    assert.ok(events.includes(write), `no "${write}" — ${events.join(' → ')}`)
+    await assertPurgedAfter(lastWrite)
+  }
+  events.length = 0
+  await call(handlers.categoryUpdate, {}, '8')
+  assert.ok(!events.includes('purge'), `nothing written, nothing purged — ${events.join(' → ')}`)
 })
 
 test('languages and translations: every write purges after the service committed', async () => {

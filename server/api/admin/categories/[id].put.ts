@@ -1,6 +1,7 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateCategoryUpdate } from '../../../services/i18n-auto-translate'
 import { readCategoryName, readDisplayOrder, readParentId, updateCategory, type CategoryUpdateInput } from '../../../services/category-writes'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -31,6 +32,11 @@ export default defineEventHandler(async (event) => {
   if (result.textChanged) {
     void autoTranslateCategoryUpdate(adminUser, result.slug, result.name, result.description).catch(() => {})
   }
+
+  // After the commit, only when something was written: a renamed or re-slugged category
+  // changes `/news/<category>` (the old slug now renders 404) and every cached list that
+  // shows it (server/utils/public-page-cache.ts).
+  await purgePublicPageCacheAfterWrite('categories.update')
 
   return { ok: true, slug: result.slug }
 })

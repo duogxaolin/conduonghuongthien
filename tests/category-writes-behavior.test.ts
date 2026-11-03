@@ -380,8 +380,19 @@ describe('the request body: what used to be a 500 or stored as text is a 400', (
     assert.equal(all().length, 6)
   })
 
+  it('the 255-character limit counts characters as MySQL utf8mb4 does (code points), not UTF-16 units', async () => {
+    // One emoji is one character in a utf8mb4 VARCHAR(255) but two UTF-16 units in JavaScript:
+    // counting `.length` would refuse a name MySQL stores, and halve the limit for such names.
+    const created = await create({ name: '😀'.repeat(255), type: 'news', slug: 'bieu-tuong' })
+    assert.equal(all().find(r => r.id === created.id)?.name, '😀'.repeat(255))
+    assert.equal((await refusal(() => create({ name: '😀'.repeat(256), type: 'news', slug: 'bieu-tuong-2' })))?.statusMessage, 'Tên danh mục tối đa 255 ký tự.')
+    assert.equal((await refusal(() => update(2, { name: '😀'.repeat(256) })))?.statusMessage, 'Tên danh mục tối đa 255 ký tự.')
+  })
+
   it('a parent that is not an id (`\'abc\'`, -1, 1.5): 400; digits as text are an id; empty means no parent', async () => {
-    for (const parentId of ['abc', -1, 1.5, '1x', true]) {
+    // '0' as text is not "no parent" (that is 0, '', null): an id 0 would reach the FK as a 500.
+    // Loose number syntax ('0x10' = 16, '1e1' = 10 to `Number`) is not an id either.
+    for (const parentId of ['abc', -1, 1.5, '1x', true, '0', '0x10', '1e1', '+2', '2.0']) {
       assert.equal((await refusal(() => create({ name: 'X', type: 'news', parentId })))?.statusMessage, 'Danh mục cha không hợp lệ.', String(parentId))
       assert.equal((await refusal(() => update(2, { parentId })))?.statusMessage, 'Danh mục cha không hợp lệ.', String(parentId))
     }
@@ -396,6 +407,11 @@ describe('the request body: what used to be a 500 or stored as text is a 400', (
     assert.equal((await refusal(() => create({ name: 'X', type: 'news', displayOrder: 'abc' })))?.statusMessage, 'Thứ tự hiển thị phải là một số.')
     assert.equal((await refusal(() => update(2, { displayOrder: 'abc' })))?.statusMessage, 'Thứ tự hiển thị phải là một số.')
     assert.equal((await refusal(() => update(2, { displayOrder: 1e12 })))?.statusMessage, 'Thứ tự hiển thị phải là một số.')
+    // An array or object is not a number even when `Number()` would make one of it (`[5]` → 5, `[]` → 0).
+    for (const displayOrder of [[5], [], { n: 1 }]) {
+      assert.equal((await refusal(() => create({ name: 'X', type: 'news', displayOrder })))?.statusMessage, 'Thứ tự hiển thị phải là một số.', JSON.stringify(displayOrder))
+      assert.equal((await refusal(() => update(2, { displayOrder })))?.statusMessage, 'Thứ tự hiển thị phải là một số.', JSON.stringify(displayOrder))
+    }
     await update(2, { displayOrder: '3' })
     assert.equal((sqlite.prepare('SELECT display_order AS o FROM categories WHERE id = 2').get() as { o: number }).o, 3)
   })
