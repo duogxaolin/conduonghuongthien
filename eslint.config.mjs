@@ -61,6 +61,9 @@ export default tseslint.config(
       // TS no-unused-vars đã lo chính xác hơn JS preset.
       'no-unused-vars': 'off',
       'no-regex-spaces': 'warn',
+      // Hai luật mới trong `recommended` của ESLint 10 (23 + 6 chỗ lúc nâng cấp) — cùng triết lý: cảnh báo, không đỏ.
+      'no-useless-assignment': 'warn',
+      'preserve-caught-error': 'warn',
       'no-useless-escape': 'warn',
       'no-empty': ['warn', { allowEmptyCatch: true }],
       'no-irregular-whitespace': 'warn',

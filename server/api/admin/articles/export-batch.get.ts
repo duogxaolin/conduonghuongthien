@@ -4,7 +4,7 @@ import { eq, desc, inArray } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { articleResource } from '../../../services/articles'
 import { vietnamDateString } from '../../../utils/vn-day-range'
-import archiver from 'archiver'
+import { ZipArchive } from 'archiver'
 import { Readable } from 'node:stream'
 
 /**
@@ -123,7 +123,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const stamp = vietnamDateString(new Date()).replace(/-/g, '')
-  const zip = archiver('zip', { zlib: { level: 6 } })
+  const zip = new ZipArchive({ zlib: { level: 6 } })
   for (const r of allowed) {
     const safeSlug = (r.slug || `bai-viet-${r.id}`).replace(/[^\w-]/g, '_')
     zip.append(Readable.from([buildArticleHtml(r)]), { name: `${safeSlug}.html` })

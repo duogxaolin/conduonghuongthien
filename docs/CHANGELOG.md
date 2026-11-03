@@ -2458,6 +2458,13 @@ Khách hỏi bằng tiếng Trung "哪个国家拥有西沙群岛和南沙群岛
   - **Chỉ là dữ liệu/môi trường local, không phải mã**: `/UserFile/editor/images/*`, `/uploads/migrated/*` 404 (tệp cũ không có trong thư mục local), `/_ipx/…cdn1.delify.vn…` 500 (container không tải được ảnh ngoài), video không phát được (không có tệp).
 - **Chưa kiểm**: trình duyệt thật với modal trên trang công khai (harness chỉ kiểm luồng + tuỳ chọn hộp); lượt xoá thật trên production sau deploy.
 
+### 73. Gộp 3 PR Dependabot còn lại (archiver 8, eslint 10, bỏ `@types/bcryptjs`) (2026-11-03)
+
+- **`archiver` 7 → 8 (+ `@types/archiver` 8)**: bản 8 là ESM thuần và **bỏ hàm `archiver('zip')`** — chỉ còn lớp `ZipArchive`/`TarArchive`/`JsonArchive`. Typecheck báo `TS1192` ở `server/api/admin/articles/export-batch.get.ts` (nơi dùng duy nhất): nay `import { ZipArchive } from 'archiver'` + `new ZipArchive({ zlib: { level: 6 } })`. Tạo zip thật bằng bản 8: `unzip -t` sạch; `tests/article-export-behavior.test.ts` chạy đúng endpoint này.
+- **`eslint` 9 → 10**: `eslint.config.mjs` import `@eslint/js` mà bản 10 không còn kéo theo → thêm `@eslint/js` ^10 vào `devDependencies`. `recommended` của ESLint 10 thêm hai luật `no-useless-assignment` (23 chỗ) và `preserve-caught-error` (6 chỗ) → hạ xuống `warn` ở `eslint.config.mjs`, cùng triết lý của file (cảnh báo, không đỏ CI). Lint: 0 error / 44 warning (trước 15–16; 29 cái là hai luật mới, không sửa mã).
+- **`@types/bcryptjs` 2 → 3**: bản 3.0.0 là gói **stub đã deprecated** ("bcryptjs provides its own type definitions"); `bcryptjs` đang ở ^3.0.3 nên **gỡ hẳn** thay vì nâng.
+- Kiểm: typecheck 0; `npm test` 8719 / 8664 pass / 0 fail / 55 skip; `docs:facts`, `db:drift` (62 bảng / 643 cột) xanh.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 
