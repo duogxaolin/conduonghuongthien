@@ -751,4 +751,22 @@ test.describe('hộp xác nhận mở từ nút: đóng hộp trả focus về �
     await networkBarrier(page)
     expect(puts, 'Hủy/Escape: không lưu gì').toEqual([])
   })
+
+  test('lưu hạn mức bị từ chối (403) ở /admin/ai: câu máy chủ trong role="alert", focus vẫn ở "Lưu hạn mức" — không rơi về <body>', async ({ page }) => {
+    await page.route(url => url.pathname === '/api/admin/ai/budget', async (route) => {
+      if (route.request().method() !== 'PUT') return route.continue()
+      await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ statusCode: 403, statusMessage: 'E2E: không có quyền sửa cấu hình AI.' }) })
+    })
+    await page.goto('/admin/ai')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('button', { name: 'Sửa hạn mức' }).click()
+    // Above this month's spend (the e2e database has none): no question is asked, the PUT goes at once.
+    await page.locator('#ai-budget-vnd').fill('5000000')
+    const save = page.locator('form button[type="submit"]', { hasText: 'Lưu hạn mức' })
+    await save.click()
+    await expect(page.getByRole('alert').filter({ hasText: 'E2E: không có quyền sửa cấu hình AI.' })).toBeVisible()
+    await expect(save).not.toHaveAttribute('aria-busy', 'true')
+    await expect(save, 'nút Lưu không bị `disabled` lúc gửi, nên focus không rơi về <body>').toBeFocused()
+    expect(await focusIsNotBody(page)).toBe(true)
+  })
 })
