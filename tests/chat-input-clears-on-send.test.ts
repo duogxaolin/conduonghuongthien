@@ -24,6 +24,7 @@ import {
   alerts, answer, bubbles, button, byId, chatServer, content, dropped, findAll, HOLD, json, launcher, messageText, mountChat,
   QUICK_QUESTIONS, sseStream, statuses, words, type ChatCtx, type MountOptions,
 } from './_chat-widget-harness.ts'
+import { dbI18n } from './_i18n-db.ts'
 
 const ASSISTANT = fileURLToPath(new URL('../app/pages/assistant.vue', import.meta.url))
 
@@ -146,6 +147,28 @@ for (const surface of SURFACES) {
     })
   }
 
+  // The contract is "the question goes back into an EMPTY box": a draft typed while the answer
+  // was awaited (the harness types into the box; a real one is disabled, but the field can
+  // change under it — retry, autofill) is never overwritten, whatever the failure. Lỗ H3 của
+  // kiểm chứng độc lập: nhánh 400-từ-chối ghi đè bản nháp không bị test nào bắt.
+  for (const failure of failures) {
+    test(`${surface.name}: ${failure.label} while a draft was typed during the wait keeps the draft`, async (t) => {
+      const ctx = await surface.open(t)
+      ctx.server.state.chat.push(() => HOLD)
+      await ask(surface, ctx, 'Câu bị lỗi')
+      assert.equal(boxValue(surface, ctx), '')
+      await input(surface.box(ctx)!, 'Bản nháp đang gõ')
+      await ctx.settle()
+      const call = ctx.server.state.held.shift()!
+      const reply = failure.reply()
+      if (reply instanceof Error) call.fail(reply)
+      else call.respond(reply)
+      await ctx.settle()
+      assert.equal(boxValue(surface, ctx), 'Bản nháp đang gõ', 'the draft was overwritten by the failed question')
+      assert.equal(said(ctx).length, failure.kept ? 1 : 0)
+    })
+  }
+
   test(`${surface.name}: what the browser refuses before sending stays in the box`, async (t) => {
     const ctx = await surface.open(t)
     await ask(surface, ctx, 'a'.repeat(2001))
@@ -153,6 +176,41 @@ for (const surface of SURFACES) {
     assert.equal(chatPosts(ctx).length, 0)
   })
 }
+
+test('/assistant: the grown question box shrinks back as the question is sent, not when the answer is in (lỗ H8)', async (t) => {
+  const surface = SURFACES[1]!
+  const ctx = await surface.open(t)
+  const box = surface.box(ctx)! as unknown as { style: { height?: string } }
+  box.style.height = '160px' // a long question grew the textarea (autoGrow)
+  const held = holdChat(ctx)
+  await ask(surface, ctx, 'Một câu hỏi dài nhiều dòng')
+  assert.equal(chatPosts(ctx).length, 1, 'the question went out')
+  assert.equal(box.style.height, 'auto', 'the empty box keeps the height of the sent question while the bot answers')
+  const stream = held.release()
+  stream.push(content('Trả lời.'))
+  stream.done()
+  await ctx.settle()
+  assert.equal(box.style.height, 'auto')
+})
+
+test('/assistant: the page title and description follow the language (lỗ I15)', async (t) => {
+  for (const [lang, title, description] of [
+    ['vi', 'Trợ lý Hướng Thiện', /^Trợ lý ảo hỗ trợ tra cứu thông tin về tái hòa nhập cộng đồng/],
+    ['en', 'Huong Thien Assistant', /^A virtual assistant for looking up community reintegration information/],
+  ] as const) {
+    const heads: unknown[] = []
+    const ctx = await mountChat(t, chatServer(), {
+      file: ASSISTANT, path: '/assistant', i18n: dbI18n(lang),
+      auto: { watch: Vue.watch, useHead: (input: unknown) => { heads.push(input) } },
+    })
+    await ctx.settle()
+    assert.equal(heads.length, 1)
+    const head = (typeof heads[0] === 'function' ? (heads[0] as () => unknown)() : heads[0]) as { title: string, meta: Array<{ name: string, content: string }> }
+    assert.equal(head.title, title, lang)
+    assert.match(head.meta.find(m => m.name === 'description')!.content, description, lang)
+    ctx.close()
+  }
+})
 
 test('widget: a quick question leaves the box empty while it is answered', async (t) => {
   const surface = SURFACES[0]!
