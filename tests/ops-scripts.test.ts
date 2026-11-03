@@ -287,7 +287,7 @@ test('a failing browser run keeps the evidence of what the page showed', () => {
   // A CI-only failure is otherwise a single assertion line. The trace and
   // screenshot are written only on failure, so this uploads nothing when green.
   const workflow = read('.github/workflows/ci.yml')
-  assert.match(workflow, /uses: actions\/upload-artifact@v4/)
+  assert.match(workflow, /uses: actions\/upload-artifact@v7/)
   assert.match(workflow, /if: failure\(\)/)
 })
 

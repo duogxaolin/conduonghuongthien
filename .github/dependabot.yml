@@ -15,6 +15,16 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # Major cần việc riêng, không phải PR tự động (đã thử 2026-11-03, CI đỏ):
+      #   tailwindcss 3→4 (đổi cấu hình, test màu brand/ink), h3 1→2 (lõi Nitro),
+      #   js-yaml 4→5 (test ci-* đỏ). Gỡ dòng tương ứng khi có người nhận việc.
+      - dependency-name: tailwindcss
+        update-types: [version-update:semver-major]
+      - dependency-name: h3
+        update-types: [version-update:semver-major]
+      - dependency-name: js-yaml
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
