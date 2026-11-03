@@ -11,6 +11,11 @@
  *    rồi phát bản cũ. Lượt đầu (chưa có bản đệm) mang tag `request`, không có gì để bỏ.
  *
  * Bỏ ngay trong hook là đủ: bộ bọc không ghi đè vì phản hồi ≥ 400 không qua `validate`.
+ *
+ * Giới hạn: plugin chỉ chạy khi trang được DỰNG LẠI, tức sau khi bản đệm hết `maxAge` (60 s)
+ * và có một lượt tải. Nó không bỏ được một bản 200 vừa được ghi (vd. lượt dựng bắt đầu trước
+ * commit, xong sau purge của đường ghi) — bản đó còn công khai tới 60 s + một lượt; plugin
+ * chặn "mãi mãi", không chặn cửa sổ đó.
  */
 import { evictGoneCachedRoute, isGoneStatus } from '../utils/public-page-cache'
 

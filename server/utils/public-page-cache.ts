@@ -12,15 +12,17 @@
  * "Xoá cache" mới làm nó thành 404. Từ 2026-10-14 (68967451) bài không có mới trả 404
  * thật — trước đó trang "không tìm thấy" là 200, được lưu đè, nên lỗi không lộ.
  *
- * Hai lớp, mỗi lớp đóng một nửa:
+ * Hai lớp:
  *  1. `purgePublicPageCacheAfterWrite` — gọi SAU khi một lượt ghi nội dung công khai đã
- *     commit (bài, menu, cài đặt giao diện): khách thấy ngay, không đợi 60 giây.
+ *     commit (bài, menu, cài đặt giao diện…): khách thấy ngay, không đợi 60 giây.
  *  2. `evictGoneCachedRoute` (plugin `public-cache-gone.ts`) — khi lượt dựng của một tuyến
- *     đệm ra 404/410 thì bỏ bản cũ của chính tuyến đó. Lớp 1 một mình còn hở: một lượt
- *     dựng lại bắt đầu TRƯỚC commit, xong SAU lượt xoá, ghi lại bản 200 cũ — và 404 sau đó
- *     lại bị Nitro bỏ. Lớp 2 cũng phủ mọi đường làm trang biến mất mà không qua lớp 1
- *     (sửa thẳng CSDL, endpoint mới quên gọi). 5xx thì KHÔNG bỏ: phát bản cũ trong lúc
- *     CSDL chập chờn chính là việc của swr.
+ *     đệm ra 404/410 thì bỏ bản cũ của chính tuyến đó, nên bản cũ không còn sống MÃI.
+ *     Lớp 2 GIỚI HẠN chứ không đóng chỗ hở của lớp 1: một lượt dựng bắt đầu TRƯỚC commit,
+ *     xong SAU purge, ghi lại bản 200 (dữ liệu cũ) với `mtime` mới — bản đó còn công khai
+ *     tới hết `maxAge` (60 s) cộng một lượt tải; lượt dựng lại kế tiếp ra 404 thì lớp 2 mới
+ *     bỏ nó (canh bằng test chạy bộ bọc thật). Lớp 2 cũng phủ mọi đường làm trang biến mất
+ *     mà không qua lớp 1 (sửa thẳng CSDL, endpoint quên gọi) với cùng giới hạn 60 s + một
+ *     lượt. 5xx thì KHÔNG bỏ: phát bản cũ trong lúc CSDL chập chờn chính là việc của swr.
  *
  * ## Hình dạng khoá (đừng lọc theo đường dẫn)
  *
