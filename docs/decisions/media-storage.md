@@ -16,9 +16,9 @@ OpenSpec docs từng ghi "R2 chưa được triển khai" (`proposal.md`, `media
 R2 cho video tách rời khỏi Thư viện Media (ảnh) — ảnh vẫn lưu local `/public/uploads/`, chỉ video Media Portal mới có R2.
 
 - **`server/services/video-r2-sync.ts`** (346 dòng): `syncDirectoryToR2` (upload recursive cây HLS), `deleteR2Tree` (list+delete theo prefix), `listR2Keys`, `locateR2Original` (tìm `original.<ext>` cho passthrough), `streamR2Object` (GetObject pipe HLS), `streamR2ObjectRange` (byte-range 206 cho passthrough), `headR2Object`, `putR2Object` (single file, cho thumbnail). Dùng `@aws-sdk/client-s3`, endpoint `https://${accountId}.r2.cloudflarestorage.com`.
-- **`server/services/video-processing.ts:799-833`** (giai đoạn 7): nếu `provider='r2'` và đủ credential → `syncDirectoryToR2` cây `published/` rồi xoá local → `storageProvider='r2'`. **Sync fail → giữ local + `storageProvider='local'`** (lùi an toàn — video vẫn phát từ đĩa). FFmpeg cần filesystem local nên không transcode thẳng lên R2.
+- **`processMediaItem` trong `server/services/video-transcode-pipeline.ts`** (giai đoạn 7): nếu `provider='r2'` và đủ credential → `syncDirectoryToR2` cây `published/` rồi xoá local → `storageProvider='r2'`. **Sync fail → giữ local + `storageProvider='local'`** (lùi an toàn — video vẫn phát từ đĩa). FFmpeg cần filesystem local nên không transcode thẳng lên R2.
 - **`server/services/media-config-service.ts`**: `MEDIA_PORTAL_SETTING_KEYS` liệt kê 6 khoá R2; `readR2Config(db)` đọc từ bảng `settings`, giải mã secret; `resolveMediaConfigWithDb(db)` merge `videoStorage` từ DB (ưu tiên DB > env > default).
-- **`server/services/media-portal.ts:970-1143`** `resolveStreamTarget()`: trả `{kind:'local',filePath}` hoặc `{kind:'r2',r2Key}` hoặc `{kind:'r2',passthrough:true}`. Lùi local khi R2 thiếu object.
+- **`resolveStreamTarget()` trong `server/services/media-portal-stream.ts`** (xuất lại qua barrel `media-portal.ts`): trả `{kind:'local',filePath}` hoặc `{kind:'r2',r2Key}` hoặc `{kind:'r2',passthrough:true}`. Lùi local khi R2 thiếu object.
 - **`server/api/public/media/[shortId]/stream.get.ts`**: pipe R2 stream (HLS qua `streamR2Object`, byte-range passthrough qua `streamR2ObjectRange`). `X-Content-Type-Options: nosniff` luôn.
 - **`server/api/admin/settings/media-portal.put.ts`** + **`app/pages/admin/settings/media-portal.vue`**: admin form R2 đầy đủ — validate `provider` ('local'|'r2'), validate 6 trường R2, encrypt secret qua `encryptVideoR2Secret`.
 - **`tests/media-api.test.ts`**: `FORBIDDEN_HOSTS` = `['r2.dev', 'r2.cloudflarestorage.com', 'amazonaws.com', ...]` — chặn host storage rò ra response công khai (kiểm bằng HTTP server thật, không đọc mã).
@@ -37,8 +37,8 @@ Nhãn riêng nghĩa là một envelope lưu ở đây không giải mã được
 R2 Không bao giờ là "bật hoặc chết". Một video phải phát được trong mọi trạng thái R2:
 
 1. **R2 chưa cấu hình** (`provider='local'` hoặc thiếu credential) → transcode ghi local, stream đọc local. Đây là trạng thái mặc định.
-2. **R2 bật nhưng sync fail** (`video-processing.ts` giai đoạn 7 catch) → giữ local, `storageProvider='local'`, log `media.r2_sync_failed`. Lượt transcode vẫn thành công.
-3. **R2 bật, sync thành công, nhưng stream thiếu object** (`resolveStreamTarget` trong `media-portal.ts` không tìm thấy object trên R2) → lùi local nếu file local còn; nếu không → 404.
+2. **R2 bật nhưng sync fail** (khối catch giai đoạn 7 của `processMediaItem`, `video-transcode-pipeline.ts`) → giữ local, `storageProvider='local'`, log `media.r2_sync_failed`. Lượt transcode vẫn thành công.
+3. **R2 bật, sync thành công, nhưng stream thiếu object** (`resolveStreamTarget` trong `media-portal-stream.ts` không tìm thấy object trên R2) → lùi local nếu file local còn; nếu không → 404.
 
 Không bao giờ redirect tới R2 presigned URL — pipe byte qua proxy server, đúngPattern `server/routes/uploads/[...path].ts`. Một redirect đặt địa chỉ kho đã ký vào trình duyệt người đọc, lịch sử, và log của mọi trung gian.
 
@@ -134,7 +134,7 @@ Nếu một trong ba trả 404 → restore thất bại, **không** archive. Ghi
 
 - Mọi lệnh R2 (ảnh `media-r2.ts`, video `video-r2-sync.ts`) mở client qua `openR2(config, scope)`: account id phải là 32 ký tự hex, bucket đúng quy tắc tên, đã trim — hỏng → `R2ConfigInvalidError` (400, `code: 'R2_CONFIG_INVALID'`, không phản chiếu giá trị; log `r2.config_invalid` tối đa một dòng/10 phút mỗi `scope:field`). Trước đó luật "đổi đích phải gõ lại bí mật" chỉ chặn lúc ghi; hàng đã lưu từ trước đi thẳng vào endpoint.
 - Phân biệt "không kiểm được" với "không tồn tại": `headR2Object`/`deleteR2File` **ném** lỗi cấu hình (trả `false` từng khiến quét thumbnail báo mọi ảnh R2 hỏng và self-heal coi mọi object là mất). Các hàm video "không ném" tạo client **trong** `try`. Đồng bộ media kiểm cấu hình một lần trước khi bắt đầu. Còn mở: lỗi mạng/xác thực/5xx của `HeadObject` vẫn trả `false` → self-heal gặp R2 chập chờn đổi thumbnail + `media.url` sang ảnh mặc định (có bản `pre-self-heal` trước đó).
-- Ảnh nguồn thumbnail Media Portal (`readLibraryImage`, `media-portal.ts`): R2 → `getR2Object(storagePath, …, { maxBytes: 25 MiB, timeoutMs: 20 s })` (trần đếm cả trong lúc đọc thân, quá trần/quá hạn → `R2ReadLimitError`); local → tệp thường dưới `public/uploads` (`lstat`, trần byte). Không bao giờ `fetch(media.url)`. Theo nhánh G3 (SELECT chỉ đọc trên CSDL dev, người kiểm cuối không chạy lại): cả 3213 hàng R2 có `storage_path` dạng `YYYY/MM/…`.
+- Ảnh nguồn thumbnail Media Portal (`readLibraryImage`, `media-portal-thumbnail-override.ts`): R2 → `getR2Object(storagePath, …, { maxBytes: 25 MiB, timeoutMs: 20 s })` (trần đếm cả trong lúc đọc thân, quá trần/quá hạn → `R2ReadLimitError`); local → tệp thường dưới `public/uploads` (`lstat`, trần byte). Không bao giờ `fetch(media.url)`. Theo nhánh G3 (SELECT chỉ đọc trên CSDL dev, người kiểm cuối không chạy lại): cả 3213 hàng R2 có `storage_path` dạng `YYYY/MM/…`.
 - **Fixture test phải dùng cấu hình hợp lệ**: `tests/media-replace-cleanup.test.ts` đã đổi sang account id 32 hex + bucket `video-bucket`; `tests/media-self-heal-integration.test.ts` cũng vậy (từng giữ `stub-account` → đỏ trên MySQL thật sau G3) và nay giả SDK S3 (HEAD 404) — không còn chạm mạng; trước đó nó chỉ xanh nhờ lỗi TLS tới `*.r2.cloudflarestorage.com` bị nuốt thành `false`.
 
 ---

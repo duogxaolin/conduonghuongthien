@@ -170,13 +170,22 @@ rm -f -- "$ERR_FILE"
 # A dump that fails halfway still leaves a plausible-looking file. mysqldump
 # writes a completion marker on the last line; without it the file is a
 # fragment, and a fragment silently restored is worse than no backup at all.
+# The marker block is byte-for-byte the one restore-db.sh uses to accept a dump
+# (tests/ops-scripts.test.ts compares them): a dump kept here is one it restores.
 gzip -t "$PARTIAL" 2>/dev/null || fail verify "gzip archive is corrupt" 3
 
-# `grep -c` reads to the end; `grep -q` exits at the first match, and under
-# pipefail the writer it leaves behind can die of SIGPIPE.
-if [[ "$(gzip -dc "$PARTIAL" | tail -5 | grep -c 'Dump completed' || true)" -lt 1 ]]; then
-  fail verify "dump has no completion marker — it is truncated" 3
-fi
+# >>> dump-completion-marker (identical in backup-db.sh and restore-db.sh)
+# The marker is mysqldump's own line, at the START of one of the last lines
+# ("-- Dump completed on …"; the app's dumps end the same way).  Anchored: a dump cut
+# off inside an INSERT whose data happens to contain "Dump completed" is truncated.
+# `grep -c` reads to the end — `grep -q` exits at the first match, and under pipefail
+# the `tail` it leaves behind can die of SIGPIPE and make the pipeline lie.
+DUMP_MARKER='^-- Dump completed'
+has_completion_marker() {
+  [[ "$(gzip -dc -- "$1" 2>/dev/null | tail -5 | grep -c -e "$DUMP_MARKER" || true)" -ge 1 ]]
+}
+# <<< dump-completion-marker
+has_completion_marker "$PARTIAL" || fail verify "dump has no completion marker — it is truncated" 3
 
 TABLE_COUNT="$(gzip -dc "$PARTIAL" | grep -c '^CREATE TABLE' || true)"
 [[ "$TABLE_COUNT" -ge 20 ]] || fail verify "only $TABLE_COUNT tables in the dump; expected at least 20" 3

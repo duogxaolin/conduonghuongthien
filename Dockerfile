@@ -44,8 +44,9 @@ FROM node:24-alpine
 # add ~100 MB to a layer that never reaches the image serving traffic. Alpine's
 # ffmpeg carries libx264, native aac and the hls muxer (verified by running
 # `apk add --no-cache ffmpeg` on node:24-alpine), so no community repository is
-# needed. `nice`, which video-processing.ts puts in front of every ffmpeg call to
-# keep transcode at the lowest priority, ships with BusyBox — nothing to add.
+# needed. `nice`, which `ffmpegArgs` (server/services/video-process-runner.ts) puts
+# in front of every ffmpeg call not wrapped in `cpulimit` to keep transcode at the
+# lowest priority, ships with BusyBox — nothing to add.
 # `cpulimit` giới hạn % CPU thật cho ffmpeg (MEDIA_PROCESSING_CPU_LIMIT, mặc định 50),
 # không phải chỉ ưu tiên thấp như `nice` — một lượt transcode không ăn sạch mọi nhân.
 RUN apk add --no-cache ffmpeg mysql-client cpulimit su-exec

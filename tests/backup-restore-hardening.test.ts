@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, linkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, linkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gzipSync, createGzip } from 'node:zlib'
@@ -65,10 +65,33 @@ const state = {
 }
 /** SQL text executed on a `multipleStatements` (restore) connection. */
 const executed: string[] = []
+/**
+ * What happened, in order: `restoreSql` (dump executed), `initDb` (schema brought up to
+ * date), `secrets` (the credential conversion read `settings`), `tx` (a transaction).
+ */
+const order: string[] = []
+/** The restored dump dies half-way through. */
+let failRestoreSql = false
+/** Bringing the schema up to date after the dump fails. */
+let failConverge = false
+// The boot's own schema steps (CREATE TABLE IF NOT EXISTS + additive migrations);
+// the real thing runs against MySQL in tests/backup-dump-integration.test.ts.
+mock.module('../server/db/init', {
+  namedExports: {
+    initDb: async () => {
+      order.push('initDb')
+      if (failConverge) throw new Error("fixture: ALTER TABLE `backups` ADD COLUMN failed")
+    },
+  },
+})
 let failDump = false
 let restoredTableWipesBackups = true
 /** The `settings` rows the restored dump brings back (it replaces the table); `null` = dump leaves settings alone. */
 let restoredSettings: Array<{ key: string, value: string }> | null = null
+/** The dump body lands (settings replaced) and then the restore connection fails. */
+let failRestoreMidway = false
+/** The success audit row (`backup_restore`) fails to insert. */
+let failRestoreAudit = false
 
 const schema = await import('../server/db/schema')
 
@@ -108,6 +131,9 @@ function fakeDb(via: 'tx' | 'db'): Record<string, unknown> {
             },
           }
         }
+        if (table === schema.activityLogs && failRestoreAudit && values.action === 'backup_restore') {
+          return Promise.reject(new Error('simulated audit failure'))
+        }
         if (table === schema.activityLogs) state.audit.push({ via, values })
         else if (table === schema.backups) state.backups.push({ id: state.nextId++, driveUploaded: false, driveFileId: null, error: null, createdAt: new Date(), createdBy: null, ...values } as Row)
         return Promise.resolve()
@@ -122,7 +148,7 @@ function fakeDb(via: 'tx' | 'db'): Record<string, unknown> {
       },
     }),
     update: () => ({ set: () => ({ where: async () => {} }) }),
-    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(fakeDb('tx')),
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => { order.push('tx'); return fn(fakeDb('tx')) },
   }
 }
 
@@ -135,9 +161,12 @@ function fakeConnection(options: { multipleStatements?: boolean }) {
       }
       if (options.multipleStatements && !/^\s*SET FOREIGN_KEY_CHECKS/i.test(sqlText)) {
         executed.push(sqlText)
+        if (!/^\s*SET SESSION/i.test(sqlText)) order.push('restoreSql')
         // The real dump starts with DROP TABLE backups: the table is replaced.
         if (restoredTableWipesBackups) state.backups = []
         if (restoredSettings) state.settings = restoredSettings.map(row => ({ ...row }))
+        if (failRestoreMidway && !/^\s*SET /i.test(sqlText)) throw new Error('simulated failure after part of the dump ran')
+        if (failRestoreSql && !/^\s*SET SESSION/i.test(sqlText)) throw new Error('fixture: restore died half-way (ER_LOCK_WAIT_TIMEOUT)')
       }
       return [[], []]
     },
@@ -145,7 +174,34 @@ function fakeConnection(options: { multipleStatements?: boolean }) {
     release: () => {},
   }
 }
-const fakePool = { getConnection: async () => fakeConnection({}) }
+/**
+ * `execute` serves the one-time credential conversion that runs after a database
+ * restore (wave2 2A W4): it reads and conditionally rewrites `settings` rows.
+ */
+const fakePool = {
+  getConnection: async () => fakeConnection({}),
+  // Holding its lock, a restore asks whether any media job holds one (`backup-restore.ts`,
+  // `tests/restore-media-job-exclusion.test.ts`): none does here. Any other pool query
+  // still fails, as it did before the pool had `query` at all.
+  query: async (sqlText: string, params: unknown[] = []) => {
+    if (/IS_USED_LOCK\(\?\) AS media_job_0\b/.test(sqlText)) return [[Object.fromEntries(params.map((_, index) => [`media_job_${index}`, null]))], []]
+    throw new Error(`unexpected pool query: ${sqlText}`)
+  },
+  execute: async (sqlText: string, params: unknown[] = []) => {
+    if (/^SELECT `key`, `value` FROM `settings`/.test(sqlText)) {
+      // The credential conversion reads its three keys here first: its place in `order`.
+      order.push('secrets')
+      return [state.settings.filter(row => params.includes(row.key)), []]
+    }
+    if (/^UPDATE `settings` SET `value` = \?/.test(sqlText)) {
+      const [value, key, previous] = params as [string, string, string]
+      const row = state.settings.find(candidate => candidate.key === key && candidate.value === previous)
+      if (row) row.value = value
+      return [{ affectedRows: row ? 1 : 0 }, []]
+    }
+    throw new Error(`unexpected pool statement: ${sqlText}`)
+  },
+}
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb('db'), getPool: () => fakePool } })
 mock.module('mysql2/promise', {
   namedExports: { createConnection: async (options: { multipleStatements?: boolean }) => fakeConnection(options) },
@@ -181,10 +237,15 @@ beforeEach(() => {
   state.settings = []
   state.audit = []
   executed.length = 0
+  order.length = 0
+  failRestoreSql = false
+  failConverge = false
   logs.length = 0
   failDump = false
   restoredTableWipesBackups = true
   restoredSettings = null
+  failRestoreMidway = false
+  failRestoreAudit = false
   busyLocks.clear()
 })
 
@@ -382,6 +443,8 @@ describe('a database restore is preceded by a safety backup', () => {
     assert.ok(existsSync(path.join(backupsDir(), outcome.preRestoreBackup!)))
     // The restore replaced the `backups` table; the safety backup is listed again afterwards.
     assert.ok(state.backups.some(row => row.filename === outcome.preRestoreBackup && row.trigger === 'pre-restore'))
+    // …with its off-site status (Drive is off here: `none`), not a NULL "unknown" (wave2 D-OFFSITE).
+    assert.equal(state.backups.find(row => row.filename === outcome.preRestoreBackup)?.offsiteStatus, 'none')
     const audit = restoreAudits()
     assert.equal(audit.length, 1)
     assert.equal((audit[0]!.values.meta as Record<string, unknown>).preRestoreBackup, outcome.preRestoreBackup)
@@ -456,6 +519,73 @@ describe('legacy app-generated dumps are flagged on restore', () => {
   }
 })
 
+// ─── Credentials restored from a dump taken before they were encrypted ─────────
+
+describe('a database restore re-encrypts plaintext credentials it brought back (wave2 2A W4)', () => {
+  test('a dump from before the envelope change: smtp_pass / r2_secret_key come back as envelopes, not plaintext until the next boot', async () => {
+    const previousSecret = process.env.CHATBOT_ENCRYPTION_SECRET
+    process.env.CHATBOT_ENCRYPTION_SECRET = (await import('node:crypto')).randomBytes(32).toString('base64')
+    try {
+      const { openSettingsSecret, isSettingsSecretEnvelope } = await import('../server/utils/settings-secrets')
+      seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+      restoredSettings = [
+        { key: 'smtp_pass', value: 'Restored-smtp-pass-1' },
+        { key: 'r2_secret_key', value: 'restored-r2-secret' },
+        { key: 'site_name', value: 'Cổng thông tin' },
+      ]
+      await restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR)
+      const value = (key: string) => state.settings.find(row => row.key === key)?.value
+      assert.equal(isSettingsSecretEnvelope(value('smtp_pass')), true, 'smtp_pass stayed plaintext after the restore')
+      assert.equal(openSettingsSecret('smtp_pass', value('smtp_pass')).value, 'Restored-smtp-pass-1')
+      assert.equal(openSettingsSecret('r2_secret_key', value('r2_secret_key')).value, 'restored-r2-secret')
+      assert.equal(value('site_name'), 'Cổng thông tin')
+      assert.ok(logs.some(entry => entry.event === 'backup.restore_secrets_encrypted'))
+    } finally {
+      if (previousSecret === undefined) delete process.env.CHATBOT_ENCRYPTION_SECRET
+      else process.env.CHATBOT_ENCRYPTION_SECRET = previousSecret
+    }
+  })
+
+  for (const [label, arrange] of [
+    ['the dump fails part-way after the settings table landed', () => { failRestoreMidway = true }],
+    ['the dump landed but the restore audit fails', () => { failRestoreAudit = true }],
+  ] as const) {
+    test(`W3: ${label} → the restore fails, and the plaintext it brought back is still encrypted at once`, async () => {
+      const previousSecret = process.env.CHATBOT_ENCRYPTION_SECRET
+      process.env.CHATBOT_ENCRYPTION_SECRET = (await import('node:crypto')).randomBytes(32).toString('base64')
+      try {
+        const { openSettingsSecret, isSettingsSecretEnvelope } = await import('../server/utils/settings-secrets')
+        seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+        restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+        arrange()
+        await assert.rejects(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR))
+        const stored = state.settings.find(row => row.key === 'smtp_pass')?.value
+        assert.equal(isSettingsSecretEnvelope(stored), true, 'plaintext stayed in settings until the next boot')
+        assert.equal(openSettingsSecret('smtp_pass', stored).value, 'Restored-smtp-pass-1')
+        assert.ok(logs.some(entry => entry.event === 'backup.restore_failed'), 'the restore still reports its failure')
+      } finally {
+        if (previousSecret === undefined) delete process.env.CHATBOT_ENCRYPTION_SECRET
+        else process.env.CHATBOT_ENCRYPTION_SECRET = previousSecret
+      }
+    })
+  }
+
+  test('a conversion failure does not turn a completed restore into a failed one (the next boot converts)', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    const execute = fakePool.execute
+    fakePool.execute = async () => { throw new Error('simulated settings read failure') }
+    try {
+      const outcome = await restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR)
+      assert.ok(outcome)
+      assert.ok(logs.some(entry => entry.event === 'backup.restore_secret_conversion_failed'))
+      assert.ok(logs.some(entry => entry.event === 'backup.restore_succeeded'))
+    } finally {
+      fakePool.execute = execute
+    }
+  })
+})
+
 // ─── 3.4 Audit + security log ──────────────────────────────────────────────────
 
 describe('restore is audited and logged', () => {
@@ -502,6 +632,168 @@ describe('restore is audited and logged', () => {
   })
 })
 
+// ─── The schema is brought up to date right after the dump runs (wave2 ops, re-verification CRITICAL) ─
+// An app dump carries DROP TABLE + CREATE TABLE: restoring one taken before a column
+// was added brings the table back WITHOUT that column, while Drizzle names every
+// schema column on every insert/select. The reattach insert inside the audit
+// transaction then failed (`Unknown column 'offsite_status'`), the endpoint said
+// "restore failed" although the data had been replaced, `backups` stayed empty and
+// the next orphan sweep deleted the pre-restore dump. The restore now runs the boot's
+// own schema steps (`initDb`) before anything touches the restored tables.
+
+describe('a database restore brings the schema up to date before using it', () => {
+  test('order: the dump runs, then the boot schema steps, then the reattach/audit transaction', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    await restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR)
+    const restored = order.indexOf('restoreSql')
+    const converged = order.indexOf('initDb')
+    assert.ok(restored >= 0 && converged > restored, `order: ${order.join(' → ')}`)
+    assert.equal(order.filter(step => step === 'initDb').length, 1)
+    assert.ok(order.lastIndexOf('tx') > converged, `the audit transaction must come after: ${order.join(' → ')}`)
+    assert.ok(logs.some(entry => entry.event === 'backup.restore_schema_converged'))
+  })
+
+  test('a dump that dies half-way still gets the schema steps, and its own error is what is reported', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    failRestoreSql = true
+    await assert.rejects(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR), /restore died half-way/)
+    assert.ok(order.indexOf('initDb') > order.indexOf('restoreSql'), `order: ${order.join(' → ')}`)
+    const audit = restoreAudits()
+    assert.deepEqual(audit.map(entry => entry.values.action), ['backup_restore_failed'])
+    assert.match(String((audit[0]!.values.meta as Record<string, unknown>).error), /restore died half-way/)
+  })
+
+  test('schema steps that fail after a complete dump: a named failure that says the data WAS replaced and names the pre-restore dump to go back to', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    failConverge = true
+    const error = await rejection(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR))
+    assert.equal(error.reason, 'schema_convergence_failed')
+    assert.match(error.message, /đã được nạp/)
+    // Not "restart to finish": every container start runs the same failing step
+    // (`init.ts && …`) and would loop. The way back is the safety dump, by name.
+    assert.doesNotMatch(error.message, /khởi động lại ứng dụng để hoàn tất/)
+    const pre = backupFiles().find(name => name.endsWith('-pre-restore.sql.gz'))
+    assert.ok(pre && error.message.includes(pre), `the message names ${pre}: ${error.message}`)
+    assert.match(error.message, /log máy chủ/)
+    const audit = restoreAudits()
+    assert.deepEqual(audit.map(entry => entry.values.action), ['backup_restore_failed'])
+    assert.equal((audit[0]!.values.meta as Record<string, unknown>).reason, 'schema_convergence_failed')
+    assert.ok(logs.some(entry => entry.event === 'backup.restore_schema_convergence_failed'))
+    assert.ok(!logs.some(entry => entry.event === 'backup.restore_succeeded'))
+  })
+
+  test('the restore page names every phase the server reports (no raw "schema" on screen) and keeps the bar full during the schema step', () => {
+    const source = (file: string) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+    const phases = new Set([...source('server/services/backup-restore.ts').matchAll(/setStatus\((?:true|false), '([a-z]+)'/g)].map(m => m[1]!))
+    assert.ok(phases.has('schema'))
+    const page = source('app/pages/admin/settings/backup.vue')
+    const labels = /const RESTORE_PHASE_LABEL: Record<string, string> = \{([\s\S]*?)\n\}/.exec(page)?.[1] ?? ''
+    for (const phase of phases) assert.match(labels, new RegExp(`^\\s+${phase}: '`, 'm'), `no label for phase "${phase}"`)
+    assert.match(page, /if \(restoreStatus\.value\?\.phase === 'schema'\) return 100/)
+  })
+
+  test('DB_NAME empty while MYSQL_DATABASE names another database: refused BEFORE the safety backup and the dump (round 3, S1)', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    const saved = { DB_NAME: process.env.DB_NAME, MYSQL_DATABASE: process.env.MYSQL_DATABASE }
+    process.env.DB_NAME = ''
+    process.env.MYSQL_DATABASE = 'cdkt_other'
+    try {
+      const error = await rejection(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR))
+      assert.equal(error.reason, 'db_name_mismatch')
+      assert.match(error.message, /DB_NAME/)
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+    assert.ok(!backupFiles().some(name => name.endsWith('-pre-restore.sql.gz')), 'no safety backup was taken')
+    assert.deepEqual(order.filter(step => step === 'restoreSql' || step === 'initDb'), [])
+  })
+
+  test('a file-archive restore touches no schema', async () => {
+    const name = makeArchive('cdkt-uploads-20261013T000000Z-manual.tar.gz', (root) => { uploadsTree(root); return ['uploads'] })
+    await restore.runRestore(name, ACTOR)
+    assert.ok(!order.includes('initDb'))
+    assert.ok(!order.includes('secrets'), 'a file-archive restore brings no settings back')
+  })
+})
+
+// ─── wave2 integration: 2A's credential envelopes and ops' schema step, one path ─
+//
+// 2A (§ 33, W3/W4) seals the plaintext credentials an old dump brings back; ops (§ 36)
+// brings the schema up to date right after the dump, before anything touches the
+// restored tables. Merged, EVERY path on which the dump ran keeps one order:
+//   restoreSql → schema convergence → credential conversion → reattach/audit.
+// The schema step may fail, and the conversion still runs after it. `initDb` is mocked
+// here, so only the restore's own conversion seals anything (the real `initDb` runs it
+// too, unless it fails first — tests/backup-dump-integration.test.ts).
+
+describe('a database restore: dump, then schema, then credential envelopes, then the audit (wave2 integration)', () => {
+  const DUMP = 'cdkt-20260101T000000Z-manual.sql.gz'
+  async function withEncryptionKey(work: () => Promise<void>): Promise<void> {
+    const previous = process.env.CHATBOT_ENCRYPTION_SECRET
+    process.env.CHATBOT_ENCRYPTION_SECRET = (await import('node:crypto')).randomBytes(32).toString('base64')
+    try {
+      await work()
+    } finally {
+      if (previous === undefined) delete process.env.CHATBOT_ENCRYPTION_SECRET
+      else process.env.CHATBOT_ENCRYPTION_SECRET = previous
+    }
+  }
+  async function storedSmtpPass() {
+    const { openSettingsSecret } = await import('../server/utils/settings-secrets')
+    return openSettingsSecret('smtp_pass', state.settings.find(row => row.key === 'smtp_pass')?.value)
+  }
+  /** One conversion pass, after the schema step, after the dump. */
+  function assertDumpSchemaSecrets() {
+    const restored = order.indexOf('restoreSql')
+    const converged = order.indexOf('initDb')
+    const sealed = order.indexOf('secrets')
+    assert.ok(restored >= 0 && converged > restored && sealed > converged, `order: ${order.join(' → ')}`)
+    assert.equal(order.filter(step => step === 'secrets').length, 1, `one conversion pass: ${order.join(' → ')}`)
+    return sealed
+  }
+
+  test('a complete restore: restoreSql → schema → envelopes → the reattach/audit transaction', async () => withEncryptionKey(async () => {
+    seedSqlBackup(DUMP, '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    await restore.runRestore(DUMP, ACTOR)
+    const sealed = assertDumpSchemaSecrets()
+    assert.ok(order.lastIndexOf('tx') > sealed, `the audit transaction comes after the envelopes: ${order.join(' → ')}`)
+    assert.deepEqual(await storedSmtpPass(), { state: 'sealed', value: 'Restored-smtp-pass-1' })
+  }))
+
+  test('the schema step fails after a complete dump: the restored plaintext is still sealed, after the schema attempt', async () => withEncryptionKey(async () => {
+    seedSqlBackup(DUMP, '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    failConverge = true
+    const error = await rejection(restore.runRestore(DUMP, ACTOR))
+    assert.equal(error.reason, 'schema_convergence_failed')
+    assertDumpSchemaSecrets()
+    assert.deepEqual(await storedSmtpPass(), { state: 'sealed', value: 'Restored-smtp-pass-1' })
+    assert.deepEqual(restoreAudits().map(entry => entry.values.action), ['backup_restore_failed'])
+  }))
+
+  test('the dump dies half-way: schema attempt, then envelopes, and the dump\'s own error is reported', async () => withEncryptionKey(async () => {
+    seedSqlBackup(DUMP, '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    failRestoreSql = true
+    await assert.rejects(restore.runRestore(DUMP, ACTOR), /restore died half-way/)
+    assertDumpSchemaSecrets()
+    assert.deepEqual(await storedSmtpPass(), { state: 'sealed', value: 'Restored-smtp-pass-1' })
+  }))
+
+  test('the audit transaction fails: the envelopes were written before it', async () => withEncryptionKey(async () => {
+    seedSqlBackup(DUMP, '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    failRestoreAudit = true
+    await assert.rejects(restore.runRestore(DUMP, ACTOR), /simulated audit failure/)
+    assertDumpSchemaSecrets()
+    assert.deepEqual(await storedSmtpPass(), { state: 'sealed', value: 'Restored-smtp-pass-1' })
+  }))
+})
+
 // ─── The scheduler's own record survives a restore (wave1 1B re-verification S3) ─
 
 describe('a database restore keeps the live backup scheduler state', () => {
@@ -520,6 +812,21 @@ describe('a database restore keeps the live backup scheduler state', () => {
     assert.equal(stateValue(), LIVE)
     assert.equal(state.settings.find(row => row.key === 'site_name')?.value, 'from dump', 'every other setting is the restored one')
   })
+
+  // wave2 ops round 3 (W3): a FAILED restore after the dump ran rewinds this row too.
+  for (const [label, arm] of [
+    ['the dump dies half-way', () => { failRestoreSql = true }],
+    ['the schema step fails', () => { failConverge = true }],
+  ] as const) {
+    test(`a failed restore (${label}) keeps the live record as well`, async () => {
+      seedSqlBackup('cdkt-20261025T030000Z-scheduled.sql.gz', '20261025T030000Z', 'SELECT 1;')
+      state.settings = [{ key: KEY, value: LIVE }]
+      restoredSettings = [{ key: KEY, value: IN_DUMP }]
+      arm()
+      await assert.rejects(restore.runRestore('cdkt-20261025T030000Z-scheduled.sql.gz', ACTOR))
+      assert.equal(stateValue(), LIVE)
+    })
+  }
 
   test('no live record: the dump\'s record is removed, not kept', async () => {
     seedSqlBackup('cdkt-20261025T030000Z-scheduled.sql.gz', '20261025T030000Z', 'SELECT 1;')

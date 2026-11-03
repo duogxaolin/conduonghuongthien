@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { absoluteRepoPath, backupServiceFiles } from './_backup-service-family'
 
 /**
  * A test or dev server must never touch a real backup directory.
@@ -104,8 +105,10 @@ test('no server code builds a backups path outside backupsDir()', () => {
     }
   }
   walk(new URL('../server', import.meta.url).pathname)
-  const backupTs = new URL('../server/services/backup.ts', import.meta.url).pathname
-  const allowed = offenders.filter(line => line.startsWith(`${backupTs}:`) && /'backups'\)/.test(line) && /process\.cwd\(\)/.test(line))
+  // The default lives in the backup service — since the split a barrel plus parts
+  // (`tests/_backup-service-family.ts`): exactly once across ALL of them, nowhere else.
+  const backupService = backupServiceFiles().map(absoluteRepoPath)
+  const allowed = offenders.filter(line => backupService.some(file => line.startsWith(`${file}:`)) && /'backups'\)/.test(line) && /process\.cwd\(\)/.test(line))
   assert.equal(allowed.length, 1, `backupsDir() default not found exactly once:\n${offenders.join('\n')}`)
   assert.deepEqual(offenders.filter(line => !allowed.includes(line)), [], 'build the path with backupsDir()')
 })

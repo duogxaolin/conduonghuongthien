@@ -78,6 +78,10 @@ export function useLayoutNav(settingsData?: Ref<{ settings?: Record<string, stri
     'Văn bản pháp luật': 'documents',
     'Hỏi đáp pháp luật': 'legal_qa',
     'Hỏi - Đáp': 'legal_qa',
+    // Nhãn cán bộ đặt cho dropdown "Pháp luật" trên CSDL thật (không có `labelKey`, trình
+    // sửa nav không đặt được): bản tiếng Anh từng hiện nguyên "Pháp luật"/"Giải đáp pháp luật".
+    'Pháp luật': 'nav_law',
+    'Giải đáp pháp luật': 'faq',
     'Tài liệu Hỏi-Đáp': 'qa_documents',
     'Tài liệu Hỏi – Đáp': 'qa_documents',
     'Thư viện Video': 'video_lib',

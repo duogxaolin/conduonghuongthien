@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { errorMessage } from '~/utils/errorMessage'
+import type { SitemapGenerateResponse, SitemapResponse, SitemapSaveResponse } from '~/types/admin-settings-api'
 
 definePageMeta({
   layout: 'admin',
@@ -20,12 +21,7 @@ const fetchSitemap = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean
-      xml: string | null
-      updatedAt: string | null
-      generated: string
-    }>)(`/api/admin/settings/sitemap`)
+    const res = await adminFetch<SitemapResponse>(`/api/admin/settings/sitemap`)
     if (res.ok) {
       xml.value = res.xml ?? res.generated
       hasSaved.value = res.xml !== null
@@ -51,7 +47,7 @@ const handleGenerate = async () => {
   }
   generating.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; xml: string }>)(`/api/admin/settings/sitemap/generate`, { method: 'POST' })
+    const res = await adminFetch<SitemapGenerateResponse>(`/api/admin/settings/sitemap/generate`, { method: 'POST' })
     if (res.ok) xml.value = res.xml
     toast.success('Đã sinh sitemap từ dữ liệu hiện tại. Bấm "Lưu" để áp dụng.')
   } catch (err: unknown) {
@@ -64,7 +60,7 @@ const handleGenerate = async () => {
 const handleSave = async () => {
   saving.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; updatedAt: string }>)(`/api/admin/settings/sitemap`, {
+    const res = await adminFetch<SitemapSaveResponse>(`/api/admin/settings/sitemap`, {
       method: 'PUT',
       body: { xml: xml.value },
     })
@@ -94,7 +90,7 @@ onMounted(() => { fetchSitemap() })
   <div>
     <div class="mb-6 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-[#4A6741]">Sitemap</h1>
+        <h1 class="text-2xl font-bold text-brand-600">Sitemap</h1>
         <p class="mt-1 text-sm text-gray-500">
           Sinh sitemap từ dữ liệu trang + bài viết đã xuất bản, sửa trực tiếp nếu cần, rồi lưu.
           Bản đã lưu là bản phục vụ tại <code class="rounded bg-gray-100 px-1">/sitemap.xml</code>.
@@ -103,7 +99,7 @@ onMounted(() => { fetchSitemap() })
       <div class="flex gap-2">
         <button
           type="button"
-          class="rounded-xl border border-[#4A6741]/30 px-4 py-2 text-sm font-semibold text-[#4A6741] transition hover:bg-[#4A6741]/5 disabled:opacity-50"
+          class="rounded-xl border border-brand-600/30 px-4 py-2 text-sm font-semibold text-brand-600 transition hover:bg-brand-600/5 disabled:opacity-50"
           :disabled="generating || loading"
           @click="handleGenerate"
         >
@@ -112,7 +108,7 @@ onMounted(() => { fetchSitemap() })
         </button>
         <button
           type="button"
-          class="rounded-xl bg-[#4A6741] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#3c5438] disabled:opacity-50"
+          class="rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#3c5438] disabled:opacity-50"
           :disabled="saving || loading || !xml.trim()"
           @click="handleSave"
         >
@@ -132,7 +128,7 @@ onMounted(() => { fetchSitemap() })
       v-model="xml"
       rows="24"
       spellcheck="false"
-      class="w-full rounded-xl border border-gray-300 p-3 font-mono text-sm text-gray-800 focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/20"
+      class="w-full rounded-xl border border-gray-300 p-3 font-mono text-sm text-gray-800 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20"
       placeholder="<?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#10;<urlset xmlns=&quot;http://www.sitemaps.org/schemas/sitemap/0.9&quot;>..."
     />
 

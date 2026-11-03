@@ -17,17 +17,31 @@ import { activityLogs, media, settings } from '../db/schema'
 import { deleteLocalFile } from '../utils/media-local'
 import { deleteR2File, type R2Config } from '../utils/media-r2'
 import { requireResourcePermission, type ActorLike } from '../utils/permissions'
+import { settingsSecretForUse } from '../utils/settings-secrets'
 
-/** Read the R2 credentials out of `settings`. Call once per request, not per row. */
-export async function loadR2Config(): Promise<R2Config> {
+/**
+ * R2 của thư viện ảnh đọc từ `settings`, Secret Key đã giải mã. `secretUnreadable`:
+ * khoá đã lưu là envelope không mở được — `secretAccessKey` khi đó rỗng (mọi kiểm
+ * "đủ cấu hình" đều đọc thành "chưa cấu hình"), không bao giờ là envelope.
+ */
+export type StoredR2Config = R2Config & { secretUnreadable: boolean }
+
+/**
+ * Read the R2 credentials out of `settings`. Call once per request, not per row.
+ * The ONLY place the image-library R2 secret is read for use: it is stored as an
+ * envelope (`cdkt-r2-secret:v1`, spec settings-secret-storage).
+ */
+export async function loadR2Config(): Promise<StoredR2Config> {
   const rows = await getDb().select().from(settings)
   const map = new Map(rows.map(row => [row.key, row.value]))
+  const secret = settingsSecretForUse('r2_secret_key', map.get('r2_secret_key'))
   return {
     accountId:       map.get('r2_account_id') || '',
     accessKeyId:     map.get('r2_access_key') || '',
-    secretAccessKey: map.get('r2_secret_key') || '',
+    secretAccessKey: secret.value,
     bucket:          map.get('r2_bucket') || '',
     publicUrl:       map.get('r2_public_url') || '',
+    secretUnreadable: secret.unreadable,
   }
 }
 

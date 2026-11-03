@@ -38,7 +38,7 @@
       class="mb-4"
       @clear="selection.clear()"
     >
-      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+      <button type="button" class="rounded-lg bg-danger px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
 
     <!-- List. Condition spelled out rather than chained with v-else: the bulk bar
@@ -50,14 +50,14 @@
           v-for="p in pages"
           :key="'m-'+p.id"
           class="p-4 flex flex-col gap-2.5 transition active:bg-gray-50"
-          :class="selection.isSelected(Number(p.id)) ? 'bg-[#f0f7f1]' : ''"
+          :class="selection.isSelected(Number(p.id)) ? 'bg-surface-tint' : ''"
         >
           <div class="flex items-start justify-between gap-2.5">
             <div class="flex items-center gap-2.5 min-w-0">
               <input
                 v-if="!p.isSystem"
                 type="checkbox"
-                class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                class="h-4 w-4 shrink-0 accent-brand-700"
                 :checked="selection.isSelected(Number(p.id))"
                 :aria-label="`Chọn trang ${p.title}`"
                 @change="selection.toggle(Number(p.id))"
@@ -99,7 +99,7 @@
               <th class="w-10 px-5 py-3">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.allSelected(visibleIds)"
                   :indeterminate="selection.someSelected(visibleIds)"
                   aria-label="Chọn tất cả trang có thể xóa"
@@ -118,13 +118,13 @@
               v-for="p in pages"
               :key="p.id"
               class="transition hover:bg-gray-50"
-              :class="selection.isSelected(Number(p.id)) ? 'bg-[#f0f7f1]' : ''"
+              :class="selection.isSelected(Number(p.id)) ? 'bg-surface-tint' : ''"
             >
               <td class="px-5 py-3.5">
                 <input
                   v-if="!p.isSystem"
                   type="checkbox"
-                  class="h-4 w-4 accent-[#2c6e33]"
+                  class="h-4 w-4 accent-brand-700"
                   :checked="selection.isSelected(Number(p.id))"
                   :aria-label="`Chọn trang ${p.title}`"
                   @change="selection.toggle(Number(p.id))"
@@ -160,10 +160,8 @@
     </div>
 
     <!-- Create modal -->
-    <div v-if="showCreate" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showCreate = false">
-      <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-        <h2 class="text-lg font-bold text-gray-800">Tạo trang mới</h2>
-        <div class="mt-4 space-y-4">
+    <AdminModal :open="showCreate" title="Tạo trang mới" size="sm" :busy="creating" @close="showCreate = false">
+        <div class="space-y-4">
           <div>
             <label class="block text-sm font-semibold text-gray-700 mb-1">Tiêu đề trang *</label>
             <input v-model="createForm.title" type="text" placeholder="VD: Chương trình hỗ trợ" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600" />
@@ -173,24 +171,26 @@
             <input v-model="createForm.slug" type="text" placeholder="tự động tạo từ tiêu đề nếu để trống" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600" />
           </div>
         </div>
-        <div class="mt-6 flex justify-end gap-2">
-          <button class="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100" @click="showCreate = false">Hủy</button>
+        <template #footer>
+          <button type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100" @click="showCreate = false">Hủy</button>
           <button
+            type="button"
             class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"
             :disabled="creating || !createForm.title.trim()"
             @click="createPage"
           >
-            <i v-if="creating" class="fa-solid fa-spinner fa-spin"></i>
+            <i v-if="creating" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
             Tạo trang
           </button>
-        </div>
-      </div>
-    </div>
+        </template>
+    </AdminModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { AdminPageRow } from '~/types/admin-api'
+import type { AdminPagesListResponse, PageCreateResponse, PageDeleteResponse } from '~/types/admin-pages-api'
+import AdminModal from '~/components/admin/AdminModal.vue'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const toast = useToast()
@@ -208,7 +208,7 @@ const fetchPages = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminPageRow[] }>)(`/api/admin/pages`)
+    const res = await adminFetch<AdminPagesListResponse>(`/api/admin/pages`)
     if (res.ok) {
       pages.value = res.items
       selection.keepOnly(visibleIds.value)
@@ -252,7 +252,7 @@ const createPage = async () => {
   if (!createForm.title.trim()) return
   creating.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; id: number }>)(`/api/admin/pages`, {
+    const res = await adminFetch<PageCreateResponse>(`/api/admin/pages`, {
       method: 'POST',
       body: { title: createForm.title.trim(), slug: createForm.slug.trim() || undefined },
     })
@@ -277,7 +277,7 @@ const removePage = async (p: AdminPageRow) => {
   })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/pages/${p.id}`, { method: 'DELETE' })
+    await adminFetch<PageDeleteResponse>(`/api/admin/pages/${p.id}`, { method: 'DELETE' })
     toast.success('Đã xóa trang.')
     await fetchPages()
   } catch (err: unknown) {

@@ -23,22 +23,14 @@
  */
 
 /**
- * Phản hồi **sau khi đi qua JSON**, không phải giá trị handler trả về.
- *
- * Khác biệt này là thật và cổng typecheck đã bắt được ngay: handler trả `Date`
- * cho các cột thời gian, nhưng `$fetch` nhận về **chuỗi** — JSON không có kiểu
- * ngày. Suy thẳng `Awaited<ReturnType<...>>` sẽ khai `createdAt: Date`, nên mã
- * gọi `.getTime()` trên một chuỗi vẫn biên dịch trót lọt rồi hỏng lúc chạy.
- * `Serialize` của Nitro mô phỏng đúng phép biến đổi đó (`Date → string`,
- * `Map`/`Set → {}`, `undefined` biến mất), nên kiểu ở đây khớp với **thứ trình
- * duyệt thật sự cầm trên tay**.
+ * Phản hồi **sau khi đi qua JSON**, không phải giá trị handler trả về: handler trả
+ * `Date` cho cột thời gian, `$fetch` nhận **chuỗi**. `Payload<…>` (một định nghĩa dùng
+ * chung, `app/types/handler-payload.ts`) mô phỏng phép biến đổi đó bằng `Serialize`
+ * của Nitro, nên kiểu ở đây khớp với **thứ trình duyệt thật sự cầm trên tay**.
  */
-import type { Serialize } from 'nitropack/types'
-
-type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
-
-/** Lấy phần tử của một mảng nằm trong phản hồi, ví dụ `{ ok, users: [...] }`. */
-type ItemOf<T> = T extends readonly (infer U)[] ? U : never
+import type { Payload } from './handler-payload'
+/** Lấy phần tử của một mảng nằm trong phản hồi, ví dụ `{ ok, users: [...] }` (một định nghĩa: item-of.ts). */
+import type { ItemOf } from './item-of'
 
 // ─── Người dùng & phân quyền ─────────────────────────────────────────────────
 type UsersHandler = typeof import('~~/server/api/admin/users/index.get').default
@@ -86,6 +78,15 @@ export type AdminPageDetail = Payload<PageDetailHandler>
 
 type PageUpdateHandler = typeof import('~~/server/api/admin/pages/[id].put').default
 export type AdminPageUpdateResult = Payload<PageUpdateHandler>
+
+// ─── Thao tác hàng loạt ──────────────────────────────────────────────────────
+/**
+ * Câu trả lời của mọi endpoint mà `useBulkAction` (composables/useBulkSelection.ts) gọi: cả 16
+ * URL các trang trao cho nó là handler `return runBulk(…)` (server/utils/bulk.ts), nên một kiểu
+ * suy từ `runBulk` đúng cho mọi URL đó. Ba lượt xoá hàng loạt KHÁC (phiên chat, giá AI, nhà cung
+ * cấp AI) không đi qua composable này. tests/admin-fetch-rollout-bulk-action.test.ts giữ điều đó.
+ */
+export type AdminBulkOutcome = Payload<typeof import('~~/server/utils/bulk').runBulk>
 
 // ─── Người đọc ───────────────────────────────────────────────────────────────
 type ReaderDetailHandler = typeof import('~~/server/api/admin/readers/[id].get').default

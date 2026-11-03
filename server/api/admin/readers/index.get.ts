@@ -34,9 +34,11 @@ export default defineEventHandler(async (event) => {
 
   const result = await listReaders({ search, banned: rawBanned, page, perPage })
 
+  // The page that was SHOWN (the service clamps to the last page) — `?page=9` of two
+  // pages used to be logged as page 9 while page 2 was on screen (FINDING-R6-12).
   await auditReaderRead({
     actorId: actor.id,
-    meta:    { operation: 'list', search: search || null, banned: rawBanned, page, perPage, returned: result.readers.length },
+    meta:    { operation: 'list', search: search || null, banned: rawBanned, page: result.page, perPage: result.perPage, returned: result.readers.length },
   })
 
   return { ok: true, ...result }

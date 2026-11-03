@@ -45,6 +45,8 @@ export interface ReaderIdentity {
    * disagree with the others about what somebody is called.
    */
   customDisplayName: string | null
+  /** The Google name is a reserved term — shown as "Bạn đọc" (spec reader-display-names-google). */
+  displayNameReserved: boolean
   /**
    * Whether the portal emails this reader when somebody answers their comment.
    *
@@ -95,6 +97,7 @@ async function resolveReader(event: H3Event): Promise<ReaderLookup> {
       email:        readerAccounts.email,
       displayName:  readerAccounts.displayName,
       customDisplayName: readerAccounts.customDisplayName,
+      displayNameReserved: readerAccounts.displayNameReserved,
       emailNotifications: readerAccounts.emailNotifications,
       isBanned:     readerAccounts.isBanned,
       tokenVersion: readerAccounts.tokenVersion,
@@ -116,6 +119,7 @@ async function resolveReader(event: H3Event): Promise<ReaderLookup> {
       email:        row.email,
       displayName:  row.displayName,
       customDisplayName: row.customDisplayName,
+      displayNameReserved: Boolean(row.displayNameReserved),
       // Normalised here, once. Drizzle maps a TINYINT(1) through the driver and
       // callers should never have to wonder whether they hold `1` or `true` —
       // `=== false` on a numeric 0 is the kind of comparison that silently

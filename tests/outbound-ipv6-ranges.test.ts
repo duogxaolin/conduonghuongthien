@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { isPublicIpAddress, resolvePublicProviderAddresses } from '../server/utils/chatbot/outbound.ts'
+import { resolvePublicProviderAddresses } from '../server/utils/chatbot/outbound.ts'
+import { isPublicIpAddress } from '../server/utils/chatbot/public-ip.ts'
 
 /**
  * Two IPv6 ranges that reach private space were treated as public:

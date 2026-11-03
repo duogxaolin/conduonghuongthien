@@ -151,11 +151,16 @@ export default defineEventHandler(async (event) => {
       ip: readMeta(row.meta, 'ip'),
       userAgent: readMeta(row.meta, 'userAgent'),
       mfaMethod: readMeta(row.meta, 'mfaMethod'),
+      // The two rows of a manual retention run (`retention-run.post.ts`): 'started' / 'finished'.
+      phase: readMeta(row.meta, 'phase'),
     })),
   }
 })
 
-/** activity_logs.meta is free-form JSON; only these three keys are surfaced. */
+/**
+ * activity_logs.meta is free-form JSON; only the keys read above are surfaced. A meta that is
+ * not an object (rows written as a JSON string before FINDING-R3-3) has none of them.
+ */
 function readMeta(meta: unknown, key: string): string | null {
   if (!meta || typeof meta !== 'object') return null
   const value = (meta as Record<string, unknown>)[key]

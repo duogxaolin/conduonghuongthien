@@ -1,10 +1,10 @@
 <template>
-  <section class="section bg-[#F8FAF7]">
+  <section class="section bg-surface">
     <div class="container">
       <div class="text-center max-w-[600px] mx-auto mb-[40px]">
-        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
-        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || t('block_role_title') }}</h2>
-        <p v-if="d.description" class="text-[0.95rem] text-[#4A5545] leading-[1.5]">{{ d.description }}</p>
+        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
+        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-ink mb-3">{{ d.title || t('block_role_title') }}</h2>
+        <p v-if="d.description" class="text-[0.95rem] text-ink-secondary leading-[1.5]">{{ d.description }}</p>
       </div>
 
       <!-- Tự chuyển slide do `createCarouselAutoplay` quyết định (D23): CHỈ nút
@@ -39,7 +39,7 @@
             class="flex-[0_0_auto] w-[230px] sm:w-[250px] [scroll-snap-align:start]"
           >
             <nuxt-link :to="`/role-models/${model.id}`" class="group block no-underline">
-              <figure class="relative aspect-[16/10] rounded-lg overflow-hidden bg-[#EEF2EC]">
+              <figure class="relative aspect-[16/10] rounded-lg overflow-hidden bg-surface-tint">
                 <SafeImg
                   :src="model.image"
                   :alt="model.name" img-class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
@@ -48,8 +48,8 @@
                   sizes="256px sm:384px lg:512px"
                 />
               </figure>
-              <span v-if="model.location" class="block text-[0.7rem] font-extrabold text-[#4A6741] uppercase tracking-[0.5px] leading-[1.6] mt-3 mb-1 truncate">{{ model.location }}</span>
-              <h3 class="text-[0.95rem] font-extrabold text-[#1E251C] leading-[1.35] line-clamp-2 transition-colors group-hover:text-[#4A6741]">{{ model.name }}</h3>
+              <span v-if="model.location" class="block text-[0.7rem] font-extrabold text-brand-600 uppercase tracking-[0.5px] leading-[1.6] mt-3 mb-1 truncate">{{ model.location }}</span>
+              <h3 class="text-[0.95rem] font-extrabold text-ink leading-[1.35] line-clamp-2 transition-colors group-hover:text-brand-600">{{ model.name }}</h3>
             </nuxt-link>
           </article>
         </div>
@@ -57,7 +57,7 @@
         <!-- Nút mũi tên tròn đè hai bên mép (Desktop) -->
         <button
           type="button"
-          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-1 sm:left-[-10px] xl:left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-1 sm:left-[-10px] xl:left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-brand-600 items-center justify-center cursor-pointer z-10 transition hover:bg-brand-600 hover:text-white hover:border-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
           @click="prevSlide"
           :aria-label="t('carousel_prev')"
         >
@@ -65,7 +65,7 @@
         </button>
         <button
           type="button"
-          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-1 sm:right-[-10px] xl:right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-1 sm:right-[-10px] xl:right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-brand-600 items-center justify-center cursor-pointer z-10 transition hover:bg-brand-600 hover:text-white hover:border-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
           @click="nextSlide"
           :aria-label="t('carousel_next')"
         >
@@ -78,7 +78,7 @@
           <button
             ref="autoplayToggle"
             type="button"
-            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-brand-600 flex items-center justify-center cursor-pointer transition hover:bg-brand-600 hover:text-white hover:border-brand-600 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
             :aria-label="autoplayOn ? t('carousel_pause') : t('carousel_play')"
             @click="toggleAutoplay"
           >
@@ -86,7 +86,7 @@
           </button>
           <button
             type="button"
-            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-brand-600 flex items-center justify-center cursor-pointer transition hover:bg-brand-600 hover:text-white hover:border-brand-600 shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
             :disabled="currentIndex <= 0"
             @click="prevSlide"
             :aria-label="t('carousel_prev')"
@@ -96,7 +96,7 @@
 
           <!-- Clickable indicator tabs / pills — pill nhỏ nhưng vùng tap ≥24px
                (p-1.5 = 6px mỗi bên → 24px) để đạt WCAG 2.5.5 tap-target. -->
-          <div class="flex items-center gap-1 px-2 py-1 bg-white rounded-full border border-[#E2E8DF] shadow-sm">
+          <div class="flex items-center gap-1 px-2 py-1 bg-white rounded-full border border-line shadow-sm">
             <button
               v-for="(_, idx) in list"
               :key="idx"
@@ -104,7 +104,7 @@
               @click="goToSlide(idx)"
               :class="[
                 'p-1.5 rounded-full transition-colors duration-300 cursor-pointer border-none',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]'
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600'
               ]"
               :aria-label="t('carousel_goto').replace('{n}', String(idx + 1))"
               :aria-current="currentIndex === idx ? 'true' : undefined"
@@ -112,7 +112,7 @@
               <span
                 :class="[
                   'block rounded-full transition-all duration-300 h-2.5',
-                  currentIndex === idx ? 'w-6 bg-[#4A6741]' : 'w-2.5 bg-[#D5E1D3] group-hover:bg-[#7CB342]'
+                  currentIndex === idx ? 'w-6 bg-[#4A6741]' : 'w-2.5 bg-[#D5E1D3] group-hover:bg-accent'
                 ]"
               ></span>
             </button>
@@ -120,7 +120,7 @@
 
           <button
             type="button"
-            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-brand-600 flex items-center justify-center cursor-pointer transition hover:bg-brand-600 hover:text-white hover:border-brand-600 shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
             :disabled="currentIndex >= totalCards - 1"
             @click="nextSlide"
             :aria-label="t('carousel_next')"
@@ -140,7 +140,7 @@
       />
 
       <!-- Chỉ nói "chưa có" khi đã tải xong: lúc đang tải câu đó là một lời sai. -->
-      <p v-else-if="!pending" class="text-center text-[0.9rem] text-[#5A6C58] italic">{{ t('block_role_empty') }}</p>
+      <p v-else-if="!pending" class="text-center text-[0.9rem] text-ink-soft italic">{{ t('block_role_empty') }}</p>
     </div>
   </section>
 </template>
@@ -148,6 +148,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicArticlesResponse } from '~/types/public-content-api'
 import BlockLoadError from './BlockLoadError.vue'
 import { createCarouselAutoplay } from '~/utils/carousel-autoplay'
 
@@ -162,7 +164,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, pending, error, refresh } = await useAsyncData(
   `block-role-models-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
+  () => publicFetch<PublicArticlesResponse>('/api/public/articles', {
     params: {
       type: 'role_model',
       limit: maxItems.value,
@@ -185,7 +187,9 @@ const list = computed(() =>
   (data.value?.articles || []).map(a => ({
     id: a.slug,
     name: a.title,
-    location: a.category?.name || '',
+    // FINDING G-1 (D-FETCH lô G): `categoryName` của API, như bản đầu của khối (20073b4d). Từ
+    // 30b87195 dòng này đọc `a.category?.name` (kiểu ép viết tay) — nhãn chuyên mục không bao giờ hiện.
+    location: a.categoryName || '',
     image: a.thumbnailUrl || '/assets/guong_sang_1.jpg',
   }))
 )

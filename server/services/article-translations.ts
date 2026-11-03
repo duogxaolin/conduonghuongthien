@@ -67,33 +67,6 @@ export async function listTranslationsForArticle(articleId: number, db: Database
   return rows
 }
 
-export async function getTranslationProgress(
-  articleId: number,
-  langCode: string,
-  db: Database = getDb(),
-) {
-  const [row] = await db
-    .select()
-    .from(articleTranslations)
-    .where(
-      and(
-        eq(articleTranslations.articleId, articleId),
-        eq(articleTranslations.langCode, langCode),
-      ),
-    )
-    .limit(1)
-
-  if (!row) return null
-  return {
-    status: row.status,
-    progress: row.progress,
-    currentChunk: row.currentChunk,
-    totalChunks: row.totalChunks,
-    errorMessage: row.errorMessage,
-    completedAt: row.completedAt,
-  }
-}
-
 // ─── Create (trigger translation worker) ─────────────────────────────────
 
 export async function triggerTranslation(

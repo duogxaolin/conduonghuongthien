@@ -53,7 +53,7 @@
         </h1>
 
         <div class="flex items-center gap-3 mb-6">
-          <div class="h-[3px] w-12 rounded-full bg-[#7CB342]"></div>
+          <div class="h-[3px] w-12 rounded-full bg-accent"></div>
           <div class="h-[3px] w-4 rounded-full bg-white/30"></div>
         </div>
 
@@ -84,9 +84,9 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-x-6 gap-y-2 mt-9 text-[0.8rem] font-semibold text-white/60">
-          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-[#7CB342]" aria-hidden="true"></i> {{ t('hero_support_free') || 'Hỗ trợ 24/7 miễn phí' }}</span>
-          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-[#7CB342]" aria-hidden="true"></i> {{ t('hero_security') || 'Bảo mật thông tin' }}</span>
-          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-[#7CB342]" aria-hidden="true"></i> {{ t('hero_connect_officer') || 'Kết nối trực tiếp cán bộ' }}</span>
+          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-accent" aria-hidden="true"></i> {{ t('hero_support_free') || 'Hỗ trợ 24/7 miễn phí' }}</span>
+          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-accent" aria-hidden="true"></i> {{ t('hero_security') || 'Bảo mật thông tin' }}</span>
+          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-accent" aria-hidden="true"></i> {{ t('hero_connect_officer') || 'Kết nối trực tiếp cán bộ' }}</span>
         </div>
       </div>
     </div>

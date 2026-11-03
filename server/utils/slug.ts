@@ -1,29 +1,21 @@
 import type { getDb } from './db'
 import { categories, contentTypes, mediaCategories, pages } from '../db/schema'
 import { ne, and, like } from 'drizzle-orm'
+import { slugify } from '../../shared/slugify'
 
 type Db = ReturnType<typeof getDb>
+/** The pool or an open transaction (`services/category-writes.ts` reads the slugs inside the write's). */
+type DbOrTx = Db | Parameters<Parameters<Db['transaction']>[0]>[0]
 
-/** Slugify Vietnamese/Unicode text into a clean ascii-safe slug. No timestamps. */
-export function slugify(text: string): string {
-  return text
-    .toString()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
+// The pure rule lives in `shared/slugify.ts` (the admin pages run the same one);
+// only the DB-backed `unique*Slug()` helpers stay server-side.
+export { slugify }
 
 /**
  * Resolve a collision-safe category slug by appending the smallest free
  * `-2`, `-3`, … suffix. `excludeId` skips the current row when editing.
  */
-export async function uniqueCategorySlug(db: Db, base: string, excludeId?: number): Promise<string> {
+export async function uniqueCategorySlug(db: DbOrTx, base: string, excludeId?: number): Promise<string> {
   const baseSlug = slugify(base) || 'muc'
 
   // Pull existing slugs that could collide (baseSlug or baseSlug-N)

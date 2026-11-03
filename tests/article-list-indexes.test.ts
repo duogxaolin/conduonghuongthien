@@ -24,6 +24,10 @@ import { articles } from '../server/db/schema'
 const EXPECTED: Record<string, string[]> = {
   articles_status_type_pub_idx: ['status', 'type', 'published_at', 'created_at'],
   articles_status_category_pub_idx: ['status', 'category_id', 'published_at', 'created_at'],
+  // "Đọc nhiều" (`sort=views`) ranks by the maintained total (design D6); the
+  // tie-break columns let MySQL read `ORDER BY view_total, published_at,
+  // created_at` straight off the index instead of sorting.
+  articles_status_type_views_idx: ['status', 'type', 'view_total', 'published_at', 'created_at'],
 }
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')

@@ -26,9 +26,11 @@ function fakeConnection(options: { multipleStatements?: boolean }) {
       const sqlText = typeof input === 'string' ? input : input.sql
       queries.push({ conn: id, sql: sqlText })
       if (/^SHOW TABLES/i.test(sqlText)) return [[{ Tables_in_x: 'articles' }], []]
+      // The dump lists each table's non-generated columns, then selects exactly those.
+      if (/information_schema\.COLUMNS/i.test(sqlText)) return [[{ name: 'id' }, { name: 'title' }], []]
       if (/information_schema/i.test(sqlText)) return [[{ name: 'articles', engine: 'InnoDB' }], []]
       if (/^SHOW CREATE TABLE/i.test(sqlText)) return [[{ 'Create Table': 'CREATE TABLE `articles` (`id` int NOT NULL AUTO_INCREMENT, `title` varchar(255), PRIMARY KEY (`id`))' }], []]
-      if (/^SELECT \* FROM/i.test(sqlText)) {
+      if (/^SELECT `id`, `title` FROM `articles`$/i.test(sqlText)) {
         return [[['0', "x\\'); DROP TABLE users; -- "]], [{ name: 'id', columnType: 0x03 }, { name: 'title', columnType: 0xfd }]]
       }
       void options

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# FAKE `crontab` for tests/ops-scripts-sandbox.test.ts: the user's crontab is the
+# file $SANDBOX/crontab.txt. Nothing real is read or installed.
+#   crontab -l          print it; no file → "no crontab for <user>" on stderr, exit 1
+#   crontab <file>|-    replace it with <file> / stdin; logged in docker.log
+#   FAKE_CRONTAB_LIST_RC   force `crontab -l` to fail with this code and a non-"no crontab" error
+set -u
+: "${SANDBOX:?}"
+store="$SANDBOX/crontab.txt"
+n=$(( $(cat "$SANDBOX/.n" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$SANDBOX/.n"
+printf '%s\tcrontab %s\n' "$n" "$*" >> "$SANDBOX/docker.log"
+case "${1:-}" in
+  -l)
+    if [ -n "${FAKE_CRONTAB_LIST_RC:-}" ]; then
+      echo "crontab: cannot open /var/spool/cron: Permission denied" >&2
+      exit "$FAKE_CRONTAB_LIST_RC"
+    fi
+    if [ ! -f "$store" ]; then
+      echo "no crontab for $(id -un)" >&2
+      exit 1
+    fi
+    cat "$store"
+    ;;
+  -)
+    cat > "$store"
+    ;;
+  -*)
+    echo "fake crontab: unsupported option $1" >&2
+    exit 2
+    ;;
+  *)
+    cat "$1" > "$store"
+    ;;
+esac

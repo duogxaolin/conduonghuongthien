@@ -21,7 +21,7 @@ const onHotspotClick = (docSlug: string, anchor?: string) => {
 </script>
 
 <template>
-  <div class="bg-white rounded-xl border border-[#e2ece3] p-6">
+  <div class="bg-white rounded-xl border border-line p-6">
     <SkeletonHome
       v-if="layout === 'home'"
       :hotspots="hotspots"

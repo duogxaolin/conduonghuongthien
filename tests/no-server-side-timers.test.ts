@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { CHAT_WIDGET_FAMILY, familyFiles } from './_component-family.ts'
 
 /**
  * `setInterval` phía server không bao giờ được dọn: `onUnmounted` không chạy khi
@@ -25,7 +26,11 @@ test('the role-models carousel never starts its autoplay timer on the server', (
 test('every timer started from an immediate watcher is guarded for the client', () => {
   // The shape that caused it: a watcher with `immediate: true` whose callback ends
   // in a function that calls setInterval. Any component with both needs the guard.
-  const offenders = ['../app/components/blocks/RoleModelsBlock.vue', '../app/components/LiveHero.vue', '../app/components/LiveTickerBar.vue', '../app/components/ChatWidget.vue']
+  // ChatWidget is checked file by file over its whole family since its wave3 split: the
+  // teaser's `setInterval` now lives in `composables/useChatWidgetTeaser.ts`.
+  const chatWidget = familyFiles(CHAT_WIDGET_FAMILY).map(f => `../app/${f.file}`)
+  assert.ok(chatWidget.some(path => /\bsetInterval\(/.test(read(path))), 'the teaser timer is in what this checks')
+  const offenders = ['../app/components/blocks/RoleModelsBlock.vue', '../app/components/LiveHero.vue', '../app/components/LiveTickerBar.vue', ...chatWidget]
     .filter((path) => {
       const source = read(path)
       return /immediate:\s*true/.test(source) && /\bsetInterval\(/.test(source) && !/import\.meta\.client|onMounted/.test(source)

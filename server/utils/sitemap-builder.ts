@@ -166,13 +166,15 @@ export async function collectSitemapUrls(db = getDb()): Promise<SitemapUrl[]> {
     .select({ publishedAt: chatbotKnowledge.publishedAt, updatedAt: chatbotKnowledge.updatedAt })
     .from(chatbotKnowledge)
     .where(eq(chatbotKnowledge.status, 'published'))
-  if (qaRows.length > 0) {
-    const latest = qaRows
+  // `/qa-documents` is already a list page above; it takes the date of the latest
+  // published Q&A. Pushing a second entry listed the URL twice in the sitemap.
+  const qaPage = urls.find((u) => u.loc === '/qa-documents')
+  if (qaPage && qaRows.length > 0) {
+    qaPage.lastmod = qaRows
       .map((k) => isoDate(k.publishedAt) ?? isoDate(k.updatedAt))
       .filter((d): d is string => Boolean(d))
       .sort()
       .at(-1)
-    urls.push({ loc: '/qa-documents', lastmod: latest, changefreq: 'weekly', priority: 0.6 })
   }
 
   return urls

@@ -5,18 +5,17 @@ definePageMeta({
 })
 
 import { defineAsyncComponent } from 'vue'
+import type { AnalyticsBreakdownResponse, AnalyticsBreakdownRow as BreakdownRow, AnalyticsLiveResponse, AnalyticsSummaryResponse,
+  AnalyticsTrafficPoint, DashboardArticlesResponse, DashboardMediaResponse, DashboardSubmissionsResponse } from '~/types/admin-dashboard-api'
 const AnalyticsTrafficChart = defineAsyncComponent(() => import('~/components/admin/AnalyticsTrafficChart.client.vue'))
 
 const { user, hasPermission } = useAdminAuth()
 const canReadAnalytics = computed(() => hasPermission('analytics', 'read'))
 
-type TrafficPoint = { day: string; pageViews: number; dailyUniqueVisitors: number }
-type LiveData = { fiveMinuteTotals: { pageViews: number; approximateUniqueVisitors: number; eventsPerMinute: number } }
-type BreakdownRow = { rank: number; value: string; pageViews: number; approximateUniqueVisitors: number; share: number }
 type BreakdownData = { rows: BreakdownRow[]; totalPageViews: number }
 
-const trafficPoints = ref<TrafficPoint[]>([])
-const liveData = ref<LiveData | null>(null)
+const trafficPoints = ref<AnalyticsTrafficPoint[]>([])
+const liveData = ref<AnalyticsLiveResponse | null>(null)
 const trafficLoading = ref(false)
 const liveLoading = ref(false)
 const trafficError = ref(false)
@@ -43,7 +42,7 @@ async function loadTraffic() {
   trafficLoading.value = true
   trafficError.value = false
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; traffic: TrafficPoint[] }>)(`/api/admin/analytics/summary?start=${daysAgo(6)}&end=${today()}`)
+    const res = await adminFetch<AnalyticsSummaryResponse>(`/api/admin/analytics/summary?start=${daysAgo(6)}&end=${today()}`)
     if (res?.ok) trafficPoints.value = res.traffic ?? []
   } catch {
     trafficError.value = true
@@ -57,7 +56,7 @@ async function loadLive() {
   liveLoading.value = true
   liveError.value = false
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<LiveData & { ok?: boolean }>)('/api/admin/analytics/live')
+    const res = await adminFetch<AnalyticsLiveResponse>('/api/admin/analytics/live')
     if (res) liveData.value = res
   } catch {
     liveError.value = true
@@ -73,7 +72,7 @@ async function loadBreakdowns() {
   sourceError.value = false
   deviceError.value = false
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; rows: BreakdownRow[]; totalPageViews: number }>)(`/api/admin/analytics/live/breakdown?scope=source_category&window=60`)
+    const res = await adminFetch<AnalyticsBreakdownResponse>(`/api/admin/analytics/live/breakdown?scope=source_category&window=60`)
     if (res?.ok) sourceData.value = { rows: res.rows ?? [], totalPageViews: res.totalPageViews ?? 0 }
   } catch {
     sourceError.value = true
@@ -81,7 +80,7 @@ async function loadBreakdowns() {
    sourceLoading.value = false
   }
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; rows: BreakdownRow[]; totalPageViews: number }>)(`/api/admin/analytics/live/breakdown?scope=device_class&window=60`)
+    const res = await adminFetch<AnalyticsBreakdownResponse>(`/api/admin/analytics/live/breakdown?scope=device_class&window=60`)
     if (res?.ok) deviceData.value = { rows: res.rows ?? [], totalPageViews: res.totalPageViews ?? 0 }
   } catch {
     deviceError.value = true
@@ -148,19 +147,18 @@ const quickActions = [
 onMounted(async () => {
   try {
     const [artRes, roleModelRes, subRes, mediaRes] = await Promise.all([
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; pagination?: { total?: number } }>)(`/api/admin/articles`).catch(() => null),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; pagination?: { total?: number } }>)(`/api/admin/articles`, { query: { type: 'role_model' } }).catch(() => null),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; counts?: { new?: number }; submissions?: Array<unknown> }>)(`/api/admin/submissions`).catch(() => null),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; pagination?: { total?: number } }>)(`/api/admin/media`).catch(() => null),
+      adminFetch<DashboardArticlesResponse>(`/api/admin/articles`).catch(() => null),
+      adminFetch<DashboardArticlesResponse>(`/api/admin/articles`, { query: { type: 'role_model' } }).catch(() => null),
+      adminFetch<DashboardSubmissionsResponse>(`/api/admin/submissions`).catch(() => null),
+      adminFetch<DashboardMediaResponse>(`/api/admin/media`).catch(() => null),
     ])
-    const setStat = (index: number, value: number) => {
-      const card = stats.value[index]
-      if (card) card.value = String(value)
-    }
-    if (artRes?.ok) setStat(0, artRes.pagination?.total || 0)
-    if (roleModelRes?.ok) setStat(1, roleModelRes.pagination?.total || 0)
-    if (subRes?.ok) setStat(2, subRes.counts?.new ?? subRes.submissions?.length ?? 0)
-    if (mediaRes?.ok) setStat(3, mediaRes.pagination?.total || 0)
+    // A failed card (a 403 for an officer without that resource) reads "—", not a "..." that never ends.
+    const setStat = (index: number, value: number | null) => { const card = stats.value[index]; if (card) card.value = value === null ? '—' : String(value) }
+    setStat(0, artRes?.ok ? artRes.pagination.total : null)
+    setStat(1, roleModelRes?.ok ? roleModelRes.pagination.total : null)
+    // `counts` has a key only for a status with rows: no `new` key = none pending (not all submissions).
+    setStat(2, subRes?.ok ? subRes.counts.new ?? 0 : null)
+    setStat(3, mediaRes?.ok ? mediaRes.pagination.total : null)
   } catch { /* ignore */ }
   await Promise.all([loadTraffic(), loadLive(), loadBreakdowns()])
 })
@@ -170,7 +168,7 @@ onMounted(async () => {
   <div class="flex flex-col gap-7">
 
     <!-- Welcome Banner -->
-    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#122815] via-[#1e4620] to-[#2c6e33] text-white px-6 py-6 md:px-8 md:py-7 shadow-[0_8px_32px_rgba(18,40,21,0.22)]">
+    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-950 via-brand-900 to-brand-700 text-white px-6 py-6 md:px-8 md:py-7 shadow-[0_8px_32px_rgba(18,40,21,0.22)]">
       <!-- decorative circles -->
       <div class="pointer-events-none absolute -top-10 -right-10 w-52 h-52 rounded-full bg-white/5" aria-hidden="true"></div>
       <div class="pointer-events-none absolute bottom-0 right-20 w-32 h-32 rounded-full bg-white/5" aria-hidden="true"></div>
@@ -201,7 +199,7 @@ onMounted(async () => {
         v-for="(s, idx) in stats"
         :key="idx"
         :to="s.path"
-        class="group relative overflow-hidden rounded-2xl border border-[#e2ece3] bg-white p-5 no-underline flex flex-col gap-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.07)] hover:border-transparent"
+        class="group relative overflow-hidden rounded-2xl border border-line bg-white p-5 no-underline flex flex-col gap-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.07)] hover:border-transparent"
         :style="`--accent: ${s.accent}; --bg: ${s.bg}`"
       >
         <!-- colored top bar -->
@@ -216,7 +214,7 @@ onMounted(async () => {
         </div>
         <div class="flex flex-col gap-0.5">
           <span class="text-[2rem] font-extrabold leading-none" :style="`color: ${s.accent}`">{{ s.value }}</span>
-          <span class="text-[0.78rem] text-[#667768] font-semibold truncate mt-0.5">{{ s.title }}</span>
+          <span class="text-[0.78rem] text-ink-muted font-semibold truncate mt-0.5">{{ s.title }}</span>
         </div>
         <!-- hover arrow -->
         <i class="fa-solid fa-arrow-right absolute bottom-4 right-4 text-xs opacity-0 group-hover:opacity-100 transition-opacity" :style="`color: ${s.accent}`" aria-hidden="true"></i>
@@ -226,24 +224,24 @@ onMounted(async () => {
     <!-- Quick Actions -->
     <div>
       <div class="flex items-center gap-3 mb-4">
-        <span class="w-1 h-5 rounded-full bg-[#2c6e33]" aria-hidden="true"></span>
-        <h2 class="text-[1rem] font-extrabold text-[#122815] m-0">Tác vụ nhanh</h2>
+        <span class="w-1 h-5 rounded-full bg-brand-700" aria-hidden="true"></span>
+        <h2 class="text-[1rem] font-extrabold text-brand-950 m-0">Tác vụ nhanh</h2>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <nuxt-link
           v-for="(act, idx) in quickActions"
           :key="idx"
           :to="act.path"
-          class="group bg-white border border-[#e2ece3] px-4 py-4 rounded-xl no-underline flex items-center gap-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(0,0,0,0.06)] hover:border-transparent"
+          class="group bg-white border border-line px-4 py-4 rounded-xl no-underline flex items-center gap-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(0,0,0,0.06)] hover:border-transparent"
         >
           <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors" :style="`background: ${act.accent}18`">
             <i :class="act.icon" class="text-[1.15rem]" :style="`color: ${act.accent}`" aria-hidden="true"></i>
           </div>
           <div class="flex-1 min-w-0">
-            <p class="text-[0.9rem] font-bold text-[#122815] m-0 truncate">{{ act.title }}</p>
-            <p class="text-[0.78rem] text-[#667768] m-0 mt-0.5 line-clamp-1">{{ act.desc }}</p>
+            <p class="text-[0.9rem] font-bold text-brand-950 m-0 truncate">{{ act.title }}</p>
+            <p class="text-[0.78rem] text-ink-muted m-0 mt-0.5 line-clamp-1">{{ act.desc }}</p>
           </div>
-          <i class="fa-solid fa-chevron-right text-[0.7rem] text-[#afc8b1] group-hover:text-[#2c6e33] shrink-0 transition-colors" aria-hidden="true"></i>
+          <i class="fa-solid fa-chevron-right text-[0.7rem] text-[#afc8b1] group-hover:text-brand-700 shrink-0 transition-colors" aria-hidden="true"></i>
         </nuxt-link>
       </div>
     </div>
@@ -254,14 +252,14 @@ onMounted(async () => {
       <!-- Section header -->
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <span class="w-1 h-5 rounded-full bg-[#2c6e33]" aria-hidden="true"></span>
-          <h2 class="text-[1rem] font-extrabold text-[#122815] m-0">Thống kê truy cập</h2>
-          <span class="inline-flex items-center gap-1.5 text-[0.72rem] font-bold text-[#2c6e33] bg-[#f0f7f1] border border-[#c8e6ca] rounded-full px-2.5 py-0.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-[#2c6e33] animate-pulse" aria-hidden="true"></span>
+          <span class="w-1 h-5 rounded-full bg-brand-700" aria-hidden="true"></span>
+          <h2 class="text-[1rem] font-extrabold text-brand-950 m-0">Thống kê truy cập</h2>
+          <span class="inline-flex items-center gap-1.5 text-[0.72rem] font-bold text-brand-700 bg-surface-tint border border-[#c8e6ca] rounded-full px-2.5 py-0.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-brand-700 animate-pulse" aria-hidden="true"></span>
             Live
           </span>
         </div>
-        <nuxt-link to="/admin/analytics" class="inline-flex items-center gap-1.5 text-[0.8rem] font-semibold text-[#2c6e33] no-underline hover:underline">
+        <nuxt-link to="/admin/analytics" class="inline-flex items-center gap-1.5 text-[0.8rem] font-semibold text-brand-700 no-underline hover:underline">
           Xem đầy đủ <i class="fa-solid fa-arrow-right text-[0.7rem]" aria-hidden="true"></i>
         </nuxt-link>
       </div>
@@ -269,7 +267,7 @@ onMounted(async () => {
       <!-- Live stats row — 3 metric cards -->
       <div class="grid grid-cols-3 gap-4">
         <template v-if="liveLoading">
-          <div v-for="n in 3" :key="n" class="rounded-2xl border border-[#e2ece3] bg-white p-5 animate-pulse motion-reduce:animate-none h-24" role="status" aria-label="Đang tải…"></div>
+          <div v-for="n in 3" :key="n" class="rounded-2xl border border-line bg-white p-5 animate-pulse motion-reduce:animate-none h-24" role="status" aria-label="Đang tải…"></div>
         </template>
         <template v-else-if="liveError">
           <div role="alert" class="col-span-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-500 flex items-center gap-2">
@@ -279,57 +277,57 @@ onMounted(async () => {
           </div>
         </template>
         <template v-else-if="liveData">
-          <div class="rounded-2xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-1" role="region" aria-label="Lượt xem trang 5 phút qua">
+          <div class="rounded-2xl border border-line bg-white p-5 flex flex-col gap-1" role="region" aria-label="Lượt xem trang 5 phút qua">
             <div class="flex items-center gap-2 mb-1">
-              <span class="w-8 h-8 rounded-xl bg-[#f0f7f1] flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-eye text-[#2c6e33] text-sm" aria-hidden="true"></i>
+              <span class="w-8 h-8 rounded-xl bg-surface-tint flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-eye text-brand-700 text-sm" aria-hidden="true"></i>
               </span>
-              <span class="text-[0.72rem] text-[#667768] font-semibold uppercase tracking-wide">Lượt xem</span>
+              <span class="text-[0.72rem] text-ink-muted font-semibold uppercase tracking-wide">Lượt xem</span>
             </div>
-            <span class="text-[2rem] font-extrabold text-[#122815] leading-none">{{ formatNum(liveData.fiveMinuteTotals.pageViews) }}</span>
-            <span class="text-[0.72rem] text-[#667768]">5 phút gần nhất</span>
+            <span class="text-[2rem] font-extrabold text-brand-950 leading-none">{{ formatNum(liveData.fiveMinuteTotals.pageViews) }}</span>
+            <span class="text-[0.72rem] text-ink-muted">5 phút gần nhất</span>
           </div>
-          <div class="rounded-2xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-1" role="region" aria-label="Khách ước tính 5 phút qua">
+          <div class="rounded-2xl border border-line bg-white p-5 flex flex-col gap-1" role="region" aria-label="Khách ước tính 5 phút qua">
             <div class="flex items-center gap-2 mb-1">
               <span class="w-8 h-8 rounded-xl bg-[#eef5fb] flex items-center justify-center shrink-0">
                 <i class="fa-solid fa-users text-[#2e7db8] text-sm" aria-hidden="true"></i>
               </span>
-              <span class="text-[0.72rem] text-[#667768] font-semibold uppercase tracking-wide">Khách (ước tính)</span>
+              <span class="text-[0.72rem] text-ink-muted font-semibold uppercase tracking-wide">Khách (ước tính)</span>
             </div>
-            <span class="text-[2rem] font-extrabold text-[#122815] leading-none">{{ formatNum(liveData.fiveMinuteTotals.approximateUniqueVisitors) }}</span>
-            <span class="text-[0.72rem] text-[#667768]">5 phút gần nhất</span>
+            <span class="text-[2rem] font-extrabold text-brand-950 leading-none">{{ formatNum(liveData.fiveMinuteTotals.approximateUniqueVisitors) }}</span>
+            <span class="text-[0.72rem] text-ink-muted">5 phút gần nhất</span>
           </div>
-          <div class="rounded-2xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-1" role="region" aria-label="Sự kiện mỗi phút">
+          <div class="rounded-2xl border border-line bg-white p-5 flex flex-col gap-1" role="region" aria-label="Sự kiện mỗi phút">
             <div class="flex items-center gap-2 mb-1">
               <span class="w-8 h-8 rounded-xl bg-[#fdf4e7] flex items-center justify-center shrink-0">
                 <i class="fa-solid fa-bolt text-[#c8832a] text-sm" aria-hidden="true"></i>
               </span>
-              <span class="text-[0.72rem] text-[#667768] font-semibold uppercase tracking-wide">Sự kiện/phút</span>
+              <span class="text-[0.72rem] text-ink-muted font-semibold uppercase tracking-wide">Sự kiện/phút</span>
             </div>
-            <span class="text-[2rem] font-extrabold text-[#122815] leading-none">{{ liveData.fiveMinuteTotals.eventsPerMinute.toFixed(1) }}</span>
-            <span class="text-[0.72rem] text-[#667768]">trung bình</span>
+            <span class="text-[2rem] font-extrabold text-brand-950 leading-none">{{ liveData.fiveMinuteTotals.eventsPerMinute.toFixed(1) }}</span>
+            <span class="text-[0.72rem] text-ink-muted">trung bình</span>
           </div>
         </template>
         <template v-else>
-          <div class="col-span-3 rounded-2xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] p-5 text-sm text-[#667768] text-center">Chưa có dữ liệu trực tiếp.</div>
+          <div class="col-span-3 rounded-2xl border border-dashed border-[#afc8b1] bg-surface p-5 text-sm text-ink-muted text-center">Chưa có dữ liệu trực tiếp.</div>
         </template>
       </div>
 
       <!-- 7-day traffic chart -->
-      <div class="bg-white rounded-2xl border border-[#e2ece3] p-5 md:p-6 overflow-hidden min-w-0">
+      <div class="bg-white rounded-2xl border border-line p-5 md:p-6 overflow-hidden min-w-0">
         <div class="flex items-center justify-between mb-5">
           <div class="flex items-center gap-2">
-            <i class="fa-solid fa-chart-area text-[#2c6e33]" aria-hidden="true"></i>
-            <h2 class="text-[0.95rem] font-extrabold text-[#122815] m-0">Xu hướng 7 ngày qua</h2>
+            <i class="fa-solid fa-chart-area text-brand-700" aria-hidden="true"></i>
+            <h2 class="text-[0.95rem] font-extrabold text-brand-950 m-0">Xu hướng 7 ngày qua</h2>
           </div>
-          <nuxt-link to="/admin/analytics" class="text-[0.78rem] font-semibold text-[#2c6e33] no-underline hover:underline">Chi tiết →</nuxt-link>
+          <nuxt-link to="/admin/analytics" class="text-[0.78rem] font-semibold text-brand-700 no-underline hover:underline">Chi tiết →</nuxt-link>
         </div>
-        <div v-if="trafficLoading" class="rounded-xl bg-[#f4f7f4] h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
+        <div v-if="trafficLoading" class="rounded-xl bg-surface h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
           <span class="sr-only">Đang tải biểu đồ xu hướng 7 ngày</span>
           <div
             v-for="(h, n) in ['h-1/3', 'h-2/3', 'h-1/2', 'h-full', 'h-3/5', 'h-2/5', 'h-4/5']"
             :key="n"
-            :class="['flex-1 rounded-t bg-[#dfe9e0] animate-pulse motion-reduce:animate-none', h]"
+            :class="['flex-1 rounded-t bg-line animate-pulse motion-reduce:animate-none', h]"
             aria-hidden="true"
           ></div>
         </div>
@@ -337,19 +335,19 @@ onMounted(async () => {
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Không thể tải dữ liệu thống kê.
           <button type="button" class="ml-1 font-bold underline" @click="loadTraffic()">Thử lại</button>
         </div>
-        <div v-else-if="trafficPoints.length === 0" class="rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] p-8 text-center text-sm text-[#667768]">
-          <i class="fa-solid fa-chart-area text-2xl text-[#c8d6c9] mb-2 block" aria-hidden="true"></i>
+        <div v-else-if="trafficPoints.length === 0" class="rounded-xl border border-dashed border-[#afc8b1] bg-surface p-8 text-center text-sm text-ink-muted">
+          <i class="fa-solid fa-chart-area text-2xl text-line-strong mb-2 block" aria-hidden="true"></i>
           Chưa có dữ liệu thống kê trong 7 ngày qua.
         </div>
         <ClientOnly v-else>
           <AnalyticsTrafficChart :points="trafficPoints" />
           <template #fallback>
-            <div class="rounded-xl bg-[#f4f7f4] h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
+            <div class="rounded-xl bg-surface h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
               <span class="sr-only">Đang tải biểu đồ tương tác</span>
               <div
                 v-for="(h, n) in ['h-1/3', 'h-2/3', 'h-1/2', 'h-full', 'h-3/5', 'h-2/5', 'h-4/5']"
                 :key="n"
-                :class="['flex-1 rounded-t bg-[#dfe9e0] animate-pulse motion-reduce:animate-none', h]"
+                :class="['flex-1 rounded-t bg-line animate-pulse motion-reduce:animate-none', h]"
                 aria-hidden="true"
               ></div>
             </div>
@@ -361,28 +359,28 @@ onMounted(async () => {
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
         <!-- Source category donut -->
-        <div class="bg-white rounded-2xl border border-[#e2ece3] p-5">
+        <div class="bg-white rounded-2xl border border-line p-5">
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center gap-2">
-              <i class="fa-solid fa-globe text-[#2c6e33] text-sm" aria-hidden="true"></i>
-              <h2 class="text-[0.9rem] font-extrabold text-[#122815] m-0">Nguồn truy cập</h2>
-              <span class="text-[0.65rem] text-[#667768] bg-[#f4f7f4] border border-[#e2ece3] rounded-full px-2 py-0.5 font-semibold">60 phút</span>
+              <i class="fa-solid fa-globe text-brand-700 text-sm" aria-hidden="true"></i>
+              <h2 class="text-[0.9rem] font-extrabold text-brand-950 m-0">Nguồn truy cập</h2>
+              <span class="text-[0.65rem] text-ink-muted bg-surface border border-line rounded-full px-2 py-0.5 font-semibold">60 phút</span>
             </div>
-            <nuxt-link to="/admin/analytics" class="text-[0.72rem] font-semibold text-[#2c6e33] no-underline hover:underline">Chi tiết →</nuxt-link>
+            <nuxt-link to="/admin/analytics" class="text-[0.72rem] font-semibold text-brand-700 no-underline hover:underline">Chi tiết →</nuxt-link>
           </div>
           <div v-if="sourceLoading" class="flex items-center gap-4 h-28" role="status" aria-busy="true">
             <span class="sr-only">Đang tải nguồn truy cập</span>
-            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-[#dfe9e0] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-line animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
             <div class="flex flex-1 flex-col gap-2" aria-hidden="true">
-              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
             </div>
           </div>
           <div v-else-if="sourceError" role="alert" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i> Không thể tải dữ liệu.
             <button type="button" class="ml-1 font-bold underline" @click="loadBreakdowns()">Thử lại</button>
           </div>
-          <div v-else-if="!sourceData || sourceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] text-sm text-[#667768] gap-2">
-            <i class="fa-solid fa-globe text-xl text-[#c8d6c9]" aria-hidden="true"></i>
+          <div v-else-if="!sourceData || sourceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-surface text-sm text-ink-muted gap-2">
+            <i class="fa-solid fa-globe text-xl text-line-strong" aria-hidden="true"></i>
             Chưa có dữ liệu nguồn truy cập.
           </div>
           <div v-else class="flex flex-col gap-4">
@@ -417,40 +415,40 @@ onMounted(async () => {
                   v-for="(row, i) in sourceData.rows"
                   :key="row.value"
                   class="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 transition-colors"
-                  :class="activeSlice && activeSlice.scope === 'source' && activeSlice.row.value === row.value ? 'bg-[#f0f7f1]' : 'hover:bg-[#f7fbf7]'"
+                  :class="activeSlice && activeSlice.scope === 'source' && activeSlice.row.value === row.value ? 'bg-surface-tint' : 'hover:bg-surface'"
                   @click="onSliceClick('source', row)"
                 >
                   <span class="shrink-0 w-2.5 h-2.5 rounded-full" :style="`background:${SOURCE_COLORS[i % SOURCE_COLORS.length]}`" aria-hidden="true"></span>
-                  <span class="text-[0.78rem] text-[#122815] font-semibold truncate flex-1">{{ friendlyLabel('source', row.value) }}</span>
-                  <span class="text-[0.75rem] text-[#667768] font-bold shrink-0 tabular-nums">{{ formatPct(row.share) }}</span>
+                  <span class="text-[0.78rem] text-brand-950 font-semibold truncate flex-1">{{ friendlyLabel('source', row.value) }}</span>
+                  <span class="text-[0.75rem] text-ink-muted font-bold shrink-0 tabular-nums">{{ formatPct(row.share) }}</span>
                 </li>
               </ul>
             </div>
             <Transition name="detail-fade">
               <div
                 v-if="activeSlice && activeSlice.scope === 'source'"
-                class="rounded-xl bg-[#f0f7f1] border border-[#dceedd] p-3.5"
+                class="rounded-xl bg-surface-tint border border-[#dceedd] p-3.5"
                 role="region"
                 :aria-label="`Chi tiết nguồn: ${friendlyLabel('source', activeSlice.row.value)}`"
               >
                 <div class="flex items-center justify-between mb-2.5">
-                  <span class="text-[0.82rem] font-extrabold text-[#122815]">{{ friendlyLabel('source', activeSlice.row.value) }}</span>
-                  <button class="w-6 h-6 flex items-center justify-center rounded-full text-[#667768] hover:bg-[#e2ece3] text-xs cursor-pointer border-0 bg-transparent" aria-label="Đóng chi tiết" @click="activeSlice = null">
+                  <span class="text-[0.82rem] font-extrabold text-brand-950">{{ friendlyLabel('source', activeSlice.row.value) }}</span>
+                  <button class="w-6 h-6 flex items-center justify-center rounded-full text-ink-muted hover:bg-line text-xs cursor-pointer border-0 bg-transparent" aria-label="Đóng chi tiết" @click="activeSlice = null">
                     <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                   </button>
                 </div>
                 <div class="grid grid-cols-3 gap-3">
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[0.62rem] text-[#667768] font-semibold uppercase tracking-wide">Lượt xem</span>
-                    <span class="text-[1.15rem] font-extrabold text-[#2c6e33]">{{ formatNum(activeSlice.row.pageViews) }}</span>
+                    <span class="text-[0.62rem] text-ink-muted font-semibold uppercase tracking-wide">Lượt xem</span>
+                    <span class="text-[1.15rem] font-extrabold text-brand-700">{{ formatNum(activeSlice.row.pageViews) }}</span>
                   </div>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[0.62rem] text-[#667768] font-semibold uppercase tracking-wide">Khách</span>
-                    <span class="text-[1.15rem] font-extrabold text-[#122815]">{{ formatNum(activeSlice.row.approximateUniqueVisitors) }}</span>
+                    <span class="text-[0.62rem] text-ink-muted font-semibold uppercase tracking-wide">Khách</span>
+                    <span class="text-[1.15rem] font-extrabold text-brand-950">{{ formatNum(activeSlice.row.approximateUniqueVisitors) }}</span>
                   </div>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[0.62rem] text-[#667768] font-semibold uppercase tracking-wide">Tỷ lệ</span>
-                    <span class="text-[1.15rem] font-extrabold text-[#122815]">{{ formatPct(activeSlice.row.share) }}</span>
+                    <span class="text-[0.62rem] text-ink-muted font-semibold uppercase tracking-wide">Tỷ lệ</span>
+                    <span class="text-[1.15rem] font-extrabold text-brand-950">{{ formatPct(activeSlice.row.share) }}</span>
                   </div>
                 </div>
               </div>
@@ -459,28 +457,28 @@ onMounted(async () => {
         </div>
 
         <!-- Device class donut -->
-        <div class="bg-white rounded-2xl border border-[#e2ece3] p-5">
+        <div class="bg-white rounded-2xl border border-line p-5">
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center gap-2">
-              <i class="fa-solid fa-mobile-screen text-[#2c6e33] text-sm" aria-hidden="true"></i>
-              <h2 class="text-[0.9rem] font-extrabold text-[#122815] m-0">Thiết bị truy cập</h2>
-              <span class="text-[0.65rem] text-[#667768] bg-[#f4f7f4] border border-[#e2ece3] rounded-full px-2 py-0.5 font-semibold">60 phút</span>
+              <i class="fa-solid fa-mobile-screen text-brand-700 text-sm" aria-hidden="true"></i>
+              <h2 class="text-[0.9rem] font-extrabold text-brand-950 m-0">Thiết bị truy cập</h2>
+              <span class="text-[0.65rem] text-ink-muted bg-surface border border-line rounded-full px-2 py-0.5 font-semibold">60 phút</span>
             </div>
-            <nuxt-link to="/admin/analytics" class="text-[0.72rem] font-semibold text-[#2c6e33] no-underline hover:underline">Chi tiết →</nuxt-link>
+            <nuxt-link to="/admin/analytics" class="text-[0.72rem] font-semibold text-brand-700 no-underline hover:underline">Chi tiết →</nuxt-link>
           </div>
           <div v-if="deviceLoading" class="flex items-center gap-4 h-28" role="status" aria-busy="true">
             <span class="sr-only">Đang tải thiết bị truy cập</span>
-            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-[#dfe9e0] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-line animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
             <div class="flex flex-1 flex-col gap-2" aria-hidden="true">
-              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-surface-tint animate-pulse motion-reduce:animate-none"></div>
             </div>
           </div>
           <div v-else-if="deviceError" role="alert" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i> Không thể tải dữ liệu.
             <button type="button" class="ml-1 font-bold underline" @click="loadBreakdowns()">Thử lại</button>
           </div>
-          <div v-else-if="!deviceData || deviceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] text-sm text-[#667768] gap-2">
-            <i class="fa-solid fa-mobile-screen text-xl text-[#c8d6c9]" aria-hidden="true"></i>
+          <div v-else-if="!deviceData || deviceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-surface text-sm text-ink-muted gap-2">
+            <i class="fa-solid fa-mobile-screen text-xl text-line-strong" aria-hidden="true"></i>
             Chưa có dữ liệu thiết bị.
           </div>
           <div v-else class="flex flex-col gap-4">
@@ -515,40 +513,40 @@ onMounted(async () => {
                   v-for="(row, i) in deviceData.rows"
                   :key="row.value"
                   class="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 transition-colors"
-                  :class="activeSlice && activeSlice.scope === 'device' && activeSlice.row.value === row.value ? 'bg-[#f0f7f1]' : 'hover:bg-[#f7fbf7]'"
+                  :class="activeSlice && activeSlice.scope === 'device' && activeSlice.row.value === row.value ? 'bg-surface-tint' : 'hover:bg-surface'"
                   @click="onSliceClick('device', row)"
                 >
                   <span class="shrink-0 w-2.5 h-2.5 rounded-full" :style="`background:${DEVICE_COLORS[i % DEVICE_COLORS.length]}`" aria-hidden="true"></span>
-                  <span class="text-[0.78rem] text-[#122815] font-semibold truncate flex-1">{{ friendlyLabel('device', row.value) }}</span>
-                  <span class="text-[0.75rem] text-[#667768] font-bold shrink-0 tabular-nums">{{ formatPct(row.share) }}</span>
+                  <span class="text-[0.78rem] text-brand-950 font-semibold truncate flex-1">{{ friendlyLabel('device', row.value) }}</span>
+                  <span class="text-[0.75rem] text-ink-muted font-bold shrink-0 tabular-nums">{{ formatPct(row.share) }}</span>
                 </li>
               </ul>
             </div>
             <Transition name="detail-fade">
               <div
                 v-if="activeSlice && activeSlice.scope === 'device'"
-                class="rounded-xl bg-[#f0f7f1] border border-[#dceedd] p-3.5"
+                class="rounded-xl bg-surface-tint border border-[#dceedd] p-3.5"
                 role="region"
                 :aria-label="`Chi tiết thiết bị: ${friendlyLabel('device', activeSlice.row.value)}`"
               >
                 <div class="flex items-center justify-between mb-2.5">
-                  <span class="text-[0.82rem] font-extrabold text-[#122815]">{{ friendlyLabel('device', activeSlice.row.value) }}</span>
-                  <button class="w-6 h-6 flex items-center justify-center rounded-full text-[#667768] hover:bg-[#e2ece3] text-xs cursor-pointer border-0 bg-transparent" aria-label="Đóng chi tiết" @click="activeSlice = null">
+                  <span class="text-[0.82rem] font-extrabold text-brand-950">{{ friendlyLabel('device', activeSlice.row.value) }}</span>
+                  <button class="w-6 h-6 flex items-center justify-center rounded-full text-ink-muted hover:bg-line text-xs cursor-pointer border-0 bg-transparent" aria-label="Đóng chi tiết" @click="activeSlice = null">
                     <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                   </button>
                 </div>
                 <div class="grid grid-cols-3 gap-3">
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[0.62rem] text-[#667768] font-semibold uppercase tracking-wide">Lượt xem</span>
-                    <span class="text-[1.15rem] font-extrabold text-[#2c6e33]">{{ formatNum(activeSlice.row.pageViews) }}</span>
+                    <span class="text-[0.62rem] text-ink-muted font-semibold uppercase tracking-wide">Lượt xem</span>
+                    <span class="text-[1.15rem] font-extrabold text-brand-700">{{ formatNum(activeSlice.row.pageViews) }}</span>
                   </div>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[0.62rem] text-[#667768] font-semibold uppercase tracking-wide">Khách</span>
-                    <span class="text-[1.15rem] font-extrabold text-[#122815]">{{ formatNum(activeSlice.row.approximateUniqueVisitors) }}</span>
+                    <span class="text-[0.62rem] text-ink-muted font-semibold uppercase tracking-wide">Khách</span>
+                    <span class="text-[1.15rem] font-extrabold text-brand-950">{{ formatNum(activeSlice.row.approximateUniqueVisitors) }}</span>
                   </div>
                   <div class="flex flex-col gap-0.5">
-                    <span class="text-[0.62rem] text-[#667768] font-semibold uppercase tracking-wide">Tỷ lệ</span>
-                    <span class="text-[1.15rem] font-extrabold text-[#122815]">{{ formatPct(activeSlice.row.share) }}</span>
+                    <span class="text-[0.62rem] text-ink-muted font-semibold uppercase tracking-wide">Tỷ lệ</span>
+                    <span class="text-[1.15rem] font-extrabold text-brand-950">{{ formatPct(activeSlice.row.share) }}</span>
                   </div>
                 </div>
               </div>

@@ -1,7 +1,8 @@
 import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings, aiModerationRules, socialLinks } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, pages, pageBlocks, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings } from '../db/schema'
+import { applySeedGroups } from './seed-groups'
 import type { BlockData } from '../../shared/blocks/types'
 import { eq, asc, sql } from 'drizzle-orm'
 import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
@@ -46,42 +47,12 @@ const RESOURCES = [
   'media_portal', 'livestream', 'ai',
 ]
 
-// Default categories seeded idempotently (keyed on unique slug).
-// News slugs match the legacy hardcoded slugs to ease future categorization.
-// System content types (Thể Loại). isSystem=true → editable but not deletable.
-const DEFAULT_CONTENT_TYPES = [
-  { name: 'Bản tin & Tin tức',     slug: 'news',          icon: 'fa-solid fa-newspaper',        displayOrder: 1 },
-  { name: 'Tấm gương tiêu biểu',   slug: 'role_model',    icon: 'fa-solid fa-award',            displayOrder: 2 },
-  { name: 'Mô hình tái hòa nhập',  slug: 'reintegration', icon: 'fa-solid fa-people-roof',      displayOrder: 3 },
-  { name: 'Văn bản pháp luật',     slug: 'document',      icon: 'fa-solid fa-file-lines',       displayOrder: 4 },
-  { name: 'Giải đáp pháp luật',    slug: 'faq',           icon: 'fa-solid fa-circle-question',  displayOrder: 5 },
-]
-
 // System pages backing the fixed public routes. isSystem=true → editable but
 // not deletable and slug locked. Seeded idempotently on unique slug.
 const DEFAULT_PAGES = [
   { slug: 'home',    title: 'Trang chủ',  seoTitle: null, seoDescription: null },
   { slug: 'about',   title: 'Giới thiệu', seoTitle: null, seoDescription: null },
   { slug: 'contact', title: 'Liên hệ',    seoTitle: null, seoDescription: null },
-]
-
-const DEFAULT_CATEGORIES = [
-  { name: 'Tin nổi bật',      slug: 'tin-noi-bat',      type: 'news',          displayOrder: 1 },
-  { name: 'Tin hoạt động',    slug: 'tin-hoat-dong',    type: 'news',          displayOrder: 2 },
-  { name: 'Tin địa phương',   slug: 'tin-dia-phuong',   type: 'news',          displayOrder: 3, description: 'Hoạt động về thi hành án hình sự và tái hòa nhập cộng đồng tại địa bàn xã, phường' },
-  { name: 'Tấm gương tiêu biểu', slug: 'tam-guong-tieu-bieu', type: 'role_model',   displayOrder: 1 },
-  { name: 'Mô hình tái hòa nhập', slug: 'mo-hinh-tai-hoa-nhap', type: 'reintegration', displayOrder: 1 },
-  { name: 'Văn bản pháp luật', slug: 'van-ban-phap-luat', type: 'document',      displayOrder: 1, description: 'Tra cứu các chỉ thị, nghị định và chính sách về công tác thi hành án hình sự, hỗ trợ tái hòa nhập cộng đồng' },
-  { name: 'Hỏi đáp pháp luật', slug: 'hoi-dap-phap-luat', type: 'faq',           displayOrder: 1, description: 'Ngân hàng câu hỏi, giải đáp về vay vốn và đào tạo nghề, thủ tục tái hòa nhập cộng đồng' },
-]
-
-// Danh mục mặc định cho Media Portal (video). Tách khỏi `DEFAULT_CATEGORIES`
-// (bài viết) — bảng `media_categories` riêng, phẳng.
-const DEFAULT_MEDIA_CATEGORIES = [
-  { name: 'Video hoạt động',    slug: 'video-hoat-dong',    displayOrder: 1, description: 'Video về hoạt động nghiệp vụ, sự kiện của Cục C11 và địa phương' },
-  { name: 'Video hướng dẫn',    slug: 'video-huong-dan',    displayOrder: 2, description: 'Video hướng dẫn thủ tục, quy trình tái hòa nhập cộng đồng' },
-  { name: 'Phóng sự - Tư liệu', slug: 'phong-su-tu-lieu',   displayOrder: 3, description: 'Phóng sự, tư liệu về tấm gương hoàn lương và mô hình tái hòa nhập' },
-  { name: 'Video tuyên truyền', slug: 'video-tuyen-truyen', displayOrder: 4, description: 'Video tuyên truyền pháp luật, phổ biến chính sách' },
 ]
 
 async function seed() {
@@ -271,43 +242,13 @@ async function seed() {
       .onDuplicateKeyUpdate({ set: { key: keepExisting('key') } })
   }
 
-  // ── System Content Types (Thể Loại) ───────────────────────────────────────
-  console.log('Creating system content types...')
-  for (const ct of DEFAULT_CONTENT_TYPES) {
-    await db.insert(contentTypes).values({
-      name: ct.name,
-      slug: ct.slug,
-      icon: ct.icon,
-      displayOrder: ct.displayOrder,
-      isSystem: true,
-    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
-  }
-
-  // ── Default Categories ───────────────────────────────────────────────────
-  // Idempotent on unique slug; re-running never duplicates and preserves edits.
-  console.log('Creating default categories...')
-  for (const c of DEFAULT_CATEGORIES) {
-    await db.insert(categories).values({
-      name: c.name,
-      slug: c.slug,
-      type: c.type,
-      parentId: null,
-      description: c.description ?? null,
-      displayOrder: c.displayOrder,
-    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
-  }
-
-  // ── Default Media Categories ─────────────────────────────────────────────
-  // Danh mục riêng cho Media Portal (video), tách khỏi `categories` (bài viết).
-  // Insert-only keyed trên unique slug — chạy lại không ghi đè tên/mô tả cán bộ đã sửa.
-  console.log('Creating default media categories...')
-  for (const c of DEFAULT_MEDIA_CATEGORIES) {
-    await db.insert(mediaCategories).values({
-      name: c.name,
-      slug: c.slug,
-      description: c.description ?? null,
-      displayOrder: c.displayOrder,
-    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
+  // ── Nhóm default seed MỘT LẦN (wave2 D7) ─────────────────────────────────
+  // Thể loại, danh mục bài viết, danh mục video, luật kiểm duyệt, mạng xã hội: mỗi
+  // bộ default chèn một lần cho mỗi CSDL rồi ghi dấu `seed.<nhóm>.v<N>.done` — default
+  // cán bộ đã xoá không quay lại ở lần khởi động sau. Xem `seed-groups.ts`.
+  console.log('Seeding default groups (content types, categories, media categories, moderation rules, social links)...')
+  for (const outcome of await applySeedGroups(db)) {
+    if (outcome.result !== 'skipped') console.log(`  ${outcome.group} v${outcome.version}: ${outcome.result}${outcome.inserted ? ` (+${outcome.inserted})` : ''}`)
   }
 
   // ── System Pages + block migration ────────────────────────────────────────
@@ -541,70 +482,7 @@ async function seed() {
     }
   }
 
-  // 6. Default AI Security & Moderation Rules
-  console.log('Seeding AI security & moderation rules...')
-  const defaultRules: Array<{ category: string; ruleType: string; pattern: string; action: string; severity: string }> = [
-    { category: 'hostile_forces', ruleType: 'keyword', pattern: 'việt tân', action: "auto_hide", severity: 'critical' },
-    { category: 'hostile_forces', ruleType: 'keyword', pattern: 'triều đại việt', action: "auto_hide", severity: 'critical' },
-    { category: 'hostile_forces', ruleType: 'keyword', pattern: 'chính phủ quốc gia việt nam lâm thời', action: "auto_hide", severity: 'critical' },
-    { category: 'hostile_forces', ruleType: 'keyword', pattern: 'khủng bố', action: "auto_hide", severity: 'critical' },
-    { category: 'anti_state', ruleType: 'keyword', pattern: 'lật đổ chính quyền', action: "auto_hide", severity: 'critical' },
-    { category: 'anti_state', ruleType: 'keyword', pattern: 'xuyên tạc chính sách', action: "auto_hide", severity: 'high' },
-    { category: 'anti_state', ruleType: 'keyword', pattern: 'biểu tình bạo loạn', action: "auto_hide", severity: 'critical' },
-    { category: 'anti_state', ruleType: 'keyword', pattern: 'chống phá đảng', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm danh dự công an', action: "auto_hide", severity: 'high' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'bôi nhọ lãnh đạo', action: "auto_hide", severity: 'high' },
-    // ── Xúc phạm cố lãnh đạo được tôn kính (Bác Hồ, Bác Giáp, Chủ tịch Hồ Chí Minh) ──
-    // Ranh giới đi cùng từ động từ xúc phạm: chỉ chặn phát ngôn lăng mạ cá nhân lãnh tụ,
-    // KHÔNG chặn quan điểm chính trị đối lập (Việt Nam Cộng Hòa / VNCH muôn năm / "tay
-    // sai Mỹ" đều ĐƯỢC PHÉP — đó là quan điểm, không phải xúc phạm cá nhân).
-    // Pattern kết hợp "động từ xúc phạm + tên lãnh tụ" để keyword matching không chặn
-    // ca cảnh giác/giải pháp pháp luật/dẫn chứng lịch sử.
-    { category: 'defamation', ruleType: 'keyword', pattern: 'lăng mạ bác hồ', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm bác hồ', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'bôi nhọ bác hồ', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'mạ lị bác hồ', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'nhục mạ bác hồ', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'lăng mạ chủ tịch hồ chí minh', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm chủ tịch hồ chí minh', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'bôi nhọ chủ tịch hồ chí minh', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'lăng mạ bác giáp', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm bác giáp', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'bôi nhọ đại tướng võ nguyên giáp', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'lăng mạ lãnh tụ', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm lãnh tụ', action: "auto_hide", severity: 'critical' },
-    { category: 'defamation', ruleType: 'keyword', pattern: 'mạ lị lãnh tụ', action: "auto_hide", severity: 'critical' },
-    { category: 'spam_fraud', ruleType: 'keyword', pattern: 'cờ bạc online', action: "auto_hide", severity: 'high' },
-    { category: 'spam_fraud', ruleType: 'keyword', pattern: 'tài xỉu', action: "auto_hide", severity: 'high' },
-    { category: 'spam_fraud', ruleType: 'keyword', pattern: 'vay tiền nóng', action: "auto_hide", severity: 'medium' },
-    { category: 'spam_fraud', ruleType: 'keyword', pattern: 'lừa đảo', action: "auto_hide", severity: 'medium' },
-  ]
-  for (const r of defaultRules) {
-    const [existing] = await db.select().from(aiModerationRules).where(eq(aiModerationRules.pattern, r.pattern)).limit(1)
-    if (!existing) {
-      await db.insert(aiModerationRules).values(r)
-    }
-  }
-  // ─── Social links seed (insert-only, idempotent) ────────────────────────
-  // MXH nổi tiếng + màu brand chính thức. Admin có thể sửa/xóa/thêm sau.
-  // Phương án `icon` dùng Font Awesome brands (đã self-host) cho logo sắc nét,
-  // vector và nhất với codebase. `color` là mã hex brand chính thức.
-  console.log('Seeding social links...')
-  const defaultSocialLinks = [
-    { platform: 'Facebook',  label: 'Fanpage C11',           url: 'https://facebook.com/conduonghuongthien', icon: 'fa-brands fa-facebook-f', iconType: 'fontawesome', color: '#1877f2' },
-    { platform: 'YouTube',   label: 'Kênh YouTube C11',      url: 'https://youtube.com/@conduonghuongthien',  icon: 'fa-brands fa-youtube',    iconType: 'fontawesome', color: '#ff0000' },
-    { platform: 'Zalo',      label: 'Zalo Official Account', url: 'https://zalo.me/conduonghuongthien',      icon: '/assets/social/zalo.svg', iconType: 'svg',        color: '#0068ff' },
-    { platform: 'TikTok',    label: 'TikTok C11',            url: 'https://tiktok.com/@conduonghuongthien',  icon: 'fa-brands fa-tiktok',     iconType: 'fontawesome', color: '#000000' },
-    { platform: 'Telegram',  label: 'Kênh Telegram C11',    url: 'https://t.me/conduonghuongthien',          icon: 'fa-brands fa-telegram',   iconType: 'fontawesome', color: '#0088cc' },
-    { platform: 'Instagram', label: 'Instagram C11',         url: 'https://instagram.com/conduonghuongthien', icon: 'fa-brands fa-instagram', iconType: 'fontawesome', color: '#e4405f' },
-  ]
-  for (const sl of defaultSocialLinks) {
-    const [existing] = await db.select().from(socialLinks).where(eq(socialLinks.platform, sl.platform)).limit(1)
-    if (!existing) {
-      await db.insert(socialLinks).values({ ...sl, sortOrder: defaultSocialLinks.indexOf(sl), isVisible: true })
-    }
-  }
-  console.log(`Seeded ${defaultSocialLinks.length} social links (skip existing).`)
+  // (Luật kiểm duyệt + mạng xã hội mặc định: nhóm seed một lần — `applySeedGroups` ở trên.)
 
   // ─── Languages & UI translations seed (insert-only, idempotent) ────────
   console.log('Seeding languages & default UI translations...')

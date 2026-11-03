@@ -254,7 +254,8 @@ async function readR2Config(
 
   if (secretUnreadable || !secretAccessKey) {
     // provider='r2' nhưng secret không dùng được — trả provider='r2' kèm cờ,
-    // không build r2 client. Upload mới sẽ lùi local (xem video-processing.ts).
+    // không build r2 client. Upload mới sẽ lùi local (giai đoạn 7 của
+    // `processMediaItem`, `video-transcode-pipeline.ts`).
     return {
       videoStorage: { provider: 'r2' },
       sources,

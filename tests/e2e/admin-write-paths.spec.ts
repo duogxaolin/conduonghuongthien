@@ -107,8 +107,41 @@ test('mọi đường ghi tạo mới đều tạo được bản ghi thật', a
   const pageId = pageRes.json().id
   expect(pageId, 'tạo trang không trả id').toBeTruthy()
 
-  const block = await postJson(api, `/api/admin/pages/${pageId}/blocks`, { blockType: 'heading' })
-  expect(block.status, `thêm block hỏng: ${block.body}`).toBe(200)
+  // Khối của trang đi đúng đường của trình dựng: lưu bản nháp (`PUT …/draft`) rồi
+  // xuất bản (`POST …/publish`). Bước này từng gọi `POST …/blocks`; bốn route sửa
+  // từng khối (`pages/[id]/blocks/**`) không có nơi gọi và đã bị xoá (CHANGELOG
+  // § 64). Bản nháp PHẲNG (không `children`) đi nhánh xuất bản phẳng — nhánh còn
+  // `tx.insert(pageBlocks)` + `insertId`, tức đúng loại hàng route cũ tạo ra.
+  const draft = await api.put(`/api/admin/pages/${pageId}/draft`, {
+    data: { blocks: [{ blockType: 'heading', data: { text: `E2E tiêu đề ${stamp}` } }] },
+  })
+  expect(draft.status(), `lưu bản nháp hỏng: ${await draft.text()}`).toBe(200)
+
+  const published = await postJson(api, `/api/admin/pages/${pageId}/publish`, {})
+  expect(published.status, `xuất bản hỏng: ${published.body}`).toBe(200)
+  const live = published.json() as { tree?: boolean, blocks?: Array<{ id?: number, blockType?: string }> }
+  expect(live.tree, 'bản nháp phẳng phải đi nhánh ghi page_blocks').toBe(false)
+  expect(live.blocks?.map(block => block.blockType)).toEqual(['heading'])
+  const blockId = live.blocks?.[0]?.id
+  expect(blockId, 'xuất bản trả 200 nhưng khối không có id — hàng page_blocks không được tạo').toBeTruthy()
+
+  // Xuất bản lại đúng khối đó kèm id vừa nhận: phải SỬA hàng ấy, không tạo hàng thứ
+  // hai — id trả về là khoá dùng được thật, không phải `0` hay `undefined` đã lọt qua.
+  const republished = await postJson(api, `/api/admin/pages/${pageId}/publish`, {
+    blocks: [{ id: blockId, blockType: 'heading', data: { text: `E2E đã sửa ${stamp}` } }],
+  })
+  expect(republished.status, `xuất bản lại hỏng: ${republished.body}`).toBe(200)
+  expect((republished.json().blocks as Array<{ id: number }>).map(block => block.id)).toEqual([blockId])
+
+  // Bản sao lưu thủ công (`POST …/versions`) cũng là một đường TẠO: hàng phải đọc lại được.
+  const backupLabel = `E2E sao lưu ${stamp}`
+  const backup = await postJson(api, `/api/admin/pages/${pageId}/versions`, { kind: 'manual', label: backupLabel })
+  expect(backup.status, `tạo bản sao lưu hỏng: ${backup.body}`).toBe(200)
+  const versions = await api.get(`/api/admin/pages/${pageId}/versions`)
+  expect(versions.status(), 'danh sách bản sao lưu không đọc được').toBe(200)
+  const saved = ((await versions.json()) as { versions: Array<{ kind: string, label: string | null, blockCount: number }> })
+    .versions.find(version => version.kind === 'manual' && version.label === backupLabel)
+  expect(saved?.blockCount, 'bản sao lưu vừa tạo không đọc lại được (hoặc chụp sai số khối)').toBe(1)
 
   // ── Sửa ───────────────────────────────────────────────────────────────────
   // `updateFields` được khai kiểu theo `$inferInsert` của bảng; một khoá không

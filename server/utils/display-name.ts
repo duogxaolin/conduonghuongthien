@@ -27,7 +27,26 @@ export const DISPLAY_NAME_MAX_LENGTH = 60
 export const DISPLAY_NAME_FALLBACK = 'Người dùng'
 
 /**
- * The name to show for a reader, from the two columns that can carry one.
+ * Shown instead of a Google name that folds to a reserved term ("Admin", "Ban
+ * quản trị", "C11"…) until the reader chooses a name of their own (spec
+ * reader-display-names-google, decision D-NAMES). Sign-in still succeeds:
+ * refusing it would lock out a real person whose Google profile happens to say
+ * "Admin".
+ */
+export const RESERVED_PROVIDER_NAME_FALLBACK = 'Bạn đọc'
+
+/**
+ * The name to show for a reader, from the columns that can carry one.
+ *
+ * `displayNameReserved` is a REQUIRED key on purpose: it is set by the OAuth
+ * callback when the Google name is reserved, and a call site that forgot to
+ * select it would print "Admin" on a public thread. Pass `null`/`undefined`
+ * explicitly only where the row cannot have a Google name. It is taken as MySQL
+ * hands it back too — a Drizzle `boolean()` column maps to `true`/`false`, but the
+ * same column read through `sql` is `1`/`0`, and `=== true` on a `1` is the bug
+ * that kept a reserved name on the notification bell (kiểm chứng 2A, CRITICAL).
+ * `tests/reader-name-resolver-guard.test.ts` also refuses a select that reads the
+ * Google name without the flag.
  *
  * Never returns an empty string: a blank author on a public comment reads as a
  * rendering fault rather than as a missing name.
@@ -35,8 +54,24 @@ export const DISPLAY_NAME_FALLBACK = 'Người dùng'
 export function effectiveDisplayName(row: {
   customDisplayName?: string | null
   displayName?:       string | null
+  displayNameReserved: boolean | number | null | undefined
 }): string {
-  return row.customDisplayName?.trim() || row.displayName?.trim() || DISPLAY_NAME_FALLBACK
+  const custom = row.customDisplayName?.trim()
+  if (custom) return custom
+  const provider = row.displayName?.trim()
+  if (provider && Boolean(row.displayNameReserved)) return RESERVED_PROVIDER_NAME_FALLBACK
+  return provider || DISPLAY_NAME_FALLBACK
+}
+
+/**
+ * A name already SNAPSHOTTED into a row (livestream chat stores the sender's name
+ * at send time, so a later rename does not rewrite what viewers saw). Snapshots
+ * taken before reserved Google names were masked can hold "Admin"; on the way out
+ * such a snapshot reads as the neutral name. A reader-chosen name can never be
+ * reserved (`validateDisplayName`), so this only ever masks a provider name.
+ */
+export function publicNameSnapshot(snapshot: string): string {
+  return isReservedDisplayName(snapshot) ? RESERVED_PROVIDER_NAME_FALLBACK : snapshot
 }
 
 export type DisplayNameValidation =
@@ -101,8 +136,11 @@ export function foldDisplayName(value: string): string {
  * the spaces are gone too, so `A.D.M.I.N` and `C-11` do not slip through as
  * "a d m i n" / "c 11". A reserved word INSIDE another word ("Adminh") is not a
  * match — that is somebody's name.
+ *
+ * Exported for the Google sign-in (spec reader-display-names-google): the SAME
+ * folding decides whether a provider-supplied name is shown.
  */
-function isReservedDisplayName(name: string): boolean {
+export function isReservedDisplayName(name: string): boolean {
   const folded = foldDisplayName(name)
   const compact = folded.replace(/ /g, '')
   return RESERVED_DISPLAY_NAMES.some(term => folded === term
@@ -114,7 +152,7 @@ function isReservedDisplayName(name: string): boolean {
 /**
  * A display name is ONE line of plain text.
  *
- * Unlike a comment body (services/comments.ts), newlines are not normalised —
+ * Unlike a comment body (`validateBody`, services/comments-rules.ts), newlines are not normalised —
  * they are refused along with every other control character. A comment is a
  * paragraph and its line breaks are the author's; a name that contains a newline
  * renders as a name that has broken the layout of every list it appears in, and

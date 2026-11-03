@@ -66,7 +66,7 @@ const resolveArticleType = (type: string) => {
       return {
         label: 'Bản tin',
         icon: 'fa-solid fa-newspaper',
-        badge: 'bg-[#EBF3E8] text-[#2D5A27]',
+        badge: 'bg-line text-[#2D5A27]',
         basePath: '/news/',
       }
   }

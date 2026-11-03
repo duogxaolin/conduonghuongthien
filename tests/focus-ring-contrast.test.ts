@@ -11,15 +11,21 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { solidFocusRings } from './_focus-rings.ts'
 
-const FILES = [
-  'components/layout/DefaultHeader.vue',
+/**
+ * File → how many solid focus rings it has today. The count is a floor: a ring written in a
+ * form the extractor does not read (hex OR token) would otherwise leave the file checking
+ * nothing and still green.
+ */
+const FILES: Record<string, number> = {
+  'components/layout/DefaultHeader.vue': 4,
   // Mục con của menu thả xuống (nền trắng) — sót lại sau lượt sửa đầu.
-  'components/layout/DefaultDesktopNav.vue',
-  'components/blocks/BlockLoadError.vue',
-  'components/ContentTypeListSection.vue',
-  'pages/media/index.vue',
-]
+  'components/layout/DefaultDesktopNav.vue': 1,
+  'components/blocks/BlockLoadError.vue': 1,
+  'components/ContentTypeListSection.vue': 2,
+  'pages/media/index.vue': 1,
+}
 
 function luminance(hex: string): number {
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
@@ -36,10 +42,16 @@ test('#7CB342 trên trắng thật sự dưới 3:1 (lý do của test này), #4
   assert.ok(contrast('4A6741', 'F8FAF7') >= 3)
 })
 
-for (const file of FILES) {
+test('the ring extractor reads both forms — hex and token — and skips translucent halos', () => {
+  const source = 'focus-visible:ring-[#4A6741] focus-visible:ring-brand-600 focus-visible:ring-brand-600/30 focus-visible:ring-[#7CB342]/40 focus-visible:ring-offset-brand-900'
+  assert.deepEqual(solidFocusRings(source).map((hex) => hex.toLowerCase()), ['4a6741', '4a6741'])
+})
+
+for (const [file, floor] of Object.entries(FILES)) {
   test(`${file}: mọi vòng focus đặc đạt ≥ 3:1 trên trắng`, () => {
     const source = readFileSync(new URL(`../app/${file}`, import.meta.url), 'utf8')
-    const rings = [...source.matchAll(/focus-visible:ring-\[#([0-9A-Fa-f]{6})\](?!\/)/g)].map((m) => m[1]!)
+    const rings = solidFocusRings(source)
+    assert.ok(rings.length >= floor, `${file}: expected at least ${floor} solid focus ring(s), found ${rings.length}`)
     for (const hex of rings) {
       const ratio = contrast(hex, 'FFFFFF')
       assert.ok(ratio >= 3, `#${hex} chỉ đạt ${ratio.toFixed(2)}:1 trên trắng`)

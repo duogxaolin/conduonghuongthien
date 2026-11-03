@@ -3,6 +3,7 @@ import { settings } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { backupSchedulerEnabledByServer } from '../../../utils/backup-scheduler-switch'
 import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
+import { settingsSecretNeedsReentry } from '../../../utils/settings-secrets'
 
 const KEYS = [
   'backup_auto_enabled',
@@ -28,9 +29,12 @@ export default defineEventHandler(async (event) => {
   // lưu lại dấu che không đổi gì; muốn thay thì dán JSON mới. Rỗng vẫn trả rỗng
   // để trang hiện "chưa cấu hình".
   const result: Record<string, string | null> = {}
+  const needsReentry: string[] = []
   for (const k of KEYS) {
     if (k === 'backup_drive_service_account' && map.get(k)) {
       result[k] = MASKED_SECRET
+      // Envelope không mở được bằng khoá hiện tại → trang báo "cần dán lại khoá".
+      if (settingsSecretNeedsReentry(k, map.get(k))) needsReentry.push(k)
     } else {
       result[k] = map.get(k) ?? null
     }
@@ -38,6 +42,7 @@ export default defineEventHandler(async (event) => {
   return {
     ok: true,
     settings: result,
+    needsReentry,
     // Máy chủ không chạy scheduler (BACKUP_SCHEDULER tắt, hoặc ngoài production):
     // công tắc "Backup tự động theo lịch" lưu được nhưng không có lượt nào chạy.
     schedulerDisabledByServer: !backupSchedulerEnabledByServer(process.env.BACKUP_SCHEDULER, process.env.NODE_ENV),

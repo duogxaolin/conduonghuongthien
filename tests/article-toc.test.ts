@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 
 import { TOC_MIN_HEADINGS, buildToc, headingText, slugifyHeading } from '../app/utils/toc'
+import { ARTICLE_DETAIL_FAMILY, familySource, familyStyle } from './_component-family.ts'
 
 /**
  * The outline is derived from stored article HTML at render time, so these are
@@ -143,11 +144,33 @@ test('close tags are matched to their own level, so nested levels do not swallow
 
 // ─── Wiring (source assertion: needs the Nuxt runtime to render) ──────────────
 
-test('ArticleDetail renders the toc-processed HTML, not the raw content', () => {
-  const source = readFileSync(new URL('../app/components/ArticleDetail.vue', import.meta.url), 'utf8')
-  assert.match(source, /v-html="toc\.html"/, 'body no longer renders the id-stamped HTML')
-  assert.doesNotMatch(source, /v-html="article\.content"/, 'body reverted to raw content, so anchors point nowhere')
-  assert.match(source, /toc\.headings\.length >= TOC_MIN_HEADINGS/, 'the short-article guard was dropped')
+/**
+ * Since wave3 4.2 the body is `components/article/ArticleBody.vue`, handed `toc.html` by
+ * ArticleDetail.vue: the wiring is now "the parent passes the id-stamped HTML, the body
+ * renders exactly its prop". Read over the whole family (tests/_component-family.ts).
+ */
+function tocWiringProblems(overrides?: Record<string, string>): string[] {
+  const parent = overrides?.['components/ArticleDetail.vue'] ?? readFileSync(new URL('../app/components/ArticleDetail.vue', import.meta.url), 'utf8')
+  const family = familySource(ARTICLE_DETAIL_FAMILY, overrides)
+  const problems: string[] = []
+  if (!/<ArticleBody\s+:html="toc\.html"\s*\/>/.test(parent)) problems.push('body no longer renders the id-stamped HTML')
+  if (/(?:v-html|:html)="article\.content"/.test(family)) problems.push('body reverted to raw content, so anchors point nowhere')
+  if (!/toc\.headings\.length >= TOC_MIN_HEADINGS/.test(parent)) problems.push('the short-article guard was dropped')
   // scroll-margin-top keeps a targeted heading clear of the sticky header.
-  assert.match(source, /scroll-margin-top/, 'anchor offset for the sticky header was removed')
+  if (!/scroll-margin-top/.test(familyStyle(ARTICLE_DETAIL_FAMILY, overrides))) problems.push('anchor offset for the sticky header was removed')
+  const vHtml = family.match(/v-html="[^"]*"/g) ?? []
+  if (vHtml.join() !== 'v-html="html"') problems.push(`the family renders ${JSON.stringify(vHtml)} — expected exactly ArticleBody's v-html="html"`)
+  return problems
+}
+
+test('ArticleDetail renders the toc-processed HTML, not the raw content', () => {
+  assert.deepEqual(tocWiringProblems(), [])
+})
+
+test('the wiring guard bites on a part, not only on ArticleDetail.vue (injection proof)', () => {
+  const parent = readFileSync(new URL('../app/components/ArticleDetail.vue', import.meta.url), 'utf8')
+  const body = readFileSync(new URL('../app/components/article/ArticleBody.vue', import.meta.url), 'utf8')
+  assert.equal(tocWiringProblems({ 'components/ArticleDetail.vue': parent.replace(':html="toc.html"', ':html="article.content"') }).length, 2)
+  assert.equal(tocWiringProblems({ 'components/article/ArticleBody.vue': body.replace(/scroll-margin-top: 130px;/g, '') }).length, 1)
+  assert.equal(tocWiringProblems({ 'components/article/ArticleBody.vue': body.replace('v-html="html"', 'v-html="raw"') }).length, 1)
 })

@@ -2,7 +2,7 @@ import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { plainTextField, withPlainTextFields } from '../../../utils/decode-html-entities'
 import { getDb } from '../../../utils/db'
 import { articles, users, categories, articleTranslations } from '../../../db/schema'
-import { eq, and, sql, inArray } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
@@ -30,11 +30,10 @@ export default defineEventHandler(async (event) => {
         publishedAt:  articles.publishedAt,
         createdAt:    articles.createdAt,
         authorName:   users.username,
-        viewTotal: sql<number>`(
-          SELECT COALESCE(SUM(\`v\`.\`real_views\` + \`v\`.\`fabricated_views\`), 0)
-          FROM \`article_view_daily\` \`v\`
-          WHERE \`v\`.\`article_id\` = \`articles\`.\`id\`
-        )`,
+        // Displayed total (real + fabricated), read from the maintained column
+        // (wave2 design D6) instead of summing `article_view_daily` per request.
+        // Never the real/fabricated split.
+        viewTotal:    articles.viewTotal,
       })
       .from(articles)
       .leftJoin(users, eq(articles.authorId, users.id))

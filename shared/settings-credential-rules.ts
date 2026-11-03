@@ -27,9 +27,10 @@ export const MASKED_SECRET = '********'
 
 // ─── SMTP ─────────────────────────────────────────────────────────────────────
 //
-// Bản SMTP dưới đây PHẢI trùng `server/utils/smtp-test-config.ts` (nơi endpoint
-// "gửi thử" dùng). `tests/settings-credential-rules.test.ts` chạy cả hai bản trên
-// cùng một bảng đầu vào và đỏ nếu chúng lệch nhau.
+// Luật SMTP dưới đây là bản DUY NHẤT: endpoint "gửi thử" dùng chính các hàm này qua
+// `server/utils/smtp-test-config.ts` (import + re-export, không chép). Trước đây tệp
+// đó giữ một bản chép riêng; thêm cổng ở một bên thì nút "gửi thử" và nút "lưu"
+// quyết khác nhau. `tests/settings-credential-rules.test.ts` đỏ nếu bản chép quay lại.
 
 /**
  * Cổng SMTP được phép: 25 (relay), 465 (TLS ngầm), 587 (submission), 2525 (cổng
@@ -55,7 +56,8 @@ export function isAllowedSmtpPort(port: number | null): boolean {
   return port !== null && SMTP_ALLOWED_PORTS.includes(port)
 }
 
-const isTruthy = (value: unknown) => ['true', '1', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase())
+/** Giá trị cờ `smtp_secure` (chuỗi trong bảng `settings` hoặc thân request) có bật không. */
+export const isTruthy = (value: unknown) => ['true', '1', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase())
 
 /** Đích kết nối SMTP hiệu lực — chuẩn hoá giống `getSmtpConfig` để so "có đổi máy chủ không". */
 export interface SmtpTarget {

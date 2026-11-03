@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { SECRET, cleanup, lines, makeSandbox, repoFile } from './_ops-sandbox'
+import { manageSource } from './_manage-sh-source'
+import { SECRET, cleanup, lines, makeSandbox } from './_ops-sandbox'
 
 /**
  * BEHAVIOUR tests for manage.sh Migrate's destructive-SQL scanner, run through the
@@ -103,9 +104,9 @@ function scan(body: string | Buffer, window?: number) {
   const dir = mkdtempSync(join(tmpdir(), 'cdkt-scan-'))
   try {
     writeFileSync(join(dir, 'f.sql'), body)
-    const script = readFileSync(repoFile('production/manage.sh'), 'utf8')
+    const script = manageSource()
     const program = /^sql_scan_awk\(\) \{\n {2}cat <<'AWK'\n([\s\S]*?)\nAWK\n\}/m.exec(script)?.[1]
-    assert.ok(program, 'sql_scan_awk not found in manage.sh')
+    assert.ok(program, 'sql_scan_awk not found in manage.sh or production/lib/')
     writeFileSync(join(dir, 'prog.awk'), program)
     const args = ['-v', 'raw=0', ...(window ? ['-v', `window=${window}`] : []), '-f', join(dir, 'prog.awk'), join(dir, 'f.sql')]
     const started = Date.now()

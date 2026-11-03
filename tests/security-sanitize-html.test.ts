@@ -108,8 +108,9 @@ test('sanitizeBlockData cleans rich-text fields and leaves other fields untouche
  * qua nó rồi vào cột `page_blocks.data`. Cột đó nullable ở CSDL nhưng
  * `BlockNode.data` thì không — mọi nơi đọc cây block (trình dựng, renderer) đọc
  * thẳng `node.data.x`, nên một hàng `data = NULL` nổ ở đúng đó, trên trang công
- * khai. Ba nơi gọi thật đều đã tự chặn non-object trước khi gọi
- * (`[blockId].put.ts` trả 400, hai nơi kia thay bằng `{}`), nên hợp đồng "luôn
+ * khai. Ba nơi gọi thật lúc đó đều đã tự chặn non-object trước khi gọi
+ * (`[blockId].put.ts` trả 400, hai nơi kia thay bằng `{}`; `[blockId].put.ts` sau
+ * đó bị xoá vì không có nơi gọi — CHANGELOG § 64), nên hợp đồng "luôn
  * trả về một BlockData" không làm mất dữ liệu của ai — nó chỉ bỏ đi con đường
  * mà một nơi gọi thứ tư có thể vô tình ghi `NULL` vào cột.
  */

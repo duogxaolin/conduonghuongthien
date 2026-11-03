@@ -39,6 +39,8 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
+import { fetchesData } from './_admin-fetch-call.ts'
+
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
 /**
@@ -61,6 +63,7 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/settings/tracking.vue', refs: ['error'], retries: ['fetchSettings'] },
   { file: 'pages/admin/settings/google-oauth.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/settings/ip-bans.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/settings/security.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/settings/media-portal.vue', refs: ['error'], retries: ['load'] },
   // Backup & khôi phục — danh sách bản backup.
   { file: 'pages/admin/settings/backup.vue', refs: ['error'], retries: ['loadBackups'] },
@@ -70,12 +73,17 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/content/articles/index.vue', refs: ['loadError'], retries: ['fetchArticles'] },
   { file: 'pages/admin/content/articles/[id].vue', refs: ['errorMsg'], retries: ['fetchArticle'] },
   { file: 'pages/admin/content/categories/index.vue', refs: ['error'], retries: ['fetchCategories'] },
-  { file: 'pages/admin/content/content-types.vue', refs: ['error'], retries: ['fetchTypes'] },
+  // The tree preview's categories fail on their own (wave3 7.1 batch D): a failed load used
+  // to leave every type reading "Chưa có danh mục nào trong thể loại này.".
+  { file: 'pages/admin/content/content-types.vue', refs: ['error', 'categoriesError'], retries: ['fetchTypes', 'fetchCategories'] },
   // Picker trong dialog navbar/mobile — chọn Thể loại để auto-fill URL. Failure
   // rendered trong `role="alert"` + nút "Thử lại" gọi lại `fetchTypes` (cùng file).
   { file: 'components/admin/ContentTypePicker.vue', refs: ['error'], retries: ['fetchTypes'] },
   { file: 'pages/admin/content/pages/index.vue', refs: ['loadError'], retries: ['fetchPages'] },
-  { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError'], retries: ['fetchPage'] },
+  // The builder's versions drawer (a wave3 4.2 part) shows a failed list read in the page's
+  // `#error` slot — the load and its error branch stay in the page (FINDING-B1: it used to
+  // read as "no versions").
+  { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError', 'versionsError'], retries: ['fetchPage', 'loadVersions'] },
   { file: 'pages/admin/content/navigation/navbar.vue', refs: ['error'], retries: ['loadMenu'] },
   { file: 'pages/admin/content/navigation/mobile.vue', refs: ['error'], retries: ['loadMenu'] },
 
@@ -83,15 +91,17 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/chatbot/knowledge/index.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/chatbot/knowledge/[id].vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/chatbot/settings.vue', refs: ['errorMessage'], retries: ['load'] },
-  { file: 'pages/admin/chatbot/sessions/index.vue', refs: ['loadError'], retries: ['fetchSessions'] },
+  // List state from useAdminList (D-FETCH): `error` is a computed over the list's
+  // error and `reload` its retry — both declared in the page, the block stays here.
+  { file: 'pages/admin/chatbot/sessions/index.vue', refs: ['error'], retries: ['reload'] },
   { file: 'pages/admin/chatbot/sessions/[id].vue', refs: ['loadError'], retries: ['fetchSession'] },
 
   // Reader moderation. These read citizens' personal data, so a failed fetch
   // rendering as "chưa có ai" is worse than usual: an officer would conclude
   // nobody has signed up rather than that the query broke.
-  { file: 'pages/admin/readers/index.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/readers/index.vue', refs: ['error'], retries: ['reload'] },
   { file: 'pages/admin/readers/[id].vue', refs: ['error'], retries: ['load'] },
-  { file: 'pages/admin/comments/index.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/comments/index.vue', refs: ['error'], retries: ['reload'] },
 
   // Users, media, submissions.
   { file: 'pages/admin/users/index.vue', refs: ['loadError'], retries: ['fetchUsers'] },
@@ -114,9 +124,20 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'components/admin/ai/AiDashboardTab.vue', refs: ['usageError'], retries: ['loadUsage'] },
   { file: 'components/admin/ai/AiProvidersTab.vue', refs: ['providersError'], retries: ['loadProviders'] },
   { file: 'components/admin/ai/AiServicesTab.vue', refs: ['servicesError'], retries: ['loadServices'] },
+  // Tab kiểm duyệt nay chỉ là bản tóm tắt (D10): hai con số + liên kết sang
+  // `/admin/ai/moderation`. Vẫn tự fetch hai endpoint nên vẫn giữ nhánh lỗi riêng.
   { file: 'components/admin/ai/AiModerationTab.vue', refs: ['moderationError'], retries: ['loadModeration'] },
   { file: 'components/admin/ai/AiLogsTab.vue', refs: ['logsError'], retries: ['loadLogs'] },
-  { file: 'pages/admin/ai/moderation.vue', refs: ['error'], retries: ['loadData'] },
+  // Trang kiểm duyệt (đã tách panel, wave3 4.1): nhánh lỗi lượt tải TRANG (`error` →
+  // loadData) và ba nhánh lỗi của từng tab khi đọc lại SAU lần tải đầu (hàng đợi đổi bộ
+  // lọc/trang, cài đặt/quy tắc sau khi ghi). Cả bốn nằm trong file trang (panel nhận qua
+  // slot `#error`): lỗi của một tab không che các tab khác, "Thử lại" chỉ đọc lại tab đó —
+  // không chạy loadData (ghi đè chỗ đang sửa ở tab cài đặt).
+  {
+    file: 'pages/admin/ai/moderation.vue',
+    refs: ['error', 'settingsError', 'queueError', 'rulesError'],
+    retries: ['loadData', 'reloadSettings', 'loadQueue', 'reloadRules'],
+  },
 
   // Views whose panels fail independently. Each ref is its own branch, so a
   // failed history load still leaves the password form usable.
@@ -181,6 +202,9 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   //   - QuickViewModal/GlobalTranslateModal: lỗi fetch → toast + đóng (KHÔNG
   //     render empty-state), exempt ở `NO_CONTRACT_NEEDED`.
   { file: 'components/admin/articles/ArticleBoostStatsPanel.vue', refs: ['statsError'], retries: ['loadStats'] },
+  // "Lưu thành mục media" (CHANGELOG § 67): a submit-time POST, no list. A refusal (409
+  // saved meanwhile, 403) lands in its own role="alert" under the button, which is the retry.
+  { file: 'components/admin/livestream/LivestreamRecordingCard.vue', refs: ['error'], retries: ['saveRecording'] },
 ]
 
 /**
@@ -249,6 +273,16 @@ const NO_CONTRACT_NEEDED: Record<string, string> = {
   // "chưa có bản dịch nào" — `availableLanguages` luôn hiển thị tất cả lang cards.
   // Retry = nút "Làm mới" trong panel header.
   'components/admin/articles/ArticleTranslationPanel.vue': 'best-effort fill; cards render with last-known status, and the Làm mới button is the retry affordance',
+  // Nút break-glass "Xoá xác thực hai bước" trên mỗi hàng /admin/users (§ 68). Gửi
+  // `DELETE …/users/:id/mfa` chỉ khi SuperAdmin bấm và gõ đúng tên — không tải gì, danh
+  // sách không hiện trạng thái MFA nên không có gì để lỗi thành "trống". Kết quả (câu máy
+  // chủ) ở toast; bấm lại nút là thử lại.
+  'components/admin/UserMfaResetButton.vue': 'submit-time fetch; nothing is loaded, the result lands in a toast and the button is the retry',
+  // Trình sửa hạn mức chi AI trong tab Tổng quan (§ 68). Giá trị hiện tại đến từ lượt đọc
+  // usage của AiDashboardTab (đã có nhánh lỗi `usageError` riêng); file này chỉ `PUT` khi
+  // bấm "Lưu". Lỗi lưu nằm lại trong form ở `role="alert"` với câu máy chủ, form vẫn mở —
+  // nút "Lưu hạn mức" là thử lại.
+  'components/admin/ai/AiBudgetEditor.vue': 'submit-time fetch; values come from the parent\'s usage read, a failed save stays in the open form as role="alert" and the Save button is the retry',
 }
 
 test('every admin view that fetches keeps somewhere for a rejection to land', async () => {
@@ -368,7 +402,10 @@ test('no admin view reaches for a full page reload as its retry', async () => {
  * Same shape as the directory-scanning guards in tests/reader-audit-atomicity.ts
  * and tests/client-ip.test.ts, and for the same reason.
  */
-const FETCH_CALL = /\$fetch|useFetch\(|useAsyncData\(/
+// Shared with tests/skeleton-loading-ui.test.ts — includes adminFetch/useAdminList,
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan;
+// decided on code with comments dropped (`fetchesData`, tests/_admin-fetch-call.ts).
+const FETCH_CALL = { test: fetchesData }
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const roots = ['pages/admin', 'components/admin']

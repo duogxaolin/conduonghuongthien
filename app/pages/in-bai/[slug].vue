@@ -90,6 +90,10 @@
  * lọt chỉ mục tìm kiếm. Tuyến chỉ phục vụ nút "In bài" ở `ArticleDetail.vue`.
  */
 import { safeInternalPath } from '~/utils/safe-path'
+import { formatPortalDate } from '~/utils/formatDate'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicArticleDetailResponse } from '~/types/public-content-api'
+import type { PublicSettingsPayload } from '~/types/public-site-api'
 
 definePageMeta({ layout: false })
 
@@ -107,42 +111,22 @@ const slug = computed(() => String(route.params.slug || ''))
 // `//evil.example` hay `/\evil.example` sẽ thành liên kết ra ngoài dưới tên miền chính thức.
 const backPath = computed(() => safeInternalPath(route.query.back, '/'))
 
+// URL bài gốc — dựng từ backPath + slug (bỏ /in-bai/), trên origin của chính request.
+// `useRequestURL()` cho cùng origin ở máy chủ (Host + X-Forwarded-Proto mà nginx chuyển
+// tiếp) và ở trình duyệt (`location`). Bản cũ đọc `window` nên HTML máy chủ có chuỗi rỗng,
+// trình duyệt có URL → lệch hydrate ở MỌI múi giờ. Trang không đệm (`cache: false`) nên Host
+// do request tự khai chỉ quay lại chính nó.
+const requestOrigin = useRequestURL().origin
 const pageUrl = computed(() => {
-  if (typeof window !== 'undefined') {
-    // URL bài gốc — reconstruct từ backPath + slug (bỏ /in-bai/).
-    const base = window.location.origin
-    const back = backPath.value
-    const articleUrl = back === '/' ? `/${slug.value}` : `${back}/${slug.value}`
-    return `${base}${articleUrl.startsWith('/') ? articleUrl : '/' + articleUrl}`
-  }
-  return ''
+  const back = backPath.value
+  const articleUrl = back === '/' ? `/${slug.value}` : `${back}/${slug.value}`
+  return `${requestOrigin}${articleUrl.startsWith('/') ? articleUrl : '/' + articleUrl}`
 })
 
-type ArticleDetailResponse = {
-  ok: boolean
-  article: {
-    id: number
-    title: string
-    slug: string
-    excerpt: string | null
-    content: string
-    featuredImage: string | null
-    thumbnailUrl?: string | null
-    publishedAt: string | null
-    createdAt?: string | null
-    type?: string
-    categoryName?: string | null
-    authorName?: string | null
-    viewTotal?: number
-    category?: { name: string; slug: string } | null
-    [key: string]: unknown
-  } | null
-}
-
-// SSR fetch để HTML có sẵn khi in — không lazy.
+// SSR fetch để HTML có sẵn khi in — không lazy. Kiểu suy từ handler (D-FETCH lô G).
 const { data, pending, error } = useAsyncData(
   () => `article-print-${slug.value}-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleDetailResponse>)(`/api/public/articles/${slug.value}?lang=${currentLang.value}`),
+  () => publicFetch<PublicArticleDetailResponse>(`/api/public/articles/${slug.value}?lang=${currentLang.value}`),
   { watch: [slug, currentLang] },
 )
 
@@ -150,10 +134,9 @@ const article = computed(() => data.value?.article || null)
 const loadError = computed(() => !!error.value)
 
 // Site settings để masthead/logo + footer liên hệ — chung with default.vue.
-type PublicSettingsResponse = { settings?: Record<string, string | null>; faviconUrl?: string | null }
-const { data: settingsData } = useAsyncData<PublicSettingsResponse | null>(
+const { data: settingsData } = useAsyncData<PublicSettingsPayload | null>(
   'article-print-settings',
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  () => publicFetch<PublicSettingsPayload>('/api/public/settings'),
   { default: () => null },
 )
 const sitePublicSettings = computed(() => settingsData.value?.settings || {})
@@ -169,13 +152,11 @@ const siteAddress = computed(() => sitePublicSettings.value.address?.trim() || '
 
 const categoryLabel = computed(() => article.value?.categoryName || '')
 const authorDisplay = computed(() => article.value?.authorName || t('a_author_default'))
+// Giờ Việt Nam ở cả máy chủ lẫn trình duyệt (`formatPortalDate`) — cùng lỗi lệch hydrate
+// với trang chi tiết bài khi trình duyệt ở múi giờ khác.
 const formattedDate = computed(() => {
-  const d = article.value?.publishedAt || article.value?.createdAt
-  if (!d) return ''
-  const date = new Date(d)
-  if (Number.isNaN(date.getTime())) return ''
   const locale = currentLang.value === 'vi' ? 'vi-VN' : currentLang.value === 'en' ? 'en-US' : currentLang.value
-  return date.toLocaleDateString(locale, { day: '2-digit', month: 'long', year: 'numeric' })
+  return formatPortalDate(article.value?.publishedAt || article.value?.createdAt, locale, { day: '2-digit', month: 'long', year: 'numeric' })
 })
 const formattedViews = computed(() => {
   if (!article.value?.viewTotal) return ''
@@ -186,7 +167,7 @@ const formattedViews = computed(() => {
 // Ngày xuất bản masthead — ngày hôm nay (ngày in).
 const publicationDate = computed(() => {
   const locale = currentLang.value === 'vi' ? 'vi-VN' : currentLang.value === 'en' ? 'en-US' : currentLang.value
-  return new Date().toLocaleDateString(locale, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+  return formatPortalDate(new Date(), locale, { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
 })
 
 // SEO: không index trang in.

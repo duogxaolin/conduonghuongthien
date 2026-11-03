@@ -40,22 +40,31 @@ import { after, before, describe, it } from 'node:test'
 import { drizzle } from 'drizzle-orm/mysql2'
 
 import * as schema from '../server/db/schema.ts'
+import * as chunkedUploadModule from '../server/services/chunked-upload.ts'
 import {
   accumulatedBytes,
+  chunkBodyLimit,
+  COMPLETION_LEASE_MS,
   completeUpload,
   declaredChunks,
   formatBytes,
   housekeepUploads,
   initUpload,
+  isUploadComplete,
+  isValidChunkIndex,
   isValidUploadId,
+  mediaPool,
   missingIndexes,
+  partLengthRange,
   receiveChunk,
   resolvePartPath,
   resolveUploadDir,
+  safeDisplayFilename,
   titleFromFilename,
   uploadStatus,
   withReceivedPart,
 } from '../server/services/chunked-upload.ts'
+import { closeDb, getPool } from '../server/utils/db.ts'
 import { MEDIA_DEFAULTS, type MediaConfig } from '../server/utils/media-config.ts'
 
 // ─── Cơ sở dữ liệu giả ───────────────────────────────────────────────────────
@@ -226,6 +235,7 @@ function fakePool(options: FakeOptions = {}) {
   const queries: QueryCall[] = []
   const mediaInserts: Row[] = []
   const auditInserts: Row[] = []
+  const cleanupInserts: Row[] = []
   let nextMediaId = options.nextMediaId ?? 500
   let released = 0
   let connections = 0
@@ -270,9 +280,16 @@ function fakePool(options: FakeOptions = {}) {
 
     if (trimmed.startsWith('update `media_upload_sessions`')) {
       const { columns, values } = setClause(trimmed, params)
-      const [uploadId, adminUserId] = params.slice(columns.length)
+      const [uploadId, adminUserId, claim] = params.slice(columns.length)
       const row = sessions.get(String(uploadId))
       if (!row || row.adminUserId !== adminUserId) return [{ affectedRows: 0 }]
+      // Rào của lượt hoàn tất: mọi lượt ghi sau khi giữ chỗ mang thêm
+      // `completion_claim = ?` trong WHERE. MySQL thật bỏ qua hàng mà mã giữ chỗ
+      // đã đổi; bảng giả bỏ qua điều kiện này thì một lượt mất quyền vẫn "ghi
+      // được" lên hàng của người giữ chỗ mới, và test rào xanh vì lý do sai.
+      // Chỉ đọc mệnh đề WHERE — SET cũng có thể mang `completion_claim` = ?.
+      const where = trimmed.slice(trimmed.indexOf(' where '))
+      if (where.includes('`completion_claim` = ?') && row.completionClaim !== claim) return [{ affectedRows: 0 }]
       columns.forEach((column, index) => { row[column] = values[index] })
       return [{ affectedRows: 1 }]
     }
@@ -319,6 +336,12 @@ function fakePool(options: FakeOptions = {}) {
       return [{ insertId: 1, affectedRows: 1 }]
     }
 
+    // ── media_asset_cleanup (outbox dọn cây cũ khi thay tệp) ─────────────────
+    if (trimmed.startsWith('insert into `media_asset_cleanup`')) {
+      cleanupInserts.push(insertClause(trimmed, params))
+      return [{ insertId: 0, affectedRows: 1 }]
+    }
+
     throw new Error(`câu lệnh không được mô phỏng: ${trimmed.slice(0, 160)}`)
   }
 
@@ -340,6 +363,8 @@ function fakePool(options: FakeOptions = {}) {
     sessions,
     mediaInserts,
     auditInserts,
+    cleanupInserts,
+    media,
     /** Một hàng phiên đã giải mã, đúng như một lượt đọc thật sẽ thấy. */
     session(uploadId: string): Row | undefined {
       const row = sessions.get(uploadId)
@@ -1121,5 +1146,408 @@ describe('hàm thuần', () => {
     assert.equal(formatBytes(1024), '1 KB')
     assert.equal(formatBytes(10 * 1024 * 1024), '10 MB')
     assert.equal(formatBytes(Number.NaN), '0 B')
+  })
+
+  it('partLengthRange: phần giữa dài đúng một phần, phần cuối được nới', () => {
+    assert.deepEqual(partLengthRange(0, 3, 1024), { min: 1024, max: 1024 })
+    assert.deepEqual(partLengthRange(1, 3, 1024), { min: 1024, max: 1024 })
+    assert.deepEqual(partLengthRange(2, 3, 1024), { min: 1, max: 1024 })
+    // Lượt tải một phần: phần duy nhất cũng là phần cuối.
+    assert.deepEqual(partLengthRange(0, 1, 1024), { min: 1, max: 1024 })
+  })
+
+  it('isValidChunkIndex chỉ nhận số nguyên an toàn trong [0, totalChunks)', () => {
+    assert.equal(isValidChunkIndex(0, 3), true)
+    assert.equal(isValidChunkIndex(2, 3), true)
+    for (const bad of [3, -1, 1.5, Number.NaN, '0', null, undefined, Number.MAX_SAFE_INTEGER + 2]) {
+      assert.equal(isValidChunkIndex(bad, 3), false, `chấp nhận chỉ số ${String(bad)}`)
+    }
+    assert.equal(isValidChunkIndex(0, 0), false, 'lượt tải không phần nào thì không chỉ số nào hợp lệ')
+  })
+
+  it('isUploadComplete: đủ mọi chỉ số, không tính trùng hay chỉ số rác là "đủ"', () => {
+    assert.equal(isUploadComplete([0, 1, 2], 3), true)
+    assert.equal(isUploadComplete([2, 0, 1], 3), true)
+    assert.equal(isUploadComplete([0, 2], 3), false)
+    // Đủ ĐỘ DÀI nhưng thiếu một chỉ số: trùng lặp không được lấp chỗ trống.
+    assert.equal(isUploadComplete([0, 1, 1], 3), false)
+    assert.equal(isUploadComplete([0, 1, 9], 3), false)
+    assert.equal(isUploadComplete([0, 1, 2, 9], 3), true)
+  })
+
+  it('safeDisplayFilename bỏ thành phần đường dẫn, ký tự điều khiển, cắt 255, có dự phòng', () => {
+    assert.equal(safeDisplayFilename('C:\\Users\\canbo\\phim.mp4'), 'phim.mp4')
+    assert.equal(safeDisplayFilename('../../etc/passwd'), 'passwd')
+    assert.equal(safeDisplayFilename('a\u0000b\u001fc\u007f.mp4'), 'abc.mp4')
+    assert.equal(safeDisplayFilename('  Phóng sự.mp4  '), 'Phóng sự.mp4')
+    assert.equal(safeDisplayFilename('x'.repeat(300)).length, 255)
+    for (const empty of ['', '   ', 'thu-muc/', null, undefined, 42]) {
+      assert.equal(safeDisplayFilename(empty), 'video', `không lùi về "video" cho ${String(empty)}`)
+    }
+  })
+
+  it('mediaPool trả đúng pool dùng chung của tiến trình', async () => {
+    try {
+      const pool = mediaPool()
+      assert.ok(pool, 'mediaPool trả null sau khi pool đã được dựng')
+      assert.equal(pool, getPool())
+    } finally {
+      await closeDb()
+    }
+  })
+})
+
+// ─── Bề mặt công khai ────────────────────────────────────────────────────────
+
+describe('bề mặt công khai của chunked-upload.ts', () => {
+  it('xuất đúng 22 tên runtime — không thiếu tên nào, không lộ hàm nội bộ', () => {
+    // Năm endpoint quản trị, `video-processing.ts` và hai bộ test import từ đường
+    // dẫn này. Thiếu một tên là lỗi lúc liên kết; thừa một tên (`findOwned`,
+    // `toView`, `NOT_FOUND`…) là một hàm nội bộ thành API mà không ai quyết định.
+    assert.deepEqual(Object.keys(chunkedUploadModule).sort(), [
+      'COMPLETION_LEASE_MS', 'UPLOAD_STATUSES', 'accumulatedBytes', 'chunkBodyLimit', 'completeUpload',
+      'declaredChunks', 'formatBytes', 'housekeepUploads', 'initUpload', 'isUploadComplete',
+      'isValidChunkIndex', 'isValidUploadId', 'mediaPool', 'missingIndexes', 'partLengthRange',
+      'receiveChunk', 'resolvePartPath', 'resolveUploadDir', 'safeDisplayFilename', 'titleFromFilename',
+      'uploadStatus', 'withReceivedPart',
+    ])
+  })
+})
+
+// ─── chunkBodyLimit — trần thân request theo hình học ĐÃ LƯU ─────────────────
+
+/** Thời điểm ở dạng driver gửi/nhận cho cột `timestamp` (UTC, không `Z`). */
+function driverTime(date: Date): string {
+  return date.toISOString().slice(0, -1).replace('T', ' ')
+}
+
+describe('chunkBodyLimit', () => {
+  async function openSession(declaredSize: number) {
+    const fake = fakePool()
+    const db = dbOver(fake)
+    const init = await initUpload({ adminUserId: 7, filename: 'a.mp4', declaredSize }, { db, config })
+    assert.equal(init.ok, true)
+    if (!init.ok) throw new Error('init thất bại')
+    return { fake, db, uploadId: init.uploadId }
+  }
+
+  it('mã sai hình dạng, mã không tồn tại và mã của cán bộ khác cho ra CÙNG một phản hồi 404', async () => {
+    const { db, uploadId } = await openSession(2048)
+    const malformed = await chunkBodyLimit({ adminUserId: 7, uploadId: '../x', index: 0 }, { db, config })
+    const unknown = await chunkBodyLimit({ adminUserId: 7, uploadId: '00000000-0000-4000-8000-000000000000', index: 0 }, { db, config })
+    const stranger = await chunkBodyLimit({ adminUserId: 8, uploadId, index: 0 }, { db, config })
+    assert.equal(stranger.ok, false)
+    if (stranger.ok) return
+    assert.equal(stranger.status, 404)
+    assert.equal(stranger.code, 'not_found')
+    assert.deepEqual(unknown, stranger)
+    assert.deepEqual(malformed, stranger)
+  })
+
+  it('trần là độ dài của ĐÚNG phần đó theo hình học đã lưu, không theo cấu hình hiện tại', async () => {
+    const { fake, db, uploadId } = await openSession(2500) // 1024 + 1024 + 452
+    fake.queries.length = 0
+    const first = await chunkBodyLimit({ adminUserId: 7, uploadId, index: 0 }, { db, config })
+    const last = await chunkBodyLimit({ adminUserId: 7, uploadId, index: 2 }, { db, config })
+    // Cấu hình đổi giữa chừng (chunkSize 1) không đổi hình học của lượt đang mở.
+    const reconfigured = await chunkBodyLimit({ adminUserId: 7, uploadId, index: 0 }, { db, config: { ...config, chunkSize: 1 } })
+    assert.deepEqual(first, { ok: true, bytes: 1024 })
+    assert.deepEqual(last, { ok: true, bytes: 452 })
+    assert.deepEqual(reconfigured, { ok: true, bytes: 1024 })
+    assert.equal(fake.queries.filter(q => /^(insert|update|delete)/.test(q.sql.trim())).length, 0, 'chỉ đọc, không ghi')
+    assert.ok(fake.queries.every(q => !/ for update/i.test(q.sql)), 'không khoá hàng trước khi đọc thân request')
+  })
+
+  it('phiên không còn nhận phần thì 409, kiểm TRƯỚC chỉ số', async () => {
+    const { fake, db, uploadId } = await openSession(2048)
+    for (const status of ['assembling', 'completed', 'failed']) {
+      fake.sessions.get(uploadId)!.status = status
+      const result = await chunkBodyLimit({ adminUserId: 7, uploadId, index: 99 }, { db, config })
+      assert.equal(result.ok, false)
+      if (result.ok) continue
+      assert.equal(result.status, 409, `trạng thái ${status}`)
+      assert.equal(result.code, 'state')
+    }
+  })
+
+  it('chỉ số ngoài khoảng đã khai thì 400 bad_index', async () => {
+    const { db, uploadId } = await openSession(2048)
+    for (const index of [2, -1, 0.5, '0', null, undefined]) {
+      const result = await chunkBodyLimit({ adminUserId: 7, uploadId, index }, { db, config })
+      assert.equal(result.ok, false, `chấp nhận index=${String(index)}`)
+      if (result.ok) continue
+      assert.equal(result.status, 400)
+      assert.equal(result.code, 'bad_index')
+    }
+  })
+})
+
+// ─── completeUpload — rào giữ chỗ và nhánh thay tệp ──────────────────────────
+
+describe('completeUpload — rào giữ chỗ', () => {
+  const THIEF = '22222222-3333-4444-8555-666666666666'
+
+  /** Một lượt tải đã nhận đủ phần, kèm móc chạy trước mỗi câu lệnh. */
+  async function uploaded(content: Buffer, mediaItems: Row[] = []) {
+    let hook: ((sql: string, params: unknown[]) => void) | null = null
+    const fake = fakePool({ mediaItems, onQuery: (sql, params) => hook?.(sql, params) })
+    const db = dbOver(fake)
+    const init = await initUpload({ adminUserId: 7, filename: 'a.mp4', declaredSize: content.length }, { db, config })
+    assert.equal(init.ok, true)
+    if (!init.ok) throw new Error('init thất bại')
+    for (let index = 0; index < init.totalChunks; index++) {
+      const body = content.subarray(index * config.chunkSize, (index + 1) * config.chunkSize)
+      const received = await receiveChunk({ adminUserId: 7, uploadId: init.uploadId, index, body }, { db, config })
+      assert.equal(received.ok, true)
+    }
+    return { fake, db, uploadId: init.uploadId, setHook: (next: typeof hook) => { hook = next } }
+  }
+
+  /** Ngay sau khi lượt hoàn tất giữ chỗ xong, một lượt khác chiếm chỗ (lease hết hạn). */
+  function stealAfterReservation(fake: ReturnType<typeof fakePool>, uploadId: string) {
+    let reserved = false
+    return (sql: string, params: unknown[]) => {
+      if (reserved) {
+        fake.sessions.get(uploadId)!.completionClaim = THIEF
+        fake.sessions.get(uploadId)!.completionHeartbeatAt = driverTime(new Date())
+        reserved = false
+        return
+      }
+      if (sql.startsWith('update `media_upload_sessions`') && params.includes('assembling')) reserved = true
+    }
+  }
+
+  it('phiên đã hỏng thì 400, không ghi gì', async () => {
+    const { fake, db, uploadId } = await uploaded(chunk(mp4Header()))
+    fake.sessions.get(uploadId)!.status = 'failed'
+    fake.queries.length = 0
+    const result = await completeUpload({ adminUserId: 7, uploadId }, { db, config })
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.equal(result.status, 400)
+    assert.equal(result.code, 'state')
+    assert.equal(fake.queries.filter(q => q.sql.startsWith('update ')).length, 0)
+    assert.equal(fake.mediaInserts.length, 0)
+  })
+
+  it('một lượt đang ghép với lease còn hạn thì 409, không cướp chỗ', async () => {
+    const { fake, db, uploadId } = await uploaded(chunk(mp4Header()))
+    Object.assign(fake.sessions.get(uploadId)!, {
+      status: 'assembling', completionClaim: THIEF, completionHeartbeatAt: driverTime(new Date()),
+    })
+    const result = await completeUpload({ adminUserId: 7, uploadId }, { db, config })
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.equal(result.status, 409)
+    assert.equal(result.code, 'state')
+    assert.equal(fake.session(uploadId)!.completionClaim, THIEF, 'mã giữ chỗ của lượt đang chạy bị ghi đè')
+    assert.equal(fake.mediaInserts.length, 0)
+  })
+
+  it('lease đã hết hạn thì lượt mới giữ chỗ lại và hoàn tất được', async () => {
+    const { fake, db, uploadId } = await uploaded(chunk(mp4Header()))
+    Object.assign(fake.sessions.get(uploadId)!, {
+      status: 'assembling', completionClaim: THIEF,
+      completionHeartbeatAt: driverTime(new Date(Date.now() - COMPLETION_LEASE_MS - 60_000)),
+    })
+    const result = await completeUpload({ adminUserId: 7, uploadId }, { db, config, dispatchProcessing: async () => undefined })
+    assert.equal(result.ok, true)
+    assert.equal(fake.session(uploadId)!.status, 'completed')
+    assert.equal(fake.session(uploadId)!.completionClaim ?? null, null)
+    assert.equal(fake.mediaInserts.length, 1)
+  })
+
+  it('mất quyền giữ chỗ giữa chừng: không tạo mục, không ghi đè hàng của người giữ chỗ mới', async () => {
+    const { fake, db, uploadId, setHook } = await uploaded(chunk(mp4Header()))
+    setHook(stealAfterReservation(fake, uploadId))
+    const result = await completeUpload({ adminUserId: 7, uploadId }, { db, config, dispatchProcessing: async () => undefined })
+
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.equal(result.status, 503)
+    assert.equal(result.code, 'assemble_failed')
+    assert.match(result.message, /mất quyền sở hữu/)
+    assert.equal(fake.mediaInserts.length, 0)
+    assert.equal(fake.auditInserts.length, 0)
+    // Lượt dọn lỗi chỉ ghi `WHERE completion_claim = <mã của mình>`: hàng của người
+    // giữ chỗ mới phải còn nguyên, không bị kéo về `pending`.
+    const row = fake.session(uploadId)!
+    assert.equal(row.status, 'assembling')
+    assert.equal(row.completionClaim, THIEF)
+    assert.equal(row.errorMessage ?? null, null)
+    // Các phần còn nguyên cho người giữ chỗ mới; tệp ghép tạm của lượt thua đã dọn.
+    const dir = resolveUploadDir(config.workdir, uploadId)
+    assert.deepEqual((await fs.readdir(dir)).sort(), ['0.part'])
+    await assert.rejects(fs.stat(path.resolve(config.workdir, 'media', uploadId)), 'tệp gốc bị chuyển dù đã mất quyền')
+  })
+
+  it('mất quyền rồi gặp nội dung không phải video: vẫn 415 nhưng không đánh hỏng, không xoá phần của người khác', async () => {
+    const { fake, db, uploadId, setHook } = await uploaded(notVideo(1024))
+    setHook(stealAfterReservation(fake, uploadId))
+    const result = await completeUpload({ adminUserId: 7, uploadId }, { db, config })
+
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.equal(result.status, 415)
+    assert.equal(result.code, 'unsupported_video')
+    const row = fake.session(uploadId)!
+    assert.equal(row.status, 'assembling')
+    assert.equal(row.completionClaim, THIEF)
+    assert.ok((await fs.stat(resolvePartPath(config.workdir, uploadId, 0))).isFile(), 'phần đã nhận bị xoá dưới tay người giữ chỗ mới')
+  })
+
+  it('xử lý video chỉ được đẩy đi SAU khi hàng đã hoàn tất', async () => {
+    const { fake, db, uploadId } = await uploaded(chunk(mp4Header()))
+    const dispatched: { id: number, status: unknown }[] = []
+    const result = await completeUpload({ adminUserId: 7, uploadId }, {
+      db, config, dispatchProcessing: async id => { dispatched.push({ id, status: fake.session(uploadId)!.status }) },
+    })
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.deepEqual(dispatched, [{ id: result.mediaItemId, status: 'completed' }])
+  })
+})
+
+describe('completeUpload — thay tệp một mục có sẵn', () => {
+  const OLD_ROOT = 'media/33333333-4444-4555-8666-777777777777'
+
+  function existingItem(overrides: Row = {}): Row {
+    return {
+      id: 42, slug: 'phong-su', shortId: 'abc123', source: 'upload', storagePath: OLD_ROOT,
+      storageProvider: 'local', claimedBy: null, processingStatus: 'ready', ...overrides,
+    }
+  }
+
+  async function uploadedFor(item: Row) {
+    const fake = fakePool({ mediaItems: [item] })
+    const db = dbOver(fake)
+    const content = chunk(mp4Header())
+    const init = await initUpload({ adminUserId: 7, filename: 'moi.mp4', declaredSize: content.length }, { db, config })
+    assert.equal(init.ok, true)
+    if (!init.ok) throw new Error('init thất bại')
+    const received = await receiveChunk({ adminUserId: 7, uploadId: init.uploadId, index: 0, body: content }, { db, config })
+    assert.equal(received.ok, true)
+    return { fake, db, uploadId: init.uploadId }
+  }
+
+  it('cập nhật hàng cũ, hẹn dọn cây cũ, audit "replace" — không tạo hàng mới', async () => {
+    const { fake, db, uploadId } = await uploadedFor(existingItem())
+    const dispatched: number[] = []
+    const result = await completeUpload({ adminUserId: 7, uploadId, replaceMediaItemId: 42 }, {
+      db, config, dispatchProcessing: async id => { dispatched.push(id) },
+    })
+
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.deepEqual(result, { ok: true, mediaItemId: 42, slug: 'phong-su', shortId: 'abc123', contentType: 'video/mp4' })
+    assert.equal(fake.mediaInserts.length, 0, 'thay tệp đã tạo một mục mới')
+    const item = fake.media.find(row => row.id === 42)!
+    assert.equal(item.storagePath, `media/${uploadId}`)
+    assert.equal(item.storageProvider, 'local')
+    assert.equal(item.processingStatus, 'pending')
+    assert.equal(fake.auditInserts.length, 1)
+    assert.equal(fake.auditInserts[0]!.action, 'update')
+    assert.equal(fake.auditInserts[0]!.resourceId, 42)
+    assert.equal((decodeValue('meta', fake.auditInserts[0]!.meta) as { operation?: string }).operation, 'replace')
+    assert.deepEqual(fake.cleanupInserts.map(task => `${task.storageProvider}:${task.assetRoot}`), [`local:${OLD_ROOT}`])
+    assert.equal(fake.session(uploadId)!.status, 'completed')
+    assert.equal(fake.session(uploadId)!.mediaItemId, 42)
+    assert.deepEqual(dispatched, [42])
+  })
+
+  it('mục nguồn YouTube không thay tệp được: 503 thử lại được, không sửa mục, không audit, không hẹn dọn', async () => {
+    const { fake, db, uploadId } = await uploadedFor(existingItem({ source: 'youtube' }))
+    const result = await completeUpload({ adminUserId: 7, uploadId, replaceMediaItemId: 42 }, {
+      db, config, dispatchProcessing: async () => undefined,
+    })
+
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.equal(result.status, 503)
+    assert.equal(result.code, 'assemble_failed')
+    assert.match(result.message, /tự lưu trữ/)
+    assert.equal(fake.queries.filter(q => q.sql.startsWith('update `media_items`')).length, 0)
+    assert.equal(fake.auditInserts.length, 0)
+    assert.equal(fake.cleanupInserts.length, 0)
+    assert.equal(fake.mediaInserts.length, 0)
+    assert.equal(fake.session(uploadId)!.status, 'pending', 'phiên phải thử lại được')
+    assert.match(String(fake.session(uploadId)!.errorMessage), /Không hoàn tất/)
+  })
+})
+
+// ─── housekeepUploads — lease ghép, nhật ký từng phiên ───────────────────────
+
+describe('housekeepUploads — lease và nhật ký', () => {
+  const STALE = () => driverTime(new Date(Date.now() - 72 * 60 * 60 * 1000))
+
+  async function staleSession(fake: ReturnType<typeof fakePool>, db: ReturnType<typeof dbOver>) {
+    const init = await initUpload({ adminUserId: 7, filename: 'a.mp4', declaredSize: 1024 }, { db, config })
+    assert.equal(init.ok, true)
+    if (!init.ok) throw new Error('init thất bại')
+    fake.sessions.get(init.uploadId)!.updatedAt = STALE()
+    return init.uploadId
+  }
+
+  it('lease ghép còn hạn sống sót dù updated_at đã cũ; hết hạn thì bị dọn', async () => {
+    const fake = fakePool()
+    const db = dbOver(fake)
+    const uploadId = await staleSession(fake, db)
+    Object.assign(fake.sessions.get(uploadId)!, {
+      status: 'assembling', completionClaim: '44444444-5555-4666-8777-888888888888',
+      completionHeartbeatAt: driverTime(new Date()),
+    })
+    const dir = resolveUploadDir(config.workdir, uploadId)
+
+    const live = await housekeepUploads({ db, config, now: new Date() })
+    assert.equal(live.sessions, 0, 'một lượt đang ghép bị dọn giữa chừng')
+    assert.ok(fake.sessions.has(uploadId))
+    assert.ok((await fs.stat(dir)).isDirectory())
+
+    fake.sessions.get(uploadId)!.completionHeartbeatAt = driverTime(new Date(Date.now() - COMPLETION_LEASE_MS - 60_000))
+    const expired = await housekeepUploads({ db, config, now: new Date() })
+    assert.equal(expired.sessions, 1)
+    assert.equal(fake.sessions.has(uploadId), false)
+    await assert.rejects(fs.stat(dir))
+  })
+
+  it('mỗi phiên bị dọn có đúng một dòng nhật ký, ghi tên cán bộ đã bấm dọn', async () => {
+    const fake = fakePool()
+    const db = dbOver(fake)
+    await staleSession(fake, db)
+    await staleSession(fake, db)
+
+    const result = await housekeepUploads({ db, config, now: new Date(), adminUserId: 3 })
+    assert.equal(result.sessions, 2)
+    assert.equal(fake.auditInserts.length, 2)
+    for (const audit of fake.auditInserts) {
+      assert.equal(audit.action, 'housekeep_uploads')
+      assert.equal(audit.resource, 'media_portal')
+      assert.equal(audit.userId, 3)
+      assert.deepEqual(decodeValue('meta', audit.meta), { cutoffHours: config.sessionInactivityHours })
+    }
+  })
+
+  it('nhật ký hỏng không trả lại phiên đã xoá', async () => {
+    const fake = fakePool({
+      onQuery: (sql) => { if (sql.startsWith('insert into `activity_logs`')) throw new Error('audit down') },
+    })
+    const db = dbOver(fake)
+    const uploadId = await staleSession(fake, db)
+    const result = await housekeepUploads({ db, config, now: new Date() })
+    assert.equal(result.sessions, 1)
+    assert.equal(fake.sessions.has(uploadId), false)
+  })
+
+  it('hàng mang mã không phải UUID vẫn bị dọn, không chạm đĩa', async () => {
+    const fake = fakePool({
+      sessions: [{
+        uploadId: '../../not-a-uuid', adminUserId: 7, filename: 'a.mp4', declaredSize: 1024, chunkSize: 1024,
+        totalChunks: 1, receivedParts: [], status: 'pending', updatedAt: STALE(),
+      }],
+    })
+    const db = dbOver(fake)
+    const result = await housekeepUploads({ db, config, now: new Date() })
+    assert.equal(result.sessions, 1)
+    assert.equal(fake.sessions.size, 0)
   })
 })

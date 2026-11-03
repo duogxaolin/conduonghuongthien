@@ -1,6 +1,6 @@
 <template>
   <!-- Footer Area -->
-  <footer class="bg-[#385130] text-white/80 pt-16 lg:pt-20 border-t-4 border-[#7CB342] pb-[calc(110px+env(safe-area-inset-bottom,0px))] md:pb-12 lg:pb-10">
+  <footer class="bg-brand-800 text-white/80 pt-16 lg:pt-20 border-t-4 border-accent pb-[calc(110px+env(safe-area-inset-bottom,0px))] md:pb-12 lg:pb-10">
     <div class="container grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_2fr] gap-8 lg:gap-10 mb-12 lg:mb-16">
       <div>
         <div class="flex items-center gap-3.5 mb-5 flex-wrap">
@@ -17,28 +17,28 @@
       </div>
 
       <div>
-        <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">{{ t('footer_links_main') }}</h3>
+        <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-accent">{{ t('footer_links_main') }}</h3>
         <ul class="list-none space-y-3">
-          <li><nuxt-link to="/" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('home') }}</nuxt-link></li>
-          <li><nuxt-link to="/about" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('about') }}</nuxt-link></li>
-          <li><nuxt-link to="/news" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('news') }}</nuxt-link></li>
-          <li><nuxt-link to="/documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('documents') }}</nuxt-link></li>
+          <li><nuxt-link to="/" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-accent hover:pl-1.5">{{ t('home') }}</nuxt-link></li>
+          <li><nuxt-link to="/about" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-accent hover:pl-1.5">{{ t('about') }}</nuxt-link></li>
+          <li><nuxt-link to="/news" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-accent hover:pl-1.5">{{ t('news') }}</nuxt-link></li>
+          <li><nuxt-link to="/documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-accent hover:pl-1.5">{{ t('documents') }}</nuxt-link></li>
         </ul>
       </div>
 
       <div>
-        <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">{{ t('reintegration') }}</h3>
+        <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-accent">{{ t('reintegration') }}</h3>
         <ul class="list-none space-y-3">
-          <li><nuxt-link to="/role-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('role_models') }}</nuxt-link></li>
-          <li><nuxt-link to="/reintegration-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('reintegration') }}</nuxt-link></li>
-          <li><nuxt-link to="/legal-qa" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('legal_qa') }}</nuxt-link></li>
-          <li><nuxt-link to="/qa-documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('qa_documents') }}</nuxt-link></li>
-          <li><nuxt-link to="/contact" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('contact') }}</nuxt-link></li>
+          <li><nuxt-link to="/role-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-accent hover:pl-1.5">{{ t('role_models') }}</nuxt-link></li>
+          <li><nuxt-link to="/reintegration-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-accent hover:pl-1.5">{{ t('reintegration') }}</nuxt-link></li>
+          <li><nuxt-link to="/legal-qa" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-accent hover:pl-1.5">{{ t('legal_qa') }}</nuxt-link></li>
+          <li><nuxt-link to="/qa-documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-accent hover:pl-1.5">{{ t('qa_documents') }}</nuxt-link></li>
+          <li><nuxt-link to="/contact" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-accent hover:pl-1.5">{{ t('contact') }}</nuxt-link></li>
         </ul>
       </div>
 
       <div>
-        <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">{{ t('contact_info') }}</h3>
+        <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-accent">{{ t('contact_info') }}</h3>
         <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('footer_agency') }}</strong> C11 - Bộ Công an</p>
         <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('address') }}</strong> {{ siteAddress }}</p>
         <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('phone') }}</strong> {{ siteHotline }}</p>
@@ -54,7 +54,7 @@
             href="https://delify.vn?ref=conduonghuongthien"
             target="_blank"
             rel="noopener noreferrer"
-            class="text-white/70 no-underline font-semibold transition-all hover:text-[#7CB342] hover:underline"
+            class="text-white/70 no-underline font-semibold transition-all hover:text-accent hover:underline"
           >{{ t('design_by').replace('{brand}', 'Delify.vn') }}</a>
         </p>
       </div>

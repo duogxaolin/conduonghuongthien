@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readdirSync } from 'node:fs'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { hardcodedDictionary } from '../app/composables/i18n-default-dictionary.ts'
+import { QUICK_QUESTION_STATUS_KEYS } from '../app/utils/chat-i18n.ts'
+import {
+  autoImportedIndexFiles, CHAT_WIDGET_FAMILY, CHATBOT_COMPOSABLE_FAMILY, familyScript, familySource, familyTemplate, familyVueFiles,
+  moduleFamilyParts, moduleFamilySource, readAppFile,
+} from './_component-family.ts'
 
 // The widget was extracted out of `app/layouts/default.vue` so that the full-page
 // assistant at `/assistant` could render the same conversation without duplicating
@@ -11,23 +17,23 @@ import { parse } from '@vue/compiler-sfc'
 // file holds a given line, so `script` spans both halves. Splitting the
 // assertions by file would make a future move of one function look like a
 // regression.
-const widgetPath = new URL('../app/components/ChatWidget.vue', import.meta.url)
-const composablePath = new URL('../app/composables/useChatbot.ts', import.meta.url)
 // Phần khử độc dữ liệu `localStorage` đã sang `app/utils/chatbot-storage.ts` để
 // kiểm được không cần nạp cả composable (`tests/chatbot-storage-boundary.test.ts`).
 // Ghép vào đây theo đúng nguyên tắc đã nêu ở trên: các khẳng định dưới đây nói về
-// **hành vi** của widget, không về việc tệp nào giữ dòng nào.
-const storagePath = new URL('../app/utils/chatbot-storage.ts', import.meta.url)
-const widgetSource = await readFile(widgetPath, 'utf8')
-const composableSource = `${await readFile(composablePath, 'utf8')}\n${await readFile(storagePath, 'utf8')}`
+// **hành vi** của widget, không về việc tệp nào giữ dòng nào. Từ lần tách wave3 cả
+// hai nửa là một HỌ tệp (tests/_component-family.ts): `CHAT_WIDGET_FAMILY` = ChatWidget.vue
+// + mọi phần trong components/chat-widget/ + useChatWidgetDialog/Teaser/useChatCopy, và
+// `CHATBOT_COMPOSABLE_FAMILY` = useChatbot.ts + mọi module composables/chatbot/ + chatbot-storage.
+const widgetTemplate = (overrides?: Record<string, string>) => familyTemplate(CHAT_WIDGET_FAMILY, overrides)
+const widgetScript = (overrides?: Record<string, string>) => familyScript(CHAT_WIDGET_FAMILY, overrides)
+const composableSource = moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY)
 
-const descriptor = parse(widgetSource, { filename: 'ChatWidget.vue' })
-const template = descriptor.descriptor.template?.content ?? ''
-const script = `${descriptor.descriptor.scriptSetup?.content ?? ''}\n${composableSource}`
-const source = `${widgetSource}\n${composableSource}`
+const template = widgetTemplate()
+const script = `${widgetScript()}\n${composableSource}`
+const source = `${familySource(CHAT_WIDGET_FAMILY)}\n${composableSource}`
 
 test('public widget SFC parses and uses API-backed quick questions only', () => {
-  assert.equal(descriptor.errors.length, 0)
+  for (const f of familyVueFiles(CHAT_WIDGET_FAMILY)) assert.deepEqual(parse(f.source, { filename: f.file }).errors, [], f.file)
   assert.match(script, /fetch\('\/api\/public\/chatbot\/quick-questions'/)
   assert.match(template, /v-for="question in quickQuestions"/)
   assert.match(template, /:key="question\.id"/)
@@ -41,9 +47,15 @@ test('quick-question loading, error, empty, success, and retry states are explic
     assert.match(script, new RegExp(`quickQuestionState\\.value = ['"]${state}['"]|quickQuestionState\\.value === ['"]${state}['"]`))
   }
   assert.match(source, /quickQuestionState(?:\.value)? === ['"]success['"]|\? ['"]success['"] : ['"]empty['"]/)
-  assert.match(script, /Đang tải câu hỏi đã được phê duyệt/)
-  assert.match(script, /Hiện không thể tải câu hỏi gợi ý/)
-  assert.match(script, /Hiện chưa có câu hỏi gợi ý đã được phê duyệt/)
+  // Each state says its own sentence — an i18n key per state since 2026-11-02 (the module
+  // cannot call useI18n(); the surfaces show `t(quickQuestionStatusKey)`). Distinct keys, and
+  // the Vietnamese wording each said before.
+  assert.match(script, /quickQuestionStatusKey = computed\(\(\) => QUICK_QUESTION_STATUS_KEYS\[quickQuestionState\.value\]\)/)
+  assert.match(template, /\{\{ t\(quickQuestionStatusKey\) \}\}/)
+  assert.equal(new Set(Object.values(QUICK_QUESTION_STATUS_KEYS)).size, 4)
+  assert.match(hardcodedDictionary.vi![QUICK_QUESTION_STATUS_KEYS.loading]!, /Đang tải câu hỏi đã được phê duyệt/)
+  assert.match(hardcodedDictionary.vi![QUICK_QUESTION_STATUS_KEYS.error]!, /Hiện không thể tải câu hỏi gợi ý/)
+  assert.match(hardcodedDictionary.vi![QUICK_QUESTION_STATUS_KEYS.empty]!, /Hiện chưa có câu hỏi gợi ý đã được phê duyệt/)
   // Retry is no longer a separate button: reopening the panel re-fetches the
   // quick questions whenever the previous attempt errored or came back empty.
   assert.match(script, /quickQuestionState\.value === 'error' \|\| quickQuestionState\.value === 'empty'\) loadQuickQuestions\(\)/)
@@ -59,7 +71,7 @@ test('governed SSE endpoint and response metadata drive public status rendering'
   for (const kind of ['curated', 'provider', 'not_found', 'unavailable', 'rate_limited']) {
     assert.match(script, new RegExp(`['"]${kind}['"]`))
   }
-  assert.match(template, /messageKindLabel\(msg\.kind\)/)
+  assert.match(template, /t\(messageKindKey\(msg\.kind\)\)/)
   assert.match(template, /msg\.sources\?\.length/)
   assert.match(template, /:aria-label="t\('cw_sources'\)"/)
 })
@@ -93,7 +105,11 @@ test('client submission is bounded, single-flight, abortable, and preserves fail
   // chaining or a plain if — is not the contract.
   assert.match(script, /chatRequestController(?:\?)?\.abort\(\)/)
   assert.match(script, /botInput\.value = text/)
-  assert.match(script, /if \(succeeded\) \{\s*botInput\.value = ''/s)
+  // The box empties as the question is sent — before the reply is awaited — not once it is
+  // answered: `if (succeeded) { botInput.value = ''` held the sent question in the box for the
+  // whole reply (2026-11-02; behaviour in tests/chat-input-clears-on-send.test.ts).
+  assert.match(script, /botInput\.value = ''[\s\S]*?await fetchStreamBotReply\(question/)
+  assert.doesNotMatch(script, /if \(succeeded\) \{\s*botInput\.value = ''/s)
 })
 
 test('widget exposes accessible status, focus, reduced-motion, and mobile-safe controls', () => {
@@ -144,4 +160,53 @@ test('public widget contains no provider settings, secrets, internals, or raw er
   for (const marker of forbidden) assert.doesNotMatch(source, new RegExp(marker, 'i'))
   assert.doesNotMatch(script, /console\.(?:error|log)\(/)
   assert.doesNotMatch(script, /targetFullText \+= jsonStr/)
+})
+
+test('injection proof: the widget half of these checks reads every part of ChatWidget', () => {
+  // "Must appear": the quick-question chips, the bounded input and the safe-area padding
+  // moved into parts; taking them out of their part turns the family read red.
+  const chips = 'components/chat-widget/ChatWidgetQuickQuestions.vue'
+  assert.doesNotMatch(widgetTemplate({ [chips]: readAppFile(chips).replace('v-for="question in quickQuestions"', 'v-for="question in []"') }), /v-for="question in quickQuestions"/)
+  const composer = 'components/chat-widget/ChatWidgetComposer.vue'
+  assert.doesNotMatch(widgetTemplate({ [composer]: readAppFile(composer).replace(':maxlength="limits.maxMessageChars"', '') }), /:maxlength="(?:CHATBOT_CLIENT_LIMITS|limits)\.maxMessageChars"/)
+  const meta = 'components/chat-widget/ChatWidgetMessageMeta.vue'
+  // The planted part must actually differ from the file: a probe whose search string is gone
+  // from the part (it was `messageKindLabel(msg.kind)` until 2026-11-02) replaces nothing and
+  // the "must appear" check below passes for no reason (kiểm chứng độc lập W3).
+  const metaWithoutLabel = readAppFile(meta).replace('t(messageKindKey(msg.kind))', "''")
+  assert.notEqual(metaWithoutLabel, readAppFile(meta), 'the probe no longer finds the reply-kind label in ChatWidgetMessageMeta')
+  assert.doesNotMatch(widgetTemplate({ [meta]: metaWithoutLabel }), /t\(messageKindKey\(msg\.kind\)\)/)
+  // "Must appear nowhere": markup or a log line planted in a part — or a part added
+  // later — is in what the checks read.
+  assert.match(widgetTemplate({ 'components/chat-widget/ChatWidgetLater.vue': '<template><div v-html="x"></div></template>' }), /v-html/)
+  const dialog = 'composables/useChatWidgetDialog.ts'
+  assert.match(widgetScript({ [dialog]: `${readAppFile(dialog)}\nconsole.log('x')\n` }), /console\.(?:error|log)\(/)
+  // Focus back to the launcher lives in the dialog module now.
+  assert.doesNotMatch(widgetScript({ [dialog]: readAppFile(dialog).replace('chatToggleButton.value?.focus()', 'void 0') }), /chatToggleButton\.value\?\.focus\(\)/)
+})
+
+test('useChatbot keeps ONE public surface: no index file in composables/chatbot/ for Nuxt to auto-import', () => {
+  // The directory scan itself refuses an index (moduleFamilyParts asserts it); a planted one is red.
+  assert.deepEqual(moduleFamilyParts(CHATBOT_COMPOSABLE_FAMILY).filter(file => /\/index\.\w+$/.test(file)), [])
+  assert.deepEqual(autoImportedIndexFiles(readdirSync(new URL('../app/composables/chatbot/', import.meta.url))), [])
+  for (const planted of ['index.ts', 'index.js', 'index.mts', 'index.mjs'])
+    assert.deepEqual(autoImportedIndexFiles(['send.ts', planted, 'state.ts']), [planted], planted)
+  assert.deepEqual(autoImportedIndexFiles(['reindex.ts', 'index.d.ts.map', 'indexes.ts']), [])
+})
+
+test('injection proof: the composable half of these checks reads every module of useChatbot', () => {
+  // "Must appear nowhere": a log line or a secret planted in any module — or in a module
+  // added later — is in what the checks above read.
+  const send = 'composables/chatbot/send.ts'
+  assert.match(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [send]: `${readAppFile(send)}\nconsole.log('x')\n` }), /console\.(?:error|log)\(/)
+  assert.match(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { 'composables/chatbot/later.ts': 'export const apiKey = 1' }), /apiKey/i)
+  // "Must appear": the abortable request lives in send.ts; without it the check is red.
+  const source = readAppFile(send)
+  assert.match(source, /chatRequestController\.abort\(\)/)
+  assert.doesNotMatch(moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [send]: source.replaceAll('chatRequestController.abort()', 'void 0') }), /chatRequestController(?:\?)?\.abort\(\)/)
+  const quick = 'composables/chatbot/quick-questions.ts'
+  assert.doesNotMatch(
+    moduleFamilySource(CHATBOT_COMPOSABLE_FAMILY, { [quick]: readAppFile(quick).replace("fetch('/api/public/chatbot/quick-questions'", "fetch('/api/x'") }),
+    /fetch\('\/api\/public\/chatbot\/quick-questions'/,
+  )
 })

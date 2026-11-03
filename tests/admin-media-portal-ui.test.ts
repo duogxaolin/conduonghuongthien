@@ -179,6 +179,21 @@ test('livestream page uses the livestream RBAC resource with correct verbs', asy
     'the livestream page accidentally gates on the `media_portal` resource')
 })
 
+test('"Lưu thành mục media" lives in its own card, gated on BOTH resources the route checks', async () => {
+  // `recording.post.ts` checks `livestream/update` AND `media_portal/create`; the button
+  // must not be offered to an officer the route will refuse. The `media_portal` check
+  // sits in the card, not the page — the guard above still holds for the page.
+  const { sfc: page } = await parseSfc(LIVESTREAM_PAGE)
+  assert.match(page.descriptor.template?.content ?? '', /<LivestreamRecordingCard v-if="endedSession"/,
+    'the page does not offer the card for the broadcast it just stopped')
+  const { sfc: card } = await parseSfc('components/admin/livestream/LivestreamRecordingCard.vue')
+  const script = card.descriptor.scriptSetup?.content ?? ''
+  assert.match(script, /hasPermission\('livestream', 'update'\) && hasPermission\('media_portal', 'create'\)/,
+    'the save button is not gated on both permissions of the route')
+  assert.match(script, /\/api\/admin\/livestream\/\$\{props\.session\.id\}\/recording/,
+    'the card does not call the recording route for the stopped session')
+})
+
 test('livestream page lists the current chat and removes through the admin route', async () => {
   const { sfc } = await parseSfc(LIVESTREAM_PAGE)
   const script = sfc.descriptor.scriptSetup?.content ?? ''

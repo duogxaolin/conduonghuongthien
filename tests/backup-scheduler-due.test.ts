@@ -62,8 +62,11 @@ const fakeDb = {
 }
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb, getPool: () => null } })
 const logs: Array<Record<string, unknown>> = []
+/** The level each record was logged at (only `logWarn`+ reaches the ops alert list). */
+const levels = new WeakMap<Record<string, unknown>, 'info' | 'warn' | 'error'>()
+const logAt = (level: 'info' | 'warn' | 'error') => (e: Record<string, unknown>) => { levels.set(e, level); logs.push(e) }
 mock.module('../server/utils/logger', {
-  namedExports: { logInfo: (e: Record<string, unknown>) => logs.push(e), logWarn: (e: Record<string, unknown>) => logs.push(e), logError: (e: Record<string, unknown>) => logs.push(e) },
+  namedExports: { logInfo: logAt('info'), logWarn: logAt('warn'), logError: logAt('error') },
 })
 
 // The REAL rotation selection, loaded before `runBackup` is replaced for the scheduler.
@@ -363,6 +366,124 @@ test('tick: a lock-busy refusal (another backup is running) is not an attempt', 
   await tickAt(at(26, 3, 20))
   assert.equal(backupCalls.length, 2, 'tried again at the next tick, not 60 min later')
   assert.equal(storedState()?.outcome, 'done')
+})
+
+test('tick: a refusal because a database restore is running is "busy" too — not an attempt, retried at the next tick', async () => {
+  enable('3')
+  backupOutcome = async () => { throw new realBackup.BackupRestoreInProgressError() }
+  const logsBefore = logs.length
+  await tickAt(at(26, 3, 5))
+  assert.equal(storedState(), null, 'nothing recorded')
+  const tickLogs = logs.slice(logsBefore)
+  assert.ok(tickLogs.some(entry => entry.event === 'backup.scheduler_busy' && /khôi phục/.test(String(entry.reason))), 'logged as busy, with the reason')
+  assert.ok(!tickLogs.some(entry => entry.event === 'backup.scheduler_failed'), 'a refusal is not a failure')
+  backupOutcome = async (options) => { await options.onStarted?.(); writeRunRows(clock, 'scheduled'); return {} }
+  await tickAt(at(26, 3, 20))
+  assert.equal(backupCalls.length, 2)
+  assert.equal(storedState()?.outcome, 'done')
+})
+
+// ─── Refused as "busy" until the slot is lost → the operator gets a mail ──────
+// `backup.scheduler_busy` is info and not an attempt, so a lock that stays held (a
+// hung backup, a restore that never ends) used to drop scheduled backups silently.
+// Decided by TIME, not by counting ticks: a count of 4 misfired with the off-grid
+// 120 s warmup tick, never fired when timer drift left 3 due ticks in a window, named
+// the wrong slot once a streak ran into the next day, and fired while one due tick of
+// the window was still to come.
+const blocked = () => logs.filter(entry => entry.event === 'backup.scheduler_blocked')
+const refuseAsBusy = (restore = false) => {
+  backupOutcome = async () => { throw restore ? new realBackup.BackupRestoreInProgressError() : new realBackup.BackupLockBusyError() }
+}
+/** A run that takes the lock — clears any streak earlier tests left in the module. */
+async function startedRun(now: Date) {
+  backupOutcome = async (options) => { await options.onStarted?.(); writeRunRows(clock, 'scheduled'); return {} }
+  await tickAt(now)
+  logs.length = 0
+}
+
+test('tick: warmup tick off the grid + 15-minute ticks: no alert while the window is open; ONE warn at the first tick past it, naming the slot', async () => {
+  enable('3')
+  await startedRun(at(25, 3, 5))
+  refuseAsBusy()
+  // 03:02 is the boot+120 s warmup tick; 03:13 … 03:58 the interval grid — all inside 03:00–04:00.
+  for (const minute of [2, 13, 28, 43, 58]) await tickAt(at(26, 3, minute))
+  assert.equal(blocked().length, 0, 'paged while the slot could still run (03:58 was its last chance)')
+  await tickAt(at(26, 4, 13))
+  assert.equal(blocked().length, 1)
+  const alert = blocked()[0]!
+  assert.equal(levels.get(alert), 'warn', 'below warn the ops alert never fires')
+  assert.equal(alert.slot, at(26, 3).toISOString())
+  assert.equal(alert.since, at(26, 3, 2).toISOString())
+  assert.equal(alert.busyTicks, 5)
+  assert.ok(logs.filter(entry => entry.event === 'backup.scheduler_busy').every(entry => levels.get(entry) === 'info'), 'each refusal stays info')
+  await tickAt(at(26, 4, 28))
+  assert.equal(blocked().length, 1, 'one mail per lost slot, not one per tick')
+  assert.equal(storedState()?.slot, at(25, 3).toISOString(), 'no attempt was ever recorded for the lost slot')
+})
+
+test('tick: timer drift leaves only 3 due ticks in the window — still one alert, at the first tick past it', async () => {
+  enable('3')
+  await startedRun(at(25, 3, 5))
+  refuseAsBusy(true) // a restore holding the lock is "busy" too
+  for (const minute of [14, 30, 46]) await tickAt(at(26, 3, minute))
+  assert.equal(blocked().length, 0)
+  await tickAt(at(26, 4, 2))
+  assert.equal(blocked().length, 1)
+  assert.equal(blocked()[0]!.slot, at(26, 3).toISOString())
+  assert.equal(blocked()[0]!.since, at(26, 3, 14).toISOString())
+  assert.match(String(blocked()[0]!.reason), /khôi phục/)
+})
+
+test('tick: a lock held across two daily slots → one alert per lost slot, each naming ITS slot', async () => {
+  enable('3')
+  await startedRun(at(25, 3, 5))
+  refuseAsBusy()
+  for (const [day, hour, minute] of [[26, 3, 5], [26, 3, 20], [26, 3, 35], [26, 3, 50], [26, 4, 5], [26, 12, 0]] as const) await tickAt(at(day, hour, minute))
+  assert.deepEqual(blocked().map(alert => alert.slot), [at(26, 3).toISOString()])
+  for (const [day, hour, minute] of [[27, 3, 5], [27, 3, 20], [27, 3, 35], [27, 3, 50]] as const) await tickAt(at(day, hour, minute))
+  assert.equal(blocked().length, 1, 'the second slot\'s window is still open')
+  await tickAt(at(27, 4, 5))
+  assert.deepEqual(blocked().map(alert => alert.slot), [at(26, 3).toISOString(), at(27, 3).toISOString()])
+  assert.equal(blocked()[1]!.since, at(27, 3, 5).toISOString(), 'the streak of the new slot starts at its own first refusal')
+})
+
+test('tick: a retry (no slot window) blocked for a whole hour → one alert; a run that starts first → none', async () => {
+  enable('3')
+  await startedRun(at(25, 3, 5))
+  backupOutcome = async (options) => { await options.onStarted?.(); throw new Error('EACCES: mkdir backups') }
+  await tickAt(at(26, 3, 5)) // attempt 1 fails → retries are due from 04:05, any time of day
+  refuseAsBusy()
+  for (const [hour, minute] of [[4, 6], [4, 21], [4, 36], [4, 51]] as const) await tickAt(at(26, hour, minute))
+  assert.equal(blocked().length, 0)
+  await tickAt(at(26, 5, 6)) // one hour after the first refused retry
+  assert.equal(blocked().length, 1)
+  assert.equal(blocked()[0]!.slot, at(26, 3).toISOString())
+  assert.equal(blocked()[0]!.since, at(26, 4, 6).toISOString())
+
+  // Next day: refused retries again, but the lock frees and the run STARTS before the hour is up.
+  logs.length = 0
+  backupOutcome = async (options) => { await options.onStarted?.(); throw new Error('EACCES: mkdir backups') }
+  await tickAt(at(27, 3, 5))
+  refuseAsBusy()
+  for (const [hour, minute] of [[4, 6], [4, 21], [4, 36], [4, 51]] as const) await tickAt(at(27, hour, minute))
+  backupOutcome = async (options) => { await options.onStarted?.(); writeRunRows(clock, 'scheduled'); return {} }
+  await tickAt(at(27, 5, 6))
+  await tickAt(at(27, 5, 21))
+  assert.equal(blocked().length, 0, 'the run that started cleared the streak — no mail just before a success')
+})
+
+test('tick: turning automatic backups off clears the streak', async () => {
+  enable('3')
+  await startedRun(at(25, 3, 5))
+  refuseAsBusy()
+  for (const minute of [2, 17, 32]) await tickAt(at(26, 3, minute))
+  db.settings.set('backup_auto_enabled', 'false')
+  await tickAt(at(26, 3, 40))
+  enable('3')
+  await tickAt(at(26, 3, 47))
+  await tickAt(at(26, 4, 2))
+  assert.equal(blocked().length, 1, 'the slot was still lost while busy')
+  assert.equal(blocked()[0]!.since, at(26, 3, 47).toISOString(), 'the streak restarted when the switch went off')
 })
 
 test('tick: a run cut off mid-way stays "running" and is retried after 60 min, then abandoned at the third', async () => {

@@ -14,7 +14,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Cần danh sách bài viết (ids) và mã ngôn ngữ (langCode).' })
   }
 
-  const articleIds = rawIds.filter((id: unknown) => typeof id === 'number' && id > 0)
+  // Whole ids only: `1.5` matched no row in the service's per-type permission check and then reached
+  // the background job's INSERT, which MySQL rounds into article 2 — whatever its type (FINDING-R7-5).
+  // Dropped like any other unusable id; an empty list is the 400 below.
+  const articleIds = rawIds.filter((id: unknown): id is number => Number.isSafeInteger(id) && (id as number) > 0)
   if (articleIds.length === 0) {
     throw createError({ statusCode: 400, statusMessage: 'Chưa chọn bài viết hợp lệ nào.' })
   }

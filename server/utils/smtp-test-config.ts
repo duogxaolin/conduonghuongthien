@@ -1,54 +1,32 @@
 import type { SmtpConfig } from './mailer'
-
-/** The token the settings GET returns in place of a saved SMTP password. */
-export const MASKED_SMTP_PASSWORD = '********'
-
-const isTruthy = (value: unknown) => ['true', '1', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase())
+import {
+  MASKED_SECRET,
+  SMTP_ALLOWED_PORTS,
+  SMTP_PORT_NOT_ALLOWED_MESSAGE,
+  effectiveSmtpPort,
+  isAllowedSmtpPort,
+  isTruthy,
+  sameSmtpTarget,
+  smtpTargetOf,
+} from '../../shared/settings-credential-rules'
 
 /**
- * Cổng SMTP được phép: 25 (relay), 465 (TLS ngầm), 587 (submission), 2525 (cổng
- * thay thế phổ biến của các dịch vụ gửi thư). Mọi cổng khác bị từ chối cả lúc LƯU
- * cấu hình lẫn lúc GỬI THỬ — không có trần này thì ô "cổng" biến máy chủ thành
- * công cụ dò cổng nội bộ (Redis 6379, MySQL 3306…), và một cổng lạ đã lưu sẽ bị
- * mọi email thông báo quay số lại.
+ * Luật đích SMTP (cổng cho phép, chuẩn hoá đích, dấu che mật khẩu) là của
+ * `shared/settings-credential-rules.ts` — cùng bản mà nút "lưu" (`settings/index.put.ts`)
+ * và trang `email.vue` dùng. Tệp này chỉ re-export chúng dưới tên endpoint "gửi thử"
+ * vẫn import, và giữ phần riêng của nút gửi thử (phân loại lỗi, chọn cấu hình).
+ * Đừng chép lại luật nào ở đây: hai bản lệch nhau là "gửi thử" và "lưu" quyết khác.
  */
-export const SMTP_ALLOWED_PORTS: readonly number[] = Object.freeze([25, 465, 587, 2525])
-
-/** Cổng hiệu lực của một giá trị nhập (rỗng → 587, như `getSmtpConfig`); `null` nếu không phải số nguyên. */
-export function effectiveSmtpPort(value: unknown): number | null {
-  const text = String(value ?? '').trim()
-  if (!text) return 587
-  if (!/^\d{1,5}$/.test(text)) return null
-  return Number(text)
+export {
+  MASKED_SECRET as MASKED_SMTP_PASSWORD,
+  SMTP_ALLOWED_PORTS,
+  SMTP_PORT_NOT_ALLOWED_MESSAGE,
+  effectiveSmtpPort,
+  isAllowedSmtpPort,
+  sameSmtpTarget,
+  smtpTargetOf,
 }
-
-export function isAllowedSmtpPort(port: number | null): boolean {
-  return port !== null && SMTP_ALLOWED_PORTS.includes(port)
-}
-
-export const SMTP_PORT_NOT_ALLOWED_MESSAGE = `Cổng SMTP không được phép. Chỉ nhận ${SMTP_ALLOWED_PORTS.join(', ')}.`
-
-/** Đích kết nối SMTP hiệu lực — chuẩn hoá giống hệt `getSmtpConfig` để so "có đổi máy chủ không". */
-export interface SmtpTarget {
-  host: string
-  port: number | null
-  user: string
-  secure: boolean
-}
-
-export function smtpTargetOf(values: { smtp_host?: unknown, smtp_port?: unknown, smtp_user?: unknown, smtp_secure?: unknown }): SmtpTarget {
-  return {
-    // Tên máy không phân biệt hoa/thường: đổi chữ hoa không phải đổi đích.
-    host: String(values.smtp_host ?? '').trim().toLowerCase(),
-    port: effectiveSmtpPort(values.smtp_port),
-    user: String(values.smtp_user ?? '').trim(),
-    secure: isTruthy(values.smtp_secure),
-  }
-}
-
-export function sameSmtpTarget(a: SmtpTarget, b: SmtpTarget): boolean {
-  return a.host === b.host && a.port === b.port && a.user === b.user && a.secure === b.secure
-}
+export type { SmtpTarget } from '../../shared/settings-credential-rules'
 
 /**
  * Lỗi gửi thử trả về cho cán bộ: chỉ một câu đã phân loại, KHÔNG BAO GIỜ nguyên
@@ -106,7 +84,7 @@ export function smtpFailureMessage(kind: SmtpFailureClass): string {
  */
 export function smtpTestUsesSavedConfig(body: Record<string, unknown> | null | undefined): boolean {
   const pass = String(body?.smtp_pass ?? '')
-  return pass === MASKED_SMTP_PASSWORD || pass === '' || !String(body?.smtp_host ?? '').trim()
+  return pass === MASKED_SECRET || pass === '' || !String(body?.smtp_host ?? '').trim()
 }
 
 export interface SmtpTestConfigDecision {

@@ -43,6 +43,7 @@ import { setReaderCookie } from '../../../utils/reader-auth'
 import { signReaderToken } from '../../../utils/auth'
 import { getClientIp } from '../../../utils/client-ip'
 import { logWarn } from '../../../utils/logger'
+import { isReservedDisplayName } from '../../../utils/display-name'
 
 /** Bounded so a hung Google endpoint cannot hold a request open indefinitely. */
 const TOKEN_EXCHANGE_TIMEOUT_MS = 10_000
@@ -132,6 +133,11 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
   const userAgent = (getRequestHeader(event, 'user-agent') || '').slice(0, 512) || null
   const now = new Date()
+  // Tên Google gấp ra một từ dành riêng ("Admin", "Ban quản trị"…): vẫn lưu nguyên
+  // văn, nhưng gắn cờ để `effectiveDisplayName` hiện "Bạn đọc" — cùng phép gấp với
+  // tên tự đặt (spec reader-display-names-google, D-NAMES). Không từ chối đăng nhập.
+  const displayName = verdict.claims.name ?? null
+  const displayNameReserved = displayName !== null && isReservedDisplayName(displayName)
 
   const [existing] = await db
     .select({
@@ -161,7 +167,10 @@ export default defineEventHandler(async (event) => {
         // Refreshed on every sign-in: a reader who changed their Google display
         // name should not keep appearing under the old one on a public page.
         email:         verdict.claims.email ?? null,
-        displayName:   verdict.claims.name ?? null,
+        displayName,
+        // Recomputed with the name: a reader who renames themselves at Google
+        // from "Admin" to a real name gets their name back on the next sign-in.
+        displayNameReserved,
         lastSeenAt:    now,
         lastIp:        ip,
         lastUserAgent: userAgent,
@@ -174,7 +183,8 @@ export default defineEventHandler(async (event) => {
     const inserted = await db.insert(readerAccounts).values({
       googleSub:     verdict.claims.sub,
       email:         verdict.claims.email ?? null,
-      displayName:   verdict.claims.name ?? null,
+      displayName,
+      displayNameReserved,
       lastSeenAt:    now,
       lastIp:        ip,
       lastUserAgent: userAgent,

@@ -19,7 +19,8 @@ import { sql } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { activityLogs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
-import { resolveRetentionPolicy, loadRetentionState } from '../../../services/retention-policy'
+import { resolveRetentionPolicy } from '../../../services/retention-policy'
+import { loadRetentionState } from '../../../services/retention-state'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser

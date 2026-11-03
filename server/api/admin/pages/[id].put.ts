@@ -3,6 +3,7 @@ import { pages, activityLogs } from '../../../db/schema'
 import { uniquePageSlug } from '../../../utils/slug'
 import { eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -60,6 +61,10 @@ export default defineEventHandler(async (event) => {
       meta: { id, fields: Object.keys(updateFields) },
     })
   })
+
+  // Sau commit: tiêu đề/SEO của trang hệ thống (`/`, `/about`, `/contact`) nằm trong HTML
+  // đã đệm `swr` (server/utils/public-page-cache.ts).
+  await purgePublicPageCacheAfterWrite('pages.update')
 
   return { ok: true, slug: updateFields.slug ?? existing.slug }
 })

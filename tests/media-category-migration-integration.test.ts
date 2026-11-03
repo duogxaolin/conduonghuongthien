@@ -184,11 +184,16 @@ async function insertMediaItem(conn: Connection, key: string, categoryId: number
 }
 
 /**
- * The article categories a pre-split database pointed at. `initDb()` itself
- * inserts the seven defaults (`schema-tables/content.ts`), so ids 1–7 exist on
- * every server — the same ids the legacy `media_items.category_id` held.
+ * The article categories a pre-split database pointed at. On every real server the
+ * seven defaults hold ids 1–7 — the same ids the legacy `media_items.category_id`
+ * held. `initDb()` used to insert them itself (`schema-tables/content.ts`); since
+ * wave2 D7 only `seed.ts` does, once per database, so the legacy fixture inserts the
+ * two it needs with those ids.
  */
-async function assertArticleCategoriesPresent(conn: Connection) {
+async function insertLegacyArticleCategories(conn: Connection) {
+  await conn.query(
+    "INSERT INTO `categories` (`id`, `name`, `slug`, `type`, `display_order`) VALUES (2, 'Tin hoạt động', 'tin-hoat-dong', 'news', 2), (6, 'Văn bản pháp luật', 'van-ban-phap-luat', 'document', 1)",
+  )
   const [rows] = await conn.query<RowDataPacket[]>('SELECT `id` FROM `categories` WHERE `id` IN (2, 6) ORDER BY `id`')
   assert.deepEqual(rows.map(row => Number(row.id)), [2, 6], 'article categories 2 and 6 are missing — the legacy fixture needs them')
 }
@@ -323,7 +328,7 @@ test('legacy upgrade, FK named fk_media_items_category → categories: legacy id
   // and `media_categories` already holds id 2 — the collision value-based clearing
   // would miss.
   const ids = await withConnection(DB.legacyNamed, async (conn) => {
-    await assertArticleCategoriesPresent(conn)
+    await insertLegacyArticleCategories(conn)
     await insertMediaCategories(conn)
     await conn.query('ALTER TABLE `media_items` DROP FOREIGN KEY `fk_media_items_category`')
     await conn.query('ALTER TABLE `media_items` ADD CONSTRAINT `fk_media_items_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE SET NULL')
@@ -352,7 +357,7 @@ test('legacy upgrade, auto-named FK → categories and no media_categories table
   // The real pre-split server had no `media_categories` table at all, and a
   // hand-made or older FK may carry MySQL's generated name, not ours.
   const ids = await withConnection(DB.legacyAuto, async (conn) => {
-    await assertArticleCategoriesPresent(conn)
+    await insertLegacyArticleCategories(conn)
     await conn.query('ALTER TABLE `media_items` DROP FOREIGN KEY `fk_media_items_category`')
     await conn.query('DROP TABLE `media_categories`')
     await conn.query('ALTER TABLE `media_items` ADD FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE SET NULL')

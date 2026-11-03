@@ -49,6 +49,10 @@ const state = {
   failConfigRead: false,
   /** Another backup holds the run lock. */
   lockBusy: false,
+  /** `IS_USED_LOCK('cdkt:backup:restore')`: a connection id while a restore runs, null when free. */
+  restoreHolder: null as null | number,
+  /** Asking MySQL about the restore lock fails. */
+  failRestoreLockQuery: false,
   tarCalls: [] as string[],
   /** Every path `mysqldump`/`tar` was asked to write. */
   writeTargets: [] as string[],
@@ -126,7 +130,17 @@ const fakeDb = {
     return result
   },
 }
-mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb, getPool: () => ({ query: async () => [[{ holder: null }], []] }) } })
+mock.module('../server/utils/db', {
+  namedExports: {
+    getDb: () => fakeDb,
+    getPool: () => ({
+      query: async () => {
+        if (state.failRestoreLockQuery) throw new Error('fixture: lost connection')
+        return [[{ holder: state.restoreHolder }], []]
+      },
+    }),
+  },
+})
 const lockNames: string[] = []
 mock.module('../server/utils/named-lock', {
   namedExports: {
@@ -199,6 +213,8 @@ beforeEach(() => {
   state.failRotationSelect = false
   state.nextId = 1
   state.lockBusy = false
+  state.restoreHolder = null
+  state.failRestoreLockQuery = false
   state.tarCalls = []
   state.writeTargets = []
   lockNames.length = 0
@@ -471,6 +487,94 @@ test('W3: when the rows cannot be read, no final file is deleted', async () => {
     fakeDb.select = original
   }
   assert.deepEqual(onDisk(), [orphan])
+})
+
+// ─── A restore rewinds the registry (wave2 ops re-verification round 2) ────────
+// A database restore replaces `backups` with the dump's copy. If that restore fails
+// before the live rows are put back, every file registered since the dump looks like
+// an orphan to a registry that is "well shaped" — and the sweep deleted the
+// pre-restore dump and the newer backups. Three rules, each enough on its own for the
+// case it covers:
+//  - a pre-restore dump is never an orphan (rotation already never deletes one);
+//  - an unregistered app file whose stamp is not after the newest pre-restore dump
+//    predates the last restore attempt: it may be unregistered only because the
+//    registry was rewound, so it is kept (only a killed run's leftover is lost to the
+//    sweep, and only until that pre-restore dump is deleted);
+//  - while a restore holds its lock (or that cannot be asked), no final file goes.
+
+const aged = (...names: string[]) => {
+  mkdirSync(backupDir(), { recursive: true })
+  const old = new Date(Date.now() - 60 * 60 * 1000)
+  for (const name of names) {
+    writeFileSync(path.join(backupDir(), name), name)
+    utimesSync(path.join(backupDir(), name), old, old)
+  }
+}
+
+test('the sweep never deletes a pre-restore dump, registered or not', async () => {
+  const pre = 'cdkt-20261020T030000Z-pre-restore.sql.gz'
+  const preMedia = 'cdkt-media-20261020T030000Z-pre-restore.tar.gz'
+  aged(pre, preMedia)
+  assert.equal(await sweepStaleBackupFiles(), 0)
+  assert.deepEqual(onDisk(), [preMedia, pre].sort())
+})
+
+test('unregistered app files from before the newest restore attempt are kept; a killed run after it is still swept', async () => {
+  const pre = 'cdkt-20261020T030000Z-pre-restore.sql.gz'
+  const before = 'cdkt-20261019T030000Z-manual.sql.gz'      // registered before the restore, rewound away
+  const sameSecond = 'cdkt-uploads-20261020T030000Z-scheduled.tar.gz'
+  const after = 'cdkt-media-20261021T030000Z-manual.tar.gz'  // a run killed after the restore attempt
+  aged(pre, before, sameSecond, after)
+  assert.equal(await sweepStaleBackupFiles(), 1)
+  assert.deepEqual(onDisk(), [sameSecond, before, pre].sort())
+  assert.ok(logs.some(entry => entry.event === 'backup.orphan_swept' && entry.filename === after))
+  assert.ok(logs.some(entry => entry.event === 'backup.orphan_kept_restore_window' && entry.count === 2))
+})
+
+test('while a restore holds its lock — or the lock cannot be asked — no final file is swept; partials still are', async () => {
+  const orphan = 'cdkt-uploads-20261022T030000Z-scheduled.tar.gz'
+  const partial = 'cdkt-20261022T030000Z-manual.sql.gz.partial'
+  for (const setup of [() => { state.restoreHolder = 42 }, () => { state.failRestoreLockQuery = true }]) {
+    rmSync(backupDir(), { recursive: true, force: true })
+    state.restoreHolder = null
+    state.failRestoreLockQuery = false
+    setup()
+    aged(orphan, partial)
+    assert.equal(await sweepStaleBackupFiles(), 1, 'only the partial')
+    assert.deepEqual(onDisk(), [orphan])
+  }
+  assert.ok(logs.some(entry => entry.event === 'backup.orphan_sweep_skipped' && entry.reason === 'restore_in_progress'))
+})
+
+// ─── No backup while a restore runs (wave2 ops round 3, W2) ───────────────────
+// A backup that finished DURING a database restore was not in the restore's list of
+// live rows and its stamp was after the newest pre-restore dump: the restore rewound
+// the registry under it, nothing put its row back, and the sweep deleted it. Now a
+// backup refuses to start while the restore lock is held — except the restore's own
+// pre-restore run.
+
+test('runBackup refuses while a restore holds its lock — typed, busy, nothing written, onStarted not called', async () => {
+  const { BackupRestoreInProgressError } = await import('../server/services/backup')
+  state.restoreHolder = 42
+  let started = false
+  const error = await runBackup('sql', 'manual', 1, { rotate: false, archiveSources: sources(), onStarted: async () => { started = true } }).catch((err: unknown) => err)
+  assert.ok(error instanceof BackupRestoreInProgressError, String(error))
+  assert.ok(error instanceof BackupLockBusyError, 'callers that treat "busy" as 409 / not-an-attempt keep doing so')
+  assert.match((error as Error).message, /khôi phục/)
+  assert.equal(started, false, 'the scheduler must not count it as an attempt')
+  assert.deepEqual(onDisk(), [])
+  assert.deepEqual(state.rows, [])
+})
+
+test('…unless the lock state cannot be read (refused too), and the restore\'s own pre-restore run always proceeds', async () => {
+  const { BackupRestoreInProgressError } = await import('../server/services/backup')
+  state.failRestoreLockQuery = true
+  await assert.rejects(run('sql'), (err: unknown) => err instanceof BackupRestoreInProgressError)
+  state.failRestoreLockQuery = false
+  state.restoreHolder = 42
+  const own = await runBackup('sql', 'pre-restore', 1, { rotate: false, archiveSources: sources(), allowDuringRestore: true })
+  assert.equal(own.files.length, 1)
+  assert.match(own.files[0]!.name, /-pre-restore\.sql\.gz$/)
 })
 
 test('S1: a rotation error after the backup is registered is logged, not a failed run', async () => {

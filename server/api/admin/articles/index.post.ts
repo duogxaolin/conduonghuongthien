@@ -13,6 +13,7 @@ import { requireResourcePermission } from '../../../utils/permissions'
 // vào URL công khai `/news/<slug>`, vào email thông báo trả lời bình luận, và
 // vào chỉ mục tìm kiếm.
 import { slugify } from '../../../utils/slug'
+import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -99,6 +100,10 @@ export default defineEventHandler(async (event) => {
 
     return created
   })
+
+  // Sau commit, không trong transaction (lý do: `server/utils/public-page-cache.ts`):
+  // bài mới hiện ngay ở trang chủ và các danh sách đang được đệm `swr`.
+  await purgePublicPageCacheAfterWrite('articles.create')
 
   return { ok: true, id: newArticleId, slug: uniqueSlug }
 })

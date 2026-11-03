@@ -1,30 +1,30 @@
 <template>
-  <div class="bg-[#F8FAF7]">
+  <div class="bg-surface">
     <!-- Page Header (đồng bộ 100% với /news) -->
-    <section class="border-b border-[#E2E8DF] bg-white">
+    <section class="border-b border-line bg-white">
       <div class="container pt-7 sm:pt-9 pb-5">
-        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-[#5A6C58] mb-3">
-          <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
+        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-ink-soft mb-3">
+          <nuxt-link to="/" class="hover:text-brand-600 transition-colors flex items-center gap-1.5 no-underline text-ink-soft">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
             <span>{{ t('home') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
-          <nuxt-link to="/news" class="hover:text-[#4A6741] transition-colors no-underline text-[#556450]">
+          <nuxt-link to="/news" class="hover:text-brand-600 transition-colors no-underline text-ink-soft">
             <span>{{ t('news') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
           <span class="text-[#2D5A27] font-bold">{{ heading }}</span>
         </nav>
 
-        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#4A6741] m-0 mb-1">{{ t('news_category_title') }}</p>
-        <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-[#1E251C] leading-[1.2] m-0">{{ heading }}</h1>
+        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-brand-600 m-0 mb-1">{{ t('news_category_title') }}</p>
+        <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-ink leading-[1.2] m-0">{{ heading }}</h1>
         <p v-if="subheading" class="text-[0.95rem] text-[#5A6655] mt-2 mb-5 leading-relaxed">{{ subheading }}</p>
 
         <!-- Category Nav Chips -->
         <nav :aria-label="t('news_nav_aria')" class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
           <nuxt-link
             to="/news"
-            class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 no-underline bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]"
+            class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 no-underline bg-white text-ink-secondary border-line hover:border-brand-600 hover:bg-surface-tint"
           >
             <i class="fa-solid fa-layer-group text-[0.7rem]" aria-hidden="true"></i>
             <span>{{ t('all_news') }}</span>
@@ -36,8 +36,8 @@
             :class="[
               'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 no-underline',
               categorySlug === cat.slug
-                ? 'bg-[#4A6741] text-white border-[#4A6741] shadow-sm'
-                : 'bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]'
+                ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+                : 'bg-white text-ink-secondary border-line hover:border-brand-600 hover:bg-surface-tint'
             ]"
           >
             <i :class="cat.icon" class="text-[0.7rem]" aria-hidden="true"></i>
@@ -53,17 +53,17 @@
         <!-- Left Content Area -->
         <div class="flex flex-col gap-7 min-w-0">
           <!-- Section Divider Header -->
-          <div class="flex items-center justify-between pt-1 pb-3 border-b-2 border-[#E1EADF] mb-1">
+          <div class="flex items-center justify-between pt-1 pb-3 border-b-2 border-line mb-1">
             <div class="flex items-center gap-2.5">
-              <span class="w-2.5 h-6 rounded-sm bg-[#4A6741]" aria-hidden="true"></span>
+              <span class="w-2.5 h-6 rounded-sm bg-brand-600" aria-hidden="true"></span>
               <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
                 {{ heading }}
               </h2>
-              <span v-if="!pending" class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-[#EBF3E8] text-[#385932]">
+              <span v-if="!pending" class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-line text-brand-800">
                 {{ t('n_count_suffix').replace('{n}', String(newsList.length)) }}
               </span>
             </div>
-            <nuxt-link to="/news" class="text-xs text-[#4A6741] font-bold hover:underline flex items-center gap-1 no-underline">
+            <nuxt-link to="/news" class="text-xs text-brand-600 font-bold hover:underline flex items-center gap-1 no-underline">
               <span>{{ t('n_view_all') }}</span>
               <i class="fa-solid fa-arrow-right text-[0.65rem]" aria-hidden="true"></i>
             </nuxt-link>
@@ -72,12 +72,12 @@
           <!-- Loading (Skeleton) -->
           <div v-if="pending" role="status" aria-busy="true" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             <span class="sr-only">{{ t('n_list_loading') }}</span>
-            <div v-for="n in 6" :key="n" class="bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none flex flex-col">
-              <div class="aspect-video bg-[#EEF2EC]"></div>
+            <div v-for="n in 6" :key="n" class="bg-white rounded-2xl overflow-hidden border border-line shadow-sm animate-pulse motion-reduce:animate-none flex flex-col">
+              <div class="aspect-video bg-surface-tint"></div>
               <div class="p-4 sm:p-5 flex flex-col gap-3 flex-1">
-                <div class="h-3.5 w-24 bg-[#EEF2EC] rounded"></div>
-                <div class="h-5 w-full bg-[#EEF2EC] rounded"></div>
-                <div class="h-3.5 w-full bg-[#EEF2EC] rounded"></div>
+                <div class="h-3.5 w-24 bg-surface-tint rounded"></div>
+                <div class="h-5 w-full bg-surface-tint rounded"></div>
+                <div class="h-3.5 w-full bg-surface-tint rounded"></div>
               </div>
             </div>
           </div>
@@ -86,16 +86,16 @@
           <div
             v-else-if="loadError"
             role="alert"
-            class="bg-white border-2 border-dashed border-[#F0B8B8] px-6 py-12 rounded-2xl text-center text-[#B04A4A] shadow-sm"
+            class="bg-white border-2 border-dashed border-[#F0B8B8] px-6 py-12 rounded-2xl text-center text-danger-soft shadow-sm"
           >
-            <div class="w-12 h-12 rounded-full bg-[#FCE8E8] text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
+            <div class="w-12 h-12 rounded-full bg-danger-bg text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
             <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('n_load_error_title') }}</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">{{ t('n_load_error_desc') }}</p>
+            <p class="text-sm text-ink-muted m-0 mb-4">{{ t('n_load_error_desc') }}</p>
             <button
               type="button"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-800 transition-all cursor-pointer border-none"
               @click="() => refresh()"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
@@ -106,16 +106,16 @@
           <!-- Empty State -->
           <div
             v-else-if="newsList.length === 0"
-            class="bg-white border border-[#E2E8DF] rounded-2xl p-10 text-center shadow-sm"
+            class="bg-white border border-line rounded-2xl p-10 text-center shadow-sm"
           >
-            <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-2xl">
+            <div class="w-16 h-16 rounded-full bg-line text-brand-600 flex items-center justify-center mx-auto mb-4 text-2xl">
               <i class="fa-regular fa-newspaper" aria-hidden="true"></i>
             </div>
-            <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">{{ emptyText }}</h3>
-            <p class="text-sm text-[#556450] m-0 mb-5">{{ t('n_empty_desc') }}</p>
+            <h3 class="text-lg font-extrabold text-ink-strong m-0 mb-2">{{ emptyText }}</h3>
+            <p class="text-sm text-ink-soft m-0 mb-5">{{ t('n_empty_desc') }}</p>
             <nuxt-link
               to="/news"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all no-underline"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold hover:bg-brand-800 transition-all no-underline"
             >
               <span>{{ t('n_view_all_list') }}</span>
               <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
@@ -127,10 +127,10 @@
             <article
               v-for="item in newsList"
               :key="item.id"
-              class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
+              class="group bg-white rounded-2xl overflow-hidden border border-line shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-accent transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
             >
               <!-- Thumbnail: strictly 16:9 -->
-              <nuxt-link :to="'/news/' + item.slug" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
+              <nuxt-link :to="'/news/' + item.slug" class="block relative w-full aspect-video overflow-hidden bg-surface-tint no-underline shrink-0">
                 <SafeImg
                   :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                   :alt="item.title"
@@ -143,33 +143,33 @@
 
               <!-- Card Content -->
               <div class="p-4 sm:p-5 flex flex-col flex-1">
-                <div class="flex items-center gap-2 text-xs text-[#5A6C58] font-medium mb-2">
-                  <span class="inline-block bg-[#EEF4EC] text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
+                <div class="flex items-center gap-2 text-xs text-ink-soft font-medium mb-2">
+                  <span class="inline-block bg-surface-tint text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
                     {{ item.categoryName || categoryLabel }}
                   </span>
-                  <span class="flex items-center gap-1 text-[#5a6c58] text-[0.75rem]">
+                  <span class="flex items-center gap-1 text-ink-soft text-[0.75rem]">
                     <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
                     <span>{{ formatDateVN(item.publishedAt || item.createdAt) }}</span>
                   </span>
                 </div>
 
                 <!-- Title: line-clamp-2 cắt ngắn nếu quá dài -->
-                <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-[#172516] group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
-                  <nuxt-link :to="'/news/' + item.slug" class="text-[#172516] hover:text-[#2D5A27] no-underline">
+                <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-ink-strong group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
+                  <nuxt-link :to="'/news/' + item.slug" class="text-ink-strong hover:text-[#2D5A27] no-underline">
                     {{ item.title }}
                   </nuxt-link>
                 </h3>
 
                 <!-- Excerpt: line-clamp-2 -->
-                <p v-if="item.excerpt" class="text-[0.84rem] text-[#556450] leading-relaxed line-clamp-2 mb-3 m-0">
+                <p v-if="item.excerpt" class="text-[0.84rem] text-ink-soft leading-relaxed line-clamp-2 mb-3 m-0">
                   {{ item.excerpt }}
                 </p>
 
                 <!-- Footer Action: pinned to bottom with mt-auto -->
-                <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#5A6C58]">
+                <div class="mt-auto pt-3 border-t border-surface-tint flex items-center justify-between text-xs text-ink-soft">
                   <nuxt-link
                     :to="'/news/' + item.slug"
-                    class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
+                    class="inline-flex items-center gap-1.5 font-bold text-brand-800 hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
                   >
                     <span>{{ t('view_details') }}</span>
                     <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
@@ -184,17 +184,17 @@
         <!-- Right Rail / Sidebar (Right) -->
         <aside class="flex flex-col gap-6 min-w-0 lg:sticky lg:top-[90px]">
           <!-- Widget 1: Đọc nhiều (thiết kế nguyên bản tinh tế) -->
-          <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
-            <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('most_read') }}</h2>
+          <div class="bg-white rounded-lg border border-line shadow-sm px-5 py-2">
+            <h2 class="text-[0.8rem] font-extrabold text-brand-600 uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-line m-0">{{ t('most_read') }}</h2>
 
             <div v-if="mostReadPending" role="status" aria-busy="true" class="py-2">
               <span class="sr-only">{{ t('n_loading_most_read') }}</span>
               <div aria-hidden="true" class="flex flex-col">
-                <div v-for="n in 6" :key="n" class="flex gap-3 py-3 border-b border-[#E2E8DF] last:border-b-0">
-                  <div class="w-7 h-6 bg-[#EEF2EC] rounded shrink-0 animate-pulse motion-reduce:animate-none"></div>
+                <div v-for="n in 6" :key="n" class="flex gap-3 py-3 border-b border-line last:border-b-0">
+                  <div class="w-7 h-6 bg-surface-tint rounded shrink-0 animate-pulse motion-reduce:animate-none"></div>
                   <div class="flex-1 space-y-1.5">
-                    <div class="h-3.5 w-full bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none"></div>
-                    <div class="h-3.5 w-2/3 bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none"></div>
+                    <div class="h-3.5 w-full bg-surface-tint rounded animate-pulse motion-reduce:animate-none"></div>
+                    <div class="h-3.5 w-2/3 bg-surface-tint rounded animate-pulse motion-reduce:animate-none"></div>
                   </div>
                 </div>
               </div>
@@ -204,19 +204,19 @@
               <li
                 v-for="(item, i) in mostRead"
                 :key="item.id"
-                class="flex gap-3 py-[13px] border-b border-[#E2E8DF] last:border-b-0"
+                class="flex gap-3 py-[13px] border-b border-line last:border-b-0"
               >
-                <span class="w-7 shrink-0 text-right text-[1.45rem] leading-[1.15] font-extrabold" :class="i < 3 ? 'text-[#7CB342]' : 'text-[#C7D2C2]'">{{ i + 1 }}</span>
+                <span class="w-7 shrink-0 text-right text-[1.45rem] leading-[1.15] font-extrabold" :class="i < 3 ? 'text-accent' : 'text-line-strong'">{{ i + 1 }}</span>
                 <h3 class="text-[0.9rem] font-bold leading-[1.4] m-0 min-w-0">
                   <nuxt-link
                     :to="`/news/${item.slug}`"
-                    class="text-[#1E251C] hover:text-[#4A6741] transition-colors no-underline line-clamp-2"
+                    class="text-ink hover:text-brand-600 transition-colors no-underline line-clamp-2"
                   >{{ item.title }}</nuxt-link>
                 </h3>
               </li>
             </ul>
 
-            <p v-else class="text-[0.85rem] text-[#5A6C58] italic py-4 m-0">{{ t('n_no_views') }}</p>
+            <p v-else class="text-[0.85rem] text-ink-soft italic py-4 m-0">{{ t('n_no_views') }}</p>
           </div>
 
           <!-- Widget 2: Hotline & Hỗ Trợ 24/7 -->
@@ -264,7 +264,8 @@ import { computed } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
 import { usePublicMostRead } from '~/composables/usePublicArticleList'
-import type { PublicArticleListItem } from '~/utils/public-types'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicArticlesResponse } from '~/types/public-content-api'
 
 const { t, currentLang } = useI18n()
 
@@ -285,7 +286,7 @@ const categoryNavList = computed(() => [
 
 const { data, pending, error, refresh } = await useAsyncData(
   () => `news-category-${props.categorySlug}-${currentLang.value}`,
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }>; pagination: Record<string, unknown> }>)('/api/public/articles', {
+  () => publicFetch<PublicArticlesResponse>('/api/public/articles', {
     query: { type: 'news', categorySlug: props.categorySlug, limit: props.limit, lang: currentLang.value },
   }),
   {
@@ -295,8 +296,8 @@ const { data, pending, error, refresh } = await useAsyncData(
   },
 )
 
-const newsList = computed(() => (data.value as { articles?: PublicArticleListItem[] })?.articles || [])
-const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
+const newsList = computed(() => data.value?.articles || [])
+const loadError = computed(() => !!error.value || data.value?.ok === false)
 
 // "Đọc nhiều": the shared loader passes `lang` and keys `useAsyncData` on the
 // full query (design D25). The hand-written copy used the constant key

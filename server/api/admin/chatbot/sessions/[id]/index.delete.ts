@@ -4,6 +4,7 @@ import { activityLogs, chatSessions, chatMessages } from '../../../../../db/sche
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { getClientIp } from '../../../../../utils/client-ip'
 import { logInfo } from '../../../../../utils/logger'
+import { readAffectedRows } from '../../../../../utils/affected-rows'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -37,8 +38,13 @@ export default defineEventHandler(async (event) => {
     // Delete messages first (foreign key constraint)
     await tx.delete(chatMessages).where(eq(chatMessages.sessionId, sessionId))
 
-    // Delete session
-    await tx.delete(chatSessions).where(eq(chatSessions.id, sessionId))
+    // Delete session — counted: another delete or the retention purge may have taken it since the
+    // read above, and a second "delete" audit row for a conversation this request did not remove
+    // is a record of nothing (FINDING-R7-12, the R6-10 rule). 0 rows → 404, nothing recorded.
+    const [deleted] = await tx.delete(chatSessions).where(eq(chatSessions.id, sessionId))
+    if (readAffectedRows(deleted) !== 1) {
+      throw createError({ statusCode: 404, message: 'Chat session not found' })
+    }
 
     await tx.insert(activityLogs).values({
       userId: adminUser.id,

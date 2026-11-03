@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { blocksRenderOwnH1 } from '../app/utils/blocks/page-heading'
+import { COLOR_TOKENS } from '../shared/color-tokens.ts'
 
 /**
  * Exactly one `<h1>` per public page (spec public-accessibility, design D22).
@@ -21,8 +22,15 @@ test('the header brand is not a heading, and keeps its classes', () => {
   assert.doesNotMatch(header, /<h1\b/)
   const brand = /<p class="([^"]*)">CON ĐƯỜNG HƯỚNG THIỆN<\/p>/.exec(header)
   assert.ok(brand, 'brand line not found')
-  // Same classes as the heading it replaces — the line must look identical.
-  assert.equal(brand[1], 'text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-nowrap')
+  // Same classes as the heading it replaces — the line must look identical. The primary green
+  // `#4A6741` may be written as its token (`text-brand-600`) or as that token's hex.
+  const green = new RegExp(`^text-(?:brand-600|\\[${COLOR_TOKENS['brand-600']}\\])$`, 'i')
+  const classes = brand[1]!.split(' ')
+  assert.equal(classes.filter((c) => green.test(c)).length, 1, `brand line lost its primary green: ${brand[1]}`)
+  assert.equal(
+    classes.map((c) => (green.test(c) ? 'text-<primary-green>' : c)).join(' '),
+    'text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-<primary-green> tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-nowrap',
+  )
 })
 
 test('a hero block anywhere in the visible tree supplies the page heading', () => {

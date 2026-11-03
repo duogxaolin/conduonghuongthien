@@ -2,7 +2,7 @@ import type { Connection } from 'mysql2/promise'
 import { ensureColumn, ensureIndex } from '../migrations-additive'
 
 /**
- * Bảng nội dung: articles (+cột/category_id + seed mặc định), article_view_*,
+ * Bảng nội dung: articles (+cột/category_id), article_view_*,
  * home_sections, page_contents, pages, page_blocks, page_versions.
  *
  * `articles` nhận `category`/`category_id` qua `ensureColumn` chứ không nằm
@@ -15,7 +15,11 @@ import { ensureColumn, ensureIndex } from '../migrations-additive'
  * nên đặt trong content.ts đúng domain và giữ an toàn FK.
  */
 export async function createContentTables(db: Connection, database: string): Promise<void> {
-  // Articles table
+  // Articles table. The three `view_total*` columns (all plain, app-maintained —
+  // never a generated column, see schema.ts) and their index are born here on a
+  // fresh database; an existing one gets them — and the boot-time reconcile with
+  // `article_view_daily` — from `convergeArticleViewTotals` in
+  // migrations-additive.ts (wave2 design D6).
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`articles\` (
       \`id\` INT AUTO_INCREMENT PRIMARY KEY,
@@ -31,9 +35,13 @@ export async function createContentTables(db: Connection, database: string): Pro
       \`published_at\` TIMESTAMP NULL,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`view_total_real\` BIGINT NOT NULL DEFAULT 0,
+      \`view_total_fabricated\` BIGINT NOT NULL DEFAULT 0,
+      \`view_total\` BIGINT NOT NULL DEFAULT 0,
       KEY \`type_idx\` (\`type\`),
       KEY \`status_idx\` (\`status\`),
       KEY \`articles_status_type_pub_idx\` (\`status\`, \`type\`, \`published_at\`, \`created_at\`),
+      KEY \`articles_status_type_views_idx\` (\`status\`, \`type\`, \`view_total\`, \`published_at\`, \`created_at\`),
       CONSTRAINT \`fk_articles_thumbnail\` FOREIGN KEY (\`thumbnail_id\`) REFERENCES \`media\` (\`id\`) ON DELETE SET NULL,
       CONSTRAINT \`fk_articles_author\` FOREIGN KEY (\`author_id\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -54,26 +62,9 @@ export async function createContentTables(db: Connection, database: string): Pro
     ADD CONSTRAINT \`fk_articles_category\` FOREIGN KEY (\`category_id\`) REFERENCES \`categories\` (\`id\`) ON DELETE SET NULL;
   `).catch(() => {/* ignore if already exists */})
 
-  // Seed default categories idempotently (keyed on unique slug). News slugs match
-  // the legacy hardcoded slugs. ON DUPLICATE KEY UPDATE keeps re-runs duplicate-free
-  // and preserves any admin edits to name/order.
-  const defaultCategories: Array<[string, string, string, number]> = [
-    ['Tin nổi bật', 'tin-noi-bat', 'news', 1],
-    ['Tin hoạt động', 'tin-hoat-dong', 'news', 2],
-    ['Tin địa phương', 'tin-dia-phuong', 'news', 3],
-    ['Tấm gương tiêu biểu', 'tam-guong-tieu-bieu', 'role_model', 1],
-    ['Mô hình tái hòa nhập', 'mo-hinh-tai-hoa-nhap', 'reintegration', 1],
-    ['Văn bản pháp luật', 'van-ban-phap-luat', 'document', 1],
-    ['Hỏi đáp pháp luật', 'hoi-dap-phap-luat', 'faq', 1],
-  ]
-  for (const [name, slug, type, displayOrder] of defaultCategories) {
-    await db.query(
-      `INSERT INTO \`categories\` (\`name\`, \`slug\`, \`type\`, \`parent_id\`, \`display_order\`)
-       VALUES (?, ?, ?, NULL, ?)
-       ON DUPLICATE KEY UPDATE \`slug\` = \`slug\``,
-      [name, slug, type, displayOrder],
-    )
-  }
+  // Danh mục bài viết mặc định: chèn MỘT lần cho mỗi CSDL bởi `seed.ts`
+  // (`server/db/seed-groups.ts`, wave2 D7) — không chèn ở đây. Tệp này chỉ còn DDL:
+  // chèn ở mỗi lần `init.ts` chạy là đưa lại danh mục cán bộ đã xoá sau mỗi deploy.
 
   // Per-article view counter. Real and fabricated views are separated twice:
   // by column, and by a `source_category` value ('boost') that the public

@@ -17,11 +17,11 @@ import { activityLogs, submissions, chatSessions, readerAccounts, livestreamSess
 import { requireResourcePermission } from '../../../utils/permissions'
 import {
   resolveRetentionPolicy,
-  loadRetentionState,
   RETENTION_DEFAULTS,
   MAX_ROWS_BOUNDS,
   type RetentionScope,
 } from '../../../services/retention-policy'
+import { loadRetentionState } from '../../../services/retention-state'
 import { DATA_RETENTION_BOUNDS } from '../../../utils/data-retention-config'
 
 export default defineEventHandler(async (event) => {

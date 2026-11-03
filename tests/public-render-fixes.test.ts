@@ -110,7 +110,11 @@ test('mọi nơi công khai vẽ email đều qua <PublicEmail>, chân trang dù
 })
 
 test('mọi khối v-html nội dung bài viết đều bật ẩn ảnh lỗi', () => {
-  for (const file of ['../app/components/ArticleDetail.vue', '../app/components/blocks/RichTextBlock.vue', '../app/components/blocks/ContentAsideBlock.vue', '../app/pages/in-bai/[slug].vue']) {
+  // Thân bài của trang chi tiết là `article/ArticleBody.vue` từ wave3 4.2 (trước đó nằm
+  // trong ArticleDetail.vue). Mỗi tệp trong danh sách phải CHÍNH LÀ nơi có `v-html` — một
+  // mục trỏ vào tệp đã chuyển `v-html` đi nơi khác thì kiểm một tệp không còn gì để ẩn.
+  for (const file of ['../app/components/article/ArticleBody.vue', '../app/components/blocks/RichTextBlock.vue', '../app/components/blocks/ContentAsideBlock.vue', '../app/pages/in-bai/[slug].vue']) {
+    assert.match(read(file), /v-html=/, `${file} không còn v-html — danh sách trỏ sai tệp`)
     assert.match(read(file), /useBrokenImageFallback\(/, file)
   }
 })

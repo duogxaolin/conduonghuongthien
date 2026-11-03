@@ -23,12 +23,25 @@
  * LIMITATION, stated for the same reason tests/admin-error-retry-ui.test.ts states
  * it: these are assertions about SOURCE TEXT. Nothing is mounted. They prove the
  * branches and handlers exist and will fail loudly when one is deleted; they prove
- * nothing about whether a branch paints or whether a retry recovers.
+ * nothing about whether a branch paints or whether a retry recovers. The page IS
+ * mounted by tests/reader-profile-page-behavior.test.ts.
+ *
+ * Since the wave3 4.2 split the page is a FAMILY (tests/_component-family.ts,
+ * `READER_PROFILE_FAMILY`): the page, the display parts in components/reader-profile/,
+ * and the three write composables. Two kinds of rule, read accordingly:
+ *   - the branch chains of the three loaded lists (loading / error + retry / empty), the
+ *     busy containers and the `<client-only>` wrapper are the PAGE's — read from the page
+ *     alone, so moving one into a part turns this red;
+ *   - "nowhere" and "somewhere" rules — no `v-html`, no SSR fetch, no reload, motion-reduce
+ *     per tag, the 401-vs-403 asymmetry, line breaks kept, the per-device sentence — read
+ *     from the whole family, with planted-violation proofs at the end.
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+
+import { READER_PROFILE_FAMILY, familyFiles, readAppFile, type FamilyFile } from './_component-family.ts'
 
 const PAGE = 'app/pages/profile.vue'
 const source = readFileSync(new URL(`../${PAGE}`, import.meta.url), 'utf8')
@@ -44,12 +57,34 @@ const script = descriptor.scriptSetup?.content ?? ''
  *  lesson learned would be to delete the explanation rather than to keep the
  *  guard. Same approach as tests/public-qa-documents-page.test.ts.
  */
-const markup = template.replace(/<!--[\s\S]*?-->/g, '')
+const stripMarkup = (text: string) => text.replace(/<!--[\s\S]*?-->/g, '')
 
 /** Script with comments removed, for the same reason. */
-const code = script
+const stripCode = (text: string) => text
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '')
+
+const markup = stripMarkup(template)
+const code = stripCode(script)
+
+const sfcOf = (f: FamilyFile) => parse(f.source, { filename: f.file }).descriptor
+/** Every template of the family, comments removed. */
+const familyMarkup = (overrides?: Record<string, string>) =>
+  familyFiles(READER_PROFILE_FAMILY, overrides).filter(f => f.file.endsWith('.vue'))
+    .map(f => stripMarkup(sfcOf(f).template?.content ?? '')).join('\n')
+/** Every script of the family (`<script setup>` of each `.vue`, and the composables), comments removed. */
+const familyCode = (overrides?: Record<string, string>) =>
+  familyFiles(READER_PROFILE_FAMILY, overrides)
+    .map(f => stripCode(f.file.endsWith('.vue') ? (sfcOf(f).scriptSetup?.content ?? sfcOf(f).script?.content ?? '') : f.source)).join('\n')
+
+/** Tags carrying `animate-pulse` without `motion-reduce:animate-none` — per TAG, not per file. */
+const unguardedPulses = (text: string) =>
+  (text.match(/<[^>]*animate-pulse[^>]*>/g) ?? []).filter(tag => !tag.includes('motion-reduce:animate-none')).map(tag => tag.trim().slice(0, 90))
+
+/** The reading-history sentence, not any "thiết bị này" (the claim button says it too). */
+const PER_DEVICE = /lưu trên <strong>thiết bị này<\/strong>/
+const ON_401 = /(?:statusCode|errorStatus\(\w+\)) === 401/
+const ON_403 = /(?:statusCode|errorStatus\(\w+\)) === 403[\s\S]{0,80}forgetReader/
 
 // ─── 1. The cache-safety constraint ─────────────────────────────────────────
 
@@ -82,8 +117,9 @@ test('the profile page fetches nothing during server rendering', () => {
   // useFetch/useAsyncData run on the server during SSR. The identity, the comment
   // list and the chat list must all arrive after mount — the same shape the
   // view-counter ping and the comment thread already use.
-  assert.doesNotMatch(code, /useFetch\(/, 'useFetch runs during SSR — reader data would enter cacheable HTML')
-  assert.doesNotMatch(code, /useAsyncData\(/, 'useAsyncData runs during SSR — same problem')
+  // Anywhere in the family: a part or a write composable is as able to fetch during SSR.
+  assert.doesNotMatch(familyCode(), /useFetch\(/, 'useFetch runs during SSR — reader data would enter cacheable HTML')
+  assert.doesNotMatch(familyCode(), /useAsyncData\(/, 'useAsyncData runs during SSR — same problem')
   assert.match(code, /onMounted\(/, 'nothing loads after mount, so the page has no data at all')
 })
 
@@ -104,7 +140,7 @@ test('the page body is wrapped in client-only with no fallback', () => {
 
 test('nothing on the profile page is rendered as HTML', () => {
   assert.doesNotMatch(
-    markup,
+    familyMarkup(),
     /v-html/,
     'comment bodies, chat titles and article titles are text a person typed; '
     + 'rendering them as HTML is stored XSS on a page that shows a citizen their own words',
@@ -114,9 +150,10 @@ test('nothing on the profile page is rendered as HTML', () => {
 test('comment bodies keep their line breaks without a formatter rewriting them', () => {
   // The server stores bodies verbatim precisely because the template cannot
   // interpret them (design.md D12). `whitespace-pre-line` is what makes the
-  // paragraph the citizen typed still read as paragraphs.
-  assert.match(markup, /whitespace-pre-line/, 'comment line breaks collapse into one run-on paragraph')
-  assert.match(markup, /break-words/, 'a long unbroken string overflows the card on a phone')
+  // paragraph the citizen typed still read as paragraphs. The body is drawn by
+  // ReaderProfileCommentList since the split; the element is pinned, not the file.
+  assert.match(familyMarkup(), /<p [^>]*whitespace-pre-line[^>]*>\{\{ item\.body \}\}<\/p>/, 'comment line breaks collapse into one run-on paragraph')
+  assert.match(familyMarkup(), /<p [^>]*break-words[^>]*>\{\{ item\.body \}\}<\/p>/, 'a long unbroken string overflows the card on a phone')
 })
 
 // ─── 3. Loading / error / empty, per block ──────────────────────────────────
@@ -182,17 +219,21 @@ test('every persistent error branch is announced to assistive technology', () =>
   // Without role="alert" a sighted reader sees a red box and a screen-reader user
   // is told nothing at all — the failed fetch reads exactly like a page that
   // finished loading with nothing in it.
+  // The loaded lists' error branches are the page's: one per data block, plus the
+  // notifications list.
   const alerts = markup.match(/role="alert"/g)?.length ?? 0
-  // One per data block, plus the rename form's own error.
   assert.ok(
     alerts >= DATA_BLOCKS.length + 1,
-    `only ${alerts} error branches carry role="alert"; expected at least ${DATA_BLOCKS.length + 1}`,
+    `only ${alerts} error branches carry role="alert" on the page; expected at least ${DATA_BLOCKS.length + 1}`,
   )
+  // And the two writes' errors (rename, email switch) are announced where they are drawn.
+  const inFamily = familyMarkup().match(/role="alert"/g)?.length ?? 0
+  assert.ok(inFamily >= alerts + 2, `the rename form or the email switch lost its role="alert" (${inFamily} in the family)`)
 })
 
 test('the page never reloads the document to retry one request', () => {
   assert.doesNotMatch(
-    code + markup,
+    familyCode() + familyMarkup(),
     /location\.reload\(/,
     'reloading the page to re-run one request throws away the other blocks\' loaded '
     + 'state and anything half-typed in the rename form',
@@ -206,10 +247,7 @@ test('every animate-pulse carries motion-reduce:animate-none', () => {
   // still passes a file-level check. prefers-reduced-motion is an accessibility
   // setting for people with vestibular disorders, and a pulsing full-width
   // placeholder is exactly the motion it exists to switch off.
-  const offenders: string[] = []
-  for (const tag of markup.match(/<[^>]*animate-pulse[^>]*>/g) ?? []) {
-    if (!tag.includes('motion-reduce:animate-none')) offenders.push(tag.trim().slice(0, 90))
-  }
+  const offenders = unguardedPulses(familyMarkup())
   assert.deepEqual(offenders, [], `animate-pulse without a reduced-motion guard:\n${offenders.join('\n')}`)
 })
 
@@ -235,9 +273,9 @@ test('the page says out loud that reading history is per-device', () => {
    * will conclude the portal lost their data. Saying so is part of the decision,
    * not decoration around it.
    */
-  assert.match(markup, /thiết bị này/, 'the per-device limitation is not stated anywhere on the page')
+  assert.match(familyMarkup(), PER_DEVICE, 'the per-device limitation is not stated anywhere on the page')
   assert.match(
-    markup,
+    familyMarkup(),
     /không lưu trên máy chủ/,
     'the page does not say the history stays off the server — which is the whole reason it is per-device',
   )
@@ -269,12 +307,38 @@ test('a 401 mid-session drops the cached identity, and a 403 does not', () => {
   // tức là **rộng hơn** phép đọc cũ). Điều test này bảo vệ không phải cách viết mà
   // là sự **bất đối xứng giữa 401 và 403**, và cả hai khẳng định dưới đây vẫn nói
   // đúng điều đó.
-  assert.match(code, /(?:statusCode|errorStatus\(\w+\)) === 401/,
-    'an expired ticket leaves the reader in a dead end')
+  // The page's loads AND the write composables (rename, email switch) follow the rule.
+  assert.match(code, ON_401, 'an expired ticket leaves the reader in a dead end')
   assert.match(code, /forgetReader\(\)/, 'nothing clears the stale identity')
+  for (const module of ['composables/useReaderNameEdit.ts', 'composables/useReaderEmailPreference.ts']) {
+    assert.match(stripCode(readAppFile(module)), ON_401, `${module}: an expired ticket on this write leaves the reader in a dead end`)
+  }
   assert.doesNotMatch(
-    code,
-    /(?:statusCode|errorStatus\(\w+\)) === 403[\s\S]{0,80}forgetReader/,
+    familyCode(),
+    ON_403,
     'a banned reader is invited to sign in again, which changes nothing and reads as a broken portal',
   )
+})
+
+// ─── 7. The family rules reach every file of the split ──────────────────────
+
+test('proof: each family rule turns red on a violation planted in a part or a composable', () => {
+  const part = (name: string) => `components/reader-profile/${name}`
+  const plantMarkup = (file: string, from: string, to: string) => {
+    const before = readAppFile(file)
+    assert.ok(before.includes(from), `${file} no longer contains the text this proof plants into`)
+    return familyMarkup({ [file]: before.replace(from, to) })
+  }
+  const plantCode = (file: string, addition: string) => familyCode({ [file]: readAppFile(file).replace(/(<\/script>|$)/, `\n${addition}\n$1`) })
+
+  assert.match(plantMarkup(part('ReaderProfileChatList.vue'), '{{ item.title }}', '<span v-html="item.title"></span>'), /v-html/)
+  const body = part('ReaderProfileCommentList.vue')
+  assert.doesNotMatch(plantMarkup(body, 'whitespace-pre-line ', ''), /<p [^>]*whitespace-pre-line[^>]*>\{\{ item\.body \}\}<\/p>/)
+  const pulse = 'animate-pulse motion-reduce:animate-none'
+  assert.notDeepEqual(unguardedPulses(familyMarkup({ [part('ReaderProfileExtra.vue')]: `<template><div class="h-3 animate-pulse"></div></template>` })), [])
+  assert.deepEqual(unguardedPulses(familyMarkup({ [part('ReaderProfileExtra.vue')]: `<template><div class="h-3 ${pulse}"></div></template>` })), [])
+  assert.doesNotMatch(plantMarkup(part('ReaderProfileHistory.vue'), 'thiết bị này</strong>', 'trình duyệt</strong>'), PER_DEVICE)
+  assert.match(plantCode('composables/useReaderEmailPreference.ts', 'if (errorStatus(err) === 403) options.forgetReader()'), ON_403)
+  assert.match(plantCode('composables/useReaderNameEdit.ts', "const { data } = useAsyncData('x', () => 1)"), /useAsyncData\(/)
+  assert.match(plantCode(part('ReaderProfileChatClaim.vue'), 'location.reload()'), /location\.reload\(/)
 })

@@ -23,6 +23,7 @@ import { getSmtpConfig, sendMail } from '../utils/mailer'
 import { escapeHtml } from '../utils/escape-html'
 import { logError } from '../utils/logger'
 import { publicLinkBase } from '../utils/public-link-base'
+import { effectiveDisplayName } from '../utils/display-name'
 import { buildExcerpt, notificationTargetPage, notificationUrl, sameItemPredicate } from './notifications'
 
 /** Longer than the dropdown excerpt: an email is read once, away from the portal,
@@ -90,6 +91,7 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
         mediaItemId: articleComments.mediaItemId,
         readerName:       readerAccounts.displayName,
         readerCustomName: readerAccounts.customDisplayName,
+        readerNameReserved: readerAccounts.displayNameReserved,
       })
       .from(articleComments)
       .leftJoin(readerAccounts, eq(articleComments.readerId, readerAccounts.id))
@@ -145,9 +147,14 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
     const url = base ? `${base}${path}` : ''
 
     const isAdminReply = reply.adminUserId !== null
+    // Same resolution as the public thread (`effectiveDisplayName`): a reader whose
+    // Google name is "Ban quản trị" must not mail citizens, from the portal's own
+    // address, as the administration (spec reader-display-names-google).
     const authorName = isAdminReply
       ? 'Ban quản trị'
-      : (reply.readerCustomName || reply.readerName || 'Một người đọc')
+      : (reply.readerCustomName?.trim() || reply.readerName?.trim())
+          ? effectiveDisplayName({ customDisplayName: reply.readerCustomName, displayName: reply.readerName, displayNameReserved: reply.readerNameReserved })
+          : 'Một người đọc'
 
     const excerpt = buildExcerpt(reply.body ?? '', EMAIL_EXCERPT_LENGTH)
 

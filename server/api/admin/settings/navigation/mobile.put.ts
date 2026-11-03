@@ -2,6 +2,7 @@ import { getDb } from '../../../../utils/db'
 import { settings, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { UnsafeLinkError, assertSafeLink } from '../../../../../shared/link-policy'
+import { purgePublicPageCacheAfterWrite } from '../../../../utils/public-page-cache'
 
 // Bottom-nav item. `type` decides behaviour:
 //  - 'link'    → navigate to `url`
@@ -102,6 +103,9 @@ export default defineEventHandler(async (event) => {
       meta: { keysUpdated: ['nav_menu_mobile'], itemCount: items.length },
     })
   })
+
+  // Cùng lý do với navbar.put.ts: thanh tab dưới nằm trong HTML đệm của mọi trang.
+  await purgePublicPageCacheAfterWrite('settings.nav_menu_mobile')
 
   return { ok: true, menu: items }
 })

@@ -25,7 +25,8 @@ const oauthConfig = readFileSync('server/utils/google-oauth/config.ts', 'utf8')
 
 describe('article-export-google: cấu trúc mã nguồn', () => {
   it('endpoint validate ids — lọc NaN/<=0, max EXPORT_GOOGLE_MAX', () => {
-    assert.ok(/Array\.isArray\(body\.ids\)/.test(api), 'phải check Array.isArray(body.ids)')
+    // `body?.ids`: một POST không có body đọc ra undefined (FINDING-R6-18, article-export-behavior).
+    assert.ok(/Array\.isArray\(body\?\.ids\)/.test(api), 'phải check Array.isArray(body?.ids)')
     assert.ok(/Number\.isFinite\(n\) && n > 0/.test(api), 'phải lọc NaN và n <= 0')
     assert.ok(/ids\.length > EXPORT_GOOGLE_MAX/.test(api), 'phải chặn > EXPORT_GOOGLE_MAX')
     assert.ok(/Tối đa \$\{EXPORT_GOOGLE_MAX\} bài/.test(api), 'thông báo max phải dùng EXPORT_GOOGLE_MAX')

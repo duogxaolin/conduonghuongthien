@@ -2,7 +2,8 @@
  * Phép kiểm ký tự điều khiển cho văn bản thuần do người dùng gõ.
  *
  * Module **lá** — không import gì, nên nó kiểm được không cần CSDL và không tạo
- * phụ thuộc vòng giữa các service. `comments.ts` và `submission-workflow.ts` đều
+ * phụ thuộc vòng giữa các service. `validateBody` (`comments-rules.ts`) và
+ * `submission-workflow.ts` đều
  * dùng nó; hai bản của cùng một danh sách là hai chỗ để bỏ sót một ký tự, và
  * chúng chỉ được đối chiếu **sau khi** đã lọt một cái.
  */

@@ -16,11 +16,14 @@
  * quietly takes over. The symptom reads as "the fallback is being used a lot",
  * which is not a symptom anyone investigates.
  *
- * The same expression IS correct in server/api/public/articles/[slug].get.ts — but
- * only because that query happens to carry two leftJoins for the author and the
- * category. Its correctness depends on an unrelated part of the query staying the
- * way it is; delete the joins and the view counter starts reporting zero for every
- * article, with nothing failing.
+ * The article view counters were the other place this bit: the public detail and
+ * list endpoints, the admin list and the CSV export each summed
+ * `article_view_daily` in a correlated subquery, and the interpolated form was
+ * correct there only because those queries happened to carry leftJoins for the
+ * author and the category. Delete the joins and every article reported zero views,
+ * with nothing failing. Those subqueries are gone (design D6): the totals now live
+ * on `articles` (`view_total`, maintained by server/services/article-views.ts), and
+ * the last test below keeps every API handler off the daily rows.
  *
  * So the rule is: inside a correlated subquery, write the table names out. A
  * qualified name is right whether or not a join is present, which is exactly the
@@ -118,4 +121,25 @@ test('the reader chat list titles conversations from the visitor\'s first questi
     'the correlation is no longer written with qualified table names',
   )
   assert.match(source, /\\`m\\`\.\\`role\\`\s*=\s*'user'/, 'the title would come from the assistant\'s opening line')
+})
+
+test('no API handler aggregates article_view_daily per request — view totals are read from articles', () => {
+  // The "Đọc nhiều" ranking (`sort=views`), the article page, the admin list and
+  // the CSV export used to sum the daily rows for every article on every request.
+  // They read `articles.view_total` now; the per-article breakdown stays in
+  // server/services/article-views.ts (getArticleViewStats), outside server/api.
+  // Code only: the handlers' comments explain what the totals replaced.
+  const code = (source: string) => source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:\\])\/\/.*$/gm, '$1')
+  const offenders = walk('api').filter(file => /article_view_daily|articleViewDaily/.test(
+    code(readFileSync(new URL(file, serverRoot), 'utf8')),
+  ))
+  assert.deepEqual(offenders, [], 'an API handler reads article_view_daily directly instead of the maintained totals')
+})
+
+test('sort=views orders by the indexed total column, not by a computed alias', () => {
+  const source = readFileSync(new URL('api/public/articles.get.ts', serverRoot), 'utf8')
+  assert.match(source, /desc\(articles\.viewTotal\)/, 'the ranking must order by articles.view_total so MySQL can use articles_status_type_views_idx')
+  assert.doesNotMatch(source, /desc\(sql`view_total`\)/, 'ordering by a SELECT alias is the shape that came with the per-request subquery')
 })

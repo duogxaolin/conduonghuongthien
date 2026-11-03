@@ -142,7 +142,11 @@
           >
             <option value="">Tất cả</option>
             <option v-if="isCategoryLoading(field.categoryType)" disabled>Đang tải…</option>
-            <option v-for="cat in categoriesFor(field.categoryType)" :key="cat.slug" :value="cat.slug">{{ cat.name }}</option>
+            <!-- Tree order (each parent, then its children, indented) — the list arrives by display order. -->
+            <template v-for="cat in categoriesFor(field.categoryType)" :key="cat.slug">
+              <option v-if="cat.depth === 0" :value="cat.slug">{{ cat.name }}</option>
+              <option v-else :value="cat.slug">&nbsp;&nbsp;↳ {{ cat.name }}</option>
+            </template>
           </select>
 
           <!-- plain textarea -->
@@ -170,6 +174,7 @@ import type { BuilderNode } from '~/utils/blocks/types'
 import { BLOCK_REGISTRY, clampColSpan, GRID_COLUMNS, MIN_COL_SPAN, MAX_COL_SPAN, type EditorField } from '~/utils/blocks/registry'
 import TinyMceEditor from '~/components/admin/TinyMceEditor.vue'
 import BuilderArrayEditor from '~/components/admin/builder/BuilderArrayEditor.vue'
+import { orderCategoriesAsTree, type CategoryTreeEntry } from '~/utils/category-tree-order'
 
 const props = defineProps<{ block: BuilderNode | null; index: number; total: number }>()
 defineEmits<{
@@ -184,7 +189,9 @@ const { openPicker } = useImagePicker()
 const expanded = ref(false)
 // Collapse when switching to another block, or when nothing is selected.
 watch(() => props.block?.id, () => { expanded.value = false })
-const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape' && expanded.value) expanded.value = false }
+// Escape mà một hộp thoại mở đè lên (thư viện ảnh, hộp xác nhận) đã xử lý thì không thu
+// nhỏ panel theo — một lần nhấn chỉ đóng một lớp.
+const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape' && expanded.value && !e.defaultPrevented) expanded.value = false }
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
@@ -205,11 +212,11 @@ const colSpan = computed({
 // Categories are fetched lazily per content type and cached so switching
 // between blocks of the same type doesn't refetch. Fetch errors degrade
 // gracefully to just the "Tất cả" option (editing is never blocked).
-type Category = { slug: string; name: string }
-const categoryCache = ref<Record<string, Category[]>>({})
+type Category = { id: number; parentId: number | null; slug: string; name: string }
+const categoryCache = ref<Record<string, CategoryTreeEntry<Category>[]>>({})
 const categoryLoading = ref<Record<string, boolean>>({})
 
-const categoriesFor = (type?: string): Category[] => (type ? categoryCache.value[type] || [] : [])
+const categoriesFor = (type?: string): CategoryTreeEntry<Category>[] => (type ? categoryCache.value[type] || [] : [])
 const isCategoryLoading = (type?: string): boolean => (type ? !!categoryLoading.value[type] : false)
 
 const loadCategories = async (type: string) => {
@@ -217,7 +224,7 @@ const loadCategories = async (type: string) => {
   categoryLoading.value[type] = true
   try {
     const res = await $fetch('/api/public/categories', { params: { type } })
-    categoryCache.value[type] = Array.isArray(res?.items) ? res.items : []
+    categoryCache.value[type] = Array.isArray(res?.items) ? orderCategoriesAsTree(res.items) : []
   } catch {
     categoryCache.value[type] = [] // fall back to just "Tất cả"
   } finally {

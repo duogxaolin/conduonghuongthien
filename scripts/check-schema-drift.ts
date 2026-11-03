@@ -11,7 +11,16 @@
  *
  * Run with: npm run db:drift
  *
- * It compares three things per column: presence, SQL TYPE, and NULLability.
+ * It compares four things per column: presence, SQL TYPE, NULLability, and
+ * whether the column is GENERATED (and STORED or VIRTUAL).
+ *
+ * The fourth arrived with `articles.view_total` (wave2 design D6), a stored
+ * generated column. Type and NULL alone read `view_total BIGINT` and `view_total
+ * BIGINT AS (…) STORED` as the same column — but a schema.ts that forgets
+ * `.generatedAlwaysAs()` lets Drizzle put the field in every INSERT, which MySQL
+ * rejects (error 3105), and a DDL that forgets `AS (…)` leaves a column the
+ * application believes the database maintains and nothing ever writes.
+ * tests/schema-drift-generated-columns.test.ts imports the pieces below.
  *
  * Name-level comparison alone was not enough, and that gap was not theoretical.
  * When type checking was added, it immediately found three real mismatches that
@@ -38,9 +47,25 @@ import * as schema from '../server/db/schema'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-/** One column's comparable shape: coarse SQL type family + nullability. */
-type ColumnShape = { type: string; nullable: boolean }
-type TableShape = { table: string; columns: Map<string, ColumnShape> }
+/** How MySQL produces a column's value: written by the application (`null`), or generated. */
+export type GeneratedStorage = 'stored' | 'virtual' | null
+/** One column's comparable shape: coarse SQL type family + nullability + generation. */
+export type ColumnShape = { type: string; nullable: boolean; generated: GeneratedStorage }
+export type TableShape = { table: string; columns: Map<string, ColumnShape> }
+
+/**
+ * The parts of a Drizzle column this checker reads. Drizzle keeps them on the
+ * column object without a public type for the class name, so the shape is
+ * declared here — a change in Drizzle's internals then fails loudly (an unmapped
+ * class, a missing field) instead of being read as `undefined`.
+ */
+type DrizzleColumnInternals = {
+  name: string
+  notNull: boolean
+  primary: boolean
+  generated?: { type: string; mode?: string }
+  constructor: { name: string }
+}
 
 /**
  * Drizzle column class → the MySQL type family it produces.
@@ -73,9 +98,9 @@ function normaliseSqlType(raw: string): string {
 }
 
 /** Columns declared in schema.ts, read through Drizzle's runtime metadata. */
-function fromSchemaTs(unmapped: Set<string>): Map<string, TableShape> {
+export function tablesFromSchema(schemaModule: Record<string, unknown>, unmapped: Set<string>): Map<string, TableShape> {
   const out = new Map<string, TableShape>()
-  for (const value of Object.values(schema as Record<string, unknown>)) {
+  for (const value of Object.values(schemaModule)) {
     if (!value || typeof value !== 'object') continue
     const symbols = Object.getOwnPropertySymbols(value)
     const nameSymbol = symbols.find(s => s.description === 'drizzle:Name')
@@ -98,6 +123,11 @@ function fromSchemaTs(unmapped: Set<string>): Map<string, TableShape> {
         type: mapped ?? '?',
         // A primary key is NOT NULL in MySQL whether or not it says so.
         nullable: !column.notNull && !column.primary,
+        // `generatedAlwaysAs()` records `{ type: 'always', mode }`, mode defaulting
+        // to 'virtual' like MySQL's own default.
+        generated: column.generated?.type === 'always'
+          ? (column.generated.mode === 'stored' ? 'stored' : 'virtual')
+          : null,
       })
     }
     out.set(table, { table, columns })
@@ -118,29 +148,56 @@ function fromSchemaTs(unmapped: Set<string>): Map<string, TableShape> {
  * chỗ nó cần chặt nhất. Ghép nối chuỗi trước khi phân tích: chín tệp là một nguồn
  * DDL, và một biểu thức chính quy chạy trên chuỗi ghép không cần biết ranh giới.
  */
-function fromInitTs(): Map<string, TableShape> {
+export function readDdlSource(): string {
   const schemaTables = [
     'core', 'content', 'governance', 'chatbot',
     'analytics', 'readers-media', 'ai-i18n',
   ].map(f => readFileSync(path.join(root, `server/db/schema-tables/${f}.ts`), 'utf8'))
-  const source = [
+  return [
     readFileSync(path.join(root, 'server/db/init.ts'), 'utf8'),
     ...schemaTables,
     readFileSync(path.join(root, 'server/db/migrations-additive.ts'), 'utf8'),
   ].join('\n').replace(/\r\n/g, '\n')
-  const out = new Map<string, TableShape>()
+}
 
-  /** `\`col\` TYPE ...rest` → the shape, or null if the line is not a column. */
-  function parseColumn(line: string): [string, ColumnShape] | null {
-    const match = /^\s*\\`([a-z_]+)\\`\s+([A-Za-z]+(?:\([^)]*\))?)\s*(.*)$/.exec(line)
-    if (!match) return null
-    const rest = match[3].toUpperCase()
-    return [match[1], {
-      type: normaliseSqlType(match[2]),
-      // AUTO_INCREMENT implies a key, and PRIMARY KEY columns are never nullable.
-      nullable: !/\bNOT NULL\b/.test(rest) && !/\bPRIMARY KEY\b/.test(rest) && !/\bAUTO_INCREMENT\b/.test(rest),
-    }]
+/**
+ * `AS (expr) [VIRTUAL|STORED] …` → the storage and the text after the
+ * expression, or null when the column is not generated. The expression is
+ * skipped by balanced parentheses so a `NOT NULL` inside it (`IF(x IS NOT NULL,
+ * …)`) is not read as the column's own constraint.
+ */
+function splitGenerated(rest: string): { storage: Exclude<GeneratedStorage, null>; tail: string } | null {
+  const head = /^(?:GENERATED\s+ALWAYS\s+)?AS\s*\(/.exec(rest)
+  if (!head) return null
+  let depth = 1
+  let index = head[0].length
+  for (; index < rest.length && depth > 0; index++) {
+    if (rest[index] === '(') depth++
+    else if (rest[index] === ')') depth--
   }
+  const tail = rest.slice(index)
+  // MySQL's default storage for a generated column is VIRTUAL.
+  return { storage: /^\s*STORED\b/.test(tail) ? 'stored' : 'virtual', tail }
+}
+
+/** `\`col\` TYPE ...rest` → the shape, or null if the line is not a column. */
+export function parseDdlColumn(line: string): [string, ColumnShape] | null {
+  const match = /^\s*\\`([a-z_]+)\\`\s+([A-Za-z]+(?:\([^)]*\))?)\s*(.*)$/.exec(line)
+  if (!match) return null
+  const rest = match[3].toUpperCase()
+  const generated = splitGenerated(rest)
+  const constraints = generated ? generated.tail : rest
+  return [match[1], {
+    type: normaliseSqlType(match[2]),
+    // AUTO_INCREMENT implies a key, and PRIMARY KEY columns are never nullable.
+    nullable: !/\bNOT NULL\b/.test(constraints) && !/\bPRIMARY KEY\b/.test(constraints) && !/\bAUTO_INCREMENT\b/.test(constraints),
+    generated: generated?.storage ?? null,
+  }]
+}
+
+export function tablesFromDdl(source: string): Map<string, TableShape> {
+  const out = new Map<string, TableShape>()
+  const parseColumn = parseDdlColumn
 
   const createRe = /CREATE TABLE IF NOT EXISTS \\`([a-z_]+)\\`\s*\(([\s\S]*?)\n\s*\) ENGINE/g
   let match: RegExpExecArray | null
@@ -166,7 +223,8 @@ function fromInitTs(): Map<string, TableShape> {
     const shape = definition
       ? parseColumn('  \\`' + column + '\\` ' + definition)?.[1]
       : undefined
-    entry.columns.set(column, shape ?? { type: '?', nullable: entry.columns.get(column)?.nullable ?? true })
+    const known = entry.columns.get(column)
+    entry.columns.set(column, shape ?? { type: '?', nullable: known?.nullable ?? true, generated: known?.generated ?? null })
   }
 
   // Định nghĩa nhận CẢ HAI kiểu nháy. Phần `"([^"]*)"` không phải để cho đủ bộ:
@@ -208,10 +266,13 @@ function fromInitTs(): Map<string, TableShape> {
   return out
 }
 
-function main() {
-  const unmapped = new Set<string>()
-  const declared = fromSchemaTs(unmapped)
-  const created = fromInitTs()
+const generatedLabel = (value: GeneratedStorage) => (value === null ? 'thường' : value.toUpperCase())
+
+/** Every disagreement between the two sources, plus how many columns were compared. */
+export function compareSchemas(
+  declared: Map<string, TableShape>,
+  created: Map<string, TableShape>,
+): { problems: string[]; comparedColumns: number } {
   const problems: string[] = []
   let comparedColumns = 0
 
@@ -224,7 +285,8 @@ function main() {
       comparedColumns++
       // '?' means one side could not be parsed; comparing against it would
       // manufacture a mismatch out of the checker's own blind spot.
-      if (want.type !== '?' && got.type !== '?' && want.type !== got.type) {
+      const bothParsed = want.type !== '?' && got.type !== '?'
+      if (bothParsed && want.type !== got.type) {
         problems.push(`Cột "${table}.${column}" LỆCH KIỂU: schema.ts=${want.type} ↔ init.ts=${got.type}`)
       }
       if (want.nullable !== got.nullable) {
@@ -232,6 +294,13 @@ function main() {
           `Cột "${table}.${column}" LỆCH NULL: schema.ts=${want.nullable ? 'nullable' : 'NOT NULL'}`
           + ` ↔ init.ts=${got.nullable ? 'nullable' : 'NOT NULL'}`
           + ` — Drizzle đẩy kiểu này sang TypeScript, nên hai bên lệch nghĩa là mã ứng dụng đang tin một hình dạng mà CSDL từ chối`,
+        )
+      }
+      if (bothParsed && want.generated !== got.generated) {
+        problems.push(
+          `Cột "${table}.${column}" LỆCH CỘT SINH: schema.ts=${generatedLabel(want.generated)}`
+          + ` ↔ init.ts=${generatedLabel(got.generated)}`
+          + ` — Drizzle bỏ cột sinh khỏi INSERT/UPDATE và ghi cột thường; lệch nghĩa là hoặc MySQL từ chối giá trị ghi vào (lỗi 3105), hoặc cột không bao giờ được ghi`,
         )
       }
     }
@@ -243,9 +312,17 @@ function main() {
       if (!other.columns.has(column)) problems.push(`Cột "${table}.${column}" được tạo trong init.ts nhưng thiếu trong schema.ts`)
     }
   }
+  return { problems, comparedColumns }
+}
+
+function main() {
+  const unmapped = new Set<string>()
+  const declared = tablesFromSchema(schema as Record<string, unknown>, unmapped)
+  const created = tablesFromDdl(readDdlSource())
+  const { problems, comparedColumns } = compareSchemas(declared, created)
 
   console.log(`Đã đối chiếu ${declared.size} bảng (schema.ts) với ${created.size} bảng (init.ts).`)
-  console.log(`Đã so kiểu và tính NULL của ${comparedColumns} cột.`)
+  console.log(`Đã so kiểu, tính NULL và cột sinh của ${comparedColumns} cột.`)
   if (unmapped.size > 0) {
     // Not a failure — but it must be visible, or the checker quietly stops
     // checking whichever column types it has never met.
@@ -260,4 +337,8 @@ function main() {
   process.exit(1)
 }
 
-main()
+// Run only as `npm run db:drift`: tests import the pieces above, and an
+// unconditional main() would `process.exit` the test runner. Slashes are
+// normalised as in server/db/init.ts (Windows argv uses backslashes).
+const invokedScript = (process.argv[1] || '').replaceAll('\\', '/')
+if (invokedScript.endsWith('scripts/check-schema-drift.ts')) main()

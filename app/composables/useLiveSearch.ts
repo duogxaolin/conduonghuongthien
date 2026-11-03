@@ -1,5 +1,7 @@
 import { ref, nextTick, type Ref } from 'vue'
 import { createLiveSearch, type LiveSearchStatus } from '~/utils/live-search'
+import { publicFetch } from '~/composables/publicFetch'
+import type { PublicSearchResponse } from '~/types/public-content-api'
 
 /**
  * Ô tìm kiếm nhanh ở header (desktop) + ngăn kéo mobile.
@@ -52,7 +54,7 @@ export function useLiveSearch(isMobileMenuOpen: Ref<boolean>) {
   // tách "lỗi" khỏi "không có kết quả".
   const live = createLiveSearch<LiveSearchItem>({
     fetch: (q, signal) =>
-      ($fetch as (u: string, o: Record<string, unknown>) => Promise<{ ok: boolean; items: LiveSearchItem[] }>)('/api/public/search', {
+      publicFetch<PublicSearchResponse>('/api/public/search', {
         params: { q, limit: 6 },
         signal,
         // ofetch mặc định tự gọi lại một lần khi 503 — với gợi ý gõ-tới-đâu-gọi-tới-đó
