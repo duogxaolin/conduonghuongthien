@@ -2478,6 +2478,16 @@ Năm việc tìm ra khi soi log trò chuyện thật; cả năm đều đo đư�
 - **Sửa test theo hợp đồng mới, không nới code:** 6 test của `tests/chat-policy-seams-behavior.test.ts` khẳng định "luôn đưa 5 công cụ" nay dùng câu KHÔNG khớp kho (để công cụ còn nguyên) và tách một test riêng cho đường nạp sẵn (công cụ rỗng + lời nhắc). Vòng dệt `kind: 'evidence'` vào `references` đã thành **mã chết** sau cutover (grounded luôn `toolsOff`; freeform truyền mảng rỗng và không đọc lại) — gỡ, thay bằng ghi chú nêu lý do. Guard bảo mật `tests/security-chatbot-article-search.test.ts` trỏ lại đúng chủ sở hữu mới của câu truy vấn (`searchArticles`) qua helper `chatPolicyDeclarationIn`.
 - **Kiểm:** `npm test` **8744 test / 8689 pass / 0 fail / 55 skip** (skip = suite integration tự bỏ qua khi thiếu MySQL); typecheck 0; `docs:facts` khớp; `db:drift` 62 bảng / 643 cột; ESLint các tệp chạm 0 error; ratchet `file-length` (provider còn 325 dòng sau khi tách), `fetch-casts`, `hex-colors` xanh; `coverage` **RISE** `server/services` 91,35 → 91,46% nên baseline được nâng đúng như quy ước (`--update`, chỉ đổi một dòng).
 
+### 75. Bật/tắt lớp khớp chào hỏi ngay trong `/admin/chatbot/settings` (2026-11-04)
+
+Trước đó lớp khớp thứ ba chỉ bật được bằng biến môi trường — nghĩa là mỗi lần muốn đổi phải vào VPS sửa `.env` rồi restart. Nay có công tắc.
+
+- **Cột mới** `chatbot_settings.small_talk_semantic_enabled` (`TINYINT(1) NOT NULL DEFAULT 0`), thêm lúc khởi động bằng `ensureColumn` nên DB đã có dữ liệu không phải làm gì. `db:drift` 62 bảng / **644 cột** (trước 643); `docs:facts` nâng theo.
+- **Checkbox** "Nhận thêm cách nói khác của câu chào / cảm ơn", nằm ngay dưới "Trả lời thường nhật" và **chỉ hiện khi** "Trả lời thường nhật" đang bật (tắt khối đó thì lớp thứ ba vô nghĩa). Nhãn ghi thẳng phép đo: 16/26 → 19/26 câu chào khớp, 0/20 câu nghiệp vụ bị trả lời nhầm.
+- **Thứ tự ưu tiên**: cột DB là nguồn chính; `CHATBOT_SMALL_TALK_SEMANTIC_ENABLED` chỉ **mở thêm**, không khoá được thứ cán bộ đã tick (đặt `0` không tắt lại sau lưng ai). `.env.example` + `docker-compose.yml` ghi rõ đây là công tắc khẩn cấp.
+- **Trang settings vượt 400 dòng** khi thêm khối này (448 → 458). Tách khối "Chế độ trả lời + giới hạn liên hệ" sang `app/components/admin/ChatbotAnswerModeSection.vue` (trang còn **396**), đúng khuôn các lần tách trước: component chỉ hiển thị + `defineModel`, state/lưu/lỗi/nút thử vẫn ở trang cha. Ba guard đọc văn bản trang (`chatbot-small-talk`, `chatbot-small-talk-ui-contract`, `chatbot-provider-policies`) được trỏ sang **cả hai** tệp — chỉ đọc trang thì chúng xanh giả sau khi tách.
+- **Kiểm**: `npm test` **8746 / 8691 pass / 0 fail / 55 skip**; typecheck 0; `db:drift` 644 cột; ESLint 0 error. Thử tay trong container thật (image mới, DB `cdkt_ai_qa`): bật → "helo"/"bye bye"/"ngủ ngon nhé" vào `small_talk`; tắt → trả `not_found`; câu nghiệp vụ vẫn vào kho ở cả hai chiều. Trình duyệt thật (Chromium): checkbox hiện, bấm Lưu, tải lại vẫn giữ.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

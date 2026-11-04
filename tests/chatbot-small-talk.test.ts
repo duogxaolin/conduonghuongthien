@@ -149,9 +149,15 @@ test('the serializer exposes the toggle and defaults a missing value to on', () 
 })
 
 test('the admin form and the public widget both know the small-talk field', () => {
-  const form = readFileSync(new URL('../app/pages/admin/chatbot/settings.vue', import.meta.url), 'utf8')
+  // Khối "Chế độ trả lời" đã tách sang `AdminChatbotAnswerModeSection.vue` khi trang vượt
+  // 400 dòng (ratchet file-length). Hai phép kiểm dưới đây phải đọc CẢ HAI tệp: trang giữ
+  // state + payload, component giữ ô nhập. Đọc mỗi trang thì phép kiểm xanh mà ô nhập có
+  // thể đã biến mất.
+  const page = readFileSync(new URL('../app/pages/admin/chatbot/settings.vue', import.meta.url), 'utf8')
+  const section = readFileSync(new URL('../app/components/admin/ChatbotAnswerModeSection.vue', import.meta.url), 'utf8')
+  const form = `${page}\n${section}`
   assert.match(form, /v-model="form\.smallTalkEnabled"/u)
-  assert.match(form, /smallTalkEnabled: form\.smallTalkEnabled/u)
+  assert.match(page, /smallTalkEnabled: form\.smallTalkEnabled/u)
 
   // The widget's response-kind vocabulary moved out of the layout and into the
   // composable when the widget was extracted so `/assistant` could reuse it.

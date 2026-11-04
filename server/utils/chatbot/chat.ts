@@ -98,9 +98,11 @@ type ToolCallEvent = { name: string; query?: string; status: 'calling' | 'done';
  * ý: ranker không đọc `answer`.
  */
 let trigramIndexFingerprint: string | null = null
-
 function installTrigramRanker(entries: readonly SmallTalkEntry[]): void {
-  if (!readSmallTalkSemanticConfig().enabled) return
+  // Không kiểm công tắc ở đây: chỉ mục dựng rẻ (0,49 ms cho 122 mục) và chỉ khi kho
+  // small-talk đã phải nạp, còn việc CÓ DÙNG nó hay không do `selectSmallTalk` quyết
+  // định qua `config.enabled`. Kiểm ở đây sẽ cần một biến toàn cục đọc settings của
+  // lượt gọi — trạng thái dùng chung giữa các request, không đáng.
   const projected = entries.map(entry => projectSemanticEntry(entry))
   const fingerprint = projected.map(entry => `${entry.id}:${entry.semanticExamples[0] ?? ''}`).join('|')
   if (fingerprint === trigramIndexFingerprint) return
@@ -125,7 +127,7 @@ export async function answerChat(
     // Ngưỡng mặc định đi kèm ranker, không phải của khung: 0.82 dành cho một ranker ngữ
     // nghĩa thật, trigram đo được ở 0.65 (xem `small-talk-semantic-trigram.ts`). Biến môi
     // trường vẫn ghi đè được — đó là lý do hai thứ này tách nhau.
-    semanticSmallTalkConfig: readSmallTalkSemanticConfig(),
+    semanticSmallTalkConfig: readSmallTalkSemanticConfig(process.env, settings),
     semanticSmallTalkDefaults: {
       confidenceThreshold: SMALL_TALK_TRIGRAM_DEFAULTS.confidenceThreshold,
       top1Top2Margin: SMALL_TALK_TRIGRAM_DEFAULTS.top1Top2Margin,

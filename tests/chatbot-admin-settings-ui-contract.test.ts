@@ -38,7 +38,7 @@ const ordinaryPatchFields = [
 // accept these camelCase keys; the column is snake_case in the DB, and a prior
 // regression left `small_talk_enabled` in the allowlist while everything else
 // (type, validator, schema, page) used the Drizzle field name `smallTalkEnabled`.
-const conditionalPatchFields = ['smallTalkEnabled', 'mode', 'outOfScopeBehavior', 'knowledgeGreeting', 'fallbackMessage', 'leadCaptureEnabled', 'leadCaptureEmail']
+const conditionalPatchFields = ['smallTalkEnabled', 'smallTalkSemanticEnabled', 'mode', 'outOfScopeBehavior', 'knowledgeGreeting', 'fallbackMessage', 'leadCaptureEnabled', 'leadCaptureEmail']
 // The provider DESTINATION. The page has no input for these — the form holds the
 // `ai_providers` address overlaid by GET — so it must NOT echo them back: changing
 // the destination needs a super admin (like key rotation), and echoing the overlay

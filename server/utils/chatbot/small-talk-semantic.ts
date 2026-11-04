@@ -186,14 +186,27 @@ function environmentNumber(value: string | undefined): number | undefined {
 }
 
 /**
- * Runtime contract for an optional local provider. No variables means disabled,
- * preserving existing deployments. Values are bounded again by the selector.
+ * Runtime contract for the optional local provider.
+ *
+ * Two switches, in this order:
+ *   1. `chatbot_settings.small_talk_semantic_enabled` — the admin checkbox, the normal way.
+ *   2. `CHATBOT_SMALL_TALK_SEMANTIC_ENABLED` — deployment override, for a host that must
+ *      force it on or off without touching the DB.
+ * Neither present ⇒ disabled, preserving deployments that predate the feature.
+ *
+ * `enabled` is resolved by OR: the env variable can only turn it ON. It is a kill switch
+ * for an operator who does not want the checkbox, not a lock an admin can undo by
+ * accident — turning the feature OFF is the checkbox's job, and an env value of `0` must
+ * not silently re-enable it after someone unticks it.
+ *
+ * Values are bounded again by the selector.
  */
 export function readSmallTalkSemanticConfig(
   environment: Record<string, string | undefined> = process.env,
+  settings?: { smallTalkSemanticEnabled?: boolean | null },
 ): SmallTalkSemanticConfig {
   return normalizeConfig({
-    enabled: environmentBoolean(environment.CHATBOT_SMALL_TALK_SEMANTIC_ENABLED),
+    enabled: settings?.smallTalkSemanticEnabled === true || environmentBoolean(environment.CHATBOT_SMALL_TALK_SEMANTIC_ENABLED),
     confidenceThreshold: environmentNumber(environment.CHATBOT_SMALL_TALK_SEMANTIC_CONFIDENCE),
     top1Top2Margin: environmentNumber(environment.CHATBOT_SMALL_TALK_SEMANTIC_MARGIN),
     timeoutMs: environmentNumber(environment.CHATBOT_SMALL_TALK_SEMANTIC_TIMEOUT_MS),
