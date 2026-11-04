@@ -18,6 +18,7 @@ import {
 
 import type { AdminAiUsageResponse, DelifyStatusResponse } from '~/types/admin-ai-api'
 import AiBudgetEditor from '~/components/admin/ai/AiBudgetEditor.vue'
+import AiConfigWipeCard from '~/components/admin/ai/AiConfigWipeCard.vue'
 import { delifyKeyState } from '~/utils/ai-budget-form'
 import { latestOnly } from '~/utils/latest-only'
 
@@ -134,6 +135,17 @@ async function loadUsage(options: { refresh?: boolean } = {}) {
 function budgetSaved(saved: { monthlyBudgetVnd: number, warningThresholdPct: number }) {
   if (budgetInfo.value) budgetInfo.value = { ...budgetInfo.value, ...saved }
   void loadUsage({ refresh: true })
+}
+
+/**
+ * Cấu hình AI vừa bị xoá từ vùng nguy hiểm: hàng `ai_budget_settings` và nhà cung cấp
+ * không còn, nên thẻ "Hạn mức ngân sách" và trạng thái Delify phải đọc lại ngay. Đọc
+ * lại KHÔNG kèm trạng thái tải (`refresh`) để vùng nguy hiểm không nhảy khỏi màn hình
+ * đúng lúc người bấm đang ở đó.
+ */
+function configWiped() {
+  void loadUsage({ refresh: true })
+  void loadDelifyStatus()
 }
 
 onMounted(() => {
@@ -374,6 +386,9 @@ defineExpose<{ loadUsage: typeof loadUsage; loadDelifyStatus: typeof loadDelifyS
           </div>
         </div>
       </div>
+
+      <!-- Vùng nguy hiểm: chỉ SuperAdmin thấy (máy chủ kiểm `ai.update` + SuperAdmin). -->
+      <AiConfigWipeCard @wiped="configWiped" />
     </template>
   </div>
 </template>

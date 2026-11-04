@@ -94,3 +94,18 @@ export interface DelifyStatusResponse {
   recentHistory?: Array<{ timestamp: string; model: string; status: string; cost: number; input: number; output: number; tok: number }>
   availableModels?: Array<{ name: string; input: number; output: number }>
 }
+
+/**
+ * `POST /api/admin/ai/config/wipe` — số hàng ĐÃ XOÁ theo từng nhóm, đếm trước khi xoá.
+ * `budget` là 0 hoặc 1 (`ai_budget_settings` là bảng một hàng); giữ dạng số để trang
+ * đọc cùng một kiểu với ba nhóm còn lại.
+ */
+export type AdminAiConfigWipeResponse = {
+  ok: boolean
+  deleted: {
+    providers: number
+    services: number
+    pricing: number
+    budget: number
+  }
+}
