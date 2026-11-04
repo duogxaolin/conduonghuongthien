@@ -38,8 +38,15 @@ import type { RetrievalEntry } from '../server/utils/chatbot/retrieval'
 const settingsPath = new URL('../app/pages/admin/chatbot/settings.vue', import.meta.url)
 const settingsSource = await readFile(settingsPath, 'utf8')
 const settingsSfc = parse(settingsSource, { filename: 'settings.vue' })
-const settingsScript = settingsSfc.descriptor.scriptSetup?.content ?? ''
-const settingsTemplate = settingsSfc.descriptor.template?.content ?? ''
+// Khối "Chế độ trả lời" đã tách sang `AdminChatbotAnswerModeSection.vue` (trang vượt 400
+// dòng). Script + template của component được NỐI vào để các phép kiểm "ô nhập này còn tồn
+// tại" vẫn đọc được nó — chỉ đọc trang thì tách tệp làm chúng xanh giả.
+const answerModeSectionSfc = parse(
+  await readFile(new URL('../app/components/admin/ChatbotAnswerModeSection.vue', import.meta.url), 'utf8'),
+  { filename: 'ChatbotAnswerModeSection.vue' },
+)
+const settingsScript = `${settingsSfc.descriptor.scriptSetup?.content ?? ''}\n${answerModeSectionSfc.descriptor.scriptSetup?.content ?? ''}`
+const settingsTemplate = `${settingsSfc.descriptor.template?.content ?? ''}\n${answerModeSectionSfc.descriptor.template?.content ?? ''}`
 
 const now = new Date('2026-01-01T00:00:00Z')
 

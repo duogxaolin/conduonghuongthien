@@ -12,6 +12,8 @@ const legacySource = await readFile(new URL('../app/pages/admin/chatbot/small-ta
 // navigation guard reads — and counts across — the layout's whole family (tests/_component-family.ts).
 const layoutSource = familySource(ADMIN_LAYOUT_FAMILY)
 const settingsSource = await readFile(new URL('../app/pages/admin/chatbot/settings.vue', import.meta.url), 'utf8')
+// Khối "Chế độ trả lời" đã tách sang component riêng (trang vượt 400 dòng).
+const answerModeSectionSource = await readFile(new URL('../app/components/admin/ChatbotAnswerModeSection.vue', import.meta.url), 'utf8')
 const panelSfc = parse(panelSource, { filename: 'ChatbotSmallTalkPanel.vue' })
 const panelScript = panelSfc.descriptor.scriptSetup?.content ?? ''
 const panelTemplate = panelSfc.descriptor.template?.content ?? ''
@@ -53,7 +55,7 @@ test('the combined page exposes accessible knowledge and small-talk tabs through
 
 test('legacy small-talk route and settings deep link preserve the small-talk tab', () => {
   assert.match(legacySource, /navigateTo\(\{ path: '\/admin\/chatbot\/knowledge', query: \{ tab: 'small-talk' \} \}, \{ replace: true \}\)/)
-  assert.match(settingsSource, /to="\/admin\/chatbot\/knowledge\?tab=small-talk"/)
+  assert.match(`${settingsSource}\n${answerModeSectionSource}`, /to="\/admin\/chatbot\/knowledge\?tab=small-talk"/)
 })
 
 test('the two tabs keep independent API contracts and lifecycles', () => {

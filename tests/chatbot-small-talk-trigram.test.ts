@@ -17,7 +17,7 @@ import {
   createTrigramRanker,
   normalizeForTrigram,
 } from '../server/utils/chatbot/small-talk-semantic-trigram.ts'
-import { selectSmallTalk, type SemanticSmallTalkEntry } from '../server/utils/chatbot/small-talk-semantic.ts'
+import { readSmallTalkSemanticConfig, selectSmallTalk, type SemanticSmallTalkEntry } from '../server/utils/chatbot/small-talk-semantic.ts'
 
 function entry(id: number, examples: string[]): SemanticSmallTalkEntry {
   return { id, intent: null, category: 'social', semanticExamples: examples }
@@ -108,4 +108,31 @@ test('with the shipped threshold the ranker adds matches the rules alone never r
   assert.equal((await select('helo'))?.entryId, 1, 'gõ thiếu ký tự vẫn tới mục chào')
   assert.equal((await select('cám ơn bạn nhiều'))?.entryId, 4, 'câu dài hơn mẫu vẫn tới mục cảm ơn')
   assert.equal(await select('Học nghề miễn phí ở đâu?'), null, 'câu nghiệp vụ không được thành lời chào')
+})
+
+test('the admin switch is the authority; the env variable can only force it ON', async () => {
+  // Ba tầng phải cùng một câu chuyện: cột `chatbot_settings.small_talk_semantic_enabled`
+  // (checkbox ở /admin/chatbot/settings) quyết định, biến môi trường chỉ mở thêm.
+  assert.equal(readSmallTalkSemanticConfig({}, { smallTalkSemanticEnabled: false }).enabled, false, 'tắt trên admin, env trống')
+  assert.equal(readSmallTalkSemanticConfig({}, { smallTalkSemanticEnabled: true }).enabled, true, 'bật trên admin')
+  assert.equal(readSmallTalkSemanticConfig({ CHATBOT_SMALL_TALK_SEMANTIC_ENABLED: '1' }, { smallTalkSemanticEnabled: false }).enabled, true, 'env buộc bật')
+  // Đã bỏ tick trên admin thì env `0` KHÔNG được bật lại sau lưng — nếu không, bỏ tick
+  // xong vẫn thấy chatbot trả lời như đang bật, và không ai hiểu vì sao.
+  assert.equal(readSmallTalkSemanticConfig({ CHATBOT_SMALL_TALK_SEMANTIC_ENABLED: '0' }, { smallTalkSemanticEnabled: false }).enabled, false)
+  assert.equal(readSmallTalkSemanticConfig({}, {}).enabled, false, 'không cột, không env ⇒ tắt')
+
+  // Bật/tắt công tắc phải ĐỔI KẾT QUẢ CHỌN, không chỉ đổi một cờ đọc được.
+  const ranker = createTrigramRanker(BANK)
+  const off = await selectSmallTalk({
+    businessReferences: [], entries: BANK, query: 'helo', ruleMatcher: () => null,
+    semanticProvider: ranker, semanticConfig: readSmallTalkSemanticConfig({}, { smallTalkSemanticEnabled: false }),
+    semanticDefaults: SMALL_TALK_TRIGRAM_DEFAULTS,
+  })
+  const on = await selectSmallTalk({
+    businessReferences: [], entries: BANK, query: 'helo', ruleMatcher: () => null,
+    semanticProvider: ranker, semanticConfig: readSmallTalkSemanticConfig({}, { smallTalkSemanticEnabled: true }),
+    semanticDefaults: SMALL_TALK_TRIGRAM_DEFAULTS,
+  })
+  assert.equal(off, null, 'tắt thì "helo" rơi xuống câu thông báo, đúng hành vi trước bản cập nhật')
+  assert.equal(on?.entryId, 1, 'bật thì "helo" vào mục chào')
 })

@@ -27,6 +27,7 @@ export async function createChatbotTables(db: Connection, database: string): Pro
       \`lead_capture_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
       \`lead_capture_email\` VARCHAR(255) NULL,
       \`small_talk_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`small_talk_semantic_enabled\` TINYINT(1) NOT NULL DEFAULT 0,
       \`request_timeout_ms\` INT UNSIGNED NOT NULL DEFAULT 10000,
       \`max_response_bytes\` INT UNSIGNED NOT NULL DEFAULT 262144,
       \`max_input_chars\` INT UNSIGNED NOT NULL DEFAULT 2000,

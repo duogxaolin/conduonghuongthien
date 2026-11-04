@@ -517,6 +517,9 @@ export const chatbotSettings = mysqlTable('chatbot_settings', {
   // Fixed greeting/thanks/"who are you" replies when the knowledge bank matches
   // nothing. See utils/chatbot/small-talk.ts.
   smallTalkEnabled:      boolean('small_talk_enabled').notNull().default(true),
+  // Tầng thứ ba của bộ khớp small-talk (cosine trigram). Tắt mặc định vì nó đổi
+  // hành vi trả lời; bật ở /admin/chatbot/settings, không cần deploy lại.
+  smallTalkSemanticEnabled: boolean('small_talk_semantic_enabled').notNull().default(false),
   requestTimeoutMs:      int('request_timeout_ms', { unsigned: true }).notNull().default(10000),
   maxResponseBytes:      int('max_response_bytes', { unsigned: true }).notNull().default(262144),
   maxInputChars:         int('max_input_chars', { unsigned: true }).notNull().default(2000),

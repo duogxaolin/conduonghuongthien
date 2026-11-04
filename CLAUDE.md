@@ -18,7 +18,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 <!-- Sinh bởi `npm run docs:facts -- --write`, đừng sửa tay. -->
 | Số liệu | Giá trị |
 |---|---|
-| Bảng · cột (`db:drift`) | 62 · 643 |
+| Bảng · cột (`db:drift`) | 62 · 644 |
 | Endpoint `server/api` · có `getDb()` · import `services/` | 319 · 156 · 210 |
 | Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 209 · 195 |
 | Tệp import `rateLimitDeps` | 22 |
