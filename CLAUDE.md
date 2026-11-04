@@ -18,9 +18,9 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 <!-- Sinh bởi `npm run docs:facts -- --write`, đừng sửa tay. -->
 | Số liệu | Giá trị |
 |---|---|
-| Bảng · cột (`db:drift`) | 62 · 644 |
-| Endpoint `server/api` · có `getDb()` · import `services/` | 319 · 156 · 210 |
-| Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 209 · 195 |
+| Bảng · cột (`db:drift`) | 63 · 655 |
+| Endpoint `server/api` · có `getDb()` · import `services/` | 324 · 159 · 219 |
+| Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 214 · 200 |
 | Tệp import `rateLimitDeps` | 22 |
 | Suite `*-integration` (so matrix CI) | 22 (khớp) |
 | Dòng `default.vue` · `init.ts` · `useI18n.ts` · `useChatbot.ts` · `admin/profile.vue` | 399 · 80 · 265 · 132 · 277 |
