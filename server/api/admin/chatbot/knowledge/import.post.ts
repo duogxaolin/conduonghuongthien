@@ -3,6 +3,7 @@ import { createKnowledge, transitionKnowledge, ChatbotKnowledgeValidationError }
 import { extractKeywords } from '../../../../utils/chatbot/keywords'
 import { parseQaWorkbookDiagnostics, XlsxError, type QaParseIssue, type QaRawRow, type QaRow } from '../../../../utils/xlsx-reader'
 import { logError } from '../../../../utils/logger'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024 // 8 MB
 const MAX_ROWS = 2000
@@ -136,5 +137,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // Dữ liệu nền đổi ⇒ mọi câu trả lời đã cache thành vô hiệu.
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true, total, imported, published, skipped: Math.max(0, total - imported), errors: errors.slice(0, MAX_ROWS) }
 })

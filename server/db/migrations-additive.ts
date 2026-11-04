@@ -401,6 +401,8 @@ export async function convergeChatbotSchema(db: Connection, database: string) {
   // Default OFF (khác `small_talk_enabled`): đây là tầng THỨ BA, đổi hành vi trả lời, nên
   // một DB đã có dữ liệu không được tự bật. Cán bộ bật ở /admin/chatbot/settings.
   await ensureColumn(db, database, 'chatbot_settings', 'small_talk_semantic_enabled', 'TINYINT(1) NOT NULL DEFAULT 0')
+  // Phiên bản dữ liệu cho cache câu trả lời; DB đã có dữ liệu bắt đầu ở 1.
+  await ensureColumn(db, database, 'chatbot_settings', 'answer_cache_version', 'INT UNSIGNED NOT NULL DEFAULT 1')
 
   await db.query('UPDATE `chatbot_settings` s LEFT JOIN `users` u ON u.`id` = s.`updated_by` SET s.`updated_by` = NULL WHERE s.`updated_by` IS NOT NULL AND u.`id` IS NULL')
   await db.query('UPDATE `chatbot_knowledge` k LEFT JOIN `users` u ON u.`id` = k.`author_id` SET k.`author_id` = NULL WHERE k.`author_id` IS NOT NULL AND u.`id` IS NULL')

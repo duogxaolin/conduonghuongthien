@@ -1,6 +1,7 @@
 import { transitionKnowledge, ChatbotKnowledgeValidationError } from '../../../../services/chatbot-knowledge'
 import { requireChatbotKnowledgePermission } from '../../../../utils/permissions'
 import { parseBulkIds, runBulk } from '../../../../utils/bulk'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 /**
  * Publish or archive several knowledge entries in one request.
@@ -24,6 +25,8 @@ export default defineEventHandler(async (event) => {
   const actor = requireChatbotKnowledgePermission(event, target === 'published' ? 'publish' : 'archive')
   const ids = parseBulkIds(body)
 
+  // Dữ liệu nền đổi ⇒ mọi câu trả lời đã cache thành vô hiệu.
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return runBulk(ids, async (id) => {
     try {
       if (!await transitionKnowledge(actor.id, id, target)) {

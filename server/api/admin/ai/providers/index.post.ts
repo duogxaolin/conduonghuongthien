@@ -4,6 +4,7 @@ import { requireResourcePermission } from '../../../../utils/permissions'
 import { encryptAiSecret } from '../../../../utils/ai/crypto'
 import { checkProviderBaseUrl } from '../../../../utils/ai/provider-url'
 import { eq } from 'drizzle-orm'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 /**
  * Create a new AI provider (spec R4 extension).
@@ -87,5 +88,7 @@ export default defineEventHandler(async (event) => {
     return newId
   })
 
+  // Cấu hình AI / prompt đổi ⇒ câu trả lời cũ không còn đúng.
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true, id: result }
 })

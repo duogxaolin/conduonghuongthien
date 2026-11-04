@@ -15,6 +15,13 @@ import type { ChatDependencies, ChatEvent, ChatResult } from './chat-policy-cont
 import { AI_QUOTA_MESSAGE, CHAT_RATE_LIMITED_MESSAGE, chargeChatRateLimit, enforceAiQuota } from './chat-policy-rate-limit'
 import { validateChatMessages, validateChatRequestBody } from './chat-policy-request'
 import { knowledgeOrSituation, outOfScopeResult, smallTalkResult } from './chat-policy-fallbacks'
+import {
+  answerCacheKey,
+  answerCacheVersion,
+  readCachedAnswer,
+  writeCachedAnswer,
+  type CachedAnswer,
+} from './chatbot-answer-cache'
 import { callProvider, providerFollowUps } from './chat-policy-provider'
 
 type ProviderReply = NonNullable<Awaited<ReturnType<typeof callProvider>>>
@@ -40,11 +47,44 @@ export async function answerGroundedChat(
   if (retryAfter) return { answer: CHAT_RATE_LIMITED_MESSAGE, sources: [], kind: 'rate_limited', retryAfter }
 
   const query = chatTurnText(history[history.length - 1])
+
   // Chủ quyền biển, đảo: lập trường do máy chủ viết, ở mọi chế độ, không bao giờ qua model (sovereignty-guard.ts).
   if (mentionsSovereignty(query)) {
     logInfo({ event: 'chatbot.sovereignty_answered', consequence: 'fixed official answer, provider not called' })
     return { answer: sovereigntyAnswer(query), sources: [], kind: 'curated' }
   }
+
+  /**
+   * Cache câu trả lời — tra trước khi chạm model, sau rate limit và sau kiểm chủ quyền.
+   *
+   * Thứ tự này là bắt buộc, không phải tuỳ ý:
+   *   - SAU rate limit: một câu lặp lại vẫn phải qua giới hạn tần suất, nếu không nó thành
+   *     đường vòng miễn phí.
+   *   - SAU kiểm chủ quyền: câu chạm chủ quyền biển đảo có lập trường viết sẵn, không qua
+   *     model, và không bao giờ được phát lại từ cache của bản khác.
+   *   - `answerCacheKey` tự trả `null` cho lượt có lịch sử nhiều hơn một câu, vì câu trả
+   *     lời khi đó phụ thuộc ngữ cảnh.
+   */
+  const cacheKey = answerCacheKey({
+    question: query,
+    settings,
+    version: await answerCacheVersion().catch(() => 0),
+    historyLength: history.length,
+  })
+  if (cacheKey) {
+    const cached = await readCachedAnswer(cacheKey).catch((): CachedAnswer | null => null)
+    if (cached) {
+      logInfo({ event: 'chatbot.answer_cache_hit', consequence: 'provider not called, answer replayed' })
+      return {
+        answer: cached.answer,
+        sources: cached.sources,
+        kind: cached.kind as ChatResult['kind'],
+        followUps: cached.followUps,
+        streamed: Boolean(onChunk),
+      }
+    }
+  }
+
   let references: PublicKnowledgeReference[]
   try {
     references = (dependencies.retrieve ?? retrieveKnowledge)(await dependencies.loadPublishedEntries(), query, { topK: settings.retrievalTopK, charBudget: settings.referenceCharBudget })
@@ -113,12 +153,16 @@ export async function answerGroundedChat(
         const freeform = await askProvider([])
         if (freeform === 'replaced') return replaced
         if (freeform) {
+          const followUps = await providerFollowUps(dependencies, query, freeform, [])
+          if (cacheKey) {
+            await writeCachedAnswer({ key: cacheKey, question: query, answer: freeform.text, sources: [], followUps, kind: 'provider' }).catch(() => false)
+          }
           return {
             answer: freeform.text,
             sources: [],
             toolCalls: freeform.toolCalls,
             kind: 'provider',
-            followUps: await providerFollowUps(dependencies, query, freeform, []),
+            followUps,
             streamed: Boolean(onChunk),
           }
         }
@@ -147,15 +191,21 @@ export async function answerGroundedChat(
     if (grounded) {
       // Bài viết / ảnh / video do model tự gọi công cụ rồi dệt vào câu trả lời; không
       // có block nào được ép thêm ở đây (sẽ làm chào hỏi cũng kèm link thừa).
+      //
+      // "Nguồn tham khảo" chỉ liệt kê trích dẫn kho kiến thức (chatbot_knowledge).
+      // Bài viết / ảnh / video (kind: 'evidence') đã nằm trong thân câu trả lời do
+      // model dệt từ kết quả công cụ — liệt kê lại ở đây là trùng lặp.
+      const sources = references.filter(ref => ref.source && ref.kind !== 'evidence')
+      const followUps = await providerFollowUps(dependencies, query, grounded, references)
+      if (cacheKey) {
+        await writeCachedAnswer({ key: cacheKey, question: query, answer: grounded.text, sources, followUps, kind: 'provider' }).catch(() => false)
+      }
       return {
         answer: grounded.text,
-        // "Nguồn tham khảo" chỉ liệt kê trích dẫn kho kiến thức (chatbot_knowledge).
-        // Bài viết / ảnh / video (kind: 'evidence') đã nằm trong thân câu trả lời do
-        // model dệt từ kết quả công cụ — liệt kê lại ở đây là trùng lặp.
-        sources: references.filter(ref => ref.source && ref.kind !== 'evidence'),
+        sources,
         toolCalls: grounded.toolCalls,
         kind: 'provider',
-        followUps: await providerFollowUps(dependencies, query, grounded, references),
+        followUps,
         streamed: Boolean(onChunk),
       }
     }

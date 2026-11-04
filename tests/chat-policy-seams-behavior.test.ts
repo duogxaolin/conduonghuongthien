@@ -312,8 +312,13 @@ test('the article tool binds the model string as SQL parameters, published only,
   const { dependencies } = harness()
   await answerGroundedChat(eventOf('s-articles'), settingsOf({ outOfScopeBehavior: 'ai_freeform' }), ask('quy trình phối hợp liên ngành hỗ trợ'), dependencies)
 
-  assert.equal(queries.length, 1)
-  const query = queries[0]!
+  // Bộ đệm câu trả lời tra TRƯỚC model (chat-policy-answer.ts), nên `queries` còn những
+  // lượt đọc `chatbot_settings`/`chatbot_answer_cache` đứng trước. Ghim đúng truy vấn của
+  // công cụ: lọc theo bảng, không theo vị trí — nếu không, thêm một lượt đọc trước công cụ
+  // sẽ làm test này đỏ vì lý do chẳng liên quan gì tới nó.
+  const toolQueries = queries.filter(query => query.table === articles)
+  assert.equal(toolQueries.length, 1)
+  const query = toolQueries[0]!
   assert.equal(query.table, articles)
   assert.deepEqual(query.projection, ['id', 'title', 'type', 'slug', 'excerpt', 'content', 'thumbnailUrl'])
   assert.equal(query.limit, 5)
@@ -356,7 +361,9 @@ test('video and photo tools bind an escaped LIKE operand, newest first, capped, 
   const { dependencies } = harness()
   await answerGroundedChat(eventOf('s-media'), settingsOf({ outOfScopeBehavior: 'ai_freeform' }), ask('quy trình phối hợp liên ngành hỗ trợ'), dependencies)
 
-  const [videoQuery, photoQuery] = queries
+  const mediaQueries = queries.filter(query => query.table === mediaItems || query.table === media)
+  assert.equal(mediaQueries.length, 2, 'chỉ hai truy vấn của công cụ, không tính lượt đọc bộ đệm đứng trước')
+  const [videoQuery, photoQuery] = mediaQueries
   assert.equal(videoQuery!.table, mediaItems)
   assert.equal(videoQuery!.limit, 3)
   assert.ok(compile(videoQuery!.where!).params.includes('%100\\%\\_x%'), 'wildcards typed by the model are escaped')

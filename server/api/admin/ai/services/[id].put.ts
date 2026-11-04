@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { aiServiceConfigs, activityLogs, chatbotSettings } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 /** Maximum allowed values for temperature and max_tokens. */
 const MAX_TEMPERATURE = 2
@@ -115,5 +116,7 @@ export default defineEventHandler(async (event) => {
     })
   })
 
+  // Cấu hình AI / prompt đổi ⇒ câu trả lời cũ không còn đúng.
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true }
 })

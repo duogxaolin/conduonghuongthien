@@ -1,6 +1,7 @@
 import { updateKnowledge, ChatbotKnowledgeValidationError } from '../../../../services/chatbot-knowledge'
 import { requireChatbotKnowledgePermission } from '../../../../utils/permissions'
 import { parseBulkIds, runBulk } from '../../../../utils/bulk'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 /**
  * Add or remove several knowledge entries from the widget's quick-question strip.
@@ -22,6 +23,8 @@ export default defineEventHandler(async (event) => {
   const ids = parseBulkIds(body)
   const target = body.isQuickQuestion === true
 
+  // Dữ liệu nền đổi ⇒ mọi câu trả lời đã cache thành vô hiệu.
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return runBulk(ids, async (id) => {
     try {
       if (!await updateKnowledge(actor.id, id, { isQuickQuestion: target })) {
