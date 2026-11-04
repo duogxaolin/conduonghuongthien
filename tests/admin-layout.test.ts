@@ -58,6 +58,7 @@ const MENU: Entry[] = [
   { group: 'Media & Livestream', label: 'Cài đặt Media Portal', icon: 'fa-solid fa-sliders', path: '/admin/settings/media-portal', gate: read('settings') },
   { group: 'Trợ lý Chatbot', label: 'Kho nội dung Chatbot', icon: 'fa-solid fa-book-open', path: '/admin/chatbot/knowledge', gate: read('chatbot_knowledge') },
   { group: 'Trợ lý Chatbot', label: 'Phiên trò chuyện', icon: 'fa-solid fa-comments', path: '/admin/chatbot/sessions', gate: read('chatbot_knowledge') },
+  { group: 'Trợ lý Chatbot', label: 'Câu trả lời đã lưu', icon: 'fa-solid fa-bolt', path: '/admin/chatbot/answer-cache', gate: read('chatbot_knowledge') },
   { group: 'Trợ lý Chatbot', label: 'Cài đặt Chatbot', icon: 'fa-solid fa-robot', path: '/admin/chatbot/settings', gate: read('chatbot_settings') },
   { group: 'Tương tác công dân', label: 'Đơn đăng ký hỗ trợ', icon: 'fa-solid fa-envelope-open-text', path: '/admin/submissions', gate: null },
   { group: 'Tương tác công dân', label: 'Người đọc & bình luận', icon: 'fa-solid fa-user-group', path: '/admin/readers', gate: read('readers') },

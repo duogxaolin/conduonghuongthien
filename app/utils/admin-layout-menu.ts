@@ -126,6 +126,7 @@ const ADMIN_PAGE_TITLES: Record<string, string> = {
   'admin-chatbot-small-talk': 'Trả lời thường nhật',
   'admin-chatbot-sessions': 'Phiên trò chuyện Chatbot',
   'admin-chatbot-sessions-id': 'Nội dung phiên trò chuyện',
+  'admin-chatbot-answer-cache': 'Câu trả lời đã lưu',
   'admin-chatbot-settings': 'Cài đặt Chatbot',
   'admin-readers': 'Quản lý Người đọc',
   'admin-readers-id': 'Chi tiết người đọc',

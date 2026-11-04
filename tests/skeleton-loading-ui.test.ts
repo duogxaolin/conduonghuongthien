@@ -125,6 +125,9 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'components/admin/SubmissionDetailModal.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/sessions/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/sessions/[id].vue', marker: 'v-if="loading"' },
+  // Câu trả lời đã lưu (bộ đệm của model) — cùng hợp đồng tải/lỗi/rỗng với
+  // "Phiên trò chuyện": SkeletonTable trong nhánh `loading`.
+  { file: 'pages/admin/chatbot/answer-cache.vue', marker: 'v-if="loading"' },
   // Picker trong dialog navbar/mobile — chọn Thể loại. Skeleton vẽ inline
   // (4 ô xám) trong when fetchTypes đang chạy.
   { file: 'components/admin/ContentTypePicker.vue', marker: 'v-if="loading"' },
@@ -186,6 +189,10 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // cả" dùng được ngay, dữ liệu fill nền sau. Mỗi tab con có skeleton riêng đã pin
   // ở VIEWS_WITH_LOADING_BRANCH.
   'pages/admin/ai/index.vue': 'background fallback fill of a filter dropdown; field is usable empty',
+  // Vùng nguy hiểm ở cuối tab Tổng quan: fetch CHỈ khi bấm nút (submit-time), nút mang
+  // trạng thái "Đang xoá…" + disabled. Không có danh sách nào để vẽ khung chờ; kết quả
+  // về bằng toast và tab cha đọc lại số liệu.
+  'components/admin/ai/AiConfigWipeCard.vue': 'submit-time fetch; the button shows pending and the result lands in a toast',
   // Universal Translation Hub tab (tách khỏi languages/index.vue). Tác vụ nền
   // triggered bằng nút: "Quét lại hệ thống" mang spinner trong card "Trạng thái
   // quét", "Bắt đầu Dịch Toàn Cục" chuyển thành "Đang dịch toàn cục..." + progress
