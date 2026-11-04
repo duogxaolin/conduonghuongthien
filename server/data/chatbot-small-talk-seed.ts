@@ -38,7 +38,13 @@ export const CHATBOT_SMALL_TALK_SEED: SmallTalkSeedEntry[] = [
     category: 'social',
     question: 'Xin chào',
     patterns: ['xin chao', 'chao ban', 'chao anh', 'chao chi', 'hi', 'hello'],
-    answer: 'Xin chào anh/chị. Anh/chị cần tôi hỗ trợ thông tin gì?',
+    // Câu chào là câu được trả lời NHIỀU NHẤT trên cổng, và lượt trước chỉ nói
+    // "cần tôi hỗ trợ thông tin gì?" — đúng nhưng cụt: không nói mình là ai, không
+    // nói cái gì tra được. Ba câu, đủ để người dân (nhiều người lớn tuổi, quen
+    // giấy tờ) biết ngay đây là trợ lý của cổng C11 và nên hỏi cái gì.
+    answer: 'Dạ, kính chào anh/chị. Tôi là Trợ lý ảo Hướng Thiện của Cổng thông tin điện tử C11 — Bộ Công an, '
+      + 'hỗ trợ tra cứu thủ tục pháp lý, chính sách và các dịch vụ hỗ trợ tái hòa nhập cộng đồng. '
+      + 'Anh/chị cần tìm hiểu vấn đề gì ạ?',
   },
   {
     category: 'social',

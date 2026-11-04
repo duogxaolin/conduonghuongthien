@@ -417,6 +417,26 @@ export async function convergeChatbotSchema(db: Connection, database: string) {
     WHERE k.\`id\` IS NULL
   `)
 
+  // Câu chào mặc định — cập nhật MỘT lần cho DB đã có dữ liệu.
+  //
+  // `seed.ts` là insert-only (`ON DUPLICATE KEY UPDATE` giữ nguyên chữ cũ), nên sửa
+  // seed chỉ tới được máy chủ cài mới. Lượt trước nói "Anh/chị cần tôi hỗ trợ thông tin
+  // gì?" — đúng nhưng cụt: người dân không biết đang nói chuyện với trợ lý của cổng
+  // nào và tra được những gì. Câu mới tự giới thiệu + nêu phạm vi.
+  //
+  // Điều kiện WHERE ghìm đúng chuỗi CŨ: hàng cán bộ đã sửa tay thì không khớp, nên
+  // lượt này không đè lên câu chữ của cơ quan.
+  await db.query(
+    'UPDATE `chatbot_small_talk` SET `answer` = ? WHERE `normalized_question` = ? AND `answer` = ?',
+    [
+      'Dạ, kính chào anh/chị. Tôi là Trợ lý ảo Hướng Thiện của Cổng thông tin điện tử C11 — Bộ Công an, '
+      + 'hỗ trợ tra cứu thủ tục pháp lý, chính sách và các dịch vụ hỗ trợ tái hòa nhập cộng đồng. '
+      + 'Anh/chị cần tìm hiểu vấn đề gì ạ?',
+      'xin chao',
+      'Xin chào anh/chị. Anh/chị cần tôi hỗ trợ thông tin gì?',
+    ],
+  )
+
   for (const migration of chatbotConvergentIndexMigrations) await ensureChatbotIndex(db, database, migration)
   for (const migration of chatbotForeignKeyMigrations) await ensureChatbotForeignKey(db, database, migration)
 }
