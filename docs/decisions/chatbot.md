@@ -18,6 +18,22 @@ Chatbot có hai nguồn trả lời độc lập ở tầng lược đồ, ranh 
 
 `server/utils/chatbot/small-talk.ts` là **hàm thuần** `matchSmallTalk(entries, query)`: nhận mục đã nạp từ CSDL + câu hỏi, trả `{ id, category, answer } | null`. Ba tầng khớp theo độ đặc hiệu giảm dần: khớp chính xác câu đã chuẩn hoá → khớp chính xác một pattern → pattern xuất hiện trọn vẹn dưới dạng chuỗi token liên tiếp (pattern dài hơn thắng; hoà thì `displayOrder` rồi `id`). Từ ngắn dễ nhầm (≤4 ký tự không dấu như "duoc", "oi", "ok", "da") chỉ khớp khi **là toàn bộ tin nhắn**. Chốt độ dài nới rộng (≤120 ký tự / ≤20 token) chỉ là lưới an toàn cuối, không phải cơ chế khớp chính — nhờ đó câu đời thường dài như "cho tôi hỏi dùng dịch vụ này có mất phí không ạ" (11 từ) vẫn khớp được.
 
+### Tầng thứ ba — ranker trigram, và cái bẫy ngưỡng (2026-11-04)
+
+`small-talk-semantic.ts` là **khung** cho một ranker cục bộ (không mang model runtime, mặc định TẮT, chỉ chạy sau khi kho nghiệp vụ và luật tất định đều trượt). Tới 2026-11-04 khung đó chưa có provider nào, nên câu chào biến thể rơi hết xuống "chưa tìm thấy thông tin". Đo trên kho 122 mục: luật tất định bắt **15/23** biến thể ("Hi bạn ơi", "helo", "thank you", "tks nhé", "bye bye", "ok bạn", "ngủ ngon nhé" đều trượt).
+
+`small-talk-semantic-trigram.ts` là provider đầu tiên: cosine trên trigram ký tự sau khi bỏ dấu — không model, không mạng, không thêm dependency, **0,49 ms/lượt** cho 122 mục. Cùng bộ 23 câu cần bắt + 12 câu lạc đề:
+
+| | bắt | lạc đề lọt |
+|---|---|---|
+| luật tất định | 15/23 | 0/12 |
+| luật + trigram @0,65, biên 0 | **18/23** | **0/12** |
+| luật + trigram @0,50 | 22/23 | 4/12 ("Xóa án tích cần gì?", "Học nghề miễn phí ở đâu?"…) |
+
+Bốn câu còn sót phải **thêm mẫu vào kho**, không phải hạ ngưỡng — hạ xuống 0,5 là chào lại người đang hỏi thủ tục.
+
+**Bẫy đã sập một lần:** `SMALL_TALK_SEMANTIC_DEFAULTS.confidenceThreshold` là 0,82 (dành cho ranker ngữ nghĩa thật). `readSmallTalkSemanticConfig({})` từng **điền sẵn** 0,82 khi env trống, nên ranker tự khai 0,65 vẫn bị kéo về 0,82 và không khớp gì — cấu hình đúng, hành vi sai, không test nào bắt. Nay `normalizeConfig` **bỏ hẳn khoá** khi người triển khai không đặt; `resolveSemanticConfig` mới điền mặc định, và mặc định đó đến từ `semanticSmallTalkDefaults` của **ranker đang cắm**. Env vẫn ghi đè được (`CHATBOT_SMALL_TALK_SEMANTIC_ENABLED=1` để bật). Chỉ mục được dựng lại theo dấu vân `id + câu hỏi chuẩn` mỗi lần nạp kho small-talk; sửa câu trả lời **không** dựng lại (ranker không đọc `answer`).
+
 ### Công tắc `small_talk_enabled` (**mặc định bật**, cột vắng đọc là bật)
 
 Chỉ nạp kho thường nhật khi kho nghiệp vụ **không khớp gì** và công tắc bật (kiểm công tắc TRƯỚC khi query, nên tắt thì không tốn round-trip). Ở chế độ AI cũng chặn trước khi gọi provider. `knowledgeGreeting` được prepend cho mọi nhóm TRỪ `social` (tránh chào hai lần). Loại phản hồi `kind: 'small_talk'`. Tắt công tắc → trả về đúng hành vi cũ (xin thông tin liên hệ). RBAC dùng chung resource `chatbot_knowledge` (không tạo resource mới).

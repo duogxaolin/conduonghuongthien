@@ -15,6 +15,19 @@
 function cleanAiContentCore(text: string): string {
   if (!text) return ''
   return text
+    // Lệnh gọi công cụ do model viết ra dưới dạng CHỮ (Pattern A của
+    // `extractToolCallsFromMessage`) thay vì `delta.tool_calls` có cấu trúc.
+    // `delify-5.5` làm vậy không thường xuyên nhưng có thật: người đọc từng nhận
+    // nguyên `<|tool_call>call:search_c11_articles{query:<|"|>…<|"|>}<tool_call|>`
+    // trên màn hình. Xoá ở đây là đúng chỗ: `streamText` (nguồn để trích lệnh gọi)
+    // KHÔNG đi qua hàm này, nên việc gọi công cụ vẫn chạy; chỉ chữ hiển thị sạch.
+    .replace(/<\|tool_call>[\s\S]*?<tool_call\|>/g, '')
+    // Thẻ mở không bao giờ đóng (provider cắt luồng giữa lệnh gọi, hoặc model
+    // quên thẻ đóng): bỏ từ thẻ mở tới hết chuỗi. Không có luật này, phần còn lại
+    // của lệnh gọi (`call:search_c11_articles{query:…`) vẫn hiện cho người đọc.
+    .replace(/<\|tool_call>[\s\S]*$/, '')
+    // Mảnh vụn: dấu đóng lẻ và các kiểu viết khác của provider.
+    .replace(/<\|\/tool_call\|>|<tool_call\|>|<\|tool_call\|>/g, '')
     .replace(/<\|channel>thought[\s\S]*?<channel\|>/gi, '')
     .replace(/<\|channel\|>thought[\s\S]*?<\|channel\|>/gi, '')
     .replace(/<\|thought\|>[\s\S]*?<\|\/thought\|>/gi, '')
@@ -72,6 +85,17 @@ function unclosedReasoningStart(text: string): number {
     const closeIdx = text.indexOf(thinkClose, pos + thinkOpen.length)
     if (closeIdx === -1) return pos
     pos = closeIdx + thinkClose.length
+  }
+  // Lệnh gọi công cụ dạng chữ: `<|tool_call>…<tool_call|>`. Giữ từ thẻ mở cho tới
+  // khi thẻ đóng tới, nếu không người đọc thấy nửa đầu của lệnh gọi (đo được: model
+  // phát từng mẩu, thẻ đóng tới ở mẩu sau).
+  const tcOpen = '<|' + 'tool_call' + '>'
+  const tcClose = '<' + 'tool_call' + '|>'
+  pos = 0
+  while ((pos = text.indexOf(tcOpen, pos)) !== -1) {
+    const closeIdx = text.indexOf(tcClose, pos + tcOpen.length)
+    if (closeIdx === -1) return pos
+    pos = closeIdx + tcClose.length
   }
   // Channel-tag span: `<|channel>…<channel|>` (the `thought` prefix variants
   // are subsumed by the plain `<channel|>` closer — note the `<` and `|`

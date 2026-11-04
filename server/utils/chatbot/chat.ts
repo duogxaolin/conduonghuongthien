@@ -6,7 +6,13 @@ import type { RetrievalEntry } from './retrieval'
 import type { SmallTalkEntry } from './small-talk'
 import { safeProviderRequest } from './outbound'
 import { answerGroundedChat } from './chat-policy'
-import { getSmallTalkSemanticProvider, readSmallTalkSemanticConfig } from './small-talk-semantic'
+import {
+  getSmallTalkSemanticProvider,
+  installSmallTalkSemanticProvider,
+  projectSemanticEntry,
+  readSmallTalkSemanticConfig,
+} from './small-talk-semantic'
+import { SMALL_TALK_TRIGRAM_DEFAULTS, createTrigramRanker } from './small-talk-semantic-trigram'
 
 let publishedCache: { data: RetrievalEntry[]; at: number } | null = null
 const PUBLISHED_TTL_MS = 60_000
@@ -73,10 +79,34 @@ async function loadSmallTalkEntries(): Promise<SmallTalkEntry[]> {
     .from(chatbotSmallTalk)
     .where(eq(chatbotSmallTalk.isEnabled, true))
     .orderBy(asc(chatbotSmallTalk.displayOrder), asc(chatbotSmallTalk.id))
-  return rows.map(row => ({ ...row, patterns: row.patterns ?? [] }))
+  const entries = rows.map(row => ({ ...row, patterns: row.patterns ?? [] }))
+  // Cùng chuyến đi này cũng làm mới chỉ mục trigram (khi bật) — nếu tách thành một
+  // truy vấn riêng thì mỗi câu chào hỏi tốn thêm một lượt đọc bảng vô ích.
+  installTrigramRanker(entries)
+  return entries
 }
 
 type ToolCallEvent = { name: string; query?: string; status: 'calling' | 'done'; count?: number }
+
+/**
+ * Mục đã chiếu để dựng ranker trigram, và dấu vân của chính danh sách đó.
+ *
+ * Ranker là chỉ mục trong bộ nhớ, nên ai đó phải dựng lại nó khi quản trị viên thêm /
+ * sửa / xoá một mục small-talk. Dấu vân dưới đây là `id + normalizedQuestion` của mọi
+ * mục đang bật: đổi câu hỏi chuẩn của một mục (thứ quyết định cả patterns lẫn ví dụ
+ * ngữ nghĩa), bật/tắt hay thêm/xoá mục đều làm nó đổi. Sửa CÂU TRẢ LỜI thì không — đúng
+ * ý: ranker không đọc `answer`.
+ */
+let trigramIndexFingerprint: string | null = null
+
+function installTrigramRanker(entries: readonly SmallTalkEntry[]): void {
+  if (!readSmallTalkSemanticConfig().enabled) return
+  const projected = entries.map(entry => projectSemanticEntry(entry))
+  const fingerprint = projected.map(entry => `${entry.id}:${entry.semanticExamples[0] ?? ''}`).join('|')
+  if (fingerprint === trigramIndexFingerprint) return
+  installSmallTalkSemanticProvider(createTrigramRanker(projected))
+  trigramIndexFingerprint = fingerprint
+}
 
 export async function answerChat(
   event: Parameters<typeof answerGroundedChat>[0],
@@ -92,6 +122,14 @@ export async function answerChat(
     configuredSecret: configuredChatbotSecret,
     providerRequest: safeProviderRequest,
     semanticSmallTalkProvider: getSmallTalkSemanticProvider(),
+    // Ngưỡng mặc định đi kèm ranker, không phải của khung: 0.82 dành cho một ranker ngữ
+    // nghĩa thật, trigram đo được ở 0.65 (xem `small-talk-semantic-trigram.ts`). Biến môi
+    // trường vẫn ghi đè được — đó là lý do hai thứ này tách nhau.
     semanticSmallTalkConfig: readSmallTalkSemanticConfig(),
+    semanticSmallTalkDefaults: {
+      confidenceThreshold: SMALL_TALK_TRIGRAM_DEFAULTS.confidenceThreshold,
+      top1Top2Margin: SMALL_TALK_TRIGRAM_DEFAULTS.top1Top2Margin,
+      timeoutMs: SMALL_TALK_TRIGRAM_DEFAULTS.timeoutMs,
+    },
   }, onChunk, onToolEvent, onReplace)
 }

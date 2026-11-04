@@ -82,11 +82,18 @@ export type SmallTalkSelection = {
   confidence: number
 }
 
+/**
+ * `confidenceThreshold` / `top1Top2Margin` / `timeoutMs` để TRỐNG nghĩa là "dùng mặc định
+ * của ranker đang cắm". Chúng chỉ có mặt khi người triển khai đặt biến môi trường tường
+ * minh — nếu không, `normalizeConfig` điền mặc định của KHUNG (0.82), và một ranker đo
+ * được ở 0.65 sẽ không bao giờ khớp dù cấu hình ranker nói 0.65. Đó đúng là lỗi đã xảy ra
+ * khi cắm ranker trigram: provider tự khai ngưỡng 0.65 nhưng env rỗng kéo nó về 0.82.
+ */
 export type SmallTalkSemanticConfig = {
   enabled: boolean
-  confidenceThreshold: number
-  top1Top2Margin: number
-  timeoutMs: number
+  confidenceThreshold?: number
+  top1Top2Margin?: number
+  timeoutMs?: number
 }
 
 export type SmallTalkRuleMatcher<Entry> = (
@@ -102,6 +109,8 @@ export type SelectSmallTalkOptions<Entry extends SemanticSmallTalkSource> = {
   ruleMatcher: SmallTalkRuleMatcher<Entry>
   semanticProvider?: SemanticSmallTalkProvider | null
   semanticConfig?: Partial<SmallTalkSemanticConfig>
+  /** Mặc định của ranker đang cắm; `semanticConfig` chỉ ghi đè khi đặt tường minh. */
+  semanticDefaults?: { confidenceThreshold: number, top1Top2Margin: number, timeoutMs: number }
 }
 
 /** Project a DB row to the exact metadata contract exposed to a semantic provider. */
@@ -119,33 +128,50 @@ export function projectSemanticEntry(entry: SemanticSmallTalkSource): SemanticSm
   }
 }
 
-function finiteNumber(value: unknown, fallback: number, minimum: number, maximum: number): number {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? Math.min(maximum, Math.max(minimum, value))
-    : fallback
+/** Có đặt (số hữu hạn) thì kẹp vào khoảng; KHÔNG đặt thì trả `undefined`, không trả default. */
+function bounded(value: unknown, minimum: number, maximum: number, round = false): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  const clamped = Math.min(maximum, Math.max(minimum, value))
+  return round ? Math.round(clamped) : clamped
 }
 
 function normalizeConfig(input: Partial<SmallTalkSemanticConfig> | undefined): SmallTalkSemanticConfig {
+  const confidenceThreshold = bounded(input?.confidenceThreshold, LIMITS.minimumConfidence, LIMITS.maximumConfidence)
+  const top1Top2Margin = bounded(input?.top1Top2Margin, LIMITS.minimumConfidence, LIMITS.maximumConfidence)
+  const timeoutMs = bounded(input?.timeoutMs, LIMITS.minimumTimeoutMs, LIMITS.maximumTimeoutMs, true)
+  // Khoá VẮNG MẶT, không phải khoá bằng `undefined`: "người triển khai không đặt" phải phân
+  // biệt được với "đặt bằng mặc định", nếu không ranker tự khai 0.65 lại bị kéo về 0.82 của
+  // khung. Nơi gọi điền mặc định qua `resolveSemanticConfig`.
   return {
     enabled: input?.enabled === true,
-    confidenceThreshold: finiteNumber(
-      input?.confidenceThreshold,
-      SMALL_TALK_SEMANTIC_DEFAULTS.confidenceThreshold,
-      LIMITS.minimumConfidence,
-      LIMITS.maximumConfidence,
-    ),
-    top1Top2Margin: finiteNumber(
-      input?.top1Top2Margin,
-      SMALL_TALK_SEMANTIC_DEFAULTS.top1Top2Margin,
-      LIMITS.minimumConfidence,
-      LIMITS.maximumConfidence,
-    ),
-    timeoutMs: Math.round(finiteNumber(
-      input?.timeoutMs,
-      SMALL_TALK_SEMANTIC_DEFAULTS.timeoutMs,
-      LIMITS.minimumTimeoutMs,
-      LIMITS.maximumTimeoutMs,
-    )),
+    ...(confidenceThreshold === undefined ? {} : { confidenceThreshold }),
+    ...(top1Top2Margin === undefined ? {} : { top1Top2Margin }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  }
+}
+
+/**
+ * Bộ cấu hình CUỐI CÙNG cho một lượt chọn: phần người triển khai đặt được áp lên mặc định
+ * của ranker. Tách khỏi `normalizeConfig` để một ranker khác cắm vào chỉ cần truyền bộ mặc
+ * định của nó, không phải sửa hàm chuẩn hoá.
+ */
+export type ResolvedSemanticConfig = {
+  enabled: boolean
+  confidenceThreshold: number
+  top1Top2Margin: number
+  timeoutMs: number
+}
+
+function resolveSemanticConfig(
+  input: Partial<SmallTalkSemanticConfig> | undefined,
+  defaults: { confidenceThreshold: number, top1Top2Margin: number, timeoutMs: number },
+): ResolvedSemanticConfig {
+  const normalized = normalizeConfig(input)
+  return {
+    enabled: normalized.enabled,
+    confidenceThreshold: normalized.confidenceThreshold ?? defaults.confidenceThreshold,
+    top1Top2Margin: normalized.top1Top2Margin ?? defaults.top1Top2Margin,
+    timeoutMs: normalized.timeoutMs ?? defaults.timeoutMs,
   }
 }
 
@@ -247,7 +273,11 @@ export async function selectSmallTalk<Entry extends SemanticSmallTalkSource>(
   const ruleEntry = rule ? entriesById.get(rule.id) : undefined
   if (ruleEntry) return selection(projectSemanticEntry(ruleEntry), 1)
 
-  const config = normalizeConfig(options.semanticConfig)
+  const config = resolveSemanticConfig(options.semanticConfig, options.semanticDefaults ?? {
+    confidenceThreshold: SMALL_TALK_SEMANTIC_DEFAULTS.confidenceThreshold,
+    top1Top2Margin: SMALL_TALK_SEMANTIC_DEFAULTS.top1Top2Margin,
+    timeoutMs: SMALL_TALK_SEMANTIC_DEFAULTS.timeoutMs,
+  })
   if (!config.enabled || !options.semanticProvider || options.entries.length === 0) return null
   if (query.length > LIMITS.maximumQueryChars) return null
 

@@ -39,6 +39,38 @@ function searchForm(value: string): string {
   return value.normalize('NFD').replace(/[̀-ͯ]/gu, '').replace(/[đĐ]/gu, 'd')
 }
 
+/**
+ * Hư từ tiếng Việt (đã bỏ dấu) — KHÔNG bao giờ tính là bằng chứng liên quan.
+ *
+ * Đo trên kho 20 mục của bản QA (2026-11-04): câu "Công thức nấu phở bò ngon?"
+ * khớp mục "Những nguyên tắc trong thực hiện công tác tái hòa nhập" **chỉ** vì token
+ * "thuc" (từ "thức") nằm trong "thực hiện", cộng "cong" nằm trong "công tác" — đủ
+ * `matchedKeywords >= 1` và `partial >= 2` để vượt ngưỡng. Câu "luật sư miễn phí"
+ * khớp nhờ "su"/"can" ("sư"/"cần"). Câu "đăng ký cư trú thế nào" khớp 13/20 mục nhờ
+ * "the"/"nao" ("thế"/"nào").
+ *
+ * Đây là bộ lọc theo TỪ, không phải theo ngữ nghĩa: một hư từ không mang chủ đề, nên
+ * khớp nó không nói gì về việc mục có trả lời đúng câu hỏi hay không. Giữ danh sách
+ * NGẮN và chỉ gồm từ chức năng — thêm một từ mang nghĩa vào đây sẽ làm mất kết quả
+ * đúng (vd. "cho", "của" chỉ dùng khi đi với từ khác nên để lại).
+ */
+const VIETNAMESE_STOP_WORDS: Readonly<Record<string, true>> = {
+  va: true, la: true, thi: true, ma: true, nen: true, deu: true, cung: true, chi: true, con: true,
+  the: true, nao: true, gi: true, sao: true, ai: true, dau: true, bao: true, nhieu: true, khi: true, luc: true,
+  toi: true, minh: true, chung: true, ho: true, ban: true, anh: true, em: true,
+  co: true, khong: true, duoc: true, bi: true, se: true, da: true, dang: true, vua: true, moi: true,
+  ve: true, trong: true, ngoai: true, tren: true, duoi: true, truoc: true, sau: true, giua: true, voi: true,
+  nhu: true, theo: true, boi: true, de: true, vi: true, tai: true, vao: true, ra: true,
+  nay: true, do: true, kia: true, ay: true, no: true, day: true,
+  can: true, muon: true, phai: true, hay: true,
+  thuc: true, su: true, cong: true, viec: true, cac: true, nhung: true, mot: true,
+}
+
+/** Token dùng để CHẤM ĐIỂM: bỏ hư từ. Rỗng khi câu chỉ gồm hư từ (→ không khớp gì). */
+function contentTokens(value: string): string[] {
+  return tokens(value).filter(token => !VIETNAMESE_STOP_WORDS[token])
+}
+
 function tokens(value: string): string[] {
   return [...new Set(searchForm(normalizeKnowledgeText(value)).split(/[^\p{L}\p{N}]+/u).filter(token => token.length > 0))]
 }
@@ -65,7 +97,10 @@ export function retrieveKnowledge(entries: RetrievalEntry[], query: string, opti
   const normalizedQuery = normalizeKnowledgeText(query)
   if (!normalizedQuery) return [] as PublicKnowledgeReference[]
   const querySearch = searchForm(normalizedQuery)
-  const queryTokens = tokens(normalizedQuery)
+  const queryTokens = contentTokens(normalizedQuery)
+  // Câu chỉ gồm hư từ ("thế nào?", "là gì?") không mang chủ đề nào để tra. Trả rỗng
+  // thay vì để `partial >= 2` khớp mọi mục có chữ "thế nào" trong câu hỏi chuẩn.
+  if (queryTokens.length === 0) return [] as PublicKnowledgeReference[]
   const topK = Math.min(10, Math.max(1, Math.floor(options.topK ?? 3)))
   const charBudget = options.charBudget === undefined ? Infinity : Math.max(0, Math.floor(options.charBudget))
   const tokenBudget = options.tokenBudget === undefined ? Infinity : Math.max(0, Math.floor(options.tokenBudget))
@@ -93,20 +128,33 @@ export function retrieveKnowledge(entries: RetrievalEntry[], query: string, opti
       const matchedKeywords = keywords.filter((keyword) => {
         if (keyword.includes(' ')) return querySearch.includes(keyword)
         return queryTokens.some(token => keyword === token || (token.length >= 4 && keyword.includes(token)) || (keyword.length >= 4 && token.includes(keyword)))
-      }).length
-      const canonicalTokens = tokens(entry.canonicalQuestion)
+      })
+      // Hai vế đều bỏ hư từ: khớp "thế"/"nào" không nói gì về chủ đề, và một mục
+      // có 5 hư từ trong câu hỏi chuẩn sẽ vượt `partial >= 2` với mọi câu hỏi khác.
+      const canonicalTokens = contentTokens(entry.canonicalQuestion)
       const partial = canonicalTokens.filter(token => queryTokens.includes(token)).length
-      const score = exact ? 10000 : aliasExact ? 9000 : matchedKeywords * 100 + partial
-      return { entry, score, exact, aliasExact, matchedKeywords, partial }
+      const score = exact ? 10000 : aliasExact ? 9000 : matchedKeywords.length * 100 + partial
+      return { entry, score, exact, aliasExact, matchedKeywordCount: matchedKeywords.length, partial }
     })
-    // Relevance floor. Sharing a single ordinary word with a question is not
-    // evidence of relevance — without this, an unrelated query ("công thức nấu
-    // phở") matches any entry containing "công" and the assistant answers with
-    // an irrelevant legal text instead of offering to take the visitor's details.
-    // An entry still qualifies on any keyword/alias hit, or on two or more
-    // overlapping words of the canonical question (which keeps entries that were
-    // created without explicit keyword terms working).
-    .filter(item => item.exact || item.aliasExact || item.matchedKeywords >= 1 || item.partial >= 2)
+    // Relevance floor. Sharing one ordinary word with a question is not evidence of
+    // relevance — without this, "công thức nấu phở" matched every entry containing
+    // "công" and the assistant answered with an irrelevant legal text instead of
+    // offering to take the visitor's details.
+    //
+    // Cổng liên quan. Đo trên kho 20 mục: 10 câu đúng chủ đề + 6 câu lạc đề
+    // (2026-11-04; "lọt" = câu lạc đề vẫn trả về tài liệu):
+    //   bỏ hư từ + ngưỡng này     10/10 đúng, 3/6 lọt
+    //   KHÔNG bỏ hư từ (bản cũ)    10/10 đúng, 5/6 lọt
+    // Bỏ hư từ mua được độ chính xác mà KHÔNG mất câu đúng nào: nó xoá đúng nhóm khớp
+    // giả ("thuc"~"thực hiện", "cong"~"công tác", "can"~"cần", "su"~"sư", "the"/"nao"
+    // của "thế nào"). Siết thêm bằng độ dài từ khoá thì mất câu thật — "vay 100 triệu"
+    // chỉ khớp qua "vay", "tìm việc" qua "tim"/"viec" (đo: 7–9/10 đúng).
+    //
+    // Ba câu còn lọt là ĐỒNG ÂM KHÁC NGHĨA, không phải ngưỡng: "giá vàng"~"… và gia
+    // đình", "nấu canh"~"chuẩn bị", "bóng đá Việt Nam"~"Việt Nam" (một cụm từ khoá thật
+    // của mục 8). Bài toán ngữ nghĩa, không giải được bằng bộ so chuỗi — xem
+    // `docs/decisions/chatbot.md` § truy xuất, và bước 5 (semantic provider).
+    .filter(item => item.exact || item.aliasExact || item.matchedKeywordCount >= 1 || item.partial >= 2)
     .sort((a, b) => b.score - a.score || Number(b.entry.priority) - Number(a.entry.priority) || Number(a.entry.id) - Number(b.entry.id))
 
   const result: PublicKnowledgeReference[] = []

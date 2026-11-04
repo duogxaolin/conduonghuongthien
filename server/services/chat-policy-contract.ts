@@ -43,4 +43,6 @@ export type ChatDependencies = {
   retrieve?: typeof retrieveKnowledge
   semanticSmallTalkProvider?: SemanticSmallTalkProvider | null
   semanticSmallTalkConfig?: Partial<SmallTalkSemanticConfig>
+  /** Mặc định của ranker đang cắm (ngưỡng/biên/hạn giờ) — `semanticSmallTalkConfig` chỉ ghi đè. */
+  semanticSmallTalkDefaults?: { confidenceThreshold: number, top1Top2Margin: number, timeoutMs: number }
 }

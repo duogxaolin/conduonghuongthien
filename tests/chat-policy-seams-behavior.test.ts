@@ -3,7 +3,7 @@ import test, { mock } from 'node:test'
 import { MySqlDialect } from 'drizzle-orm/mysql-core'
 import type { SQL } from 'drizzle-orm'
 import { articles, media, mediaItems, type ChatbotSettings } from '../server/db/schema'
-import { retrieveKnowledge, type PublicKnowledgeReference, type RetrievalEntry } from '../server/utils/chatbot/retrieval'
+import type { RetrievalEntry } from '../server/utils/chatbot/retrieval'
 import { CHATBOT_HOTLINE } from '../server/utils/chatbot/prompt-defaults'
 
 /**
@@ -196,7 +196,7 @@ const outputOf = (name: string) => {
 
 // ─── Gateway path: prompt, history, tools ────────────────────────────────────
 
-test('the grounded AI path hands the gateway the grounded prompt, the visitor turn, the history and five tools in order', async () => {
+test('the grounded AI path hands the gateway the grounded prompt, the visitor turn and the history, with tools already switched off', async () => {
   reset({ result: { ok: true, text: 'Câu trả lời của AI.' } })
   const { dependencies, calls } = harness()
   const history = [
@@ -232,7 +232,11 @@ test('the grounded AI path hands the gateway the grounded prompt, the visitor tu
   // `{{question}}` lands inside the system prompt: fenced with a per-call tag, never raw
   // (tests/chatbot-question-variable-fence.test.ts); the visitor turn above stays as written.
   assert.match(input.variables?.question ?? '', /^<(cau_hoi_[0-9a-f]{12})>\nThủ tục xóa án tích\?\n<\/\1>$/)
-  assert.deepEqual(input.tools?.map(tool => tool.name), TOOL_NAMES)
+  // Kho tri thức đã khớp (`references` khác rỗng) nên bài viết được nạp sẵn vào prompt
+  // và danh sách công cụ là RỖNG — bỏ được một vòng gọi model (xem
+  // `chat-policy-provider.ts` § nạp sẵn, `tests/chatbot-article-prefetch.test.ts`).
+  assert.deepEqual(input.tools, [], 'đã có tài liệu trong prompt thì không đưa công cụ')
+  assert.match(input.systemPrompt!, /<UNTRUSTED_ARTICLE_LINKS>|KHÔNG còn công cụ tra cứu/, 'prompt phải nói rõ lượt này không có công cụ')
   assert.equal(calls.legacy, 0, 'a gateway answer never touches the legacy path')
 
   assert.equal(result.kind, 'provider')
@@ -241,7 +245,7 @@ test('the grounded AI path hands the gateway the grounded prompt, the visitor tu
   assert.equal(result.streamed, false)
 })
 
-test('evidence pulled through tools is woven into the answer, not listed as a source; bank rows the model fetched become chips', async () => {
+test('tool results stay out of "Nguồn tham khảo"; only the bank row is cited, and the row the model fetched becomes a chip', async () => {
   reset({
     steps: [
       { name: 'search_c11_articles', args: { query: 'xóa án tích', type: 'role_model' } },
@@ -255,36 +259,43 @@ test('evidence pulled through tools is woven into the answer, not listed as a so
     : table === mediaItems
       ? [{ id: 4, title: 'Phóng sự', slug: 'phong-su', shortId: 'ps1', description: 'Mô tả', thumbnailUrl: null }]
       : []
-  // Keep the very array `answerGroundedChat` grounds on: the provider path appends to it.
-  let grounding: PublicKnowledgeReference[] | null = null
-  const { dependencies } = harness({
-    retrieve: (entries, query, options) => {
-      const out = retrieveKnowledge(entries, query, options)
-      grounding ??= out
-      return out
-    },
-  })
-  const result = await answerGroundedChat(eventOf('s-evidence'), settingsOf(), ask('Thủ tục xóa án tích?'), dependencies)
+  const { dependencies } = harness()
+  // KHÔNG khớp kho tri thức → công cụ còn nguyên, model tự gọi (đường nạp sẵn chỉ dành
+  // cho câu đã khớp kho; xem `chat-policy-provider.ts` § nạp sẵn).
+  const result = await answerGroundedChat(eventOf('s-evidence'), settingsOf({ outOfScopeBehavior: 'ai_freeform' }), ask('quy trình phối hợp liên ngành hỗ trợ'), dependencies)
 
   assert.equal(result.kind, 'provider')
   assert.equal(result.answer, 'Câu trả lời có dẫn chứng.')
-  assert.ok(grounding)
-  assert.deepEqual(
-    grounding.filter(ref => ref.kind === 'evidence').map(ref => ({ id: ref.id, question: ref.question, answer: ref.answer, topic: ref.topic, source: ref.source })),
-    [
-      { id: 0, question: 'Gương sáng', answer: 'Nội dung', topic: 'role_model', source: { label: 'Tấm gương: Gương sáng', reference: null, url: '/news/guong-sang' } },
-      { id: 0, question: 'Phóng sự', answer: '', topic: '', source: { label: 'Video: Phóng sự', reference: null, url: '/media/ps1' } },
-    ],
-    'article and video results join the grounding as evidence; knowledge rows (no title/url) do not',
-  )
-  assert.deepEqual(result.sources.map(source => [source.id, source.kind]), [[1, 'knowledge']], 'evidence is in the answer body, not repeated as a source')
+  // Bài viết / ảnh / video do model gọi công cụ KHÔNG vào danh sách nguồn: chúng đã nằm
+  // trong thân câu trả lời (model chép link). Chỉ trích dẫn kho tri thức mới được liệt kê.
+  assert.deepEqual(result.sources.map(source => [source.id, source.kind]), [], 'câu không khớp kho thì không có nguồn nào để liệt kê')
   assert.deepEqual(result.toolCalls?.map(call => [call.name, call.arguments, call.count]), [
     ['search_c11_articles', 'xóa án tích', 1],
     ['search_c11_videos', 'xóa án tích', 1],
     ['search_c11_knowledge', 'cư trú', 1],
   ])
   for (const call of result.toolCalls ?? []) assert.match(call.id, new RegExp(`^call_${call.name}_\\d+$`))
-  assert.deepEqual(result.followUps, ['Đăng ký cư trú sau khi ra tù ở đâu?'], 'the bank row the model fetched is offered next; the row just answered is not')
+  // Gợi ý tiếp theo đến từ hàng kho model đã tra (`search_c11_knowledge`), không từ
+  // khoảng trống của lượt: `providerFollowUps` nhận `knowledgeHitsOf(toolCallsExecuted)`.
+  assert.deepEqual(result.followUps, ['Đăng ký cư trú sau khi ra tù ở đâu?'], 'hàng kho model tra được trở thành gợi ý')
+  assert.deepEqual(result.sources.map(source => [source.id, source.kind]), [], 'câu không khớp kho thì "Nguồn tham khảo" rỗng')
+})
+
+test('a grounded turn cites the matched bank rows and never re-lists tool output as a source', async () => {
+  reset({
+    steps: [
+      { name: 'search_c11_knowledge', args: { query: 'cư trú' } },
+    ],
+    result: { ok: true, text: 'Câu trả lời có dẫn chứng.' },
+  })
+  const { dependencies } = harness()
+  const result = await answerGroundedChat(eventOf('s-grounded-source'), settingsOf(), ask('Thủ tục xóa án tích?'), dependencies)
+
+  assert.equal(result.kind, 'provider')
+  assert.deepEqual(result.sources.map(source => [source.id, source.kind]), [[1, 'knowledge']], 'chỉ kho tri thức được trích dẫn')
+  // Lượt grounded đã tắt công cụ, nên không có hàng kho nào do model tra: gợi ý chỉ có
+  // thể đến từ `reply.proposals` hoặc các hàng kho CÒN LẠI của lượt này (trừ hàng vừa trả lời).
+  assert.deepEqual(result.followUps, [], 'không có tool call, không có proposal → không gợi ý')
 })
 
 test('the article tool binds the model string as SQL parameters, published only, and returns readable Vietnamese', async () => {
@@ -294,9 +305,12 @@ test('the article tool binds the model string as SQL parameters, published only,
     { id: 7, title: 'G&#432;&#417;ng s&aacute;ng', type: 'role_model', slug: 'guong-sang', excerpt: 'Sapo &amp; t&oacute;m t&#7855;t', content: `<p>Ng&agrave;y</p>${'<b>x</b>'.repeat(400)}`, thumbnailUrl: '/uploads/a.jpg' },
     { id: 8, title: 'Mô hình', type: 'reintegration', slug: 'mo-hinh', excerpt: null, content: null, thumbnailUrl: null },
     { id: 9, title: 'Khác', type: 'other', slug: 'khac', excerpt: 'Chỉ có sapo', content: '', thumbnailUrl: null },
+    // Ảnh bìa mặc định của cổng: 492/1 132 bài production mang đúng đường dẫn này. Nó
+    // KHÔNG phải ảnh của bài — model từng nhúng nó và người đọc thấy khung ảnh vỡ.
+    { id: 10, title: 'Ảnh mặc định', type: 'news', slug: 'anh-mac-dinh', excerpt: null, content: null, thumbnailUrl: '/assets/default_cover_light.png' },
   ]
   const { dependencies } = harness()
-  await answerGroundedChat(eventOf('s-articles'), settingsOf(), ask('Thủ tục xóa án tích?'), dependencies)
+  await answerGroundedChat(eventOf('s-articles'), settingsOf({ outOfScopeBehavior: 'ai_freeform' }), ask('quy trình phối hợp liên ngành hỗ trợ'), dependencies)
 
   assert.equal(queries.length, 1)
   const query = queries[0]!
@@ -321,6 +335,8 @@ test('the article tool binds the model string as SQL parameters, published only,
   assert.equal(second!.categoryArchiveUrl, '/news/reintegration-models')
   assert.equal(third!.snippet, 'Chỉ có sapo', 'no body: the excerpt is the snippet')
   assert.equal(third!.categoryArchiveUrl, '/news')
+  const fourth = (outputOf('search_c11_articles') as Array<Record<string, unknown>>)[3]!
+  assert.equal(fourth!.coverImage, null, 'ảnh bìa mặc định của cổng phải là "không có ảnh", không phải ảnh của bài')
 })
 
 test('video and photo tools bind an escaped LIKE operand, newest first, capped, shaped for the answer', async () => {
@@ -338,7 +354,7 @@ test('video and photo tools bind an escaped LIKE operand, newest first, capped, 
       ]
     : [{ id: 3, originalName: 'trao.von.2026.jpg', url: '/uploads/trao.jpg' }]
   const { dependencies } = harness()
-  await answerGroundedChat(eventOf('s-media'), settingsOf(), ask('Thủ tục xóa án tích?'), dependencies)
+  await answerGroundedChat(eventOf('s-media'), settingsOf({ outOfScopeBehavior: 'ai_freeform' }), ask('quy trình phối hợp liên ngành hỗ trợ'), dependencies)
 
   const [videoQuery, photoQuery] = queries
   assert.equal(videoQuery!.table, mediaItems)
@@ -366,7 +382,7 @@ test('the knowledge and hotline tools answer from the approved bank only; a blan
     result: { ok: true, text: 'Đáp.' },
   })
   const { dependencies, calls } = harness()
-  await answerGroundedChat(eventOf('s-knowledge'), settingsOf(), ask('Thủ tục xóa án tích?'), dependencies)
+  await answerGroundedChat(eventOf('s-knowledge'), settingsOf({ outOfScopeBehavior: 'ai_freeform' }), ask('quy trình phối hợp liên ngành hỗ trợ'), dependencies)
 
   const [blank, found, hotline] = toolOutputs
   assert.deepEqual(blank!.data, [])
@@ -391,7 +407,7 @@ test('a tool whose read fails returns an empty list instead of failing the answe
       return BANK
     },
   })
-  const result = await answerGroundedChat(eventOf('s-fail'), settingsOf(), ask('Thủ tục xóa án tích?'), dependencies)
+  const result = await answerGroundedChat(eventOf('s-fail'), settingsOf({ outOfScopeBehavior: 'ai_freeform' }), ask('quy trình phối hợp liên ngành hỗ trợ'), dependencies)
   assert.deepEqual(toolOutputs.map(output => [output.name, output.data]), TOOL_NAMES.slice(0, 4).map(name => [name, []]))
   assert.equal(result.kind, 'provider')
   assert.equal(result.answer, 'Vẫn trả lời.')

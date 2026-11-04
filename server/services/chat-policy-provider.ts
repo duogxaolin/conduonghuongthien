@@ -13,13 +13,12 @@ import { buildProviderChatCall, extractProviderAnswer } from '../utils/chatbot/p
 import { callAi } from './ai-gateway'
 import { logWarn } from '../utils/logger'
 import { desc } from 'drizzle-orm'
-import { articles, mediaItems, media } from '../db/schema'
+import { mediaItems, media } from '../db/schema'
 import { getDb } from '../utils/db'
 import { createFollowUpStreamFilter, selectFollowUps, splitFollowUps } from '../utils/chatbot/follow-ups'
-import { buildArticleSearch } from '../utils/chatbot/article-search'
+import { searchArticles } from './chat-policy-article-search'
 import { photoSearchCondition, videoSearchCondition } from '../utils/chatbot/media-search'
 import { chatTurnText } from '../utils/chatbot/chat-turns'
-import { decodeHtmlEntities, plainTextField } from '../utils/decode-html-entities'
 import { buildChatHistory, buildGroundedSystemPrompt, questionVariable } from './chat-policy-prompt'
 import { CHAT_LIMITS, HOTLINE, type ChatDependencies, type ChatMessage, type ChatToolCall } from './chat-policy-contract'
 
@@ -130,56 +129,11 @@ async function callProvider(
         },
         required: ['query'],
       },
-      execute: async (args: Record<string, unknown>) => {
-        try {
-          const db = getDb()
-          const rawQ = String(args.query || '').trim()
-          const type = typeof args.type === 'string' ? args.type.trim() : null
-          // Toàn bộ điều kiện và thứ tự sắp xếp do `buildArticleSearch` dựng — chuỗi
-          // tìm kiếm chỉ đi vào tham số của câu lệnh (xem article-search.ts).
-          const search = buildArticleSearch(rawQ, type)
-
-          const rows = await db.select({
-            id: articles.id,
-            title: articles.title,
-            type: articles.type,
-            slug: articles.slug,
-            excerpt: articles.excerpt,
-            content: articles.content,
-            thumbnailUrl: articles.thumbnailUrl,
-          }).from(articles)
-          .where(search.where)
-          .orderBy(...search.orderBy)
-          .limit(5)
-
-          const categoryMap: Record<string, string> = {
-            reintegration: '/news/reintegration-models',
-            role_model: '/news/role-models',
-            news: '/news',
-            document: '/documents',
-            faq: '/legal-qa',
-          }
-
-          return rows.map(r => {
-            // Stored HTML (and imported excerpts) carry entities such as `Ng&agrave;y`: decode
-            // after stripping tags, so the model reads — and echoes — real Vietnamese.
-            const plainContent = decodeHtmlEntities((r.content || '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim()
-            const summary = plainTextField(r.excerpt)
-            const snippet = plainContent ? plainContent.slice(0, 350) + (plainContent.length > 350 ? '...' : '') : (summary || '')
-            return {
-              title: plainTextField(r.title) ?? '',
-              type: r.type,
-              url: `/news/${r.slug}`,
-              summary,
-              snippet,
-              coverImage: r.thumbnailUrl || null,
-              categoryArchiveUrl: categoryMap[r.type] || '/news',
-            }
-          })
-        } catch {
-          return []
-        }
-      },
+      execute: async (args: Record<string, unknown>) => searchArticles(
+        String(args.query || ''),
+        typeof args.type === 'string' ? args.type.trim() : null,
+        5,
+      ),
     },
     {
       name: 'search_c11_videos',
@@ -265,46 +219,65 @@ async function callProvider(
     },
   ]
 
+  /**
+   * Nạp sẵn bài viết liên quan Ở MÁY CHỦ rồi đưa vào prompt, thay cho việc để model
+   * tự gọi `search_c11_articles` — và tắt luôn công cụ khi đã có tài liệu trong tay.
+   *
+   * Vì sao: `delify-5.5` có sàn ~3,5 s cho MỌI lượt gọi, kể cả "1+1=?". Vòng gọi
+   * công cụ tốn HAI lượt (một lượt quyết định gọi tool, một lượt trả lời), nên mỗi
+   * câu nghiệp vụ mất ~9 s tới chữ đầu thay vì ~4,5 s. Tra bài viết ở máy chủ chỉ
+   * 31–127 ms (đo trên DB dev, 1 132 bài) — rẻ hơn hai bậc so với một lượt gọi model.
+   *
+   * Đánh đổi có chủ đích: model không còn tự chọn từ khoá tra bài viết. Với câu hỏi
+   * đã khớp kho tri thức (`references.length > 0`), câu hỏi của người đọc chính là
+   * từ khoá tốt nhất — đo được là nó trả về bài liên quan. Câu KHÔNG khớp kho tri
+   * thức vẫn giữ đủ công cụ, vì lúc đó model phải tự tìm.
+   */
+  const prefetched = references.length > 0 ? await searchArticles(queryText, null, 4) : []
+  const articleBlock = prefetched.length
+    ? '\n\n<UNTRUSTED_ARTICLE_LINKS>\n'
+      + prefetched.map(a => `- [${a.title}](${a.url})${a.summary ? `: ${a.summary.slice(0, 160)}` : ''}`).join('\n')
+      + '\n</UNTRUSTED_ARTICLE_LINKS>'
+    : ''
+  /**
+   * Công cụ tắt theo `references.length`, nên lời nhắc "không còn công cụ" phải theo
+   * ĐÚNG điều kiện đó — không phải theo `articleBlock`. Lệch hai điều kiện từng để lại
+   * một lỗ: kho tri thức khớp nhưng `searchArticles` trả rỗng (từ khoá là thuật ngữ
+   * nghiệp vụ không có trong tiêu đề bài) → không có khối bài viết, nên model không
+   * được báo là công cụ đã tắt, và nó vẫn viết `<|tool_call>…` như thói quen. Câu trả
+   * lời khi đó là một lệnh gọi công cụ không ai chạy.
+   */
+  const toolsOff = references.length > 0
+  const systemPrompt = [
+    groundedPrompt,
+    articleBlock,
+    toolsOff
+      ? '\n\nKHÔNG còn công cụ tra cứu trong lượt này. Trả lời bằng văn xuôi từ tài liệu tham khảo'
+        + (articleBlock ? ' và các bài viết ở trên' : '')
+        + '; khi giới thiệu một bài, chép nguyên link markdown của nó. KHÔNG viết lệnh gọi công cụ dưới bất kỳ dạng nào.'
+      : '',
+  ].join('')
+
   try {
     const result = await callAi('chatbot', {
       prompt: queryText,
-      systemPrompt: groundedPrompt,
+      systemPrompt,
       // `{{question}}` đặt câu hỏi vào system prompt: đi trong khối thẻ, không thô (chat-policy-prompt.ts).
       variables: { question: questionVariable(queryText), references: references.map(r => r.question).join('; '), fallback_message: settings.fallbackMessage ?? '' },
       userId: null,
       history: historyMessages,
       onChunk: followUpFilter ? chunk => followUpFilter.push(chunk) : undefined,
       onToolCall,
-      tools: chatbotTools,
+      // Đã có kho tri thức trong prompt: thêm một lượt gọi model để nó quyết định có
+      // cần tra nữa không chỉ làm câu trả lời chậm gấp đôi.
+      tools: toolsOff ? [] : chatbotTools,
     })
     await followUpFilter?.finish()
     if (result.ok && result.text) {
-      if (result.toolCallsExecuted && Array.isArray(result.toolCallsExecuted)) {
-        for (const te of result.toolCallsExecuted) {
-          if (Array.isArray(te.data)) {
-            for (const item of te.data) {
-              if (item && typeof item === 'object') {
-                const it = item as Record<string, unknown>
-                if (typeof it.title === 'string' && typeof it.url === 'string') {
-                  const typeLabel = it.type === 'role_model' ? 'Tấm gương' : it.type === 'reintegration' ? 'Mô hình' : it.url.includes('/media/') ? 'Video' : 'Bài viết'
-                  references.push({
-                    id: Number(it.id) || 0,
-                    kind: 'evidence',
-                    question: it.title,
-                    answer: String(it.snippet || it.summary || ''),
-                    topic: String(it.type || ''),
-                    source: {
-                      label: `${typeLabel}: ${it.title}`,
-                      reference: null,
-                      url: String(it.url),
-                    },
-                  })
-                }
-              }
-            }
-          }
-        }
-      }
+      // Không còn dệt `kind: 'evidence'` vào `references`: sau khi nạp sẵn bài viết, đường
+      // grounded LUÔN tắt công cụ (`toolsOff`) nên không có `toolCallsExecuted`; đường
+      // freeform truyền `references` rỗng và không đọc lại mảng đó. Kết quả công cụ vẫn
+      // tới người đọc qua `toolCalls` bên dưới, chỉ mảng evidence là đã thành mã chết.
       const { answer, proposals } = splitFollowUps(result.text)
       return {
         text: answer.slice(0, CHAT_LIMITS.maxOutputChars),

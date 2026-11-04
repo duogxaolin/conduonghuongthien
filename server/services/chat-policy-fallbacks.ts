@@ -66,6 +66,7 @@ async function smallTalkResult(settings: ChatbotSettings, dependencies: ChatDepe
     // Chế độ câu kể chỉ dùng luật tất định; không bao giờ để ngữ nghĩa chen vào trước câu trả lời của kho.
     semanticProvider: statementOnly ? null : dependencies.semanticSmallTalkProvider,
     semanticConfig: dependencies.semanticSmallTalkConfig,
+    semanticDefaults: dependencies.semanticSmallTalkDefaults,
   })
   if (!selection) return null
 

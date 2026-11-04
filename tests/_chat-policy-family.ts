@@ -137,6 +137,21 @@ export function chatPolicyDeclaration(name: string, overrides: Record<string, st
 }
 
 /**
+ * Như `chatPolicyDeclaration`, nhưng chỉ trong MỘT tệp đã biết.
+ *
+ * Cần khi hai phần của policy cùng khai một tên gọi phổ biến (`searchArticles`): phép kiểm
+ * phải đọc đúng tệp sở hữu, không phải "tên này xuất hiện đâu đó trong họ".
+ */
+export function chatPolicyDeclarationIn(file: string, name: string, overrides: Record<string, string> = {}): { file: string, text: string } {
+  const source = overrides[file] ?? readRepoFile(file)
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  for (const statement of sf.statements) {
+    if (topLevelNames(statement).includes(name)) return { file, text: statement.getText(sf) }
+  }
+  assert.fail(`${file} không khai báo ${name}`)
+}
+
+/**
  * What is wrong with the barrel's shape, or `[]`. The barrel holds named re-exports from
  * its own parts (`../../services/chat-policy-*`) and nothing else: no code (code with the
  * same name moved back into it would keep the API pin green), no import, no `export *`
