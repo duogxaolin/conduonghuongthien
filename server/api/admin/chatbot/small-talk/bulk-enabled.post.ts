@@ -1,6 +1,7 @@
 import { setSmallTalkEnabled } from '../../../../services/chatbot-small-talk'
 import { requireChatbotSmallTalkPermission } from '../../../../utils/permissions'
 import { parseBulkIds, runBulk } from '../../../../utils/bulk'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 /**
  * Enable or disable several everyday-reply entries in one request.
@@ -18,6 +19,8 @@ export default defineEventHandler(async (event) => {
   const actor = requireChatbotSmallTalkPermission(event, 'update')
   const ids = parseBulkIds(body)
 
+  // Dữ liệu nền đổi ⇒ mọi câu trả lời đã cache thành vô hiệu.
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return runBulk(ids, async (id) => {
     if (!await setSmallTalkEnabled(actor.id, id, isEnabled)) {
       throw createError({ statusCode: 404, statusMessage: 'Mục trả lời thường nhật không tồn tại.' })

@@ -2,6 +2,7 @@ import { inArray } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { aiProviders, aiServiceConfigs, aiModelPricing, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 /**
  * Bulk delete AI providers.
@@ -78,5 +79,6 @@ export default defineEventHandler(async (event) => {
     })
   })
 
+    await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true, deleted: providersToDelete.length }
 })

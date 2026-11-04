@@ -14,6 +14,7 @@ import { requireResourcePermission } from '../../../utils/permissions'
 // vào chỉ mục tìm kiếm.
 import { slugify } from '../../../utils/slug'
 import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
+import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -103,6 +104,7 @@ export default defineEventHandler(async (event) => {
 
   // Sau commit, không trong transaction (lý do: `server/utils/public-page-cache.ts`):
   // bài mới hiện ngay ở trang chủ và các danh sách đang được đệm `swr`.
+  await bumpAnswerCacheVersion().catch(() => undefined)
   await purgePublicPageCacheAfterWrite('articles.create')
 
   return { ok: true, id: newArticleId, slug: uniqueSlug }

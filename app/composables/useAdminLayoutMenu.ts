@@ -88,6 +88,7 @@ export function useAdminLayoutMenu({ route, user, hasPermission }: AdminLayoutMe
         // Same gate as the knowledge bank: whoever may read the approved answers
         // may read the questions visitors asked of them.
         ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Phiên trò chuyện', icon: 'fa-solid fa-comments', path: '/admin/chatbot/sessions' }] : []),
+        ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Câu trả lời đã lưu', icon: 'fa-solid fa-bolt', path: '/admin/chatbot/answer-cache' }] : []),
         ...(hasPermission('chatbot_settings', 'read') ? [{ label: 'Cài đặt Chatbot', icon: 'fa-solid fa-robot', path: '/admin/chatbot/settings' }] : []),
       ]
     },

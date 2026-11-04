@@ -4,6 +4,7 @@ import { aiProviders, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { encryptAiSecret } from '../../../../utils/ai/crypto'
 import { checkProviderBaseUrl, normalizedProviderBaseUrl } from '../../../../utils/ai/provider-url'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 function hasStoredKey(row: typeof aiProviders.$inferSelect): boolean {
   return Boolean(row.apiKeyCiphertext)
@@ -108,5 +109,7 @@ export default defineEventHandler(async (event) => {
     })
   })
 
+  // Cấu hình AI / prompt đổi ⇒ câu trả lời cũ không còn đúng.
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true }
 })

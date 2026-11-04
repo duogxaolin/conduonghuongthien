@@ -110,6 +110,24 @@ Honeypot, nằm ngoài thứ tự tab: điền vào thì trả **200 kèm một 
 
 Dùng chung quyền `chatbot_knowledge.read` — ai được đọc kho câu trả lời đã duyệt thì cũng được đọc câu hỏi khách đặt cho nó; tạo resource mới là buộc cấp lại quyền cho mọi vai trò đang có trước khi trang chạy được. **Mọi lượt xem tự ghi một dòng** `activity_logs` kèm bộ lọc: những hàng này chứa địa chỉ IP và có khi cả số điện thoại, và một nhật ký quét được trong im lặng là công cụ theo dõi. Trang chi tiết **đối chiếu số điện thoại với `submissions`** bằng 9 chữ số cuối (`REGEXP_REPLACE` + `RIGHT`) chứ không so chuỗi thô — biểu mẫu nhận cả `0903 480 985`, `+84903480985` và `0903480985` là cùng một số, nên so thẳng sẽ trượt gần hết ca thật. Đây là lý do việc phát hiện số điện thoại tồn tại: một người hỏi bot rồi sau đó gửi biểu mẫu là **một người với một vấn đề**, và cán bộ không thấy được cả hai nửa sẽ gọi lại hỏi đúng thứ họ đã gõ.
 
+### Bộ đệm câu trả lời của model — ba bất biến, và thứ tự không thể đổi
+
+`chatbot_answer_cache` trả lời cùng một câu hỏi mà không gọi model. Ba điều phải cùng đúng, nếu không "tiết kiệm" là phát tán câu trả lời sai:
+
+1. **Khoá gồm phiên bản dữ liệu** (`chatbot_settings.answer_cache_version`), tăng ở mọi đường ghi dữ liệu nền: sửa kho kiến thức, small-talk, bài viết, cấu hình AI. Không ai phải nhớ đi xoá cache khi sửa nội dung — câu cũ thành vô hình ngay.
+2. **Khoá gồm cấu hình đang chạy** (model, baseUrl, mode, out-of-scope, băm của system prompt): đổi model thì câu của model cũ không lọt sang. Prompt dài tới 20 000 ký tự nên băm riêng để khoá cuối vẫn cố định độ dài.
+3. **Lượt có ngữ cảnh nhiều câu, và câu chạm chủ quyền biển đảo, không bao giờ cache.** Câu trả lời khi đó phụ thuộc các lượt trước (hoặc do máy chủ viết sẵn), nên một khoá theo riêng câu hỏi hiện tại sẽ trả lời sai cho người khác hỏi đúng câu đó.
+
+**Câu được chuẩn hoá về dạng TÌM KIẾM (bỏ dấu), không phải dạng hiển thị.** "lam sao de xoa an tich" và "Làm sao để xóa án tích?" là cùng một hàng. Dùng `normalizeKnowledgeText` sẽ tách chúng thành hai khoá và làm cache gần như vô dụng với nhóm người gõ không dấu — nhóm rất đông trên cổng này.
+
+**Thứ tự trong `answerGroundedChat` là bắt buộc**: rate limit → kiểm chủ quyền → cache → truy xuất → model. Cache đứng trước rate limit là đường vòng miễn phí (câu lặp lại không bị đếm); đứng trước kiểm chủ quyền là phát lại lập trường của bản khác.
+
+**Chỉ cache `kind: 'provider'`.** `knowledge`/`small_talk` trả về trước điểm cache nên không bao giờ vào; `rate_limited`/`unavailable`/`moderation_blocked` là trạng thái, không phải câu trả lời — cache lại là phát tán lỗi cho người kế tiếp.
+
+**Đếm lượt dùng không bao giờ làm hỏng câu trả lời**: `readCachedAnswer` bắn `hits + 1` rồi bỏ qua lỗi (`void … .catch(() => undefined)`). Số liệu dùng, không phải dữ liệu đúng.
+
+**Trang quản lý `/admin/chatbot/answer-cache`** dùng `chatbot_knowledge.read` để xem và `.delete` để xoá, đúng như trang "Phiên trò chuyện". Xoá cache không phải xoá tri thức: lượt hỏi sau gọi model lại và ghi hàng mới, nên đường này hữu ích khi nội dung đã bị sửa bằng SQL tay (đường đó không đi qua `bumpAnswerCacheVersion`).
+
 ### Phát hiện liên hệ cố tình bảo thủ
 
 `contact-detect.ts`: chỉ nhận đầu số di động (`03/05/07/08/09`, đúng 10 số) — số cố định **cố ý loại ra**, và số căn cước / số nghị định không được ghi thành số liên hệ. Tên chỉ nhận khi có động từ giới thiệu tường minh ("tôi tên", "em là"); đoán tên theo chữ hoa sẽ sai liên tục trong tiếng Việt, và một cái tên sai gắn vào phiên còn tệ hơn không có tên. Tiểu từ cuối câu bị cắt (`ạ`, `nhé`, `ơi`, …) nhưng **"a" không dấu thì không** — "Nguyễn Văn A" là cách viết tên phổ biến nhất, cắt chữ "A" đó sẽ phá nhiều tên hơn số tiểu từ dọn được.

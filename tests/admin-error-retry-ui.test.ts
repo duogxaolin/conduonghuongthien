@@ -94,6 +94,9 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   // List state from useAdminList (D-FETCH): `error` is a computed over the list's
   // error and `reload` its retry — both declared in the page, the block stays here.
   { file: 'pages/admin/chatbot/sessions/index.vue', refs: ['error'], retries: ['reload'] },
+  // Cùng khuôn với trang "Phiên trò chuyện": `useAdminList` giữ lỗi, trang khai
+  // `error`/`reload` và vẽ nhánh `role="alert"` + nút "Thử lại".
+  { file: 'pages/admin/chatbot/answer-cache.vue', refs: ['error'], retries: ['reload'] },
   { file: 'pages/admin/chatbot/sessions/[id].vue', refs: ['loadError'], retries: ['fetchSession'] },
 
   // Reader moderation. These read citizens' personal data, so a failed fetch
@@ -243,6 +246,10 @@ const NO_CONTRACT_NEEDED: Record<string, string> = {
   // Logs khi Providers tab chưa mount. Lỗi nuốt im lặng (Providers tab sẽ thử lại
   // khi user sang đó); dropdown "Tất cả" vẫn dùng được. Không có UI để render lỗi.
   'pages/admin/ai/index.vue': 'background fallback fill of a filter dropdown; failure is silent and the field stays usable',
+  // Vùng nguy hiểm ở tab Tổng quan: POST chỉ khi bấm nút. Lỗi (403, 500, mất mạng)
+  // vào toast; nút "Xoá toàn bộ cấu hình AI" chính là retry — không có danh sách nào
+  // để lỗi thành "trống" rồi cán bộ tưởng đã xoá xong.
+  'components/admin/ai/AiConfigWipeCard.vue': 'submit-time fetch; the button is the retry and the failure lands in a toast',
   // Universal Translation Hub tab (tách khỏi languages/index.vue). Self-contained
   // fetch `loadCoverage`/`runUniversalTranslate`/`cancelUniversalTranslate` — tất cả
   // là tác vụ nền triggered bằng nút. Lỗi chỉ toast (không có danh sách tải để

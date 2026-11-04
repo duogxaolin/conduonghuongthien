@@ -1,5 +1,5 @@
 import {
-  mysqlTable, int, bigint, varchar, text, longtext, mediumtext, boolean, decimal,
+  mysqlTable, int, bigint, varchar, char, text, longtext, mediumtext, boolean, decimal,
   timestamp, datetime, date, json, mysqlEnum, uniqueIndex, index} from 'drizzle-orm/mysql-core'
 import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
 import { sql } from 'drizzle-orm'
@@ -520,6 +520,9 @@ export const chatbotSettings = mysqlTable('chatbot_settings', {
   // Tầng thứ ba của bộ khớp small-talk (cosine trigram). Tắt mặc định vì nó đổi
   // hành vi trả lời; bật ở /admin/chatbot/settings, không cần deploy lại.
   smallTalkSemanticEnabled: boolean('small_talk_semantic_enabled').notNull().default(false),
+  // Tăng mỗi khi dữ liệu nền đổi (kho kiến thức, small-talk, bài viết, cấu hình AI).
+  // Nằm trong KHOÁ cache câu trả lời, nên tăng là mọi khoá cũ thành vô hiệu ngay.
+  answerCacheVersion:    int('answer_cache_version', { unsigned: true }).notNull().default(1),
   requestTimeoutMs:      int('request_timeout_ms', { unsigned: true }).notNull().default(10000),
   maxResponseBytes:      int('max_response_bytes', { unsigned: true }).notNull().default(262144),
   maxInputChars:         int('max_input_chars', { unsigned: true }).notNull().default(2000),
@@ -651,6 +654,31 @@ export const chatMessages = mysqlTable('chat_messages', {
   createdAt: datetime('created_at', { mode: 'date' }).notNull(),
 }, (t) => ({
   transcriptIdx: index('chat_messages_session_created_idx').on(t.sessionId, t.createdAt),
+}))
+
+/**
+ * Câu trả lời đã dùng cho một câu hỏi, để lượt lặp lại không gọi model lần nữa.
+ *
+ * `cacheKey` = SHA-256 của (câu chuẩn hoá + cấu hình đang chạy + phiên bản dữ liệu).
+ * Phiên bản nằm TRONG KHOÁ, nên sửa kho kiến thức chỉ cần tăng số phiên bản là mọi hàng
+ * cũ thành vô hiệu — không có đường nào quên xoá. `expiresAt` là lớp dọn rác cuối.
+ *
+ * Đây KHÔNG phải lịch sử trò chuyện; lịch sử nằm ở `chatSessions`/`chatMessages`.
+ */
+export const chatbotAnswerCache = mysqlTable('chatbot_answer_cache', {
+  cacheKey:   char('cache_key', { length: 64 }).primaryKey(),
+  question:   varchar('question', { length: 1000 }).notNull(),
+  answer:     text('answer').notNull(),
+  kind:       varchar('kind', { length: 32 }).notNull(),
+  sources:    json('sources').$type<unknown[]>(),
+  followUps:  json('follow_ups').$type<string[]>(),
+  hits:       int('hits', { unsigned: true }).notNull().default(0),
+  createdAt:  datetime('created_at', { mode: 'date' }).notNull(),
+  lastUsedAt: datetime('last_used_at', { mode: 'date' }).notNull(),
+  expiresAt:  datetime('expires_at', { mode: 'date' }).notNull(),
+}, (t) => ({
+  expiresIdx: index('chatbot_answer_cache_expires_idx').on(t.expiresAt),
+  lastUsedIdx: index('chatbot_answer_cache_last_used_idx').on(t.lastUsedAt),
 }))
 
 // ─── Privacy-preserving Analytics ─────────────────────────────────────────────

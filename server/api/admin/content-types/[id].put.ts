@@ -2,6 +2,7 @@ import { getDb } from '../../../utils/db'
 import { contentTypes, categories, articles } from '../../../db/schema'
 import { uniqueContentTypeSlug } from '../../../utils/slug'
 import { eq } from 'drizzle-orm'
+import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateContentTypeUpdate } from '../../../services/i18n-auto-translate'
 import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
@@ -51,6 +52,9 @@ export default defineEventHandler(async (event) => {
   if (newSlug) {
     await db.update(categories).set({ type: newSlug }).where(eq(categories.type, existing.slug))
     await db.update(articles).set({ type: newSlug }).where(eq(articles.type, existing.slug))
+    // Đổi slug thể loại đổi URL bài viết mà chatbot nạp sẵn vào câu trả lời; câu đã cache
+    // còn trỏ địa chỉ cũ. Tăng phiên bản sau khi cả hai UPDATE đã chạy.
+    await bumpAnswerCacheVersion().catch(() => undefined)
   }
 
   // Non-blocking i18n auto-translate update (re-upsert vi + re-dịch non-vi).

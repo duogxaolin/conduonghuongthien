@@ -28,6 +28,7 @@ export async function createChatbotTables(db: Connection, database: string): Pro
       \`lead_capture_email\` VARCHAR(255) NULL,
       \`small_talk_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
       \`small_talk_semantic_enabled\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`answer_cache_version\` INT UNSIGNED NOT NULL DEFAULT 1,
       \`request_timeout_ms\` INT UNSIGNED NOT NULL DEFAULT 10000,
       \`max_response_bytes\` INT UNSIGNED NOT NULL DEFAULT 262144,
       \`max_input_chars\` INT UNSIGNED NOT NULL DEFAULT 2000,
@@ -147,4 +148,30 @@ export async function createChatbotTables(db: Connection, database: string): Pro
 
   // Detected-name arrived after the first deployments of the two tables above.
   await ensureColumn(db, database, 'chat_sessions', 'detected_name', 'VARCHAR(128) NULL')
+
+  /**
+   * Câu trả lời đã dùng, để lượt hỏi lặp lại không phải gọi model lần nữa.
+   *
+   * `cache_key` là SHA-256 của (câu đã chuẩn hoá + cấu hình đang chạy + phiên bản dữ
+   * liệu). Đưa phiên bản vào KHOÁ thay vì đi xoá từng hàng: sửa kho kiến thức chỉ cần
+   * tăng số phiên bản, mọi khoá cũ tự thành vô hiệu, và không có đường nào quên xoá.
+   *
+   * Bảng này KHÔNG phải lịch sử trò chuyện — đó là `chat_sessions`/`chat_messages`.
+   */
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`chatbot_answer_cache\` (
+      \`cache_key\` CHAR(64) NOT NULL PRIMARY KEY,
+      \`question\` VARCHAR(1000) NOT NULL,
+      \`answer\` TEXT NOT NULL,
+      \`kind\` VARCHAR(32) NOT NULL,
+      \`sources\` JSON NULL,
+      \`follow_ups\` JSON NULL,
+      \`hits\` INT UNSIGNED NOT NULL DEFAULT 0,
+      \`created_at\` DATETIME NOT NULL,
+      \`last_used_at\` DATETIME NOT NULL,
+      \`expires_at\` DATETIME NOT NULL,
+      KEY \`chatbot_answer_cache_expires_idx\` (\`expires_at\`),
+      KEY \`chatbot_answer_cache_last_used_idx\` (\`last_used_at\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
 }

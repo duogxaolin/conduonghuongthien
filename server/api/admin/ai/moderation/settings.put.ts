@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { aiServiceConfigs, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -65,5 +66,6 @@ export default defineEventHandler(async (event) => {
     })
   })
 
+    await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true }
 })

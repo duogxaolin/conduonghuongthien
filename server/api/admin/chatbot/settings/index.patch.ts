@@ -1,6 +1,7 @@
 import { ChatbotSettingsValidationError, type ChatbotSettingsUpdate } from '../../../../utils/chatbot/settings'
 import { requireChatbotSettingsPermission } from '../../../../utils/permissions'
 import { ChatbotDestinationChangeForbiddenError, publicChatbotSettings, updateChatbotSettings } from '../../../../services/chatbot-settings'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 const FIELDS = new Set(['enabled', 'providerPolicy', 'provider', 'baseUrl', 'model', 'systemPrompt', 'allowedHosts', 'mode', 'outOfScopeBehavior', 'knowledgeGreeting', 'fallbackMessage', 'leadCaptureEnabled', 'smallTalkEnabled', 'smallTalkSemanticEnabled', 'leadCaptureEmail', 'requestTimeoutMs', 'maxResponseBytes', 'maxInputChars', 'maxHistoryMessages', 'retrievalTopK', 'referenceCharBudget', 'rateLimitRequests', 'rateLimitWindowSeconds', 'apiKey'])
 
@@ -12,6 +13,8 @@ export default defineEventHandler(async (event) => {
     // Đổi đích gọi (baseUrl/allowedHosts) đòi siêu quản trị như xoay khoá — service
     // so với giá trị đang lưu và từ chối nếu thực sự đổi.
     const settings = await updateChatbotSettings(user.id, body as ChatbotSettingsUpdate, event.context.requestId, { mayChangeDestination: user.isSuperAdmin === true })
+    // Cấu hình trả lời đổi ⇒ câu trả lời đã cache không còn đúng.
+    await bumpAnswerCacheVersion().catch(() => undefined)
     return { ok: true, settings: publicChatbotSettings(settings) }
   } catch (error) {
     if (error instanceof ChatbotSettingsValidationError) throw createError({ statusCode: 400, statusMessage: error.message })

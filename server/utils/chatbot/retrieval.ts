@@ -35,7 +35,11 @@ export function normalizeKnowledgeText(value: unknown): string {
   return value.normalize('NFKC').trim().toLocaleLowerCase('vi-VN').replace(/\s+/gu, ' ')
 }
 
-function searchForm(value: string): string {
+/**
+ * Dạng TÌM KIẾM: bỏ dấu, đ→d. Dùng cho mọi phép so chuỗi của kho và cho khoá cache câu
+ * trả lời, để "lam sao de xoa an tich" và "làm sao để xóa án tích" là cùng một câu.
+ */
+export function searchForm(value: string): string {
   return value.normalize('NFD').replace(/[̀-ͯ]/gu, '').replace(/[đĐ]/gu, 'd')
 }
 

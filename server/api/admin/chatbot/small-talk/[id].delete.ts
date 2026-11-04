@@ -1,5 +1,6 @@
 import { deleteSmallTalk, ChatbotSmallTalkValidationError } from '../../../../services/chatbot-small-talk'
 import { requireChatbotSmallTalkPermission } from '../../../../utils/permissions'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const actor = requireChatbotSmallTalkPermission(event, 'delete')
@@ -7,6 +8,7 @@ export default defineEventHandler(async (event) => {
   if (!Number.isSafeInteger(id) || id <= 0) throw createError({ statusCode: 400, statusMessage: 'Invalid small-talk ID' })
   try {
     if (!await deleteSmallTalk(actor.id, id)) throw createError({ statusCode: 404, statusMessage: 'Small-talk entry not found' })
+    await bumpAnswerCacheVersion().catch(() => undefined)
     return { ok: true }
   } catch (error) {
     if (error instanceof ChatbotSmallTalkValidationError) throw createError({ statusCode: 400, statusMessage: error.message })

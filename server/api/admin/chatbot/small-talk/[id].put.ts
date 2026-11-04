@@ -1,5 +1,6 @@
 import { updateSmallTalk, adminSmallTalk, ChatbotSmallTalkValidationError } from '../../../../services/chatbot-small-talk'
 import { requireChatbotSmallTalkPermission } from '../../../../utils/permissions'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const actor = requireChatbotSmallTalkPermission(event, 'update')
@@ -8,6 +9,7 @@ export default defineEventHandler(async (event) => {
   try {
     const item = await updateSmallTalk(actor.id, id, await readBody(event).catch(() => ({})))
     if (!item) throw createError({ statusCode: 404, statusMessage: 'Small-talk entry not found' })
+    await bumpAnswerCacheVersion().catch(() => undefined)
     return { ok: true, item: adminSmallTalk(item) }
   } catch (error) {
     if (error instanceof ChatbotSmallTalkValidationError) throw createError({ statusCode: 400, statusMessage: error.message })
