@@ -130,6 +130,13 @@ services:
       NUXT_ANALYTICS_HMAC_SECRET: ${ANALYTICS_HMAC_SECRET}
       ANALYTICS_COLLECTION_ENABLED: ${ANALYTICS_COLLECTION_ENABLED:-true}
       NUXT_ANALYTICS_COLLECTION_ENABLED: ${NUXT_ANALYTICS_COLLECTION_ENABLED:-true}
+      # Tầng khớp small-talk bằng trigram (server/utils/chatbot/small-talk-semantic-trigram.ts).
+      # Đặt `1` để bật. Không đặt = đúng hành vi trước 2026-11-04. Ba biến số chỉ để chỉnh
+      # khi đo lại; bỏ trống thì dùng mặc định CỦA RANKER (0,65 / biên 0 / 60 ms).
+      CHATBOT_SMALL_TALK_SEMANTIC_ENABLED: ${CHATBOT_SMALL_TALK_SEMANTIC_ENABLED:-}
+      CHATBOT_SMALL_TALK_SEMANTIC_CONFIDENCE: ${CHATBOT_SMALL_TALK_SEMANTIC_CONFIDENCE:-}
+      CHATBOT_SMALL_TALK_SEMANTIC_MARGIN: ${CHATBOT_SMALL_TALK_SEMANTIC_MARGIN:-}
+      CHATBOT_SMALL_TALK_SEMANTIC_TIMEOUT_MS: ${CHATBOT_SMALL_TALK_SEMANTIC_TIMEOUT_MS:-}
       # Behind a proxy the peer address is the docker bridge gateway for every
       # visitor, so per-IP rate limits collapse into one shared bucket and audit
       # rows record the proxy. Naming the proxy here restores the real address

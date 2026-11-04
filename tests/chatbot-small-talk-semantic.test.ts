@@ -3,7 +3,6 @@ import test from 'node:test'
 import {
   readSmallTalkSemanticConfig,
   selectSmallTalk,
-  SMALL_TALK_SEMANTIC_DEFAULTS,
   type SemanticSmallTalkEntry,
   type SemanticSmallTalkProvider,
 } from '../server/utils/chatbot/small-talk-semantic'
@@ -32,7 +31,10 @@ function provider(scores: { entryId: number; confidence: number }[]) {
 }
 
 test('semantic runtime is disabled by default and requires no provider', async () => {
-  assert.deepEqual(readSmallTalkSemanticConfig({}), SMALL_TALK_SEMANTIC_DEFAULTS)
+  // Không đặt biến nào ⇒ chỉ `enabled: false`; ngưỡng/biên/hạn giờ để TRỐNG để nơi gọi
+  // điền mặc định của ranker đang cắm (xem `resolveSemanticConfig`). Điền sẵn mặc định của
+  // khung ở đây chính là lỗi đã kéo ranker trigram (0.65) về 0.82 và làm nó không khớp gì.
+  assert.deepEqual(readSmallTalkSemanticConfig({}), { enabled: false })
 
   let ruleCalls = 0
   const result = await selectSmallTalk({
