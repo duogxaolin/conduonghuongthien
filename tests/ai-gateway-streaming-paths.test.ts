@@ -377,3 +377,25 @@ test('a failed callAi is ONE usage row too — 0 tokens, the code — whether th
     ['no tools, streamed, the host resolves to a private address', [], {}, 0, failed('provider_error'), async () => [{ address: '10.0.0.5', family: 4 }]],
   ])
 })
+
+// ─── Số lượt gọi provider: đường nạp sẵn phải là MỘT ─────────────────────────
+
+test('no tools: one provider round; with tools the model may take two', async () => {
+  // Vòng gọi công cụ tốn hai lượt (quyết định gọi → trả lời). Nạp sẵn bài viết ở máy
+  // chủ rồi tắt công cụ là để đường grounded chỉ còn MỘT lượt — đây là bất biến của
+  // thay đổi đó, đo bằng số request thật tới socket giả.
+  await withProvider([sseResponse(content('Một lượt.') + usage(10, 5) + DONE)], async (requests) => {
+    await run({})
+    assert.equal(requests.length, 1, 'không công cụ ⇒ đúng một lượt gọi provider')
+  })
+
+  const calls: Array<Record<string, unknown>> = []
+  await withProvider([
+    sseResponse(toolDelta({ index: 0, id: 'c1', function: { name: 'search_c11_knowledge', arguments: '{"query":"x"}' } }) + usage(10, 5) + DONE),
+    sseResponse(content('Hai lượt.') + usage(10, 5) + DONE),
+  ], async (requests) => {
+    await run({ tools: [knowledgeTool(calls)] })
+    assert.equal(requests.length, 2, 'có công cụ và model gọi nó ⇒ hai lượt, đúng thứ nạp sẵn tránh được')
+  })
+  assert.equal(calls.length, 1)
+})

@@ -5,7 +5,7 @@ import type { SQL } from 'drizzle-orm'
 import { articleSearchKeywords, buildArticleSearch } from '../server/utils/chatbot/article-search'
 import { escapeLikeWildcards } from '../server/utils/sql-like'
 import { intervalDays } from '../server/utils/sql-literals'
-import { CHAT_POLICY_BARREL, chatPolicyDeclaration, chatPolicyPart, chatPolicySource, chatPolicySourceWith, readRepoFile } from './_chat-policy-family.ts'
+import { CHAT_POLICY_BARREL, chatPolicyDeclaration, chatPolicyDeclarationIn, chatPolicyPart, chatPolicySource, chatPolicySourceWith, readRepoFile } from './_chat-policy-family.ts'
 
 /**
  * `search_c11_articles` nhận chuỗi tìm kiếm từ **model**, mà khách vãng lai dẫn
@@ -122,7 +122,17 @@ const RAW_SQL = /sql\.raw/
 const HAND_BUILT_LIKE = /like\([^)]*`%\$\{/
 
 test('chat-policy builds the article query through buildArticleSearch only', () => {
-  assert.match(chatPolicyDeclaration('callProvider').text, /buildArticleSearch\(rawQ, type\)/)
+  // Câu truy vấn bài viết có MỘT chủ sở hữu từ 2026-11-04: `searchArticles`, dùng chung cho
+  // công cụ `search_c11_articles` và khối nạp sẵn trong prompt. Trước đó nó nằm inline
+  // trong `callProvider`; đổi chỗ dựng câu lệnh mà không đổi phép kiểm này thì bất biến
+  // "không ghép chuỗi vào SQL" sẽ không còn ai canh.
+  // `searchArticles` sống ở `chat-policy-article-search.ts` — nằm trong cùng HỌ tệp policy
+  // (`chat-policy-*.ts`) nên lệnh cấm `sql.raw` bên dưới vẫn phủ nó. Phép kiểm "có gọi
+  // đúng helper" đọc khai báo của tệp đó.
+  assert.match(
+    chatPolicyDeclarationIn(chatPolicyPart('article-search'), 'searchArticles').text,
+    /buildArticleSearch\(query, type\)/,
+  )
   assert.doesNotMatch(chatPolicySource(), RAW_SQL, 'no raw SQL may be assembled in the chatbot policy')
 })
 
@@ -186,17 +196,22 @@ test('injection proof: both bans see raw SQL / a hand-built LIKE in ANY file of 
 
 test('injection proof: the "is present" checks read the tool code itself, not a comment about it', () => {
   const provider = chatPolicyPart('provider')
-  const source = readRepoFile(provider)
-  const guarded: Array<[string, RegExp]> = [
-    ['buildArticleSearch(rawQ, type)', /buildArticleSearch\(rawQ, type\)/],
-    ['videoSearchCondition(q)', /videoSearchCondition\(/],
-    ['photoSearchCondition(q)', /photoSearchCondition\(/],
+  // `buildArticleSearch` nằm trong `searchArticles`, hai phép kiểm media nằm trong `callProvider`.
+  const guarded: Array<[string, string, string, RegExp]> = [
+    ['buildArticleSearch(query, type)', chatPolicyPart('article-search'), 'searchArticles', /buildArticleSearch\(query, type\)/],
+    ['videoSearchCondition(q)', provider, 'callProvider', /videoSearchCondition\(/],
+    ['photoSearchCondition(q)', provider, 'callProvider', /photoSearchCondition\(/],
   ]
-  for (const [call, pattern] of guarded) {
-    assert.ok(source.includes(call), `${provider} no longer has ${call} to mutate`)
+  for (const [call, file, declaration, pattern] of guarded) {
+    const fileSource = readRepoFile(file)
+    assert.ok(fileSource.includes(call), `${file} no longer has ${call} to mutate`)
     // The call is gone from the code but still named in a comment of the same file.
-    const overrides = { [provider]: `// ${call}\n${source.replace(call, 'unsafeSearch(q)')}` }
+    const overrides = { [file]: `// ${call}\n${fileSource.replace(call, 'unsafeSearch(q)')}` }
     assert.match(chatPolicySourceWith(overrides), pattern, `${call}: the file-level text still matches (that is the trap)`)
-    assert.doesNotMatch(chatPolicyDeclaration('callProvider', overrides).text, pattern, `${call}: the declaration check must go red`)
+    assert.doesNotMatch(
+      chatPolicyDeclarationIn(file, declaration, overrides).text,
+      pattern,
+      `${call}: the declaration check must go red`,
+    )
   }
 })
