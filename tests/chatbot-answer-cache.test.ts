@@ -15,6 +15,7 @@ import {
   ANSWER_CACHE_MAX_ROWS,
   ANSWER_CACHE_TTL_DAYS,
   answerCacheKey,
+  parseCachedSources,
 } from '../server/services/chatbot-answer-cache.ts'
 
 const SETTINGS = {
@@ -67,4 +68,36 @@ test('a blank question is never cached', () => {
 test('the two limits the service enforces are named constants, not magic numbers', () => {
   assert.ok(Number.isInteger(ANSWER_CACHE_TTL_DAYS) && ANSWER_CACHE_TTL_DAYS > 0)
   assert.ok(Number.isInteger(ANSWER_CACHE_MAX_ROWS) && ANSWER_CACHE_MAX_ROWS > 1000)
+})
+
+/**
+ * Hàng cache ghi TRƯỚC 2026-11-05 mang `PublicKnowledgeReference` đầy đủ (có `answer`).
+ * Cache sống hàng ngày, nên đọc lại phải chiếu về hình dạng hiện tại — nếu không, mọi
+ * câu phát lại vẫn kèm toàn văn điều luật. Đo trên production ngay sau deploy bản vá:
+ * bản miss có `sources` 215 ký tự, bản hit (hàng cũ) 5 812 ký tự, `answer` vẫn ở trong.
+ */
+test('a cached row written before the citation cut is narrowed when read back', () => {
+  const legacy = [{
+    id: 11,
+    kind: 'knowledge',
+    question: 'Việc xoá án tích đối với người chấp hành xong án phạt tù như thế nào?',
+    answer: 'Khoản 1 Điều 69 Bộ luật Hình sự: người được xóa án tích coi như chưa bị kết án.',
+    topic: 'general',
+    source: { label: 'Tài liệu Hỏi – Đáp', reference: 'STT 7', url: null },
+  }]
+
+  const [citation] = parseCachedSources(legacy)
+  assert.deepEqual(citation, {
+    id: 11,
+    kind: 'knowledge',
+    source: { label: 'Tài liệu Hỏi – Đáp', reference: 'STT 7', url: null },
+  })
+  assert.doesNotMatch(JSON.stringify(citation), /Bộ luật Hình sự/u, 'toàn văn không được rò ra mạng qua đường cache')
+})
+
+test('a malformed cached row is dropped, not passed through', () => {
+  // Cột JSON trong DB không được ràng buộc kiểu; hàng rác không được thành trích dẫn.
+  assert.deepEqual(parseCachedSources(null), [])
+  assert.deepEqual(parseCachedSources([null, 3, 'x', { kind: 'knowledge' }, { id: 'a', kind: 'b' }]), [])
+  assert.deepEqual(parseCachedSources([{ id: 4, kind: 'knowledge' }]), [{ id: 4, kind: 'knowledge', source: null }])
 })
