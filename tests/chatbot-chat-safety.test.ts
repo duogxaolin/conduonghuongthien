@@ -92,7 +92,13 @@ test('exact and keyword references remain provider-grounded when configured', as
     const result = await answerGroundedChat(event(id), settings, [{ role: 'user', content: query }], fixture.value)
     assert.equal(result.kind, 'provider')
     assert.equal(result.answer, 'Provider explanation grounded in approved content.')
-    assert.equal(result.sources[0]?.answer, 'Nội dung pháp luật đã được phê duyệt.')
+    // Trích dẫn đi ra mạng KHÔNG mang toàn văn (đo production 2026-11-04: `sources`
+    // chiếm 43,4% payload, gần hết là `answer` mà widget vứt đi). Toàn văn đi qua
+    // `/api/public/chatbot/sources?id=…` khi khách bấm "Xem đầy đủ".
+    const citation = result.sources[0] as unknown as Record<string, unknown>
+    assert.equal(citation.answer, undefined, 'toàn văn không được đi ra mạng')
+    assert.equal(citation.id, 1, 'id là thứ danh sách và nút "Xem" cần')
+    assert.deepEqual(citation.source, { label: 'C11', reference: 'VB-01', url: 'https://example.gov.vn/source' })
     assert.deepEqual(fixture.calls, { loading: 1, retrieval: 1, provider: 1, secret: 1 })
   }
 })

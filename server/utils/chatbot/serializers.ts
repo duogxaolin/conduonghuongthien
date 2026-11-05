@@ -1,4 +1,5 @@
 import type { ChatbotKnowledge, ChatbotSettings } from '../../db/schema'
+import type { CitationReference } from './retrieval'
 import { DEFAULT_CHATBOT_SYSTEM_PROMPT } from './prompt-defaults'
 import { CHATBOT_PROVIDER_PRESETS, resolveProviderPolicy } from './providers'
 
@@ -94,4 +95,23 @@ export function serializeAdminKnowledge(entry: ChatbotKnowledge) {
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
   }
+}
+
+/**
+ * Trích dẫn gửi xuống TRÌNH DUYỆT — chỉ những gì danh sách "Nguồn tham khảo" vẽ ra.
+ *
+ * `PublicKnowledgeReference` mang cả `question` và `answer` vì prompt cần chúng. Gửi
+ * nguyên hình dạng đó xuống client thì mỗi câu trả lời kèm toàn văn điều luật mà widget
+ * KHÔNG dùng: đo trên production 2026-11-04, câu "Thủ tục xóa án tích như thế nào?" có
+ * payload 13 309 ký tự, riêng `sources` 5 772 ký tự (43,4%) với 5 079 ký tự là `answer`
+ * của 3 nguồn — `normalizeSource` phía client vứt hết, chỉ giữ `entryId`, `label`,
+ * `reference`, `url`. Bấm "Xem" mới gọi `/api/public/chatbot/sources?id=…` để lấy toàn văn.
+ *
+ * Bỏ hai trường đó ở BIÊN giới mạng, không phải khỏi prompt: `references` phía máy chủ
+ * vẫn nguyên vẹn cho model đọc và cho `retrieval` tính ngân sách ký tự.
+ */
+export function toCitationReferences(
+  references: readonly CitationReference[],
+): CitationReference[] {
+  return references.map(({ id, kind, source }) => ({ id, kind, source }))
 }

@@ -16,6 +16,8 @@ import { createSseHeartbeat } from '../../../utils/chatbot/sse-heartbeat'
 function sseEnvelope(answer: string, kind: string, sources: unknown, retryAfter: number | null, askContact: boolean, followUps: string[] = []): string {
   const payload = JSON.stringify({
     choices: [{ delta: { content: answer } }],
+    // `sources` đã là trích dẫn rút gọn (`toCitationReferences`): toàn văn điều luật chỉ
+    // được tải khi khách bấm "Xem" (`/api/public/chatbot/sources?id=…`).
     chatbot: { kind, sources, retryAfter, askContact, followUps },
   })
   return `data: ${payload}\n\ndata: [DONE]\n\n`

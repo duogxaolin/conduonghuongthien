@@ -22,6 +22,23 @@ export type PublicKnowledgeReference = {
   topic: string
   source: { label: string | null, reference: string | null, url: string | null } | null
 }
+/**
+ * Trích dẫn ĐÃ RÚT GỌN để đi qua mạng — không có `question`/`answer`.
+ *
+ * `PublicKnowledgeReference` mang toàn văn vì prompt cần nó; `sources` của kết quả thì
+ * không: widget chỉ vẽ nhãn, và toàn văn được tải khi khách bấm "Xem"
+ * (`/api/public/chatbot/sources?id=…`). Đo trên production 2026-11-04: `sources` chiếm
+ * 43,4% payload (5 772/13 309 ký tự), 5 079 trong đó là `answer` mà client vứt đi.
+ *
+ * Khai ở ĐÂY, không ở `chat-policy-contract.ts`: `chatbot-answer-cache.ts` cần kiểu này,
+ * và import nó từ nhóm chat-policy sẽ tạo vòng (barrel → answer → cache → barrel) —
+ * `tests/service-split-boundaries.test.ts` chặn đúng vòng đó.
+ */
+export type CitationReference = {
+  id: number
+  kind: string
+  source: { label: string | null, reference: string | null, url: string | null } | null
+}
 export type RetrievalOptions = {
   topK?: number
   charBudget?: number

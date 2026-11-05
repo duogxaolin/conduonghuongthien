@@ -3,6 +3,7 @@
  * hỗ trợ), small-talk thường nhật, và lời mời để lại liên hệ khi ngoài phạm vi. Tách
  * nguyên văn từ `server/utils/chatbot/chat-policy.ts` (wave3 D-SPLIT).
  */
+import { toCitationReferences } from '../utils/chatbot/serializers'
 import type { ChatbotSettings } from '../db/schema'
 import type { PublicKnowledgeReference } from '../utils/chatbot/retrieval'
 import { selectSmallTalk } from '../utils/chatbot/small-talk-semantic'
@@ -29,7 +30,7 @@ function friendlyKnowledgeAnswer(settings: ChatbotSettings, references: PublicKn
     userQuery: top.question,
     fallback: references.slice(1, 1 + FOLLOW_UP_LIMIT).map(ref => ({ id: ref.id, question: ref.question })),
   })
-  return { answer, sources: top.source ? references.slice(0, 1) : [], kind: 'curated', followUps }
+  return { answer, sources: top.source ? toCitationReferences(references.slice(0, 1)) : [], kind: 'curated', followUps }
 }
 
 /**
