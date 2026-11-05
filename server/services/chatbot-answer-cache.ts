@@ -102,8 +102,32 @@ export async function bumpAnswerCacheVersion(): Promise<number> {
   return answerCacheVersion()
 }
 
-function parseSources(value: unknown): CitationReference[] {
-  return Array.isArray(value) ? value as CitationReference[] : []
+/**
+ * Hàng cache ghi TRƯỚC 2026-11-05 mang `PublicKnowledgeReference` đầy đủ (có
+ * `question`/`answer`). Cache sống hàng ngày, nên đọc lại phải CHIẾU về hình dạng hiện
+ * tại — nếu không, mọi câu trả lời phát lại vẫn kèm toàn văn điều luật dù bản ghi mới
+ * đã gọn (đo trên production sau deploy: bản miss 215 ký tự `sources`, bản hit 5 812).
+ * Chiếu ở đây cũng là bước kiểm hình dạng: hàng rác/JSON lạ không lọt ra mạng.
+ */
+export function parseCachedSources(value: unknown): CitationReference[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item): CitationReference[] => {
+    if (!item || typeof item !== 'object') return []
+    const raw = item as Record<string, unknown>
+    if (typeof raw.id !== 'number' || typeof raw.kind !== 'string') return []
+    const source = raw.source && typeof raw.source === 'object' ? raw.source as Record<string, unknown> : null
+    return [{
+      id: raw.id,
+      kind: raw.kind,
+      source: source
+        ? {
+            label: typeof source.label === 'string' ? source.label : null,
+            reference: typeof source.reference === 'string' ? source.reference : null,
+            url: typeof source.url === 'string' ? source.url : null,
+          }
+        : null,
+    }]
+  })
 }
 
 function parseFollowUps(value: unknown): string[] {
@@ -124,7 +148,7 @@ export async function readCachedAnswer(key: string): Promise<CachedAnswer | null
   void db.execute(sql`UPDATE \`chatbot_answer_cache\` SET \`hits\` = \`hits\` + 1, \`last_used_at\` = UTC_TIMESTAMP() WHERE \`cache_key\` = ${key}`).catch(() => undefined)
   return {
     answer: row.answer,
-    sources: parseSources(row.sources),
+    sources: parseCachedSources(row.sources),
     followUps: parseFollowUps(row.followUps),
     kind: row.kind,
   }
