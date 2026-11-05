@@ -1,6 +1,5 @@
 import { setHeader, createError } from 'h3'
 import { getChatbotSettings } from '../services/chatbot-settings'
-import { toCitationReferences } from '../utils/chatbot/serializers'
 import { answerChat } from '../utils/chatbot/chat'
 import { CHAT_RATE_LIMITED_MESSAGE, chargeChatRateLimit } from '../utils/chatbot/chat-policy'
 import { assertChatInputLength } from '../utils/chatbot/input-length'
@@ -68,5 +67,5 @@ export default defineEventHandler(async (event) => {
   setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
   setHeader(event, 'Cache-Control', 'no-cache, no-transform')
   setHeader(event, 'Connection', 'keep-alive')
-  return `data: ${JSON.stringify({ choices: [{ delta: { content: result.answer } }], chatbot: { kind: result.kind, sources: toCitationReferences(result.sources), retryAfter: result.retryAfter || null } })}\n\ndata: [DONE]\n\n`
+  return `data: ${JSON.stringify({ choices: [{ delta: { content: result.answer } }], chatbot: { kind: result.kind, sources: result.sources, retryAfter: result.retryAfter || null } })}\n\ndata: [DONE]\n\n`
 })

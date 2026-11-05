@@ -1,5 +1,5 @@
 import type { ChatbotKnowledge, ChatbotSettings } from '../../db/schema'
-import type { CitationReference, PublicKnowledgeReference } from './retrieval'
+import type { CitationReference } from './retrieval'
 import { DEFAULT_CHATBOT_SYSTEM_PROMPT } from './prompt-defaults'
 import { CHATBOT_PROVIDER_PRESETS, resolveProviderPolicy } from './providers'
 
@@ -111,7 +111,7 @@ export function serializeAdminKnowledge(entry: ChatbotKnowledge) {
  * vẫn nguyên vẹn cho model đọc và cho `retrieval` tính ngân sách ký tự.
  */
 export function toCitationReferences(
-  references: readonly PublicKnowledgeReference[],
+  references: readonly CitationReference[],
 ): CitationReference[] {
   return references.map(({ id, kind, source }) => ({ id, kind, source }))
 }

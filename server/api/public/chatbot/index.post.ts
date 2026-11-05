@@ -11,7 +11,6 @@ import { earlierTurnsToWithhold, fastPreModerate } from '../../../services/moder
 import { createModerationRegexBudget } from '../../../services/moderation-regex'
 import { chatHistoryShapeOk, chatTextsToScreen, lastUserTurnText, withoutUserTurns } from '../../../utils/chatbot/chat-turns'
 import { createSseHeartbeat } from '../../../utils/chatbot/sse-heartbeat'
-import { toCitationReferences } from '../../../utils/chatbot/serializers'
 
 /** Serialises a result into the single-event SSE envelope the widget parses. */
 function sseEnvelope(answer: string, kind: string, sources: unknown, retryAfter: number | null, askContact: boolean, followUps: string[] = []): string {
@@ -221,7 +220,7 @@ export default defineEventHandler(async (event) => {
       choices: [{ delta: { content: '' } }],
       chatbot: {
         kind: result.kind,
-        sources: toCitationReferences(result.sources),
+        sources: result.sources,
         toolCalls: result.toolCalls,
         retryAfter: result.retryAfter || null,
         askContact: result.askContact || false,
@@ -268,5 +267,5 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  return sseEnvelope(result.answer, result.kind, toCitationReferences(result.sources), result.retryAfter || null, result.askContact || false, result.followUps ?? [])
+  return sseEnvelope(result.answer, result.kind, result.sources, result.retryAfter || null, result.askContact || false, result.followUps ?? [])
 })
