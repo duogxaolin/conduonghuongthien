@@ -23,6 +23,7 @@ import {
   type CachedAnswer,
 } from './chatbot-answer-cache'
 import { callProvider, providerFollowUps } from './chat-policy-provider'
+import { toCitationReferences } from '../utils/chatbot/serializers'
 
 type ProviderReply = NonNullable<Awaited<ReturnType<typeof callProvider>>>
 
@@ -195,7 +196,11 @@ export async function answerGroundedChat(
       // "Nguồn tham khảo" chỉ liệt kê trích dẫn kho kiến thức (chatbot_knowledge).
       // Bài viết / ảnh / video (kind: 'evidence') đã nằm trong thân câu trả lời do
       // model dệt từ kết quả công cụ — liệt kê lại ở đây là trùng lặp.
-      const sources = references.filter(ref => ref.source && ref.kind !== 'evidence')
+      // Trích dẫn đưa vào KẾT QUẢ và vào cache dưới dạng RÚT GỌN (id + nhãn nguồn), không
+      // kèm toàn văn `answer`: client chỉ vẽ danh sách, và toàn văn được tải khi khách
+      // bấm "Xem". Giữ toàn văn ở đây thì mỗi câu trả lời (kể cả bản phát lại từ cache)
+      // mang thêm ~5 KB điều luật mà không ai đọc tới.
+      const sources = toCitationReferences(references.filter(ref => ref.source && ref.kind !== 'evidence'))
       const followUps = await providerFollowUps(dependencies, query, grounded, references)
       if (cacheKey) {
         await writeCachedAnswer({ key: cacheKey, question: query, answer: grounded.text, sources, followUps, kind: 'provider' }).catch(() => false)

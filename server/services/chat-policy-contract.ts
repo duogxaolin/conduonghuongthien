@@ -13,7 +13,7 @@
 import type { H3Event } from 'h3'
 import type { ChatbotSettings } from '../db/schema'
 import type { SafeProviderRequestOptions, SafeProviderResponse } from '../utils/chatbot/outbound'
-import type { retrieveKnowledge, PublicKnowledgeReference, RetrievalEntry } from '../utils/chatbot/retrieval'
+import type { retrieveKnowledge, CitationReference, RetrievalEntry } from '../utils/chatbot/retrieval'
 import { CHATBOT_HOTLINE } from '../utils/chatbot/prompt-defaults'
 import type { SemanticSmallTalkProvider, SmallTalkSemanticConfig } from '../utils/chatbot/small-talk-semantic'
 import type { SmallTalkEntry } from '../utils/chatbot/small-talk'
@@ -26,7 +26,7 @@ export type ChatToolCall = { id: string; name: string; arguments?: string; count
 
 export type ChatResult = {
   answer: string
-  sources: PublicKnowledgeReference[]
+  sources: CitationReference[]
   kind: 'curated' | 'provider' | 'small_talk' | 'not_found' | 'unavailable' | 'rate_limited'
   retryAfter?: number
   askContact?: boolean

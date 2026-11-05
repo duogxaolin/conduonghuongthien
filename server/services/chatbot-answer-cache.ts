@@ -26,7 +26,7 @@ import { activityLogs, chatbotAnswerCache, chatbotSettings, type ChatbotSettings
 import { getDb } from '../utils/db'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import { searchForm } from '../utils/chatbot/retrieval'
-import type { PublicKnowledgeReference } from '../utils/chatbot/retrieval'
+import type { CitationReference } from '../utils/chatbot/retrieval'
 
 /** Số ngày một hàng còn dùng được. Phiên bản mới là cơ chế chính; đây là trần rác. */
 export const ANSWER_CACHE_TTL_DAYS = 30
@@ -44,7 +44,8 @@ const CACHEABLE_KINDS = new Set(['provider'])
 
 export type CachedAnswer = {
   answer: string
-  sources: PublicKnowledgeReference[]
+  /** Trích dẫn rút gọn (không toàn văn) — cùng hình dạng đi ra mạng. */
+  sources: CitationReference[]
   followUps: string[]
   kind: string
 }
@@ -101,8 +102,8 @@ export async function bumpAnswerCacheVersion(): Promise<number> {
   return answerCacheVersion()
 }
 
-function parseSources(value: unknown): PublicKnowledgeReference[] {
-  return Array.isArray(value) ? value as PublicKnowledgeReference[] : []
+function parseSources(value: unknown): CitationReference[] {
+  return Array.isArray(value) ? value as CitationReference[] : []
 }
 
 function parseFollowUps(value: unknown): string[] {
@@ -134,7 +135,7 @@ export async function writeCachedAnswer(input: {
   key: string
   question: string
   answer: string
-  sources: PublicKnowledgeReference[]
+  sources: CitationReference[]
   followUps: string[]
   kind: string
 }): Promise<boolean> {
