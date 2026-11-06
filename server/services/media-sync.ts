@@ -110,7 +110,7 @@ export function getSyncJobStatus(): SyncJobStatus | null {
 }
 
 /**
- * Khởi tạo job sync nền. Trả `{ jobId }` ngay — worker chạy tiếp trong nền.
+ * Khởi tạo job sync nền. Trả `{ jobId, finished }` ngay — worker chạy nền; `finished` = trạng thái cuối, không reject.
  * Nếu đã có job đang chạy → throw 409-style (caller lo bắt). Chặn thật sự nằm ở
  * khoá MySQL mà worker giữ; cờ `running` chỉ để trả lời nhanh cho UI.
  *
@@ -119,7 +119,7 @@ export function getSyncJobStatus(): SyncJobStatus | null {
 export async function startSyncJob(
   direction: SyncDirection,
   adminUserId: number | null,
-): Promise<{ jobId: string }> {
+): Promise<{ jobId: string, finished: Promise<SyncJobStatus> }> {
   if (currentJob?.running) {
     throw new Error(BUSY_MESSAGE)
   }
@@ -148,9 +148,9 @@ export async function startSyncJob(
   currentJob = job
 
   // Worker chạy nền — không await, không block response.
-  void runSyncWorker(job, generation, direction, adminUserId)
+  const finished = runSyncWorker(job, generation, direction, adminUserId).then(() => ({ ...job }))
 
-  return { jobId }
+  return { jobId, finished }
 }
 
 /**

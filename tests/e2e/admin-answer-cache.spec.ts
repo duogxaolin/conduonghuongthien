@@ -11,6 +11,7 @@ import mysql from 'mysql2/promise'
 
 import { expect, test, type Page } from '@playwright/test'
 import { E2E_ADMIN_USERNAME, E2E_PASSWORD_ENV, e2eDbConfig } from './harness'
+import { answerCacheKey } from '../../server/utils/chatbot/answer-cache-key'
 
 async function login(page: Page) {
   const password = process.env[E2E_PASSWORD_ENV]
@@ -25,8 +26,12 @@ async function login(page: Page) {
 test.describe.configure({ mode: 'serial' })
 
 const stamp = Date.now()
-const KEY = stamp.toString(16).padStart(64, '0')
 const QUESTION = `Câu hỏi E2E ${stamp}`
+/**
+ * Khoá THẬT mà một lượt hỏi tính ra với cấu hình đang chạy (đọc ở `beforeAll`): cổng sửa tay từ chối
+ * (409) hàng không lượt hỏi nào còn tới được — một khoá bịa sẽ là đúng loại hàng đó.
+ */
+let KEY = ''
 // Dài hơn đoạn xem trước (240 ký tự) để chứng minh danh sách chỉ cho thấy phần đầu.
 const FULL_ANSWER = `Phần đầu của câu trả lời. ${'Nội dung kéo dài để vượt đoạn xem trước. '.repeat(10)}CUỐI-CÙNG-CHỈ-HIỆN-Ở-HỘP`
 const NEW_ANSWER = `Bản đã sửa tay ${stamp}.\nDòng thứ hai.`
@@ -37,6 +42,23 @@ async function withDb<T>(fn: (conn: mysql.Connection) => Promise<T>): Promise<T>
 }
 
 test.beforeAll(async () => {
+  const [rows] = await withDb(conn => conn.execute(
+    'SELECT mode, out_of_scope_behavior, model, base_url, system_prompt, answer_cache_version FROM chatbot_settings WHERE id = 1',
+  ))
+  const current = (rows as Array<Record<string, string | number | null>>)[0]
+  if (!current) throw new Error('chatbot_settings row 1 is missing — db:seed did not run')
+  KEY = answerCacheKey({
+    question: QUESTION,
+    settings: {
+      mode: String(current.mode),
+      outOfScopeBehavior: String(current.out_of_scope_behavior),
+      model: current.model === null ? null : String(current.model),
+      baseUrl: current.base_url === null ? null : String(current.base_url),
+      systemPrompt: current.system_prompt === null ? null : String(current.system_prompt),
+    },
+    version: Number(current.answer_cache_version),
+    historyLength: 1,
+  })!
   await withDb(conn => conn.execute(
     `INSERT INTO chatbot_answer_cache (cache_key, question, answer, kind, sources, follow_ups, hits, created_at, last_used_at, expires_at)
      VALUES (?, ?, ?, 'provider', ?, ?, 3, UTC_TIMESTAMP(), UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 DAY))`,

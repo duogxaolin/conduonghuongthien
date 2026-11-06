@@ -1,5 +1,6 @@
 import { getSmallTalk, setSmallTalkEnabled, adminSmallTalk } from '../../../../../services/chatbot-small-talk'
 import { requireChatbotSmallTalkPermission } from '../../../../../utils/permissions'
+import { bumpAnswerCacheVersion } from '../../../../../services/chatbot-answer-cache'
 
 /**
  * Flip a single entry's enabled flag. Toggling is an `update` on this store
@@ -12,5 +13,8 @@ export default defineEventHandler(async (event) => {
   const current = await getSmallTalk(id)
   if (!current) throw createError({ statusCode: 404, statusMessage: 'Small-talk entry not found' })
   const item = await setSmallTalkEnabled(actor.id, id, !current.isEnabled)
+  // Cache được tra TRƯỚC small-talk: không tăng phiên bản thì mục vừa bật không bao giờ thắng
+  // câu trả lời của model đã lưu cho cùng câu hỏi (như `bulk-enabled.post.ts`).
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true, item: adminSmallTalk(item) }
 })

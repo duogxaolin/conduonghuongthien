@@ -17,7 +17,7 @@ import { validateChatMessages, validateChatRequestBody } from './chat-policy-req
 import { knowledgeOrSituation, outOfScopeResult, smallTalkResult } from './chat-policy-fallbacks'
 import {
   answerCacheKey,
-  answerCacheVersion,
+  discardCachedAnswer,
   readCachedAnswer,
   writeCachedAnswer,
   type CachedAnswer,
@@ -31,11 +31,23 @@ function aiProviderReady(settings: ChatbotSettings): boolean {
   return Boolean(settings.enabled && settings.baseUrl && settings.model && settings.allowedHosts?.length)
 }
 
+/**
+ * Câu trả lời lấy từ cache qua lại lớp chặn đầu ra của chủ quyền — đúng bộ máy mà câu trả lời
+ * trực tiếp đi qua, chạy trên cả câu (một chunk, rồi bước kiểm cuối). Cache phát lại không gọi
+ * model, nên không có lớp này thì: (a) mỗi lần nâng bộ khớp không áp cho hàng đã cache (tới 30
+ * ngày), (b) một lần lọt hiếm hoi thành câu phát lại y nguyên cho MỌI người hỏi cùng câu.
+ */
+async function cachedAnswerBreaksStance(answer: string, question: string): Promise<boolean> {
+  const guard = createSovereigntyOutputGuard({ forward: () => undefined, replace: () => undefined, question })
+  await guard.push?.(answer)
+  return guard.finish(answer)
+}
+
 export async function answerGroundedChat(
   event: ChatEvent,
   settings: ChatbotSettings,
   messages: unknown,
-  dependencies: ChatDependencies,
+  givenDependencies: ChatDependencies,
   onChunk?: (chunk: string) => void | Promise<void>,
   onToolCall?: (event: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => void | Promise<void>,
   /** Rút lại phần đã stream và thay bằng `answer` (lớp chặn đầu ra, sovereignty-guard.ts). */
@@ -65,22 +77,41 @@ export async function answerGroundedChat(
    *     model, và không bao giờ được phát lại từ cache của bản khác.
    *   - `answerCacheKey` tự trả `null` cho lượt có lịch sử nhiều hơn một câu, vì câu trả
    *     lời khi đó phụ thuộc ngữ cảnh.
+   *   - Phiên bản lấy từ CHÍNH hàng `chatbot_settings` mà endpoint đã đọc (`settings`), không đọc lại:
+   *     cấu hình (cả phần không nằm trong khoá: topK, ngân sách tham chiếu, câu lùi) và phiên bản khi đó
+   *     là một ảnh chụp. Đọc phiên bản riêng, sau đó, thì một lần PATCH xen giữa sẽ ghi câu dựng từ
+   *     cấu hình cũ dưới khoá còn sống (verifier 2026-11-06). Không có phiên bản ⇒ không tra, không ghi:
+   *     lùi về một số mặc định sẽ trùng khoá của dữ liệu cũ.
+   *   - Câu lấy ra vẫn qua lớp chặn chủ quyền (`cachedAnswerBreaksStance`); bị bắt thì hàng bị
+   *     bỏ và khách nhận lập trường chính thức, như khi lớp chặn bắt câu trả lời trực tiếp.
    */
-  const cacheKey = answerCacheKey({
-    question: query,
-    settings,
-    version: await answerCacheVersion().catch(() => 0),
-    historyLength: history.length,
-  })
+  const dataVersion = typeof settings.answerCacheVersion === 'number' && Number.isSafeInteger(settings.answerCacheVersion)
+    ? settings.answerCacheVersion
+    : null
+  // MỌI lượt tra kho trong lượt hỏi này (truy xuất, câu hỏi gợi ý, công cụ search_c11_knowledge) dùng cùng
+  // phiên bản: một lượt tra không kèm phiên bản sẽ nhận bất kỳ bản nào còn tươi — kể cả bản cũ mà một lượt
+  // hỏi chậm vừa ghi đè lên — rồi câu trả lời dựng từ đó được ghi dưới khoá của phiên bản này.
+  const dependencies: ChatDependencies = dataVersion === null
+    ? givenDependencies
+    : { ...givenDependencies, loadPublishedEntries: () => givenDependencies.loadPublishedEntries(dataVersion) }
+  const cacheKey = dataVersion === null
+    ? null
+    : answerCacheKey({ question: query, settings, version: dataVersion, historyLength: history.length })
   if (cacheKey) {
     const cached = await readCachedAnswer(cacheKey).catch((): CachedAnswer | null => null)
+    if (cached && await cachedAnswerBreaksStance(cached.answer, query)) {
+      logWarn({ event: 'chatbot.sovereignty_cached_answer_replaced', consequence: 'cached answer withheld and discarded, fixed official answer sent instead' })
+      await discardCachedAnswer(cacheKey).catch(() => false)
+      return { answer: sovereigntyAnswer(query), sources: [], kind: 'curated' }
+    }
     if (cached) {
       logInfo({ event: 'chatbot.answer_cache_hit', consequence: 'provider not called, answer replayed' })
       return {
         answer: cached.answer,
         sources: cached.sources,
         kind: cached.kind as ChatResult['kind'],
-        followUps: cached.followUps,
+        // Như câu hỏi gợi ý của lượt trực tiếp (lọc ở `askProvider`); hàng sửa tay chưa từng qua bộ lọc đó.
+        followUps: cached.followUps.filter(followUp => !mentionsSovereignty(followUp, { output: true })),
         streamed: Boolean(onChunk),
       }
     }
@@ -88,6 +119,8 @@ export async function answerGroundedChat(
 
   let references: PublicKnowledgeReference[]
   try {
+    // Bản kho trong bộ nhớ phải thuộc ĐÚNG phiên bản đã dùng cho khoá — nếu không, câu trả lời từ kho cũ
+    // được ghi dưới khoá của phiên bản mới (xem `publishedEntries`).
     references = (dependencies.retrieve ?? retrieveKnowledge)(await dependencies.loadPublishedEntries(), query, { topK: settings.retrievalTopK, charBudget: settings.referenceCharBudget })
   } catch (error) {
     logWarn({

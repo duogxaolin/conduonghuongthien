@@ -232,10 +232,14 @@ test('the counter purge runs whether or not auto-cleanup is switched on', () => 
 
   const plugin = readFileSync(new URL('../server/plugins/retention-scheduler.ts', import.meta.url), 'utf8')
   assert.match(plugin, /startRateLimitPurgeScheduler\(\)/, 'nothing starts the counter purge timer')
+  // Cache câu trả lời chatbot giữ câu hỏi của người dân: timer cùng công tắc + cron (hàm dọn từng không được gọi ở đâu).
+  assert.match(plugin, /startAnswerCachePruneScheduler\(\)/, 'nothing starts the answer-cache prune timer')
+  assert.match(plugin, /stopAnswerCachePruneScheduler\(\)/, 'Nitro close does not stop the answer-cache prune timer')
   // The cron entry point covers deployments that run RETENTION_SCHEDULER=0.
   // Behaviour of that path: tests/analytics-maintenance-script.test.ts.
   const script = readFileSync(new URL('../scripts/analytics-maintenance.ts', import.meta.url), 'utf8')
   assert.match(script, /await reportRateLimitPurge\(\)/)
+  assert.match(script, /await reportAnswerCachePrune\(\)/)
 })
 
 test('a database failure is reported rather than thrown at cron', async () => {

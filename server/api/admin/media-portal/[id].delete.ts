@@ -17,6 +17,7 @@ import { defineEventHandler } from 'h3'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { deleteMediaItem } from '../../../services/media-portal'
 import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
+import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -39,5 +40,7 @@ export default defineEventHandler(async (event) => {
   // `purgePublicPageCacheAfterWrite` (`server/utils/public-page-cache.ts`).
   if (result.fromStatus === 'published') await purgePublicPageCacheAfterWrite('media_portal.delete')
 
+  // Câu trả lời chatbot đã cache không được dẫn video vừa xoá (`search_c11_videos`).
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true }
 })

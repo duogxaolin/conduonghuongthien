@@ -1,5 +1,6 @@
 /**
  * Service config, provider row and pricing reads for `callAi`, with the two 60 s caches
+ * (both dropped at once when the answer-cache version is bumped — `utils/config-generation.ts`)
  * and the provider→wire-format map — part of the `ai-gateway.ts` family
  * (wave3-long-term 4.3, D-SPLIT). Moved verbatim.
  *
@@ -9,6 +10,7 @@
  */
 import { eq } from 'drizzle-orm'
 import type { Database } from '../utils/db'
+import { configGeneration } from '../utils/config-generation'
 import {
   aiServiceConfigs, aiProviders, aiModelPricing,
   type AiServiceConfig, type AiProvider, type AiModelPricing,
@@ -17,11 +19,14 @@ import {
 interface CachedConfig {
   config: AiServiceConfig | null
   loadedAt: number
+  /** Thế hệ đọc TRƯỚC lượt đọc CSDL (`utils/config-generation.ts`): khác thế hệ hiện tại ⇒ nạp lại. */
+  generation: number
 }
 
 interface CachedProvider {
   provider: AiProvider | null
   loadedAt: number
+  generation: number
 }
 
 const CACHE_TTL_MS = 60_000
@@ -62,19 +67,21 @@ export function substituteVariables(prompt: string, variables: Record<string, st
 
 async function loadServiceConfig(db: Database, serviceKey: string): Promise<AiServiceConfig | null> {
   const cached = configCache.get(serviceKey)
-  if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) return cached.config
+  const generation = configGeneration()
+  if (cached && cached.generation === generation && Date.now() - cached.loadedAt < CACHE_TTL_MS) return cached.config
 
   const [row] = await db.select().from(aiServiceConfigs).where(eq(aiServiceConfigs.serviceKey, serviceKey)).limit(1)
-  configCache.set(serviceKey, { config: row ?? null, loadedAt: Date.now() })
+  configCache.set(serviceKey, { config: row ?? null, loadedAt: Date.now(), generation })
   return row ?? null
 }
 
 async function loadProvider(db: Database, providerName: string): Promise<AiProvider | null> {
   const cached = providerCache.get(providerName)
-  if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) return cached.provider
+  const generation = configGeneration()
+  if (cached && cached.generation === generation && Date.now() - cached.loadedAt < CACHE_TTL_MS) return cached.provider
 
   const [row] = await db.select().from(aiProviders).where(eq(aiProviders.provider, providerName)).limit(1)
-  providerCache.set(providerName, { provider: row ?? null, loadedAt: Date.now() })
+  providerCache.set(providerName, { provider: row ?? null, loadedAt: Date.now(), generation })
   return row ?? null
 }
 

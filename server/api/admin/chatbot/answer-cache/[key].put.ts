@@ -6,6 +6,8 @@ import {
   ANSWER_EDIT_MAX_CHARS,
   FOLLOW_UP_MAX_CHARS,
   FOLLOW_UP_MAX_COUNT,
+  answerCacheContext,
+  answerCacheKeyIsLive,
   getAnswerCacheDetail,
   updateCachedAnswer,
 } from '../../../../services/chatbot-answer-cache'
@@ -19,6 +21,11 @@ import {
  * nằm trong khoá) — trang nói rõ điều này; muốn câu trả lời bền thì đưa vào kho kiến thức.
  *
  * Body qua `readValidated` (thân bị cắt cụt là 400, không phải "không gửi gì").
+ *
+ * Hàng CHẾT (đã tăng phiên bản / đổi cấu hình AI sau khi lưu — `answerCacheKeyIsLive`) hoặc đã HẾT HẠN bị
+ * từ chối 409: không lượt hỏi nào còn nhận câu đó, nên "sửa" nó là cán bộ tưởng đã sửa câu người dân nhận
+ * trong khi không ai nhận được. Hàng hết hạn mà sửa được thì được gia hạn thêm 30 ngày — vượt trần lưu giữ
+ * câu hỏi của người dân, và trái với danh sách vốn đã ẩn hàng đó. Lượt dọn định kỳ xoá các hàng này.
  */
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -45,6 +52,17 @@ export default defineEventHandler(async (event) => {
   }
   if (followUps.some(item => item.length > FOLLOW_UP_MAX_CHARS)) {
     throw createError({ statusCode: 400, statusMessage: `Mỗi câu hỏi gợi ý tối đa ${FOLLOW_UP_MAX_CHARS} ký tự.` })
+  }
+
+  const current = await getAnswerCacheDetail(key)
+  if (!current) throw createError({ statusCode: 404, statusMessage: 'Không tìm thấy câu trả lời đã cache.' })
+  const context = await answerCacheContext()
+  const expired = new Date(current.expiresAt).getTime() <= Date.now()
+  if (expired || !context || !answerCacheKeyIsLive(current, context.settings, context.version)) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Câu trả lời này không còn được phát lại: kho kiến thức, bài viết hoặc cấu hình AI đã đổi sau khi nó được lưu. Hàng sẽ được dọn tự động; muốn câu trả lời bền, hãy đưa vào kho kiến thức.',
+    })
   }
 
   const result = await updateCachedAnswer({

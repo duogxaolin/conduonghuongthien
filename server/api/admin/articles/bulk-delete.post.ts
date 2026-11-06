@@ -1,6 +1,7 @@
 import { deleteArticleById } from '../../../services/articles'
 import { parseBulkIds, runBulk } from '../../../utils/bulk'
 import { purgeAfterBulk } from '../../../utils/public-page-cache'
+import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
 /**
  * Delete several articles in one request.
@@ -18,4 +19,9 @@ export default defineEventHandler(async (event) => {
   const ids = parseBulkIds(await readBody(event).catch(() => ({})))
   return runBulk(ids, id => deleteArticleById(actor, id), 'Không thể xóa bài viết này.')
     .then(outcome => purgeAfterBulk(outcome, 'articles.bulk_delete'))
+    .then(async (outcome) => {
+      // Câu trả lời chatbot đã cache có thể dẫn link bài vừa xoá: tăng phiên bản để nó không được phát lại.
+      if (outcome.succeeded > 0) await bumpAnswerCacheVersion().catch(() => undefined)
+      return outcome
+    })
 })

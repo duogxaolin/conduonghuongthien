@@ -1,6 +1,7 @@
 import { requireResourcePermission, requireSuperAdmin } from '../../../../utils/permissions'
 import { wipeAiConfig } from '../../../../services/ai-config-wipe'
 import { logInfo } from '../../../../utils/logger'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 /**
  * `POST /api/admin/ai/config/wipe` — xoá toàn bộ cấu hình AI (nhà cung cấp + khoá API,
@@ -21,6 +22,8 @@ export default defineEventHandler(async (event) => {
 
   const deleted = await wipeAiConfig(adminUser.id ?? null, event.context.requestId ?? null)
   logInfo({ event: 'ai.config_wiped', ...deleted, adminUserId: adminUser.id ?? null })
+  // Xoá cấu hình dịch vụ `chatbot` (model, prompt) như sửa/xoá từng nhà cung cấp, dịch vụ: tăng phiên bản cache.
+  await bumpAnswerCacheVersion().catch(() => undefined)
 
   return { ok: true, deleted }
 })

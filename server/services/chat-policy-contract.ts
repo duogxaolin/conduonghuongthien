@@ -36,7 +36,11 @@ export type ChatResult = {
 }
 export type ChatEvent = H3Event
 export type ChatDependencies = {
-  loadPublishedEntries: () => Promise<RetrievalEntry[]>
+  /**
+   * `dataVersion` = phiên bản cache câu trả lời của lượt này: bản kho giữ trong bộ nhớ nạp
+   * dưới phiên bản khác thì phải nạp lại (`publishedEntries` ở `utils/chatbot/chat.ts`).
+   */
+  loadPublishedEntries: (dataVersion?: number) => Promise<RetrievalEntry[]>
   loadSmallTalkEntries: () => Promise<SmallTalkEntry[]>
   configuredSecret: (settings: ChatbotSettings) => string | null
   providerRequest: (options: SafeProviderRequestOptions) => Promise<SafeProviderResponse>

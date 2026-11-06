@@ -15,6 +15,7 @@ import { requireResourcePermission } from '../../../../utils/permissions'
 import { clearMediaThumbnail } from '../../../../services/media-portal'
 import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
 import { getDb } from '../../../../utils/db'
+import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -38,5 +39,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage })
   }
 
+  // `search_c11_videos` trả ảnh đại diện cho model: câu đã cache không được dẫn ảnh cũ (đã dọn).
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true }
 })

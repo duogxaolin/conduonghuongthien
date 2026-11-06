@@ -498,6 +498,12 @@ Lệnh dọn sự kiện xem trang thô (`analytics_page_view_events`, giữ 14 
 
 ---
 
+## Dọn cache câu trả lời chatbot (tồn đọng sau bản vá 2026-11-06)
+
+Hàm dọn bảng `chatbot_answer_cache` trước đây không được gọi ở đâu: mỗi lần sửa bài viết/kho kiến thức để lại toàn bộ hàng cũ (không còn được phát lại nhưng vẫn giữ câu hỏi đầu của người dân, vô thời hạn). Sau khi deploy, app tự dọn mỗi 15 phút (lượt đầu sau 2 phút khởi động), cùng công tắc `RETENTION_SCHEDULER` với bộ dọn dữ liệu; cron `npm run analytics:maintenance` cũng chạy nó (trường `answerCache` trong JSON, không đổi mã thoát). Lượt đầu xoá hết hàng hết hạn và hàng của phiên bản cũ — trang `/admin/chatbot/answer-cache` sẽ ngắn đi rõ rệt, đó là bình thường; log `chatbot.answer_cache_pruned` ghi số hàng. Không cần biến môi trường, migration hay thao tác tay nào.
+
+---
+
 ## Sửa dữ liệu sau deploy (post-deploy data repair): danh mục video bị xoá lúc khởi động
 
 Từ 2026-09-22 tới bản vá `fix-media-category-wipe-on-boot`, **mỗi lần app khởi động** (deploy CI, `manage.sh` Update, restart sau sự cố) đều xoá danh mục của mọi video trong Media Portal. Bản vá chặn việc xoá từ lần khởi động đầu tiên của image mới. Giá trị đã mất thì không tự về: phải khôi phục từ bản sao lưu theo runbook ở [`docs/decisions/data-layer.md` § Khôi phục danh mục video sau lỗi xoá lúc khởi động](../docs/decisions/data-layer.md#media-category-restore).

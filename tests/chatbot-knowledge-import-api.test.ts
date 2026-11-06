@@ -138,7 +138,9 @@ test('unknown save errors are hidden while partial success continues', async () 
   assert.equal(error.code, 'save_error')
   assert.equal(error.message, 'Không thể lưu dòng do lỗi hệ thống.')
   assert.doesNotMatch(JSON.stringify(error), /SQL|secret_table|23000/)
-  assert.equal(logged.length, 1)
+  // Không có CSDL ở đây nên bước tăng phiên bản cache sau lượt nhập cũng hỏng — và nay được log
+  // (`chatbot.answer_cache_bump_failed`) thay vì nuốt im; chỉ đếm log của chính lượt nhập.
+  assert.equal(logged.filter(fields => (fields as { event?: string }).event !== 'chatbot.answer_cache_bump_failed').length, 1)
 })
 
 test('a publish failure keeps the imported draft and reports publish state separately', async () => {

@@ -20,6 +20,7 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { scanArticleThumbnails, DEFAULT_COVER } from '../../../services/articles-thumbnail-scan'
 import { JobBlockedByRestoreError } from '../../../services/pre-job-backup'
+import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -61,6 +62,8 @@ export default defineEventHandler(async (event) => {
       }
     }
 
+    // Ảnh bìa hỏng vừa được thay: câu trả lời chatbot đã cache có thể nhúng đúng ảnh hỏng đó.
+    if (r.fixedCount && r.fixedCount > 0) await bumpAnswerCacheVersion().catch(() => undefined)
     return {
       ok: true,
       ...r,

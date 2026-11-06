@@ -2,6 +2,7 @@ import { createError } from 'h3'
 import { ARTICLE_STATUSES, setArticleStatus, type ArticleStatus } from '../../../services/articles'
 import { parseBulkIds, runBulk } from '../../../utils/bulk'
 import { purgeAfterBulk } from '../../../utils/public-page-cache'
+import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
 /**
  * Move several articles to one status. `archived` is what "hide" means for an
@@ -28,4 +29,9 @@ export default defineEventHandler(async (event) => {
     id => setArticleStatus(actor, id, status as ArticleStatus),
     'Không thể đổi trạng thái bài viết này.',
   ).then(outcome => purgeAfterBulk(outcome, 'articles.bulk_status'))
+    .then(async (outcome) => {
+      // Như sửa từng bài (`[id].put.ts`): bài vừa gỡ/ẩn không được còn trong câu trả lời chatbot đã cache.
+      if (outcome.succeeded > 0) await bumpAnswerCacheVersion().catch(() => undefined)
+      return outcome
+    })
 })
