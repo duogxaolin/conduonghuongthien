@@ -1,0 +1,147 @@
+/**
+ * Danh mục "làm hỏng có chủ đích" — mỗi mục gỡ đúng một bất biến trọng yếu khỏi mã, và các tệp test ghi
+ * kèm PHẢI đỏ. `npm run test:mutations` (`scripts/mutation-proofs.ts`) chạy cả danh mục trên một worktree
+ * tạm; `tests/mutation-proofs-catalog.test.ts` (trong `npm test`) giữ danh mục khớp mã: mỗi `find` còn
+ * xuất hiện ĐÚNG MỘT lần, mỗi tệp test còn tồn tại.
+ *
+ * Vì sao: repo từng chứng minh từng cổng bằng tay ("bỏ X → đỏ, đã thử"), nhưng bằng chứng đó không được
+ * chạy lại. Một refactor làm test hết bắt được lỗi thì bộ test vẫn xanh — chỉ có chạy lại đột biến mới thấy.
+ * Thêm bất biến trọng yếu mới ⇒ thêm một mục ở đây.
+ */
+export interface MutationProof {
+  /** Tên ngắn, ổn định. */
+  id: string
+  /** Tệp bị làm hỏng (đường dẫn từ gốc repo). */
+  file: string
+  /** Đoạn mã gốc — phải xuất hiện đúng một lần trong tệp. */
+  find: string
+  /** Đoạn thay thế (bất biến bị gỡ). */
+  replace: string
+  /** Các tệp test mà ít nhất một test trong đó phải đỏ. */
+  tests: string[]
+  /** Bất biến nào, và vì sao nó đáng giữ. */
+  why: string
+}
+
+export const MUTATION_PROOFS: MutationProof[] = [
+  {
+    id: 'answer-cache-bump-bulk-status',
+    file: 'server/api/admin/articles/bulk-status.post.ts',
+    find: 'if (outcome.succeeded > 0) await bumpAnswerCacheVersion().catch(() => undefined)',
+    replace: 'void outcome',
+    tests: ['tests/chatbot-answer-cache-invalidation.test.ts'],
+    why: 'gỡ/ẩn bài hàng loạt phải làm câu trả lời chatbot đã cache dẫn bài đó hết được phát lại (CHANGELOG § 78)',
+  },
+  {
+    id: 'answer-cache-sovereignty-recheck',
+    file: 'server/services/chat-policy-answer.ts',
+    find: 'if (cached && await cachedAnswerBreaksStance(cached.answer, query)) {',
+    replace: 'if (cached && false) {',
+    tests: ['tests/chatbot-answer-cache-replay.test.ts'],
+    why: 'câu trúng cache phải qua lại lớp chặn chủ quyền — nếu không một lần lọt bị phát lại cho mọi người',
+  },
+  {
+    id: 'answer-cache-turn-version-pin',
+    file: 'server/services/chat-policy-answer.ts',
+    find: ': { ...givenDependencies, loadPublishedEntries: () => givenDependencies.loadPublishedEntries(dataVersion) }',
+    replace: ': givenDependencies',
+    tests: ['tests/chatbot-answer-cache-replay.test.ts'],
+    why: 'mọi lượt nạp kho trong lượt hỏi dùng cùng phiên bản với khoá cache',
+  },
+  {
+    id: 'published-entries-version-check',
+    file: 'server/utils/chatbot/chat.ts',
+    find: '&& (dataVersion === undefined || publishedCache.version === dataVersion)) return publishedCache.data',
+    replace: ') return publishedCache.data',
+    tests: ['tests/chatbot-published-entries-version.test.ts'],
+    why: 'bản kho 60 s phải nạp lại khi phiên bản cache câu trả lời đổi',
+  },
+  {
+    id: 'gateway-config-generation',
+    file: 'server/services/ai-gateway-config.ts',
+    find: 'if (cached && cached.generation === generation && Date.now() - cached.loadedAt < CACHE_TTL_MS) return cached.config',
+    replace: 'if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) return cached.config',
+    tests: ['tests/ai-gateway-config-generation.test.ts'],
+    why: 'đổi model/nhà cung cấp phải có hiệu lực ngay, không đợi 60 s (câu của model cũ bị cache dưới khoá mới)',
+  },
+  {
+    id: 'sovereignty-question-server-answer',
+    file: 'server/services/chat-policy-answer.ts',
+    find: 'if (mentionsSovereignty(query)) {',
+    replace: 'if (false) {',
+    tests: ['tests/chatbot-sovereignty-guard.test.ts'],
+    why: 'câu hỏi chủ quyền biển đảo do máy chủ trả lời bằng lập trường chính thức, không bao giờ tới model (sự cố 2026-10-27)',
+  },
+  {
+    id: 'translation-content-sanitize',
+    file: 'server/services/article-translations.ts',
+    find: 'updates.content = sanitizeHtml(data.content)',
+    replace: 'updates.content = data.content',
+    tests: ['tests/security-translation-html.test.ts'],
+    why: 'nội dung bản dịch render bằng v-html phải qua sanitizeHtml lúc ghi',
+  },
+  {
+    id: 'article-content-sanitize',
+    file: 'server/api/admin/articles/[id].put.ts',
+    find: 'updateFields.content = sanitizeHtml(String(body.content))',
+    replace: 'updateFields.content = String(body.content)',
+    tests: ['tests/security-translation-html.test.ts'],
+    why: 'nội dung bài viết gốc render bằng v-html công khai phải qua sanitizeHtml lúc ghi',
+  },
+  {
+    id: 'moderation-rules-invalidate',
+    file: 'server/api/admin/ai/moderation/rules/[id].put.ts',
+    find: '  invalidateModerationRulesCache()\n',
+    replace: '',
+    tests: ['tests/in-process-cache-registry.test.ts'],
+    why: 'luật kiểm duyệt vừa sửa phải chặn từ lượt kế tiếp, không đợi TTL 60 s',
+  },
+  {
+    id: 'jwt-algorithm-pinning',
+    file: 'server/utils/auth.ts',
+    find: 'const VERIFY_OPTIONS = { algorithms: [JWT_ALGORITHM] }',
+    replace: 'const VERIFY_OPTIONS = {}',
+    tests: ['tests/jwt-algorithm-pinning.test.ts'],
+    why: 'kiểm JWT ghim HS256 — chấp nhận thuật toán khác là mở đường giả vé',
+  },
+  {
+    id: 'small-talk-ranker-fresh-examples',
+    file: 'server/utils/chatbot/small-talk-semantic-trigram.ts',
+    find: '        const grams = gramsOf(candidate)',
+    replace: '        const grams = index.get(candidate.id)?.grams ?? []',
+    tests: ['tests/chatbot-small-talk-trigram.test.ts'],
+    why: 'mục small-talk vừa thêm/sửa phải khớp ngay — nếu không câu của model che nó trong cache tới 30 ngày',
+  },
+  {
+    id: 'delify-quota-forgets-deleted-provider',
+    file: 'server/utils/ai-budget.ts',
+    find: '      cachedDelifyQuota = null\n      return null',
+    replace: '      return cachedDelifyQuota',
+    tests: ['tests/ai-budget-delify-quota-staleness.test.ts'],
+    why: 'quota của khoá Delify đã bị treo không được chặn mọi dịch vụ AI sau khi nhà cung cấp đó đã bị xoá',
+  },
+  {
+    id: 'tracking-settings-cleared-on-save',
+    file: 'server/api/admin/settings/index.put.ts',
+    find: '  if (applied.some(key => (TRACKING_KEYS as readonly string[]).includes(key))) clearTrackingSettingsCache()\n',
+    replace: '',
+    tests: ['tests/in-process-cache-registry.test.ts'],
+    why: 'gỡ một script theo dõi tự viết phải có hiệu lực ngay, không còn chạy trên trang công khai thêm ~90 s',
+  },
+  {
+    id: 'small-talk-ranker-fresh-process',
+    file: 'server/utils/chatbot/chat.ts',
+    find: '  return getSmallTalkSemanticProvider() ?? createTrigramRanker([])',
+    replace: '  return getSmallTalkSemanticProvider() as SemanticSmallTalkProvider',
+    tests: ['tests/chatbot-semantic-provider-fallback.test.ts'],
+    why: 'lượt hỏi đầu tiên sau khởi động không được bỏ qua lớp khớp ngữ nghĩa small-talk',
+  },
+  {
+    id: 'answer-cache-edit-permission',
+    file: 'server/api/admin/chatbot/answer-cache/[key].put.ts',
+    find: "requireResourcePermission(adminUser, 'chatbot_knowledge', 'update')",
+    replace: "requireResourcePermission(adminUser, 'chatbot_knowledge', 'read')",
+    tests: ['tests/chatbot-answer-cache-view-edit-behavior.test.ts'],
+    why: 'người chỉ được đọc kho không được thay lời mà cổng nói với người dân',
+  },
+]

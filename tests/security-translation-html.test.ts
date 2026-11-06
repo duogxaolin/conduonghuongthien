@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { sanitizeBlockData, sanitizeHtml } from '../server/utils/sanitize-html'
 import { sanitizeTranslationFields, stripMarkup } from '../server/utils/translation-html'
+import { ROOT as ROOT_DIR, allTranslationWrites, translationWritesIn } from './_translation-writes'
 
 /**
  * Bản dịch được hiển thị bằng `v-html` y như bài gốc, nhưng trước đây bài gốc
@@ -58,44 +59,158 @@ test('an update without content passes through, and null stays null', () => {
 
 // Hai tệp cùng giữ các đường ghi `article_translations.content`: `article-translations.ts`
 // (sửa tay) và `article-translation-worker.ts` (job dịch AI, tách ra khỏi tệp trên).
-const TRANSLATION_WRITERS = ['article-translations.ts', 'article-translation-worker.ts']
+/**
+ * Lượt ghi `article_translations` mà phép chứng minh AST không tự đi tới được — mỗi mục nói vì sao nó vẫn
+ * an toàn, và một test bên dưới kiểm đúng điều đó.
+ */
+const UNPROVEN_TRANSLATION_WRITES: Record<string, string> = {
+  'server/services/stored-html-sanitize.ts': 'lượt dọn một lần ghi lại `content` đã qua sanitizeHtml ở bước lập kế hoạch (test kế bên)',
+  'server/services/stored-plaintext-decode.ts': 'chỉ ghi title/excerpt (văn bản thuần): `changedValues` không có trường content (test kế bên)',
+}
+/** Miễn trừ tính theo SỐ lượt ghi trong tệp: một lượt ghi mới không chứng minh được trong tệp đã có tên phải hiện ra. */
+function unprovenPerFile(writes: Array<{ site: string, ok: boolean }>): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const write of writes) if (!write.ok) counts[write.site.split(':')[0]!] = (counts[write.site.split(':')[0]!] ?? 0) + 1
+  return counts
+}
 
-test('every write of translation content is sanitized', () => {
-  let found = 0
-  for (const name of TRANSLATION_WRITERS) {
-    const lines = read(`../server/services/${name}`).split('\n')
-    const writes = lines
-      .map((text, index) => ({ text, line: index + 1 }))
-      // a `content:` value or a `.content =` assignment, but not a type member
-      .filter(({ text }) => (/^\s*content:\s+\S/.test(text) && !/content:\s*string/.test(text)) || /\.content\s*=[^=]/.test(text))
-    found += writes.length
-    for (const { text, line } of writes) {
-      assert.match(text, /sanitizeHtml\(/, `${name}:${line} writes content without sanitizing: ${text.trim()}`)
-    }
-  }
-  assert.ok(found >= 3, 'the writes this guard exists for must be found')
-  // The generic updater also carries `content` (the partial save after a failed chunk).
-  assert.match(read('../server/services/article-translation-worker.ts'), /\.set\(sanitizeTranslationFields\(updates\)\)/)
+test('every write of translation content provably goes through sanitizeHtml (AST, every server file)', () => {
+  // Bản cũ đòi mỗi DÒNG `content: …` chứa `sanitizeHtml(` — `.set(body)` hay `.set({ ...body })` lọt mà cổng
+  // vẫn xanh. Nay mọi `insert|update(articleTranslations)` trong server/ phải chứng minh được (tests/_translation-writes.ts).
+  const writes = allTranslationWrites()
+  assert.ok(writes.length >= 11, `the translation write sites must be found (got ${writes.length})`)
+  assert.deepEqual(
+    unprovenPerFile(writes),
+    Object.fromEntries(Object.keys(UNPROVEN_TRANSLATION_WRITES).map(file => [file, 1])),
+    `route the write through sanitizeTranslationFields / sanitizeHtml, or name it above with the reason it is safe:\n${writes.filter(write => !write.ok).map(write => `${write.site} — ${write.reason}`).join('\n')}`,
+  )
 })
 
-test('no other server file writes article translation content', () => {
-  const offenders: string[] = []
+const IMPORTS = "import { sanitizeHtml } from '../utils/sanitize-html'\nimport { sanitizeTranslationFields } from '../utils/translation-html'\n"
+
+test('the proof rejects the shapes the line-based guard let through', () => {
+  const check = (body: string, imports = IMPORTS) => translationWritesIn(
+    join(ROOT_DIR, 'server/services/__probe.ts'),
+    `${imports}async function f(tx, body, raw, fill, schema) {\n${body}\n}`,
+  )[0]!
+  for (const unsafe of [
+    'await tx.update(articleTranslations).set(body)',
+    'await tx.update(articleTranslations).set({ ...body, status: \'reviewed\' })',
+    'await tx.update(articleTranslations).set({ content: raw })',
+    'const content = raw\nawait tx.update(articleTranslations).set({ content })',
+    'const u = { status: \'x\' }\nu.content = raw\nawait tx.update(articleTranslations).set(u)',
+    'const u = {}\nObject.assign(u, body)\nawait tx.update(articleTranslations).set(u)',
+    'await tx.insert(articleTranslations).values({ articleId: 1 }).onDuplicateKeyUpdate({ set: { content: raw } })',
+    'const content = String(raw)\nawait tx.update(articleTranslations).set({ content })',
+    'await tx.update(articleTranslations).set({ ...(raw ? { content: raw } : {}) })',
+    // Các hình dạng verifier 2026-11-06 dò ra là lọt qua bản đầu của phép chứng minh:
+    'await tx.update(articleTranslations).set({ \'content\': raw })',
+    'await tx.update(articleTranslations).set({ [\'content\']: raw })',
+    'await tx.update(articleTranslations).set({ [body.key]: raw })',
+    'await tx.update(articleTranslations).set({ get content() { return raw } })',
+    'const u = { content: sanitizeHtml(raw) }\nu.content += raw\nawait tx.update(articleTranslations).set(u)',
+    'let content = sanitizeHtml(raw)\ncontent += raw\nawait tx.update(articleTranslations).set({ content })',
+    'let u = { status: \'x\' }\nu = body\nawait tx.update(articleTranslations).set(u)',
+    'const u = { status: \'x\' }\nconst v = u\nv.content = raw\nawait tx.update(articleTranslations).set(u)',
+    'const u = { status: \'x\' }\nfill(u, body)\nawait tx.update(articleTranslations).set(u)',
+    'const u = { content: sanitizeHtml(raw) }\nif (raw) { const u = body\n await tx.update(articleTranslations).set(u) }',
+    'await tx.update(schema.articleTranslations).set({ content: raw })',
+  ]) assert.equal(check(unsafe).ok, false, unsafe)
+  // `sanitizeHtml` tự viết (không phải hàm import từ utils/sanitize-html) không chứng minh gì.
+  assert.equal(check('await tx.update(articleTranslations).set({ content: sanitizeHtml(raw) })', 'const sanitizeHtml = (value) => value\n').ok, false, 'local sanitizeHtml')
+  assert.equal(check('await tx.update(articleTranslations).set({ content: sanitizeHtml(raw) })', '').ok, false, 'sanitizeHtml not imported')
+  for (const safe of [
+    'await tx.update(articleTranslations).set(sanitizeTranslationFields(body))',
+    'await tx.update(articleTranslations).set({ content: sanitizeHtml(raw), status: \'done\' })',
+    'const u = { status: \'x\' }\nif (raw) u.content = sanitizeHtml(raw)\nawait tx.update(articleTranslations).set(u)',
+    'await tx.update(articleTranslations).set({ status: \'failed\' })',
+    'const content = sanitizeHtml(raw)\nawait tx.insert(articleTranslations).values({ articleId: 1, content })',
+    'const u = {}\nu.content = sanitizeHtml(raw)\nawait db.transaction(async (t) => { await t.update(articleTranslations).set(u) })',
+    'await tx.update(articleTranslations).set({ ...(raw ? { progress: 1 } : { progress: 0 }) })',
+    'const u = { status: \'x\' }\nu.content = sanitizeHtml(raw)\nconst fields = Object.keys(u)\nawait tx.update(articleTranslations).set(u)',
+    'await tx.update(articleTranslations).set({ \'content\': sanitizeHtml(raw) })',
+  ]) assert.equal(check(safe).ok, true, safe)
+})
+
+/**
+ * Bài viết GỐC dùng cùng phép chứng minh: `articles.content` là bề mặt `v-html` công khai chính. Hành vi đường
+ * ghi gốc đã có test chạy thật (`tests/article-write-sanitize-behavior.test.ts`); phép chứng minh này bắt đường
+ * ghi MỚI ở bất kỳ đâu trong server/ — kể cả qua biến dựng dần hay spread.
+ */
+const UNPROVEN_ARTICLE_WRITES: Record<string, string> = {
+  'server/services/stored-plaintext-decode.ts': 'chỉ ghi title/excerpt: `changedValues` không có trường content (test kế bên)',
+}
+
+test('every write of article content provably goes through sanitizeHtml (AST, every server file)', () => {
+  const writes = allTranslationWrites('articles')
+  assert.ok(writes.length >= 6, `the article write sites must be found (got ${writes.length})`)
+  assert.deepEqual(
+    unprovenPerFile(writes),
+    Object.fromEntries(Object.keys(UNPROVEN_ARTICLE_WRITES).map(file => [file, 1])),
+    `sanitize article content with sanitizeHtml before the write, or name the site above with the reason it is safe:\n${writes.filter(write => !write.ok).map(write => `${write.site} — ${write.reason}`).join('\n')}`,
+  )
+})
+
+/**
+ * Câu SQL thô ghi `content` của bài viết/bản dịch không đi qua phép chứng minh AST. Chỉ được có ở các công cụ vá
+ * URL bên trong HTML ĐÃ LƯU (đã lọc lúc ghi) — không nhận đầu vào người dùng. Kiểm vắng mặt (đọc chữ là đủ), tính
+ * theo SỐ câu trong mỗi tệp: thêm một câu mới vào tệp đã có tên cũng phải được nhìn thấy.
+ */
+const RAW_CONTENT_WRITERS: Record<string, { statements: number, reason: string }> = {
+  'server/db/legacy-media-urls.ts': { statements: 1, reason: 'vá URL ảnh cũ bên trong nội dung đã lưu lúc khởi động' },
+  'server/services/media-repair.ts': { statements: 5, reason: 'vá tiền tố localhost bên trong nội dung đã lưu (REPLACE trên chính cột đó)' },
+}
+/**
+ * Câu ghi mà BẢNG là một biểu thức (`UPDATE ${target.table} SET ${target.column} = …`) — không biết bảng nào nên
+ * không đếm được bằng chữ; gồm cả `articles.content` và `article_translations.content` qua `URL_REFERENCE_TARGETS`.
+ * An toàn vì chỉ thay URL, và `assertRewritable` (`media-sync-url-match.ts`) từ chối URL có ký tự HTML
+ * (`" ' < > \` \t\r\n`) — không chèn được thẻ hay thuộc tính.
+ */
+const DYNAMIC_TABLE_WRITERS: Record<string, string> = {
+  'server/services/media-repoint.ts': 'đổi domain URL ảnh trong các cột tham chiếu; assertRewritable trước khi thay',
+  'server/services/media-sync-rewrite.ts': 'thay URL local ↔ R2 trong các cột tham chiếu; assertRewritable trước khi thay',
+}
+
+function serverSources(): Array<[string, string]> {
+  const out: Array<[string, string]> = []
   const walk = (dir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name)
-      if (entry.isDirectory()) { walk(path); continue }
-      if (!/\.(ts|mjs)$/.test(entry.name) || TRANSLATION_WRITERS.some(name => path.endsWith(name))) continue
-      // Ngoại lệ có tên: chính lượt dọn một lần ghi lại `content` đã qua sanitizeHtml
-      // (kiểm ngay bên dưới), nên nó không phải đường ghi chưa lọc.
-      if (path.endsWith('stored-html-sanitize.ts')) continue
-      const text = readFileSync(path, 'utf8')
-      if (/(insert|update)\(articleTranslations\)/.test(text) && /\bcontent\b/.test(text.slice(text.search(/(insert|update)\(articleTranslations\)/)))) {
-        offenders.push(path)
-      }
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) { walk(full); continue }
+      if (/\.(ts|mjs)$/.test(entry.name)) out.push([full.slice(ROOT_DIR.length + 1), readFileSync(full, 'utf8')])
     }
   }
-  walk(new URL('../server', import.meta.url).pathname)
-  assert.deepEqual(offenders, [], 'route the write through sanitizeTranslationFields and add it to the guard above')
+  walk(join(ROOT_DIR, 'server'))
+  return out
+}
+
+test('raw SQL writes article/translation content only in the named URL-repair tools, statement for statement', () => {
+  const found: Record<string, number> = {}
+  for (const [rel, text] of serverSources()) {
+    // UPDATE … SET content …  và  INSERT INTO … (…, content, …): mọi câu trên hai bảng có nhắc tới cột content.
+    const count = text.match(/(UPDATE|INSERT\s+INTO)\s+`?(articles|article_translations)`?[\s(][^;]*?\bcontent\b/gi)?.length ?? 0
+    if (count) found[rel] = count
+  }
+  const expected = Object.fromEntries(Object.entries(RAW_CONTENT_WRITERS).map(([file, entry]) => [file, entry.statements]))
+  assert.deepEqual(found, expected, 'write content through Drizzle after sanitizeHtml, or name the statement above with the reason no user input reaches it')
+})
+
+test('SQL whose table is an expression is only in the URL rewriters, and they check every URL first', () => {
+  const found = serverSources()
+    .filter(([, text]) => /(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+`?\$\{[A-Za-z_$][\w$]*\.[\w$.]+\}/.test(text))
+    .map(([rel]) => rel)
+    .sort()
+  assert.deepEqual(found, Object.keys(DYNAMIC_TABLE_WRITERS).sort(), 'a write to a table chosen at run time escapes every check above — name it with its reason')
+  for (const file of Object.keys(DYNAMIC_TABLE_WRITERS)) {
+    assert.match(readFileSync(join(ROOT_DIR, file), 'utf8'), /assertRewritable\(/, `${file} no longer checks URLs before rewriting stored HTML`)
+  }
+})
+
+test('the plain-text decode tool writes no translation content', () => {
+  const source = read('../server/services/stored-plaintext-decode.ts')
+  const body = source.slice(source.indexOf('function changedValues('), source.indexOf('function scanArticles('))
+  assert.match(body, /title/)
+  assert.doesNotMatch(body, /content/, 'changedValues must stay title/excerpt only — it is spread into the translation update')
 })
 
 test('the one-off cleanup writes only content that went through sanitizeHtml', () => {

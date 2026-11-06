@@ -222,6 +222,19 @@ Phủ chạy thật trước lượt chuyển (grep import/`mock.module` của h
 
   Hai kiểm kê đường ghi ("every write of translation content is sanitized", "no other server file writes…") giữ nguyên: đó là cấu trúc.
 
+## Bất biến "mọi đường X phải làm Y": lần theo lời gọi, không đọc chữ (2026-11-06)
+
+Hai loại khẳng định trên mã nguồn khác nhau về độ tin:
+
+- **Vắng mặt** ("không ai gọi `getRequestIP` trực tiếp", "không `sql.raw` trong tệp này") — đọc chữ là đủ: mọi lượt dùng đều hiện ra bằng chữ.
+- **Hiện diện / bao phủ** ("mọi handler ghi bảng X đều làm mới cache", "mọi lượt ghi `content` đều qua `sanitizeHtml`") — đọc chữ **không** đủ. Lượt ghi đi qua service, qua biến, qua spread không để lại chữ nào trong tệp được soát. Cổng làm mới cache câu trả lời bản đầu xanh trong khi 3 đường ghi qua service lọt (CHANGELOG § 78).
+
+Bất biến loại hai dùng một trong ba cơ chế:
+
+1. **Lần theo lời gọi (AST)**: `tests/_cache-input-writes.ts` (`handlerReaches(file, { tables, sqlTables, calls, skipCalls, dynamicTables })`), dựng trên `loadModule` của `_admin-authz-classifier.ts`. Dùng ở cổng làm mới cache câu trả lời và ở sổ đăng ký bộ đệm. Phép kiểm trên đối số: `tests/_translation-writes.ts` cho mọi lượt ghi `article_translations` và `articles` qua Drizzle (bảo thủ trên các hình dạng đã biết, không phải chứng minh hình thức; SQL thô có kiểm vắng mặt đếm theo câu). Mỗi cổng phải có ca tự kiểm cho các hình dạng mà bản đọc chữ để lọt.
+2. **Sổ đăng ký bộ đệm trong tiến trình** (`tests/in-process-cache-registry.test.ts` + `tests/_module-caches.ts`): mọi bộ đệm cấp module trong `server/` **mà bộ dò nhận ra** (tên có "cache", hoặc mang trường thời hạn, hoặc có tên trong `KNOWN_UNNAMED_CACHES`) khai cách làm mới (`versioned` / `invalidated` / `ttl-only` / `memo` / `state`). Bộ đệm mà câu trả lời chatbot dựng từ đó phải `versioned`. Bộ đệm `invalidated` khai bảng nguồn thì mọi handler admin ghi bảng đó phải gọi tới hàm xoá. Trạng thái trên `globalThis`: mọi tệp nhắc tới nó phải có tên. Bộ đệm đặt tên khác và không có trường thời hạn vẫn lọt — người viết/review phải thêm vào `KNOWN_UNNAMED_CACHES`.
+3. **Làm hỏng có chủ đích, chạy lại được** (`npm run test:mutations`, danh mục `scripts/mutation-proofs-catalog.ts`): gỡ từng bất biến trọng yếu trên một worktree tạm và đòi test đỏ, có bước mốc (test phải xanh khi chưa làm hỏng). `tests/mutation-proofs-catalog.test.ts` (trong `npm test`) giữ danh mục khớp mã. Câu "bỏ X → đỏ, đã thử" trong CHANGELOG nay thành một mục danh mục.
+
 ## Danh sách chuyển tiếp theo (ưu tiên)
 
 An ninh trước, dữ liệu sau. Thứ tự trong mỗi nhóm: chưa có test chạy nào trước, rồi mức nghiêm trọng.

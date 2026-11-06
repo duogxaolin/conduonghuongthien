@@ -136,3 +136,29 @@ test('the admin switch is the authority; the env variable can only force it ON',
   assert.equal(off, null, 'tắt thì "helo" rơi xuống câu thông báo, đúng hành vi trước bản cập nhật')
   assert.equal(on?.entryId, 1, 'bật thì "helo" vào mục chào')
 })
+
+/**
+ * Ranker dựng từ bản chụp CŨ của kho vẫn phải chấm theo ví dụ mà ứng viên mang theo (hàng CSDL vừa nạp).
+ * Lỗi gốc (2026-11-06): mục vừa thêm/sửa không khớp ở lượt hỏi đầu tiên sau khi sửa (chỉ mục là bản chụp lúc
+ * dựng), câu đó rơi xuống model, và câu của model được cache dưới khoá mới — che mục mới tới 30 ngày.
+ */
+test('a ranker built from an older bank scores new and edited entries by the examples they carry', async () => {
+  const stale = createTrigramRanker(BANK)
+  const signal = new AbortController().signal
+  const added = entry(42, ['so dien thoai duong day nong', 'hotline la gi'])
+  const edited = entry(19, ['chuc mot ngay tot lanh'])
+  const scores = await stale.rank({ query: 'hotline la gi', candidates: [...BANK.filter(item => item.id !== 19), added, edited], signal })
+  const best = [...scores].sort((left, right) => right.confidence - left.confidence)[0]!
+  assert.equal(best.entryId, 42, 'the entry added after the ranker was built must be rankable')
+  assert.ok(best.confidence >= SMALL_TALK_TRIGRAM_DEFAULTS.confidenceThreshold)
+
+  const editedScore = (await stale.rank({ query: 'chuc mot ngay tot lanh', candidates: [edited], signal }))[0]!
+  assert.ok(editedScore.confidence >= 0.99, 'an edited entry is scored by its new examples, not the snapshot')
+  const oldWording = (await stale.rank({ query: 'chuc ngu ngon', candidates: [edited], signal }))[0]!
+  assert.ok(oldWording.confidence < SMALL_TALK_TRIGRAM_DEFAULTS.confidenceThreshold, 'the old examples no longer match')
+})
+
+test('an empty ranker (fresh process) still ranks the candidates it is given', async () => {
+  const scores = await createTrigramRanker([]).rank({ query: 'cam on nhieu', candidates: BANK, signal: new AbortController().signal })
+  assert.equal([...scores].sort((left, right) => right.confidence - left.confidence)[0]!.entryId, 4)
+})

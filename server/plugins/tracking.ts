@@ -1,5 +1,4 @@
-import { getDb } from '../utils/db'
-import { settings } from '../db/schema'
+import { loadTrackingSettings } from '../utils/tracking-settings'
 
 /**
  * Tracking / Marketing tags injector.
@@ -12,47 +11,6 @@ import { settings } from '../db/schema'
  *
  * No schema change: everything lives under string keys in `settings`.
  */
-
-const TRACKING_KEYS = [
-  'tracking_enabled',
-  'ga4_measurement_id',
-  'gtm_container_id',
-  'google_ads_id',
-  'google_ads_conversion_label',
-  'google_site_verification',
-  'facebook_pixel_id',
-  'tiktok_pixel_id',
-  'clarity_project_id',
-  'tracking_custom_head',
-  'tracking_custom_body',
-] as const
-
-type TrackingSettings = Record<(typeof TRACKING_KEYS)[number], string>
-
-// ─── In-module cache (short TTL so every render doesn't hit the DB) ──────────
-const CACHE_TTL_MS = 30_000
-let cache: { data: TrackingSettings; expires: number } | null = null
-
-async function loadTrackingSettings(): Promise<TrackingSettings | null> {
-  const now = Date.now()
-  if (cache && cache.expires > now) return cache.data
-
-  try {
-    const db = getDb()
-    const rows = await db.select().from(settings)
-    const map: Record<string, string> = {}
-    for (const r of rows) {
-      if (r.key) map[r.key] = r.value == null ? '' : String(r.value)
-    }
-    const data = {} as TrackingSettings
-    for (const k of TRACKING_KEYS) data[k] = map[k] ?? ''
-    cache = { data, expires: now + CACHE_TTL_MS }
-    return data
-  } catch {
-    // Any DB error → inject nothing, never throw.
-    return null
-  }
-}
 
 // ─── Strict allow-list validators for structured IDs (anti stored-XSS) ───────
 // A malformed id is skipped entirely rather than injected into a JS string.
