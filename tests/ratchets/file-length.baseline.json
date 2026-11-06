@@ -12,7 +12,6 @@
     "exempt": true,
     "reason": "Content, not logic: the hardcoded Vietnamese fallback dictionary used when the translations API is unreachable. It grows by one line per i18n key, so growth is not a regression."
   },
-  "app/pages/admin/chatbot/settings.vue": 448,
   "app/pages/admin/comments/index.vue": 437,
   "app/pages/admin/content/articles/index.vue": {
     "value": 1256,
@@ -62,9 +61,8 @@
   "server/services/backup-restore-guards.ts": 482,
   "server/services/livestream-chat.ts": 456,
   "server/services/livestream.ts": 513,
-  "server/services/media-sync.ts": 457,
   "server/services/notifications.ts": 449,
-  "server/services/readers.ts": 550,
+  "server/services/readers.ts": 548,
   "server/utils/chatbot/outbound.ts": 518,
   "server/utils/xlsx-reader.ts": 434,
   "shared/blocks/registry.ts": 469

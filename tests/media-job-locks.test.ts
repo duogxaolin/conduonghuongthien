@@ -23,7 +23,7 @@ import type * as TS from 'typescript'
 
 const ts = createRequire(import.meta.url)('typescript') as typeof TS
 const SERVICES = new URL('../server/services/', import.meta.url).pathname
-const EXPECTED_JOB_MODULES = ['articles-thumbnail-scan.ts', 'media-repair.ts', 'media-repoint.ts', 'media-scan.ts', 'media-self-heal.ts', 'media-sync.ts']
+const EXPECTED_JOB_MODULES = ['articles-thumbnail-scan.ts', 'media-repair.ts', 'media-repoint.ts', 'media-scan.ts', 'media-self-heal.ts', 'media-sync-worker.ts']
 
 const sources = new Map<string, TS.SourceFile>()
 function parse(file: string): TS.SourceFile {

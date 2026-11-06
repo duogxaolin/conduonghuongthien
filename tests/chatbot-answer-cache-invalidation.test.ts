@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
-import { CACHE_INPUT_TABLES, handlerWritesCacheInput } from './_cache-input-writes'
+import { CACHE_INPUT_TABLES, handlerReaches, handlerWritesCacheInput } from './_cache-input-writes'
 
 /**
  * Mọi đường ghi dữ liệu mà câu trả lời cache PHỤ THUỘC đều phải tăng
@@ -15,7 +15,7 @@ import { CACHE_INPUT_TABLES, handlerWritesCacheInput } from './_cache-input-writ
  *
  * Ranh giới của phép đo (đọc kỹ trước khi thêm ngoại lệ):
  *   - chỉ quét `server/api/admin/**` — mọi đường ghi dữ liệu nền đi qua admin API (job đồng bộ
- *     media nền: handler tăng phiên bản khi promise `finished` của worker xong);
+ *     media nền: handler trả ngay, WORKER tăng phiên bản — xem `BUMPS_IN_SERVICE`);
  *   - "ghi dữ liệu nền" = code CHẠY TỚI ĐƯỢC từ handler (kể cả qua `server/services/**` /
  *     `server/utils/**`, `tests/_cache-input-writes.ts`) có thao tác ghi trên các bảng mà câu
  *     trả lời được dựng từ đó: kho kiến thức, small-talk, bài viết, ảnh/video, cấu hình AI;
@@ -75,6 +75,22 @@ function code(source: string): string {
 const bumps = (name: string) => /\bbumpAnswerCacheVersion\s*\(/u.test(code(readFileSync(path.join(root, name), 'utf8')))
 const writesCacheInput = (name: string) => handlerWritesCacheInput(path.join(root, name))
 
+/**
+ * Handler mà việc tăng phiên bản nằm trong service nó gọi chứ không phải trong tệp handler. Chỉ dành cho
+ * việc chạy NỀN: handler trả ngay còn job chạy tiếp (có thể qua cả lần khởi động lại), nên lượt tăng đúng
+ * phải do worker làm — ngay sau hàng đầu tiên commit và khi job kết thúc, không phải ở handler. Không tin
+ * danh sách này: mỗi mục phải CHỨNG MINH được bằng phép đi theo lời gọi (`bumpsThroughService`), nên gỡ
+ * lời gọi khỏi worker là cổng đỏ. Hành vi (đúng lúc nào, không tăng khi chưa ghi) ghim ở
+ * `tests/media-sync-behavior.test.ts`.
+ */
+const BUMPS_IN_SERVICE: Record<string, string> = {
+  'server/api/admin/media/sync-storage.post.ts':
+    'job nền: `startSyncJob` → `runSyncWorker` (media-sync-worker.ts) tăng sau commit hàng đầu và khi job kết thúc',
+}
+const BUMP_CALL = { calls: new Set(['bumpAnswerCacheVersion']) }
+/** Code chạy tới được từ handler có GỌI `bumpAnswerCacheVersion` (đi qua service, không chỉ chữ trong tệp). */
+const bumpsThroughService = (name: string) => handlerReaches(path.join(root, name), BUMP_CALL)
+
 const handlers = files(path.join(root, 'server/api/admin')).map(rel)
 
 test('the scan sees the admin write paths it is meant to check', () => {
@@ -113,16 +129,35 @@ test('the reachability walk sees writes made through a service, not only in the 
 })
 
 test('every admin handler that writes a cache-input table bumps the answer-cache version', () => {
-  const missing = handlers.filter(name => writesCacheInput(name) && !bumps(name) && !EXEMPT[name])
+  const missing = handlers.filter(name => writesCacheInput(name)
+    && !bumps(name)
+    && !EXEMPT[name]
+    && !(BUMPS_IN_SERVICE[name] && bumpsThroughService(name)))
   assert.deepEqual(
     missing,
     [],
     'these admin handlers change data a cached answer depends on but never bump '
     + '`chatbot_settings.answer_cache_version` — call `bumpAnswerCacheVersion()` after the write, '
-    + 'or name the file in EXEMPT with the reason the cached answer stays correct. '
+    + 'or name the file in EXEMPT with the reason the cached answer stays correct '
+    + '(a background job whose service bumps for it goes in BUMPS_IN_SERVICE). '
     + 'A hand-written list is green forever for files it has never heard of; this gate walks '
     + 'the directory precisely because of that.',
   )
+})
+
+test('a bump delegated to a service is proven by the call walk, and is never a hiding place', () => {
+  for (const name of Object.keys(BUMPS_IN_SERVICE)) {
+    assert.ok(handlers.includes(name), `${name} no longer exists`)
+    assert.ok(writesCacheInput(name), `${name} no longer writes a cache-input table — drop the entry`)
+    assert.equal(bumps(name), false, `${name} bumps in the handler now — drop the BUMPS_IN_SERVICE entry`)
+    assert.ok(bumpsThroughService(name), `${name}: nothing reachable from it calls bumpAnswerCacheVersion any more`)
+    assert.equal(EXEMPT[name], undefined, `${name} is both exempt and bumping through a service`)
+  }
+  // The walk is not trivially true: a handler that writes cache inputs and bumps nowhere is not seen as bumping,
+  // and one that calls the bump itself is.
+  assert.equal(bumpsThroughService('server/api/admin/articles/[id]/boost.post.ts'), false, 'a non-bumping writer looks like it bumps')
+  assert.equal(bumpsThroughService('server/api/admin/media/upload.post.ts'), false, 'a non-bumping writer looks like it bumps')
+  assert.ok(bumpsThroughService('server/api/admin/media/repoint-r2-urls.post.ts'), 'a direct bump is not seen by the walk')
 })
 
 test('an exemption is not stale: each named file still writes a cache-input table', () => {

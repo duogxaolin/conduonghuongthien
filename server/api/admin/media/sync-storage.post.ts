@@ -16,10 +16,12 @@
  * công nếu thảm họa (không auto-rollback — restore toàn DB mất dữ liệu unrelated).
  * Đang khôi phục CSDL → worker dừng trước lượt ghi đầu tiên; endpoint này đã trả
  * `{ jobId }`, nên lý do nằm ở `sync-status` (`phase: 'failed'`, câu "Đang khôi phục…").
+ *
+ * Bộ đệm câu trả lời chatbot (`bumpAnswerCacheVersion`) do worker tăng, không phải handler này — handler
+ * trả ngay và không sống tới cuối job (tiến trình có thể khởi động lại giữa chừng).
  */
 import { requireResourcePermission } from '../../../utils/permissions'
 import { startSyncJob, type SyncDirection } from '../../../services/media-sync'
-import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -35,13 +37,9 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const { jobId, finished } = await startSyncJob(direction as SyncDirection, adminUser.id ?? null)
-    // Khi job kết thúc (xong, huỷ hay lỗi giữa chừng — các hàng trước đó đã đổi URL và bản cũ đã xoá):
-    // câu trả lời chatbot đã cache còn chép URL cũ không được phát lại. Không chờ: job chạy nhiều phút.
-    // Job không đổi URL nào (bị chặn vì đang khôi phục CSDL, không có hàng) thì không đụng CSDL.
-    void finished.then(
-      job => (job.synced + job.urlsRepaired + job.articlesRewritten > 0 ? bumpAnswerCacheVersion() : undefined),
-    ).catch(() => undefined)
+    // Việc vô hiệu bộ đệm câu trả lời chatbot nằm trong worker (`media-sync-worker.ts`): ngay sau hàng
+    // đầu tiên commit và khi job kết thúc — không phụ thuộc handler/tiến trình còn sống tới cuối job.
+    const { jobId } = await startSyncJob(direction as SyncDirection, adminUser.id ?? null)
     return { ok: true, jobId, message: 'Đã khởi tạo job sync. Theo dõi tiến độ qua /api/admin/media/sync-status.' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

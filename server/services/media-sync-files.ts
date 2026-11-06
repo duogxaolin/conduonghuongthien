@@ -64,6 +64,21 @@ export interface SyncOneOptions {
    * local) chỉ là tệp thừa, lượt sau PUT/ghi đè lên đúng chỗ đó.
    */
   stillOwner?: () => boolean
+  /**
+   * Gọi ngay SAU commit của hàng, TRƯỚC khi lưới an toàn / xoá bản cũ: đây là khoảnh khắc URL cũ
+   * sắp chết, nên là lúc bộ đệm câu trả lời chatbot phải bị vô hiệu. Lỗi ném ra từ hook bị nuốt
+   * (log) — hàng đã commit, không được đếm là bỏ qua và bỏ sót lượt xoá bản cũ.
+   */
+  onCommitted?: () => Promise<void> | void
+}
+
+async function notifyCommitted(item: MediaRow, opts: SyncOneOptions): Promise<void> {
+  if (!opts.onCommitted) return
+  try {
+    await opts.onCommitted()
+  } catch (err: unknown) {
+    logWarn({ event: 'media.sync_on_committed_failed', mediaId: item.id, error: err instanceof Error ? err.message : String(err) })
+  }
 }
 
 class SyncSuperseded extends Error {
@@ -246,6 +261,7 @@ export async function syncOneToR2(
 
   if (opts.stillOwner && !opts.stillOwner()) throw new SyncSuperseded()
   const rowsRewritten = await commitMove(db, item, { provider: 'r2', url: r2Url, storagePath: r2Key }, 'to-r2', adminUserId)
+  await notifyCommitted(item, opts)
 
   // Chỉ tới đây — hàng + mọi tham chiếu đã trỏ R2 và đã commit — và lưới an toàn
   // không còn thấy tham chiếu nào, mới xoá local. Xoá hỏng không làm hỏng lượt
@@ -287,6 +303,7 @@ export async function syncOneToLocal(
 
   if (opts.stillOwner && !opts.stillOwner()) throw new SyncSuperseded()
   const rowsRewritten = await commitMove(db, item, { provider: 'local', url: localUrl, storagePath: localStoragePath }, 'to-local', adminUserId)
+  await notifyCommitted(item, opts)
 
   // Xoá R2 object SAU khi hàng + nội dung đã trỏ bản local, và chỉ khi lưới an
   // toàn không còn thấy tham chiếu nào tới URL R2 cũ.

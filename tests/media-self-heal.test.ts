@@ -22,9 +22,9 @@ import { backupServiceSource } from './_backup-service-family'
 import { describe, it } from 'node:test'
 
 const svcHeal = readFileSync('server/services/media-self-heal.ts', 'utf8')
-// `media-sync.ts` được tách làm 3 tệp (worker + rewrite bài viết + từng hàng); các khẳng định
+// `media-sync.ts` được tách làm nhiều tệp (trạng thái job, worker, đường cũ, rewrite bài viết, từng hàng); các khẳng định
 // dưới đây nói về cấu trúc của dịch vụ đồng bộ chứ không về tệp nào giữ hàm nào.
-const svcSync = ['media-sync.ts', 'media-sync-rewrite.ts', 'media-sync-url-match.ts', 'media-sync-files.ts']
+const svcSync = ['media-sync.ts', 'media-sync-worker.ts', 'media-sync-legacy.ts', 'media-sync-shared.ts', 'media-sync-rewrite.ts', 'media-sync-url-match.ts', 'media-sync-files.ts']
   .map(name => readFileSync(`server/services/${name}`, 'utf8'))
   .join('\n')
 const apiHeal = readFileSync('server/api/admin/media/self-heal.post.ts', 'utf8')
