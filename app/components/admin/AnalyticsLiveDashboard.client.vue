@@ -636,7 +636,7 @@ onBeforeUnmount(() => {
             </svg>
             <!-- Legend -->
             <ul class="w-full list-none p-0 m-0 flex flex-col gap-1.5">
-              <li v-for="(arc, i) in donutArcs" :key="arc.row.value" class="flex items-center gap-2 text-[0.78rem]">
+              <li v-for="arc in donutArcs" :key="arc.row.value" class="flex items-center gap-2 text-[0.78rem]">
                 <span class="shrink-0 h-3 w-3 rounded-full" :style="`background:${arc.color}`" aria-hidden="true"></span>
                 <span class="truncate font-semibold text-[#334e36]">{{ scopeLabel(arc.row.value) }}</span>
                 <span class="ml-auto shrink-0 font-bold text-brand-950">{{ Math.round(arc.row.share * 100) }}%</span>

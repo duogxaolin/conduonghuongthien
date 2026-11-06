@@ -15,6 +15,7 @@
          Mỗi khối một v-html: khi câu trả lời đang stream chỉ khối cuối đổi, các khối
          trên (kể cả ảnh bìa bài viết) giữ nguyên DOM — không bị dựng lại mỗi chunk. -->
     <div class="chat-markdown break-words [overflow-wrap:anywhere] leading-relaxed">
+      <!-- eslint-disable-next-line vue/no-v-html -- nguồn: app/utils/markdown.ts, escape toàn bộ trước khi dựng thẻ (kiểm kê ở tests/security-ai-editorial-html.test.ts) -->
       <div v-for="(block, index) in blocks" :key="index" class="contents" v-html="block"></div>
     </div>
 

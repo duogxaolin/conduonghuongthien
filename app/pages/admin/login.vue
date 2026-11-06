@@ -296,9 +296,8 @@ function backToPassword() {
         <div v-if="captchaRequired" class="mb-5">
           <label class="block text-[0.82rem] font-bold text-ink-admin mb-2">Mã captcha</label>
           <div class="flex items-center gap-3">
-            <div
-              v-if="captchaSvg"
-              v-html="captchaSvg"
+            <!-- eslint-disable-next-line vue/no-v-html -- nguồn: SVG captcha do máy chủ sinh, không chứa dữ liệu người dùng (kiểm kê ở tests/security-ai-editorial-html.test.ts) -->
+            <div v-if="captchaSvg" v-html="captchaSvg"
               class="shrink-0 rounded-lg border border-line-strong bg-[#f0f9ff] overflow-hidden"
               aria-label="Hình captcha"
             />

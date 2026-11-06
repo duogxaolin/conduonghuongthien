@@ -115,7 +115,7 @@ test('pins the connection lookup to validated DNS answers', async () => {
   const lookup = requestOptions?.lookup
   assert.ok(lookup)
   const result = await new Promise<unknown[]>((resolve) => {
-    ;(lookup as Function)('api.provider.example', { all: true }, (...args: unknown[]) => resolve(args))
+    ;(lookup as (host: string, options: object, callback: (...args: unknown[]) => void) => void)('api.provider.example', { all: true }, (...args: unknown[]) => resolve(args))
   })
   assert.deepEqual(result, [null, [
     { address: '8.8.8.8', family: 4 },

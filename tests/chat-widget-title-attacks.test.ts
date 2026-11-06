@@ -501,8 +501,8 @@ test('A20 whitespace / zero-width questions: blank not sent; zero-width refused 
   await ask(ctx, '   \n\t ')
   assert.equal(chatCalls(ctx).length, 0)
   ctx.server.state.chat.push(o.refused(), o.refused())
-  await ask(ctx, '​')
-  await ask(ctx, `​${W}‍`)
+  await ask(ctx, '\u200b')
+  await ask(ctx, `\u200b${W}\u200d`)
   await finish(t, ctx, o, { [activeIdOf(ctx)]: DEFAULT })
 })
 

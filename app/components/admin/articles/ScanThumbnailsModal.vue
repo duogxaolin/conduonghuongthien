@@ -89,7 +89,7 @@ const runFix = async () => {
   if (ids.length === 0) return
   // Xác nhận trước khi sửa SQL hàng loạt.
   const { confirm } = useConfirm()
-  let yes = false
+  let yes: boolean
   try {
     yes = await confirm(
       `Sửa ${ids.length} bài viết — đổi thumbnail_url sang "${defaultCover.value}" trong CSDL?`,

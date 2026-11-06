@@ -385,7 +385,7 @@ test('sql_mode is pinned by the dump: a NO_BACKSLASH_ESCAPES session runs no inj
 
   // 1. The dump text itself, run on a session that starts in NO_BACKSLASH_ESCAPES.
   const hostile = await mysql.createConnection({ host, port, user, password, database: DB.modeDst, multipleStatements: true })
-  let sessionMode = ''
+  let sessionMode: string
   try {
     await hostile.query("SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'")
     await hostile.query(dump)
@@ -534,7 +534,7 @@ test('a dump written the way an older image writes it (SELECT * of every column)
   await closeDb()
 
   const conn = await mysql.createConnection({ host, port, user, password, database: DB.genSrc, dateStrings: true, supportBigNumbers: true, bigNumberStrings: true })
-  let legacyDump = ''
+  let legacyDump: string
   try {
     await conn.query("SET SESSION time_zone = '+00:00'")
     // As an older image writes an article: it knows nothing of the totals.

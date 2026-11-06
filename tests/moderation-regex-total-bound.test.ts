@@ -419,7 +419,7 @@ test('(d) a heavy-but-legal rule before a catastrophic one: the catastrophic one
   const lines: LogLine[] = []
   const spy = mock.method(console, 'error', (line: unknown) => { try { lines.push(JSON.parse(String(line)) as LogLine) } catch { /* not a log line */ } })
   const started = performance.now()
-  let hits: boolean[] = []
+  let hits: boolean[]
   try {
     hits = withinWallClock(5000, 'heavy then catastrophic', () => testModerationRegexes(rules, `${'日'.repeat(1500)}! lô đề`))
   } finally {

@@ -63,7 +63,7 @@ export async function runToolCalls(toolCalls: ToolCall[], toolDefs: AiToolDefini
       })
     }
 
-    let toolResult: unknown = null
+    let toolResult: unknown
     if (fn) {
       try {
         toolResult = await fn.execute(args)

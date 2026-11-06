@@ -115,7 +115,7 @@ ${DATA_NOTICE}`)
   // The answer must be the JSON object asked for. Anything else is a failed translation:
   // it used to come back as "[EN] <the Vietnamese title>", the Vietnamese excerpt as its
   // own "translation", and the model's reply (a refusal, say) as the body.
-  let parsedJson: unknown = null
+  let parsedJson: unknown
   try {
     parsedJson = JSON.parse(aiResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim())
   } catch {

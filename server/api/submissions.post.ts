@@ -183,7 +183,7 @@ export default defineEventHandler(async (event) => {
   // Answers whose map === 'none' are stored as free-form JSON [{label,value}].
   const extraAnswers: Array<{ label: string; value: string }> = []
   // Full answer set kept for the notification email body.
-  let emailAnswers: Array<{ label: string; value: string }> = []
+  let emailAnswers: Array<{ label: string; value: string }>
 
   const answers = normalizeAnswers(body?.answers)
 

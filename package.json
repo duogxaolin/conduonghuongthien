@@ -5,7 +5,7 @@
   "scripts": {
     "build": "npm run check:admin-password && nuxt build",
     "check:admin-password": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/check-admin-password.ts",
-    "lint": "eslint . --max-warnings=9999",
+    "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix --max-warnings=9999",
     "format": "prettier --write \"**/*.{ts,tsx,vue,json,css,md}\" --ignore-path .prettierignore",
     "dev": "nuxt dev",

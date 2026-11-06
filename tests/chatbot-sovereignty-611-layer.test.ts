@@ -58,10 +58,9 @@ test('the exceptions the new matcher keeps let these through; the 611588c2 layer
 
 async function stream(chunks: string[]) {
   let shown = ''
-  let trippedBeforeFinish = false
   const guard = createSovereigntyOutputGuard({ forward: (chunk) => { shown += chunk }, replace: () => {}, question: 'Tôi muốn vay vốn' })
   for (const chunk of chunks) await guard.push!(chunk)
-  trippedBeforeFinish = guard.tripped
+  const trippedBeforeFinish = guard.tripped
   return { trippedBeforeFinish, tripped: await guard.finish(chunks.join('')), shown }
 }
 const split = (text: string, size: number) => Array.from({ length: Math.ceil(text.length / size) }, (_, index) => text.slice(index * size, (index + 1) * size))

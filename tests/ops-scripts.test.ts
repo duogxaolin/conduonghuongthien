@@ -303,12 +303,12 @@ test('CI refuses a committed .env or a known-default secret', () => {
 // ─── CI tiết kiệm phút ───────────────────────────────────────────────────────
 test('PR chạy bộ nhẹ; integration và bản đầy đủ chỉ bị bỏ qua ở PR, không bao giờ ở main', () => {
   const workflow = read('.github/workflows/ci.yml')
-  const planJob = /\n  changes:\n([\s\S]*?)(?=\n  [a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
+  const planJob = /\n {2}changes:\n([\s\S]*?)(?=\n {2}[a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
   assert.ok(planJob, 'thiếu job `changes` lập kế hoạch cho CI')
 
   // Mọi sự kiện không phải PR (push main, chạy tay) phải chạy ĐỦ — nếu nhánh này sai thì
   // integration bị bỏ qua ngay trên `main` và `image`/`deploy` ra VPS mà chưa qua cổng nào.
-  const nonPr = /if \[ "\$EVENT" != "pull_request" \]; then([\s\S]*?)\n          fi/.exec(planJob)?.[1] ?? ''
+  const nonPr = /if \[ "\$EVENT" != "pull_request" \]; then([\s\S]*?)\n {10}fi/.exec(planJob)?.[1] ?? ''
   assert.match(nonPr, /echo "run=true"/, 'sự kiện không phải PR phải chạy')
   assert.match(nonPr, /echo "integration=true"/, 'sự kiện không phải PR phải chạy cả integration')
   assert.doesNotMatch(nonPr, /=false/, 'nhánh non-PR không được tắt gì')
@@ -338,7 +338,7 @@ test('PR chạy bộ nhẹ; integration và bản đầy đủ chỉ bị bỏ q
     assert.match(body, /needs: changes/, `${job} không chờ job \`changes\``)
     assert.match(body, /if: needs\.changes\.outputs\.run == 'true'/, `${job} không tôn trọng việc bỏ qua PR nháp`)
   }
-  const integration = /\n  integration-tests:\n([\s\S]*?)(?=\n  [a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
+  const integration = /\n {2}integration-tests:\n([\s\S]*?)(?=\n {2}[a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
   assert.match(integration, /if: needs\.changes\.outputs\.run == 'true' && needs\.changes\.outputs\.integration == 'true'/)
 })
 

@@ -135,7 +135,7 @@ export function trackedFiles(root: string = REPO_ROOT): string[] {
     })
   } catch (error) {
     const detail = error instanceof Error ? error.message.split('\n')[0] : String(error)
-    throw new Error(`docs-facts lists files with \`git ls-files\` so untracked files never count, and it failed in ${root} (${detail}).`)
+    throw new Error(`docs-facts lists files with \`git ls-files\` so untracked files never count, and it failed in ${root} (${detail}).`, { cause: error })
   }
   return output.split('\0').filter(Boolean).sort()
 }
