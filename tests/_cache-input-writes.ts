@@ -42,38 +42,70 @@ export const CACHE_INPUT_TABLES = new Set([
   'mediaItems',
 ])
 
-const RAW_SQL_WRITE = /\b(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+`?(?:chatbot_knowledge|chatbot_knowledge_terms|chatbot_small_talk|articles|ai_providers|ai_service_configs|media|media_items)`?(?=[\s(]|$)/iu
+/** SQL names of `CACHE_INPUT_TABLES` (raw statements name tables by their SQL name). */
+const CACHE_INPUT_SQL_TABLES = ['chatbot_knowledge', 'chatbot_knowledge_terms', 'chatbot_small_talk', 'articles', 'ai_providers', 'ai_service_configs', 'media', 'media_items']
 /** Câu ghi mà tên bảng là một biến (`UPDATE ${table}`, `` UPDATE `${table}` ``): không biết bảng ⇒ tính là ghi. */
 const DYNAMIC_TABLE_WRITE = /\b(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+`?$/iu
-/** Chính lời gọi tăng phiên bản — không phải lượt ghi dữ liệu nền. */
-const INVALIDATION_CALLS = new Set(['bumpAnswerCacheVersion'])
 const WRITE_METHODS = new Set(['insert', 'update', 'delete'])
 const MAX_HOPS = 4
 
-function writesHere(node: ts.Node): boolean {
-  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && WRITE_METHODS.has(node.expression.name.text)) {
-    const [table] = node.arguments
-    if (table && ts.isIdentifier(table) && CACHE_INPUT_TABLES.has(table.text)) return true
+/** What a walk looks for: writes to these tables, or a call to one of these functions. */
+export interface WalkTarget {
+  /** Drizzle table bindings (`articles`, `aiModerationRules`). */
+  tables?: ReadonlySet<string>
+  /** SQL table names for raw statements (`articles`, `ai_moderation_rules`). */
+  sqlTables?: readonly string[]
+  /** Function names whose CALL is the thing looked for (`invalidateModerationRulesCache`). */
+  calls?: ReadonlySet<string>
+  /** Function names never followed (an invalidation call is not a data write). */
+  skipCalls?: ReadonlySet<string>
+  /**
+   * Count SQL whose table is a non-identifier substitution (`UPDATE ${target.table}`) as a write. On for the
+   * answer-cache gate (the URL rewriters `media-repoint`/`media-sync-rewrite` really do write its tables);
+   * off by default — for any other table set it only reports those rewriters as noise.
+   */
+  dynamicTables?: boolean
+}
+
+const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+function matcher(target: WalkTarget) {
+  const tables = target.tables ?? new Set<string>()
+  const raw = target.sqlTables?.length
+    ? new RegExp(`\\b(?:UPDATE|INSERT\\s+INTO|DELETE\\s+FROM)\\s+\`?(?:${target.sqlTables.map(escape).join('|')})\`?(?=[\\s(]|$)`, 'iu')
+    : null
+  return (node: ts.Node): boolean => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression
+      if (target.calls && ts.isIdentifier(callee) && target.calls.has(callee.text)) return true
+      if (target.calls && ts.isPropertyAccessExpression(callee) && target.calls.has(callee.name.text)) return true
+      if (ts.isPropertyAccessExpression(callee) && WRITE_METHODS.has(callee.name.text)) {
+        const [table] = node.arguments
+        if (table && ts.isIdentifier(table) && tables.has(table.text)) return true
+      }
+    }
+    if (!raw) return false
+    if (ts.isNoSubstitutionTemplateLiteral(node) || ts.isStringLiteral(node)) return raw.test(node.text)
+    if (ts.isTemplateExpression(node)) {
+      const text = node.head.text + node.templateSpans.map(span => ` ? ${span.literal.text}`).join('')
+      if (raw.test(text)) return true
+      // Bảng là phần thay ngay sau từ khoá ghi. Định danh trơn (`${backups}`, `${RATE_LIMIT_TABLE}`, `${table}` của
+      // bộ dọn dữ liệu) là một bảng có tên: chỉ tính khi đó là bảng đang tìm. Biểu thức khác (`${target.table}`) thì
+      // không biết bảng nào ⇒ tính là ghi.
+      return node.templateSpans.some((span, index) => {
+        const before = index === 0 ? node.head.text : node.templateSpans[index - 1]!.literal.text
+        if (!DYNAMIC_TABLE_WRITE.test(before)) return false
+        return ts.isIdentifier(span.expression) ? tables.has(span.expression.text) : target.dynamicTables === true
+      })
+    }
+    return false
   }
-  if (ts.isNoSubstitutionTemplateLiteral(node) || ts.isStringLiteral(node)) return RAW_SQL_WRITE.test(node.text)
-  if (ts.isTemplateExpression(node)) {
-    const text = node.head.text + node.templateSpans.map(span => ` ? ${span.literal.text}`).join('')
-    if (RAW_SQL_WRITE.test(text)) return true
-    // Bảng là phần thay ngay sau từ khoá ghi. Định danh trơn (`${backups}`, `${RATE_LIMIT_TABLE}`, `${table}` của
-    // bộ dọn dữ liệu) là một bảng có tên: chỉ tính khi đó là bảng nguồn. Biểu thức khác (`${target.table}`) thì
-    // không biết bảng nào ⇒ tính là ghi.
-    return node.templateSpans.some((span, index) => {
-      const before = index === 0 ? node.head.text : node.templateSpans[index - 1]!.literal.text
-      if (!DYNAMIC_TABLE_WRITE.test(before)) return false
-      return ts.isIdentifier(span.expression) ? CACHE_INPUT_TABLES.has(span.expression.text) : true
-    })
-  }
-  return false
 }
 
 type Module = NonNullable<ReturnType<typeof loadModule>>
+type Matcher = ReturnType<typeof matcher>
 
-function reachesWrite(module: Module, root: ts.Node, visited: Set<string>, hops: number): boolean {
+function reaches(module: Module, root: ts.Node, hit: Matcher, target: WalkTarget, visited: Set<string>, hops: number): boolean {
   let found = false
   const pending: ts.Node[] = [root]
   const seenLocals = new Set<string>()
@@ -81,11 +113,11 @@ function reachesWrite(module: Module, root: ts.Node, visited: Set<string>, hops:
     const node = pending.pop()!
     const visit = (child: ts.Node) => {
       if (found) return
-      if (writesHere(child)) { found = true; return }
+      if (hit(child)) { found = true; return }
       if (ts.isCallExpression(child)) {
         const callee = child.expression
         const name = ts.isIdentifier(callee) ? callee.text : null
-        if (name && INVALIDATION_CALLS.has(name)) return
+        if (name && target.skipCalls?.has(name)) return
         const object = ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) ? callee.expression.text : null
         if (name) {
           const local = module.locals.get(name)
@@ -96,7 +128,7 @@ function reachesWrite(module: Module, root: ts.Node, visited: Set<string>, hops:
           const importedName = object
             ? (binding?.name === '*' && ts.isPropertyAccessExpression(callee) ? callee.name.text : null)
             : binding?.name
-          if (binding && importedName && importedWrites(binding.module, importedName, visited, hops + 1)) { found = true; return }
+          if (binding && importedName && importedReaches(binding.module, importedName, hit, target, visited, hops + 1)) { found = true; return }
         }
       }
       ts.forEachChild(child, visit)
@@ -106,23 +138,36 @@ function reachesWrite(module: Module, root: ts.Node, visited: Set<string>, hops:
   return found
 }
 
-function importedWrites(modulePath: string, name: string, visited: Set<string>, hops: number): boolean {
+function importedReaches(modulePath: string, name: string, hit: Matcher, target: WalkTarget, visited: Set<string>, hops: number): boolean {
   if (!/^server\/(services|utils)\//.test(rel(modulePath))) return false
   const key = `${modulePath}#${name}`
   if (visited.has(key)) return false
   visited.add(key)
   const module = loadModule(modulePath)
   if (!module) return false
-  const target = module.exports.get(name)
-  if (!target) return false
-  if ('from' in target) return importedWrites(target.from, target.name, visited, hops)
-  return reachesWrite(module, target, visited, hops)
+  const exported = module.exports.get(name)
+  if (!exported) return false
+  if ('from' in exported) return importedReaches(exported.from, exported.name, hit, target, visited, hops)
+  return reaches(module, exported, hit, target, visited, hops)
+}
+
+/** Does the code reachable from the handler at `file` (absolute, or repo-relative) match `target`? */
+export function handlerReaches(file: string, target: WalkTarget): boolean {
+  const absolute = path.isAbsolute(file) ? file : path.resolve(import.meta.dirname, '..', file)
+  const module = loadModule(absolute)
+  if (!module) return false
+  return reaches(module, module.defaultExport ?? module.sourceFile, matcher(target), target, new Set(), 0)
+}
+
+const CACHE_INPUT_TARGET: WalkTarget = {
+  tables: CACHE_INPUT_TABLES,
+  sqlTables: CACHE_INPUT_SQL_TABLES,
+  dynamicTables: true,
+  // Chính lời gọi tăng phiên bản — không phải lượt ghi dữ liệu nền.
+  skipCalls: new Set(['bumpAnswerCacheVersion']),
 }
 
 /** Does the handler at `file` (absolute, or relative to the repo root) reach a write on a cache-input table? */
 export function handlerWritesCacheInput(file: string): boolean {
-  const absolute = path.isAbsolute(file) ? file : path.resolve(import.meta.dirname, '..', file)
-  const module = loadModule(absolute)
-  if (!module) return false
-  return reachesWrite(module, module.defaultExport ?? module.sourceFile, new Set(), 0)
+  return handlerReaches(file, CACHE_INPUT_TARGET)
 }

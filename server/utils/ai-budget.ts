@@ -15,6 +15,7 @@ import { aiUsageLogs, aiBudgetSettings, aiProviders, type AiBudgetSettings } fro
 import { decryptAiSecret } from './ai/crypto'
 import { fetchDelifyUsage } from './ai/delify-usage'
 import { logWarn } from './logger'
+import { configGeneration } from './config-generation'
 import { vietnamMonthStart } from './vn-day-range'
 
 /** Services blocked at 100% budget. Chatbot falls back to knowledge-only in its
@@ -83,17 +84,26 @@ let cachedDelifyQuota: CachedDelifyQuota | null = null
  */
 const DELIFY_QUOTA_CACHE_TTL_MS = 60_000
 let lastQuotaLookupAt: number | null = null
+/**
+ * Config generation (`config-generation.ts`) the cached outcome was looked up under. Every AI provider write
+ * bumps the answer-cache version, which advances it: a rotated, replaced or deleted Delify key is looked up
+ * again on the next check instead of riding the 60 s window.
+ */
+let quotaGeneration: number | null = null
 /** The lookup in flight: concurrent budget checks share it instead of each asking. */
 let quotaLookup: Promise<CachedDelifyQuota | null> | null = null
 
 export async function loadDelifyQuota(db: Database): Promise<CachedDelifyQuota | null> {
   const now = Date.now()
+  const generation = configGeneration()
   // A clock that went backwards counts as expired.
-  if (lastQuotaLookupAt !== null && now >= lastQuotaLookupAt && now - lastQuotaLookupAt < DELIFY_QUOTA_CACHE_TTL_MS) {
+  if (lastQuotaLookupAt !== null && quotaGeneration === generation && now >= lastQuotaLookupAt && now - lastQuotaLookupAt < DELIFY_QUOTA_CACHE_TTL_MS) {
     return cachedDelifyQuota
   }
   quotaLookup ??= lookupDelifyQuota(db).finally(() => {
     lastQuotaLookupAt = Date.now()
+    // The generation read BEFORE the lookup: a bump during it leaves the outcome stale-tagged, re-looked up next.
+    quotaGeneration = generation
     quotaLookup = null
   })
   return quotaLookup
@@ -106,7 +116,12 @@ async function lookupDelifyQuota(db: Database): Promise<CachedDelifyQuota | null
       .limit(1)
 
     if (!delifyRow || !delifyRow.apiKeyCiphertext || !delifyRow.apiKeyNonce || !delifyRow.apiKeyAuthTag || !delifyRow.apiKeyVersion || !delifyRow.apiKeyKeyId) {
-      return cachedDelifyQuota
+      // No Delify key ⇒ no Delify quota. Returning the last known one kept a suspended key's `active: false`
+      // blocking EVERY AI service after the admin had deleted that provider and moved to another, until the
+      // process restarted (verifier 2026-11-06). "Last known on failure" is for a lookup that failed, not for
+      // a provider that no longer exists.
+      cachedDelifyQuota = null
+      return null
     }
 
     const secret = decryptAiSecret({

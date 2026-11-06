@@ -7,6 +7,7 @@ import type { SmallTalkEntry } from './small-talk'
 import { safeProviderRequest } from './outbound'
 import { answerGroundedChat } from './chat-policy'
 import {
+  type SemanticSmallTalkProvider,
   getSmallTalkSemanticProvider,
   installSmallTalkSemanticProvider,
   projectSemanticEntry,
@@ -121,6 +122,16 @@ function installTrigramRanker(entries: readonly SmallTalkEntry[]): void {
   trigramIndexFingerprint = fingerprint
 }
 
+/**
+ * Ranker ngữ nghĩa small-talk cho một lượt hỏi. Ranker chấm theo ví dụ của chính ứng viên (`createTrigramRanker`),
+ * nên lấy nó ra TRƯỚC khi kho small-talk được nạp lại không làm lượt hỏi dùng bản chụp cũ. Tiến trình vừa khởi
+ * động chưa cài ranker nào: một ranker rỗng vẫn chấm được (tự tính trigram từ ứng viên) — nếu không, lượt đầu
+ * tiên bỏ qua lớp ngữ nghĩa, câu rơi xuống model và được cache, che mục small-talk tới 30 ngày.
+ */
+export function semanticProviderForTurn(): SemanticSmallTalkProvider {
+  return getSmallTalkSemanticProvider() ?? createTrigramRanker([])
+}
+
 export async function answerChat(
   event: Parameters<typeof answerGroundedChat>[0],
   settings: ChatbotSettings,
@@ -134,7 +145,7 @@ export async function answerChat(
     loadSmallTalkEntries,
     configuredSecret: configuredChatbotSecret,
     providerRequest: safeProviderRequest,
-    semanticSmallTalkProvider: getSmallTalkSemanticProvider(),
+    semanticSmallTalkProvider: semanticProviderForTurn(),
     // Ngưỡng mặc định đi kèm ranker, không phải của khung: 0.82 dành cho một ranker ngữ
     // nghĩa thật, trigram đo được ở 0.65 (xem `small-talk-semantic-trigram.ts`). Biến môi
     // trường vẫn ghi đè được — đó là lý do hai thứ này tách nhau.

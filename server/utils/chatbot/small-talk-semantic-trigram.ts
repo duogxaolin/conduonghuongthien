@@ -104,22 +104,32 @@ export type TrigramRanker = SemanticSmallTalkProvider & {
  * trả lời; `selectSmallTalk` tự tra câu trả lời từ hàng CSDL gốc.
  */
 export function createTrigramRanker(entries: readonly SemanticSmallTalkEntry[]): TrigramRanker {
-  const index = new Map<number, Map<string, number>[]>()
-  for (const entry of entries) {
-    const grams = entry.semanticExamples
-      .filter(example => typeof example === 'string' && example.trim().length > 0)
-      .map(trigrams)
-    if (grams.length) index.set(entry.id, grams)
+  /**
+   * Bộ nhớ trigram theo mục, KHOÁ CẢ BẰNG CHÍNH CÁC VÍ DỤ: ứng viên được chấm theo ví dụ nó MANG THEO
+   * (chiếu từ hàng CSDL vừa nạp), chỉ mục chỉ để khỏi tính lại khi ví dụ không đổi. Bản đầu chấm theo bản
+   * chụp lúc dựng ranker — mục small-talk vừa thêm/sửa không khớp ở lượt hỏi đầu tiên sau khi sửa, câu đó
+   * rơi xuống model, và câu của model được cache dưới khoá mới, che mục mới tới 30 ngày (2026-11-06).
+   */
+  const index = new Map<number, { key: string, grams: Map<string, number>[] }>()
+  const gramsOf = (entry: SemanticSmallTalkEntry): Map<string, number>[] => {
+    const examples = entry.semanticExamples.filter(example => typeof example === 'string' && example.trim().length > 0)
+    const key = examples.join('\u0000')
+    const known = index.get(entry.id)
+    if (known && known.key === key) return known.grams
+    const grams = examples.map(trigrams)
+    index.set(entry.id, { key, grams })
+    return grams
   }
+  const size = entries.filter(entry => gramsOf(entry).length > 0).length
 
   return {
-    size: index.size,
+    size,
     async rank({ query, candidates }): Promise<readonly SemanticSmallTalkScore[]> {
       const queryGrams = trigrams(query)
       const scores: SemanticSmallTalkScore[] = []
       for (const candidate of candidates) {
-        const grams = index.get(candidate.id)
-        if (!grams) continue
+        const grams = gramsOf(candidate)
+        if (!grams.length) continue
         let best = 0
         for (const gram of grams) {
           const score = cosine(queryGrams, gram)
