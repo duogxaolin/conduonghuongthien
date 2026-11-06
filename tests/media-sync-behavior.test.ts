@@ -53,6 +53,10 @@ const rec = {
   backupFails: true,
   backupGate: null as Gate | null,
   uploadGate: null as Gate | null,
+  /** Chỉ giữ lượt tải của tệp này (mặc định: mọi lượt tải). */
+  uploadGateOnly: null as string | null,
+  /** Giữ lượt `bumpAnswerCacheVersion` thứ N (đếm từ 1) tới khi mở. */
+  bumpGate: null as { onCall: number, gate: Gate } | null,
   failRewriteOnce: false,
   rowUpdateAffected: 1,
   lockHeld: false,
@@ -67,14 +71,19 @@ const rec = {
   /** Hàng `settings` mà `loadFaviconSetting` đọc. */
   settingsRows: [] as Row[],
   warnings: [] as Row[],
+  /** Lỗi pre-backup tuỳ chọn (vd. "đang khôi phục"); mặc định lỗi chung "backup down" khi `backupFails`. */
+  backupThrows: null as null | (() => Error),
+  /** Hành vi của `bumpAnswerCacheVersion` giả: trả số phiên bản, trả null (hợp đồng khi hỏng) hoặc ném. */
+  bumpMode: 'ok' as 'ok' | 'null' | 'throw',
 }
 function reset() {
   Object.assign(rec, {
     items: [], mediaRows: [], auditTrail: [], content: {}, events: [], scans: [], rewrites: [], audits: [], rowUpdates: [],
-    headResult: true, backupFails: true, backupGate: null, uploadGate: null, failRewriteOnce: false,
+    headResult: true, backupFails: true, backupGate: null, uploadGate: null, uploadGateOnly: null, bumpGate: null, failRewriteOnce: false,
     rowUpdateAffected: 1, lockHeld: false, onDeleteLocal: null,
     r2Config: { accountId: 'a', accessKeyId: 'k', secretAccessKey: 's', bucket: 'b' },
     rewriteMisses: new Set<string>(), remainingCheckFails: false, ownedByOther: new Set<string>(), settingsRows: [], warnings: [],
+    backupThrows: null, bumpMode: 'ok',
   })
 }
 
@@ -207,14 +216,28 @@ mock.module(new URL('../server/utils/db.ts', import.meta.url), {
 mock.module(new URL('../server/services/media.ts', import.meta.url), {
   namedExports: { loadR2Config: async () => rec.r2Config },
 })
+const refusalStubs = restoreRefusalStubs()
 mock.module(new URL('../server/services/backup.ts', import.meta.url), {
   namedExports: {
     runBackup: async () => {
       if (rec.backupGate) await rec.backupGate.wait
+      if (rec.backupThrows) throw rec.backupThrows()
       if (rec.backupFails) throw new Error('backup down')
       return { stamp: 'stamp-1' }
     },
-    ...restoreRefusalStubs(),
+    ...refusalStubs,
+  },
+})
+// Bộ đệm câu trả lời chatbot: bản thật chạy `UPDATE chatbot_settings` mà bộ thực thi giả của tệp này coi là một lượt
+// thay URL. Ghi `bump` vào cùng nhật ký sự kiện để khẳng định THỨ TỰ so với commit / xoá bản cũ.
+mock.module(new URL('../server/services/chatbot-answer-cache.ts', import.meta.url), {
+  namedExports: {
+    bumpAnswerCacheVersion: async () => {
+      rec.events.push('bump')
+      if (rec.bumpGate && rec.events.filter(e => e === 'bump').length === rec.bumpGate.onCall) await rec.bumpGate.gate.wait
+      if (rec.bumpMode === 'throw') throw new Error('bump down')
+      return rec.bumpMode === 'null' ? null : 7
+    },
   },
 })
 mock.module(new URL('../server/utils/media-r2.ts', import.meta.url), {
@@ -222,7 +245,7 @@ mock.module(new URL('../server/utils/media-r2.ts', import.meta.url), {
     r2ObjectKeyFor: (filename: string) => `2026/10/${filename}`,
     uploadR2File: async (_b: Buffer, filename: string) => {
       rec.events.push(`upload:${filename}`)
-      if (rec.uploadGate) await rec.uploadGate.wait
+      if (rec.uploadGate && (!rec.uploadGateOnly || rec.uploadGateOnly === filename)) await rec.uploadGate.wait
       return { url: `https://cdn.test/2026/10/${filename}`, storagePath: `2026/10/${filename}` }
     },
     deleteR2File: async (key: string) => { rec.events.push(`delete-r2:${key}`) },
@@ -257,6 +280,7 @@ mock.module(new URL('../server/utils/named-lock.ts', import.meta.url), {
 
 const svc = await import('../server/services/media-sync.ts')
 const { URL_REFERENCE_TARGETS } = await import('../server/services/media-sync-rewrite.ts')
+const { syncOneToR2 } = await import('../server/services/media-sync-files.ts')
 const { loadFaviconSetting } = await import('../server/utils/favicon-setting.ts')
 
 const dir = mkdtempSync(join(tmpdir(), 'media-sync-'))
@@ -448,6 +472,7 @@ test('buộc dừng khi worker treo giữa lượt tải R2 của một hàng: h
   assert.equal(rec.rewrites.length, 0)
   assert.ok(!rec.events.some(e => e.startsWith('delete-local')), 'không xoá local của hàng chưa commit')
   assert.ok(!rec.events.includes('upload:next.png'))
+  assert.ok(!rec.events.includes('bump'), 'chưa hàng nào commit → bị buộc dừng cũng không tăng phiên bản cache')
 })
 
 test('vá trạng thái dở dang của mã cũ ở đầu lượt — kể cả khi không còn hàng local nào', async () => {
@@ -508,6 +533,9 @@ test('to-local: xoá object R2 chỉ sau commit của hàng + nội dung', async
   assert.ok(rewrites.every(r => r.inTx && r.newUrl === '/uploads/2026/10/r.png'))
   assert.equal(rec.content['articles.content']![0], '<img src="/uploads/2026/10/r.png"><img src="https://cdn.test/2026/09/r.png.webp">')
   assert.ok(rec.events.indexOf('commit') < rec.events.indexOf('delete-r2:2026/09/r.png'))
+  // Hướng to-local cũng tăng phiên bản: URL R2 cũ chết khi object bị xoá (gỡ `notifyCommitted` ở `syncOneToLocal` là mất hẳn lượt tăng).
+  assert.equal(bumpCount(), 1)
+  assert.ok(indexesOf('commit')[0]! < indexesOf('bump')[0]! && indexesOf('bump')[0]! < rec.events.indexOf('delete-r2:2026/09/r.png'), 'commit < bump < xoá object R2')
 })
 
 test('getSyncJobStatus trả bản sao', async () => {
@@ -633,4 +661,173 @@ test('bản cũ dùng chung với một hàng `media` khác → giữ bản cũ'
   try { assert.equal((await svc.syncMediaStorage('to-r2', 5)).synced, 1) } finally { log.restore() }
   assert.ok(!rec.events.some(e => e.startsWith('delete-local')))
   assert.ok(log.lines.some(l => l.event === 'media.sync_old_copy_kept_referenced' && l.sharedWithOtherRow === true))
+})
+
+// ─── Vô hiệu bộ đệm câu trả lời chatbot: đúng hai lúc, luôn sau commit ────────────
+
+const bumpCount = () => rec.events.filter(e => e === 'bump').length
+const indexesOf = (event: string) => rec.events.flatMap((e, i) => (e === event ? [i] : []))
+
+test('bộ đệm chatbot: tăng ngay SAU commit hàng đầu (trước khi xoá bản cũ), rồi tăng lần nữa khi job kết thúc', async () => {
+  reset()
+  rec.items = [localItem(1, 'one.png'), localItem(2, 'two.png'), localItem(3, 'three.png')]
+  const { jobId } = await svc.startSyncJob('to-r2', 5)
+  const s = await waitJob(jobId)
+  assert.equal(s.phase, 'done')
+  assert.equal(s.synced, 3)
+  // Người poll thấy `running:false` thì lượt tăng cuối đã xong (không còn lượt tăng nào sau đó).
+  assert.equal(bumpCount(), 2, 'lần đầu sau hàng đầu, lần cuối khi job kết thúc')
+  const [first, last] = indexesOf('bump') as [number, number]
+  const commits = indexesOf('commit')
+  const at = (e: string) => rec.events.indexOf(e)
+  assert.ok(commits[0]! < first, 'sau commit của hàng đầu')
+  assert.ok(first < at('delete-local:one.png'), 'TRƯỚC khi xoá bản cũ của hàng đầu — URL cũ chưa kịp chết khi cache còn phát nó')
+  assert.ok(first < at('upload:two.png'), 'lần đầu tăng trước khi chạm hàng thứ hai')
+  assert.ok(commits[2]! < last, 'lần cuối sau commit của hàng cuối')
+})
+
+test('bộ đệm chatbot: chỉ MỘT hàng commit → đúng một lần tăng (không tăng thừa khi kết thúc)', async () => {
+  reset()
+  rec.items = [localItem(1, 'solo.png')]
+  const { jobId } = await svc.startSyncJob('to-r2', 5)
+  await waitJob(jobId)
+  assert.equal(bumpCount(), 1)
+  assert.ok(indexesOf('commit')[0]! < indexesOf('bump')[0]!)
+  assert.ok(indexesOf('bump')[0]! < rec.events.indexOf('delete-local:solo.png'))
+})
+
+test('bộ đệm chatbot: không tăng khi chưa ghi gì — job bị từ chối vì đang khôi phục, hay mọi hàng đều hỏng', async () => {
+  reset()
+  rec.backupThrows = () => new refusalStubs.BackupRestoreInProgressError('restore running')
+  rec.items = [localItem(1, 'a.png')]
+  const refused = await svc.startSyncJob('to-r2', 5)
+  const s = await waitJob(refused.jobId)
+  assert.equal(s.phase, 'failed')
+  assert.equal(bumpCount(), 0, 'job bị chặn trước lượt ghi đầu tiên không được đụng phiên bản cache')
+  assert.equal(rec.rowUpdates.length, 0)
+
+  reset()
+  rec.headResult = false
+  rec.items = [localItem(1, 'x.png'), localItem(2, 'y.png')]
+  await tick()
+  const failing = await svc.startSyncJob('to-r2', 5)
+  const f = await waitJob(failing.jobId)
+  assert.equal(f.skipped, 2)
+  assert.equal(bumpCount(), 0, 'không hàng nào commit → không có URL nào đổi')
+
+  // Hàng đầu hỏng không "mở" lượt tăng: lượt tăng đi theo hàng đầu tiên COMMIT được, và đứng sau commit đó.
+  reset()
+  rec.items = [localItem(1, 'gone.png', false), localItem(2, 'ok.png')]
+  await tick()
+  const mixed = await svc.startSyncJob('to-r2', 5)
+  const m = await waitJob(mixed.jobId)
+  assert.deepEqual({ synced: m.synced, skipped: m.skipped }, { synced: 1, skipped: 1 })
+  assert.equal(bumpCount(), 1)
+  assert.ok(indexesOf('commit')[0]! < indexesOf('bump')[0]!, 'tăng sau commit của hàng ok, không phải sau hàng hỏng')
+})
+
+test('bộ đệm chatbot: huỷ giữa chừng vẫn tăng lần cuối cho các hàng sau hàng đầu', async () => {
+  reset()
+  rec.items = [localItem(1, 'one.png'), localItem(2, 'two.png'), localItem(3, 'three.png')]
+  rec.onDeleteLocal = (p) => { if (p.endsWith('two.png')) svc.cancelSyncJob() }
+  const { jobId } = await svc.startSyncJob('to-r2', 5)
+  const s = await waitJob(jobId)
+  assert.equal(s.phase, 'cancelled')
+  assert.equal(s.synced, 2)
+  assert.equal(bumpCount(), 2, 'hàng 1 (ngay sau commit) + hàng 2 (khi job kết thúc vì huỷ)')
+  assert.ok(indexesOf('commit')[1]! < indexesOf('bump')[1]!)
+  assert.ok(!rec.events.includes('upload:three.png'))
+})
+
+test('bộ đệm chatbot: lượt vá URL dở dang mà không còn hàng nào để chuyển vẫn tăng một lần khi kết thúc', async () => {
+  reset()
+  rec.mediaRows = [{ id: 7, url: 'https://cdn.test/2026/09/old.png', provider: 'r2' }]
+  rec.auditTrail = [{ resourceId: 7, meta: { sync: 'to-r2', oldUrl: '/uploads/2026/09/old.png', newUrl: 'https://cdn.test/2026/09/old.png' } }]
+  rec.content['articles.content'] = ['<img src="/uploads/2026/09/old.png">']
+  const { jobId } = await svc.startSyncJob('to-r2', 5)
+  const s = await waitJob(jobId)
+  assert.equal(s.total, 0)
+  assert.equal(s.urlsRepaired, 1)
+  assert.equal(bumpCount(), 1)
+  assert.ok(indexesOf('commit').at(-1)! < indexesOf('bump')[0]!)
+
+  // Không còn gì để vá, không còn hàng → không tăng.
+  reset()
+  await tick()
+  const idle = await svc.startSyncJob('to-r2', 5)
+  await waitJob(idle.jobId)
+  assert.equal(bumpCount(), 0)
+})
+
+test('bộ đệm chatbot: tăng hỏng (trả null hay ném) không làm hỏng job, không làm hàng bị tính là bỏ qua', async () => {
+  for (const mode of ['null', 'throw'] as const) {
+    reset()
+    rec.bumpMode = mode
+    rec.items = [localItem(1, 'p.png'), localItem(2, 'q.png')]
+    await tick()
+    const { jobId } = await svc.startSyncJob('to-r2', 5)
+    const s = await waitJob(jobId)
+    assert.equal(s.phase, 'done', `bumpMode=${mode}: ${s.message}`)
+    assert.deepEqual({ synced: s.synced, skipped: s.skipped, errors: s.errors }, { synced: 2, skipped: 0, errors: [] })
+    assert.ok(rec.events.includes('delete-local:p.png'), `bumpMode=${mode}: bản cũ của hàng đầu vẫn được xoá sau khi tăng hỏng`)
+    assert.ok(rec.events.includes('delete-local:q.png'))
+    assert.equal(bumpCount(), 2)
+  }
+})
+
+test('bộ đệm chatbot: lượt tăng cuối xong TRƯỚC khi trạng thái báo `running:false` (người poll thấy xong thì cache đã sạch)', async () => {
+  reset()
+  rec.items = [localItem(1, 'one.png'), localItem(2, 'two.png')]
+  rec.bumpGate = { onCall: 2, gate: gate() }
+  const { jobId } = await svc.startSyncJob('to-r2', 5)
+  await until(() => bumpCount() === 2)
+  // Lượt tăng cuối đang chạy dở (bị giữ): job CHƯA được báo kết thúc.
+  assert.equal(svc.getSyncJobStatus()?.running, true, 'job không được báo running:false trong lúc lượt tăng cuối còn dở')
+  rec.bumpGate.gate.open()
+  const s = await waitJob(jobId)
+  assert.equal(s.running, false)
+  assert.equal(s.phase, 'done')
+})
+
+test('bộ đệm chatbot: worker bị buộc dừng sau khi đã commit vài hàng vẫn tăng lượt cuối (không phụ thuộc owns())', async () => {
+  reset()
+  rec.items = [localItem(1, 'one.png'), localItem(2, 'two.png'), localItem(3, 'hang.png')]
+  rec.uploadGate = gate()
+  rec.uploadGateOnly = 'hang.png'
+  await svc.startSyncJob('to-r2', 5)
+  await until(() => rec.events.includes('upload:hang.png'))
+  assert.equal(bumpCount(), 1, 'hàng 1 đã tăng; hàng 2 đã commit nhưng chưa tăng')
+  svc.forceResetSyncJob()
+  rec.uploadGate.open()
+  await until(() => !rec.lockHeld)
+  await until(() => bumpCount() === 2)
+  assert.equal(bumpCount(), 2, 'worker cũ bị thay vẫn tăng cho hàng 2 đã commit')
+  assert.ok(!rec.events.includes('delete-local:hang.png'), 'hàng treo bị thay: không commit, không xoá')
+})
+
+test('bộ đệm chatbot: lượt tăng hỏng ở hàng đầu được thử lại một lần khi job kết thúc', async () => {
+  reset()
+  rec.bumpMode = 'null'
+  rec.items = [localItem(1, 'only.png')]
+  const { jobId } = await svc.startSyncJob('to-r2', 5)
+  const s = await waitJob(jobId)
+  assert.equal(s.phase, 'done')
+  assert.equal(bumpCount(), 2, 'lần đầu hỏng (null) → thử lại đúng một lần ở cuối, không lặp vô hạn')
+})
+
+test('hook onCommitted của từng hàng ném lỗi → hàng vẫn thành công và bản cũ vẫn được xoá (hàng đã commit)', async () => {
+  reset()
+  const item = localItem(1, 'hook.png')
+  const log = captureLogs()
+  let result
+  try {
+    result = await syncOneToR2(fakeDb as never, item as never, rec.r2Config as never, 5, {
+      onCommitted: async () => { rec.events.push('hook'); throw new Error('hook down') },
+    })
+  } finally { log.restore() }
+  assert.equal(result.oldCopyKept, false)
+  const ev = rec.events
+  assert.ok(ev.indexOf('commit') < ev.indexOf('hook'), 'hook chạy sau commit')
+  assert.ok(ev.indexOf('hook') < ev.indexOf('delete-local:hook.png'), 'hook chạy TRƯỚC khi xoá bản cũ')
+  assert.ok(log.lines.some(l => l.event === 'media.sync_on_committed_failed'), 'lỗi hook được log, không im lặng')
 })

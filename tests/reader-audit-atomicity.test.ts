@@ -622,8 +622,10 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   // trong `db.transaction` ở `media-sync-files.ts`. `media-sync-rewrite.ts` từng được
   // miễn ở đây (audit thay URL best-effort ngoài transaction); nay lượt thay URL và
   // audit của nó cùng transaction, nên tệp đó đi qua cổng như mọi service khác.
-  'media-sync.ts': 'progress/summary audits are best-effort by design; the row+audit pair is transactional in media-sync-files.ts',
-  // Cùng hình với `media-sync.ts`: job quét nền ghi audit TIẾN ĐỘ (mỗi lô / tổng kết)
+  // Sau khi tách (2026-11-06): audit tiến độ ở `media-sync-worker.ts`, audit tổng của đường cũ ở `media-sync-legacy.ts`.
+  'media-sync-worker.ts': 'progress audits are best-effort by design; the row+audit pair is transactional in media-sync-files.ts',
+  'media-sync-legacy.ts': 'summary audit is best-effort by design; the row+audit pair is transactional in media-sync-files.ts',
+  // Cùng hình với `media-sync-worker.ts`: job quét nền ghi audit TIẾN ĐỘ (mỗi lô / tổng kết)
   // bằng try/catch best-effort. Cặp hàng `media` + audit `create` của từng tệp nhập
   // nằm trong `db.transaction` ở `media-scan-import.ts` (wave2 D-SCAN tách ra) — trước
   // đó cùng tệp, nên `media-scan.ts` từng nằm ở SERVICE_POOL_AUDIT_EXEMPTIONS.
