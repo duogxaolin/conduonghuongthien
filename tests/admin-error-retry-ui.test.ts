@@ -97,6 +97,8 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   // Cùng khuôn với trang "Phiên trò chuyện": `useAdminList` giữ lỗi, trang khai
   // `error`/`reload` và vẽ nhánh `role="alert"` + nút "Thử lại".
   { file: 'pages/admin/chatbot/answer-cache.vue', refs: ['error'], retries: ['reload'] },
+  // Hộp xem/sửa toàn văn: GET một hàng khi mở; lỗi tải có role="alert" + "Thử lại" gọi lại `load`.
+  { file: 'components/admin/AnswerCacheDetailModal.vue', refs: ['loadError'], retries: ['load'] },
   { file: 'pages/admin/chatbot/sessions/[id].vue', refs: ['loadError'], retries: ['fetchSession'] },
 
   // Reader moderation. These read citizens' personal data, so a failed fetch
