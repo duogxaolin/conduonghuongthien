@@ -26,6 +26,7 @@ import { defineEventHandler, readBody, createError } from 'h3'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { updateMediaItem, MediaValidationError } from '../../../services/media-portal'
 import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
+import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -68,5 +69,8 @@ export default defineEventHandler(async (event) => {
   // `swr: 60`: xoá một bản đệm không đụng gì tới việc danh tính người đọc chỉ nạp sau mount.
   await purgePublicPageCacheAfterWrite('media_portal.update')
 
+  // Model dẫn video (`search_c11_videos`: tiêu đề, mô tả, đường dẫn) vào câu trả lời: video vừa ẩn/đổi
+  // không được còn trong câu đã cache.
+  await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true, slug: result.slug, status: result.status }
 })

@@ -16,6 +16,7 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { selfHealMedia } from '../../../services/media-self-heal'
 import { JobBlockedByRestoreError } from '../../../services/pre-job-backup'
+import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -29,6 +30,8 @@ export default defineEventHandler(async (event) => {
     }
   } catch { /* body rỗng — giữ false */ }
 
+  // Lỗi đã phân loại (đang khôi phục CSDL, lượt khác đang chạy, thiếu cấu hình R2) xảy ra TRƯỚC lượt ghi nào.
+  let refusedBeforeWriting = false
   try {
     const r = await selfHealMedia(adminUser.id ?? null, { dryRun })
     const prefix = dryRun ? 'Xem trước: ' : 'Đã vá: '
@@ -42,10 +45,15 @@ export default defineEventHandler(async (event) => {
       message: prefix + detail + (r.backupStamp ? `. Snapshot: ${r.backupStamp}.` : ''),
     }
   } catch (err) {
-    if (err instanceof JobBlockedByRestoreError) throw createError({ statusCode: 409, statusMessage: err.message })
     const msg = err instanceof Error ? err.message : String(err)
+    refusedBeforeWriting = err instanceof JobBlockedByRestoreError || msg.includes('Một lượt tự vá') || msg.includes('Cấu hình Cloudflare R2')
+    if (err instanceof JobBlockedByRestoreError) throw createError({ statusCode: 409, statusMessage: err.message })
     if (msg.includes('Một lượt tự vá')) throw createError({ statusCode: 409, statusMessage: msg })
     if (msg.includes('Cấu hình Cloudflare R2')) throw createError({ statusCode: 400, statusMessage: msg })
     throw createError({ statusCode: 500, statusMessage: msg })
+  } finally {
+    // URL ảnh/bài vừa được viết lại: câu trả lời chatbot đã cache còn chép URL cũ không được phát lại. Ở `finally`
+    // vì lượt vá commit theo HAI transaction (`media-self-heal.ts`): bước sau hỏng thì bước trước đã đổi URL rồi.
+    if (!dryRun && !refusedBeforeWriting) await bumpAnswerCacheVersion()
   }
 })

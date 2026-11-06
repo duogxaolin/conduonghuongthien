@@ -14,6 +14,8 @@ import test, { mock } from 'node:test'
  */
 
 let connections = 0
+// `getDb` lần theo lượt dọn cache câu trả lời (timer thứ ba của cùng plugin): đếm để biết nó còn chạy sau `close` không.
+let dbCalls = 0
 mock.module('../server/utils/db', {
   namedExports: {
     getPool: () => ({
@@ -22,6 +24,10 @@ mock.module('../server/utils/db', {
         throw new Error('fake pool: no database in this test')
       },
     }),
+    getDb: () => {
+      dbCalls += 1
+      throw new Error('fake db: no database in this test')
+    },
   },
 })
 let retentionStarted = 0
@@ -30,6 +36,7 @@ mock.module('../server/services/retention-scheduler', {
 })
 
 const scheduler = await import('../server/services/rate-limit-purge-scheduler')
+const { ANSWER_CACHE_PRUNE_TICK_MS } = await import('../server/services/chatbot-answer-cache-prune')
 const WARMUP_MS = 90_000
 
 /** Let the sweep's promise chain run after a timer fired. */
@@ -77,10 +84,13 @@ test('the plugin stops the timer when Nitro closes', async (t) => {
     assert.ok(close.length > 0, 'no close hook registered')
 
     connections = 0
+    dbCalls = 0
     for (const fn of close) await fn()
     t.mock.timers.tick(WARMUP_MS + scheduler.RATE_LIMIT_PURGE_TICK_MS * 2)
+    t.mock.timers.tick(ANSWER_CACHE_PRUNE_TICK_MS * 2)
     await settle()
     assert.equal(connections, 0, 'the purge kept running after Nitro closed')
+    assert.equal(dbCalls, 0, 'the answer-cache prune kept running after Nitro closed')
   } finally {
     if (previous === undefined) delete process.env.RETENTION_SCHEDULER
     else process.env.RETENTION_SCHEDULER = previous

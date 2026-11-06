@@ -14,7 +14,7 @@ import {
 } from './small-talk-semantic'
 import { SMALL_TALK_TRIGRAM_DEFAULTS, createTrigramRanker } from './small-talk-semantic-trigram'
 
-let publishedCache: { data: RetrievalEntry[]; at: number } | null = null
+let publishedCache: { data: RetrievalEntry[]; at: number; version: number | null } | null = null
 const PUBLISHED_TTL_MS = 60_000
 
 /**
@@ -25,13 +25,24 @@ const PUBLISHED_TTL_MS = 60_000
  * questions cost 201 round-trips on every single chat message.
  * Result is cached 60s — a chat burst would otherwise full-scan both tables
  * on every message even though the knowledge bank rarely changes.
+ *
+ * `dataVersion` (the answer-cache version the caller read for this turn) pins the
+ * copy to the data it was loaded under: a different version reloads at once.
+ * Without it, an admin's fix to a wrong answer bumped the version, and for up to
+ * 60 s the model still answered from the OLD entries — and that answer was written
+ * to the answer cache under the NEW version key, replayed for up to 30 days
+ * (found 2026-11-06). `answerGroundedChat` passes the turn's version on EVERY load
+ * (retrieval, follow-ups, `search_c11_knowledge`); a call without a version (no
+ * version on the settings row ⇒ the turn is not cached) reuses whatever copy is fresh.
  */
-async function publishedEntries(): Promise<RetrievalEntry[]> {
-  if (publishedCache && Date.now() - publishedCache.at < PUBLISHED_TTL_MS) return publishedCache.data
+export async function publishedEntries(dataVersion?: number): Promise<RetrievalEntry[]> {
+  if (publishedCache && Date.now() - publishedCache.at < PUBLISHED_TTL_MS
+    && (dataVersion === undefined || publishedCache.version === dataVersion)) return publishedCache.data
+  const version = dataVersion ?? null
   const db = getDb()
   const entries = await db.select().from(chatbotKnowledge).where(eq(chatbotKnowledge.status, 'published'))
   if (entries.length === 0) {
-    publishedCache = { data: [], at: Date.now() }
+    publishedCache = { data: [], at: Date.now(), version }
     return []
   }
 
@@ -54,7 +65,7 @@ async function publishedEntries(): Promise<RetrievalEntry[]> {
   }
 
   const data = entries.map(entry => ({ ...entry, terms: termsByKnowledge.get(entry.id) || [] }))
-  publishedCache = { data, at: Date.now() }
+  publishedCache = { data, at: Date.now(), version }
   return data
 }
 

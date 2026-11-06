@@ -27,6 +27,7 @@ import { requireResourcePermission } from '../../../../../utils/permissions'
 import { completeUpload } from '../../../../../services/chunked-upload'
 import { resolveMediaConfigWithDb } from '../../../../../services/media-config-service'
 import { getDb } from '../../../../../utils/db'
+import { bumpAnswerCacheVersion } from '../../../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -52,6 +53,9 @@ export default defineEventHandler(async (event) => {
   if (!result.ok) {
     throw createError({ statusCode: result.status, statusMessage: result.message })
   }
+  // Thay tệp của video đã có: cây tệp cũ (kể cả ảnh đại diện) bị dọn qua outbox, nên câu trả lời chatbot
+  // đã cache dẫn tới chúng không được phát lại. Tạo mục MỚI thì không đổi câu nào đã cache.
+  if (replaceId) await bumpAnswerCacheVersion().catch(() => undefined)
 
   setResponseStatus(event, 201)
   return {

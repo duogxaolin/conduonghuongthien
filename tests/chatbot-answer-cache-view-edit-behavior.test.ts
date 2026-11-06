@@ -13,7 +13,9 @@ import test, { after, beforeEach, mock } from 'node:test'
  *   - sửa chỉ đổi `answer` + `follow_ups` (+ gia hạn hạn dùng); khoá, loại, nguồn, số lượt dùng giữ nguyên;
  *   - hàng và dòng audit commit CÙNG nhau; audit không chứa toàn văn câu trả lời;
  *   - đầu vào xấu bị TỪ CHỐI (không lặng lẽ cắt) và không để lại dòng audit;
- *   - lưu y nguyên thì không ghi gì; bản sửa là bản `readCachedAnswer` phát lại.
+ *   - lưu y nguyên thì không ghi gì; bản sửa là bản `readCachedAnswer` phát lại;
+ *   - hàng CHẾT (đã tăng phiên bản sau khi lưu — không lượt hỏi nào còn tới khoá đó) không sửa được (409),
+ *     và danh sách không hiện hàng hết hạn (2026-11-06: trước đó cán bộ sửa được câu không ai còn nhận).
  */
 
 process.env.JWT_SECRET = 'chatbot-answer-cache-view-edit-test-secret-0123456789'
@@ -44,7 +46,7 @@ const adminAuth = (await import('../server/middleware/admin-auth')).default
 const listCache = (await import('../server/api/admin/chatbot/answer-cache/index.get')).default
 const getOne = (await import('../server/api/admin/chatbot/answer-cache/[key].get')).default
 const putOne = (await import('../server/api/admin/chatbot/answer-cache/[key].put')).default
-const { readCachedAnswer, ANSWER_PREVIEW_CHARS, ANSWER_EDIT_MAX_CHARS, FOLLOW_UP_MAX_COUNT, FOLLOW_UP_MAX_CHARS, ANSWER_CACHE_TTL_DAYS } =
+const { answerCacheKey, readCachedAnswer, ANSWER_PREVIEW_CHARS, ANSWER_EDIT_MAX_CHARS, FOLLOW_UP_MAX_COUNT, FOLLOW_UP_MAX_CHARS, ANSWER_CACHE_TTL_DAYS } =
   await import('../server/services/chatbot-answer-cache')
 const { signToken } = await import('../server/utils/auth')
 
@@ -63,7 +65,16 @@ const cookieFor = (account: Account) =>
   `cdkt_admin=${signToken({ userId: account.id, username: account.username, roleId: account.roleId, roleName: account.roleName, tokenVersion: 0 })}`
 
 const keyOf = (n: number) => n.toString(16).padStart(64, '0')
-const FIRST = keyOf(1)
+/** Cấu hình đang chạy của bài test — khoá của hàng mẫu phải là khoá THẬT mà một lượt hỏi tính ra. */
+const CACHE_SETTINGS = {
+  mode: 'ai',
+  outOfScopeBehavior: 'ai_freeform',
+  model: 'delify-5.5',
+  baseUrl: 'https://router.delify.vn/v1',
+  systemPrompt: 'Chỉ trả lời theo tài liệu đã duyệt.',
+}
+const QUESTION = 'Làm sao để xoá án tích?'
+const FIRST = answerCacheKey({ question: QUESTION, settings: CACHE_SETTINGS, version: 1, historyLength: 1 })!
 const LONG_ANSWER = 'Điều 70 Bộ luật Hình sự quy định về xoá án tích. '.repeat(20).trim()
 const SOURCES = [{ id: 7, kind: 'knowledge', source: { label: 'Điều 70', reference: 'BLHS 2015', url: null } }]
 const FOLLOW_UPS = ['Xoá án tích mất bao lâu?', 'Cần giấy tờ gì?']
@@ -88,11 +99,11 @@ beforeEach(async () => {
   await harness.db.insert(users).values([EDITOR, READER].map(account => ({
     id: account.id, username: account.username, email: `${account.username}@example.vn`, passwordHash: 'x', roleId: account.roleId,
   })))
-  await harness.db.insert(chatbotSettings).values({ id: 1 })
+  await harness.db.insert(chatbotSettings).values({ id: 1, ...CACHE_SETTINGS, answerCacheVersion: 1 })
   const now = new Date('2026-11-01T00:00:00Z')
   await harness.db.insert(chatbotAnswerCache).values({
     cacheKey: FIRST,
-    question: 'Làm sao để xoá án tích?',
+    question: QUESTION,
     answer: LONG_ANSWER,
     kind: 'provider',
     sources: SOURCES,
@@ -235,4 +246,47 @@ test('if the audit row cannot be written, the answer is not changed', async () =
   assert.equal(response.status, 500)
   assert.equal(row().answer, LONG_ANSWER, 'row and audit commit together')
   assert.deepEqual(row().followUps, FOLLOW_UPS)
+})
+
+test('a row no question can reach any more cannot be edited: 409, unchanged, no audit row', async () => {
+  // Kho kiến thức/bài viết/cấu hình AI đổi sau khi lưu ⇒ phiên bản tăng ⇒ khoá của hàng không còn được tính ra.
+  await harness.db.update(chatbotSettings).set({ answerCacheVersion: 2 })
+  const response = await call('put', url(FIRST), EDITOR, { answer: 'Sửa một câu không ai nhận.', followUps: [] })
+  assert.equal(response.status, 409)
+  assert.match(String(response.body.statusMessage ?? response.body.message ?? ''), /không còn được phát lại/)
+  assert.equal(row().answer, LONG_ANSWER)
+  assert.equal(audit().length, 0)
+
+  // Đổi model cũng vậy: câu của model cũ không còn được phát.
+  await harness.db.update(chatbotSettings).set({ answerCacheVersion: 1, model: 'model-khac' })
+  assert.equal((await call('put', url(FIRST), EDITOR, { answer: 'Vẫn không.', followUps: [] })).status, 409)
+})
+
+test('an expired row cannot be edited either: it is never replayed, and an edit would extend it 30 more days', async () => {
+  await harness.db.update(chatbotAnswerCache).set({ expiresAt: new Date(Date.now() - 60_000) })
+  const response = await call('put', url(FIRST), EDITOR, { answer: 'Gia hạn lén.', followUps: [] })
+  assert.equal(response.status, 409)
+  assert.equal(row().answer, LONG_ANSWER)
+  assert.ok(new Date(row().expiresAt).getTime() < Date.now(), 'the expiry was not extended')
+  assert.equal(audit().length, 0)
+})
+
+test('the list leaves out expired rows — they are never replayed', async () => {
+  const now = new Date()
+  await harness.db.insert(chatbotAnswerCache).values({
+    cacheKey: keyOf(7),
+    question: 'Câu đã hết hạn',
+    answer: 'Không còn phát.',
+    kind: 'provider',
+    sources: [],
+    followUps: [],
+    hits: 0,
+    createdAt: now,
+    lastUsedAt: now,
+    expiresAt: new Date(now.getTime() - 60_000),
+  })
+  const response = await call('get', '/api/admin/chatbot/answer-cache', READER)
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body.items.map((item: { cacheKey: string }) => item.cacheKey), [FIRST])
+  assert.equal(response.body.total, 1)
 })

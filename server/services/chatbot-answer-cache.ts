@@ -20,18 +20,30 @@
  * TTL là lớp dọn rác cuối (mặc định 30 ngày), không phải cơ chế đúng-sai chính: phiên
  * bản mới là thứ bảo đảm nội dung khớp dữ liệu.
  */
-import { and, count, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
-import { createHash } from 'node:crypto'
+import { and, count, desc, eq, gt, sql } from 'drizzle-orm'
 import { activityLogs, chatbotAnswerCache, chatbotSettings, type ChatbotSettings } from '../db/schema'
 import { getDb } from '../utils/db'
 import { affectedRowsOrZero } from '../utils/affected-rows'
-import { searchForm } from '../utils/chatbot/retrieval'
+import { advanceConfigGeneration } from '../utils/config-generation'
+// Namespace, không import theo tên: module này nằm dưới gần như mọi handler admin, và các bộ test giả `logger`
+// với những tập tên khác nhau — import theo tên làm tệp test thiếu tên đó không nạp được (đã gặp 2026-11-06).
+import * as logger from '../utils/logger'
 import type { CitationReference } from '../utils/chatbot/retrieval'
 
-/** Số ngày một hàng còn dùng được. Phiên bản mới là cơ chế chính; đây là trần rác. */
+/**
+ * Số ngày một hàng còn dùng được. Phiên bản mới là cơ chế chính; đây là trần rác — và là
+ * trần lưu giữ câu hỏi của người dân trong bảng này (≤ mức tối thiểu 30 ngày của phạm vi
+ * `chat_sessions`), nên lượt dọn định kỳ (`chatbot-answer-cache-prune.ts`) phải thật sự chạy.
+ */
 export const ANSWER_CACHE_TTL_DAYS = 30
-/** Trần số hàng. Vượt thì lượt ghi mới dọn theo `last_used_at` cũ nhất. */
+/** Trần số hàng. Vượt thì lượt dọn định kỳ cắt theo `last_used_at` cũ nhất. */
 export const ANSWER_CACHE_MAX_ROWS = 20_000
+/**
+ * Độ dài tối đa của câu hỏi được cache = độ dài cột `question`. Câu dài hơn không được cache:
+ * khoá băm từ CẢ câu, cột chỉ giữ 1000 ký tự đầu, nên từ hàng đã lưu không dựng lại được khoá
+ * — mà lượt dọn và cổng sửa tay dựa đúng vào việc dựng lại đó (`answerCacheKeyIsLive`).
+ */
+export const ANSWER_CACHE_QUESTION_MAX_CHARS = 1000
 /**
  * Chỉ cache câu của MODEL.
  *
@@ -50,36 +62,18 @@ export type CachedAnswer = {
   kind: string
 }
 
+/** Khoá và phép kiểm "hàng còn sống" là mã thuần, tách ra để E2E/script tính được mà không mở CSDL. */
+export { answerCacheKey, answerCacheKeyIsLive } from '../utils/chatbot/answer-cache-key'
+
 /**
- * Khoá cache. Trả `null` nghĩa là "lượt này không được cache" — người gọi coi như miss
- * và đi tiếp bình thường.
+ * Cấu hình + phiên bản đang chạy — đúng hai thứ mà lượt hỏi dùng để tính khoá — đọc trong MỘT câu lệnh
+ * (cùng một hàng `chatbot_settings`, nên không lệch nhau). `null` khi chưa có hàng cấu hình: khi đó
+ * chưa lượt hỏi nào tính được khoá. Không qua `getChatbotSettings` (nó TẠO hàng mặc định, và kéo theo
+ * chuỗi import `permissions` vào mọi handler đang import module này).
  */
-export function answerCacheKey(input: {
-  question: string
-  settings: Pick<ChatbotSettings, 'mode' | 'outOfScopeBehavior' | 'model' | 'baseUrl' | 'systemPrompt'>
-  version: number
-  historyLength: number
-}): string | null {
-  // Câu trả lời cho lượt có ngữ cảnh phụ thuộc các lượt trước; một khoá theo câu hỏi
-  // hiện tại sẽ trả lời sai ngữ cảnh.
-  if (input.historyLength > 1) return null
-  // Dạng TÌM KIẾM (bỏ dấu) chứ không phải dạng hiển thị: người gõ "lam sao de xoa an
-  // tich" và "Làm sao để xóa án tích?" là cùng một câu hỏi. Dùng `normalizeKnowledgeText`
-  // ở đây sẽ tách chúng thành hai hàng cache và làm cache gần như vô dụng với người gõ
-  // không dấu — nhóm người dùng rất đông trên cổng này.
-  const normalized = searchForm(input.question).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/gu, ' ').trim()
-  if (!normalized) return null
-  const material = JSON.stringify([
-    normalized,
-    input.version,
-    input.settings.mode,
-    input.settings.outOfScopeBehavior,
-    input.settings.model ?? '',
-    input.settings.baseUrl ?? '',
-    // Prompt dài (tới 20 000 ký tự); băm riêng để khoá cuối vẫn cố định độ dài.
-    createHash('sha256').update(input.settings.systemPrompt ?? '').digest('hex'),
-  ])
-  return createHash('sha256').update(material).digest('hex')
+export async function answerCacheContext(): Promise<{ settings: ChatbotSettings, version: number } | null> {
+  const [row] = await getDb().select().from(chatbotSettings).where(eq(chatbotSettings.id, 1)).limit(1)
+  return row ? { settings: row, version: Number(row.answerCacheVersion ?? 0) } : null
 }
 
 /**
@@ -95,11 +89,25 @@ export async function answerCacheVersion(): Promise<number> {
   return Number(row?.version ?? 0)
 }
 
-/** Tăng phiên bản ⇒ mọi khoá cũ thành vô hiệu ngay. Gọi ở mọi đường ghi dữ liệu nền. */
-export async function bumpAnswerCacheVersion(): Promise<number> {
-  const db = getDb()
-  await db.execute(sql`UPDATE \`chatbot_settings\` SET \`answer_cache_version\` = \`answer_cache_version\` + 1 WHERE \`id\` = 1`)
-  return answerCacheVersion()
+/**
+ * Tăng phiên bản ⇒ mọi khoá cũ thành vô hiệu ngay. Gọi ở mọi đường ghi dữ liệu nền, SAU commit.
+ *
+ * Cũng tăng thế hệ trong tiến trình (`utils/config-generation.ts`) để gateway AI bỏ bản cấu hình 60 s
+ * đang giữ: nếu không, câu của model/nhà cung cấp CŨ được ghi dưới khoá MỚI. Không bao giờ ném: tăng hỏng
+ * thì ghi log (`chatbot.answer_cache_bump_failed`) và trả `null` — lượt ghi dữ liệu nền đã commit rồi,
+ * làm nó báo lỗi cũng không hoàn tác được gì.
+ */
+export async function bumpAnswerCacheVersion(): Promise<number | null> {
+  advanceConfigGeneration()
+  try {
+    await getDb().execute(sql`UPDATE \`chatbot_settings\` SET \`answer_cache_version\` = \`answer_cache_version\` + 1 WHERE \`id\` = 1`)
+    return await answerCacheVersion()
+  } catch (error) {
+    try {
+      logger.logError({ event: 'chatbot.answer_cache_bump_failed', error, consequence: 'cached answers built on the old data stay replayable until the next bump, the TTL, or "clear all"' })
+    } catch { /* ghi log hỏng không được làm hỏng lượt ghi đã commit */ }
+    return null
+  }
 }
 
 /**
@@ -166,13 +174,14 @@ export async function writeCachedAnswer(input: {
   if (!/^[0-9a-f]{64}$/u.test(input.key)) return false
   if (!CACHEABLE_KINDS.has(input.kind)) return false
   if (!input.answer.trim()) return false
+  if (input.question.length > ANSWER_CACHE_QUESTION_MAX_CHARS) return false
   const now = new Date()
   const expiresAt = new Date(now.getTime() + ANSWER_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000)
   const db = getDb()
   try {
     await db.insert(chatbotAnswerCache).values({
       cacheKey: input.key,
-      question: input.question.slice(0, 1000),
+      question: input.question,
       answer: input.answer,
       kind: input.kind,
       sources: input.sources,
@@ -192,27 +201,15 @@ export async function writeCachedAnswer(input: {
   }
 }
 
-/** Xoá hàng hết hạn + cắt bớt khi vượt trần. Trả số hàng đã xoá. */
-export async function pruneAnswerCache(): Promise<number> {
-  const db = getDb()
-  const expired = await db.delete(chatbotAnswerCache).where(lt(chatbotAnswerCache.expiresAt, new Date()))
-  let removed = affectedRowsOrZero(expired)
-  const [row] = await db.select({ total: count() }).from(chatbotAnswerCache)
-  const total = Number(row?.total ?? 0)
-  if (total > ANSWER_CACHE_MAX_ROWS) {
-    const excess = total - ANSWER_CACHE_MAX_ROWS
-    const oldest = await db
-      .select({ key: chatbotAnswerCache.cacheKey })
-      .from(chatbotAnswerCache)
-      .orderBy(chatbotAnswerCache.lastUsedAt, chatbotAnswerCache.cacheKey)
-      .limit(excess)
-    if (oldest.length) {
-      const dropped = await db.delete(chatbotAnswerCache)
-        .where(inArray(chatbotAnswerCache.cacheKey, oldest.map(item => item.key)))
-      removed += affectedRowsOrZero(dropped)
-    }
-  }
-  return removed
+/**
+ * Bỏ MỘT hàng không còn được phép phát lại (lớp chặn chủ quyền bắt nó lúc đọc). Không audit:
+ * đây là máy chủ tự vệ, không phải người quản trị xoá — log `chatbot.sovereignty_cached_answer_replaced`
+ * ở nơi gọi là dấu vết. Trả `true` khi có hàng bị xoá.
+ */
+export async function discardCachedAnswer(key: string): Promise<boolean> {
+  if (!/^[0-9a-f]{64}$/u.test(key)) return false
+  const deleted = await getDb().delete(chatbotAnswerCache).where(eq(chatbotAnswerCache.cacheKey, key))
+  return affectedRowsOrZero(deleted) > 0
 }
 
 /** Xoá toàn bộ cache (kèm audit trong cùng transaction). */
@@ -248,9 +245,17 @@ export type AnswerCacheRow = {
   expiresAt: Date
 }
 
+/**
+ * Danh sách cho trang quản trị — chỉ hàng CÒN HẠN: hàng hết hạn không bao giờ được phát lại
+ * (`readCachedAnswer` lọc `expires_at`), hiện nó ra là mời cán bộ sửa một câu không ai nhận được.
+ * Hàng chết vì đã tăng phiên bản thì lượt dọn định kỳ xoá; cổng sửa tay từ chối nó (409).
+ */
 export async function listAnswerCache(page: number, pageSize: number, search: string): Promise<{ items: AnswerCacheRow[], total: number }> {
   const db = getDb()
-  const where = search ? sql`\`question\` LIKE ${`%${search.replace(/[\\%_]/gu, match => `\\${match}`)}%`}` : undefined
+  const live = gt(chatbotAnswerCache.expiresAt, new Date())
+  const where = search
+    ? and(live, sql`\`question\` LIKE ${`%${search.replace(/[\\%_]/gu, match => `\\${match}`)}%`}`)
+    : live
   const items = await db
     .select({
       cacheKey: chatbotAnswerCache.cacheKey,

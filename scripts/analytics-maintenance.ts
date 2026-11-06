@@ -1,6 +1,7 @@
 import { runAnalyticsMaintenance } from '../server/services/analytics-maintenance'
 import { runRetentionPass } from '../server/services/retention-scheduler'
 import { reportRateLimitPurge } from '../server/services/rate-limit-purge-scheduler'
+import { reportAnswerCachePrune } from '../server/services/chatbot-answer-cache-prune'
 import { closeDb } from '../server/utils/db'
 
 /**
@@ -64,6 +65,11 @@ try {
   // `reportRateLimitPurge` never throws: a failure is `{ ran: false, error }`.
   const rateLimits = await reportRateLimitPurge()
 
+  // Cache câu trả lời chatbot: hàng hết hạn/chết/vượt trần (giữ câu hỏi của người dân — trần 30 ngày).
+  // Cùng lý do với dòng trên: RETENTION_SCHEDULER=0 thì cron là đường dọn duy nhất. Chỉ báo cáo, không
+  // đổi mã thoát — đây là bộ đệm, lỗi của nó không làm hỏng dữ liệu nghiệp vụ. Không bao giờ ném.
+  const answerCache = await reportAnswerCachePrune()
+
   const output = {
     status: result?.status ?? 'failed',
     ...(analytics.ok ? {} : { error: analytics.error }),
@@ -85,6 +91,7 @@ try {
               }
             : { ran: false, skipped: retention.value.reason },
     rateLimits,
+    answerCache,
     scheduler: SCHEDULER_NOTE,
   }
   console.log(JSON.stringify(output))

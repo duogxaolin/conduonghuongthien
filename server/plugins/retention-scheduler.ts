@@ -1,5 +1,6 @@
 import { startRetentionScheduler } from '../services/retention-scheduler'
 import { startRateLimitPurgeScheduler, stopRateLimitPurgeScheduler } from '../services/rate-limit-purge-scheduler'
+import { startAnswerCachePruneScheduler, stopAnswerCachePruneScheduler } from '../services/chatbot-answer-cache-prune'
 
 /**
  * Start the retention purge on boot.
@@ -18,6 +19,11 @@ import { startRateLimitPurgeScheduler, stopRateLimitPurgeScheduler } from '../se
  * turned off in the admin — cannot stop it. With the in-process timers handed to
  * cron, the cron entry point runs that sweep too. Nitro `close` stops that timer
  * (interval and warm-up) so a shutting-down worker starts no new sweep.
+ *
+ * A third timer prunes the chatbot answer cache (`chatbot-answer-cache-prune.ts`):
+ * expired rows, rows no question can reach any more (version bumped, AI config
+ * changed) and the row cap. Its rows hold citizens' first questions, so it rides
+ * the same switch as the retention purge; the cron entry point runs it too.
  */
 export default defineNitroPlugin((nitroApp) => {
   const override = (process.env.RETENTION_SCHEDULER || '').trim().toLowerCase()
@@ -27,5 +33,9 @@ export default defineNitroPlugin((nitroApp) => {
 
   startRetentionScheduler()
   startRateLimitPurgeScheduler()
-  nitroApp.hooks.hook('close', () => stopRateLimitPurgeScheduler())
+  startAnswerCachePruneScheduler()
+  nitroApp.hooks.hook('close', () => {
+    stopRateLimitPurgeScheduler()
+    stopAnswerCachePruneScheduler()
+  })
 })

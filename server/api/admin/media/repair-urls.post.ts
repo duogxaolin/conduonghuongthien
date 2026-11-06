@@ -13,6 +13,7 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { repairMediaUrls } from '../../../services/media-repair'
 import { JobBlockedByRestoreError } from '../../../services/pre-job-backup'
+import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -20,6 +21,8 @@ export default defineEventHandler(async (event) => {
 
   try {
     const result = await repairMediaUrls(adminUser.id ?? null)
+    // URL ảnh/bài vừa được viết lại: câu trả lời chatbot đã cache còn chép URL cũ không được phát lại.
+    await bumpAnswerCacheVersion().catch(() => undefined)
     return {
       ok: true,
       ...result,
