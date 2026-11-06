@@ -1,6 +1,7 @@
 import { escapeHtml } from '../utils/escape-html'
 import { buildFaviconTags } from '../utils/favicon'
 import { loadFaviconSetting } from '../utils/favicon-setting'
+import { routePath } from '../utils/route-path'
 
 /**
  * Favicon injector.
@@ -33,7 +34,8 @@ export default defineNitroPlugin((nitroApp) => {
     // API routes render no document. Match the real `/api` surface only — not a
     // public custom page whose slug merely starts with it (e.g. `/api-tin-tuc`
     // through the `[slug]` catch-all), the same distinction tracking.ts draws.
-    const path = event?.path || ''
+    // Cùng dạng đường dẫn với router. `/admin/**` KHÔNG bị bỏ ở đây (xem ⚠️ ở đầu tệp) — chỉ `/api` (kể cả `/api?x=1`, `/API`).
+    const path = routePath(event?.path)
     if (path === '/api' || path.startsWith('/api/')) return
 
     // Read through the shared loader, which also backs `routes/favicon.ico.ts`.

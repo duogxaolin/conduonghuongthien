@@ -137,6 +137,22 @@ export const MUTATION_PROOFS: MutationProof[] = [
     why: 'lượt hỏi đầu tiên sau khởi động không được bỏ qua lớp khớp ngữ nghĩa small-talk',
   },
   {
+    id: 'tracking-skips-admin-by-router-path',
+    file: 'server/plugins/tracking.ts',
+    find: 'const path = routePath(event?.path)',
+    replace: "const path = event?.path || ''",
+    tests: ['tests/plugin-tracking-behavior.test.ts'],
+    why: 'mã theo dõi không được chèn lên trang quản trị dưới bất kỳ cách viết đường dẫn nào (/admin?x=1, /ADMIN, /%61dmin)',
+  },
+  {
+    id: 'translation-reaper-timer-unref',
+    file: 'server/plugins/translation-reaper.ts',
+    find: '  timer.unref?.()\n',
+    replace: '',
+    tests: ['tests/plugin-boot-guards-behavior.test.ts'],
+    why: 'timer khởi động chưa chạy không được giữ tiến trình sống lúc tắt máy (như mọi scheduler khác)',
+  },
+  {
     id: 'answer-cache-edit-permission',
     file: 'server/api/admin/chatbot/answer-cache/[key].put.ts',
     find: "requireResourcePermission(adminUser, 'chatbot_knowledge', 'update')",

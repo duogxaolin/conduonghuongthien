@@ -1,5 +1,6 @@
 import { escapeHtml } from '../utils/escape-html'
 import { loadOgImageSetting } from '../utils/og-image-setting'
+import { routePath } from '../utils/route-path'
 
 /**
  * OG image injector — chèn `<meta property="og:image">` + Twitter Card vào mọi
@@ -27,7 +28,8 @@ import { loadOgImageSetting } from '../utils/og-image-setting'
  */
 export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('render:html', async (html, { event }) => {
-    const path = event?.path || ''
+    // Cùng dạng đường dẫn với router (bỏ query/fragment, giải mã %, chữ thường).
+    const path = routePath(event?.path)
     // Bỏ qua API (không dựng document) và admin (không chia sẻ công khai).
     if (path === '/api' || path.startsWith('/api/') || path.startsWith('/admin/')) return
 

@@ -1,4 +1,5 @@
 import { loadTrackingSettings } from '../utils/tracking-settings'
+import { routePath } from '../utils/route-path'
 
 /**
  * Tracking / Marketing tags injector.
@@ -31,7 +32,8 @@ export default defineNitroPlugin((nitroApp) => {
     // Skip admin + API routes entirely. Match ONLY the real admin/api
     // surfaces — not public custom pages whose slug merely begins with those
     // strings (e.g. /admin-huong-dan, /api-tin-tuc via the [slug] catch-all).
-    const path = event?.path || ''
+    // Cùng dạng đường dẫn với router (bỏ query/fragment, giải mã %, chữ thường): `/admin?x=1`, `/ADMIN`, `/%61dmin` đều là admin.
+    const path = routePath(event?.path)
     if (
       path === '/admin' ||
       path.startsWith('/admin/') ||
