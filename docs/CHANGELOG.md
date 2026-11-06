@@ -2594,6 +2594,17 @@ Rà soát `main` sau § 76–77 tìm ra bốn chỗ cache phát lại câu sai h
 - **Không phải "không đổi hành vi" tuyệt đối** (soát độc lập): `finish()` nay chạy SAU khi nhả khoá tên (trước đó trong lúc giữ khoá); `startSyncJob` không còn trả `finished`; thêm `.catch` trên promise worker; một chế độ lỗi mới — nếu lượt tăng cuối treo (CSDL đứng), job ở `running:true` với khoá đã nhả và chỉ buộc dừng mới gỡ được.
 - **Kiểm chứng**: bộ unit 8 908+ test, 0 fail (55 skip = integration không có MySQL); typecheck 0 lỗi; lint 0/0; docs facts khớp; integration trên MySQL dev `media-sync-rewrite` 2/2 và `media-repoint` 1/1, không sót DB tạm; soát độc lập: sẵn sàng commit; mỗi test mới được chứng minh đỏ khi phá code (4 đột biến).
 
+### 83. Chất lượng — phần 4: cảnh báo vận hành khi lớp chặn chủ quyền thay câu trả lời (2026-11-06)
+
+Lớp chặn đầu ra chủ quyền (§ 31b/§ 60) bắt 388/442 câu trả lời có yêu sách trên bộ tấn công; phần còn lại chỉ dựa vào luật trong prompt. Mỗi lần lớp chặn thay một câu (của model, hoặc một câu đã lưu cache — § 78) chỉ để lại một dòng log. Phần 4 làm cho người vận hành biết **kịp**, không đụng vào bộ khớp (không thêm ngoại lệ, không đổi câu chữ lập trường).
+
+- **Cảnh báo:** `chatbot.sovereignty_output_replaced` và `chatbot.sovereignty_cached_answer_replaced` vào `ALERT_EVENTS`; dùng lại `ops-alert` (không kênh mới, không biến môi trường mới — `OPS_ALERT_EMAIL` đã được compose truyền vào). Cửa sổ 10 phút/sự kiện (`SOVEREIGNTY_ALERT_WINDOW_SECONDS`, mặc định hệ thống là 15 phút), gom số lần; bắn-rồi-quên; không có `OPS_ALERT_EMAIL`/SMTP thì chỉ còn log như cũ. **Nội dung thư không có dữ liệu cá nhân**: danh sách trường cho phép riêng (`OPS_ALERT_CONTEXT_FIELDS` = `consequence`) — đã kiểm bằng cách dựng thư từ một bản ghi log có câu hỏi, câu trả lời, mã phiên, IP.
+- **Runbook mới** `docs/runbooks/chatbot-sovereignty-incident.md`: ý nghĩa thư, phân loại (bước 0 — thư **không** mặc định là sự cố: lớp chặn thay cả câu hợp lệ nhắc biển/đảo), xác nhận, hành động ngay (chế độ chỉ kho kiến thức, xoá cache), sửa gốc theo quy trình đã kiểm chứng, giới hạn 388/442. Nói thẳng: chữ model đã viết **không được lưu ở đâu**, chỉ khôi phục được câu hỏi; nhãn `curated` không đủ để nhận ra lượt bị thay.
+- **Test:** `tests/chatbot-sovereignty-alerting.test.ts` (11 test chạy thật `answerGroundedChat` qua logger + `ops-alert` thật; SMTP/DB/cache/AI giả: lượt đầu gửi thư, burst gửi một thư kèm số gộp, không có dữ liệu cá nhân trong toàn bộ nội dung, SMTP treo/lỗi/thiếu không ảnh hưởng câu trả lời) + mục đột biến `sovereignty-alert-no-personal-data`. Các test chủ quyền sẵn có không sửa.
+- **Tác động deploy:** merge ⇒ CI tự deploy ⇒ **bắt đầu gửi thư thật** cho `OPS_ALERT_EMAIL` (tối đa 144 thư/ngày/sự kiện; khách bất kỳ có thể gây ra nếu tìm được câu lọt bộ khớp đầu vào). `production/README.md` bảng sự kiện cảnh báo cập nhật; không đổi `.env`/compose.
+- **Giới hạn đã biết:** số lần gộp chỉ tới ở thư kế tiếp (đợt dừng hẳn thì không bao giờ tới; khởi động lại mất bộ đếm); cửa sổ bị dùng hết cả khi SMTP lỗi; `/admin/chatbot/sessions` chưa có ô tìm theo nội dung nên tìm phiên bằng ngày/giờ.
+- **Kiểm chứng:** bộ unit 8 911 test 0 fail; typecheck 0; lint 0/0; docs facts khớp; soát độc lập: sẵn sàng commit (cảnh báo runbook/README/tài liệu đã sửa).
+
 ### 84. Chất lượng — phần 3: rà 4 cảnh báo `npm audit` mức trung bình của gói runtime (2026-11-07)
 
 `npm audit --omit=dev` báo 4 cảnh báo mức `moderate` (cổng CI chỉ chặn từ `high`, nên chưa bao giờ đỏ). Mỗi cái đã được đọc, không nâng theo phản xạ:

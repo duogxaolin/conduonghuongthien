@@ -200,4 +200,12 @@ export const MUTATION_PROOFS: MutationProof[] = [
     tests: ['tests/media-sync-behavior.test.ts'],
     why: 'lỗi ở hook sau commit không được làm hàng đã commit bị tính là bỏ qua và bỏ sót lượt xoá bản cũ',
   },
+  {
+    id: 'sovereignty-alert-no-personal-data',
+    file: 'server/utils/ops-alert.ts',
+    find: '    if (allowed && !allowed.includes(key)) continue\n',
+    replace: '',
+    tests: ['tests/chatbot-sovereignty-alerting.test.ts'],
+    why: 'thư cảnh báo khi lớp chặn chủ quyền thay câu trả lời chỉ mang tên sự kiện + đếm — không câu hỏi, câu trả lời, phiên hay IP của người dân, kể cả khi dòng log sau này thêm các trường đó (Phần 4)',
+  },
 ]

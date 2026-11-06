@@ -37,9 +37,36 @@ import { SMTP_KEYS, getSmtpConfig, sendMail, type SendMailArgs, type SmtpConfig 
 import { recordRateLimitHit, type RateLimitExecutor } from './rate-limit-store'
 import { dbConnectionOptions } from './db'
 
+/**
+ * The chatbot's output-side sovereignty guard replaced an answer (model's or cached) — see
+ * `docs/runbooks/chatbot-sovereignty-incident.md`. The FIRST trip is the signal, so it mails at once; the
+ * next mail (after this window) carries how many trips it swallowed. Ten minutes, shorter than the 15 of
+ * the default: a repeat inside a quarter of an hour is more likely one live incident than noise, and each
+ * event name (model answer / cached answer) has its own window and its own remedy.
+ */
+export const SOVEREIGNTY_ALERT_WINDOW_SECONDS = 10 * 60
+export const SOVEREIGNTY_ALERT_EVENTS = ['chatbot.sovereignty_output_replaced', 'chatbot.sovereignty_cached_answer_replaced'] as const
+export const SOVEREIGNTY_RUNBOOK = 'docs/runbooks/chatbot-sovereignty-incident.md'
+
+/**
+ * Events whose e-mail may carry ONLY these top-level fields. The sovereignty events sit on the citizen-facing
+ * chat path: a future log line that adds the question, the answer, a session id or an IP must not turn into
+ * an e-mail with personal data in it. Without an entry here every primitive field of the record is mailed.
+ */
+export const OPS_ALERT_CONTEXT_FIELDS: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
+  SOVEREIGNTY_ALERT_EVENTS.map(event => [event, ['consequence']]),
+)
+
+/** Event → repo path of the runbook the e-mail points at. */
+export const OPS_ALERT_RUNBOOKS: Readonly<Record<string, string>> = Object.fromEntries(
+  SOVEREIGNTY_ALERT_EVENTS.map(event => [event, SOVEREIGNTY_RUNBOOK]),
+)
+
 /** Window per event name, in seconds; `default` for every event not listed. */
 export const OPS_ALERT_WINDOW_SECONDS: Readonly<Record<string, number>> = {
   default: 15 * 60,
+  [SOVEREIGNTY_ALERT_EVENTS[0]]: SOVEREIGNTY_ALERT_WINDOW_SECONDS,
+  [SOVEREIGNTY_ALERT_EVENTS[1]]: SOVEREIGNTY_ALERT_WINDOW_SECONDS,
   // The origin gate (wave2 2A, `server/middleware/00.origin-gate.ts`) refuses a
   // browser posting on behalf of another site — a probe repeats it for hours, a
   // misconfigured integration on every request. The first refusal is the signal (the
@@ -105,8 +132,10 @@ export function buildOpsAlertMessage(
 ): { subject: string, text: string } {
   const event = String(record.event)
   const context: string[] = []
+  const allowed = OPS_ALERT_CONTEXT_FIELDS[event]
   for (const [key, value] of Object.entries(record)) {
     if (SKIPPED_KEYS.has(key)) continue
+    if (allowed && !allowed.includes(key)) continue
     const text = contextValue(value)
     if (text === null) continue
     context.push(`  ${key}: ${text.replace(/\s+/g, ' ')}`)
@@ -125,6 +154,8 @@ export function buildOpsAlertMessage(
   if (meta.suppressed > 0) {
     lines.push('', `Trong ${minutes} phút trước đó còn ${meta.suppressed} lần cùng sự kiện không gửi thư.`)
   }
+  const runbook = OPS_ALERT_RUNBOOKS[event]
+  if (runbook) lines.push('', `Quy trình xử lý: ${runbook}`)
   lines.push(
     '',
     `Thư tự động của cổng thông tin — tối đa một thư cho mỗi sự kiện trong ${minutes} phút.`,
