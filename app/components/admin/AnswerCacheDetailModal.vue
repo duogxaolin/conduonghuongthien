@@ -189,7 +189,7 @@ const requestClose = () => { if (!saving.value) emit('close') }
           Bản sửa chỉ có hiệu lực tới khi kho kiến thức, bài viết hoặc cấu hình AI thay đổi (khi đó bộ đệm tự vô hiệu và câu hỏi được trả lời lại). Muốn câu trả lời bền, hãy thêm vào Kho kiến thức.
         </p>
         <p v-if="validation" class="m-0 text-[0.82rem] font-bold text-danger-soft" role="alert">{{ validation }}</p>
-        <p v-else-if="saveError" class="m-0 rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ saveError }}</p>
+        <p v-else-if="saveError" class="m-0 rounded-lg border border-danger-soft/45 bg-danger-bg p-3 text-sm text-danger-soft" role="alert">{{ saveError }}</p>
       </form>
     </div>
 
