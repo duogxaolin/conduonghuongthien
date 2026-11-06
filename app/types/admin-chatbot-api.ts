@@ -61,11 +61,17 @@ export type AdminChatSessionBulkDeleteResponse = Payload<SessionBulkDeleteHandle
 // ─── Câu trả lời đã lưu (bộ đệm câu trả lời của model) ─────────────────────────
 type AnswerCacheListHandler = typeof import('~~/server/api/admin/chatbot/answer-cache/index.get').default
 type AnswerCacheDeleteHandler = typeof import('~~/server/api/admin/chatbot/answer-cache/[key].delete').default
+type AnswerCacheDetailHandler = typeof import('~~/server/api/admin/chatbot/answer-cache/[key].get').default
+type AnswerCacheUpdateHandler = typeof import('~~/server/api/admin/chatbot/answer-cache/[key].put').default
 type AnswerCacheBulkDeleteHandler = typeof import('~~/server/api/admin/chatbot/answer-cache/bulk-delete.post').default
 type AnswerCacheClearHandler = typeof import('~~/server/api/admin/chatbot/answer-cache/clear-all.post').default
 /** `GET /api/admin/chatbot/answer-cache` — danh sách có phân trang + tìm theo câu hỏi. */
 export type AdminAnswerCacheListResponse = Payload<AnswerCacheListHandler>
 /** `DELETE …/answer-cache/:key` và `POST …/bulk-delete` — cùng hình dạng `{ ok, deleted }`. */
 export type AdminAnswerCacheDeleteResponse = Payload<AnswerCacheDeleteHandler>
+/** `GET …/answer-cache/:key` — toàn văn câu trả lời + câu hỏi gợi ý + nguồn. */
+export type AdminAnswerCacheDetailResponse = Payload<AnswerCacheDetailHandler>
+/** `PUT …/answer-cache/:key` — `{ ok, changed, item }`. */
+export type AdminAnswerCacheUpdateResponse = Payload<AnswerCacheUpdateHandler>
 export type AdminAnswerCacheBulkDeleteResponse = Payload<AnswerCacheBulkDeleteHandler>
 export type AdminAnswerCacheClearResponse = Payload<AnswerCacheClearHandler>

@@ -5,6 +5,7 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 interface CacheRow {
   cacheKey: string
   question: string
+  answerPreview: string
   kind: string
   hits: number
   createdAt: string
@@ -40,6 +41,15 @@ const toast = useToast()
 const { confirm } = useConfirm()
 const { hasPermission } = useAdminAuth()
 const canDelete = computed(() => hasPermission('chatbot_knowledge', 'delete'))
+const canUpdate = computed(() => hasPermission('chatbot_knowledge', 'update'))
+
+// Hộp xem/sửa toàn văn: mở theo khoá cache; `viewEditing` mở thẳng ở chế độ sửa (nút "Sửa").
+const viewKey = ref<string | null>(null)
+const viewEditing = ref(false)
+function openView(row: CacheRow, edit = false) {
+  viewEditing.value = edit && canUpdate.value
+  viewKey.value = row.cacheKey
+}
 
 const selection = useBulkSelection<string>()
 const listShown = computed(() => !loading.value && !error.value)
@@ -212,7 +222,7 @@ onMounted(reload)
                 <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Số lần dùng</th>
                 <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Dùng gần nhất</th>
                 <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Hết hạn</th>
-                <th v-if="canDelete" class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Thao tác</th>
+                <th class="whitespace-nowrap border-b border-line bg-surface px-4 py-3 font-bold text-ink-muted">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -228,19 +238,40 @@ onMounted(reload)
                 </td>
                 <td class="max-w-[28rem] border-b border-surface-tint px-4 py-3.5">
                   <span class="line-clamp-2 font-semibold text-brand-950">{{ r.question }}</span>
+                  <span class="mt-1 line-clamp-2 text-[0.82rem] leading-relaxed text-ink-muted">{{ r.answerPreview }}</span>
                 </td>
                 <td class="whitespace-nowrap border-b border-surface-tint px-4 py-3.5 text-ink-secondary">{{ r.hits }}</td>
                 <td class="whitespace-nowrap border-b border-surface-tint px-4 py-3.5 text-ink-secondary">{{ fmtDate(r.lastUsedAt) }}</td>
                 <td class="whitespace-nowrap border-b border-surface-tint px-4 py-3.5 text-ink-secondary">{{ fmtDate(r.expiresAt) }}</td>
-                <td v-if="canDelete" class="whitespace-nowrap border-b border-surface-tint px-4 py-3.5">
-                  <button
-                    type="button"
-                    class="rounded-lg border border-danger-soft/45 px-3 py-1.5 text-[0.8rem] font-bold text-danger-soft hover:bg-danger-bg disabled:opacity-60"
-                    :disabled="deleting"
-                    @click="deleteOne(r)"
-                  >
-                    Xoá
-                  </button>
+                <td class="whitespace-nowrap border-b border-surface-tint px-4 py-3.5">
+                  <div class="flex gap-2">
+                    <button
+                      type="button"
+                      class="rounded-lg border border-line-strong px-3 py-1.5 text-[0.8rem] font-bold text-brand-700 hover:bg-surface-tint"
+                      :aria-label="`Xem câu trả lời cho: ${r.question.slice(0, 60)}`"
+                      @click="openView(r)"
+                    >
+                      Xem
+                    </button>
+                    <button
+                      v-if="canUpdate"
+                      type="button"
+                      class="rounded-lg border border-line-strong px-3 py-1.5 text-[0.8rem] font-bold text-ink-secondary hover:bg-surface"
+                      :aria-label="`Sửa câu trả lời cho: ${r.question.slice(0, 60)}`"
+                      @click="openView(r, true)"
+                    >
+                      Sửa
+                    </button>
+                    <button
+                      v-if="canDelete"
+                      type="button"
+                      class="rounded-lg border border-danger-soft/45 px-3 py-1.5 text-[0.8rem] font-bold text-danger-soft hover:bg-danger-bg disabled:opacity-60"
+                      :disabled="deleting"
+                      @click="deleteOne(r)"
+                    >
+                      Xoá
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -260,18 +291,23 @@ onMounted(reload)
           />
           <div class="min-w-0 flex-1">
             <p class="m-0 text-[0.9rem] font-bold text-brand-950">{{ r.question }}</p>
+            <p class="m-0 mt-1 line-clamp-3 text-[0.82rem] leading-relaxed text-ink-muted">{{ r.answerPreview }}</p>
             <p class="m-0 mt-1 text-[0.78rem] text-ink-muted">
               {{ r.hits }} lần · dùng gần nhất {{ fmtDate(r.lastUsedAt) }}
             </p>
-            <button
-              v-if="canDelete"
-              type="button"
-              class="mt-2 rounded-lg border border-danger-soft/45 px-3 py-1.5 text-[0.78rem] font-bold text-danger-soft hover:bg-danger-bg disabled:opacity-60"
-              :disabled="deleting"
-              @click="deleteOne(r)"
-            >
-              Xoá
-            </button>
+            <div class="mt-2 flex gap-2">
+              <button type="button" class="rounded-lg border border-line-strong px-3 py-1.5 text-[0.78rem] font-bold text-brand-700 hover:bg-surface-tint" @click="openView(r)">Xem</button>
+              <button v-if="canUpdate" type="button" class="rounded-lg border border-line-strong px-3 py-1.5 text-[0.78rem] font-bold text-ink-secondary hover:bg-surface" @click="openView(r, true)">Sửa</button>
+              <button
+                v-if="canDelete"
+                type="button"
+                class="rounded-lg border border-danger-soft/45 px-3 py-1.5 text-[0.78rem] font-bold text-danger-soft hover:bg-danger-bg disabled:opacity-60"
+                :disabled="deleting"
+                @click="deleteOne(r)"
+              >
+                Xoá
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -282,5 +318,13 @@ onMounted(reload)
         <button type="button" class="rounded-lg border border-line-strong px-3 py-1.5 font-bold disabled:opacity-50" :disabled="page >= totalPages" @click="goToPage(page + 1)">Sau</button>
       </div>
     </template>
+
+    <AdminAnswerCacheDetailModal
+      :cache-key="viewKey"
+      :can-edit="canUpdate"
+      :start-editing="viewEditing"
+      @close="viewKey = null"
+      @saved="reload()"
+    />
   </div>
 </template>

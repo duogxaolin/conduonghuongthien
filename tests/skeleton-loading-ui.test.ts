@@ -128,6 +128,8 @@ const VIEWS_WITH_LOADING_BRANCH = [
   // Câu trả lời đã lưu (bộ đệm của model) — cùng hợp đồng tải/lỗi/rỗng với
   // "Phiên trò chuyện": SkeletonTable trong nhánh `loading`.
   { file: 'pages/admin/chatbot/answer-cache.vue', marker: 'v-if="loading"' },
+  // Hộp xem/sửa toàn văn một câu trả lời đã lưu: tải một hàng khi mở, dùng SkeletonForm dùng chung.
+  { file: 'components/admin/AnswerCacheDetailModal.vue', marker: 'v-if="loading"' },
   // Picker trong dialog navbar/mobile — chọn Thể loại. Skeleton vẽ inline
   // (4 ô xám) trong when fetchTypes đang chạy.
   { file: 'components/admin/ContentTypePicker.vue', marker: 'v-if="loading"' },

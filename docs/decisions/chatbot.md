@@ -126,7 +126,7 @@ Dùng chung quyền `chatbot_knowledge.read` — ai được đọc kho câu tr�
 
 **Đếm lượt dùng không bao giờ làm hỏng câu trả lời**: `readCachedAnswer` bắn `hits + 1` rồi bỏ qua lỗi (`void … .catch(() => undefined)`). Số liệu dùng, không phải dữ liệu đúng.
 
-**Trang quản lý `/admin/chatbot/answer-cache`** dùng `chatbot_knowledge.read` để xem và `.delete` để xoá, đúng như trang "Phiên trò chuyện". Xoá cache không phải xoá tri thức: lượt hỏi sau gọi model lại và ghi hàng mới, nên đường này hữu ích khi nội dung đã bị sửa bằng SQL tay (đường đó không đi qua `bumpAnswerCacheVersion`).
+**Trang quản lý `/admin/chatbot/answer-cache`** dùng `chatbot_knowledge.read` để xem (danh sách + toàn văn từng câu), `.update` để sửa tay nội dung/gợi ý và `.delete` để xoá, đúng như trang "Phiên trò chuyện". Sửa tay **không** tăng phiên bản cache (tăng là vô hiệu cả bản vừa sửa), nên bản sửa chỉ sống tới khi dữ liệu nền/cấu hình AI đổi — muốn câu trả lời bền thì đưa vào kho kiến thức (CHANGELOG § 77). Xoá cache không phải xoá tri thức: lượt hỏi sau gọi model lại và ghi hàng mới, nên đường này hữu ích khi nội dung đã bị sửa bằng SQL tay (đường đó không đi qua `bumpAnswerCacheVersion`).
 
 ### Phát hiện liên hệ cố tình bảo thủ
 

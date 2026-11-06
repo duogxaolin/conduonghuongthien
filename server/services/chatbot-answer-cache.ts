@@ -233,9 +233,14 @@ export async function clearAnswerCache(actorId: number | null, requestId: string
   })
 }
 
+/** Số ký tự đầu của câu trả lời hiện ngay ở danh sách (xem đủ ở hộp chi tiết). */
+export const ANSWER_PREVIEW_CHARS = 240
+
 export type AnswerCacheRow = {
   cacheKey: string
   question: string
+  /** Đoạn đầu của câu trả lời — chỉ để nhìn nhanh, không phải toàn văn. */
+  answerPreview: string
   kind: string
   hits: number
   createdAt: Date
@@ -250,6 +255,8 @@ export async function listAnswerCache(page: number, pageSize: number, search: st
     .select({
       cacheKey: chatbotAnswerCache.cacheKey,
       question: chatbotAnswerCache.question,
+      // `SUBSTR` (không `LEFT`): chạy được cả trên MySQL lẫn SQLite của bộ test.
+      answerPreview: sql<string>`SUBSTR(\`answer\`, 1, ${ANSWER_PREVIEW_CHARS})`,
       kind: chatbotAnswerCache.kind,
       hits: chatbotAnswerCache.hits,
       createdAt: chatbotAnswerCache.createdAt,
@@ -263,4 +270,91 @@ export async function listAnswerCache(page: number, pageSize: number, search: st
     .offset((page - 1) * pageSize)
   const [row] = await db.select({ total: count() }).from(chatbotAnswerCache).where(where)
   return { items, total: Number(row?.total ?? 0) }
+}
+
+/** Trần độ dài một câu trả lời sửa tay (cột TEXT chứa tới 65 535 byte; chữ Việt tới 3 byte/ký tự). */
+export const ANSWER_EDIT_MAX_CHARS = 10_000
+export const FOLLOW_UP_MAX_COUNT = 5
+export const FOLLOW_UP_MAX_CHARS = 200
+
+export type AnswerCacheDetail = AnswerCacheRow & {
+  /** Toàn văn câu trả lời (markdown — widget dựng nó qua bộ lọc, trang quản trị chỉ hiện chữ thô). */
+  answer: string
+  followUps: string[]
+  sources: CitationReference[]
+}
+
+/** Một hàng đầy đủ để xem/sửa. Khác `readCachedAnswer`: không cần còn hạn, không đếm lượt dùng. */
+export async function getAnswerCacheDetail(key: string): Promise<AnswerCacheDetail | null> {
+  if (!/^[0-9a-f]{64}$/u.test(key)) return null
+  const [row] = await getDb().select().from(chatbotAnswerCache).where(eq(chatbotAnswerCache.cacheKey, key)).limit(1)
+  if (!row) return null
+  return {
+    cacheKey: row.cacheKey,
+    question: row.question,
+    answerPreview: row.answer.slice(0, ANSWER_PREVIEW_CHARS),
+    answer: row.answer,
+    kind: row.kind,
+    hits: row.hits,
+    createdAt: row.createdAt,
+    lastUsedAt: row.lastUsedAt,
+    expiresAt: row.expiresAt,
+    followUps: parseFollowUps(row.followUps),
+    sources: parseCachedSources(row.sources),
+  }
+}
+
+/**
+ * Sửa tay một câu trả lời đã lưu: nội dung + câu hỏi gợi ý. Hàng và dòng audit commit cùng nhau.
+ *
+ * - Giữ nguyên khoá, `kind`, `sources`, `hits`; chỉ gia hạn `expires_at` thêm một TTL (người sửa
+ *   vừa xác nhận nội dung nên không để nó hết hạn sớm hơn bản mới sinh).
+ * - KHÔNG tăng phiên bản: tăng là vô hiệu mọi khoá, kể cả bản vừa sửa. Hệ quả cần nói rõ cho
+ *   người dùng: khi kho kiến thức/cấu hình AI đổi, bản sửa này cũng ngừng được phát (khoá cũ).
+ * - Trả `null` khi hàng không còn (đã xoá/dọn giữa lúc mở hộp và lúc lưu).
+ */
+export async function updateCachedAnswer(input: {
+  key: string
+  answer: string
+  followUps: string[]
+  actorId: number | null
+  ip: string | null
+}): Promise<{ changedAnswer: boolean, changedFollowUps: boolean } | null> {
+  return getDb().transaction(async (tx) => {
+    const [row] = await tx
+      .select({ question: chatbotAnswerCache.question, answer: chatbotAnswerCache.answer, followUps: chatbotAnswerCache.followUps })
+      .from(chatbotAnswerCache)
+      .where(eq(chatbotAnswerCache.cacheKey, input.key))
+      .limit(1)
+    if (!row) return null
+    const before = parseFollowUps(row.followUps)
+    const changedAnswer = row.answer !== input.answer
+    const changedFollowUps = JSON.stringify(before) !== JSON.stringify(input.followUps)
+    // Lưu y nguyên: không ghi, không gia hạn, không để lại dòng audit "đã sửa" cho việc không sửa gì.
+    if (!changedAnswer && !changedFollowUps) return { changedAnswer, changedFollowUps }
+    const expiresAt = new Date(Date.now() + ANSWER_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000)
+    const updated = await tx
+      .update(chatbotAnswerCache)
+      .set({ answer: input.answer, followUps: input.followUps, expiresAt })
+      .where(eq(chatbotAnswerCache.cacheKey, input.key))
+    // Hàng biến mất giữa SELECT và UPDATE (dọn rác/xoá) → coi như không còn.
+    if (affectedRowsOrZero(updated) === 0) return null
+    await tx.insert(activityLogs).values({
+      userId: input.actorId,
+      action: 'update',
+      resource: 'chatbot_knowledge',
+      resourceId: null,
+      meta: {
+        type: 'answer_cache_update',
+        cacheKey: input.key,
+        question: row.question,
+        changedAnswer,
+        changedFollowUps,
+        answerLengthBefore: row.answer.length,
+        answerLengthAfter: input.answer.length,
+        ip: input.ip,
+      },
+    })
+    return { changedAnswer, changedFollowUps }
+  })
 }
