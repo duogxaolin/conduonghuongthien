@@ -31,7 +31,7 @@ function delay(ms: number): Promise<void> {
 export function parseTitleAndExcerpt(
   rawText: string,
   originalTitle = '',
-  originalExcerpt = '',
+  _originalExcerpt = '', // giữ chỗ trong chữ ký: cả worker lẫn test vẫn truyền tóm tắt gốc, nhưng chưa dùng tới
 ): { title: string; excerpt: string } {
   let title = ''
   let excerpt = ''

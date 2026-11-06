@@ -134,10 +134,10 @@ export function useMediaUploadSession(options: { actorId: number, storage: Stora
           if (status !== 409) throw error
           // Another request owns assembly. Retry complete to also recover an expired lease.
           await wait(signal)
-          if (signal.aborted) throw new Error('aborted')
+          if (signal.aborted) throw new Error('aborted', { cause: error })
           const response = await request<{ session: Session }>(`${base}/status`)
           if (response.session.status === 'completed' && response.session.mediaItemId) return { mediaItemId: response.session.mediaItemId, slug: '' }
-          if (response.session.status === 'failed') throw new Error('session-failed')
+          if (response.session.status === 'failed') throw new Error('session-failed', { cause: error })
         }
       }
     }

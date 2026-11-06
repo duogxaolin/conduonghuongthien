@@ -281,7 +281,7 @@ export async function clearMediaThumbnail(
 async function deleteR2Thumb(storagePath: string, _r2Config: R2Config): Promise<void> {
   // `deleteR2File` (media-r2) trả `false` khi R2 lỗi và ném khi cấu hình hỏng. Vẫn
   // best-effort, nhưng không còn im lặng: object còn sót là thứ admin cần biết.
-  let deleted = false
+  let deleted: boolean
   try {
     deleted = await deleteR2File(r2ThumbnailKey(storagePath), _r2Config)
   } catch {

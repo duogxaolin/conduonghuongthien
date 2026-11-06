@@ -374,7 +374,7 @@ export async function saveRetentionPolicy(
   } catch (error) {
     // Only a STORED value can fail here (pending ones passed the same parsers): the
     // server's state, not the form's fault — not the 400 a validation error maps to.
-    throw new Error(`stored retention policy is unreadable: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(`stored retention policy is unreadable: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
   }
 
   const keys = pending.map(([key]) => key)

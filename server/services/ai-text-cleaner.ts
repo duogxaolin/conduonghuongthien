@@ -47,8 +47,9 @@ export function cleanAiContent(text: string): string {
 }
 
 /** Incremental cleaner for streaming: avoids re-running 8 regexes on the full
- *  `streamText` for every chunk (O(n²)). Holds an incomplete trailing tag in
- *  `carry` so a split like `<thi` + `nk>` does not leak.
+ *  `streamText` for every chunk (O(n²)). Holds an incomplete trailing tag back
+ *  (it stays in `rawBuffer`, outside `usable`) so a split like `<thi` + `nk>`
+ *  does not leak.
  *
  * Emits by **prefix diff**, not by byte length. `cleanAiContent` runs 8 regexes
  * that *delete* spans (reasoning tags like ``, "Actually, I'll
@@ -123,7 +124,6 @@ function unclosedReasoningStart(text: string): number {
 }
 
 export function createStreamingCleaner() {
-  let carry = ''
   let emittedText = ''
   let rawBuffer = ''
   return {
@@ -150,7 +150,6 @@ export function createStreamingCleaner() {
       if (!hasMarker) {
         const newChunk = rawBuffer.slice(emittedText.length)
         emittedText = rawBuffer
-        carry = ''
         return newChunk
       }
       // Hold incomplete trailing "<...": don't emit tail that hasn't closed yet.
@@ -160,10 +159,8 @@ export function createStreamingCleaner() {
       const lastOpen = rawBuffer.lastIndexOf('<')
       const lastClose = rawBuffer.lastIndexOf('>')
       let usable: string
-      let nextCarry = ''
       if (lastOpen !== -1 && lastOpen > lastClose) {
         usable = rawBuffer.slice(0, lastOpen)
-        nextCarry = rawBuffer.slice(lastOpen)
       } else {
         usable = rawBuffer
       }
@@ -173,7 +170,6 @@ export function createStreamingCleaner() {
       // beyond it would be prematurely committed to `emittedText`.
       const unclosedAt = unclosedReasoningStart(usable)
       if (unclosedAt !== -1) {
-        nextCarry = usable.slice(unclosedAt) + nextCarry
         usable = usable.slice(0, unclosedAt)
       }
       // Clean the **whole usable raw buffer**, not just the current delta. A
@@ -186,8 +182,7 @@ export function createStreamingCleaner() {
       // emit-side prefix-diff below correctly suppresses the now-deleted
       // region instead of emitting garbled shifted text.
       const cleaned = cleanAiContentCore(usable)
-      carry = nextCarry
-      let newChunk = ''
+      let newChunk: string
       if (cleaned.startsWith(emittedText)) {
         // Normal extension: `cleaned` grew by appending to the already-emitted
         // text. Emit only the new suffix.
@@ -228,7 +223,6 @@ export function createStreamingCleaner() {
         /\b(?:Actually|Wait),\s*I'?\s*(?:will|ll)\s*try/i.test(rawBuffer)
       if (!hasMarker) {
         const tail = rawBuffer.slice(emittedText.length)
-        carry = ''
         return tail
       }
       // Final pass: clean the whole raw buffer. Any held-back trailing span
@@ -236,8 +230,7 @@ export function createStreamingCleaner() {
       // and it emits as-is (the caller's `finalText(streamText)` fallback is
       // the safety net for a provider that never closed its tag).
       const cleaned = cleanAiContentCore(rawBuffer)
-      carry = ''
-      let tail = ''
+      let tail: string
       if (cleaned.startsWith(emittedText)) {
         tail = cleaned.slice(emittedText.length)
       } else if (emittedText.startsWith(cleaned)) {

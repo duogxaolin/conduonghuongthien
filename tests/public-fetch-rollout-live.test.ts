@@ -81,13 +81,12 @@ for (const file of ['components/LiveHero.vue', 'components/LiveTickerBar.vue'] a
       t.mock.timers.tick(3999)
       await settle()
       const call = ctx.calls[0]!
-      let aborted = false
       // The request is still open at 3.999 s: answering it now would still be read.
       t.mock.timers.tick(1)
       await settle()
       call.respond(json(ON_AIR))
       await settle()
-      aborted = !/Buổi phát thử/.test(words(ctx.page))
+      const aborted = !/Buổi phát thử/.test(words(ctx.page))
       assert.equal(aborted, true, 'the answer that came after 4 s was not read')
     })
 

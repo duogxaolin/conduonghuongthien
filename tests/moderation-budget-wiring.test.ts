@@ -125,8 +125,8 @@ describe('W7: the request budget reaches livestream chat and the rescan job', ()
       return background as ReturnType<typeof worker.checkAndModerateContent>
     }
     const slow = slowRules()
-    let requestMs = 0
-    let totalMs = 0
+    let requestMs: number
+    let totalMs: number
     try {
       const started = performance.now()
       const result = await chat('chào cả nhà', moderate)

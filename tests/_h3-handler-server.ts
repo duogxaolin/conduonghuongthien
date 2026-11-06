@@ -109,7 +109,7 @@ export async function startHandlerServer(routes: HandlerRoute[], middleware: h3.
       }
       const response = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers, body, redirect: options.redirect ?? 'follow' })
       const text = await response.text()
-      let parsed: Record<string, unknown> = {}
+      let parsed: Record<string, unknown>
       try { parsed = text ? JSON.parse(text) as Record<string, unknown> : {} } catch { parsed = { text } }
       const cookies = new Map<string, { value: string, raw: string }>()
       for (const raw of response.headers.getSetCookie()) {

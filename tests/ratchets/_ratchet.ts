@@ -118,7 +118,7 @@ export function trackedFiles(root: string = REPO_ROOT): string[] {
     })
   } catch (error) {
     const detail = error instanceof Error ? error.message.split('\n')[0] : String(error)
-    throw new Error(`ratchets list files with \`git ls-files\` so untracked files never count, and it failed in ${root} (${detail}). Run them from a git checkout with git installed.`)
+    throw new Error(`ratchets list files with \`git ls-files\` so untracked files never count, and it failed in ${root} (${detail}). Run them from a git checkout with git installed.`, { cause: error })
   }
   return output.split('\0').filter(Boolean).sort(byPath)
 }
@@ -129,7 +129,7 @@ export function measureFiles(ratchet: FileRatchet, root: string = REPO_ROOT, fil
   for (const file of files) {
     if (!ratchet.inScope(file)) continue
     const full = path.join(root, file)
-    let isFile = false
+    let isFile: boolean
     try {
       isFile = lstatSync(full).isFile()
     } catch {

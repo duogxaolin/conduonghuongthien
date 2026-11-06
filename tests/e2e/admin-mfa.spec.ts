@@ -155,7 +155,7 @@ test('two-factor enrollment: real code accepted, wrong code rejected, codes show
   await login(page)
 
   // ── 1. A wrong code must leave the factor pending, never active ────────────
-  const secret = await beginTotpEnrollment(page)
+  await beginTotpEnrollment(page)
   const dialog = page.getByRole('dialog')
 
   await dialog.locator('#enroll-code').fill('000000')

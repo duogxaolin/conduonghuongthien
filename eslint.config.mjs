@@ -2,13 +2,13 @@
 /**
  * ESLint flat config (v9).
  *
- * Cố ý tải LỜI CANH BÁO thay vì lỗi — spec này tồn tại để giữ phong cách, không
- * để chặn build hay đỏ CI. Một guard đỏ 167 file getDb() thẳng hoặc 20 vết
- * `any` sẽ bị maintainer tắt (vô dụng) hoặc disable từng dòng (noise) — đúng
- * thứ em đã phân tích ROI. Chạy bằng `npm run lint`, xem warning, sửa chủ đích.
+ * Luật ở mức `warn`, nhưng kết quả bị chặn ở SỐ 0 (đo 2026-11-06, trước đó 44): `npm run lint`
+ * chạy `--max-warnings=0`, và `tests/ratchets/lint-warnings.test.ts` (trong `npm test` và job unit
+ * của CI) đỏ khi bất kỳ tệp theo dõi nào có một message. Mức `warn` giữ nguyên chỉ để một luật mới
+ * của lần nâng cấp ESLint hiện ra thành danh sách để sửa, thay vì làm gãy cả `npm run lint` bằng
+ * lỗi cấu hình.
  *
- * Không sink vào `nuxt build` hay `npm test`: test runner là Node thuần không
- * cài thêm (CLAUDE.md), và build có guard riêng (admin-password, db:drift).
+ * Không sink vào `nuxt build`: build có guard riêng (admin-password, db:drift).
  */
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
@@ -52,8 +52,7 @@ export default tseslint.config(
     },
   },
   {
-    // Cố ý tải cảnh báo thay vì lỗi — không đỏ CI. Maintainer xem warning,
-    // sửa chủ đích.
+    // Mức `warn` — nhưng số warning bị chặn ở 0 (xem đầu tệp), nên một warning mới làm CI đỏ.
     rules: {
       // Nuxt auto-import `defineEventHandler`, `$fetch`, `ref`, `computed`...
       // JS preset `no-undef` không biết auto-import → tắt, TS typecheck đã lo.
@@ -61,7 +60,8 @@ export default tseslint.config(
       // TS no-unused-vars đã lo chính xác hơn JS preset.
       'no-unused-vars': 'off',
       'no-regex-spaces': 'warn',
-      // Hai luật mới trong `recommended` của ESLint 10 (23 + 6 chỗ lúc nâng cấp) — cùng triết lý: cảnh báo, không đỏ.
+      // Hai luật mới trong `recommended` của ESLint 10 (23 + 6 chỗ lúc nâng cấp, đã sửa hết 2026-11-06). Mức `warn` giữ nguyên
+    // vì kết quả bị chặn ở số 0 bởi `npm run lint` (`--max-warnings=0`) và `tests/ratchets/lint-warnings.test.ts`.
       'no-useless-assignment': 'warn',
       'preserve-caught-error': 'warn',
       'no-useless-escape': 'warn',
@@ -121,6 +121,9 @@ export default tseslint.config(
     ignores: [
       '.output/**',
       '.nuxt/**',
+      // Worktree của agent/phiên song song (`.claude/worktrees/<tên>/`): mã của nhánh khác, không phải của cây này.
+      // Không loại ra thì `npm run lint` và ratchet quét luôn chúng và đỏ vì cảnh báo của nhánh khác.
+      '.claude/**',
       '.data/**',
       'node_modules/**',
       'dist/**',

@@ -93,8 +93,8 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
   if (!resolved.ok) return { ok: false, statusCode: 400, message: resolved.message }
   const target = resolved.target
 
-  let contextTitle: string | null = null
-  let contextUrl: string | null = null
+  let contextTitle: string
+  let contextUrl: string
 
   if (target.kind === 'article') {
     const [article] = await db

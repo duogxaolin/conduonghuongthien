@@ -1314,7 +1314,7 @@ async function insertRows(conn: Connection, rows: Map<string, Row[]>) {
             columns.map(c => row[c]),
           )
         } catch (err) {
-          throw new Error(`could not insert a representative row into ${table} (${err instanceof Error ? err.message : String(err)}) — add or fix its entry in SEED_OVERRIDES`)
+          throw new Error(`could not insert a representative row into ${table} (${err instanceof Error ? err.message : String(err)}) — add or fix its entry in SEED_OVERRIDES`, { cause: err })
         }
       }
     }

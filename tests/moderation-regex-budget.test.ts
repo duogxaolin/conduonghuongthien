@@ -448,7 +448,7 @@ test('a regex pass that THROWS keeps the keyword decisions of the whole batch; t
   const lines: LogLine[] = []
   const logs = mock.method(console, 'error', (line: unknown) => { try { lines.push(JSON.parse(String(line)) as LogLine) } catch { /* not a log line */ } })
   let matches: unknown
-  let withheld = new Set<string>()
+  let withheld: Set<string>
   try {
     matches = await worker.matchInstantRuleBatch(['có kèo cá độ', 'chơi lô đề', 'bình thường'])
     withheld = await worker.earlierTurnsToWithhold(['có kèo cá độ', 'chơi lô đề', 'bình thường', 'mày dcm'])

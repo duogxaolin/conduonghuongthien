@@ -1,6 +1,7 @@
 <template>
   <section class="section bg-white" role="region" aria-label="Nội dung">
     <div class="container">
+      <!-- eslint-disable-next-line vue/no-v-html -- nguồn: sanitizeBlockData lúc ghi và lúc đọc (kiểm kê ở tests/security-ai-editorial-html.test.ts) -->
       <div ref="bodyEl" class="article-body max-w-[760px] mx-auto text-[#2b352a]" v-html="html"></div>
     </div>
   </section>

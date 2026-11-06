@@ -2555,6 +2555,18 @@ Rà soát `main` sau § 76–77 tìm ra bốn chỗ cache phát lại câu sai h
 - **Chưa làm (đề xuất tiếp):** danh sách 10 bất biến an ninh còn khẳng định bằng chữ trong `docs/decisions/test-strategy.md` § Danh sách chuyển tiếp theo (rate limit phiên chatbot, chính sách mật khẩu, client IP, login…); nối `test:mutations` vào CI — chưa nối thì danh mục chỉ chứng minh khi có người chạy; test hành vi cho `factorCache` (MFA); **chính sách quota Delify** — `lookupDelifyQuota` tra hàng Delify bất kể dịch vụ có đang dùng Delify không, nên TẮT (không xoá) một khoá Delify đã treo rồi chuyển dịch vụ sang nhà cung cấp khác vẫn bị `checkBudget` chặn mọi lượt gọi AI. Không lọc theo `aiProviders.isActive` được (gateway chọn nhà cung cấp theo cấu hình dịch vụ, không xét cờ đó; cờ mặc định `false`); cách đúng là chỉ tra quota Delify cho dịch vụ đang cấu hình dùng Delify — đổi chính sách ngân sách, để đợt riêng.
 - **Kiểm chứng (sau lượt sửa theo verifier)**: `npm test` 8 832 test, 0 fail (55 skip = integration không có MySQL); typecheck 0 lỗi; ESLint sạch trên tệp chạm; docs facts khớp; `npm run test:mutations` 15/15 bị bắt (mốc 12 tệp/77 test xanh, không mục `INVALID`/`LOAD-ERROR`).
 
+### 80. Chất lượng — phần 9: lint về 0 cảnh báo và có ratchet (2026-11-06)
+
+`npm run lint` có 44 cảnh báo (0 lỗi; CLAUDE.md không ghi số nào, các mục CHANGELOG cũ ghi 16): `no-useless-assignment` 23, `vue/no-v-html` 6, `preserve-caught-error` 6, `no-unused-vars` 3, `no-regex-spaces` 3, và 3 luật lẻ. Sửa tận gốc, không đổi hành vi:
+- **Gán thừa** (23): bỏ giá trị khởi tạo/phép gán chết ở server, 1 modal Vue và 12 chỗ trong test. `ai-text-cleaner.ts`: biến `carry`/`nextCarry` chỉ được ghi, không bao giờ đọc, nên xoá; việc giữ lại thẻ chưa đóng vẫn do `usable` đảm nhiệm (bộ test stream của gateway xanh).
+- **`preserve-caught-error`** (6): thêm `{ cause: error }`, chuỗi thông báo giữ nguyên nên hợp đồng `errorMessage` (chỉ câu máy chủ soạn tới người dùng) không đổi.
+- **`vue/no-v-html`** (6): không đổi gì về render; mỗi chỗ có `eslint-disable-next-line vue/no-v-html -- nguồn: …` ghi nguồn đã lọc, khớp bảng kiểm kê `tests/security-ai-editorial-html.test.ts` (không sửa test đó).
+- Còn lại: tham số `_originalExcerpt` (còn được truyền từ worker và test nên không xoá), regex `{2}`/`{10}` thay cho khoảng trắng lặp (đối chiếu cùng kết quả khớp trên `ci.yml`), U+200B/U+200D viết bằng escape, `Function` thành chữ ký hàm tường minh.
+- **Ratchet**: `tests/ratchets/lint-warnings.test.ts` + `lint-warnings.baseline.json` = `{}` — mọi tệp theo dõi có một message ESLint (warning hay error) làm test đỏ và in `file:line:col rule`. `package.json`: `lint` từ `--max-warnings=9999` sang `--max-warnings=0` (CI không chạy `npm run lint`, nên không phá CI). Thử thêm một biến không dùng → đỏ đúng chỗ. `login.vue` 428 → 427 dòng, baseline file-length hạ theo.
+- `eslint.config.mjs`: bỏ các comment "cố ý không đỏ CI / không sink vào `npm test`" (nay sai), thêm `.claude/**` vào ignores (không thì lint ở cây chính quét luôn worktree của agent song song).
+- **Chưa làm:** kiểm a11y tự động bằng axe trong E2E (cần thêm devDependency, anh quyết); bỏ tham số chết `_originalExcerpt` cùng đối số thứ ba ở `article-translation-worker.ts:182`; `lint:fix` còn `--max-warnings=9999`.
+- **Kiểm chứng**: bộ unit 8 817 test, 0 fail; typecheck 0 lỗi; `npm run lint` 0/0; docs facts khớp.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

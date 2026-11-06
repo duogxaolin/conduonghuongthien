@@ -193,7 +193,7 @@ export function readXlsxGrid(buf: Buffer): SheetGrid {
       const inner = cellMatch[3] ?? ''
       const ci = columnToIndex(col)
       const type = /t="([^"]+)"/.exec(attrs)?.[1]
-      let value = ''
+      let value: string
       if (type === 's') {
         const idx = Number(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1])
         value = Number.isInteger(idx) ? (shared[idx] ?? '') : ''

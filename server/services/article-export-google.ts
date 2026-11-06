@@ -347,7 +347,7 @@ export async function exportArticlesToGoogle(
 
   // Host R2 công khai của thư viện ảnh — nguồn ảnh bìa từ xa DUY NHẤT được tải.
   // Đọc không được → chỉ còn ảnh `/uploads/…` trên đĩa; bản xuất vẫn tiếp tục.
-  let r2PublicUrl = ''
+  let r2PublicUrl: string
   try {
     r2PublicUrl = (await loadR2Config()).publicUrl
   } catch {

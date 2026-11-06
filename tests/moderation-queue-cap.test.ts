@@ -146,7 +146,7 @@ test('a failed queue insert is logged once, without the message, and the message
   const lines: string[] = []
   const original = console.error
   console.error = (...args: unknown[]) => { lines.push(args.map(String).join(' ')) }
-  let outcome: Awaited<ReturnType<typeof fastPreModerate>> | null = null
+  let outcome: Awaited<ReturnType<typeof fastPreModerate>> | null
   try {
     outcome = await fastPreModerate(secretText, { targetType: 'comment', authorIp: ip, authorName: 'Người gửi bí mật', readerId: 6001, sessionId: 'sess-6001' })
   } finally {
@@ -185,7 +185,7 @@ test('a statement-wrapping error with no driver cause: its message (the bound pa
   const lines: string[] = []
   const original = console.error
   console.error = (...args: unknown[]) => { lines.push(args.map(String).join(' ')) }
-  let outcome: Awaited<ReturnType<typeof fastPreModerate>> | null = null
+  let outcome: Awaited<ReturnType<typeof fastPreModerate>> | null
   try {
     outcome = await fastPreModerate(secretText, { targetType: 'livestream_chat', authorIp: ip, readerId: 6002 })
   } finally {

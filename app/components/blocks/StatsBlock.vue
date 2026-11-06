@@ -13,6 +13,7 @@
               <i :class="[stat.icon || fallbackIcons[i % fallbackIcons.length], 'text-xl']"></i>
             </div>
             <div class="min-w-0">
+              <!-- eslint-disable-next-line vue/no-v-html -- nguồn: formatValue escape HTML (kiểm kê ở tests/security-ai-editorial-html.test.ts) -->
               <span class="block text-[2rem] font-black leading-none tracking-tight text-[#244829] lg:text-[2.25rem]" v-html="formatValue(stat.value)"></span>
               <span class="mt-2 block text-[0.84rem] font-semibold leading-[1.45] text-ink-soft">{{ stat.label }}</span>
             </div>
