@@ -2567,6 +2567,21 @@ Rà soát `main` sau § 76–77 tìm ra bốn chỗ cache phát lại câu sai h
 - **Chưa làm:** kiểm a11y tự động bằng axe trong E2E (cần thêm devDependency, anh quyết); bỏ tham số chết `_originalExcerpt` cùng đối số thứ ba ở `article-translation-worker.ts:182`; `lint:fix` còn `--max-warnings=9999`.
 - **Kiểm chứng**: bộ unit 8 817 test, 0 fail; typecheck 0 lỗi; `npm run lint` 0/0; docs facts khớp.
 
+### 81. Chất lượng — phần 2: độ rộng test, plugin Nitro và trang công khai (2026-11-06)
+
+`server/plugins` là thư mục thấp nhất của ratchet độ phủ (56%): 10 plugin không test nào nạp tới, gồm `tracking` (chèn mã vào mọi trang công khai) và `security-headers`. Phần 2 chạy chính các plugin thật bằng khung chung `tests/_nitro-plugin-harness.ts` (`defineNitroPlugin` giả, `fakeNitroApp`, `withEnv`) và tìm ra hai lỗi thật.
+
+**Lỗi thật đã sửa:**
+- **Mã theo dõi, ảnh og và favicon chèn lên trang quản trị khi đường dẫn viết khác đi.** Ba plugin so `event.path` thô: `/admin?x=1` không khớp `path === '/admin'`, và `/ADMIN`, `/%61dmin`, `//admin` — vue-router không phân biệt hoa thường và giải mã % nên dựng đúng trang quản trị (admin điều hướng phía client sau lượt tải đầu, mã theo dõi ở lại suốt phiên). Nay cả ba dùng `server/utils/route-path.ts` (`routePath`: bỏ query/fragment, giải mã %, chữ thường, gộp `//`). Giữ nguyên ý định cũ: favicon vẫn phục vụ `/admin` (tab không icon khó phân biệt), og-image chỉ bỏ `/admin/…`, chỉ `/api` bị bỏ ở cả ba.
+- **Timer 60 s của `translation-reaper` thiếu `unref`**, có thể giữ tiến trình sống lúc tắt máy trong khi mọi scheduler khác đều `unref`.
+
+**Test mới (57 test hành vi trong 6 tệp, `server/plugins` 55,61% → 99,87%):** `plugin-security-headers-behavior` (plugin chỉ gỡ `x-powered-by`, cả đường streamed; CSP/HSTS không ở plugin này), `plugin-tracking-behavior` (không chèn admin/api, công tắc tổng chỉ nhận `"1"`, ID dị dạng bị bỏ hẳn, gtag nạp một lần, mã tuỳ biến chỉ khi bật, DB lỗi không ném, bộ đệm 30 s), `plugin-head-injectors-behavior` (og-image + favicon, escape, fallback, khoá `og_image_url` ghim riêng vì mock DB bỏ qua `.where()`), `plugin-schedulers-behavior` (39 tổ hợp env cho analytics/view-boost/media-reaper, `unref`, idempotent, hook `close`), `plugin-boot-guards-behavior` (khoá mã hoá bắt buộc ở production, cầu `useRuntimeConfig`, translation-reaper), `route-path.test.ts`. Mỗi test được chứng minh đỏ khi phá plugin (bản chép scratch: 19 đột biến, 18 đỏ, 1 lọt vì mock DB — đã ghim khoá); hai mục thêm vào `npm run test:mutations` (17 mục).
+
+**Trang công khai:** `tests/e2e/public-pages-smoke.spec.ts` ghé 16 trang tĩnh (`tests/e2e/public-static-pages.ts`; `SMOKE_EXEMPT` rỗng): 200, đúng một `<h1>` ở SSR và sau hydrate, không `console.error`/`pageerror`. Ratchet `tests/ratchets/e2e-static-pages.test.ts`: trang tĩnh dưới `app/pages` không có trong danh sách và không miễn kèm lý do (≥ 25 ký tự) thì đỏ; hiểu nhóm route `(nhom)/` và hậu tố `.client`. **Quy ước:** thêm trang công khai tĩnh ⇒ thêm vào `SMOKE_PAGES` (hoặc `SMOKE_EXEMPT`). Trang động (`[slug]`, `in-bai/[slug]`…) và admin chưa được phủ.
+
+- **Giới hạn đã biết:** `analytics-scheduler` và `view-boost-scheduler` không đăng ký hook `close` (chỉ dựa vào `unref`); smoke spec chỉ phủ trang không cần dữ liệu CMS.
+- **Kiểm chứng:** bộ unit 8 889+ test, 0 fail (55 skip = integration không có MySQL); typecheck 0 lỗi; ESLint sạch; coverage ratchet nâng 4 thư mục bằng `--update` (không thư mục nào hạ); E2E: spec smoke + `public-single-h1` 17/17 trên bản build (cả bộ 144/144 trước khi rebase); không sót DB `cdkt_e2e_*` hay cổng 3123.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

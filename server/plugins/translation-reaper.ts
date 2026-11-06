@@ -14,8 +14,9 @@ import { logWarn } from '../utils/logger'
 const STALE_THRESHOLD_MINUTES = 30
 
 export default defineNitroPlugin(() => {
-  // Run 60 seconds after startup to let DB init complete
-  setTimeout(async () => {
+  // Run 60 seconds after startup to let DB init complete. `unref`: như mọi scheduler khác, một lượt dọn chưa chạy không
+  // được giữ tiến trình sống lúc tắt máy.
+  const timer = setTimeout(async () => {
     try {
       const db = getDb()
       const staleRows = await db
@@ -45,4 +46,5 @@ export default defineNitroPlugin(() => {
       // Swallow — reaper failure must not crash startup
     }
   }, 60_000)
+  timer.unref?.()
 })
