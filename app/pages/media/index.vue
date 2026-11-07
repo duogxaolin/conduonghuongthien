@@ -227,7 +227,7 @@
                   <span class="text-[0.95rem] font-bold text-ink leading-snug line-clamp-2 group-hover:text-brand-600 transition-colors">
                     {{ entry.title }}
                   </span>
-                  <span class="mt-auto text-[0.7rem] text-ink-faint inline-flex items-center gap-1.5">
+                  <span class="mt-auto text-[0.7rem] text-ink-soft inline-flex items-center gap-1.5">
                     <i class="fa-regular fa-eye" aria-hidden="true"></i>
                     {{ t('m_views_count').replace('{n}', String(entry.viewCount)) }}
                   </span>
