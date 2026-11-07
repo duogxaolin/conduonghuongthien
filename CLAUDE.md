@@ -27,7 +27,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 | i18n seed: key · hàng · fallback `vi` | 690 · 738 · 534 |
 | Page Builder: section · content · layout | 9 · 7 · 3 |
 | Mục small talk mặc định | 122 |
-| Cột URL media (`URL_REFERENCE_TARGETS`) · mục đột biến (`test:mutations`) | 27 · 23 |
+| Cột URL media (`URL_REFERENCE_TARGETS`) · mục đột biến (`test:mutations`) | 27 · 24 |
 <!-- facts:end -->
 
 ---

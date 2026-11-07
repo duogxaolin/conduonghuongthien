@@ -11,7 +11,7 @@
  */
 import { sum, gte, eq } from 'drizzle-orm'
 import type { Database } from '../utils/db'
-import { aiUsageLogs, aiBudgetSettings, aiProviders, type AiBudgetSettings } from '../db/schema'
+import { aiUsageLogs, aiBudgetSettings, aiProviders, aiServiceConfigs, type AiBudgetSettings } from '../db/schema'
 import { decryptAiSecret } from './ai/crypto'
 import { fetchDelifyUsage } from './ai/delify-usage'
 import { logWarn } from './logger'
@@ -152,6 +152,19 @@ async function lookupDelifyQuota(db: Database): Promise<CachedDelifyQuota | null
   return cachedDelifyQuota
 }
 
+/** `false` only when the service is KNOWN to use a provider other than Delify. */
+async function serviceUsesDelify(db: Database, serviceKey: string, provider?: string): Promise<boolean> {
+  if (provider !== undefined) return provider === 'delify'
+  try {
+    const [row] = await db.select({ provider: aiServiceConfigs.provider }).from(aiServiceConfigs)
+      .where(eq(aiServiceConfigs.serviceKey, serviceKey))
+      .limit(1)
+    return row ? row.provider === 'delify' : true
+  } catch {
+    return true
+  }
+}
+
 async function loadTotalSpend(db: Database): Promise<number> {
   const [result] = await db
     .select({ total: sum(aiUsageLogs.costVnd) })
@@ -184,15 +197,21 @@ async function loadMonthlySpend(db: Database): Promise<number> {
  *   - Spend ≥ 100% of budget AND the service is a non-critical service.
  *
  * The 80% warning is emitted once per day via `logWarn`.
+ *
+ * The Delify quota (a key Delify suspended, or its allocated budget) applies only to a service that USES
+ * Delify: the provider column of the service's config row, or `provider` when the caller already has it
+ * (the gateway does). The provider's own on/off switch is not read anywhere in the call path, so it cannot
+ * be the signal. A service with no config row, or a failed lookup of it, keeps the quota — an unknown
+ * provider is not a reason to skip a gate.
  */
-export async function checkBudget(db: Database, _serviceKey: string): Promise<BudgetCheckResult> {
+export async function checkBudget(db: Database, serviceKey: string, provider?: string): Promise<BudgetCheckResult> {
   const budget = await loadBudget(db)
 
   let budgetVnd = Number(budget?.monthlyBudgetVnd) || 0
   let isProviderBudget = false
 
   // If monthly budget in settings is 0 (unlimited/unset), check allocated quota from active provider (Delify)
-  if (budgetVnd <= 0) {
+  if (budgetVnd <= 0 && (await serviceUsesDelify(db, serviceKey, provider))) {
     const providerQuota = await loadDelifyQuota(db)
     if (providerQuota) {
       if (providerQuota.active === false) {

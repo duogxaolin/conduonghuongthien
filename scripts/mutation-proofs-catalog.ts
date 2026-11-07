@@ -208,4 +208,12 @@ export const MUTATION_PROOFS: MutationProof[] = [
     tests: ['tests/chatbot-sovereignty-alerting.test.ts'],
     why: 'thư cảnh báo khi lớp chặn chủ quyền thay câu trả lời chỉ mang tên sự kiện + đếm — không câu hỏi, câu trả lời, phiên hay IP của người dân, kể cả khi dòng log sau này thêm các trường đó (Phần 4)',
   },
+  {
+    id: 'ai-budget-delify-quota-scoped-to-service',
+    file: 'server/utils/ai-budget.ts',
+    find: "  if (budgetVnd <= 0 && (await serviceUsesDelify(db, serviceKey, provider))) {\n",
+    replace: '  if (budgetVnd <= 0) {\n',
+    tests: ['tests/ai-budget-provider-scope.test.ts'],
+    why: 'khoá Delify bị tạm khoá không được chặn dịch vụ AI đã chuyển sang nhà cung cấp khác',
+  },
 ]
