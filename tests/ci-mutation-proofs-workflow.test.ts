@@ -13,6 +13,7 @@ import yaml from 'js-yaml'
 
 interface Workflow {
   on: Record<string, unknown>
+  env?: Record<string, string>
   permissions?: Record<string, string>
   jobs: Record<string, { steps: Array<{ run?: string }> }>
 }
@@ -38,4 +39,12 @@ test('it runs the real command, read-only', () => {
   const runs = Object.values(workflow.jobs).flatMap(job => job.steps.map(step => step.run ?? ''))
   assert.ok(runs.some(run => run.trim() === 'npm run test:mutations'), 'a step runs `npm run test:mutations` as is')
   assert.deepEqual(workflow.permissions, { contents: 'read' }, 'no write permission: it never deploys or commits')
+})
+
+test('`npm ci` can run: the postinstall `nuxt prepare` needs the analytics HMAC placeholder, as ci.yml sets', () => {
+  // The first GitHub run (2026-11-07) died in `npm ci` with "ANALYTICS_HMAC_SECRET is required in
+  // production" — no test saw it because the local checkout has a .env. It must be workflow-level env.
+  assert.ok((workflow.env?.ANALYTICS_HMAC_SECRET ?? '').length >= 32, 'a placeholder of at least 32 characters')
+  const ci = yaml.load(readFileSync('.github/workflows/ci.yml', 'utf8')) as { env?: Record<string, string> }
+  assert.ok(ci.env?.ANALYTICS_HMAC_SECRET, 'ci.yml still defines the same variable this workflow mirrors')
 })
