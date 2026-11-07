@@ -2623,6 +2623,15 @@ Bảng số liệu tự sinh (`npm run docs:facts`) thêm một hàng: **27 cộ
 - Chưa đổi: bình luận trong mã (`media-repoint.ts`, `media-duplicates.ts`, hai handler), tên test và đặc tả đã lưu trữ vẫn nhắc "27 cột" — là lịch sử/bình luận, không phải số liệu hiện hành; sửa chúng là việc dọn riêng.
 - Không đổi hành vi chạy; không ảnh hưởng deploy.
 
+### 86. Chất lượng — danh mục đột biến chạy hằng tuần trong CI (2026-11-07)
+
+`npm run test:mutations` (23 mục) chứng minh các test bất biến trọng yếu vẫn có thể ĐỎ, nhưng trước đây chỉ chạy tay — một test bị làm yếu có thể xanh mãi. Thêm `.github/workflows/mutation-proofs.yml`: thứ Tư 02:43 UTC hằng tuần + bấm tay, `permissions: contents: read`, không deploy.
+
+- **Cố ý không chạy ở PR/push:** merge vào `main` là một lần deploy; mỗi mục chạy lại các tệp test của nó trong worktree tạm, đủ để kéo dài mọi lần merge. Đổi lấy: một test bị làm yếu có thể sống tới 7 ngày; người thêm bất biến mới vẫn chạy `npm run test:mutations -- <id>` ở máy trước khi mở PR.
+- **Test canh** (`tests/ci-mutation-proofs-workflow.test.ts`, 3 test): có đúng một lịch theo một ngày trong tuần + `workflow_dispatch`; KHÔNG gắn `push`/`pull_request`/`pull_request_target`/`workflow_run`; chạy đúng `npm run test:mutations` với quyền chỉ đọc.
+- **Đã chạy thử ở máy trước khi gộp:** 23/23 bị bắt, thoát 0. Workflow chưa chạy trên GitHub — lượt đầu là lần bấm tay hoặc thứ Tư kế tiếp; đỏ nghĩa là một mục SURVIVED/STALE/INVALID/LOAD-ERROR/TIMEOUT (đọc log).
+- Không đổi mã chạy, không ảnh hưởng deploy.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 
