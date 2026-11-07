@@ -253,7 +253,7 @@
                 class="mt-8 pt-6 border-t border-line flex flex-col sm:flex-row items-center justify-between gap-4"
                 aria-label="Phân trang tài liệu"
               >
-                <div class="text-xs text-[#6F7F6C] font-medium">
+                <div class="text-xs text-ink-soft font-medium">
                   Trang <strong>{{ page }}</strong> trên tổng số <strong>{{ pagination.totalPages || 1 }}</strong> trang
                 </div>
 

@@ -255,7 +255,7 @@
           :aria-label="t('sp_pagination_aria')"
           class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-line"
         >
-          <div class="text-xs text-[#6F7F6C] font-medium">
+          <div class="text-xs text-ink-soft font-medium">
             <I18nStrong :text="t('sp_page_of')" :values="{ page: currentPage, total: searchData.pagination.totalPages }" />
           </div>
 

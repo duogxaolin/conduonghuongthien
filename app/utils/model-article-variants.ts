@@ -69,7 +69,7 @@ export const MODEL_ARTICLE_VARIANTS: Record<ModelArticleVariant, ModelArticleVar
     ],
     theme: {
       featuredCard: 'border-[#E2E8DF] hover:shadow-[0_12px_30px_rgba(74,103,65,0.12)] hover:border-[#7CB342]',
-      featuredBadge: 'bg-[#689F38]',
+      featuredBadge: 'bg-brand-600',
       titleHover: 'hover:text-[#2D5A27]',
       actionLink: 'text-[#385932] hover:text-[#1B3617]',
       dividerBar: 'bg-[#4A6741]',
