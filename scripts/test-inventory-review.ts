@@ -87,11 +87,6 @@ export const REVIEW: Record<string, Review> = {
     class: S,
     note: 'Phần lớn là hợp đồng giao diện. Ngữ nghĩa truy vấn (chỉ bài đã xuất bản, không tự liệt kê, cùng thể loại, lỗi ≠ rỗng) là ứng viên dữ liệu — SQLite như article-id-oracle.',
     blocks: {
-      'cả hai truy vấn chỉ đọc bài đã xuất bản': H,
-      'bài đang đọc không bao giờ là bài liên quan của chính nó': H,
-      'bài liên quan cùng thể loại với bài đang đọc': H,
-      'slug lạ trả về danh sách rỗng chứ không phải lỗi': H,
-      'truy vấn hỏng phân biệt được với không có gì liên quan': H,
       'bài không có danh mục thì bỏ hẳn mệnh đề CASE, không thay bằng hằng số': H,
     },
   },
@@ -151,7 +146,6 @@ export const REVIEW: Record<string, Review> = {
   'tests/chatbot-mobile-smoothness.test.ts': { class: S, note: 'Hợp đồng giao diện mobile.' },
   'tests/chatbot-provider-policies.test.ts': { class: S, note: 'Điều khiển an toàn còn trên trang.' },
   'tests/chatbot-public-widget.test.ts': { class: S, note: 'Hợp đồng widget; "không chứa bí mật" là quét văn bản giao diện (kiểm kê).' },
-  'tests/chatbot-session-rate-limit.test.ts': { class: H, note: 'POST /chatbot/session: 429 + Retry-After, 503 khi thiếu bí mật — chưa có test chạy endpoint.' },
   'tests/chatbot-slow-wait.test.ts': { class: S, note: 'Heartbeat SSE + vùng trạng thái.' },
   'tests/chatbot-small-talk-admin.test.ts': {
     class: H,
@@ -215,7 +209,6 @@ export const REVIEW: Record<string, Review> = {
   'tests/legacy-media-urls.test.ts': { class: S, note: 'Nối dây lượt sửa vào bước khởi động.' },
   'tests/live-chat-history-error.test.ts': { class: S, note: 'Nhánh lỗi role=alert.' },
   'tests/live-status-polling.test.ts': { class: S, note: 'Poll theo visibility, đọc qua cache.' },
-  'tests/livestream-chat.test.ts': { class: H, note: 'Mọi lý do từ chối trước lượt tiêu hạn mức, INSERT sau — đổi sang chạy service với store giả (cùng kiểu reader-notifications-scope-behavior).' },
   'tests/logging.test.ts': {
     class: H,
     note: 'Đăng nhập ghi mọi thất bại/khoá/thành công, 401 giống hệt nhau, phiên bị thu hồi + form bị chặn có log — chạy được với logger giả.',
@@ -257,7 +250,6 @@ export const REVIEW: Record<string, Review> = {
     blocks: { 'the MFA security events are declared and used': S, 'the profile endpoints are ungated by RBAC because they are session-scoped': S },
   },
   'tests/mobile-drawer-a11y.test.ts': { class: S, note: 'A11y ngăn kéo; phần dựng thật đã chạy.' },
-  'tests/moderation-always-scan.test.ts': { class: H, note: 'Kiểm duyệt chạy với mọi nội dung không rỗng (không còn ngưỡng 5 ký tự), lớp tức thì đi trước — chạy checkAndModerateContent với AI giả.' },
   'tests/moderation-rescan-summary.test.ts': { class: S, note: 'role=status trong template.' },
   'tests/nav-config-boundary.test.ts': { class: S, note: 'Bản dịch nhãn + kiểm kê target=_blank kèm rel.' },
   'tests/news-most-read-language.test.ts': { class: S, note: 'Dùng loader chung.' },
@@ -286,7 +278,6 @@ export const REVIEW: Record<string, Review> = {
       'the json-file fallback is ONE function, identical in manage.sh and deploy-remote.sh, called before the app starts': S,
     },
   },
-  'tests/password-policy.test.ts': { class: H, note: 'Tạo user/đổi mật khẩu áp chính sách + thu hồi phiên, seed và khởi động production từ chối mật khẩu yếu — chạy được.' },
   'tests/public-block-load-error-ui.test.ts': { class: S, note: 'Nhánh lỗi + thử lại của block.' },
   'tests/public-detail-ssr-status.test.ts': { class: S, note: 'Cùng quyết định cho nhánh lỗi và 503/404.' },
   'tests/public-keyboard-a11y.test.ts': { class: S, note: 'A11y bàn phím.' },
@@ -294,15 +285,6 @@ export const REVIEW: Record<string, Review> = {
   'tests/public-qa-documents-page.test.ts': {
     class: S,
     note: 'Trang là hợp đồng giao diện. Endpoint danh sách (chỉ hàng đã xuất bản, không lộ trường nội bộ, trần perPage) là ứng viên an ninh/dữ liệu.',
-    blocks: {
-      'the list endpoint serves published rows only': H,
-      'the list endpoint never puts internal fields on the wire': H,
-      'the topic facet counts published rows only': H,
-      'a failed query is distinguishable from an empty bank': H,
-      'an unknown topic yields an empty page rather than an error': H,
-      'per-page is capped so one request cannot ask for the whole bank': H,
-      'a non-numeric page falls back instead of becoming NaN': H,
-    },
   },
   'tests/public-render-fixes.test.ts': { class: S, note: 'Kiểm kê PublicEmail + ẩn ảnh lỗi.' },
   'tests/public-single-h1.test.ts': { class: S, note: 'Một h1 mỗi trang.' },
@@ -335,7 +317,6 @@ export const REVIEW: Record<string, Review> = {
     },
   },
   'tests/runtime-image-sources.test.ts': { class: S, note: 'AST: image chạy nạp được mọi import.' },
-  'tests/safe-path.test.ts': { class: H, note: 'Open redirect: backPath qua safeInternalPath — dựng template in-bai/[slug].vue với backPath độc hại.' },
   'tests/schema-upgrade-integration.test.ts': { class: S, note: 'Kiểm kê bảng/khai báo cho suite nâng cấp.' },
   'tests/security-ai-editorial-html.test.ts': {
     class: H,
@@ -347,7 +328,6 @@ export const REVIEW: Record<string, Review> = {
   'tests/security-translation-html.test.ts': {
     class: H,
     note: 'Lượt dọn một lần chỉ ghi nội dung đã lọc, đường sửa tay gỡ thẻ title/excerpt — chạy được. Hai kiểm kê đường ghi là cấu trúc. Hai khối lọc lúc đọc đã chuyển (§ chuyển đổi).',
-    blocks: { 'every write of translation content is sanitized': S, 'no other server file writes article translation content': S },
   },
   'tests/seed-upsert-no-overwrite.test.ts': { class: H, note: 'Seed không ghi đè hàng có sẵn — chạy seed trên DB giả bắt câu lệnh.' },
   'tests/server-no-app-imports.test.ts': { class: S, note: 'Ranh giới import server/shared ↛ app.' },

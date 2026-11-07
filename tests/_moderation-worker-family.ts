@@ -87,46 +87,6 @@ export function readServiceFile(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 }
 
-/** The text of the whole family — what used to be the single `moderation-worker.ts`. */
-export function moderationWorkerSource(): string {
-  return moderationWorkerSourceWith()
-}
-
-/**
- * The family text with some files replaced or added (`{ 'moderation-worker-x.ts': source }`),
- * for in-suite injection proofs. An added name joins only if `isModerationWorkerFile`
- * classifies it — the same rule the on-disk scan uses — so a proof cannot hand the guard
- * a file the real scan would never read.
- */
-export function moderationWorkerSourceWith(overrides: Record<string, string> = {}): string {
-  const names = new Set([
-    ...moderationWorkerFiles().map(file => file.slice(SERVICES.length + 1)),
-    ...Object.keys(overrides).filter(isModerationWorkerFile),
-  ])
-  return [...names]
-    .sort()
-    .map(name => overrides[name] ?? readServiceFile(`${SERVICES}/${name}`))
-    .join('\n')
-}
-
-/**
- * The ONE family file that declares `function <name>` (exported or not, async or not),
- * with its source. Exactly one match: a guard never reads a stale copy, and never goes
- * green because the name vanished.
- */
-export function moderationFileDeclaring(name: string): { file: string, source: string } {
-  const declaration = new RegExp(`(?:^|\\n)(?:export )?(?:async )?function ${name}\\b`)
-  const matches = moderationWorkerFiles()
-    .map(file => ({ file, source: readServiceFile(file) }))
-    .filter(({ source }) => declaration.test(source))
-  assert.equal(
-    matches.length,
-    1,
-    `${name} phải được khai báo ở đúng một tệp của moderation-worker, thấy: ${JSON.stringify(matches.map(match => match.file))}`,
-  )
-  return matches[0]!
-}
-
 /**
  * What is wrong with the barrel's shape, or `[]`. The barrel holds named re-exports from
  * its own parts and nothing else: no code (code with the same name moved back into it

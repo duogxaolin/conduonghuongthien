@@ -21,7 +21,6 @@ import {
   parseTrustedProxies,
   resolveClientIp,
 } from '../server/utils/client-ip.ts'
-import { chatPolicyDeclaration, chatPolicyPart, chatPolicySource, chatPolicySourceWith, readRepoFile } from './_chat-policy-family.ts'
 
 const NGINX = '172.18.0.1'
 const VISITOR = '203.0.113.45'
@@ -250,8 +249,8 @@ describe('call sites', () => {
     'server/utils/client-ip.ts':
       'the helper itself — this is where the peer address is read and resolved',
     // Asks "is the peer one of our proxies?", which needs the raw peer and
-    // cannot use getClientIp() without circularity. Its semantics are pinned by
-    // the next test, not just its presence here.
+    // cannot use getClientIp() without circularity. Its semantics run in
+    // client-ip-resolution-behavior.test.ts, not just its presence here.
     'server/utils/google-oauth/config.ts':
       'uses the peer only to decide proxy trust before honouring forwarded headers',
   }
@@ -286,50 +285,17 @@ describe('call sites', () => {
     )
   })
 
-  it('the OAuth redirect helper uses the peer address only to decide proxy trust', () => {
-    // This is the one new file allowed to call getRequestIP. It must ask
-    // isTrustedProxy about the peer — never treat the peer as the visitor's
-    // address, and never honour a forwarded host without that check, or a forged
-    // header would choose the redirect URI sent to Google.
+  it('the OAuth redirect helper never resolves a client address of its own', () => {
+    // The one file besides the helper allowed to call getRequestIP. It asks isTrustedProxy about the
+    // PEER, so it must not go through getClientIp (circular, and the peer is not "the visitor").
+    // That a forged forwarded host/proto from a stranger is ignored runs in
+    // `client-ip-resolution-behavior.test.ts`, as do the chat bucket and the logout audit `ip`.
     const source = read('server/utils/google-oauth/config.ts')
-    assert.match(source, /isTrustedProxy\(/)
-    assert.match(source, /xForwardedFor: false/)
     assert.doesNotMatch(
       source,
       /getClientIp\(/,
       'config.ts must not resolve a client address — it only decides whether the peer is our proxy',
     )
-  })
-
-  // `chat-policy.ts` is a barrel since wave3 4.3 (D-SPLIT). The key is built by
-  // `clientKey` (in `server/services/chat-policy-rate-limit.ts`): read that declaration for
-  // "is present", and every file of the policy family for "is absent" (`_chat-policy-family.ts`).
-  it('the chat rate-limit key is derived from the resolved client address', () => {
-    assert.match(chatPolicyDeclaration('clientKey').text, /getClientIp\(event\)/)
-    assert.doesNotMatch(chatPolicySource(), /xForwardedFor/)
-  })
-
-  it('injection proof: the xForwardedFor ban reads every file of the chat-policy family, and only it', () => {
-    const planted = '\nexport const _peer = { xForwardedFor: true }\n'
-    for (const overrides of [
-      { [chatPolicyPart('answer')]: `${readRepoFile(chatPolicyPart('answer'))}${planted}` },
-      { [chatPolicyPart('extra')]: planted },
-    ])
-      assert.match(chatPolicySourceWith(overrides), /xForwardedFor/, JSON.stringify(Object.keys(overrides)))
-    assert.equal(chatPolicySourceWith({ 'server/utils/chatbot/chat-turns.ts': planted }), chatPolicySource())
-    // "Is present" reads the key builder itself: a raw peer read there turns it red even
-    // though `getClientIp(event)` is still named in a comment of the same file.
-    const file = chatPolicyPart('rate-limit')
-    const source = readRepoFile(file)
-    assert.ok(source.includes('getClientIp(event)'), `${file} no longer has getClientIp(event) to mutate`)
-    const overrides = { [file]: `// getClientIp(event)\n${source.replace('getClientIp(event)', 'String(event.node.req.socket.remoteAddress)')}` }
-    assert.doesNotMatch(chatPolicyDeclaration('clientKey', overrides).text, /getClientIp\(event\)/)
-  })
-
-  it('logout no longer trusts the raw header for its audit row', () => {
-    const source = read('server/api/admin/auth/logout.post.ts')
-    assert.doesNotMatch(source, /getRequestHeader\(event, 'x-forwarded-for'\)/)
-    assert.match(source, /ip: getClientIp\(event\)/)
   })
 
   it('the app port is published on loopback, not every interface', () => {

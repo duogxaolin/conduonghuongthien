@@ -13,7 +13,9 @@ import { ARTICLE_DETAIL_FAMILY, familySource, familyStyle, familyTemplate, readA
  * thật với bảng danh mục dựng tay — đó là phần sai được trong im lặng, vì một con
  * số lệch vẫn là một con số trông hợp lý. Phần còn lại (truy vấn Drizzle và cây
  * template) chỉ kiểm được bằng văn bản mã nguồn: nó chặn việc xoá mất một guard,
- * **không** chứng minh guard đó chạy đúng lúc chạy thật.
+ * **không** chứng minh guard đó chạy đúng lúc chạy thật. Riêng hành vi của endpoint (lọc
+ * `published`, không tự liên quan, cùng thể loại, rỗng/503) chạy thật ở
+ * `tests/article-related-endpoint-behavior.test.ts`.
  */
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -246,39 +248,9 @@ test('hàm không lộ trường nội bộ ra ngoài', () => {
 
 // ─── Endpoint ───────────────────────────────────────────────────────────────
 
-test('cả hai truy vấn chỉ đọc bài đã xuất bản', () => {
-  // Bản nháp không được dùng làm mỏ neo (để lộ chủ đề và các bài lân cận của nó)
-  // và cũng không được đếm vào con số trên chip.
-  const handler = read(HANDLER)
-  const clauses = handler.match(/eq\(articles\.status, 'published'\)/g) ?? []
-  assert.ok(clauses.length >= 3, `mọi truy vấn phải lọc published, thấy ${clauses.length}`)
-})
-
-test('bài đang đọc không bao giờ là bài liên quan của chính nó', () => {
-  assert.match(read(HANDLER), /ne\(articles\.id, current\.id\)/)
-})
-
-test('bài liên quan cùng thể loại với bài đang đọc', () => {
-  // Một câu chuyện tấm gương nằm dưới nhãn "bài viết liên quan" của một bản tin
-  // là nói sai về thứ nó là — và link sẽ trỏ sai tiền tố route.
-  assert.match(read(HANDLER), /eq\(articles\.type, current\.type\)/)
-})
-
-test('slug lạ trả về danh sách rỗng chứ không phải lỗi', () => {
-  // Đây là khối phụ của một trang đã tự xử lý 404 của chính nó. `createError` ở
-  // đây sẽ biến một bài viết đọc được thành một trang lỗi.
-  assert.doesNotMatch(code(HANDLER), /createError/, 'slug lạ phải trả rỗng, không được ném lỗi')
-  assert.match(read(HANDLER), /if \(!current\) return empty\(\)/)
-})
-
-test('truy vấn hỏng phân biệt được với không có gì liên quan', () => {
-  // `ok: false` là thứ phía client biến thành nhánh lỗi có nút thử lại. Trả rỗng
-  // khi hỏng sẽ đọc ra là "bài này không liên quan tới bài nào", và người đọc
-  // mất đường đi tiếp mà không có gì giải thích.
-  const handler = read(HANDLER)
-  assert.match(handler, /return \{ ok: false as const, articles: \[\], topics: \[\] \}/)
-  assert.match(handler, /ok: true as const, articles: relatedRows/)
-})
+// Lọc `published` ở cả ba truy vấn, bài không là chính nó, cùng thể loại, slug lạ → rỗng,
+// truy vấn hỏng → `ok: false`/503: chạy thật ở tests/article-related-endpoint-behavior.test.ts.
+// Còn lại ở đây là cấu trúc mà hành vi không chứng minh được.
 
 test('phản hồi rỗng là hàm, không phải object cấp module', () => {
   // Một object cấp module trả về cho mọi request là một mảng mà bất cứ ai cũng

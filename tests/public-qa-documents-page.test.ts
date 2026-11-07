@@ -13,16 +13,16 @@ import { inVietnamese } from './_vi-template.ts'
  * simply wanted to read what has been approved had no way in.
  *
  * These assertions inspect source text and the compiled template, so they pin
- * structure — a published-only query, no internal fields on the wire, the
- * loading/error/empty contract — and not runtime behaviour. That boundary is
- * deliberate: a claim about source text should never be read as a claim about
- * what a visitor sees.
+ * structure — the loading/error/empty contract, accordion semantics, routes — and
+ * not runtime behaviour. That boundary is deliberate: a claim about source text
+ * should never be read as a claim about what a visitor sees. What the ENDPOINT
+ * serves (published only, no internal field, caps, failure shape) is run for real in
+ * tests/public-qa-knowledge-list-behavior.test.ts.
  */
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 const PAGE = '../app/pages/qa-documents.vue'
-const HANDLER = '../server/api/public/chatbot/knowledge.get.ts'
 const CHAT_SURFACES = ['../app/components/ChatWidget.vue', '../app/pages/assistant.vue'] as const
 
 const template = (path: string) => parse(read(path), { filename: path }).descriptor.template?.content ?? ''
@@ -45,63 +45,15 @@ const code = (path: string) => stripComments(read(path))
 const templateCode = (path: string) => stripComments(template(path))
 
 // ─── Endpoint ────────────────────────────────────────────────────────────────
+// The list endpoint (published-only list/total/facet, no internal field on the wire, the
+// perPage cap, NaN page, an unknown topic as an empty page, ok:false on failure) is run for real
+// in tests/public-qa-knowledge-list-behavior.test.ts. The page's own half of the NaN rule stays:
 
-test('the list endpoint serves published rows only', () => {
-  // A draft is an answer nobody has approved yet. The whole lifecycle in
-  // chatbot-knowledge.ts exists to keep unapproved legal text off the portal, and
-  // a list endpoint that forgot this clause would undo all of it at once.
-  const handler = read(HANDLER)
-  assert.match(handler, /eq\(chatbotKnowledge\.status, 'published'\)/, 'drafts must never be served publicly')
-})
-
-test('the list endpoint never puts internal fields on the wire', () => {
-  // The projection goes through `serializePublicKnowledge` rather than naming
-  // columns here, so a column added to the table later cannot leak by default.
-  assert.match(read(HANDLER), /serializePublicKnowledge/, 'the public serializer must build the projection')
-  const handler = code(HANDLER)
-  for (const secret of ['internalNotes', 'sourceInternal', 'apiKey', 'authorId', 'reviewerId']) {
-    assert.doesNotMatch(handler, new RegExp(secret, 'i'), `${secret} must not leave the server`)
-  }
-})
-
-test('the topic facet counts published rows only', () => {
-  // Deriving the facet from the whole table would advertise a topic with nothing
-  // published under it; picking it would return an empty list and no explanation.
-  const handler = read(HANDLER)
-  const facet = handler.match(/const topicRows[\s\S]*?\.limit\(\d+\)/)?.[0]
-  assert.ok(facet, 'the topic facet query moved; re-check that it filters by status')
-  assert.match(facet, /eq\(chatbotKnowledge\.status, 'published'\)/)
-  assert.match(facet, /groupBy\(chatbotKnowledge\.topic\)/)
-})
-
-test('a failed query is distinguishable from an empty bank', () => {
-  // `ok: false` is what the page turns into its error branch. Returning an empty
-  // list on failure would render as "nothing has been approved yet", and a
-  // visitor would leave believing the portal has no answers.
-  const handler = read(HANDLER)
-  assert.match(handler, /return \{ ok: false, items: \[\], topics: \[\]/, 'a caught failure must report ok: false')
-  assert.match(handler, /ok: true/, 'the success path must report ok: true')
-})
-
-test('an unknown topic yields an empty page rather than an error', () => {
-  // The filter arrives in a URL a visitor can edit or share. A 400 on a stale
-  // link reads as the portal being broken.
-  assert.doesNotMatch(code(HANDLER), /createError/, 'a bad filter must not throw; it must return an empty page')
-})
-
-test('per-page is capped so one request cannot ask for the whole bank', () => {
-  assert.match(code(HANDLER), /readInt\(query\.perPage, 20, 1, 50\)/)
-})
-
-test('a non-numeric page falls back instead of becoming NaN', () => {
+test('a non-numeric page falls back instead of becoming NaN (the page side)', () => {
   // Found by calling the endpoint: `?page=abc` under `Math.max(1, Number(raw))`
   // produced `page: null` in the response and `NaN` in `offset()` — a paginator
-  // that returns rows while reporting no current page. Both the handler and the
-  // page parse this, so both need the finite check.
-  const handler = code(HANDLER)
-  assert.match(handler, /Number\.isFinite\(value\)/, 'the handler must reject NaN before clamping')
-  assert.doesNotMatch(handler, /Math\.max\(1, Number\(query\.page/, 'this form yields NaN for non-numeric input')
-
+  // that returns rows while reporting no current page. The handler's half is run in
+  // tests/public-qa-knowledge-list-behavior.test.ts; the page parses it too.
   const pageSource = code(PAGE)
   assert.match(pageSource, /Number\.isFinite\(value\) && value >= 1/, 'the page must reject NaN too')
   assert.doesNotMatch(pageSource, /Math\.max\(1, Number\(route\.query\.page/, 'this form yields NaN for non-numeric input')

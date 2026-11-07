@@ -8,7 +8,8 @@
  *     mà cả hai mươi lần thử đều rơi vào lúc không có buổi phát nào vẫn tiêu hết
  *     hạn mức của chính mình — và một kẻ tấn công tiêu được hạn mức của người khác
  *     bằng những request **luôn luôn thất bại**. Khẳng định ở đây là hành vi (bộ đếm
- *     còn nguyên sau một lượt bị từ chối) **và** thứ tự trong mã nguồn.
+ *     còn nguyên sau một lượt bị từ chối); thứ tự đầy đủ chạy thật ở
+ *     `tests/livestream-chat-order-behavior.test.ts`.
  *  2. **Lưu TRƯỚC, phát SAU.** Phát trước rồi mới lưu thì một lượt INSERT hỏng để lại
  *     một tin nhắn đã hiện trên màn hình hàng trăm người và không nằm trong lịch sử
  *     của ai.
@@ -417,29 +418,8 @@ describe('12.7 — hạn mức tiêu NGAY TRƯỚC câu INSERT, không phải �
     assert.equal(result.ok, false, 'địa chỉ unknown không được miễn hạn mức theo địa chỉ')
   })
 
-  it('thứ tự trong mã nguồn: mọi lý do TỪ CHỐI đứng trước lượt tiêu hạn mức, câu INSERT đứng sau', async () => {
-    // Khẳng định hành vi ở trên phủ hai nhánh cụ thể. Khẳng định này bám vào **thứ
-    // tự** cho mọi nhánh còn lại — kể cả nhánh thêm sau này. Đây là lượt kiểm âm tính
-    // của 12.7: dời hai lượt gọi lên đầu hàm thì nó đỏ.
-    const { readFileSync } = await import('node:fs')
-    const source = readFileSync(new URL('../server/services/livestream-chat.ts', import.meta.url), 'utf8')
-    const body = source.slice(source.indexOf('export async function sendChatMessage'))
-
-    const contentCheck = body.indexOf('validateChatContent(')
-    const sessionCheck = body.indexOf('const session = await activeSession(db)')
-    const firstHit = body.indexOf('recordRateLimitHit(')
-    const insert = body.indexOf('db.insert(livestreamMessages)')
-    // Chặn tức thì ghi một hàng chờ duyệt, nên nó đứng SAU hạn mức (xem
-    // tests/reader-flows-rate-limit-before-moderation.test.ts cho hành vi).
-    const moderation = body.indexOf('fastPreModerate(')
-
-    assert.ok(contentCheck !== -1 && sessionCheck !== -1 && firstHit !== -1 && insert !== -1 && moderation !== -1, 'không tìm thấy đủ năm mốc')
-    assert.ok(contentCheck < firstHit, 'hạn mức được tiêu TRƯỚC khi kiểm nội dung')
-    assert.ok(sessionCheck < firstHit, 'hạn mức được tiêu TRƯỚC khi biết có buổi phát nào đang chạy')
-    assert.ok(firstHit < moderation, 'kiểm duyệt (ghi hàng chờ duyệt) chạy TRƯỚC khi tiêu hạn mức')
-    assert.ok(moderation < insert, 'kiểm duyệt phải chạy trước câu INSERT')
-    assert.ok(firstHit < insert, 'hạn mức phải được tiêu trước câu INSERT')
-  })
+  // Thứ tự đầy đủ (từ chối → hạn mức → kiểm duyệt → INSERT) chạy thật ở
+  // tests/livestream-chat-order-behavior.test.ts; không còn kiểm bằng `indexOf` trên mã nguồn.
 })
 
 describe('12.6 — gửi: lưu trước, phát sau', () => {

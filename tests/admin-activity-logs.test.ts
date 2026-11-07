@@ -15,9 +15,9 @@
  *   READ-ONLY RETENTION. The retention endpoint reports; it never purges. A
  *   purge reachable from a GET would delete audit rows on a stray refresh.
  *
- * These are source-contract assertions, not behavioural ones: they prove the
- * guard is present and cannot be dropped unnoticed, which is what the project's
- * other endpoint tests establish too.
+ * GATED and RECORDED are run for real in tests/admin-activity-logs-access-behavior.test.ts.
+ * What remains here are source-contract assertions (the page, the menu entry, the retention
+ * endpoint's read-only shape): they prove a guard is present, not that it runs.
  */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -38,43 +38,9 @@ function codeOnly(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 }
 
-test('cross-account log listing requires an explicit users.read grant', () => {
-  assert.match(listSource, /requireResourcePermission\(admin, 'users', 'read'\)/)
-  // Session presence alone must not be the gate.
-  assert.match(listSource, /if \(!admin\) throw createError\(\{ statusCode: 401/)
-})
-
-test('reading every account\'s trail is itself written to the trail', () => {
-  assert.match(listSource, /db\.insert\(activityLogs\)\.values\(\{/)
-  assert.match(listSource, /resource: 'activity_logs'/)
-  assert.match(listSource, /action: 'read'/)
-  // The auditor is the caller, never the account being inspected.
-  assert.match(listSource, /userId: admin\.id/)
-})
-
-test('listing filters are validated instead of coerced, and paging is bounded', () => {
-  for (const marker of [/userId không hợp lệ/, /page phải là số nguyên/, /pageSize phải là số nguyên/]) {
-    assert.match(listSource, marker)
-  }
-  assert.match(listSource, /MAX_PAGE_SIZE = 100/)
-  assert.match(listSource, /pageSize > MAX_PAGE_SIZE/)
-  // A reversed range is refused rather than silently swapped.
-  assert.match(listSource, /from phải trước to/)
-  // Free-text filters are length-capped before reaching the query.
-  assert.match(listSource, /parseFilter\(query\.action, 'action', 32\)/)
-  assert.match(listSource, /parseFilter\(query\.resource, 'resource', 64\)/)
-})
-
-test('log rows survive the account being deleted', () => {
-  // An inner join would erase the trail of a removed account, which is exactly
-  // the trail an audit needs to keep.
-  assert.match(listSource, /leftJoin\(users, eq\(activityLogs\.userId, users\.id\)\)/)
-  assert.doesNotMatch(codeOnly(listSource), /\.innerJoin\(/)
-})
-
-test('pagination is deterministic when rows share a timestamp', () => {
-  assert.match(listSource, /orderBy\(desc\(activityLogs\.createdAt\), desc\(activityLogs\.id\)\)/)
-})
+// The gate (users.read), "the read is itself recorded", validated filters and paging bounds,
+// rows surviving a deleted account and the stable ordering are run for real in
+// tests/admin-activity-logs-access-behavior.test.ts. The checks below are structure.
 
 test('only allowlisted meta keys are surfaced from free-form JSON', () => {
   assert.match(listSource, /function readMeta/)
@@ -85,8 +51,8 @@ test('only allowlisted meta keys are surfaced from free-form JSON', () => {
   assert.doesNotMatch(listSource, /meta: row\.meta/)
 })
 
-test('retention endpoint is gated, read-only, and reports a missing purge', () => {
-  assert.match(retentionSource, /requireResourcePermission\(admin, 'users', 'read'\)/)
+test('retention endpoint is read-only and reports a missing purge', () => {
+  // Its users.read gate is run for real in tests/admin-activity-logs-access-behavior.test.ts.
   // Reporting only: no destructive statement may be reachable from a GET.
   assert.doesNotMatch(codeOnly(retentionSource), /\.delete\(|runDataRetention|DELETE FROM/)
   assert.match(retentionSource, /purgeOverdue/)

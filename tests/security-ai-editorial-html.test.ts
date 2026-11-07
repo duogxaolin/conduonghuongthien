@@ -85,13 +85,9 @@ test('a suggested replacement (inserted into the editor) is sanitized; the searc
   assert.equal(res.polishedContent, '', 'with a change list and no body, the client applies the changes one by one')
 })
 
-test('the AI panel renders only the sanitized field, never the raw reply', () => {
-  const panel = readFileSync(new URL('../app/components/admin/articles/ArticleAIPanel.vue', import.meta.url), 'utf8')
-  assert.match(panel, /content:\s*res\.polishedContent \|\| ''/)
-  assert.doesNotMatch(panel, /polishedContent \|\| res\.rawText/, 'rawText is unsanitized and must not feed v-html')
-  const handlerSource = readFileSync(new URL('../server/api/admin/ai/editorial.post.ts', import.meta.url), 'utf8')
-  assert.match(handlerSource, /polishedContent:\s*sanitizeHtml\(/)
-})
+// The panel's side ("renders `polishedContent` only, never `rawText`") is run for real in
+// tests/admin-article-ai-panel.test.ts ("polish without a change list…", "polish, nothing usable…"):
+// the real component over a fake network that answers with a hostile `rawText`.
 
 // ─── Kiểm kê v-html ───────────────────────────────────────────────────────────
 //

@@ -228,29 +228,17 @@ test('an exactly-full last batch costs one extra empty statement, not an endless
 })
 
 // ─── Wiring ──────────────────────────────────────────────────────────────────
-test('login counts every failure branch, including the disabled account', async () => {
+// The login endpoint's wiring (every failure branch counts, 5 per source + account and 15 per
+// account, the key shapes, Retry-After) runs in `admin-login-throttle-behavior.test.ts`. What a
+// run cannot show is that the handler holds no limiter of its own beside the shared store:
+test('login keeps no in-process limiter of its own', async () => {
   const source = read('server/api/admin/auth/login.post.ts')
-  // Three 401 branches: unknown user, disabled account, wrong password. If the
-  // disabled branch skipped the counter it would answer faster than the others
-  // and become an account-enumeration oracle.
-  const recorded = source.match(/recordRateLimitHit\(ipBucket/g) ?? []
-  assert.equal(recorded.length, 3, `only ${recorded.length} of 3 failure branches count against the limit`)
   assert.doesNotMatch(source, /new Map<string, \{ count: number/, 'the in-process limiter is back')
-  assert.match(source, /clearRateLimit\(ipBucket/)
 })
 
-test('login throttles per source and per account, with different ceilings', async () => {
-  const source = read('server/api/admin/auth/login.post.ts')
-  assert.match(source, /const IP_RULE: RateLimitRule = \{ limit: 5/)
-  assert.match(source, /const USER_RULE: RateLimitRule = \{ limit: 15/)
-  assert.match(source, /login:ip:\$\{ip\}:\$\{userKey\}/)
-  assert.match(source, /login:user:\$\{userKey\}/)
-})
-
-test('both throttled endpoints tell the caller when to come back', async () => {
-  for (const path of ['server/api/admin/auth/login.post.ts', 'server/api/submissions.post.ts']) {
-    assert.match(read(path), /setResponseHeader\(event, 'Retry-After'/, `${path} returns 429 with no Retry-After`)
-  }
+test('the public form tells the caller when to come back', async () => {
+  const path = 'server/api/submissions.post.ts'
+  assert.match(read(path), /setResponseHeader\(event, 'Retry-After'/, `${path} returns 429 with no Retry-After`)
 })
 
 test('the public form no longer keeps its own in-process buckets', async () => {

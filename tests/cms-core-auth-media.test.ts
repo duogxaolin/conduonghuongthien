@@ -76,27 +76,8 @@ test('production refuses to run on a missing or known-default JWT secret', () =>
 })
 
 // ─── Login hardening ─────────────────────────────────────────────────────────
-test('login rate-limits on an address the client cannot choose', () => {
-  const login = read('server/api/admin/auth/login.post.ts')
-  // This used to pin `getRequestIP(event, { xForwardedFor: false })`, which is
-  // unforgeable but, once nginx is in front, identical for every visitor — the
-  // per-source limit became a second copy of the per-username one. getClientIp
-  // reads the forwarded chain only from a proxy we listed; see client-ip.test.ts.
-  assert.match(login, /getClientIp\(event\)/)
-  assert.doesNotMatch(login, /const ip = getRequestHeader\(event, 'x-forwarded-for'\)/)
-  // Named for the bucket, not the data structure: this assertion previously
-  // pinned a `Map` variable name and broke when the counters moved to a shared
-  // table, even though the lockout itself never went away.
-  assert.match(login, /login:user:/, 'missing per-username lockout')
-})
-
-test('a disabled account is indistinguishable from a wrong password', () => {
-  const login = read('server/api/admin/auth/login.post.ts')
-  // Both branches must return the same message, or the response enumerates accounts.
-  const messages = [...login.matchAll(/statusCode: 401, statusMessage: '([^']+)'/g)].map(m => m[1])
-  assert.ok(messages.length >= 3, `expected several 401 branches, saw ${messages.length}`)
-  assert.equal(new Set(messages).size, 1, `401 responses differ and leak account state: ${[...new Set(messages)]}`)
-})
+// Login's address-keyed throttle and the identical 401 branches run in
+// `admin-login-throttle-behavior.test.ts`.
 
 test('the session cookie is httpOnly and no longer outlives its token', () => {
   const session = read('server/utils/mfa/session.ts')
