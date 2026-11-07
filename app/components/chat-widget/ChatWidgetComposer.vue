@@ -26,7 +26,7 @@
         <i class="fa-solid fa-paper-plane text-[0.85rem]"></i>
       </button>
     </form>
-    <p id="public-chatbot-counter" class="m-0 mt-1 text-[0.65rem] text-[#9ca3af] text-right px-2" :class="{ '!text-[#b42318]': botInput.length > limits.maxMessageChars * 0.9 }">{{ botInput.length }}/{{ limits.maxMessageChars }}</p>
+    <p id="public-chatbot-counter" class="m-0 mt-1 text-[0.65rem] text-ink-soft text-right px-2" :class="{ '!text-[#b42318]': botInput.length > limits.maxMessageChars * 0.9 }">{{ botInput.length }}/{{ limits.maxMessageChars }}</p>
   </div>
 </template>
 

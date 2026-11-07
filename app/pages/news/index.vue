@@ -143,7 +143,7 @@
             <template v-if="pageOutOfRange">
               <!-- `?page=` vượt trang cuối (link cũ, gõ tay): không phải "chưa có bài" —
                    đưa người đọc về trang đầu thay vì để kẹt ở một trang trắng. -->
-              <p class="text-sm text-[#6E7D6B] max-w-md mx-auto m-0 mb-5">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
+              <p class="text-sm text-ink-soft max-w-md mx-auto m-0 mb-5">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
               <button
                 type="button"
                 class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-800 text-white font-bold text-sm transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2"
@@ -155,7 +155,7 @@
             </template>
             <template v-else>
               <h3 class="text-base font-extrabold text-[#233520] m-0 mb-1">{{ t('n_empty_title') }}</h3>
-              <p class="text-sm text-[#6E7D6B] max-w-md mx-auto m-0 mb-5">
+              <p class="text-sm text-ink-soft max-w-md mx-auto m-0 mb-5">
                 {{ t('n_empty_desc2') }}
               </p>
               <button

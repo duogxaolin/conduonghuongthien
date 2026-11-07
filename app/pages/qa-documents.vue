@@ -12,7 +12,7 @@
           <span class="text-[#2D5A27] font-bold">{{ t('qa_documents') }}</span>
         </nav>
 
-        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-accent m-0 mb-1">Kho tri thức nghiệp vụ C11</p>
+        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-brand-600 m-0 mb-1">Kho tri thức nghiệp vụ C11</p>
         <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-ink leading-[1.2] m-0">{{ t('qa_documents') }}</h1>
         <p class="text-[0.95rem] text-[#5A6655] mt-2 mb-5 leading-relaxed max-w-3xl">
           Toàn bộ nội dung hỏi – đáp nghiệp vụ đã được Cục C11 phê duyệt. Đây cũng chính là kho dữ liệu chuẩn mà Trợ lý ảo Hướng Thiện dùng để trả lời cho công dân.

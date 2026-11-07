@@ -23,7 +23,6 @@
     v-if="session && !isOnMedia"
     to="/media"
     class="group relative block bg-[#1a2e1c] no-underline transition-colors hover:bg-[#213926]"
-    aria-label="Thông báo buổi phát trực tiếp — bấm để xem"
   >
     <div class="container relative flex items-center justify-between gap-3 py-1.5 sm:py-[7px]">
       <!-- Cụm trái: Badge + Tiêu đề -->
