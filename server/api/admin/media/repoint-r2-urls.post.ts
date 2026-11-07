@@ -5,7 +5,7 @@
  * Body: `{ oldDomain, newDomain }`.
  *
  * Ca sử dụng: đổi domain CDN R2 nhưng vẫn cùng R2 account + bucket → file đã ở R2
- * (storage_path không đổi), chỉ cần đổi URL: `media.url` (hàng R2) và 27 cột tham
+ * (storage_path không đổi), chỉ cần đổi URL: `media.url` (hàng R2) và các cột tham
  * chiếu (`URL_REFERENCE_TARGETS`), đúng ranh giới URL, trong một transaction cùng
  * dòng audit. Trả số hàng đã đổi theo từng cột (`byTarget`).
  *

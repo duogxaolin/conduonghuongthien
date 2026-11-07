@@ -6,7 +6,7 @@
  * đã ở R2 — chỉ những URL đã nướng domain cũ cần đổi. Không tải file, không cần
  * worker nền.
  *
- * **Phạm vi = mọi cột mang URL ảnh** (`URL_REFERENCE_TARGETS`, 27 cột — cùng danh
+ * **Phạm vi = mọi cột mang URL ảnh** (`URL_REFERENCE_TARGETS`, số cột ở bảng của CLAUDE.md — cùng danh
  * sách lượt đồng bộ local ↔ R2 dùng, kể cả khối trang, phiên bản trang, logo trong
  * `settings`, câu trả lời chatbot, bản dịch) **cộng `media.url` của hàng R2**. Bản
  * cũ chỉ đổi `media.url` + `articles.content`: 25 cột còn lại trỏ domain cũ mãi.
@@ -57,7 +57,7 @@ import { URL_REFERENCE_TARGETS, assertRewritable, type ReferenceTarget } from '.
 /** Không xếp hàng: một lượt ghi ảnh khác đang chạy thì trả "bận" ngay. */
 const LOCK_TIMEOUT_SECONDS = 0
 
-/** Nhãn của `media.url` (hàng R2) trong `byTarget` — nằm ngoài 27 cột tham chiếu. */
+/** Nhãn của `media.url` (hàng R2) trong `byTarget` — nằm ngoài các cột tham chiếu. */
 export const MEDIA_URL_TARGET_LABEL = 'media.url'
 
 /** Số id mỗi câu UPDATE `… WHERE id IN (…)`. */
@@ -66,7 +66,7 @@ const ID_CHUNK = 500
 export interface RepointResult {
   /** Hàng `media` (provider `r2`) đã đổi URL. */
   mediaUpdated: number
-  /** Tổng số hàng đã đổi trên 27 cột tham chiếu. */
+  /** Tổng số hàng đã đổi trên các cột tham chiếu. */
   contentRowsUpdated: number
   /** Số hàng đã đổi theo từng cột — đủ mọi cột, kể cả 0, cộng `media.url`. */
   byTarget: Record<string, number>

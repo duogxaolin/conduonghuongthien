@@ -10,7 +10,7 @@
  *   - `storage_path`: cùng provider + cùng chỗ lưu — hai hàng một object (xoá một
  *     hàng qua thư viện là xoá ảnh của hàng kia).
  *
- * Mỗi hàng kèm số nơi đang dùng URL của nó trên 27 cột tham chiếu
+ * Mỗi hàng kèm số nơi đang dùng URL của nó trên các cột tham chiếu
  * (`URL_REFERENCE_TARGETS`), đếm theo HÀNG nội dung (hai thẻ `<img>` trong một bài là
  * một), với cùng ranh giới URL và bộ dò của lượt đồng bộ (`findPresentOldUrls`):
  * `a.jpg` không được tính cho `a.jpg.webp`. Cán bộ dùng số đó để chọn hàng giữ lại.
@@ -35,7 +35,7 @@ import { findPresentOldUrls, forEachReferenceText } from './media-sync-rewrite'
 export const MAX_DUPLICATE_GROUPS = 200
 /** Thời gian tối đa cho lượt đọc cột tham chiếu — dưới hạn giờ của proxy. */
 export const MAX_DUPLICATE_SCAN_MS = 20_000
-/** Số hàng nội dung tối đa đọc qua 27 cột tham chiếu. */
+/** Số hàng nội dung tối đa đọc qua các cột tham chiếu. */
 export const MAX_DUPLICATE_REFERENCE_ROWS = 200_000
 /** Khoá tên MySQL: một báo cáo một lúc trên mọi bản sao. */
 export const MEDIA_DUPLICATES_LOCK_NAME = 'cdkt:media:duplicates-report'
@@ -57,7 +57,7 @@ export interface DuplicateReportOptions {
 }
 
 export interface MediaUsage {
-  /** Số hàng nội dung (trên 27 cột) đang chứa URL của hàng này. */
+  /** Số hàng nội dung (trên các cột tham chiếu) đang chứa URL của hàng này. */
   total: number
   byTarget: Record<string, number>
 }
@@ -108,7 +108,7 @@ function groupsOf<K>(rows: MediaRow[], keyOf: (row: MediaRow) => string, describ
 }
 
 /**
- * Số hàng nội dung đang chứa từng URL — một lượt đọc qua 27 cột. URL dạng thô và
+ * Số hàng nội dung đang chứa từng URL — một lượt đọc qua các cột tham chiếu. URL dạng thô và
  * dạng mã hoá phần trăm (trình soạn thảo có thể lưu `%20`) đều tính cho URL gốc.
  * `complete: false` khi `shouldStop` cắt lượt đọc — số đếm khi đó là cận dưới.
  */
