@@ -145,6 +145,7 @@ async function openEditor(id: string, responder = server()): Promise<Opened> {
       onBeforeRouteLeave: () => {},
       navigateTo: (to: unknown) => { navigations.push(to) },
       useImagePicker: () => ({ openPicker: () => {} }),
+      useVideoPicker: () => ({ openVideoPicker: () => {} }),
       useUpload: () => ({ uploading: Vue.ref(false), uploadFile: async () => null }),
     },
   })

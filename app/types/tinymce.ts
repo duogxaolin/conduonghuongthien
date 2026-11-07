@@ -25,6 +25,8 @@ export interface TinyMceEditorInstance {
   setContent: (html: string) => void
   /** Chèn HTML tại vị trí con trỏ (dùng khi chọn ảnh từ Thư viện Media). */
   insertContent: (html: string) => void
+  /** Giao diện của TinyMCE — chỉ phần đăng ký nút trên thanh công cụ (nút "video từ kho"). */
+  ui?: { registry: { addButton: (name: string, spec: { icon: string, tooltip: string, onAction: () => void }) => void } }
   remove: () => void
   destroy: () => void
 }

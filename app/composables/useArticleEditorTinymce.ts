@@ -7,8 +7,10 @@ import { errorMessage } from '../utils/errorMessage'
 import type { AdminMediaUploadResult } from '../types/admin-api'
 import type { ArticleEditorForm } from '../types/admin-article-editor'
 import type { MediaItem } from '../types/media'
-import type { WindowWithTinyMce } from '../types/tinymce'
+import type { TinyMceEditorInstance, WindowWithTinyMce } from '../types/tinymce'
 import { imageFilePicker } from '../utils/tinymce-image-picker'
+import { registerVideoLibraryButton } from '../utils/tinymce-video-picker'
+import type { AdminMediaItem } from '../types/admin-api'
 
 /**
  * The article editor's TinyMCE (`pages/admin/content/articles/[id].vue`) — the project's SECOND
@@ -31,6 +33,8 @@ export interface ArticleEditorTinymceDeps {
    * dialog only offers an upload or a typed URL.
    */
   pickImage: (onPick: (media: MediaItem) => void) => void
+  /** Same for the video library: the toolbar's "video from the library" button inserts the chosen item's player frame. */
+  pickVideo: (onPick: (item: AdminMediaItem) => void) => void
 }
 
 const TINYMCE_EDITOR_ID = 'tinymce-content-editor'
@@ -47,7 +51,7 @@ const CONTENT_STYLE = `
       table td, table th { border: 1px solid #ddd; padding: 8px; }
     `
 
-export function useArticleEditorTinymce({ form, pickImage }: ArticleEditorTinymceDeps) {
+export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleEditorTinymceDeps) {
   const tinymceReady = ref(false)
   // Body baseline as TinyMCE serialises it — setContent() normalises HTML, and `form.content`
   // only follows the editor on `change`. Null until the editor's `init` takes it.
@@ -148,7 +152,7 @@ export function useArticleEditorTinymce({ form, pickImage }: ArticleEditorTinymc
         'bold italic underline strikethrough | forecolor backcolor | ' +
         'alignleft aligncenter alignright alignjustify | ' +
         'bullist numlist outdent indent | ' +
-        'link image media | ' +
+        'link image media cdktvideo | ' +
         'table | removeformat | fullscreen code',
       toolbar_mode: 'sliding',
       quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
@@ -171,11 +175,8 @@ export function useArticleEditorTinymce({ form, pickImage }: ArticleEditorTinymc
           })
           .catch((err) => reject(errorMessage(err, 'Upload thất bại')))
       }),
-      setup: (editor: {
-        on: (event: string, handler: () => void) => void
-        setContent: (html: string) => void
-        getContent: () => string
-      }) => {
+      setup: (editor: TinyMceEditorInstance) => {
+        registerVideoLibraryButton(editor, pickVideo)
         editor.on('init', () => {
           tinymceReady.value = true
           if (form.content) editor.setContent(form.content)

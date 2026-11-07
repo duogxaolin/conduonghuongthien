@@ -75,6 +75,12 @@ test('collector emits once for eligible completed navigation and ignores exclusi
   assert.equal(isEligiblePublicAnalyticsPath('/news'), true)
 })
 
+test('the embedded player frame inside an article is not a page view of its own', () => {
+  assert.equal(isEligiblePublicAnalyticsPath('/media/embed/Ab3_x-9Qz1k'), false)
+  assert.equal(isEligiblePublicAnalyticsPath('/media/embed/Ab3_x-9Qz1k?x=1'), false)
+  assert.equal(isEligiblePublicAnalyticsPath('/media/Ab3_x-9Qz1k'), true, 'the watch page still counts')
+})
+
 test('collector transport failures never escape or block later navigation', async () => {
   const emit = createPageViewCollector({ transport: () => Promise.reject(new Error('offline')) })
   assert.doesNotThrow(() => emit('/news'))

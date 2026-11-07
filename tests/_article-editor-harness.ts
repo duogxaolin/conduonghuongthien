@@ -283,6 +283,7 @@ export async function openEditor(t: TestContext, id: string, options: OpenOption
       onBeforeRouteLeave: (guard: () => Promise<boolean> | boolean) => { leaveGuards.push(guard) },
       navigateTo: (to: unknown) => { navigations.push(to); leaveAtNavigation.push(leaveGuards[0]?.()) },
       useImagePicker: () => ({ openPicker: (request: Picker) => { pickers.push(request) } }),
+      useVideoPicker: () => ({ openVideoPicker: () => {} }),
       useUpload: () => ({
         uploading,
         uploadFile: (file: unknown) => {

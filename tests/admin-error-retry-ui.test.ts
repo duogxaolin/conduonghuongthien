@@ -174,6 +174,7 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   //     buttons; it was missing only role="alert", so a screen-reader user was
   //     told nothing while a sighted user saw amber.
   { file: 'components/admin/MediaLibraryModal.vue', refs: ['loadError'], retries: ['fetchMedia'] },
+  { file: 'components/admin/VideoLibraryModal.vue', refs: ['loadError'], retries: ['fetchVideos'] },
   { file: 'components/admin/ChatbotSmallTalkPanel.vue', refs: ['error'], retries: ['load'] },
   // The submission detail modal fetches the processing log on open — the list
   // table does not carry it (an N+1 query for a column nobody reads on the

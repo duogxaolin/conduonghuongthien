@@ -44,9 +44,9 @@ const ALLOWED_TAGS = new Set([
   'a', 'img', 'figure', 'figcaption',
   'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
   'section', 'article', 'header', 'footer', 'nav', 'aside', 'main',
-  // `iframe` — chỉ cho YouTube embed. `src` được kiểm bởi `isSafeIframeSrc` (chỉ
-  // `youtube.com/embed/` hoặc `youtube-nocookie.com/embed/`), và rewrite sang
-  // `youtube-nocookie.com` khi emit — cùng quy tắc `buildYouTubeEmbedUrl` đã có.
+  // `iframe` — chỉ cho YouTube embed và khung phát của chính cổng (`/media/embed/<short_id>`).
+  // `src` được kiểm bởi `isSafeIframeSrc` (`youtube.com/embed/` hoặc `youtube-nocookie.com/embed/`,
+  // rewrite sang `youtube-nocookie.com` khi emit — cùng quy tắc `buildYouTubeEmbedUrl` đã có).
   'iframe',
 ])
 
@@ -80,7 +80,7 @@ function isSafeUrl(raw: string): boolean {
 }
 
 /**
- * `src` của `<iframe>` — CHỈ nhận nhúng YouTube, không nhận origin nào khác.
+ * `src` của `<iframe>` — CHỈ nhận nhúng YouTube (dưới đây) và khung phát của chính cổng (`SAFE_OWN_EMBED_SRC`); không nhận origin nào khác.
  *
  * TinyMCE plugin `media` sinh `<iframe src="https://www.youtube.com/embed/<id>?...">`.
  * Mở `iframe` mà không giới hạn `src` là XSS: `<iframe src="javascript:alert(1)">`
@@ -94,8 +94,19 @@ function isSafeUrl(raw: string): boolean {
  */
 const SAFE_IFRAME_SRC = /^https:\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\/[A-Za-z0-9_-]{11}(\?[A-Za-z0-9_=&%.+,:-]*)?$/
 
+/**
+ * Khung phát của CHÍNH cổng (`app/pages/media/embed/[shortId].vue`): `/media/embed/<short_id>`. Nhận cả dạng tuyệt
+ * đối `http(s)://<host>/…` (TinyMCE tự đổi `src` thành tuyệt đối khi chèn — đo ở E2E) nhưng **luôn phát ra đường dẫn
+ * tương đối, bỏ host**: kết quả luôn là khung cùng gốc, không bao giờ của bên ngoài. Host chỉ chữ/số/`.`/`-` (+ cổng).
+ */
+const OWN_EMBED_SRC = /^(?:https?:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?)?(\/media\/embed\/[A-Za-z0-9_-]{6,16})$/
+
+function ownEmbedPath(raw: string): string | null {
+  return OWN_EMBED_SRC.exec(raw.trim())?.[1] ?? null
+}
+
 function isSafeIframeSrc(raw: string): boolean {
-  return SAFE_IFRAME_SRC.test(raw.trim())
+  return SAFE_IFRAME_SRC.test(raw.trim()) || ownEmbedPath(raw) !== null
 }
 
 /** Rewrite `youtube.com` → `youtube-nocookie.com` để người đọc không nhận cookie
@@ -120,7 +131,7 @@ function decodeEntitiesForCheck(value: string): string {
     .replace(/&tab;/gi, '\t')
     .replace(/&newline;/gi, '\n')
 }
-/** `&amp; &quot; &lt; &gt; &apos;` → the characters, once — the iframe `src` is checked AND re-emitted from its real text. */
+// `&amp; &quot; &lt; &gt; &apos;` → the characters, once: the iframe `src` is checked and re-emitted from real text.
 function decodeBasicEntities(value: string): string {
   const characters: Record<string, string> = { amp: '&', quot: '"', lt: '<', gt: '>', apos: "'" }
   return value.replace(/&(amp|quot|lt|gt|apos);/gi, (_, name: string) => characters[name.toLowerCase()] ?? '')
@@ -149,9 +160,9 @@ function filterAttributes(tag: string, attrString: string): string {
       if (tag === 'iframe' && name === 'src') {
         const decodedIframe = decodeBasicEntities(decodeEntitiesForCheck(value))
         if (!isSafeIframeSrc(decodedIframe)) continue
-        const rewritten = rewriteYoutubeNocookie(decodedIframe)
-        // The value is DECODED here (entities resolved above), so every `&`, `"`, `<`, `>` in it must be escaped again —
-        // the earlier no-op replacements let a `"` in the query end the attribute (stored XSS, 2026-11-07).
+        // The portal's own frame is emitted as its path alone (see `OWN_EMBED_SRC`); YouTube is rewritten to no-cookie.
+        const rewritten = ownEmbedPath(decodedIframe) ?? rewriteYoutubeNocookie(decodedIframe)
+        // The value is DECODED: escape `&` `"` `<` `>` again (no-op replacements here once let a `"` end the attribute).
         const escIframe = rewritten.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         out.push(`src="${escIframe}"`)
         continue
@@ -166,8 +177,7 @@ function filterAttributes(tag: string, attrString: string): string {
     }
     if (name === 'target') { out.push('target="_blank"'); continue }
     // Escape the value for safe re-emission.
-    // An entity already in the value (the editor wrote `&quot;`, `&amp;`) is kept as it is: escaping its `&` again made
-    // every pass longer (`&quot;` → `&amp;quot;` → …) and put entity junk into `alt`/`title`. Only a bare `&` is escaped.
+    // Keep an entity already in the value (`&quot;`): escaping its `&` again grew every pass. Only a bare `&` is escaped.
     const escaped = value.replace(/&(?!(?:amp|quot|lt|gt|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     out.push(value === '' ? name : `${name}="${escaped}"`)
   }

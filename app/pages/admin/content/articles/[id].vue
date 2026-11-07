@@ -56,11 +56,12 @@ const loaded = ref(isNew.value)
 const toast = useToast()
 const { confirm } = useConfirm()
 const { openPicker } = useImagePicker()
+const { openVideoPicker } = useVideoPicker()
 
 const {
   editorId, setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent, onBodyShown,
   insertMediaIntoEditor, initTinyMCE, loadTinyMCEScript,
-} = useArticleEditorTinymce({ form, pickImage: onPick => openPicker({ onSelect: onPick }) })
+} = useArticleEditorTinymce({ form, pickImage: onPick => openPicker({ onSelect: onPick }), pickVideo: openVideoPicker })
 
 // ─── Unsaved-changes guard: route leave here (a Nuxt auto-import), the tab close in the composable ──
 const { markSaved, confirmLeave } = useArticleEditorUnsavedGuard({ form, loading, markBodySaved, bodyChanged, confirm })

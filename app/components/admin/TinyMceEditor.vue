@@ -2,6 +2,7 @@
 import type { AdminMediaUploadResult } from '~/types/admin-api'
 import type { TinyMceEditorInstance, WindowWithTinyMce } from '~/types/tinymce'
 import { imageFilePicker } from '~/utils/tinymce-image-picker'
+import { registerVideoLibraryButton } from '~/utils/tinymce-video-picker'
 // ─── Reusable TinyMCE rich-text editor (v-model) ─────────────────────────────
 // Single source for TinyMCE in the admin. Used by the page builder's richtext
 // fields (PropertyPanel) so the in-builder editing experience matches the
@@ -18,6 +19,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 const { openPicker } = useImagePicker()
+const { openVideoPicker } = useVideoPicker()
 
 // Unique id per instance so multiple editors can coexist on one page.
 const editorId = `tinymce-${Math.random().toString(36).slice(2, 10)}`
@@ -67,7 +69,7 @@ onMounted(async () => {
     ],
     toolbar: 'undo redo | blocks | bold italic underline | forecolor backcolor | ' +
       'alignleft aligncenter alignright | bullist numlist outdent indent | ' +
-      'link image media table | removeformat | code fullscreen',
+      'link image media cdktvideo table | removeformat | code fullscreen',
     toolbar_mode: 'sliding',
     quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
     quickbars_insert_toolbar: 'quickimage quicktable',
@@ -88,6 +90,7 @@ onMounted(async () => {
     }),
     setup: (ed: TinyMceEditorInstance) => {
       editor = ed
+      registerVideoLibraryButton(ed, openVideoPicker)
       ed.on('init', () => { ed.setContent(props.modelValue || '') })
       const push = () => {
         internalUpdate = true

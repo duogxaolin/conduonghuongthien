@@ -223,7 +223,7 @@ describe('components/admin/TinyMceEditor.vue', () => {
   async function uploadHandler(route: Route): Promise<{ handler: Handler, calls: NetCall[] }> {
     let options: { images_upload_handler?: Handler } = {}
     const opened = await mountAdminPage('components/admin/TinyMceEditor.vue', routes({ [`POST ${UPLOAD}`]: route }), {
-      auto: { useImagePicker: () => ({ openPicker: () => {} }), window: { tinymce: { init: (given: typeof options) => { options = given } } } },
+      auto: { useImagePicker: () => ({ openPicker: () => {} }), useVideoPicker: () => ({ openVideoPicker: () => {} }), window: { tinymce: { init: (given: typeof options) => { options = given } } } },
     })
     assert.ok(options.images_upload_handler, 'the editor was initialised with an upload handler')
     return { handler: options.images_upload_handler, calls: opened.calls }
@@ -237,6 +237,7 @@ describe('components/admin/TinyMceEditor.vue', () => {
     await mountAdminPage('components/admin/TinyMceEditor.vue', routes({}), {
       auto: {
         useImagePicker: () => ({ openPicker: (given: PickerOptions) => { opened.push(given) } }),
+        useVideoPicker: () => ({ openVideoPicker: () => {} }),
         window: { tinymce: { init: (given: typeof options) => { options = given } } },
       },
     })
