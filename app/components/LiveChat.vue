@@ -141,7 +141,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
       class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2 text-sm"
       @scroll="handleScroll"
     >
-      <p v-if="messages.length === 0 && connection === 'open' && !historyError" class="text-center text-gray-400 py-4">
+      <p v-if="messages.length === 0 && connection === 'open' && !historyError" class="text-center text-ink-soft py-4">
         {{ t('m_chat_empty') }}
       </p>
 
@@ -224,7 +224,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
           <span class="sr-only">{{ t('m_chat_send_aria') }}</span>
         </button>
       </form>
-      <p class="mt-1 text-xs text-gray-400">{{ t('m_chat_hint') }}</p>
+      <p class="mt-1 text-xs text-ink-soft">{{ t('m_chat_hint') }}</p>
     </div>
   </section>
 </template>

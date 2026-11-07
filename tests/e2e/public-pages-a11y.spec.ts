@@ -6,6 +6,10 @@
  * (chạy trên production 2026-11-07: `label-content-name-mismatch` ở cả 16 trang, `color-contrast` ở
  * 3 trang, một `aria-allowed-attr` mức critical ở /media).
  *
+ * Bỏ `iframe`: nội dung nhúng của bên thứ ba (trình phát YouTube ở /media tự báo `aria-allowed-attr` mức
+ * critical và `aria-prohibited-attr` trong khung của nó) không phải mã của dự án và không sửa được ở đây;
+ * trang chứa khung vẫn được quét.
+ *
  * Chỉ MỘT CHIỀU, như các ratchet của repo: `KNOWN` ghi số nút vi phạm đang được chấp nhận theo từng
  * (trang, quy tắc), kèm lý do. Vi phạm mới, hoặc nhiều nút hơn mức ghi, làm test đỏ; vi phạm đã sửa
  * thì test cũng đỏ cho tới khi hạ mục (hoặc xoá hẳn) — để mức chấp nhận chỉ giảm. Mục `'*'` áp cho
@@ -23,7 +27,7 @@ const stamp = `${Date.now()}`
 for (const route of SMOKE_PAGES) {
   test(`${route}: không vi phạm WCAG A/AA mới (axe)`, async ({ page }) => {
     await page.goto(`${route}?e2e=axe${stamp}`, { waitUntil: 'networkidle' })
-    const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
+    const results = await new AxeBuilder({ page }).exclude('iframe').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
 
     const found: Record<string, number> = {}
     for (const violation of results.violations) found[violation.id] = violation.nodes.length

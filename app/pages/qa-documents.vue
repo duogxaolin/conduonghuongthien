@@ -31,7 +31,7 @@
             @click="applyTopic('')"
           >
             <span>Tất cả</span>
-            <span class="text-[0.7rem] px-1.5 py-px rounded-full font-extrabold" :class="!activeTopic ? 'bg-white/20 text-white' : 'bg-surface-tint text-ink-soft'">
+            <span class="text-[0.7rem] px-1.5 py-px rounded-full font-extrabold" :class="!activeTopic ? 'bg-black/20 text-white' : 'bg-surface-tint text-ink-soft'">
               {{ pagination.total }}
             </span>
           </button>
@@ -47,7 +47,7 @@
             @click="applyTopic(item.topic)"
           >
             <span>{{ item.topic }}</span>
-            <span class="text-[0.7rem] px-1.5 py-px rounded-full font-extrabold" :class="activeTopic === item.topic ? 'bg-white/20 text-white' : 'bg-surface-tint text-ink-soft'">
+            <span class="text-[0.7rem] px-1.5 py-px rounded-full font-extrabold" :class="activeTopic === item.topic ? 'bg-black/20 text-white' : 'bg-surface-tint text-ink-soft'">
               {{ item.total }}
             </span>
           </button>
@@ -316,7 +316,7 @@
                     <i class="fa-solid fa-layer-group text-xs" aria-hidden="true"></i>
                     <span>Tất cả</span>
                   </span>
-                  <span class="text-[0.75rem] px-2 py-0.5 rounded-full font-bold" :class="!activeTopic ? 'bg-white/20 text-white' : 'bg-surface-tint text-ink-soft'">
+                  <span class="text-[0.75rem] px-2 py-0.5 rounded-full font-bold" :class="!activeTopic ? 'bg-black/20 text-white' : 'bg-surface-tint text-ink-soft'">
                     {{ pagination.total }}
                   </span>
                 </button>
@@ -335,7 +335,7 @@
                     <i class="fa-solid fa-tag text-xs opacity-70" aria-hidden="true"></i>
                     <span class="truncate">{{ item.topic }}</span>
                   </span>
-                  <span class="text-[0.75rem] px-2 py-0.5 rounded-full font-bold shrink-0" :class="activeTopic === item.topic ? 'bg-white/20 text-white' : 'bg-surface-tint text-ink-soft'">
+                  <span class="text-[0.75rem] px-2 py-0.5 rounded-full font-bold shrink-0" :class="activeTopic === item.topic ? 'bg-black/20 text-white' : 'bg-surface-tint text-ink-soft'">
                     {{ item.total }}
                   </span>
                 </button>

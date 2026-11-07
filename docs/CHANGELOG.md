@@ -2700,6 +2700,15 @@ Thêm `@axe-core/playwright` 4.14.0 (devDependency ghim đúng bản, cùng `axe
 - **Chưa phủ — dữ liệu thật khác dữ liệu E2E:** trên production axe còn báo `color-contrast` ×4, `aria-allowed-attr` mức critical và `aria-prohibited-attr` ở `/media`, và `color-contrast` ×3 ở `/qa-documents` (E2E chỉ ra 1) — phần tử chỉ có khi có dữ liệu thật (buổi phát, bài). Đo lại axe trên production sau deploy rồi mới sửa; spec E2E không thấy được chúng.
 - Không ảnh hưởng deploy toolkit; thay đổi hiển thị: chữ phụ/nhãn đậm hơn ở vài chỗ.
 
+### 94. Trợ năng — phần axe chỉ hiện với dữ liệu thật (2026-11-07)
+
+Sau § 93, axe chạy trên production (dữ liệu thật) còn báo hai nhóm mà E2E không có dữ liệu để thấy:
+
+- **`/media`:** `color-contrast` ở hộp chat phát trực tiếp — dòng "Chưa có tin nhắn…" và gợi ý "Enter để gửi…" dùng `text-gray-400` (`#9ca3af`, 2,41:1) → `text-ink-soft` (`LiveChat.vue`). Và `aria-allowed-attr` mức critical + `aria-prohibited-attr` — là của **trình phát YouTube nhúng** (`aria-level` trên `<a>`, `aria-label` trên `<div>` không có role, bên trong `iframe`), không phải mã của dự án: spec axe nay `.exclude('iframe')` (trang chứa khung vẫn được quét).
+- **`/qa-documents`:** hai viên đếm trên nút lọc đang chọn là `bg-white/20 text-white` trên nền xanh đậm — 4,02:1. Đổi sang `bg-black/20 text-white` (tối hơn, đạt AA) ở bốn chỗ của `qa-documents.vue`.
+- **Đo lại sau deploy** bằng axe trên production: 13/16 trang sạch sau § 93; kết quả của đợt này ghi ở lần kiểm tiếp theo.
+- Thay đổi hiển thị nhỏ (chữ phụ, viên đếm). Không ảnh hưởng deploy toolkit.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 
