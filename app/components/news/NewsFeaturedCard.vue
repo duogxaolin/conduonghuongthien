@@ -20,7 +20,7 @@
     <div class="p-5 sm:p-6 lg:p-6 xl:p-7 flex flex-col justify-between flex-1 min-w-0 bg-white">
       <div>
         <div class="flex items-center gap-2.5 mb-2.5 text-xs flex-wrap">
-          <span class="inline-block bg-[#689F38] text-white font-extrabold px-2.5 py-0.5 rounded text-[0.7rem] uppercase tracking-wider shadow-sm">
+          <span class="inline-block bg-brand-600 text-white font-extrabold px-2.5 py-0.5 rounded text-[0.7rem] uppercase tracking-wider shadow-sm">
             {{ t('n_featured_badge') }}
           </span>
           <span

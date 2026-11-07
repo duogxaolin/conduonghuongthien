@@ -2652,6 +2652,15 @@ Mốc đầu tiên của Phần 7 — Lighthouse trên production `cdht.delify.v
 - **Chưa làm:** cắt (subset) font chỉ còn icon đang dùng — hiệu quả cao nhất (cận trên ~4 s) nhưng cần bước build và kiểm giấy phép FontAwesome Pro cho phép cắt. **Chưa đo lại** sau thay đổi này; số "~5,6 s" là ước lượng, không phải kết quả đo — đo sau deploy.
 - Không ảnh hưởng deploy toolkit (`production/` không đổi).
 
+### 89. Trợ năng — hai màu trượt tương phản AA ở trang tin (2026-11-07)
+
+Lighthouse trên production (2026-11-07) báo `color-contrast` ở `/news` (a11y 96 → mục tiêu 100): (1) nhãn "Nổi bật" — chữ trắng trên `#689F38` (~3,2:1); (2) dòng chú thích phân trang — `#6F7F6C` trên nền trắng (~4,2:1). Cả hai dưới 4,5:1 của chữ nhỏ.
+
+- **Sửa:** `text-[#6F7F6C]` → `text-ink-soft` (`#5a6c58`, "chữ phụ" đã chốt) ở 6 tệp (`NewsPagination`, `ModelArticlesListPage`, `documents/index`, `legal-qa/index`, `qa-documents`, `search`); `bg-[#689F38]` → `bg-brand-600` (`#4a6741`) ở nhãn nổi bật của `NewsFeaturedCard` và của biến thể "người tốt việc tốt" trong `model-article-variants.ts`. Đổi nhìn thấy được: nhãn xanh lá nhạt thành xanh đậm hơn. Nút quản trị `hover:bg-[#689F38]` giữ nguyên (không phải chữ nhỏ trên nền đó, ngoài trang công khai).
+- **Test:** `tests/public-text-contrast.test.ts` — tính tỉ lệ tương phản từ bảng token thật (`ink-soft` trên trắng và trắng trên `brand-600` đều ≥ 4,5:1; đổi token nhạt hơn thì đỏ) và cấm hai màu cũ quay lại trong `app/`; đã chứng minh đỏ khi trả một `text-[#6F7F6C]` về. Ratchet hex hạ 7 mục bằng `--update`.
+- **Không làm (cố ý):** "ảnh thiếu kích thước" (6 logo ở header/footer/ngăn kéo): kích thước thật của logo do quản trị tải lên, không biết trước; đặt `width`/`height` đoán sẽ giữ chỗ sai tỉ lệ và gây dịch bố cục (CLS) khi tải xong, nặng hơn lợi ích của một mục không tính vào điểm hiệu năng.
+- **Chưa đo lại** a11y sau thay đổi này — đo sau deploy.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

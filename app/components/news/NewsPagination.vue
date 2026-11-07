@@ -3,7 +3,7 @@
     aria-label="Phân trang bản tin"
     class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-line"
   >
-    <div class="text-xs text-[#6F7F6C] font-medium order-2 sm:order-1">
+    <div class="text-xs text-ink-soft font-medium order-2 sm:order-1">
       {{ t('n_pagination_summary').replace('{current}', String(page)).replace('{total}', String(totalPages)) }}
     </div>
 
