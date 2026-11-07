@@ -14,6 +14,9 @@
       (đã convert WebP lúc upload) → `<img src>` trực tiếp, không picture.
     -->
     <picture v-if="isDefaultHero">
+      <!-- Điện thoại (≤ 767 px): bản 768 px (~37 KB) thay bản 1376 px (155 KB) — ảnh nằm dưới lớp phủ xanh
+           đậm nên độ mịn không lộ; cùng điều kiện media với preload ở useHead bên dưới. -->
+      <source media="(max-width: 767px)" srcset="/assets/hero_banner-768.webp" type="image/webp" />
       <source srcset="/assets/hero_banner.webp" type="image/webp" />
       <img
         src="/assets/hero_banner.jpg"
@@ -131,6 +134,11 @@ const isDefaultHero = computed(() => bgImage.value === '/assets/hero_banner.jpg'
  * (R2 URL) hiếm + không biết before render.
  */
 useHead(() => isDefaultHero.value ? {
-  link: [{ rel: 'preload', as: 'image', href: '/assets/hero_banner.webp', fetchpriority: 'high' }],
+  // Hai preload loại trừ nhau theo cùng media với <source> ở trên: thiếu `media` thì điện thoại
+  // tải CẢ hai bản (preload không dùng tới là băng thông lãng phí, tranh với chính LCP).
+  link: [
+    { rel: 'preload', as: 'image', href: '/assets/hero_banner-768.webp', media: '(max-width: 767px)', fetchpriority: 'high' },
+    { rel: 'preload', as: 'image', href: '/assets/hero_banner.webp', media: '(min-width: 768px)', fetchpriority: 'high' },
+  ],
 } : {})
 </script>

@@ -72,7 +72,10 @@ test('page 1 without a search: the first story is featured, the rest fill the gr
   assert.equal(img.props.src, '/uploads/2026/10/tin-1.webp')
   assert.equal(img.props.alt, 'Bản tin số 1')
   assert.equal(img.props.sizes, '384px sm:512px lg:768px')
-  assert.equal(img.props.loading, 'lazy')
+  // The lead card is the page's LCP image: lazy-loading it delayed the largest paint by ~6.5 s on
+  // mobile (Lighthouse on production, 2026-11-07). Eager + high priority; the grid below stays lazy.
+  assert.equal(img.props.loading, 'eager')
+  assert.equal(img.props.fetchpriority, 'high')
 
   // The grid, in order: 2…19.
   assert.deepEqual(cards.slice(1).map(cardTitle), Array.from({ length: 18 }, (_, i) => `Bản tin số ${i + 2}`))

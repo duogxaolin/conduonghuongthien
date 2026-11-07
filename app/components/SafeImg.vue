@@ -15,6 +15,7 @@
     :class="imgClass"
     :loading="loading"
     :decoding="decoding"
+    :fetchpriority="fetchpriority"
     :sizes="sizes"
     format="webp"
     @error="onError"
@@ -30,6 +31,8 @@ const props = withDefaults(defineProps<{
   imgClass?: string
   loading?: 'lazy' | 'eager'
   decoding?: 'async' | 'sync' | 'auto'
+  /** `high` chỉ cho ảnh LCP (đầu trang, thấy ngay) — mặc định không đặt thuộc tính. */
+  fetchpriority?: 'high' | 'low' | 'auto'
   sizes?: string
   fallback?: string
 }>(), {
@@ -37,6 +40,7 @@ const props = withDefaults(defineProps<{
   imgClass: '',
   loading: 'lazy',
   decoding: 'async',
+  fetchpriority: undefined,
   sizes: '',
   fallback: '/assets/default_cover_light.png',
 })

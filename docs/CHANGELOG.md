@@ -2632,6 +2632,16 @@ Bảng số liệu tự sinh (`npm run docs:facts`) thêm một hàng: **27 cộ
 - **Đã chạy thử ở máy trước khi gộp:** 23/23 bị bắt, thoát 0. Workflow chưa chạy trên GitHub — lượt đầu là lần bấm tay hoặc thứ Tư kế tiếp; đỏ nghĩa là một mục SURVIVED/STALE/INVALID/LOAD-ERROR/TIMEOUT (đọc log).
 - Không đổi mã chạy, không ảnh hưởng deploy.
 
+### 87. Hiệu năng — LCP di động: ảnh đầu trang tin tải ngay, hero 768 px cho điện thoại (2026-11-07)
+
+Mốc đầu tiên của Phần 7 — Lighthouse trên production `cdht.delify.vn` (2026-11-07, mô phỏng 4G chậm): trang chủ di động **63** / máy tính 89; `/news` di động **64** / máy tính 88; a11y 96–100, best-practices 96, SEO 100. LCP di động 8,2 s (chủ) và 8,6 s (tin). Điểm di động cũ là 52 (2026-10-06).
+
+- **`/news` (LCP 8,6 s, độ trễ tải 6,5 s):** phần tử LCP là ảnh thẻ bài nổi bật mà `NewsFeaturedCard.vue` đặt `loading="lazy"` (audit `lcp-lazy-loaded` = 0). Nay `loading="eager"` + `fetchpriority="high"`; lưới bên dưới giữ lazy. `SafeImg.vue` thêm prop `fetchpriority` (mặc định không đặt thuộc tính, các nơi khác không đổi).
+- **Trang chủ (LCP 8,2 s):** ảnh hero mặc định 1376 px (155 KB) tải trên mọi điện thoại. Thêm `public/assets/hero_banner-768.webp` (37 KB); `<picture>` dùng nó dưới 768 px, và hai `<link rel=preload>` ở `useHead` mang `media` loại trừ nhau — thiếu `media` thì điện thoại tải CẢ hai bản. Ảnh nằm dưới lớp phủ xanh đậm nên độ mịn thấp hơn không lộ. Hero do quản trị tải lên (URL R2) không đổi.
+- **Test:** `tests/hero-banner-mobile-variant.test.ts` (3 test: bản điện thoại nhỏ hơn một nửa và là WebP; `<source>` có media và đứng trước; mỗi preload mang media của `<source>` tương ứng, không preload nào thiếu media) — đã chứng minh đỏ khi bỏ `media` của một preload; `tests/news-index-page.test.ts` đổi mốc ghim ảnh nổi bật từ `lazy` sang `eager` + `high`.
+- **Chưa làm (còn trên báo cáo):** CSS chặn render (`fontawesome.min.css`, `entry.*.css`, 300–450 ms mô phỏng), ảnh thiếu kích thước (6 ảnh), lỗi tương phản ở `/news` (a11y 96–97), DOM lớn ở `/news`. **Chưa đo lại** sau thay đổi này — đo lại trên production sau khi deploy; số trong mục này là mốc TRƯỚC.
+- Đổi hành vi hiển thị công khai; không ảnh hưởng deploy toolkit (`production/` không đổi; ảnh tĩnh nằm trong `public/`, đã có cache-control immutable ở `routeRules`).
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

@@ -9,7 +9,8 @@
       <SafeImg
         :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
         :alt="item.title" img-class="w-full h-[220px] sm:h-[250px] lg:h-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-105"
-        loading="lazy"
+        loading="eager"
+        fetchpriority="high"
         decoding="async"
         sizes="384px sm:512px lg:768px"
       />
