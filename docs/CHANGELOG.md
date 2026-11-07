@@ -2642,6 +2642,16 @@ Mốc đầu tiên của Phần 7 — Lighthouse trên production `cdht.delify.v
 - **Chưa làm (còn trên báo cáo):** CSS chặn render (`fontawesome.min.css`, `entry.*.css`, 300–450 ms mô phỏng), ảnh thiếu kích thước (6 ảnh), lỗi tương phản ở `/news` (a11y 96–97), DOM lớn ở `/news`. **Chưa đo lại** sau thay đổi này — đo lại trên production sau khi deploy; số trong mục này là mốc TRƯỚC.
 - Đổi hành vi hiển thị công khai; không ảnh hưởng deploy toolkit (`production/` không đổi; ảnh tĩnh nằm trong `public/`, đã có cache-control immutable ở `routeRules`).
 
+### 88. Hiệu năng — chỉ preload font icon `solid` (2026-11-07)
+
+Đo lại sau § 87 (3 lượt Lighthouse di động mỗi trang, trung vị): trang chủ **64** / LCP 8,2 s (không đổi — hero 768 px không phải nút thắt); `/news` **65** / LCP 7,8 s (từ 8,6 s, nhờ ảnh nổi bật hết lazy). Dòng thời gian thật cho thấy mọi thứ xong trước ~0,9 s; con số 8 s là của mô phỏng 4G chậm, trong đó ảnh hero 39 KB tranh băng thông với **ba font icon FontAwesome preload ở mức ưu tiên cao: solid 272 KB + regular 350 KB + brands 115 KB = 737 KB**.
+
+- **Ước lượng bằng chặn URL** (Lighthouse `--blocked-url-patterns`, 2 lượt mỗi mức, là CẬN TRÊN vì font bị chặn hẳn): chặn `regular`+`brands` → LCP ~5,4–5,9 s, điểm 66 (từ 8,1 s / 57–63); chặn cả ba → ~4,0–4,3 s, điểm 77–78.
+- **Quyết định (chủ dự án chọn):** bỏ preload `regular` và `brands`, giữ `solid` (icon header/hero/nút). Hai font còn lại vẫn nối CSS, `font-display: swap` — tải khi có glyph dùng, icon có thể hiện muộn một nhịp ở phần cuối trang. Ngược lại với quyết định cũ "preload cả ba cho Hiển thị phông chữ 620 → 90 ms", nay chỉ còn đúng với `solid`.
+- **Test:** `tests/icon-font-preload.test.ts` (3 test: chỉ `fa-solid-900.woff2`; preload đúng dạng `as=font` + `crossorigin` + `woff2`; hai CSS còn lại giữ `font-display:swap` và vẫn được nối) — chứng minh đỏ khi thêm lại `regular`.
+- **Chưa làm:** cắt (subset) font chỉ còn icon đang dùng — hiệu quả cao nhất (cận trên ~4 s) nhưng cần bước build và kiểm giấy phép FontAwesome Pro cho phép cắt. **Chưa đo lại** sau thay đổi này; số "~5,6 s" là ước lượng, không phải kết quả đo — đo sau deploy.
+- Không ảnh hưởng deploy toolkit (`production/` không đổi).
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 
