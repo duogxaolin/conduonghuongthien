@@ -2661,6 +2661,14 @@ Lighthouse trên production (2026-11-07) báo `color-contrast` ở `/news` (a11y
 - **Không làm (cố ý):** "ảnh thiếu kích thước" (6 logo ở header/footer/ngăn kéo): kích thước thật của logo do quản trị tải lên, không biết trước; đặt `width`/`height` đoán sẽ giữ chỗ sai tỉ lệ và gây dịch bố cục (CLS) khi tải xong, nặng hơn lợi ích của một mục không tính vào điểm hiệu năng.
 - **Chưa đo lại** a11y sau thay đổi này — đo sau deploy.
 
+### 90. Vận hành — hai bộ hẹn giờ thiếu `close` (2026-11-07)
+
+Việc nợ đã ghi từ § 81: `analytics-scheduler` và `view-boost-scheduler` khởi động bộ hẹn giờ trong tiến trình nhưng plugin không đăng ký hook `close` của Nitro (retention, backup, media reaper đều có) — một worker đang tắt vẫn có thể bắn thêm nhịp gộp analytics hoặc nhịp boost.
+
+- **Sửa:** cả hai plugin đăng ký `nitroApp.hooks.hook('close', stop…)`. `stopAnalyticsScheduler` còn giữ tay cầm lượt khởi động hoãn 90 s và gỡ nó (trước đó `stop` trong 90 s đầu vẫn để lượt đó chạy sau khi dừng — đúng lỗi FINDING-R7-11 đã sửa cho view-boost, nay áp cho analytics).
+- **Test:** `tests/plugin-schedulers-behavior.test.ts` — bài kiểm "Nitro close gỡ cả interval lẫn warm-up" trước chỉ của media reaper nay chạy cho cả ba plugin (cổng đóng thì không đăng ký `close`; đúng một hook; close gỡ cả hai tay cầm timer; bật lại sau close hẹn giờ mới). Viết trước, ĐỎ cho hai plugin (thiếu hook), rồi xanh sau sửa.
+- Không đổi hành vi bình thường; không ảnh hưởng deploy.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

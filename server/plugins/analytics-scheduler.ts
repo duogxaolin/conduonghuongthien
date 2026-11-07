@@ -1,4 +1,4 @@
-import { startAnalyticsScheduler } from '../services/analytics-scheduler'
+import { startAnalyticsScheduler, stopAnalyticsScheduler } from '../services/analytics-scheduler'
 
 /**
  * Start analytics aggregation and purge on boot.
@@ -17,12 +17,15 @@ import { startAnalyticsScheduler } from '../services/analytics-scheduler'
  * purged — the table grows until the disk fills. That is the whole reason the
  * scheduler exists, so ANALYTICS_SCHEDULER=0 is a choice to run cron, not a choice
  * to skip the work.
+ *
+ * Nitro `close` stops the timer (interval and warm-up) so a shutting-down worker starts no new pass.
  */
-export default defineNitroPlugin(() => {
+export default defineNitroPlugin((nitroApp) => {
   const override = (process.env.ANALYTICS_SCHEDULER || '').trim().toLowerCase()
   if (['0', 'false', 'off', 'no'].includes(override)) return
   const enabled = ['1', 'true', 'on', 'yes'].includes(override) || process.env.NODE_ENV === 'production'
   if (!enabled) return
 
   startAnalyticsScheduler()
+  nitroApp.hooks.hook('close', stopAnalyticsScheduler)
 })

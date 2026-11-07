@@ -1,4 +1,4 @@
-import { startViewBoostScheduler } from '../services/view-boost-scheduler'
+import { startViewBoostScheduler, stopViewBoostScheduler } from '../services/view-boost-scheduler'
 
 /**
  * Start the gradual view-inflation delivery loop on boot.
@@ -11,12 +11,15 @@ import { startViewBoostScheduler } from '../services/view-boost-scheduler'
  * Turning it off does not cancel anything: jobs stay `running` and, because
  * delivery is derived from elapsed time rather than accumulated per tick, the
  * first pass after it comes back on delivers the whole shortfall at once.
+ *
+ * Nitro `close` stops the timer (interval and warm-up) so a shutting-down worker starts no new pass.
  */
-export default defineNitroPlugin(() => {
+export default defineNitroPlugin((nitroApp) => {
   const override = (process.env.VIEW_BOOST_SCHEDULER || '').trim().toLowerCase()
   if (['0', 'false', 'off', 'no'].includes(override)) return
   const enabled = ['1', 'true', 'on', 'yes'].includes(override) || process.env.NODE_ENV === 'production'
   if (!enabled) return
 
   startViewBoostScheduler()
+  nitroApp.hooks.hook('close', stopViewBoostScheduler)
 })
