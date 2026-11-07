@@ -367,16 +367,6 @@ onMounted(() => {
   max-width: 100%;
   height: auto;
 }
-/* Khung nhúng (video): không tràn trang; in ra giấy chỉ là khung trống nên bị ẩn khi in. */
-.print-article-body :deep(iframe) {
-  max-width: 100%;
-  aspect-ratio: 16 / 9;
-  height: auto;
-  border: 0;
-}
-@media print {
-  .print-article-body :deep(iframe) { display: none; }
-}
 .print-article-body :deep(figure) {
   margin: 1.2rem 0;
   text-align: center;

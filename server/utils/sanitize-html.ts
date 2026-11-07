@@ -95,16 +95,12 @@ function isSafeUrl(raw: string): boolean {
 const SAFE_IFRAME_SRC = /^https:\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\/[A-Za-z0-9_-]{11}(\?[A-Za-z0-9_=&%.+,:-]*)?$/
 
 /**
- * Khung phát nhúng của CHÍNH cổng (`app/pages/media/embed/[shortId].vue`): `/media/embed/<short_id>` (6–16 ký tự
- * base64url), không query/fragment/`..`. Nhận cả dạng tuyệt đối `http(s)://<host>/…` — TinyMCE (`convert_urls` +
- * `remove_script_host: false`) tự đổi `src` của khung thành tuyệt đối ngay khi chèn (đo ở E2E) — nhưng **luôn phát ra
- * đường dẫn tương đối**: bộ lọc không biết host của cổng nên BỎ host đi, kết quả luôn là khung cùng gốc (host lạ trùng
- * đuôi thành khung của chính cổng, không bao giờ của bên ngoài). Host chỉ gồm chữ/số/`.`/`-` (+ cổng): không
- * `user:pass@`, `[..]`, hay `//host`.
+ * Khung phát của CHÍNH cổng (`app/pages/media/embed/[shortId].vue`): `/media/embed/<short_id>`. Nhận cả dạng tuyệt
+ * đối `http(s)://<host>/…` (TinyMCE tự đổi `src` thành tuyệt đối khi chèn — đo ở E2E) nhưng **luôn phát ra đường dẫn
+ * tương đối, bỏ host**: kết quả luôn là khung cùng gốc, không bao giờ của bên ngoài. Host chỉ chữ/số/`.`/`-` (+ cổng).
  */
 const OWN_EMBED_SRC = /^(?:https?:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?)?(\/media\/embed\/[A-Za-z0-9_-]{6,16})$/
 
-/** The portal player path for an iframe `src` of that shape, or `null`. */
 function ownEmbedPath(raw: string): string | null {
   return OWN_EMBED_SRC.exec(raw.trim())?.[1] ?? null
 }
@@ -135,7 +131,7 @@ function decodeEntitiesForCheck(value: string): string {
     .replace(/&tab;/gi, '\t')
     .replace(/&newline;/gi, '\n')
 }
-/** `&amp; &quot; &lt; &gt; &apos;` → the characters, once — the iframe `src` is checked AND re-emitted from its real text. */
+// `&amp; &quot; &lt; &gt; &apos;` → the characters, once: the iframe `src` is checked and re-emitted from real text.
 function decodeBasicEntities(value: string): string {
   const characters: Record<string, string> = { amp: '&', quot: '"', lt: '<', gt: '>', apos: "'" }
   return value.replace(/&(amp|quot|lt|gt|apos);/gi, (_, name: string) => characters[name.toLowerCase()] ?? '')
@@ -166,8 +162,7 @@ function filterAttributes(tag: string, attrString: string): string {
         if (!isSafeIframeSrc(decodedIframe)) continue
         // The portal's own frame is emitted as its path alone (see `OWN_EMBED_SRC`); YouTube is rewritten to no-cookie.
         const rewritten = ownEmbedPath(decodedIframe) ?? rewriteYoutubeNocookie(decodedIframe)
-        // The value is DECODED here (entities resolved above), so every `&`, `"`, `<`, `>` in it must be escaped again —
-        // the earlier no-op replacements let a `"` in the query end the attribute (stored XSS, 2026-11-07).
+        // The value is DECODED: escape `&` `"` `<` `>` again (no-op replacements here once let a `"` end the attribute).
         const escIframe = rewritten.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         out.push(`src="${escIframe}"`)
         continue
@@ -182,8 +177,7 @@ function filterAttributes(tag: string, attrString: string): string {
     }
     if (name === 'target') { out.push('target="_blank"'); continue }
     // Escape the value for safe re-emission.
-    // An entity already in the value (the editor wrote `&quot;`, `&amp;`) is kept as it is: escaping its `&` again made
-    // every pass longer (`&quot;` → `&amp;quot;` → …) and put entity junk into `alt`/`title`. Only a bare `&` is escaped.
+    // Keep an entity already in the value (`&quot;`): escaping its `&` again grew every pass. Only a bare `&` is escaped.
     const escaped = value.replace(/&(?!(?:amp|quot|lt|gt|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     out.push(value === '' ? name : `${name}="${escaped}"`)
   }
