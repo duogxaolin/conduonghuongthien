@@ -45,6 +45,11 @@
  *     image ships all of scripts/ and no shipped code may load app/
  *     (tests/runtime-image-sources.test.ts).
  *   - Page Builder: BLOCK_REGISTRY by `category`. Small talk: CHATBOT_SMALL_TALK_SEED rows.
+ *   - media URL columns: `URL_REFERENCE_TARGETS` (every column the R2 repoint/sync rewrites,
+ *     which CLAUDE.md and two decision notes used to quote as a typed "27"); mutation
+ *     entries: `MUTATION_PROOFS`, the catalog `npm run test:mutations` runs. Both are
+ *     lists a contributor extends on purpose, so the count moves rarely and each move is a
+ *     reviewed change — unlike test totals, which would turn every PR into a table conflict.
  *
  * Files come from `git ls-files` with no directory-walk fallback, like the ratchets
  * (tests/ratchets/_ratchet.ts), so untracked files never count; a tracked file deleted in
@@ -71,6 +76,8 @@ import * as schema from '../server/db/schema.ts'
 import { DEFAULT_TRANSLATIONS_SEED } from '../server/data/default-translations-seed.ts'
 import { CHATBOT_SMALL_TALK_SEED } from '../server/data/chatbot-small-talk-seed.ts'
 import { BLOCK_REGISTRY } from '../shared/blocks/registry.ts'
+import { URL_REFERENCE_TARGETS } from '../server/services/media-sync-url-match.ts'
+import { MUTATION_PROOFS } from './mutation-proofs-catalog.ts'
 import { compareSchemas, readDdlSource, tablesFromDdl, tablesFromSchema } from './check-schema-drift.ts'
 
 export const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url))
@@ -119,6 +126,8 @@ export interface ModuleFacts {
   i18nRows: number
   blocksByCategory: { section: number, content: number, layout: number }
   smallTalkEntries: number
+  mediaUrlColumns: number
+  mutationProofs: number
 }
 
 export type DocsFacts = TreeFacts & ModuleFacts
@@ -243,6 +252,8 @@ export function measureModules(): ModuleFacts {
     i18nRows: DEFAULT_TRANSLATIONS_SEED.length,
     blocksByCategory,
     smallTalkEntries: CHATBOT_SMALL_TALK_SEED.length,
+    mediaUrlColumns: URL_REFERENCE_TARGETS.length,
+    mutationProofs: MUTATION_PROOFS.length,
   }
 }
 
@@ -271,6 +282,7 @@ export function renderFactsBlock(facts: DocsFacts): string {
     ['i18n seed: key · hàng · fallback `vi`', join(facts.i18nKeys, facts.i18nRows, facts.i18nViFallback)],
     ['Page Builder: section · content · layout', join(facts.blocksByCategory.section, facts.blocksByCategory.content, facts.blocksByCategory.layout)],
     ['Mục small talk mặc định', String(facts.smallTalkEntries)],
+    ['Cột URL media (`URL_REFERENCE_TARGETS`) · mục đột biến (`test:mutations`)', join(facts.mediaUrlColumns, facts.mutationProofs)],
   ]
   return [
     START,

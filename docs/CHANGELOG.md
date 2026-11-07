@@ -2603,6 +2603,15 @@ Rà soát `main` sau § 76–77 tìm ra bốn chỗ cache phát lại câu sai h
 - Còn lại sau thay đổi: 3 cảnh báo `moderate` (`archiver`, `readdir-glob`, `minimatch`), cùng một chuỗi. **Xem lại khi** `archiver` phát hành bản dùng `readdir-glob`/`minimatch` đã vá, hoặc khi mã bắt đầu gọi `archiver.glob()`/`directory()` với mẫu do người dùng đưa (khi đó thành cảnh báo thật).
 - Không đổi hành vi, không ảnh hưởng deploy (`production/` không đổi; image cài lại từ lockfile).
 
+### 85. Chất lượng — phần 8: bảng số liệu của CLAUDE.md thêm cột URL media và mục đột biến (2026-11-07)
+
+Bảng số liệu tự sinh (`npm run docs:facts`) thêm một hàng: **27 cột URL media** (`URL_REFERENCE_TARGETS`) · **22 mục đột biến** (`MUTATION_PROOFS`, danh mục của `npm run test:mutations`). Con số "27" trước đó được gõ tay ở CLAUDE.md và `production/README.md` — đúng đến lần thêm cột kế tiếp.
+
+- Chọn hai danh sách mà người đóng góp chủ động mở rộng, nên số đổi hiếm và mỗi lần đổi là một thay đổi được soát. **Cố ý không đưa** tổng số test, số tệp test hay số sự kiện cảnh báo vào bảng: chúng đổi ở gần như mọi PR, mỗi PR song song sẽ xung đột đúng một dòng bảng.
+- CLAUDE.md và `production/README.md` trỏ về bảng thay vì gõ lại số. `tests/docs-facts.test.ts` thêm hai chốt: hàng bảng bằng độ dài hai danh sách thật (và danh sách rỗng là lỗi nạp, không phải số đếm), và văn xuôi CLAUDE.md không được gõ lại "N cột `URL_REFERENCE_TARGETS`". Cả hai được chứng minh đỏ khi phá (sửa số trong bảng; gõ lại "27 cột" trong văn xuôi).
+- Chưa đổi: bình luận trong mã (`media-repoint.ts`, `media-duplicates.ts`, hai handler), tên test và đặc tả đã lưu trữ vẫn nhắc "27 cột" — là lịch sử/bình luận, không phải số liệu hiện hành; sửa chúng là việc dọn riêng.
+- Không đổi hành vi chạy; không ảnh hưởng deploy.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 
