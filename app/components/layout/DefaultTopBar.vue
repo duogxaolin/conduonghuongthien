@@ -13,7 +13,7 @@
             class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all border border-white/20 cursor-pointer shadow-2xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#9CCC65]"
             :aria-expanded="isLangMenuOpen"
             aria-haspopup="true"
-            :aria-label="t('language_switcher')"
+            :aria-label="`${currentLocale.name} — ${t('language_switcher')}`"
             @click="$emit('toggle-lang')"
           >
             <span class="text-sm leading-none">{{ currentLocaleFlag }}</span>

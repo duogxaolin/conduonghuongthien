@@ -2689,6 +2689,16 @@ Cổng ngân sách (`checkBudget`) tra quota của khoá Delify rồi CHẶN m�
 - **Ghi lại, không sửa:** ô bật/tắt của nhà cung cấp trên trang quản trị vẫn không ảnh hưởng việc gọi AI (chỉ hiển thị, và `chatbot/settings` dùng nó để báo `enabled`). Bắt nó có hiệu lực là đổi hành vi sản xuất (API tạo nhà cung cấp mặc định `isActive = false`), cần quyết định riêng.
 - Không ảnh hưởng deploy.
 
+### 93. Trợ năng — axe-core trong E2E, và những gì nó bắt được (2026-11-07)
+
+Thêm `@axe-core/playwright` 4.14.0 (devDependency ghim đúng bản, cùng `axe-core` 4.14.0; cả hai đã ra ≥ 3 tuần; không vào image production, `npm audit --omit=dev` không đổi) và `tests/e2e/public-pages-a11y.spec.ts`: axe (WCAG 2.0/2.1 A + AA) trên mỗi trang trong `SMOKE_PAGES` — danh sách chung với smoke 200/h1/console nên trang mới tự vào. Spec riêng, không nhét vào smoke, để không ăn thêm `globalTimeout`; 16 test chạy 1,1 phút.
+
+- **Lighthouse chấm trợ năng 100 nhưng axe bắt thêm được** (chạy trên production và trên bản build thật): `label-content-name-mismatch` (WCAG 2.5.3 — tên truy cập không chứa chữ nhìn thấy) ở cả 16 trang trên 3 nút: chọn ngôn ngữ (`DefaultTopBar`), thanh phát trực tiếp (`LiveTickerBar`), nút Mạng xã hội (`SocialBubble`); `color-contrast` ở `/assistant` (bộ đếm ký tự `#9ca3af`), `/qa-documents` (nhãn mắt `text-accent` — màu `accent` chỉ để trang trí, không bao giờ làm chữ) và trang trống/ngoài phạm vi của danh sách tin/gương người tốt (`#6E7D6B`).
+- **Sửa (đều trên bản build thật, spec 16/16 xanh với `KNOWN` rỗng):** nút ngôn ngữ nhận nhãn bắt đầu bằng tên ngôn ngữ đang chọn; thanh phát trực tiếp và nút Mạng xã hội bỏ `aria-label` thừa (tên lấy từ chính chữ hiển thị); các chữ trên đổi sang `text-ink-soft`/`text-brand-600` (đạt AA); bộ đếm của hộp chat cũng đổi cho giống. Nút Mạng xã hội không còn `aria-label` nên `tests/social-bubble-auto-open.test.ts` tìm nó bằng `aria-haspopup="dialog"`. Ratchet hex hạ 4 mục; `public-text-contrast.test.ts` cấm thêm `#6E7D6B`.
+- **Spec chỉ một chiều:** `KNOWN` (route hoặc `'*'` → quy tắc → số nút chấp nhận) mặc định rỗng; vi phạm mới hoặc nhiều nút hơn thì đỏ, vi phạm đã sửa mà mục chưa hạ cũng đỏ. Thông báo lỗi in cả HTML của nút vi phạm.
+- **Chưa phủ — dữ liệu thật khác dữ liệu E2E:** trên production axe còn báo `color-contrast` ×4, `aria-allowed-attr` mức critical và `aria-prohibited-attr` ở `/media`, và `color-contrast` ×3 ở `/qa-documents` (E2E chỉ ra 1) — phần tử chỉ có khi có dữ liệu thật (buổi phát, bài). Đo lại axe trên production sau deploy rồi mới sửa; spec E2E không thấy được chúng.
+- Không ảnh hưởng deploy toolkit; thay đổi hiển thị: chữ phụ/nhãn đậm hơn ở vài chỗ.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

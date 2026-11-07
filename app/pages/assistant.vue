@@ -308,7 +308,7 @@
                 <i class="fa-solid fa-paper-plane text-[0.9rem]" aria-hidden="true"></i>
               </button>
             </form>
-            <p id="tro-ly-counter" class="mx-auto mt-1 mb-0 max-w-[760px] px-1 text-right text-[0.68rem] text-[#9ca3af]" :class="{ '!text-[#b42318]': botInput.length > limits.maxMessageChars * 0.9 }">
+            <p id="tro-ly-counter" class="mx-auto mt-1 mb-0 max-w-[760px] px-1 text-right text-[0.68rem] text-ink-soft" :class="{ '!text-[#b42318]': botInput.length > limits.maxMessageChars * 0.9 }">
               {{ botInput.length }}/{{ limits.maxMessageChars }}
             </p>
           </div>

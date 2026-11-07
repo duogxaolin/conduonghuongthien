@@ -113,6 +113,16 @@ const panelOpen = (root: MiniElement) => {
 const floatingExpanded = (root: MiniElement) => findAll(root, el => el.tag === 'button' && el.props['aria-label'] === 'Mở kết nối mạng xã hội và liên hệ hỗ trợ').length === 0
 /** Errors from the component's own code (not Vue's `<Transition>` hooks on the mini DOM, see above). */
 const ownErrors = (errors: unknown[]) => errors.filter(err => !/runtime-dom/.test(String((err as Error)?.stack)))
+/**
+ * The popup launcher is found by `aria-haspopup="dialog"`, not by an `aria-label`: it has none on purpose —
+ * its name comes from its visible text, because a label that did not contain that text failed axe's
+ * `label-content-name-mismatch` (WCAG 2.5.3) on every public page (2026-11-07).
+ */
+const popupLauncher = (root: MiniElement) => {
+  const found = findAll(root, el => el.tag === 'button' && el.props['aria-haspopup'] === 'dialog')
+  assert.equal(found.length, 1, 'the popup launcher is not rendered')
+  return found[0]!
+}
 const byAria = (root: MiniElement, label: string) => {
   const found = findAll(root, el => el.tag === 'button' && el.props['aria-label'] === label)
   assert.ok(found.length >= 1, `no button "${label}"`)
@@ -212,10 +222,10 @@ describe('SocialBubble popup (desktop): never over the top of a page, once per s
   it('the visitor opens and closes it themselves before scrolling: no auto-open on top of that, nor after a reload', async (t) => {
     const storage = new Map<string, string>()
     const ctx = await mountBubble(t, { path: '/', storage })
-    await click(byAria(ctx.page.root, 'Kênh mạng xã hội C11'))
+    await click(popupLauncher(ctx.page.root))
     await settle()
     assert.equal(panelOpen(ctx.page.root), true)
-    await click(byAria(ctx.page.root, 'Kênh mạng xã hội C11'))
+    await click(popupLauncher(ctx.page.root))
     await settle()
     assert.equal(panelOpen(ctx.page.root), false)
     await ctx.browser.scrollTo(PAST)
@@ -279,7 +289,7 @@ describe('SocialBubble popup (desktop): never over the top of a page, once per s
     const ctx = await mountBubble(t, { path: '/news', storage: 'throws', scrollY: PAST })
     assert.deepEqual(ownErrors(ctx.page.errors), [])
     assert.equal(panelOpen(ctx.page.root), false)
-    await click(byAria(ctx.page.root, 'Kênh mạng xã hội C11'))
+    await click(popupLauncher(ctx.page.root))
     await settle()
     assert.equal(panelOpen(ctx.page.root), true, 'the launcher still works')
     assert.deepEqual(ownErrors(ctx.page.errors), [])

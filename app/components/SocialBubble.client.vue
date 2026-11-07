@@ -411,7 +411,6 @@ function getIconStyle(item: SocialLink) {
       :class="{ 'ring-2 ring-[#7CB342] shadow-[0_12px_28px_rgba(30,70,32,0.45)]': open }"
       :aria-expanded="open"
       aria-haspopup="dialog"
-      :aria-label="t('social_launcher_aria')"
       @click.stop="toggle"
     >
       <span class="w-6 h-6 rounded-full bg-white/15 flex items-center justify-center text-[0.82rem] transition-transform duration-200 group-hover:rotate-12">

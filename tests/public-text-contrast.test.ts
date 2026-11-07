@@ -34,6 +34,7 @@ test('the two colors that failed AA are not used in the public app any more', ()
     } catch { return '' }
   }
   assert.equal(found('text-[#6F7F6C]'), '', 'small caption text uses text-ink-soft')
+  assert.equal(found('text-[#6E7D6B]'), '', 'axe color-contrast (2026-11-07): small message text uses text-ink-soft')
   const badge = found('bg-[#689F38]').split('\n').filter(line => line && !line.includes('hover:bg-[#689F38]'))
   assert.deepEqual(badge, [], 'a white-text badge on #689F38 is 3.2:1 — use bg-brand-600 (hover on an admin button is the only remaining use)')
 })
