@@ -216,4 +216,20 @@ export const MUTATION_PROOFS: MutationProof[] = [
     tests: ['tests/ai-budget-provider-scope.test.ts'],
     why: 'khoá Delify bị tạm khoá không được chặn dịch vụ AI đã chuyển sang nhà cung cấp khác',
   },
+  {
+    id: 'own-embed-src-exact-path',
+    file: 'server/utils/sanitize-html.ts',
+    find: '{6,16})$/',
+    replace: '{6,16})/',
+    tests: ['tests/security-sanitize-own-embed.test.ts'],
+    why: 'khung phát nhúng của cổng chỉ nhận đúng đường dẫn /media/embed/<id> — thêm đuôi (query, đường dẫn con) là mở một khung cùng gốc tới trang khác của cổng',
+  },
+  {
+    id: 'own-embed-src-host-dropped',
+    file: 'server/utils/sanitize-html.ts',
+    find: 'ownEmbedPath(decodedIframe) ?? rewriteYoutubeNocookie(decodedIframe)',
+    replace: 'rewriteYoutubeNocookie(decodedIframe)',
+    tests: ['tests/security-sanitize-own-embed.test.ts'],
+    why: 'URL tuyệt đối của khung phát phải phát ra chỉ còn đường dẫn: giữ host là giữ khung của bên ngoài',
+  },
 ]

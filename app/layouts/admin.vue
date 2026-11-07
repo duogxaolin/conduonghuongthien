@@ -99,6 +99,8 @@ const currentAdminPageTitle = computed(() => adminPageTitle(route.name, route.pa
 
   <!-- Global Media Library Modal — rendered once, driven by useImagePicker() -->
   <AdminMediaLibraryModal />
+  <!-- Global Video Library Modal — chèn video vào bài, driven by useVideoPicker() -->
+  <AdminVideoLibraryModal />
   <!-- Global Confirm Dialog — rendered once, driven by useConfirm() -->
   <AdminConfirmModal />
 </template>

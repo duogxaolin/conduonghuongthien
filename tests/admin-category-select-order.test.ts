@@ -32,6 +32,7 @@ describe('page builder — category field in tree order', () => {
       auto: {
         $fetch: async (url: string, options: unknown) => { calls.push([url, options]); return { ok: true, items: flat } },
         useImagePicker: () => ({ openPicker: () => {} }),
+        useVideoPicker: () => ({ openVideoPicker: () => {} }),
         window: { addEventListener: (type: string) => { listeners.push(type) }, removeEventListener: () => {} },
       },
       modules: {

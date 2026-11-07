@@ -1,7 +1,7 @@
 {
   "app/components/ContentTypeListSection.vue": 522,
   "app/components/ModelArticlesListPage.vue": 535,
-  "app/components/SocialBubble.client.vue": 510,
+  "app/components/SocialBubble.client.vue": 509,
   "app/components/admin/AnalyticsLiveDashboard.client.vue": {
     "value": 1034,
     "reason": "Unsplittable: tests/analytics-live-dashboard-ui.test.ts greps ~30 patterns in this file's template and runs its script through Function() (docs/decisions/refactor-large-files.md). Allowed above the 400-line default, but capped: it may only shrink."
@@ -36,7 +36,7 @@
   "app/pages/qa-documents.vue": 479,
   "app/pages/search.vue": 419,
   "app/utils/docs/admin-docs-system.ts": 526,
-  "nuxt.config.ts": 412,
+  "nuxt.config.ts": 411,
   "scripts/deploy-remote.sh": 587,
   "server/data/chatbot-small-talk-seed.ts": {
     "exempt": true,
