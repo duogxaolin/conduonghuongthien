@@ -27,6 +27,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 | i18n seed: key · hàng · fallback `vi` | 690 · 738 · 534 |
 | Page Builder: section · content · layout | 9 · 7 · 3 |
 | Mục small talk mặc định | 122 |
+| Cột URL media (`URL_REFERENCE_TARGETS`) · mục đột biến (`test:mutations`) | 27 · 22 |
 <!-- facts:end -->
 
 ---
@@ -137,7 +138,7 @@ server/utils/    deadlock-retry.ts · mysql-errors.ts · plain-text / display-na
 
 **`slugify` một bản duy nhất** (`shared/slugify.ts`; `tests/slugify.test.ts` bắt bản chép — bản chép thiếu cắt gạch treo → `-tin-nong-`). Không backfill slug dị dạng. **`validateIdTokenClaims` có test** (`aud` là thứ duy nhất chặn token phát cho app khác; `picture` không lọt vào return).
 
-**Media R2** (`media-sync*.ts`, `media-repoint.ts`): upload → Head → **một tx** (đổi hàng + thay URL ở 27 cột `URL_REFERENCE_TARGETS` + audit) → **rồi mới** xoá local; thay video dọn qua outbox `media_asset_cleanup` (không xoá trước commit); đường ghi/xoá local không đi theo symlink ra ngoài `public/uploads`. Đổi domain: regex không `(?i:…)`, domain mới phải qua `mediaHostProblem` (`shared/media-hosts.ts`), `r2_public_url` lưu kèm scheme trên domain cũ cũng bị đổi (chủ đích); `tests/media-repoint.test.ts`, `tests/media-hosts-policy.test.ts`, `tests/media-repoint-integration.test.ts`. Quét thư mục: trùng khoá R2 → `conflict`; ghi hàng hỏng mà không chứng minh được → GIỮ object; `repairLegacyMediaUrls` không viết cứng `cdn1.delify.vn`, tên mơ hồ → giữ liên kết (`tests/legacy-media-urls.test.ts`).
+**Media R2** (`media-sync*.ts`, `media-repoint.ts`): upload → Head → **một tx** (đổi hàng + thay URL ở mọi cột `URL_REFERENCE_TARGETS` (số cột: bảng số liệu) + audit) → **rồi mới** xoá local; thay video dọn qua outbox `media_asset_cleanup` (không xoá trước commit); đường ghi/xoá local không đi theo symlink ra ngoài `public/uploads`. Đổi domain: regex không `(?i:…)`, domain mới phải qua `mediaHostProblem` (`shared/media-hosts.ts`), `r2_public_url` lưu kèm scheme trên domain cũ cũng bị đổi (chủ đích); `tests/media-repoint.test.ts`, `tests/media-hosts-policy.test.ts`, `tests/media-repoint-integration.test.ts`. Quét thư mục: trùng khoá R2 → `conflict`; ghi hàng hỏng mà không chứng minh được → GIỮ object; `repairLegacyMediaUrls` không viết cứng `cdn1.delify.vn`, tên mơ hồ → giữ liên kết (`tests/legacy-media-urls.test.ts`).
 
 **Job media và lượt khôi phục không bao giờ ghi cùng lúc** (`services/pre-job-backup.ts`): mỗi phía giữ khoá mình TRƯỚC rồi hỏi khoá kia (`IS_USED_LOCK`; phía khôi phục hỏi mọi khoá trong `MEDIA_JOB_LOCK_NAMES`); tên khoá job chỉ viết ở `MEDIA_JOB_LOCK` (`MEDIA_SYNC_LOCK_NAME`/`MEDIA_SCAN_LOCK_NAME` là bí danh) (`backup-restore.ts` không được viết tên khoá; `tests/media-job-locks.test.ts`); job gặp khôi phục → `abortJobIfRestoreInProgress` ĐẦU TIÊN trong `catch` → 409 (`tests/restore-media-job-exclusion.test.ts`, `tests/media-jobs-restore-abort.test.ts`).
 

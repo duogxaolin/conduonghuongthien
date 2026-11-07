@@ -71,6 +71,23 @@ describe('the block', () => {
     assert.throws(() => extractFactsBlock(`${END}\n${START}`), /comes before/)
   })
 
+  test('the media URL columns and mutation entries are the lengths of the lists themselves', async () => {
+    const { URL_REFERENCE_TARGETS } = await import('../server/services/media-sync-url-match.ts')
+    const { MUTATION_PROOFS } = await import('../scripts/mutation-proofs-catalog.ts')
+    assert.equal(facts.mediaUrlColumns, URL_REFERENCE_TARGETS.length)
+    assert.equal(facts.mutationProofs, MUTATION_PROOFS.length)
+    assert.ok(facts.mediaUrlColumns > 0 && facts.mutationProofs > 0, 'an empty list would mean a broken import, not a real count')
+    const row = block.split('\n').find(line => line.startsWith('| Cột URL media'))
+    assert.equal(row, `| Cột URL media (\`URL_REFERENCE_TARGETS\`) · mục đột biến (\`test:mutations\`) | ${facts.mediaUrlColumns} · ${facts.mutationProofs} |`)
+    const stale = renderFactsBlock({ ...facts, mediaUrlColumns: facts.mediaUrlColumns + 1 })
+    assert.equal(blockDiff(stale, block).length, 2, 'a changed count shows as one removed and one added row')
+  })
+
+  test('CLAUDE.md prose points at the table instead of typing the media column count again', () => {
+    const outside = doc.replace(extractFactsBlock(doc), '')
+    assert.doesNotMatch(outside, /\d+\s+cột\s+`URL_REFERENCE_TARGETS`/)
+  })
+
   test('integration suites the CI matrix does not name show as "lệch"', () => {
     assert.match(block, /\| Suite `\*-integration` \(so matrix CI\) \| \d+ \(khớp\) \|/)
     const off = renderFactsBlock({ ...facts, integrationMatrixMismatch: facts.integrationSuites - 1 })
