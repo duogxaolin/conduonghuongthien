@@ -92,7 +92,7 @@ function isSafeUrl(raw: string): boolean {
  * quyết định `buildYouTubeEmbedUrl` đã ghi (miền không cookie là ràng buộc quyền
  * riêng tư, không phải sở thích).
  */
-const SAFE_IFRAME_SRC = /^https:\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\/[A-Za-z0-9_-]{11}([?].*)?$/
+const SAFE_IFRAME_SRC = /^https:\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\/[A-Za-z0-9_-]{11}(\?[A-Za-z0-9_=&%.+,:-]*)?$/
 
 function isSafeIframeSrc(raw: string): boolean {
   return SAFE_IFRAME_SRC.test(raw.trim())
@@ -120,6 +120,11 @@ function decodeEntitiesForCheck(value: string): string {
     .replace(/&tab;/gi, '\t')
     .replace(/&newline;/gi, '\n')
 }
+/** `&amp; &quot; &lt; &gt; &apos;` → the characters, once — the iframe `src` is checked AND re-emitted from its real text. */
+function decodeBasicEntities(value: string): string {
+  const characters: Record<string, string> = { amp: '&', quot: '"', lt: '<', gt: '>', apos: "'" }
+  return value.replace(/&(amp|quot|lt|gt|apos);/gi, (_, name: string) => characters[name.toLowerCase()] ?? '')
+}
 function codePoint(n: number): string {
   if (!Number.isFinite(n) || n < 0 || n > 0x10ffff) return ''
   try { return String.fromCodePoint(n) } catch { return '' }
@@ -142,10 +147,12 @@ function filterAttributes(tag: string, attrString: string): string {
       // `iframe` `src` đi qua allowlist YouTube riêng — `isSafeUrl` quá rộng cho
       // iframe (nó nhận mọi http/https), và mở iframe nhận mọi origin là XSS.
       if (tag === 'iframe' && name === 'src') {
-        const decodedIframe = decodeEntitiesForCheck(value)
+        const decodedIframe = decodeBasicEntities(decodeEntitiesForCheck(value))
         if (!isSafeIframeSrc(decodedIframe)) continue
         const rewritten = rewriteYoutubeNocookie(decodedIframe)
-        const escIframe = rewritten.replace(/&/g, '&').replace(/"/g, '"').replace(/</g, '<').replace(/>/g, '>')
+        // The value is DECODED here (entities resolved above), so every `&`, `"`, `<`, `>` in it must be escaped again —
+        // the earlier no-op replacements let a `"` in the query end the attribute (stored XSS, 2026-11-07).
+        const escIframe = rewritten.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         out.push(`src="${escIframe}"`)
         continue
       }
@@ -159,7 +166,9 @@ function filterAttributes(tag: string, attrString: string): string {
     }
     if (name === 'target') { out.push('target="_blank"'); continue }
     // Escape the value for safe re-emission.
-    const escaped = value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // An entity already in the value (the editor wrote `&quot;`, `&amp;`) is kept as it is: escaping its `&` again made
+    // every pass longer (`&quot;` → `&amp;quot;` → …) and put entity junk into `alt`/`title`. Only a bare `&` is escaped.
+    const escaped = value.replace(/&(?!(?:amp|quot|lt|gt|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     out.push(value === '' ? name : `${name}="${escaped}"`)
   }
   // Force rel=noopener noreferrer on links that open a new tab.

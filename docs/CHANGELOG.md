@@ -2719,6 +2719,16 @@ Hộp "Insert/Edit Image" của TinyMCE chỉ cho tải lên hoặc gõ URL; mu�
 - **Chưa làm:** video. Hộp "Media" của TinyMCE vẫn nhận URL gõ tay (chỉ YouTube sống được qua bộ lọc HTML); chọn video từ kho video là hạng mục riêng (CHANGELOG § 96 nếu làm).
 - Không ảnh hưởng deploy.
 
+### 96. An ninh — XSS lưu trữ qua `src` iframe YouTube, và thuộc tính bị thoát đôi (2026-11-07)
+
+Một lượt soát độc lập (khi làm nút chèn video, § 97) tìm ra hai lỗi CŨ trong `server/utils/sanitize-html.ts` — không do nút chèn video gây ra, có từ `69a84eb7` (2026-09-22):
+
+- **XSS lưu trữ (nghiêm trọng).** `src` của `<iframe>` YouTube được kiểm trên văn bản đã GIẢI MÃ entity, rồi phát ra qua bốn phép thay mỗi ký tự bằng chính nó (`'"'` → `'"'`: thoát hiện ra nhưng vô tác dụng). `SAFE_IFRAME_SRC` lại nhận mọi thứ sau `?`. Nên `src="https://www.youtube.com/embed/AAAAAAAAAAA?&#34; onload=&#34;alert(1)"` ra thành `src="…?" onload="alert(1)"`: dấu `"` đóng thuộc tính, phần còn lại thành thuộc tính của khung. Các đường đọc công khai lọc lần hai nên che được; các đường chỉ lọc một lần thì không — ví dụ bản dịch (`article-translations.ts` lọc một lần lúc ghi, `articles/[id]/translations/[lang].get.ts` trả hàng thô) rồi `ArticleQuickViewModal` hiển thị bằng `v-html`; CSP đang thi hành còn `'unsafe-inline'`. Người có quyền soạn bài có thể cài mã chạy trong phiên của quản trị viên/SuperAdmin xem trước bài. **Chưa thấy dấu hiệu bị khai thác; không có bước xử lý dữ liệu cũ nào ở đây** — nội dung đã lưu qua đường cũ chỉ bị loại `onload` khi đọc qua đường lọc hai lần, nên nên chạy `npm run db:sanitize-html` (sao lưu trước) sau khi triển khai.
+- **Thoát đôi thuộc tính.** Đường chung của mọi thuộc tính thoát lại cả `&` của entity có sẵn (`&quot;` → `&amp;quot;`), nên mỗi lần lưu/đọc làm `alt`/`title` dài ra và để lại rác entity trong tên truy cập.
+- **Sửa:** `src` iframe: quy tắc YouTube chỉ nhận chuỗi truy vấn `[A-Za-z0-9_=&%.+,:-]` (một `"`, `<`, `>`, khoảng trắng, `;` không còn lọt; hợp lệ cho `modestbranding`/`start`/`rel`…), kiểm và phát ra trên văn bản đã giải mã đúng một lần (`decodeBasicEntities`), thoát đủ bốn ký tự khi phát. Đường thuộc tính chung chỉ thoát `&` trần — entity có sẵn (`&amp; &quot; &lt; &gt; &apos; &#n; &#xh;`) giữ nguyên (trong thuộc tính, entity chỉ là nội dung giá trị, không bao giờ đóng thuộc tính) — nên lọc lại không đổi gì.
+- **Test:** `tests/security-sanitize-attribute-escaping.test.ts` (5 test: bốn kiểu giấu `"`/`<`/`>` trong truy vấn kể cả `&#34;`, `&#x22;`, `&quot;`; thuộc tính nháy đơn; truy vấn YouTube thật sống sót và ổn định qua lượt lọc thứ hai; entity trong `alt`/`title` giữ nguyên qua nhiều lần; `&`/`"`/`<` trần vẫn bị thoát) — đã chứng minh đỏ (3 ca) trên mã cũ. Bộ `security-sanitize-html` cũ giữ nguyên, xanh.
+- Không ảnh hưởng deploy toolkit. Đổi hành vi: iframe YouTube có truy vấn lạ (dấu cách, nháy) mất `src` (trước kia lọt).
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 
