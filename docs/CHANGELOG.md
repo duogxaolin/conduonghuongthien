@@ -2680,6 +2680,15 @@ Mười hàng của "Danh sách chuyển tiếp theo" (`docs/decisions/test-stra
 - **Quan sát phụ, không sửa:** `?perPage=` rỗng của endpoint Hỏi–đáp bị kẹp về 1 (`Number('') === 0`), không về mặc định 20; vô hại nên không ghim.
 - Không ảnh hưởng deploy.
 
+### 92. AI — quota Delify chỉ áp cho dịch vụ đang dùng Delify (2026-11-07)
+
+Cổng ngân sách (`checkBudget`) tra quota của khoá Delify rồi CHẶN mọi dịch vụ AI nếu Delify báo khoá bị tạm khoá (`active: false`) — kể cả dịch vụ quản trị đã chuyển sang nhà cung cấp khác. Ô "bật/tắt" của nhà cung cấp không cứu được: cổng gọi AI (`prepareAiCall`) chỉ đọc `isActive` của DỊCH VỤ, không bao giờ đọc của nhà cung cấp, nên "khoá tắt" không phải tín hiệu có thật. Chủ dự án chọn (2026-11-07): quota Delify chỉ áp cho dịch vụ thực sự dùng Delify.
+
+- **Sửa:** `checkBudget(db, serviceKey, provider?)`. Nhà cung cấp lấy từ tham số (cổng gọi AI đã tải cấu hình dịch vụ nên truyền `config.provider`) hoặc, khi người gọi không biết (các endpoint kiểm tra trước), từ cột `provider` của hàng `ai_service_configs` theo `serviceKey`. Chỉ khi BIẾT chắc dịch vụ dùng nhà cung cấp khác Delify thì bỏ tra quota Delify (cũng không gọi Delify). Dịch vụ không có hàng cấu hình, hoặc tra hàng đó lỗi → giữ hành vi cũ (quota vẫn áp): nhà cung cấp chưa rõ không phải lý do bỏ một cổng. Ngân sách tháng đặt trong cài đặt (`monthlyBudgetVnd`) vẫn áp cho mọi dịch vụ như trước.
+- **Test:** `tests/ai-budget-provider-scope.test.ts` (5 test: dịch vụ nhà khác không bị chặn và Delify không bị hỏi; dịch vụ Delify vẫn bị chặn; không có hàng cấu hình giữ hành vi cũ; tham số `provider` thắng; tra hàng lỗi giữ hành vi cũ) — viết trước, ĐỎ 2/5 trước khi sửa; `ai-gateway-seams-behavior` ghim rằng cổng gọi truyền đúng nhà cung cấp của dịch vụ (đỏ 11 ca khi bỏ tham số). Mục đột biến mới `ai-budget-delify-quota-scoped-to-service` (24 mục).
+- **Ghi lại, không sửa:** ô bật/tắt của nhà cung cấp trên trang quản trị vẫn không ảnh hưởng việc gọi AI (chỉ hiển thị, và `chatbot/settings` dùng nó để báo `enabled`). Bắt nó có hiệu lực là đổi hành vi sản xuất (API tạo nhà cung cấp mặc định `isActive = false`), cần quyết định riêng.
+- Không ảnh hưởng deploy.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

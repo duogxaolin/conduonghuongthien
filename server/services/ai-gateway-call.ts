@@ -102,7 +102,7 @@ async function prepareAiCall(db: Database, serviceKey: string, input: AiCallInpu
   }
 
   // 2. Check budget (spec R10.1 step 3, R9).
-  const budgetResult = await checkBudget(db, serviceKey)
+  const budgetResult = await checkBudget(db, serviceKey, config.provider)
   if (!budgetResult.allowed) {
     return {
       refused: {

@@ -44,6 +44,7 @@ type Row = Record<string, unknown>
 const rec = {
   budget: { allowed: true } as Row,
   budgetCalls: [] as string[],
+  budgetProviders: [] as Array<string | undefined>,
   decryptThrows: false,
   decryptCalls: [] as Row[],
   usage: [] as Row[],
@@ -52,7 +53,7 @@ const rec = {
 }
 
 mock.module('../server/utils/ai-budget', {
-  namedExports: { checkBudget: async (_db: unknown, serviceKey: string) => { rec.budgetCalls.push(serviceKey); return rec.budget } },
+  namedExports: { checkBudget: async (_db: unknown, serviceKey: string, provider?: string) => { rec.budgetCalls.push(serviceKey); rec.budgetProviders.push(provider); return rec.budget } },
 })
 mock.module('../server/utils/ai-usage', { namedExports: { logAiUsage: async (_db: unknown, entry: Row) => { rec.usage.push(entry) } } })
 mock.module('../server/utils/ai/crypto', {
@@ -146,6 +147,7 @@ async function withProvider<T>(responses: Response[], run: (transport: { request
 function reset(budget: Row = { allowed: true }) {
   rec.budget = budget
   rec.budgetCalls.length = 0
+  rec.budgetProviders.length = 0
   rec.decryptThrows = false
   rec.decryptCalls.length = 0
   rec.usage.length = 0
@@ -199,6 +201,9 @@ for (const refusal of refusals) {
       const result = await callAi(serviceKey, { prompt: 'xin chào', db, transport })
       assert.deepEqual(result, refusal.result)
       assert.deepEqual(rec.budgetCalls, refusal.budgetChecked ? [serviceKey] : [])
+      // The Delify quota applies only to a service that uses Delify: the gateway hands the budget check the
+      // service's own provider (it already loaded the config), so the check never has to guess.
+      assert.deepEqual(rec.budgetProviders, refusal.budgetChecked ? [rows.config?.provider] : [])
       assert.equal(reads.provider, refusal.providerRead ? 1 : 0)
       assert.equal(rec.decryptCalls.length, refusal.decrypted ? 1 : 0)
       assert.equal(reads.pricing, 0)
