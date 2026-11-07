@@ -70,15 +70,14 @@ const iconLinks = ['fontawesome', ...ICON_FAMILIES].map(name => ({
 }))
 
 /**
- * Preload 3 woff2 icon font để font sẵn sàng khi CSS parse xong, đưa woff2 ra
- * khỏi critical path (Lighthouse "Hiển thị phông chữ" 620ms → ~90ms). Không
- * preload fontawesome.min.css (154KB class map) vì không phải font, chỉ preload
- * woff2. `crossorigin` bắt buộc cho `as="font"`.
+ * Preload CHỈ woff2 `solid` (icon header/hero/nút, trên màn hình đầu). `regular` 350 KB và `brands`
+ * 115 KB không ở màn hình đầu, `font-display: swap` — tải khi có glyph dùng. Preload cả ba (737 KB,
+ * ưu tiên cao) tranh băng thông với ảnh hero: LCP di động 8,1 s → ~5,6 s khi bỏ hai font đó
+ * (Lighthouse production 2026-11-07, CHANGELOG § 88). Chỉ woff2, không preload CSS; `crossorigin`
+ * bắt buộc cho `as="font"`. tests/icon-font-preload.test.ts ghim danh sách.
  */
 const iconFontPreloads = [
   { family: 'solid', weight: '900', file: 'fa-solid-900.woff2' },
-  { family: 'regular', weight: '400', file: 'fa-regular-400.woff2' },
-  { family: 'brands', weight: '400', file: 'fa-brands-400.woff2' },
 ].map(f => ({
   rel: 'preload' as const,
   as: 'font' as const,
