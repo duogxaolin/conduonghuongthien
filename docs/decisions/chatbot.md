@@ -383,6 +383,10 @@ Bỏ **theo lượt hỏi–đáp**, không theo từng lượt: câu hỏi bị
 
 Nằm tại `/admin/content/articles/[id]` và `POST /api/admin/ai/editorial`.
 
+### Cảnh báo vận hành khi lớp chặn chủ quyền thay một câu trả lời (2026-11-06)
+
+Trước đó một lần lớp chặn đầu ra thay câu trả lời chỉ để lại một dòng log `chatbot.sovereignty_output_replaced` / `chatbot.sovereignty_cached_answer_replaced` — không ai biết kịp. Hai sự kiện nay nằm trong `ALERT_EVENTS` (`server/utils/logger.ts`) và dùng cơ chế thư `ops-alert` sẵn có (`OPS_ALERT_EMAIL`, SMTP trong admin): cửa sổ **10 phút** mỗi sự kiện (`SOVEREIGNTY_ALERT_WINDOW_SECONDS`), bắn-rồi-quên (không chờ SMTP, không ném, không làm chậm câu trả lời), và nội dung thư chỉ gồm tên sự kiện, giờ, máy chủ, dòng mô tả cố định và số lần gộp — danh sách trường cho phép riêng (`OPS_ALERT_CONTEXT_FIELDS`) loại mọi thứ khác nên một dòng log sau này có thêm câu hỏi/IP/mã phiên cũng không lọt vào thư. Khách bất kỳ có thể gây ra thư này (cận trên 144 thư/ngày/sự kiện). Không đụng bộ khớp hay lập trường: *recall là cổng cứng* vẫn nguyên. Thư không có nghĩa là sự cố — lớp chặn chặn rộng nên cũng thay cả câu hợp lệ nhắc tới biển, đảo (Cát Bà, Jeju…); runbook `docs/runbooks/chatbot-sovereignty-incident.md` bắt đầu bằng bước phân loại. Test: `tests/chatbot-sovereignty-alerting.test.ts`; mục đột biến `sovereignty-alert-no-personal-data`.
+
 ### Giới hạn token & vị trí mảng `changes`
 
 - **Vấn đề đã trả giá:** `buildProviderChatCall` ban đầu gán cứng `max_tokens: 1200` (`MAX_ANSWER_TOKENS`), bỏ qua cấu hình `maxTokens: 4096` của `ai_service_configs`. Khi bài viết HTML dài (trên 3.000 ký tự), việc AI lặp lại toàn bộ mã HTML ở trường `polishedContent` rồi mới đến mảng `changes` khiến JSON bị cắt cụt giữa chừng ngay cuối mảng, ném `SyntaxError` lúc parse và rơi vào nhánh fallback in chuỗi JSON thô ra màn hình.

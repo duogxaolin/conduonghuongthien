@@ -244,7 +244,8 @@ export const BOOT_MIGRATION_EVENTS = {
  * a restore failed or was refused, someone holding a valid password is guessing
  * second factors, an e-mail link was asked for on a forged Host, a browser posted to
  * the API on behalf of another site (the origin gate, wave2 2A), a moderation rule was
- * turned off for running slow (it judges nothing for 10 minutes), a scheduled backup
+ * turned off for running slow (it judges nothing for 10 minutes), the chatbot's sovereignty output guard
+ * replaced an answer (model or cached), a scheduled backup
  * slot was given up, a scheduled slot was lost to "busy" refusals (another backup or a
  * restore held the lock past the slot's window — `busyStreakDeadline`), the boot
  * migration cannot reach its schema without losing data.
@@ -266,5 +267,11 @@ export const ALERT_EVENTS: readonly string[] = [
   'backup.slot_abandoned',
   'backup.scheduler_blocked',
   BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked,
+  // The chatbot's output guard replaced a model answer / a cached answer with the official stance
+  // (`services/chat-policy-answer.ts`) — the model said something about the sea or islands that must never
+  // reach a citizen. The mail carries the event name and a count, never the question or answer
+  // (`OPS_ALERT_CONTEXT_FIELDS`). `chatbot.sovereignty_answered` (the matcher's routine answer) is NOT here.
+  'chatbot.sovereignty_output_replaced',
+  'chatbot.sovereignty_cached_answer_replaced',
 ]
 const ALERT_EVENT_SET: ReadonlySet<string> = new Set(ALERT_EVENTS)

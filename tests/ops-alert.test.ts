@@ -134,6 +134,9 @@ test('the alert list is the D-ALERT subset, and nothing else alerts', () => {
     'backup.restore_refused',
     'backup.scheduler_blocked',
     'backup.slot_abandoned',
+    // Part 4 (sovereignty alerting): the output guard replaced a model / cached answer.
+    'chatbot.sovereignty_cached_answer_replaced',
+    'chatbot.sovereignty_output_replaced',
     'db.migration.media_category_fk_blocked',
     'security.cross_site_refused',
     'security.link_host_rejected',
