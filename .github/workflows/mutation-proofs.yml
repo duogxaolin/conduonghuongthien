@@ -1,0 +1,47 @@
+name: Mutation proofs
+
+# `npm run test:mutations` gỡ từng bất biến trọng yếu khỏi mã (scripts/mutation-proofs-catalog.ts) rồi đòi
+# đúng các test đã ghi kèm phải ĐỎ. Một đột biến "sống sót" nghĩa là bất biến không còn được test canh —
+# xanh giả. Chạy HẰNG TUẦN, hoặc bấm tay (Actions → Mutation proofs → Run workflow); KHÔNG chạy trên mỗi
+# PR/push: mỗi mục chạy lại các tệp test của nó trong một worktree tạm, đủ để kéo dài CI mỗi lần merge
+# (mà merge vào main là một lần deploy). Đổi lấy đó: một test bị làm yếu có thể sống tới 7 ngày — thêm bất
+# biến mới thì chạy `npm run test:mutations -- <id>` ở máy trước khi mở PR (CLAUDE.md).
+#
+# Workflow này không deploy, không ghi gì vào repo; đỏ nghĩa là có mục SURVIVED/STALE/INVALID/LOAD-ERROR/
+# TIMEOUT — đọc log, sửa test hoặc cập nhật mục trong danh mục.
+
+on:
+  schedule:
+    # Thứ Tư 02:43 UTC (09:43 giờ VN) — lệch khỏi phút :00 và khỏi lịch thứ Hai của ghcr-retention.
+    - cron: '43 2 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-proofs
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  mutation-proofs:
+    name: Mutation proofs
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run the mutation catalog
+        env:
+          TZ: Asia/Ho_Chi_Minh
+        run: npm run test:mutations
