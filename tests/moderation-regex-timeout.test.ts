@@ -94,7 +94,11 @@ test('hard timeout: 日*日*日*$ passes Layer 1, and on 401 chars returns withi
     assert.equal(logged[0]!.pattern, pattern)
     assert.equal(logged[0]!.inputLength, text.length)
     assert.equal(logged[0]!.disabledForMs, MODERATION_RULE_COOLDOWN_MS)
-    assert.ok(Number(logged[0]!.elapsedMs) >= MODERATION_RULE_WINDOW_BUDGET_MS - 1 && Number(logged[0]!.elapsedMs) < 1000,
+    // The vm watchdog and the runtime's own clock are two clocks: on a loaded runner the logged
+    // elapsed time has come out at 197 ms against a 200 ms budget (CI, 2026-11-07). The point is
+    // "cut off near the budget, not the ~15 s unbounded run", so the floor is half the budget
+    // (proves it really ran) and the ceiling is what separates bounded from unbounded.
+    assert.ok(Number(logged[0]!.elapsedMs) >= MODERATION_RULE_WINDOW_BUDGET_MS / 2 && Number(logged[0]!.elapsedMs) < 1000,
       `elapsedMs ${String(logged[0]!.elapsedMs)}: about the budget, not the unbounded run`)
 
     const second = timedRun(pattern, text)
