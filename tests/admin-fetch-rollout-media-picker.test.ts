@@ -223,11 +223,31 @@ describe('components/admin/TinyMceEditor.vue', () => {
   async function uploadHandler(route: Route): Promise<{ handler: Handler, calls: NetCall[] }> {
     let options: { images_upload_handler?: Handler } = {}
     const opened = await mountAdminPage('components/admin/TinyMceEditor.vue', routes({ [`POST ${UPLOAD}`]: route }), {
-      auto: { window: { tinymce: { init: (given: typeof options) => { options = given } } } },
+      auto: { useImagePicker: () => ({ openPicker: () => {} }), window: { tinymce: { init: (given: typeof options) => { options = given } } } },
     })
     assert.ok(options.images_upload_handler, 'the editor was initialised with an upload handler')
     return { handler: options.images_upload_handler, calls: opened.calls }
   }
+
+  it('the image dialog gets a browse button that opens the media library and fills the dialog with the choice', async () => {
+    type PickerOptions = { onSelect?: (media: { url: string, originalName: string }) => void }
+    type FilePicker = (callback: (url: string, meta?: Record<string, string>) => void, value: string, meta: { filetype?: string }) => void
+    let options: { file_picker_types?: string, file_picker_callback?: FilePicker } = {}
+    const opened: PickerOptions[] = []
+    await mountAdminPage('components/admin/TinyMceEditor.vue', routes({}), {
+      auto: {
+        useImagePicker: () => ({ openPicker: (given: PickerOptions) => { opened.push(given) } }),
+        window: { tinymce: { init: (given: typeof options) => { options = given } } },
+      },
+    })
+    assert.equal(options.file_picker_types, 'image')
+    assert.ok(options.file_picker_callback, 'the dialog is given a picker')
+    const filled: Array<[string, Record<string, string> | undefined]> = []
+    options.file_picker_callback((url, meta) => filled.push([url, meta]), '', { filetype: 'image' })
+    assert.equal(opened.length, 1, 'the library opens')
+    opened[0]!.onSelect!({ url: '/uploads/b.webp', originalName: 'b.webp' })
+    assert.deepEqual(filled, [['/uploads/b.webp', { alt: 'b.webp' }]])
+  })
   const blobInfo = { blob: () => new Blob([new Uint8Array([1])], { type: 'image/png' }), filename: () => 'dan.png' }
 
   it('a pasted image is POSTed as `file` and the editor gets the stored URL', async () => {

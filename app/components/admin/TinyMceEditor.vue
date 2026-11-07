@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminMediaUploadResult } from '~/types/admin-api'
 import type { TinyMceEditorInstance, WindowWithTinyMce } from '~/types/tinymce'
+import { imageFilePicker } from '~/utils/tinymce-image-picker'
 // ─── Reusable TinyMCE rich-text editor (v-model) ─────────────────────────────
 // Single source for TinyMCE in the admin. Used by the page builder's richtext
 // fields (PropertyPanel) so the in-builder editing experience matches the
@@ -15,6 +16,8 @@ const props = withDefaults(defineProps<{
 }>(), { modelValue: '', height: 480, placeholder: '' })
 
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
+
+const { openPicker } = useImagePicker()
 
 // Unique id per instance so multiple editors can coexist on one page.
 const editorId = `tinymce-${Math.random().toString(36).slice(2, 10)}`
@@ -72,6 +75,7 @@ onMounted(async () => {
     automatic_uploads: true,
     paste_data_images: true,
     file_picker_types: 'image',
+    file_picker_callback: imageFilePicker(onPick => openPicker({ onSelect: onPick })),
     images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', blobInfo.blob(), blobInfo.filename())
