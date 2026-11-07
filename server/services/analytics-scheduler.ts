@@ -207,6 +207,7 @@ export async function runAnalyticsMaintenancePass(options: RunPassOptions = {}):
 }
 
 let timer: ReturnType<typeof setInterval> | null = null
+let warmup: ReturnType<typeof setTimeout> | null = null
 
 /**
  * Start ticking. Idempotent, and `unref()`ed so the timer never holds the process
@@ -232,11 +233,14 @@ export function startAnalyticsScheduler(): void {
   // Deferred: at boot the database may not be reachable yet and init/seed are
   // still running. Longer than retention's 60s because this pass is heavier and
   // there is no reason for both to land at once on a small box.
-  const warmup = setTimeout(tick, 90_000)
+  warmup = setTimeout(() => { warmup = null; tick() }, 90_000)
   warmup.unref?.()
 }
 
+/** Stop ticking — the deferred first pass included, so a stop inside its first 90 s runs no pass. */
 export function stopAnalyticsScheduler(): void {
+  if (warmup) clearTimeout(warmup)
+  warmup = null
   if (!timer) return
   clearInterval(timer)
   timer = null

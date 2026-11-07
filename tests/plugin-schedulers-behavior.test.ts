@@ -115,27 +115,31 @@ for (const entry of PLUGINS) {
   })
 }
 
-test('media-processing-reaper: Nitro close gỡ cả interval lẫn warm-up; cổng đóng thì không đăng ký close', async () => {
-  const plugin = loaded.get('server/plugins/media-processing-reaper.ts')!
-  stopMediaProcessingReaper()
+// Nitro `close` phải gỡ cả interval lẫn warm-up của MỌI bộ hẹn giờ trong tiến trình: một worker đang
+// tắt không được bắn thêm nhịp (analytics-scheduler và view-boost-scheduler từng thiếu hook này).
+for (const entry of PLUGINS) {
+  test(`${entry.file}: Nitro close gỡ cả interval lẫn warm-up; cổng đóng thì không đăng ký close`, async () => {
+    const plugin = loaded.get(entry.file)!
+    entry.stop()
 
-  const closed = fakeNitroApp()
-  const off = await withEnv({ MEDIA_REAPER_SCHEDULER: '0', NODE_ENV: 'production' }, () => observeTimers(() => plugin(closed.app)))
-  assert.deepEqual(off.timers, [])
-  assert.equal(closed.hooks.has('close'), false, 'cổng đóng mà vẫn đăng ký close')
+    const closed = fakeNitroApp()
+    const off = await withEnv({ [entry.variable]: '0', NODE_ENV: 'production' }, () => observeTimers(() => plugin(closed.app)))
+    assert.deepEqual(off.timers, [])
+    assert.equal(closed.hooks.has('close'), false, 'cổng đóng mà vẫn đăng ký close')
 
-  const nitro = fakeNitroApp()
-  const observed = await withEnv({ MEDIA_REAPER_SCHEDULER: '1', NODE_ENV: 'development' }, () => observeTimers(async () => {
-    await plugin(nitro.app)
-    assert.equal(nitro.hooks.get('close')?.length, 1, 'phải đăng ký đúng một hook close')
-    await nitro.fire('close')
-  }))
-  const handles = observed.timers.map(timer => timer.handle)
-  assert.equal(handles.length, 2)
-  for (const handle of handles) assert.ok(observed.cleared.includes(handle), 'một timer không bị gỡ khi close')
+    const nitro = fakeNitroApp()
+    const observed = await withEnv({ [entry.variable]: '1', NODE_ENV: 'development' }, () => observeTimers(async () => {
+      await plugin(nitro.app)
+      assert.equal(nitro.hooks.get('close')?.length, 1, 'phải đăng ký đúng một hook close')
+      await nitro.fire('close')
+    }))
+    const handles = observed.timers.map(timer => timer.handle)
+    assert.equal(handles.length, 2)
+    for (const handle of handles) assert.ok(observed.cleared.includes(handle), 'một timer không bị gỡ khi close')
 
-  // Sau close, bật lại phải hẹn giờ mới (trạng thái đã dọn sạch, không kẹt "đã chạy").
-  const again = await withEnv({ MEDIA_REAPER_SCHEDULER: '1', NODE_ENV: 'development' }, () => observeTimers(() => plugin(fakeNitroApp().app)))
-  assert.equal(again.timers.filter(timer => timer.kind === 'interval').length, 1)
-  stopMediaProcessingReaper()
-})
+    // Sau close, bật lại phải hẹn giờ mới (trạng thái đã dọn sạch, không kẹt "đã chạy").
+    const again = await withEnv({ [entry.variable]: '1', NODE_ENV: 'development' }, () => observeTimers(() => plugin(fakeNitroApp().app)))
+    assert.equal(again.timers.filter(timer => timer.kind === 'interval').length, 1)
+    entry.stop()
+  })
+}
