@@ -2709,6 +2709,16 @@ Sau § 93, axe chạy trên production (dữ liệu thật) còn báo hai nhóm 
 - **Đo lại sau deploy** bằng axe trên production: 13/16 trang sạch sau § 93; kết quả của đợt này ghi ở lần kiểm tiếp theo.
 - Thay đổi hiển thị nhỏ (chữ phụ, viên đếm). Không ảnh hưởng deploy toolkit.
 
+### 95. Trình soạn bài — hộp chèn ảnh có nút duyệt thư viện ảnh (2026-11-07)
+
+Hộp "Insert/Edit Image" của TinyMCE chỉ cho tải lên hoặc gõ URL; muốn chọn ảnh có sẵn phải dùng nút "Chèn ảnh từ thư viện" nằm NGOÀI trình soạn. Nay hộp có nút duyệt (`file_picker_callback`) mở modal Thư viện ảnh của layout admin; ảnh được chọn điền ô Source và ô Alt (tên gốc của tệp).
+
+- **Hai đường init cùng dùng một hàm** `imageFilePicker` (`app/utils/tinymce-image-picker.ts`, thuần, không auto-import): `components/admin/TinyMceEditor.vue` (trường rich text của page builder) và `useArticleEditorTinymce` (trang soạn bài; nhận thêm `pickImage` từ trang). Chỉ trả lời yêu cầu `filetype === 'image'`; `media`/`file` không có hộp chọn từ đây. Đóng thư viện không chọn thì không gọi lại hộp.
+- **Hợp tác focus giữa hai hộp thoại** — thứ chỉ trình duyệt thật chứng minh được: TinyMCE giữ focus trong hộp modal của nó, còn `AdminModal` đặt phần còn lại của trang `inert` và xếp lớp `z-[9000]` (trên khoảng 1300 của TinyMCE). `tests/e2e/admin-editor-media-picker.spec.ts` chạy trên bản build thật: mở hộp ảnh → nút duyệt → thư viện hiện TRÊN hộp ảnh và dùng được → chọn → thư viện đóng, hộp ảnh còn nguyên và mang URL đã chọn → Save → ảnh nằm trong thân bài. Hai chi tiết của spec: nút ảnh nằm sau "reveal more" ở bề rộng này nên mở hộp bằng lệnh `mceImage`; bấm vào ô (tile) chứ không phải thẻ `<img>` vì lớp phủ chọn nằm đè lên ảnh trong ô.
+- **Test:** `tests/tinymce-image-picker.test.ts` (3 test), `tests/admin-fetch-rollout-media-picker.test.ts` thêm 1 test mount thật `TinyMceEditor.vue` (đã chứng minh đỏ khi gỡ dòng nối), E2E nói trên.
+- **Chưa làm:** video. Hộp "Media" của TinyMCE vẫn nhận URL gõ tay (chỉ YouTube sống được qua bộ lọc HTML); chọn video từ kho video là hạng mục riêng (CHANGELOG § 96 nếu làm).
+- Không ảnh hưởng deploy.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

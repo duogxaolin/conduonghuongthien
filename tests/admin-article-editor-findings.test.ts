@@ -201,7 +201,7 @@ describe('KNOWN 5/6: "Thử lại" after a failed load', () => {
   const puts = (ctx: Editor) => ctx.calls.filter(call => call.method === 'PUT')
   /** The config minus its two functions (a new closure on every init). */
   const settings = (config: Record<string, unknown>) => {
-    const { setup: _setup, images_upload_handler: _upload, ...rest } = config
+    const { setup: _setup, images_upload_handler: _upload, file_picker_callback: _picker, ...rest } = config
     return rest
   }
 

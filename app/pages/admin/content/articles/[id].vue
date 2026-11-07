@@ -55,11 +55,12 @@ const errorMsg = ref('')
 const loaded = ref(isNew.value)
 const toast = useToast()
 const { confirm } = useConfirm()
+const { openPicker } = useImagePicker()
 
 const {
   editorId, setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent, onBodyShown,
   insertMediaIntoEditor, initTinyMCE, loadTinyMCEScript,
-} = useArticleEditorTinymce({ form })
+} = useArticleEditorTinymce({ form, pickImage: onPick => openPicker({ onSelect: onPick }) })
 
 // ─── Unsaved-changes guard: route leave here (a Nuxt auto-import), the tab close in the composable ──
 const { markSaved, confirmLeave } = useArticleEditorUnsavedGuard({ form, loading, markBodySaved, bodyChanged, confirm })
@@ -155,7 +156,6 @@ const fetchArticle = async () => {
   }
 }
 
-const { openPicker } = useImagePicker()
 const { uploading: uploadingThumb, uploadFile } = useUpload()
 const { openMediaPicker, uploadThumbnailFromInput } = useArticleEditorMedia({ form, openPicker, uploadFile, insertMediaIntoEditor })
 

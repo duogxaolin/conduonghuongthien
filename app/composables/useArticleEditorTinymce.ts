@@ -8,6 +8,7 @@ import type { AdminMediaUploadResult } from '../types/admin-api'
 import type { ArticleEditorForm } from '../types/admin-article-editor'
 import type { MediaItem } from '../types/media'
 import type { WindowWithTinyMce } from '../types/tinymce'
+import { imageFilePicker } from '../utils/tinymce-image-picker'
 
 /**
  * The article editor's TinyMCE (`pages/admin/content/articles/[id].vue`) — the project's SECOND
@@ -24,6 +25,12 @@ import type { WindowWithTinyMce } from '../types/tinymce'
 export interface ArticleEditorTinymceDeps {
   /** The page's form: the editor starts from `content`, and `content` follows the editor on `change`. */
   form: ArticleEditorForm
+  /**
+   * Opens the media library for ONE image (the admin layout's global modal) and hands the choice back.
+   * TinyMCE's image dialog gets a browse button that calls it (`file_picker_callback`); without it the
+   * dialog only offers an upload or a typed URL.
+   */
+  pickImage: (onPick: (media: MediaItem) => void) => void
 }
 
 const TINYMCE_EDITOR_ID = 'tinymce-content-editor'
@@ -40,7 +47,7 @@ const CONTENT_STYLE = `
       table td, table th { border: 1px solid #ddd; padding: 8px; }
     `
 
-export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
+export function useArticleEditorTinymce({ form, pickImage }: ArticleEditorTinymceDeps) {
   const tinymceReady = ref(false)
   // Body baseline as TinyMCE serialises it — setContent() normalises HTML, and `form.content`
   // only follows the editor on `change`. Null until the editor's `init` takes it.
@@ -153,6 +160,7 @@ export function useArticleEditorTinymce({ form }: ArticleEditorTinymceDeps) {
       paste_data_images: true,
       paste_merge_formats: true,
       file_picker_types: 'image',
+      file_picker_callback: imageFilePicker(pickImage),
       images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
         const formData = new FormData()
         formData.append('file', blobInfo.blob(), blobInfo.filename())

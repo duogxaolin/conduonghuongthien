@@ -134,10 +134,11 @@ describe('article editor — load and TinyMCE', () => {
   it('TinyMCE gets exactly the article config, once, after the article', async (t) => {
     const ctx = await openEditor(t, '42')
     assert.equal(ctx.tiny.configs.length, 1)
-    const { setup, images_upload_handler: upload, ...config } = ctx.tiny.configs[0]!
+    const { setup, images_upload_handler: upload, file_picker_callback: picker, ...config } = ctx.tiny.configs[0]!
     assert.deepEqual(config, CONFIG)
     assert.equal(typeof setup, 'function')
     assert.equal(typeof upload, 'function')
+    assert.equal(typeof picker, 'function', 'the image dialog gets a browse button that opens the media library')
     assert.match(CONTENT_STYLE, /img \{ max-width: 100%;/)
     assert.match(CONTENT_STYLE, /iframe, video \{ max-width: 100%;/)
   })
