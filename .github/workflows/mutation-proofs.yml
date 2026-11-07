@@ -25,6 +25,9 @@ concurrency:
 
 env:
   NODE_VERSION: '24'
+  # Như ci.yml: `npm ci` chạy `nuxt prepare` (postinstall) ở chế độ production, và nuxt.config từ chối
+  # chạy thiếu bí mật analytics HMAC (>= 32 ký tự). Không ký gì ở đây — chỉ để postinstall qua được.
+  ANALYTICS_HMAC_SECRET: ci-placeholder-not-a-real-secret-000000
 
 jobs:
   mutation-proofs:
