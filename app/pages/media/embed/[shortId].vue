@@ -24,7 +24,7 @@
       <p class="m-0 mb-3 text-sm">{{ t('m_detail_error_desc') }}</p>
       <button
         type="button"
-        class="cursor-pointer rounded-lg border-none bg-white px-5 py-2 text-xs font-extrabold text-brand-800"
+        class="cursor-pointer rounded-lg border-none bg-white px-5 py-2 text-xs font-extrabold text-brand-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
         @click="reload"
       >
         {{ t('m_retry') }}

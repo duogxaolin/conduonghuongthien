@@ -11,7 +11,7 @@ export const VIDEO_LIBRARY_BUTTON = 'cdktvideo'
  * item is inserted at the caret as the iframe `videoEmbedHtml` builds — the shape the HTML filter keeps.
  * An item that cannot be embedded (the modal does not offer one) inserts nothing.
  *
- * Pure (no auto-imports): `pickVideo` is the caller's `openVideoPicker`, so tests/tinymce-video-picker.test.ts
+ * Pure (no auto-imports): `pickVideo` is the caller's `openVideoPicker`, so tests/video-embed-html.test.ts
  * drives it with a fake editor.
  */
 export function registerVideoLibraryButton(

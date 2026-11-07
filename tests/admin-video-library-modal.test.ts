@@ -110,4 +110,22 @@ describe(MODAL, () => {
     await settle()
     assert.match(wire(opened.calls.at(-1)!), /page=2/)
   })
+
+  it('"Thử lại" after a failed page 2 asks for page 2 again, not for the page shown', async () => {
+    let failPage2 = true
+    const { opened } = await open((call) => {
+      const asked = Number(call.url.searchParams.get('page'))
+      if (asked === 2 && failPage2) return h3Error(403, 'Không đọc được trang 2.')
+      return answer([video(asked)], 30)
+    })
+    const next = findAll(opened.page.root, el => el.tag === 'button' && el.props['aria-label'] === 'Trang sau')[0]!
+    await fire(next, 'click')
+    await settle()
+    assert.match(alertText(opened.page), /Không đọc được trang 2\./)
+    failPage2 = false
+    await fire(findAll(opened.page.root, el => el.tag === 'button' && /Thử lại/.test(textOf(el)))[0]!, 'click')
+    await settle()
+    assert.match(wire(opened.calls.at(-1)!), /page=2/, 'the retry repeats the request that failed')
+    assert.match(textOf(opened.page.root), /2 \/ 3/)
+  })
 })

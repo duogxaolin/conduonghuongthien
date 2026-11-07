@@ -80,9 +80,19 @@ test('/admin và /api thật không bị chèn và không chạm DB; slug chỉ 
     assert.equal(all(html), '', `${path} bị chèn`)
     assert.equal(dbReads, 0, `${path} không được đọc DB`)
   }
-  for (const path of ['/', '/about', '/admin-huong-dan', '/api-tin-tuc', '/news/bai-1', '/news?page=2', '/admin-huong-dan?x=1']) {
+  for (const path of ['/', '/about', '/admin-huong-dan', '/api-tin-tuc', '/news/bai-1', '/news?page=2', '/admin-huong-dan?x=1', '/media/bai-1', '/media']) {
     const html = await render(t, path, settings)
     assert.match(all(html), /G-ABC123/, `${path} phải được chèn`)
+  }
+})
+
+test('khung phát nhúng /media/embed/<id> không bị chèn mã theo dõi và không chạm DB (mọi dạng của router)', async (t) => {
+  const settings = on({ ga4_measurement_id: 'G-ABC123' })
+  for (const path of ['/media/embed/Ab3_x-9Qz1k', '/media/embed/Ab3_x-9Qz1k?x=1', '/MEDIA/EMBED/Ab3_x-9Qz1k', '/media/%65mbed/Ab3_x-9Qz1k']) {
+    dbReads = 0
+    const html = await render(t, path, settings)
+    assert.equal(all(html), '', `${path} bị chèn`)
+    assert.equal(dbReads, 0, `${path} không được đọc DB`)
   }
 })
 

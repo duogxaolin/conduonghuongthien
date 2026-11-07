@@ -21,6 +21,8 @@ export function isEligiblePublicAnalyticsPath(value: unknown): boolean {
   const path = normalizeCollectorPath(value)
   if (!path || path === ANALYTICS_ENDPOINT || path === '/admin' || path.startsWith('/admin/') || path === '/api' || path.startsWith('/api/')) return false
   if (ASSET_PREFIXES.some(prefix => path.startsWith(prefix)) || ASSET_SUFFIX_RE.test(path)) return false
+  // Khung phát nhúng trong bài (`/media/embed/<id>`): một lượt xem bài không là thêm một lượt xem mỗi video.
+  if (path.startsWith('/media/embed/')) return false
   return true
 }
 

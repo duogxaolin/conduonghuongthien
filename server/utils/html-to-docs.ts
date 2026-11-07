@@ -356,9 +356,13 @@ function convertBlock(
         const src = (openMatch[2] || '').match(/src=["']([^"']*)["']/i)?.[1]
           ?? inner.match(/src=["']([^"']*)["']/i)?.[1] ?? ''
         const label = tag === 'video' ? 'Video' : 'Media'
-        const text = src ? `[${label}: ${src}]\n` : `[${label}]\n`
+        // Docs rejects a link that is not absolute and the WHOLE batchUpdate fails with it
+        // (`article-export-google.ts`) — and the portal's own player frame is stored as the path
+        // `/media/embed/<id>`. A relative or empty src stays plain text, with no link.
+        const link = /^https?:\/\//i.test(src) ? src : ''
+        const text = link ? `[${label}: ${link}]\n` : `[${label}]\n`
         requests.push(insertText(idx, text))
-        requests.push(updateTextStyle(idx, text.length - 1, { link: { url: src || '' } }))
+        if (link) requests.push(updateTextStyle(idx, text.length - 1, { link: { url: link } }))
         idx += text.length
         break
       }

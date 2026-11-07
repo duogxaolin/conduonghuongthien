@@ -28,10 +28,14 @@ const loadError = ref('')
 const searchQuery = ref('')
 const page = ref(1)
 const totalPages = ref(1)
+// The page the LAST request asked for: "Thử lại" repeats THAT request. `page` (what the pager shows) moves only
+// once a page has arrived, so retrying `page` after a failed page 2 would load page 1 again.
+let askedPage = 1
 
 // Only the LATEST load writes (a search, then another, or a page click, before the first answer).
 let listRequest = 0
 const fetchVideos = async (pg = 1) => {
+  askedPage = pg
   const ticket = ++listRequest
   loading.value = true
   loadError.value = ''
@@ -97,11 +101,11 @@ watch(isOpen, (open) => {
       </div>
 
       <div v-else-if="loadError" role="alert" class="py-12 text-center">
-        <p class="m-0 text-sm text-red-600">{{ loadError }}</p>
+        <p class="m-0 text-sm text-danger">{{ loadError }}</p>
         <button
           type="button"
-          class="mt-3 cursor-pointer rounded-lg border border-red-300 bg-transparent px-4 py-2 text-sm font-bold text-red-700 hover:bg-red-50"
-          @click="fetchVideos(page)"
+          class="mt-3 cursor-pointer rounded-lg border border-danger/40 bg-transparent px-4 py-2 text-sm font-bold text-danger hover:bg-danger-bg focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600"
+          @click="fetchVideos(askedPage)"
         >
           Thử lại
         </button>
@@ -142,7 +146,7 @@ watch(isOpen, (open) => {
           type="button"
           aria-label="Trang trước"
           :disabled="page <= 1"
-          class="cursor-pointer rounded-lg border border-line bg-white px-3 py-2 text-sm transition hover:bg-surface-tint disabled:cursor-not-allowed disabled:opacity-50"
+          class="cursor-pointer rounded-lg border border-line bg-white px-3 py-2 text-sm transition hover:bg-surface-tint focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
           @click="fetchVideos(page - 1)"
         >
           <i class="fa-regular fa-chevron-left" aria-hidden="true"></i>
@@ -152,7 +156,7 @@ watch(isOpen, (open) => {
           type="button"
           aria-label="Trang sau"
           :disabled="page >= totalPages"
-          class="cursor-pointer rounded-lg border border-line bg-white px-3 py-2 text-sm transition hover:bg-surface-tint disabled:cursor-not-allowed disabled:opacity-50"
+          class="cursor-pointer rounded-lg border border-line bg-white px-3 py-2 text-sm transition hover:bg-surface-tint focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
           @click="fetchVideos(page + 1)"
         >
           <i class="fa-regular fa-chevron-right" aria-hidden="true"></i>

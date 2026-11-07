@@ -38,7 +38,10 @@ export default defineNitroPlugin((nitroApp) => {
       path === '/admin' ||
       path.startsWith('/admin/') ||
       path === '/api' ||
-      path.startsWith('/api/')
+      path.startsWith('/api/') ||
+      // Khung phát nhúng trong bài: đã nằm trong một trang được đếm; chèn pixel/GA vào mỗi khung là đếm
+      // mỗi lượt xem bài thêm N lần (N = số video) và nạp mã bên thứ ba vào khung chỉ có trình phát.
+      path.startsWith('/media/embed/')
     )
       return
 
