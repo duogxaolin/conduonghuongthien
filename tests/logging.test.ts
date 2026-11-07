@@ -79,23 +79,8 @@ test('a cyclic or deeply nested payload does not throw', () => {
 })
 
 // ─── The events an operator needs ────────────────────────────────────────────
-test('login records every failure, the lockout, and the success', () => {
-  const source = read('server/api/admin/auth/login.post.ts')
-  assert.equal((source.match(/SECURITY_EVENTS\.loginFailed/g) ?? []).length, 3, 'not all three 401 branches are logged')
-  assert.match(source, /SECURITY_EVENTS\.loginLocked/)
-  assert.match(source, /SECURITY_EVENTS\.loginSucceeded/)
-  // The operator needs to tell the branches apart even though the caller cannot.
-  for (const reason of ['unknown_user', 'account_disabled', 'bad_password']) {
-    assert.match(source, new RegExp(`reason: '${reason}'`), `no reason recorded for ${reason}`)
-  }
-})
-
-test('the 401 responses stay identical even though the logs differ', () => {
-  const source = read('server/api/admin/auth/login.post.ts')
-  const messages = [...source.matchAll(/statusCode: 401, statusMessage: '([^']+)'/g)].map(m => m[1])
-  assert.ok(messages.length >= 3)
-  assert.equal(new Set(messages).size, 1, `logging the reason leaked it into the response: ${[...new Set(messages)]}`)
-})
+// Login's events (three `loginFailed` with their reasons, `loginLocked`, `loginSucceeded`) and the
+// identical 401 bodies run in `admin-login-throttle-behavior.test.ts`.
 
 test('a revoked session and a throttled form are recorded too', () => {
   assert.match(read('server/middleware/admin-auth.ts'), /SECURITY_EVENTS\.sessionRevoked/)

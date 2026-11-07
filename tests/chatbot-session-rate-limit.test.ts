@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { CHAT_SESSION_MINT_ALLOWED, enforceSessionMintLimit } from '../server/utils/chatbot/session-limit'
 import type { RateLimitDeps } from '../server/utils/rate-limit-store'
@@ -10,6 +9,8 @@ import type { RateLimitDeps } from '../server/utils/rate-limit-store'
  * ceiling, see `AI_IP_CEILING_RULE`), so this limit is defence in depth: it keeps
  * a script from hammering the endpoint and flooding the logs. It must leave room
  * for a visitor's ten conversations and for a small office behind one address.
+ * The endpoint itself (429 + Retry-After, 503 without a secret, limit before signing)
+ * runs in `chatbot-session-endpoint-behavior.test.ts`.
  */
 
 const memoryDeps = (): RateLimitDeps => ({ execute: null, memory: new Map() })
@@ -45,14 +46,4 @@ test('the allowance fits ten conversations for several visitors behind one addre
   // A visitor stores at most 10 conversations (CHATBOT_CLIENT_LIMITS.maxConversations),
   // each minting one token. Five such visitors in an office must not be refused.
   assert.ok(CHAT_SESSION_MINT_ALLOWED >= 5 * 10)
-})
-
-test('the endpoint refuses with 429 and a Retry-After header, and keeps the 503 for a missing secret', () => {
-  const source = readFileSync(new URL('../server/api/public/chatbot/session.post.ts', import.meta.url), 'utf8')
-  assert.match(source, /enforceSessionMintLimit\(event\)/)
-  assert.match(source, /statusCode:\s*429/)
-  assert.match(source, /Retry-After/)
-  assert.match(source, /statusCode:\s*503/)
-  // The limit runs before the token is signed: a refused request must cost nothing.
-  assert.ok(source.indexOf('enforceSessionMintLimit') < source.indexOf('issueSessionToken('))
 })

@@ -10,8 +10,9 @@
  *
  * The endpoint deletes nothing from the database — it removes entries from
  * Nitro's `cache` storage namespace, group `nitro/routes` (the HTML of public
- * pages). What a source-text test can pin without a running Nitro is the set of
- * decisions a refactor could quietly invert:
+ * pages). Decisions 1–3 below are run for real in
+ * tests/admin-cache-clear-behavior.test.ts; this file keeps only what is structure
+ * (the route file's `.post` suffix) and the layout button (decision 4):
  *
  *   1. It is POST + `confirm: true` + RBAC `settings.update` — same three
  *      guards as `retention-run.post.ts`, the operational endpoint this one is
@@ -47,42 +48,8 @@ describe('POST /api/admin/cache-clear — the guards are the endpoint', () => {
     assert.match(source, /defineEventHandler/, 'no handler at all?')
   })
 
-  it('requires explicit confirm:true, not a stray click', () => {
-    assert.match(source, /body\?\.confirm !== true/, 'the confirm gate disappeared')
-    assert.match(source, /statusCode: 400/, 'a missing confirm must be a 400')
-  })
-
-  it('gates on settings.update RBAC, not on nothing', () => {
-    assert.match(
-      source,
-      /requireResourcePermission\(admin, 'settings', 'update'\)/,
-      'cache invalidation must sit behind settings.update — any lower and a viewer account can spam re-renders, any higher and officers who edit content cannot see their edits',
-    )
-  })
-
-  it('clears ONLY the nitro/routes group, not the whole cache namespace', () => {
-    // The purge itself moved to server/utils/public-page-cache.ts so the article,
-    // menu and settings write paths run the very same one after commit. That it
-    // leaves the other groups alone is run for real (real unstorage, three groups)
-    // in tests/public-page-cache-behavior.test.ts; here: the button uses it.
-    assert.match(source, /await purgePublicPageCache\(\)/, 'the button must run the shared purge')
-    const util = read('server/utils/public-page-cache.ts')
-    assert.match(util, /ROUTE_CACHE_GROUP = 'nitro\/routes'/, 'the shared purge must name only the route cache group')
-    assert.match(util, /getKeys\(ROUTE_CACHE_GROUP\)/, 'must list only the route cache group')
-    for (const text of [source, util]) {
-      assert.doesNotMatch(
-        text,
-        /getKeys\(\s*\)/,
-        'a bare getKeys() sweeps every cache group — favicon settings and future function caches have their own invalidation paths',
-      )
-    }
-  })
-
-  it('writes one audit row naming who flushed and how much', () => {
-    assert.match(source, /activityLogs/, 'no audit insert at all')
-    assert.match(source, /clearedKeys/, 'the row must record the number of entries cleared')
-    assert.match(source, /clear_swr_cache/, 'the row must name the operation')
-  })
+  // confirm:true, the settings.update gate, clearing ONLY `nitro/routes` and the audit row are run
+  // for real in tests/admin-cache-clear-behavior.test.ts (real admin-auth, real unstorage prefix).
 })
 
 describe('the layout surfaces the action where officers look for it', () => {

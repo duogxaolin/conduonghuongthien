@@ -1,8 +1,5 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import path from 'node:path'
 import { safeInternalPath, SAFE_PATH_MAX_LENGTH } from '../app/utils/safe-path'
 
 const FALLBACK = '/'
@@ -75,14 +72,5 @@ describe('safeInternalPath — đường dẫn nội bộ từ query không tin 
   })
 })
 
-describe('trang in bài dùng safeInternalPath (kiểm cấu trúc)', () => {
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-  const source = readFileSync(path.join(root, 'app/pages/in-bai/[slug].vue'), 'utf8')
-
-  it('backPath đi qua safeInternalPath và href không còn ghép `/${backPath}`', () => {
-    assert.match(source, /safeInternalPath\(route\.query\.back/)
-    assert.doesNotMatch(source, /href="`\/\$\{backPath\}`"/)
-    assert.doesNotMatch(source, /`\/\$\{backPath\}`/)
-    assert.match(source, /:href="backPath"/)
-  })
-})
+// Trang in bài dùng `safeInternalPath` cho `?back=`: mount thật và kiểm `href` ở
+// tests/in-bai-back-path-behavior.test.ts (không còn khẳng định văn bản trên `[slug].vue`).

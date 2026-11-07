@@ -104,36 +104,9 @@ test('passwordRejectionMessage returns null exactly when the password passes', (
   assert.equal(typeof passwordRejectionMessage('short'), 'string')
 })
 
-// ─── Every path that sets a password goes through the policy ─────────────────
-test('creating a user enforces the policy', () => {
-  const source = read('server/api/admin/users/index.post.ts')
-  assert.match(source, /passwordRejectionMessage\(password, \{ username \}\)/)
-  assert.doesNotMatch(source, /password\.length < 6/, 'the six-character rule is back')
-})
-
-test('changing a password enforces the policy and revokes sessions', () => {
-  const source = read('server/api/admin/users/[id].put.ts')
-  assert.match(source, /passwordRejectionMessage\(newPassword/)
-  assert.match(source, /username: users\.username/, 'the username is not loaded, so the rule cannot apply')
-  assert.match(source, /tokenVersion = sql`\$\{users\.tokenVersion\} \+ 1`/)
-  // The old code skipped a short password without telling anyone.
-  assert.doesNotMatch(source, /String\(body\.password\)\.trim\(\)\.length >= 6/)
-})
-
-test('the seed refuses to create the first admin with a weak password', () => {
-  const source = read('server/db/seed.ts')
-  assert.match(source, /passwordRejectionMessage\(adminPassword/)
-  // `|| ''` is fine (it just coerces an unset variable); `|| 'something'` is a
-  // hard-coded password sneaking back in.
-  assert.doesNotMatch(source, /ADMIN_PASSWORD \|\| '[^']/, 'the seed fell back to a hard-coded password again')
-  assert.match(source, /process\.exit\(1\)/)
-})
-
-test('production refuses to boot on a weak ADMIN_PASSWORD', () => {
-  const guard = read('server/plugins/require-secrets.ts')
-  assert.match(guard, /ADMIN_PASSWORD/)
-  assert.match(guard, /passwordRejectionMessage/)
-})
+// Every path that sets a password goes through the policy — create user, reset password (and its
+// session revocation), the seed and the production boot guard — runs in
+// `password-policy-enforcement-behavior.test.ts`.
 
 // ─── The build-time guard ────────────────────────────────────────────────────
 /**
@@ -152,9 +125,9 @@ test('an invalid password stops the build, a valid one lets it through', () => {
 test('the policy is applied against the account the seed actually creates', () => {
   // Checking against some other username would let "Admin@..." through here and
   // fail later in the seed — the exact split this guard exists to close.
+  // The seed side (that it creates exactly SEED_USERNAME) runs in
+  // `password-policy-enforcement-behavior.test.ts`.
   assert.equal(SEED_USERNAME, 'admin')
-  const source = read('server/db/seed.ts')
-  assert.match(source, /username: 'admin'/, 'the seed no longer creates "admin"; the guard checks the wrong name')
 })
 
 test('an absent password warns instead of failing the build', () => {

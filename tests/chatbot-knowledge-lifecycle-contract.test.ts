@@ -5,43 +5,10 @@ import { readFile } from 'node:fs/promises'
 const root = new URL('../', import.meta.url)
 const read = (path: string) => readFile(new URL(path, root), 'utf8')
 
-test('ordinary API routes authorize content actions and delegate status rejection to the service', async () => {
-  const createRoute = await read('server/api/admin/chatbot/knowledge/index.post.ts')
-  const updateRoute = await read('server/api/admin/chatbot/knowledge/[id].put.ts')
-
-  assert.match(createRoute, /requireChatbotKnowledgePermission\(event, 'create'\)/)
-  assert.match(createRoute, /createKnowledge\(actor\.id, await readBody\(event\)/)
-  assert.doesNotMatch(createRoute, /'publish'|'archive'|transitionKnowledge/)
-
-  assert.match(updateRoute, /requireChatbotKnowledgePermission\(event, 'update'\)/)
-  assert.match(updateRoute, /updateKnowledge\(actor\.id, id, await readBody\(event\)/)
-  assert.doesNotMatch(updateRoute, /'publish'|'archive'|transitionKnowledge/)
-})
-
-test('dedicated lifecycle routes authorize and execute only their matching action', async () => {
-  const publishRoute = await read('server/api/admin/chatbot/knowledge/[id]/publish.post.ts')
-  const archiveRoute = await read('server/api/admin/chatbot/knowledge/[id]/archive.post.ts')
-
-  assert.match(publishRoute, /requireChatbotKnowledgePermission\(event, 'publish'\)/)
-  assert.match(publishRoute, /transitionKnowledge\(actor\.id, id, 'published'\)/)
-  assert.doesNotMatch(publishRoute, /'archive'|status\s*:/)
-
-  assert.match(archiveRoute, /requireChatbotKnowledgePermission\(event, 'archive'\)/)
-  assert.match(archiveRoute, /transitionKnowledge\(actor\.id, id, 'archived'\)/)
-  assert.doesNotMatch(archiveRoute, /'publish'|status\s*:/)
-})
-
-test('service contract fixes create to draft and keeps update lifecycle fields immutable', async () => {
-  const service = await read('server/services/chatbot-knowledge.ts')
-
-  assert.match(service, /status: 'draft'/)
-  assert.match(service, /reviewerId: null, reviewedAt: null, publishedAt: null, archivedAt: null/)
-  assert.match(service, /rejectLifecycleStatus\(input\)/)
-  assert.doesNotMatch(service, /patch\.status\s*=/)
-  assert.doesNotMatch(service, /value\.status/)
-  assert.match(service, /if \(current\.status === 'published'\) validatePublish/)
-  assert.match(service, /reviewerId: actorId, reviewedAt: now/)
-})
+// The routes' authorisation (publish ≠ archive ≠ create ≠ update, SuperAdmin), the service's
+// lifecycle contract (born draft, `status` refused, publish needs answer + source, reviewer and
+// dates, audit in the same transaction) are run for real in
+// tests/chatbot-knowledge-lifecycle-behavior.test.ts. What stays here is the editor page's shape.
 
 test('editor payload excludes status and lifecycle buttons call dedicated endpoints', async () => {
   const editor = await read('app/pages/admin/chatbot/knowledge/[id].vue')
