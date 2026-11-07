@@ -2594,6 +2594,15 @@ Rà soát `main` sau § 76–77 tìm ra bốn chỗ cache phát lại câu sai h
 - **Không phải "không đổi hành vi" tuyệt đối** (soát độc lập): `finish()` nay chạy SAU khi nhả khoá tên (trước đó trong lúc giữ khoá); `startSyncJob` không còn trả `finished`; thêm `.catch` trên promise worker; một chế độ lỗi mới — nếu lượt tăng cuối treo (CSDL đứng), job ở `running:true` với khoá đã nhả và chỉ buộc dừng mới gỡ được.
 - **Kiểm chứng**: bộ unit 8 908+ test, 0 fail (55 skip = integration không có MySQL); typecheck 0 lỗi; lint 0/0; docs facts khớp; integration trên MySQL dev `media-sync-rewrite` 2/2 và `media-repoint` 1/1, không sót DB tạm; soát độc lập: sẵn sàng commit; mỗi test mới được chứng minh đỏ khi phá code (4 đột biến).
 
+### 84. Chất lượng — phần 3: rà 4 cảnh báo `npm audit` mức trung bình của gói runtime (2026-11-07)
+
+`npm audit --omit=dev` báo 4 cảnh báo mức `moderate` (cổng CI chỉ chặn từ `high`, nên chưa bao giờ đỏ). Mỗi cái đã được đọc, không nâng theo phản xạ:
+
+- **`qs` 6.16.0 → 6.17.1** (GHSA-6pq8-jhm2-2vcw: `qs.stringify` với `arrayFormat: 'comma'` ném `TypeError` khi phần tử mảng có `toString` không gọi được). Đến từ `googleapis-common` (xuất Google Docs); mã của repo không import `qs`. Bản vá cùng dải phiên bản nên chỉ đổi `package-lock.json` (3 dòng), không đổi `package.json`.
+- **`minimatch` → `readdir-glob` → `archiver@8.0.0`** (GHSA-g3hv-75wg-m249: DoS khi khớp mẫu glob). Bản vá là `minimatch ≥ 11.0.1`, mà `readdir-glob@3` khai `^10.2.2`; `archiver@8.0.0` là bản mới nhất, và "bản sửa" mà `npm audit fix --force` đề nghị là **hạ** xuống `archiver@7.0.1`. **Không nâng, không ghi đè (`overrides`)**: mã chỉ dùng `zip.append(...)` ở `server/api/admin/articles/export-batch.get.ts`, không gọi `glob()`/`directory()`, nên `readdir-glob` không bao giờ nhận mẫu nào — lỗi không tới được. Ép `minimatch@11` lên gói được viết cho 10 là rủi ro hỏng lúc nạp trên đường xuất bài, đổi lấy việc dập một cảnh báo không tới được.
+- Còn lại sau thay đổi: 3 cảnh báo `moderate` (`archiver`, `readdir-glob`, `minimatch`), cùng một chuỗi. **Xem lại khi** `archiver` phát hành bản dùng `readdir-glob`/`minimatch` đã vá, hoặc khi mã bắt đầu gọi `archiver.glob()`/`directory()` với mẫu do người dùng đưa (khi đó thành cảnh báo thật).
+- Không đổi hành vi, không ảnh hưởng deploy (`production/` không đổi; image cài lại từ lockfile).
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 
