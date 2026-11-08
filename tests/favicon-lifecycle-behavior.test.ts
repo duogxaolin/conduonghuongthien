@@ -52,7 +52,7 @@ mock.module('../server/utils/logger', {
 })
 mock.module('../server/utils/db', { namedExports: { getDb: () => harness.db, getPool: () => null } })
 
-const { installH3Globals, startHandlerServer } = await import('./_h3-handler-server')
+const { installH3Globals, startHandlerServer, REQUEST_DEADLINE_MS } = await import('./_h3-handler-server')
 installH3Globals()
 const adminAuth = (await import('../server/middleware/admin-auth')).default
 const setFavicon = (await import('../server/api/admin/settings/favicon.post')).default
@@ -89,7 +89,11 @@ const reset = (account = EDITOR) => server.request('DELETE', '/api/admin/setting
 /** GET /favicon.ico, body as bytes. */
 async function favicon(): Promise<{ status: number, type: string | null, nosniff: string | null, bytes: Buffer }> {
   const { hostname, port } = new URL(server.origin)
-  const response = await fetch(`http://${hostname}:${port}/favicon.ico`)
+  // Same deadline as `server.request`: a hang fails here, named, instead of after undici's 300 s.
+  const signal = AbortSignal.timeout(REQUEST_DEADLINE_MS)
+  const response = await fetch(`http://${hostname}:${port}/favicon.ico`, { signal }).catch((error: unknown) => {
+    throw signal.aborted ? new Error(`GET /favicon.ico: no answer within ${REQUEST_DEADLINE_MS} ms`, { cause: error }) : error
+  })
   return {
     status: response.status,
     type: response.headers.get('content-type'),

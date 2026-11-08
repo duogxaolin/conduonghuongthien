@@ -363,10 +363,10 @@ onMounted(() => {
   line-height: 1.3;
 }
 .print-article-body :deep(img),
-.print-article-body :deep(video) {
-  max-width: 100%;
-  height: auto;
-}
+.print-article-body :deep(video),
+.print-article-body :deep(iframe) { max-width: 100%; height: auto; }
+/* Khung video (YouTube, /media/embed): co theo cột, giữ 16:9 — width="640" của khung không tràn khổ hẹp. */
+.print-article-body :deep(iframe) { width: 100%; aspect-ratio: 16 / 9; border: 0; }
 .print-article-body :deep(figure) {
   margin: 1.2rem 0;
   text-align: center;

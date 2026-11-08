@@ -20,6 +20,9 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 const { openPicker } = useImagePicker()
 const { openVideoPicker } = useVideoPicker()
+// The video library's list needs `media_portal` read: without it the button is not registered (TinyMCE
+// leaves out a toolbar name nothing registered) rather than opening a list the server refuses.
+const { hasPermission } = useAdminAuth()
 
 // Unique id per instance so multiple editors can coexist on one page.
 const editorId = `tinymce-${Math.random().toString(36).slice(2, 10)}`
@@ -69,7 +72,7 @@ onMounted(async () => {
     ],
     toolbar: 'undo redo | blocks | bold italic underline | forecolor backcolor | ' +
       'alignleft aligncenter alignright | bullist numlist outdent indent | ' +
-      'link image media cdktvideo table | removeformat | code fullscreen',
+      'link image cdktvideo table | removeformat | code fullscreen',
     toolbar_mode: 'sliding',
     quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
     quickbars_insert_toolbar: 'quickimage quicktable',
@@ -90,7 +93,7 @@ onMounted(async () => {
     }),
     setup: (ed: TinyMceEditorInstance) => {
       editor = ed
-      registerVideoLibraryButton(ed, openVideoPicker)
+      if (hasPermission('media_portal', 'read')) registerVideoLibraryButton(ed, openVideoPicker)
       ed.on('init', () => { ed.setContent(props.modelValue || '') })
       const push = () => {
         internalUpdate = true

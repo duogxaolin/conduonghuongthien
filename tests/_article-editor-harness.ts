@@ -125,6 +125,9 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
   const editor = {
     html: '',
     inserted: [] as string[],
+    /** Toolbar buttons `setup` registered (TinyMCE leaves out a toolbar name nothing registered). */
+    buttons: [] as string[],
+    ui: { registry: { addButton: (name: string) => { editor.buttons.push(name) } } },
     /** The element `init` attached this editor to. */
     box: undefined as MiniElement | undefined,
     on(event: string, handler: () => void) { handlers[event] = handler },
@@ -239,6 +242,8 @@ export interface OpenOptions {
   leftover?: boolean
   normalize?: (html: string) => string
   languages?: typeof LANGUAGES
+  /** The account's permission check (`useAdminAuth().hasPermission`); every permission by default. */
+  can?: (resource: string, action: string) => boolean
 }
 
 export async function openEditor(t: TestContext, id: string, options: OpenOptions = {}) {
@@ -271,6 +276,7 @@ export async function openEditor(t: TestContext, id: string, options: OpenOption
 
   const opened: MountedAdminPage = await mountAdminPage(path.relative(APP_DIR, PAGE), options.responder ?? server(), {
     route: { params: { id } },
+    can: options.can,
     modules: {
       '~/components/admin/TinyMceEditor.vue': { default: Stub },
       '~/components/admin/AdminModal.vue': { default: AdminModalStandIn },

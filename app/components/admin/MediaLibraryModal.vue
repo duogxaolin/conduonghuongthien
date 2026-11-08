@@ -210,7 +210,8 @@ watch(isOpen, (val) => {
               <p class="mt-4 text-sm text-gray-500">Chưa có ảnh nào. Hãy tải ảnh lên!</p>
             </div>
 
-            <!-- Grid — 4 cột, h-32, border + ring on select -->
+            <!-- Grid — 4 cột, h-32, border + ring on select. Each tile is a button (Tab + Enter/Space choose it;
+                 aria-pressed when several are picked); its name is the image's alt. -->
             <div v-else class="flex flex-col gap-4">
               <!-- Nhóm ảnh mặc định — luôn đầu grid, chọn nhanh khi gán thumbnail. -->
               <div>
@@ -219,36 +220,39 @@ watch(isOpen, (val) => {
                   Ảnh mặc định
                 </div>
                 <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-                  <div
+                  <button
                     v-for="item in DEFAULT_IMAGES"
                     :key="`default-${item.id}`"
-                    class="group relative cursor-pointer overflow-hidden rounded-lg border-2 transition"
+                    type="button"
+                    class="group relative block w-full cursor-pointer overflow-hidden rounded-lg border-2 bg-transparent p-0 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
                     :class="isSelected(item.id)
                       ? 'border-green-600 ring-2 ring-green-600/30'
-                      : 'border-emerald-200 hover:border-green-600'"
+                      : 'border-emerald-200 hover:border-green-600 focus-visible:border-green-600'"
+                    :aria-pressed="isMultiple ? isSelected(item.id) : undefined"
                     @click="selectImage(item)"
                   >
                     <img
                       :src="item.url"
                       :alt="item.originalName"
-                      class="h-32 w-full object-cover transition group-hover:scale-105"
+                      class="block h-32 w-full object-cover transition group-hover:scale-105 group-focus-visible:scale-105"
                       loading="lazy"
                     />
                     <!-- Overlay check -->
-                    <div
+                    <span
                       class="absolute inset-0 flex items-center justify-center transition"
-                      :class="isSelected(item.id) ? 'bg-black/40' : 'bg-black/0 group-hover:bg-black/40'"
+                      :class="isSelected(item.id) ? 'bg-black/40' : 'bg-black/0 group-hover:bg-black/40 group-focus-visible:bg-black/40'"
                     >
                       <i
                         class="fa-regular fa-circle-check text-3xl text-white transition"
-                        :class="isSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                        :class="isSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'"
+                        aria-hidden="true"
                       ></i>
-                    </div>
-                    <!-- Filename -->
-                    <div class="absolute bottom-0 left-0 right-0 truncate bg-gradient-to-t from-black/60 to-transparent p-2 text-xs text-white">
+                    </span>
+                    <!-- Filename (the image's alt already names the button) -->
+                    <span class="absolute bottom-0 left-0 right-0 block truncate bg-gradient-to-t from-black/60 to-transparent p-2 text-xs text-white" aria-hidden="true">
                       {{ item.originalName }}
-                    </div>
-                  </div>
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -259,36 +263,39 @@ watch(isOpen, (val) => {
                   Thư viện
                 </div>
                 <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-                  <div
+                  <button
                     v-for="item in mediaItems"
                     :key="item.id"
-                    class="group relative cursor-pointer overflow-hidden rounded-lg border-2 transition"
+                    type="button"
+                    class="group relative block w-full cursor-pointer overflow-hidden rounded-lg border-2 bg-transparent p-0 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
                     :class="isSelected(item.id)
                       ? 'border-green-600 ring-2 ring-green-600/30'
-                      : 'border-transparent hover:border-green-600'"
+                      : 'border-transparent hover:border-green-600 focus-visible:border-green-600'"
+                    :aria-pressed="isMultiple ? isSelected(item.id) : undefined"
                     @click="selectImage(item)"
                   >
                     <img
                       :src="item.url"
                       :alt="item.originalName"
-                      class="h-32 w-full object-cover transition group-hover:scale-105"
+                      class="block h-32 w-full object-cover transition group-hover:scale-105 group-focus-visible:scale-105"
                       loading="lazy"
                     />
                     <!-- Overlay check -->
-                    <div
+                    <span
                       class="absolute inset-0 flex items-center justify-center transition"
-                      :class="isSelected(item.id) ? 'bg-black/40' : 'bg-black/0 group-hover:bg-black/40'"
+                      :class="isSelected(item.id) ? 'bg-black/40' : 'bg-black/0 group-hover:bg-black/40 group-focus-visible:bg-black/40'"
                     >
                       <i
                         class="fa-regular fa-circle-check text-3xl text-white transition"
-                        :class="isSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                        :class="isSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'"
+                        aria-hidden="true"
                       ></i>
-                    </div>
-                    <!-- Filename -->
-                    <div class="absolute bottom-0 left-0 right-0 truncate bg-gradient-to-t from-black/60 to-transparent p-2 text-xs text-white">
+                    </span>
+                    <!-- Filename (the image's alt already names the button) -->
+                    <span class="absolute bottom-0 left-0 right-0 block truncate bg-gradient-to-t from-black/60 to-transparent p-2 text-xs text-white" aria-hidden="true">
                       {{ item.originalName }}
-                    </div>
-                  </div>
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>

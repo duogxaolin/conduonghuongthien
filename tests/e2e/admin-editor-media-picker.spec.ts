@@ -48,8 +48,10 @@ test('image dialog → browse → library → choose: the source is filled and t
 
   const library = page.getByRole('dialog', { name: 'Thư viện ảnh' })
   await expect(library).toBeVisible()
-  // Click the tile, not its <img>: a selection overlay sits on top of the image inside the tile.
-  await library.getByAltText(media.originalName).locator('xpath=ancestor::div[contains(@class, "cursor-pointer")][1]').click()
+  // Each tile is a button named by its image: reach it from the keyboard and choose it with Enter.
+  const tile = library.getByRole('button', { name: media.originalName, exact: true })
+  await tile.focus()
+  await page.keyboard.press('Enter')
   await expect(library).toBeHidden()
 
   // TinyMCE's dialog is still there, usable, and carries the choice.

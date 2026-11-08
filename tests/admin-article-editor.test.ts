@@ -85,9 +85,9 @@ const CONFIG = {
   plugins: ['advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
     'insertdatetime', 'media', 'table', 'wordcount', 'quickbars'],
   toolbar: 'undo redo | blocks | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | '
-    + 'bullist numlist outdent indent | link image media cdktvideo | table | removeformat | fullscreen code',
+    + 'bullist numlist outdent indent | link image cdktvideo | table | removeformat | fullscreen code',
   toolbar_mode: 'sliding', quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote', quickbars_insert_toolbar: 'quickimage quicktable',
-  contextmenu: 'link image table', image_advtab: true, image_caption: true, automatic_uploads: true, paste_data_images: true,
+  contextmenu: 'link image table', removed_menuitems: 'media', image_advtab: true, image_caption: true, automatic_uploads: true, paste_data_images: true,
   paste_merge_formats: true, file_picker_types: 'image', content_style: CONTENT_STYLE,
 }
 
