@@ -33,8 +33,12 @@ export interface ArticleEditorTinymceDeps {
    * dialog only offers an upload or a typed URL.
    */
   pickImage: (onPick: (media: MediaItem) => void) => void
-  /** Same for the video library: the toolbar's "video from the library" button inserts the chosen item's player frame. */
-  pickVideo: (onPick: (item: AdminMediaItem) => void) => void
+  /**
+   * Same for the video library: the toolbar's "video from the library" button inserts the chosen item's player
+   * frame. `null` for an account that cannot read the video library (`media_portal` read — its list is refused):
+   * the button is then not registered, and TinyMCE leaves out a toolbar name nothing registered.
+   */
+  pickVideo: ((onPick: (item: AdminMediaItem) => void) => void) | null
 }
 
 const TINYMCE_EDITOR_ID = 'tinymce-content-editor'
@@ -152,12 +156,16 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
         'bold italic underline strikethrough | forecolor backcolor | ' +
         'alignleft aligncenter alignright alignjustify | ' +
         'bullist numlist outdent indent | ' +
-        'link image media cdktvideo | ' +
+        'link image cdktvideo | ' +
         'table | removeformat | fullscreen code',
       toolbar_mode: 'sliding',
       quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
       quickbars_insert_toolbar: 'quickimage quicktable',
       contextmenu: 'link image table',
+      // TinyMCE's own Media dialog takes any typed URL, and the HTML filter keeps only two frame shapes, so
+      // anything else vanished on save. Videos go in from the video library (`cdktvideo`); the plugin stays
+      // so frames already in a body keep their placeholder.
+      removed_menuitems: 'media',
       image_advtab: true,
       image_caption: true,
       automatic_uploads: true,
@@ -176,7 +184,7 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
           .catch((err) => reject(errorMessage(err, 'Upload thất bại')))
       }),
       setup: (editor: TinyMceEditorInstance) => {
-        registerVideoLibraryButton(editor, pickVideo)
+        if (pickVideo) registerVideoLibraryButton(editor, pickVideo)
         editor.on('init', () => {
           tinymceReady.value = true
           if (form.content) editor.setContent(form.content)

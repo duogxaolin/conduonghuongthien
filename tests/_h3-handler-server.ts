@@ -59,7 +59,8 @@ export interface HandlerServer {
    * A `FormData` body is sent as `multipart/form-data` exactly as a browser would
    * (fetch writes the boundary); any other non-string body goes as JSON.
    */
-  request(method: string, path: string, options?: { cookie?: string, body?: unknown, headers?: Record<string, string>, redirect?: 'follow' | 'manual' }): Promise<HandlerResponse>
+  request(method: string, path: string, options?: { cookie?: string, body?: unknown, headers?: Record<string, string>, redirect?: 'follow' | 'manual', deadlineMs?: number }): Promise<HandlerResponse>
+  /** Ends open connections first: a handler that never answered cannot hold the suite's `after` hook. */
   close(): Promise<void>
   /**
    * `http://127.0.0.1:<port>`, for a suite that must send a path `fetch` would
@@ -67,6 +68,14 @@ export interface HandlerServer {
    */
   origin: string
 }
+
+/**
+ * How long a request may wait for its answer before the call fails, naming the request. Without it a
+ * handler that never answers waits for undici's 300 s header timeout and fails with a bare "fetch failed"
+ * that does not say which call hung (tests/favicon-lifecycle-behavior.test.ts on a CI runner, 2026-11-07).
+ * A local handler answers in milliseconds; 30 s only ends a hang.
+ */
+export const REQUEST_DEADLINE_MS = 30_000
 
 /** A failure a suite injected on purpose (`_sqlite-mysql-db.ts` `failNext`), anywhere in the cause chain. */
 function isInjectedFailure(error: unknown): boolean {
@@ -107,8 +116,17 @@ export async function startHandlerServer(routes: HandlerRoute[], middleware: h3.
         body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body)
         headers['content-type'] ??= 'application/json'
       }
-      const response = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers, body, redirect: options.redirect ?? 'follow' })
-      const text = await response.text()
+      const deadlineMs = options.deadlineMs ?? REQUEST_DEADLINE_MS
+      const signal = AbortSignal.timeout(deadlineMs)
+      let response: Response
+      let text: string
+      try {
+        response = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers, body, redirect: options.redirect ?? 'follow', signal })
+        text = await response.text()
+      } catch (error) {
+        if (signal.aborted) throw new Error(`${method} ${path}: no answer within ${deadlineMs} ms — the handler hung`, { cause: error })
+        throw error
+      }
       let parsed: Record<string, unknown>
       try { parsed = text ? JSON.parse(text) as Record<string, unknown> : {} } catch { parsed = { text } }
       const cookies = new Map<string, { value: string, raw: string }>()
@@ -119,7 +137,10 @@ export async function startHandlerServer(routes: HandlerRoute[], middleware: h3.
       }
       return { status: response.status, body: parsed, headers: response.headers, cookies }
     },
-    close: () => new Promise<void>(resolve => server.close(() => resolve())),
+    close: () => new Promise<void>((resolve) => {
+      server.close(() => resolve())
+      server.closeAllConnections()
+    }),
     origin: `http://127.0.0.1:${port}`,
   }
 }
