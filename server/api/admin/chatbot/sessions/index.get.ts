@@ -11,13 +11,11 @@
  * not an audit trail. One row per request, not per session displayed.
  */
 
-import { and, desc, gte, isNotNull, lt, sql } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { activityLogs, chatSessions } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { getClientIp } from '../../../../utils/client-ip'
 import { summarizeUserAgent } from '../../../../utils/chatbot/user-agent'
 import { DAY_MS, vietnamDayStart } from '../../../../utils/vn-day-range'
+import { auditChatSessionListRead, listChatSessionsPage } from '../../../../services/admin-chatbot-sessions-list'
 
 const DEFAULT_PAGE_SIZE = 25
 const MAX_PAGE_SIZE = 100
@@ -73,43 +71,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "hasContact chỉ nhận giá trị rỗng, 'yes' hoặc 'no'." })
   }
 
-  const db = getDb()
-  const conditions = []
-  if (from) conditions.push(gte(chatSessions.startedAt, from))
-  if (toExclusive) conditions.push(lt(chatSessions.startedAt, toExclusive))
-  if (rawHasContact === 'yes') conditions.push(isNotNull(chatSessions.detectedPhone))
-  if (rawHasContact === 'no') conditions.push(sql`${chatSessions.detectedPhone} IS NULL`)
-  const where = conditions.length ? and(...conditions) : undefined
+  const { total, rows } = await listChatSessionsPage({ from, toExclusive, hasContact: rawHasContact, page, pageSize })
 
-  const [countRow] = await db.select({ total: sql<number>`COUNT(*)` }).from(chatSessions).where(where)
-  const total = Number(countRow?.total ?? 0)
-
-  const rows = await db
-    .select({
-      id: chatSessions.id,
-      ip: chatSessions.ip,
-      userAgent: chatSessions.userAgent,
-      detectedPhone: chatSessions.detectedPhone,
-      detectedName: chatSessions.detectedName,
-      messageCount: chatSessions.messageCount,
-      startedAt: chatSessions.startedAt,
-      lastMessageAt: chatSessions.lastMessageAt,
-    })
-    .from(chatSessions)
-    .where(where)
-    // Tie-broken by id so pagination is stable when rows share a timestamp.
-    .orderBy(desc(chatSessions.lastMessageAt), desc(chatSessions.id))
-    .limit(pageSize)
-    .offset((page - 1) * pageSize)
-
-  await db.insert(activityLogs).values({
-    userId: admin.id,
-    action: 'read',
-    resource: 'chat_sessions',
-    meta: {
-      filters: { from: query.from ?? null, to: query.to ?? null, hasContact: rawHasContact || null },
-      ip: getClientIp(event),
-    },
+  // The read is recorded — one audit row per request (services/admin-chatbot-sessions-list.ts).
+  await auditChatSessionListRead(admin.id, {
+    filters: { from: query.from ?? null, to: query.to ?? null, hasContact: rawHasContact || null },
+    ip: getClientIp(event),
   })
 
   return {

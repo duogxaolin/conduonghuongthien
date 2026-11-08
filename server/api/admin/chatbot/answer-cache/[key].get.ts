@@ -1,7 +1,6 @@
-import { activityLogs } from '../../../../db/schema'
-import { getDb } from '../../../../utils/db'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { getAnswerCacheDetail } from '../../../../services/chatbot-answer-cache'
+import { auditAnswerCacheView } from '../../../../services/admin-chatbot-answer-cache-view-audit'
 
 /**
  * Một câu trả lời đã cache, đủ toàn văn + câu hỏi gợi ý + nguồn — thứ danh sách chỉ cho thấy
@@ -22,13 +21,8 @@ export default defineEventHandler(async (event) => {
   if (!item) throw createError({ statusCode: 404, statusMessage: 'Không tìm thấy câu trả lời đã cache.' })
 
   // Cùng khuôn với danh sách: một dòng audit cho lượt ĐỌC; nhật ký không chứa toàn văn câu trả lời.
-  await getDb().insert(activityLogs).values({
-    userId: adminUser.id ?? null,
-    action: 'read',
-    resource: 'chatbot_knowledge',
-    resourceId: null,
-    meta: { type: 'answer_cache_view', cacheKey: key },
-  }).catch(() => undefined)
+  // Best-effort: a failed insert is swallowed (services/admin-chatbot-answer-cache-view-audit.ts).
+  await auditAnswerCacheView(adminUser, key)
 
   return { ok: true, item }
 })

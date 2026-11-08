@@ -1,11 +1,8 @@
-import { inArray } from 'drizzle-orm'
 import { z } from 'zod'
-import { affectedRowsOrZero } from '../../../../utils/affected-rows'
 import { getClientIp } from '../../../../utils/client-ip'
-import { activityLogs, chatbotAnswerCache } from '../../../../db/schema'
-import { getDb } from '../../../../utils/db'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { readValidated } from '../../../../utils/request-body'
+import { bulkDeleteCachedAnswersWithAudit } from '../../../../services/admin-chatbot-answer-cache-admin'
 
 const MAX_IDS = 200
 
@@ -33,20 +30,8 @@ export default defineEventHandler(async (event) => {
   const keys = [...new Set(body.keys)]
   if (keys.length > MAX_IDS) throw createError({ statusCode: 400, statusMessage: `Tối đa ${MAX_IDS} câu trả lời mỗi lượt.` })
 
-  const db = getDb()
-  const removed = await db.transaction(async (tx) => {
-    const deleted = await tx.delete(chatbotAnswerCache).where(inArray(chatbotAnswerCache.cacheKey, keys))
-    const count = affectedRowsOrZero(deleted)
-    if (count === 0) return 0
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'delete',
-      resource: 'chatbot_knowledge',
-      resourceId: null,
-      meta: { type: 'answer_cache_bulk_delete', count, ip: getClientIp(event) },
-    })
-    return count
-  })
+  // The rows and one audit row in one transaction; only rows actually deleted count (services/admin-chatbot-answer-cache-admin.ts).
+  const removed = await bulkDeleteCachedAnswersWithAudit(adminUser, keys, getClientIp(event))
 
   return { ok: true, deleted: removed }
 })

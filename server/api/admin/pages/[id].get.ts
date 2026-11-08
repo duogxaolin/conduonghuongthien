@@ -1,8 +1,6 @@
 import type { BlockNode } from '../../../../shared/blocks/types'
-import { getDb } from '../../../utils/db'
-import { pages, pageBlocks } from '../../../db/schema'
-import { eq, asc } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { findPageById, listPageBlockRows } from '../../../services/admin-pages-queries'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -11,8 +9,7 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid page ID' })
 
-  const db = getDb()
-  const [page] = await db.select().from(pages).where(eq(pages.id, id)).limit(1)
+  const page = await findPageById(id)
   if (!page) {
     throw createError({ statusCode: 404, statusMessage: 'Trang không tồn tại.' })
   }
@@ -32,11 +29,7 @@ export default defineEventHandler(async (event) => {
      * Một hàng cũ có `data = NULL` sẽ làm nổ đúng ở đó, nên chuẩn hoá về `{}`
      * tại biên đọc — một lần, chứ không phải một `?? {}` ở từng nơi đọc.
      */
-    const rows = await db
-      .select()
-      .from(pageBlocks)
-      .where(eq(pageBlocks.pageId, id))
-      .orderBy(asc(pageBlocks.displayOrder), asc(pageBlocks.id))
+    const rows = await listPageBlockRows(id)
     blocks = rows.map(row => ({ ...row, data: row.data ?? {}, isVisible: row.isVisible ?? true }))
   }
 

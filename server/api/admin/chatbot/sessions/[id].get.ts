@@ -12,12 +12,15 @@
  * literal comparison would miss most real matches.
  */
 
-import { asc, eq, sql, desc } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { activityLogs, chatMessages, chatSessions, submissions } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { getClientIp } from '../../../../utils/client-ip'
 import { summarizeUserAgent } from '../../../../utils/chatbot/user-agent'
+import {
+  auditChatSessionView,
+  findChatSessionById,
+  findSubmissionsByPhoneTail,
+  listChatTranscript,
+} from '../../../../services/admin-chatbot-session-detail'
 
 /** Enough transcript for review without letting one long session blow up the
  *  response. Sessions past this are truncated with a flag, never silently. */
@@ -33,32 +36,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Mã phiên không hợp lệ.' })
   }
 
-  const db = getDb()
-
-  const [session] = await db
-    .select()
-    .from(chatSessions)
-    .where(eq(chatSessions.id, sessionId))
-    .limit(1)
+  const session = await findChatSessionById(sessionId)
 
   if (!session) {
     throw createError({ statusCode: 404, statusMessage: 'Không tìm thấy phiên trò chuyện.' })
   }
 
-  const messages = await db
-    .select({
-      id: chatMessages.id,
-      role: chatMessages.role,
-      content: chatMessages.content,
-      kind: chatMessages.kind,
-      createdAt: chatMessages.createdAt,
-    })
-    .from(chatMessages)
-    .where(eq(chatMessages.sessionId, sessionId))
-    // Ascending: a transcript read out of order is not a transcript. Tie-broken
-    // by id because both turns of one exchange share a timestamp to the second.
-    .orderBy(asc(chatMessages.createdAt), asc(chatMessages.id))
-    .limit(MAX_TRANSCRIPT + 1)
+  // Oldest first, ties by id (services/admin-chatbot-session-detail.ts); one extra turn to know it was cut.
+  const messages = await listChatTranscript(sessionId, MAX_TRANSCRIPT + 1)
 
   const truncated = messages.length > MAX_TRANSCRIPT
   if (truncated) messages.length = MAX_TRANSCRIPT
@@ -78,28 +63,12 @@ export default defineEventHandler(async (event) => {
     const digits = session.detectedPhone.replace(/\D/g, '')
     const tail = digits.slice(-9)
     if (tail.length === 9) {
-      relatedSubmissions = await db
-        .select({
-          id: submissions.id,
-          fullName: submissions.fullName,
-          phone: submissions.phone,
-          email: submissions.email,
-          formTitle: submissions.formTitle,
-          createdAt: submissions.createdAt,
-        })
-        .from(submissions)
-        .where(sql`RIGHT(REGEXP_REPLACE(${submissions.phone}, '[^0-9]', ''), 9) = ${tail}`)
-        .orderBy(desc(submissions.createdAt))
-        .limit(20)
+      relatedSubmissions = await findSubmissionsByPhoneTail(tail)
     }
   }
 
-  await db.insert(activityLogs).values({
-    userId: admin.id,
-    action: 'read',
-    resource: 'chat_sessions',
-    meta: { sessionId, ip: getClientIp(event) },
-  })
+  // Reading a transcript is recorded (services/admin-chatbot-session-detail.ts).
+  await auditChatSessionView(admin.id, { sessionId, ip: getClientIp(event) })
 
   return {
     ok: true,

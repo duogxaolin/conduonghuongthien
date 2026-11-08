@@ -1,10 +1,11 @@
-import { getDb } from '../../../../utils/db'
-import { pages } from '../../../../db/schema'
 import { normalizeBlocks } from '../../../../utils/page-versions'
-import { eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { findPageById } from '../../../../services/admin-pages-queries'
+import { clearPageDraft, savePageDraft } from '../../../../services/admin-page-draft'
 
 // Save the unpublished working copy (draft). Does NOT touch page_blocks (live).
+// The read and the write are not in one transaction, and not audited — as before the
+// move (services/admin-page-draft.ts says what that leaves open).
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'pages', 'update')
@@ -14,23 +15,18 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event).catch(() => ({}))
 
-  const db = getDb()
-  const [page] = await db.select().from(pages).where(eq(pages.id, pageId)).limit(1)
+  const page = await findPageById(pageId)
   if (!page) throw createError({ statusCode: 404, statusMessage: 'Trang không tồn tại.' })
 
   // No blocks array in the body → clear the draft (revert to live). An explicit
   // (possibly empty) array is saved as-is so a genuinely empty page can be drafted.
   if (!Array.isArray(body?.blocks)) {
-    await db.update(pages).set({ draftBlocks: null, draftUpdatedAt: null, draftUpdatedBy: null }).where(eq(pages.id, pageId))
+    await clearPageDraft(pageId)
     return { ok: true, cleared: true, savedAt: new Date().toISOString() }
   }
 
   const blocks = normalizeBlocks(body.blocks)
-  await db.update(pages).set({
-    draftBlocks: blocks,
-    draftUpdatedAt: new Date(),
-    draftUpdatedBy: adminUser.id,
-  }).where(eq(pages.id, pageId))
+  await savePageDraft(pageId, blocks, adminUser)
 
   return { ok: true, savedAt: new Date().toISOString() }
 })

@@ -256,12 +256,31 @@ const AUDITED_DELETE_ENDPOINTS: Array<{ file: string, why: string }> = [
     why: "another administrator's second factors are stripped and the override leaves no trace",
   },
   {
-    file: 'server/api/admin/pages/[id]/versions/[versionId].delete.ts',
+    file: 'server/services/admin-page-versions.ts#deletePageVersionWithAudit', // the transaction of pages/[id]/versions/[versionId].delete.ts
     why: 'a saved backup is discarded untraceably',
   },
   {
-    file: 'server/api/admin/pages/[id]/versions/index.post.ts',
+    file: 'server/services/admin-page-versions.ts#savePageVersionWithAudit', // the transaction of pages/[id]/versions/index.post.ts
     why: 'the origin path deletes the old baseline before writing the new one — a failure between them leaves the page with no baseline at all',
+  },
+  // The next four were guarded by the endpoint directory scans below until their transactions
+  // moved out of their handlers (chatbot/sessions/[id]/index.delete.ts, sessions/bulk-delete.post.ts,
+  // answer-cache/[key].delete.ts, answer-cache/bulk-delete.post.ts); named by FUNCTION here.
+  {
+    file: 'server/services/admin-chatbot-session-delete.ts#deleteChatSessionWithAudit',
+    why: "a citizen's chat transcript (phone, name, questions) disappears with nothing recording who removed it",
+  },
+  {
+    file: 'server/services/admin-chatbot-session-delete.ts#bulkDeleteChatSessionsWithAudit',
+    why: 'up to 100 citizen conversations disappear with nothing recording who removed them',
+  },
+  {
+    file: 'server/services/admin-chatbot-answer-cache-admin.ts#deleteCachedAnswerWithAudit',
+    why: 'a cached answer the portal was replaying to citizens is dropped untraceably',
+  },
+  {
+    file: 'server/services/admin-chatbot-answer-cache-admin.ts#bulkDeleteCachedAnswersWithAudit',
+    why: 'up to 200 cached answers are dropped untraceably',
   },
 ]
 
@@ -370,9 +389,11 @@ const AUDITED_MUTATION_ENDPOINTS: string[] = [
   // articles/[id]/boost.delete.ts: guarded by the endpoint directory scan below until its transaction moved here
   'server/services/admin-article-boost.ts#cancelBoostWithAudit',
   'server/api/admin/media/upload.post.ts',
-  'server/api/admin/pages/[id].put.ts',
-  'server/api/admin/pages/[id]/versions/[versionId]/restore.post.ts',
-  'server/api/admin/pages/index.post.ts',
+  'server/services/admin-page-write.ts#updatePageWithAudit', // pages/[id].put.ts
+  'server/services/admin-page-versions.ts#restorePageVersionWithAudit', // pages/[id]/versions/[versionId]/restore.post.ts
+  'server/services/admin-page-write.ts#createPageWithAudit', // pages/index.post.ts
+  // pages/[id]/publish.post.ts: guarded by the endpoint directory scan below until its transaction moved here
+  'server/services/admin-page-publish.ts#publishPageWithAudit',
   // Factor, recovery codes, session generation and audit row in one transaction; the
   // cookie is written AFTER the commit, so it is no longer a cookie-between-writes
   // exception (2026-10-28 — the audit used to follow the cookie on the pool).
@@ -854,6 +875,24 @@ const AUDIT_ONLY_FUNCTION_EXEMPTIONS: Record<string, { fn: string, why: string }
   'comments-moderation.ts': {
     fn: 'auditCommentRead',
     why: 'audit-only insert recording a read of the moderation list; no row write to pair it with',
+  },
+  // Moved verbatim from the read handlers (2026-11-08): each file holds the reads of one
+  // endpoint plus its one read-audit insert, and writes nothing else.
+  'admin-chatbot-sessions-list.ts': {
+    fn: 'auditChatSessionListRead', // chatbot/sessions/index.get.ts
+    why: 'audit-only insert recording a read of the visitor chat session list (IPs, phone numbers); no row write to pair it with — a failed insert fails the request, as before',
+  },
+  'admin-chatbot-session-detail.ts': {
+    fn: 'auditChatSessionView', // chatbot/sessions/[id].get.ts
+    why: "audit-only insert recording a read of one citizen's chat transcript; no row write to pair it with — a failed insert fails the request, as before",
+  },
+  'admin-chatbot-answer-cache-list-audit.ts': {
+    fn: 'auditAnswerCacheListRead', // chatbot/answer-cache/index.get.ts
+    why: 'audit-only insert recording a read of the cached-answer list; no row write to pair it with — best-effort (.catch), as before',
+  },
+  'admin-chatbot-answer-cache-view-audit.ts': {
+    fn: 'auditAnswerCacheView', // chatbot/answer-cache/[key].get.ts
+    why: 'audit-only insert recording a view of one cached answer; no row write to pair it with — best-effort (.catch), as before',
   },
 }
 
@@ -1362,12 +1401,13 @@ describe('every admin endpoint that deletes rows records that it did', () => {
 
   it('the two chat-session delete paths audit on the transaction handle', () => {
     // Ghim đúng hai tệp đã từng ở trong khoảng trống trên, để một lần dọn dẹp sau
-    // này không lặng lẽ đưa chúng về `logInfo` rồi lại xanh.
+    // này không lặng lẽ đưa chúng về `logInfo` rồi lại xanh. Transaction của chúng đã
+    // dời sang service (2026-11-08): đọc đúng HÀM giữ transaction đó.
     for (const file of [
-      'server/api/admin/chatbot/sessions/[id]/index.delete.ts',
-      'server/api/admin/chatbot/sessions/bulk-delete.post.ts',
+      'server/services/admin-chatbot-session-delete.ts#deleteChatSessionWithAudit', // sessions/[id]/index.delete.ts
+      'server/services/admin-chatbot-session-delete.ts#bulkDeleteChatSessionsWithAudit', // sessions/bulk-delete.post.ts
     ]) {
-      const source = read(file)
+      const source = entrySource(file)
       assert.match(source, /db\.transaction\(/, `${file}: lệnh xoá và dòng audit phải cùng commit`)
       assert.match(source, /tx\.insert\(activityLogs\)/, `${file}: dòng audit phải nằm trên handle tx`)
       assert.match(source, /tx\.delete\(/, `${file}: mở transaction nhưng xoá ở ngoài nó`)
@@ -1389,10 +1429,10 @@ describe('every admin endpoint that deletes rows records that it did', () => {
     // hệ trong phần vừa xoá — đủ để đánh giá mức độ của một lượt xoá — mà không
     // nhân bản số điện thoại của công dân ra thêm một bảng có thời hạn lưu khác.
     for (const file of [
-      'server/api/admin/chatbot/sessions/[id]/index.delete.ts',
-      'server/api/admin/chatbot/sessions/bulk-delete.post.ts',
+      'server/services/admin-chatbot-session-delete.ts#deleteChatSessionWithAudit', // sessions/[id]/index.delete.ts
+      'server/services/admin-chatbot-session-delete.ts#bulkDeleteChatSessionsWithAudit', // sessions/bulk-delete.post.ts
     ]) {
-      const source = read(file)
+      const source = entrySource(file)
       assert.match(source, /hasContact:/, `${file}: thiếu cờ hasContact`)
       assert.ok(
         !/meta:[\s\S]{0,400}detectedPhone:/.test(source),

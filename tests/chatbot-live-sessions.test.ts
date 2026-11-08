@@ -254,15 +254,20 @@ test('detected contact fields accumulate instead of overwriting each other', () 
 // ─── Admin viewer contracts ───────────────────────────────────────────────────
 
 test('both admin session endpoints require chatbot_knowledge.read and audit the read', () => {
-  for (const file of [
-    'server/api/admin/chatbot/sessions/index.get.ts',
-    'server/api/admin/chatbot/sessions/[id].get.ts',
-  ]) {
+  // The reads and the audit insert live in a service since 2026-11-08 (no `server/api` file
+  // calls getDb() itself): the handler must CALL the service's audit function, and that
+  // function must insert the row.
+  for (const [file, service, audit] of [
+    ['server/api/admin/chatbot/sessions/index.get.ts', 'server/services/admin-chatbot-sessions-list.ts', 'auditChatSessionListRead'],
+    ['server/api/admin/chatbot/sessions/[id].get.ts', 'server/services/admin-chatbot-session-detail.ts', 'auditChatSessionView'],
+  ] as const) {
     const src = readFileSync(file, 'utf8')
     assert.match(src, /requireResourcePermission\(admin,\s*'chatbot_knowledge',\s*'read'\)/, `${file}: permission gate`)
     // Reading transcripts that carry IPs and phone numbers must leave a trace;
     // a log that can be swept silently is a surveillance tool.
-    assert.match(src, /insert\(activityLogs\)/, `${file}: writes an audit row`)
+    assert.match(src, new RegExp(`await ${audit}\\(admin\\.id,`), `${file}: calls ${audit}`)
+    const auditFn = readFileSync(service, 'utf8').split(`export async function ${audit}(`)[1] ?? ''
+    assert.match(auditFn, /insert\(activityLogs\)/, `${service}: ${audit} writes an audit row`)
     assert.match(src, /getClientIp\(event\)/, `${file}: records the admin's own IP`)
   }
 })
@@ -275,7 +280,8 @@ test('the session list rejects an unrecognised hasContact value rather than igno
 })
 
 test('the transcript is ordered oldest-first with a stable tie-break', () => {
-  const src = readFileSync('server/api/admin/chatbot/sessions/[id].get.ts', 'utf8')
+  // The transcript query moved out of `sessions/[id].get.ts` (2026-11-08).
+  const src = readFileSync('server/services/admin-chatbot-session-detail.ts', 'utf8')
   assert.match(
     src,
     /orderBy\(asc\(chatMessages\.createdAt\),\s*asc\(chatMessages\.id\)\)/,

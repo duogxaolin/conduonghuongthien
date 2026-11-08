@@ -1,9 +1,7 @@
-import { eq } from 'drizzle-orm'
 import { requireChatbotSettingsPermission } from '../../../../utils/permissions'
 import { getChatbotSettings } from '../../../../services/chatbot-settings'
-import { getDb } from '../../../../utils/db'
-import { aiServiceConfigs, aiProviders } from '../../../../db/schema'
 import { serializeChatbotSettings } from '../../../../utils/chatbot/serializers'
+import { findChatbotProviderRow, findChatbotServiceConfig } from '../../../../services/admin-chatbot-settings-read'
 
 /**
  * Chatbot settings — spec R11.4 backward compatibility.
@@ -20,13 +18,10 @@ export default defineEventHandler(async (event) => {
   const settings = await getChatbotSettings()
 
   // Overlay AI fields from new tables (spec R11.4)
-  const db = getDb()
-  const [chatbotConfig] = await db.select().from(aiServiceConfigs)
-    .where(eq(aiServiceConfigs.serviceKey, 'chatbot')).limit(1)
+  const chatbotConfig = await findChatbotServiceConfig()
 
   if (chatbotConfig) {
-    const [providerRow] = await db.select().from(aiProviders)
-      .where(eq(aiProviders.provider, chatbotConfig.provider)).limit(1)
+    const providerRow = await findChatbotProviderRow(chatbotConfig.provider)
 
     if (providerRow) {
       // Overlay new AI config onto the settings object
