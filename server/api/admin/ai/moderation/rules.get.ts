@@ -1,17 +1,11 @@
-import { desc, asc } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiModerationRules } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { listModerationRules } from '../../../../services/admin-ai-moderation-rules'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'ai', 'read')
 
-  const db = getDb()
-  const rules = await db
-    .select()
-    .from(aiModerationRules)
-    .orderBy(asc(aiModerationRules.category), desc(aiModerationRules.id))
+  const rules = await listModerationRules()
 
   return {
     ok: true,

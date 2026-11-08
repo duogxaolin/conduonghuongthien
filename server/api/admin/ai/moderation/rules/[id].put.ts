@@ -1,10 +1,9 @@
 import { createError } from 'h3'
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../../utils/db'
-import { aiModerationRules, activityLogs } from '../../../../../db/schema'
+import type { aiModerationRules } from '../../../../../db/schema'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { invalidateModerationRulesCache } from '../../../../../services/moderation-worker'
 import { checkModerationPattern } from '../../../../../services/moderation-regex'
+import { findModerationRuleById, updateModerationRuleWithAudit } from '../../../../../services/admin-ai-moderation-rules'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -21,8 +20,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Dữ liệu không hợp lệ.' })
   }
 
-  const db = getDb()
-  const [existing] = await db.select().from(aiModerationRules).where(eq(aiModerationRules.id, id)).limit(1)
+  const existing = await findModerationRuleById(id)
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: 'Quy tắc không tồn tại.' })
   }
@@ -47,16 +45,8 @@ export default defineEventHandler(async (event) => {
     return { ok: true, message: 'Không có thay đổi.' }
   }
 
-  await db.transaction(async (tx) => {
-    await tx.update(aiModerationRules).set(patch).where(eq(aiModerationRules.id, id))
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'update',
-      resource: 'ai',
-      resourceId: id,
-      meta: { type: 'update_moderation_rule', changedFields: Object.keys(patch) },
-    })
-  })
+  // The update and its audit row in one transaction (in the service).
+  await updateModerationRuleWithAudit(adminUser, id, patch)
 
   invalidateModerationRulesCache()
   return { ok: true }

@@ -1,11 +1,9 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../../utils/db'
-import { aiProviders } from '../../../../../db/schema'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { decryptAiSecret } from '../../../../../utils/ai/crypto'
 import { safeProviderRequest } from '../../../../../utils/chatbot/outbound'
 import { buildProviderProbeCall } from '../../../../../utils/chatbot/providers'
 import { logWarn } from '../../../../../utils/logger'
+import { findProviderById } from '../../../../../services/admin-ai-providers'
 
 /**
  * Test an AI provider's API connection (spec R4.5).
@@ -23,8 +21,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'ID không hợp lệ.' })
   }
 
-  const db = getDb()
-  const [provider] = await db.select().from(aiProviders).where(eq(aiProviders.id, id)).limit(1)
+  const provider = await findProviderById(id)
 
   if (!provider) {
     return { ok: false, error: 'Provider không tồn tại.' }

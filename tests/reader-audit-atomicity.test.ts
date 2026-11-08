@@ -988,6 +988,9 @@ const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, string> = {
   // `create` của từng tệp nhập nằm trong `db.transaction` ở `media-scan-import.ts`.
   // Chuyển từ SERVICE_EXEMPTIONS (cả tệp).
   'media-scan.ts#startScanJob': 'progress/summary audits of a background scan job are best-effort by design; the row+audit pair is transactional in media-scan-import.ts',
+  'admin-ai-moderation-ops.ts#writeModerationRescanAudit': 'moved verbatim from ai/moderation/rescan-all.post.ts: audit-only rows of a background rescan job (start; summary at finish via onFinished) — the only write of the request, no row to pair with; best-effort, a failed insert logs ai_moderation.rescan_audit_failed',
+  'admin-ai-moderation-ops.ts#writeServerRestartAudit': 'moved verbatim from ai/moderation/restart-server.post.ts: audit-only row before a SuperAdmin-requested process exit — the only write of the request, no row to pair with; best-effort, a failed insert is swallowed as in the handler, which then logs system.restart_requested',
+  'admin-ai-moderation-ops.ts#writeWorkerRestartAudit': 'moved verbatim from ai/moderation/restart-worker.post.ts: audit-only row after an in-memory reset (worker counters, rule cache) — the only write of the request, no row to pair with; best-effort, a failed insert logs ai_moderation.restart_worker_audit_failed',
 }
 
 /** The audit rules of the service layer: an audit row is written on a transaction handle. */

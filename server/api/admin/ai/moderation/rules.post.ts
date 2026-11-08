@@ -1,9 +1,8 @@
 import { createError } from 'h3'
-import { getDb } from '../../../../utils/db'
-import { aiModerationRules, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { invalidateModerationRulesCache } from '../../../../services/moderation-worker'
 import { checkModerationPattern } from '../../../../services/moderation-regex'
+import { createModerationRuleWithAudit } from '../../../../services/admin-ai-moderation-rules'
 
 const VALID_CATEGORIES = new Set(['hostile_forces', 'anti_state', 'defamation', 'spam_fraud', 'profanity', 'custom'])
 const VALID_SEVERITIES = new Set(['critical', 'high', 'medium', 'low'])
@@ -47,30 +46,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: patternCheck.reason })
   }
 
-  const db = getDb()
-
-  const newId = await db.transaction(async (tx) => {
-    const [insertRes] = await tx.insert(aiModerationRules).values({
-      category,
-      pattern,
-      severity,
-      action,
-      ruleType,
-      isEnabled: body.isEnabled !== false,
-      createdBy: adminUser.id ?? null,
-    })
-
-    const id = Number(insertRes?.insertId ?? 0)
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'create',
-      resource: 'ai',
-      resourceId: id,
-      meta: { type: 'create_moderation_rule', category, pattern, action },
-    })
-
-    return id
+  // The rule and its audit row in one transaction (in the service).
+  const newId = await createModerationRuleWithAudit(adminUser, {
+    category,
+    pattern,
+    severity,
+    action,
+    ruleType,
+    isEnabled: body.isEnabled !== false,
   })
 
   invalidateModerationRulesCache()

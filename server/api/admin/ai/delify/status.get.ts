@@ -1,10 +1,8 @@
-import { eq, sum, count } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiProviders, aiUsageLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { decryptAiSecret } from '../../../../utils/ai/crypto'
 import { DelifyUsageError, fetchDelifyUsage, type DelifyUsagePath } from '../../../../utils/ai/delify-usage'
 import { checkProviderBaseUrl } from '../../../../utils/ai/provider-url'
+import { findDelifyProvider, sumLocalAiUsage } from '../../../../services/admin-ai-delify'
 
 const ALLOWED_PERIODS = new Set(['1h', '24h', '7d', '30d', 'all'])
 
@@ -59,12 +57,8 @@ export default defineEventHandler(async (event) => {
   const rawPeriod = typeof query.period === 'string' ? query.period.trim().toLowerCase() : '7d'
   const period = ALLOWED_PERIODS.has(rawPeriod) ? rawPeriod : '7d'
 
-  const db = getDb()
-
   // 1. Find Delify provider
-  const [delifyProvider] = await db.select().from(aiProviders)
-    .where(eq(aiProviders.provider, 'delify'))
-    .limit(1)
+  const delifyProvider = await findDelifyProvider()
 
   if (!delifyProvider) {
     return { ok: false, configured: false, error: 'Chưa tạo nhà cung cấp Delify Router.' }
@@ -149,13 +143,7 @@ export default defineEventHandler(async (event) => {
   const budgetVnd = budgetUsd != null ? budgetUsd * 25500 : null
 
   // 2. Tiền hiện tại đã dùng: lấy từ dữ liệu hiện tại (ai_usage_logs trong CSDL)
-  const [localUsage] = await db
-    .select({
-      totalCostUsd: sum(aiUsageLogs.costUsd),
-      totalCostVnd: sum(aiUsageLogs.costVnd),
-      totalRequests: count(aiUsageLogs.id),
-    })
-    .from(aiUsageLogs)
+  const localUsage = await sumLocalAiUsage()
 
   const usedCostUsd = Number(localUsage?.totalCostUsd ?? 0)
   const usedCostVnd = Number(localUsage?.totalCostVnd ?? 0)
