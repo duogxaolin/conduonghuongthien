@@ -32,10 +32,13 @@ import test, { after, afterEach, before, beforeEach, mock } from 'node:test'
  */
 
 const workerCalls: Array<[number, string, string, string]> = []
+/** What the recorded worker answers: `null` (a run that ended, done or failed) or an AI-not-configured refusal. */
+let workerOutcome: null | { aiNotConfigured: string } = null
 mock.module('../server/services/article-translations', {
   namedExports: {
     runTranslationWorker: async (articleId: number, langCode: string, langName: string, targetStatus: string) => {
       workerCalls.push([articleId, langCode, langName, targetStatus])
+      return workerOutcome
     },
   },
 })
@@ -156,6 +159,7 @@ beforeEach(async () => {
   h.network.sent.length = 0
   h.logged.length = 0
   workerCalls.length = 0
+  workerOutcome = null
   model()
   await seedLanguages()
   editor = await h.account([{ resource: 'settings', canRead: true, canUpdate: true }], 'caidat')
@@ -523,4 +527,50 @@ test('a failure mid-run is reported in the task state, and the next run starts c
 
   const next = await run({ targetLangs: ['en'], ...ONLY, includeUi: true })
   assert.deepEqual([next.error, next.phase], [null, 'Hoàn tất'])
+})
+
+// ─── AI not configured (CHANGELOG § 98) ─────────────────────────────────────
+
+test('provider switched off: each AI service is refused ONCE — no further UI chunk, block or article; the task says why', async () => {
+  const { advanceConfigGeneration } = await import('../server/utils/config-generation')
+  const OFF = 'Nhà cung cấp AI "Nhãn openai" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.'
+  await h.harness.db.insert(langTranslations).values([ui('vi', 'save', 'Lưu'), ui('vi', 'back', 'Quay lại')])
+  const first = await block({ title: 'Giới thiệu' })
+  const second = await block({ title: 'Liên hệ' })
+  await article('published')
+  h.harness.sqlite.prepare('UPDATE ai_providers SET is_active = 0').run()
+  // The gateway keeps the provider row 60 s; the provider PUT bumps the generation — do the same here.
+  advanceConfigGeneration()
+  try {
+    const state = await run({ targetLangs: ['en', 'zh'], articlesLimit: 0 })
+    assert.deepEqual(h.network.sent, [], 'nothing reaches the provider')
+    const refusals = h.logged.filter(line => line.includes('ai_gateway.provider_inactive'))
+    assert.equal(refusals.length, 2, `translation_ui once, translation_article once — not once per chunk, block, attempt and language:\n${refusals.join('\n')}`)
+    assert.deepEqual(workerCalls, [], 'translation_article was refused in the blocks: no article goes to the worker')
+    assert.equal(blockData(first).translations, undefined)
+    assert.equal(blockData(second).translations, undefined)
+    assert.equal(h.logged.filter(line => line.includes('block_json_parse_failed')).length, 0, 'a refusal is not reported as an unreadable answer')
+    assert.equal(state.aiNotConfigured, OFF)
+    assert.equal(state.error, OFF)
+    assert.equal(state.active, false)
+  } finally {
+    h.harness.sqlite.prepare('UPDATE ai_providers SET is_active = 1').run()
+    advanceConfigGeneration()
+  }
+})
+
+test('the article worker reporting AI not configured stops the article phase — the next article is not handed over', async () => {
+  const OFF = 'Nhà cung cấp AI "Khác" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.'
+  await article('published')
+  await article('published')
+  workerOutcome = { aiNotConfigured: OFF }
+  const state = await run({ targetLangs: ['en', 'zh'], ...ONLY, includeArticles: true, articlesLimit: 0 })
+  assert.equal(workerCalls.length, 1, 'one article, one language — then the phase stops')
+  assert.deepEqual([state.aiNotConfigured, state.error], [OFF, OFF])
+})
+
+test('a run where every service answered carries no AI-not-configured notice', async () => {
+  await h.harness.db.insert(langTranslations).values([ui('vi', 'save', 'Lưu')])
+  const state = await run({ targetLangs: ['en'], ...ONLY, includeUi: true })
+  assert.deepEqual([state.aiNotConfigured, state.error, state.phase], [null, null, 'Hoàn tất'])
 })

@@ -48,7 +48,7 @@ function fakeDb(config: Row) {
   const take = (table: unknown): unknown[] => {
     if (table === aiServiceConfigs) return [config]
     if (table === aiProviders) {
-      return [{ provider: config.provider, baseUrl: 'https://api.provider.example/v1', apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'abcd' }]
+      return [{ provider: config.provider, baseUrl: 'https://api.provider.example/v1', isActive: true, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'abcd' }]
     }
     if (table === aiModelPricing) return []
     throw new Error('unexpected table')

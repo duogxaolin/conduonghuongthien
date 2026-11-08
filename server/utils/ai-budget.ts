@@ -115,7 +115,10 @@ async function lookupDelifyQuota(db: Database): Promise<CachedDelifyQuota | null
       .where(eq(aiProviders.provider, 'delify'))
       .limit(1)
 
-    if (!delifyRow || !delifyRow.apiKeyCiphertext || !delifyRow.apiKeyNonce || !delifyRow.apiKeyAuthTag || !delifyRow.apiKeyVersion || !delifyRow.apiKeyKeyId) {
+    // Switched off counts as no key (CHANGELOG § 98): the gateway refuses every service on it with
+    // `provider_inactive` right after the budget check, so there is no quota to weigh — and its key is not
+    // sent to Delify to ask.
+    if (!delifyRow || delifyRow.isActive !== true || !delifyRow.apiKeyCiphertext || !delifyRow.apiKeyNonce || !delifyRow.apiKeyAuthTag || !delifyRow.apiKeyVersion || !delifyRow.apiKeyKeyId) {
       // No Delify key ⇒ no Delify quota. Returning the last known one kept a suspended key's `active: false`
       // blocking EVERY AI service after the admin had deleted that provider and moved to another, until the
       // process restarted (verifier 2026-11-06). "Last known on failure" is for a lookup that failed, not for
@@ -200,9 +203,9 @@ async function loadMonthlySpend(db: Database): Promise<number> {
  *
  * The Delify quota (a key Delify suspended, or its allocated budget) applies only to a service that USES
  * Delify: the provider column of the service's config row, or `provider` when the caller already has it
- * (the gateway does). The provider's own on/off switch is not read anywhere in the call path, so it cannot
- * be the signal. A service with no config row, or a failed lookup of it, keeps the quota — an unknown
- * provider is not a reason to skip a gate.
+ * (the gateway does). A Delify row switched off has no quota (`lookupDelifyQuota` — the gateway refuses
+ * its services with `provider_inactive` right after this check, CHANGELOG § 98). A service with no config
+ * row, or a failed lookup of it, keeps the quota — an unknown provider is not a reason to skip a gate.
  */
 export async function checkBudget(db: Database, serviceKey: string, provider?: string): Promise<BudgetCheckResult> {
   const budget = await loadBudget(db)

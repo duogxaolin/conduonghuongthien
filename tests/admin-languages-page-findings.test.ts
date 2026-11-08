@@ -26,7 +26,7 @@ import { describe, it } from 'node:test'
 
 import { click, fire, input, type MiniElement } from './_sfc-mount.ts'
 import {
-  button, buttonsWith, byTitle, card, dialog, dialogs, findAll, HOLD, lastToast, languagesServer, openPage, tabButton, tableRows, textOf, wire,
+  button, buttonsWith, byTitle, card, dialog, dialogs, findAll, h3Error, HOLD, lastToast, languagesServer, openPage, tabButton, tableRows, textOf, wire,
   type NetCall,
 } from './_languages-page-harness.ts'
 
@@ -262,5 +262,44 @@ describe('FINDING-L2 — one AI batch at a time', () => {
     await ctx.settle()
     const enChunks = ctx.calls.filter(c => wire(c) === 'POST /api/admin/languages/ai-translate-chunk' && (c.body as { langCode: string }).langCode === 'en')
     assert.equal(enChunks.length, 1, 'English stopped after the chunk in flight')
+  })
+})
+
+// CHANGELOG § 98: the chunk endpoint answers 503 with the server's sentence when the AI service
+// "Dịch giao diện" cannot run at all (its provider switched off, the service off, no key). Every
+// later chunk — and every later language — would be refused the same way.
+describe('AI not configured — the batch stops at the first 503 and says why', () => {
+  const OFF = 'Nhà cung cấp AI "Delify Router" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.'
+
+  it('"Dịch tất cả còn thiếu": one chunk is sent, the server\'s sentence is the error toast, no other chunk or language follows (RED before: every chunk, "Hoàn tất")', async (t) => {
+    const server = languagesServer()
+    server.state.rows.fr![1]!.value = null // fr misses nav.news too
+    for (let i = 1; i <= 12; i++) server.state.rows.vi!.push({ group: 'bulk', key: `k${i}`, value: `Giá trị ${i}`, isAiTranslated: false })
+    server.state.override = call => (wire(call) === 'POST /api/admin/languages/ai-translate-chunk' ? h3Error(503, OFF) : undefined)
+    const ctx = await openPage(t, server)
+    const from = ctx.calls.length
+    tap(header(ctx.page, 'Dịch tất cả còn thiếu'))
+    await ctx.settle()
+    const chunks = ctx.calls.slice(from).filter(c => wire(c) === 'POST /api/admin/languages/ai-translate-chunk')
+    assert.equal(chunks.length, 1, 'English has two chunks and French one: only the first is sent')
+    assert.equal(lastToast(ctx.toasts, 'error'), OFF)
+    assert.equal(ctx.toasts.filter(x => x.type === 'success').length, 0, 'never "Đã hoàn tất dịch"')
+  })
+
+  it('any other failed request (a 502 from the proxy, a dropped connection) still marks the chunk failed and goes on to the next one', async (t) => {
+    const server = languagesServer()
+    for (let i = 1; i <= 12; i++) server.state.rows.vi!.push({ group: 'bulk', key: `k${i}`, value: `Giá trị ${i}`, isAiTranslated: false })
+    let first = true
+    server.state.override = (call) => {
+      if (wire(call) !== 'POST /api/admin/languages/ai-translate-chunk' || !first) return undefined
+      first = false
+      return h3Error(502, 'Lỗi tạm thời')
+    }
+    const ctx = await openPage(t, server)
+    const from = ctx.calls.length
+    tap(button(card(ctx.page, 'en'), 'Dịch AI ('))
+    await ctx.settle()
+    assert.equal(ctx.calls.slice(from).filter(c => wire(c) === 'POST /api/admin/languages/ai-translate-chunk').length, 2)
+    assert.match(textOf(dialog(ctx.page)), /Lỗi dịch/)
   })
 })

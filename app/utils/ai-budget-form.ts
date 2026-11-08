@@ -100,7 +100,8 @@ export function checkBudgetForm(input: BudgetFormInput): BudgetFormCheck {
  *     đang tắt hoặc thiếu khoá, cổng AI trả `service_not_found`/`service_inactive`/`no_api_key`
  *     TRƯỚC khi xét hạn mức (`ai-gateway-call.ts` bước 1–2) và chatbot gọi thẳng nhà cung cấp cấu
  *     hình ở "Cài đặt Chatbot" — đường cũ này không qua hạn mức (chủ đích, ghim ở
- *     `tests/chat-policy-seams-behavior.test.ts`); câu dưới nói đúng như vậy;
+ *     `tests/chat-policy-seams-behavior.test.ts`); câu dưới nói đúng như vậy. Nhà cung cấp đang TẮT
+ *     (`provider_inactive`, CHANGELOG § 98) thì không bao giờ đi đường cũ — như `budget_exceeded`;
  *   - kiểm duyệt (`moderation-worker-check.ts`): `budget_exceeded` là lỗi tạm thời của AI —
  *     chặn tức thì (`fastPreModerate`) vẫn chạy trước; sau đó chỉ khi khớp một quy tắc mức
  *     `critical` (từ khoá HOẶC mẫu regex) thì tự ẩn (kèm hàng chờ); chỉ khớp quy tắc mức thấp

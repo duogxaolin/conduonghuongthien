@@ -536,3 +536,11 @@ test('FINDING-R4-10: a message over 10 000 or a system prompt over 20 000 charac
   assert.equal((await call({ provider: 'openai', model: 'gpt-4o-mini', message: ` ${'a'.repeat(10_000)} `, systemPrompt: 's'.repeat(20_000) })).body.ok, true)
   assert.equal(network.sent.length, 1)
 })
+
+test('a provider switched off can still be test-called — testing before switching it on is the normal flow (CHANGELOG § 98)', async () => {
+  await harness.db.update(aiProviders).set({ isActive: false })
+  const response = await call({ provider: 'openai', model: 'gpt-4o-mini', message: 'Chào bạn' })
+  assert.equal(response.status, 200)
+  assert.equal(response.body.ok, true, JSON.stringify(response.body))
+  assert.equal(network.sent.length, 1, 'the test call is sent: this endpoint does not go through callAi')
+})

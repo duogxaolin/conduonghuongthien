@@ -33,6 +33,7 @@ const { aiServiceConfigs, aiProviders, aiModelPricing } = await import('../serve
 const PROVIDER_ROW = {
   provider: 'delify',
   baseUrl: 'https://api.provider.example/v1',
+  isActive: true,
   apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'abcd',
 }
 

@@ -68,7 +68,7 @@ function fakeDb() {
   return handle
 }
 
-let aiAnswer: { ok: boolean, text?: string } = { ok: true, text: '' }
+let aiAnswer: { ok: boolean, text?: string, error?: string, errorMessage?: string } = { ok: true, text: '' }
 const prompts: string[] = []
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb() } })
 mock.module('../server/utils/permissions', { namedExports: { requireResourcePermission: () => {} } })
@@ -255,6 +255,30 @@ test('chunk: an item without a group is 400, not a row written under group "unde
     assert.equal(response.status, 400, `${JSON.stringify(items)}: ${response.text}`)
   }
   assert.deepEqual(writes, [])
+})
+
+test('chunk: AI not configured (provider switched off, service off, no key) is a 503 with the server\'s sentence — not a silent empty 200 the page loops on', async () => {
+  const OFF = 'Nhà cung cấp AI "Delify Router" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.'
+  const items = [{ group: 'nav', key: 'home', sourceText: 'Trang chủ' }]
+  for (const [answer, message] of [
+    [{ ok: false, error: 'provider_inactive', errorMessage: OFF }, OFF],
+    [{ ok: false, error: 'service_inactive' }, /chưa được cấu hình/],
+    [{ ok: false, error: 'no_api_key' }, /chưa được cấu hình/],
+  ] as const) {
+    aiAnswer = answer
+    const response = await send('POST', '/api/admin/languages/ai-translate-chunk', { langCode: 'fr', items })
+    assert.equal(response.status, 503, `${answer.error}: ${response.text}`)
+    const body = response.json() as { statusMessage?: string, message?: string }
+    if (typeof message === 'string') assert.equal(body.statusMessage ?? body.message, message)
+    else assert.match(String(body.statusMessage ?? body.message), message)
+  }
+  assert.deepEqual(writes, [])
+
+  // A transient failure keeps the old answer: an empty 200, the page logs the chunk and goes on.
+  aiAnswer = { ok: false, error: 'provider_error' }
+  const transient = await send('POST', '/api/admin/languages/ai-translate-chunk', { langCode: 'fr', items })
+  assert.equal(transient.status, 200, transient.text)
+  assert.deepEqual(transient.json().translated, [])
 })
 
 test('single key: a model that answers "null" stores nothing and the officer gets an error (RED before: stored "null")', async () => {

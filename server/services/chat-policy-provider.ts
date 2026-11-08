@@ -1,6 +1,7 @@
 /**
  * Gọi AI cho một câu trả lời có căn cứ: qua cổng AI (`callAi`, kèm năm công cụ tra cứu
- * mà model tự gọi), lùi về đường gọi trực tiếp cũ khi cổng chưa cấu hình. Chuỗi do
+ * mà model tự gọi), lùi về đường gọi trực tiếp cũ khi cổng chưa cấu hình — không bao giờ khi
+ * hết hạn mức hay nhà cung cấp đang tắt (`provider_inactive`, CHANGELOG § 98). Chuỗi do
  * model truyền vào công cụ là dữ liệu người dùng: truy vấn bài viết dựng qua
  * `article-search.ts`, ảnh/video qua `media-search.ts`. Tách nguyên văn từ
  * `server/utils/chatbot/chat-policy.ts` (wave3 D-SPLIT); `callProvider` giữ nguyên một
@@ -11,6 +12,7 @@ import { retrieveKnowledge, type PublicKnowledgeReference } from '../utils/chatb
 import { DEFAULT_CHATBOT_SYSTEM_PROMPT } from '../utils/chatbot/prompt-defaults'
 import { buildProviderChatCall, extractProviderAnswer } from '../utils/chatbot/providers'
 import { callAi } from './ai-gateway'
+import { AI_PROVIDER_INACTIVE } from '../utils/ai/not-configured'
 import { logWarn } from '../utils/logger'
 import { desc } from 'drizzle-orm'
 import { mediaItems, media } from '../db/schema'
@@ -76,9 +78,10 @@ async function callProvider(
 ): Promise<ProviderReply | null> {
   // logged and budget guard runs. The gateway reads from `ai_service_configs`
   // + `ai_providers`, which are backfilled from `chatbot_settings` on first
-  // seed (spec R11.2–R11.3). If the gateway fails (service inactive, no key,
-  // or budget exceeded), fall back to the legacy direct path so existing
-  // deployments that haven't migrated to /admin/ai settings still work.
+  // seed (spec R11.2–R11.3). If the gateway is not configured (service missing
+  // or inactive, no key) or throws, fall back to the legacy direct path so existing
+  // deployments that haven't migrated to /admin/ai settings still work. Budget
+  // exceeded and a provider switched off (`provider_inactive`) never fall back.
   const basePrompt = settings.systemPrompt?.trim() ? settings.systemPrompt : DEFAULT_CHATBOT_SYSTEM_PROMPT
   const groundedPrompt = buildGroundedSystemPrompt(basePrompt, references)
   const userTurn = history[history.length - 1]
@@ -286,8 +289,10 @@ async function callProvider(
         knowledgeHits: knowledgeHitsOf(result.toolCallsExecuted),
       }
     }
-    if (result.error === 'budget_exceeded') return null
-    // service_inactive or no_api_key = fall through to legacy direct path
+    // Hết hạn mức, hoặc nhà cung cấp đang tắt (CHANGELOG § 98): dừng hẳn — chỉ trả lời từ kho. Đường gọi
+    // cũ bên dưới dùng khoá ở "Cài đặt Chatbot", nên lùi về đó là lách đúng công tắc cán bộ vừa tắt.
+    if (result.error === 'budget_exceeded' || result.error === AI_PROVIDER_INACTIVE) return null
+    // service_not_found / service_inactive / no_api_key = fall through to legacy direct path
   } catch {
     // Gateway threw unexpectedly — fall through to legacy path
   }

@@ -30,7 +30,7 @@ function fakeDb(baseUrl: string) {
   const serviceKey = `svc-url-${id}`
   const rowsFor = (table: unknown): unknown[] => {
     if (table === aiServiceConfigs) return [{ serviceKey, provider, model: 'm', isActive: true, systemPrompt: '', maxTokens: 256 }]
-    if (table === aiProviders) return [{ provider, baseUrl, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'cret' }]
+    if (table === aiProviders) return [{ provider, baseUrl, isActive: true, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'cret' }]
     return []
   }
   const db = {

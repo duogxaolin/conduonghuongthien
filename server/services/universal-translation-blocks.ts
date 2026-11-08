@@ -22,7 +22,8 @@
 import { eq } from 'drizzle-orm'
 import type { Database } from '../utils/db'
 import { pageBlocks } from '../db/schema'
-import { callAi } from './ai-gateway'
+import { callAi, type AiCallResult } from './ai-gateway'
+import { AiNotConfiguredError, aiNotConfiguredMessage, isAiNotConfigured } from '../utils/ai/not-configured'
 import { modelTranslationText } from '../utils/ai/model-translations'
 import { sanitizeHtml } from '../utils/sanitize-html'
 import { logWarn } from '../utils/logger'
@@ -103,6 +104,14 @@ function extractJsonFromAi(answer: string): Fields | null {
 
 type Lang = { code: string, name: string }
 
+/**
+ * AI chưa cấu hình (nhà cung cấp tắt, dịch vụ tắt, thiếu khoá — CHANGELOG § 98): không thử lần hai, không
+ * ghi "không đọc được JSON" — ném để lượt dịch toàn cục dừng mọi khối và bài viết của dịch vụ này.
+ */
+function refuseIfNotConfigured(res: AiCallResult): void {
+  if (isAiNotConfigured(res.error)) throw new AiNotConfiguredError(aiNotConfiguredMessage(res))
+}
+
 /** Every asked field as text, or null — the model gets two tries. */
 async function translateFields(fields: Record<string, string>, lang: Lang, userId: number | null): Promise<Record<string, string> | null> {
   const prompt = `You are a professional translator. Translate the following UI/CMS texts from Vietnamese into ${lang.name}.
@@ -110,6 +119,7 @@ Return ONLY a valid JSON object with the exact same keys and translated text val
 ${JSON.stringify(fields)}`
   for (let attempt = 0; attempt < 2; attempt++) {
     const res = await callAi('translation_article', { prompt, userId })
+    refuseIfNotConfigured(res)
     const parsed = res.ok && res.text ? extractJsonFromAi(res.text) : null
     if (!parsed) continue
     const translated: Record<string, string> = {}
@@ -133,6 +143,7 @@ CRITICAL RULES:
 ${bodyHtml}`
   for (let attempt = 0; attempt < 2; attempt++) {
     const res = await callAi('translation_article', { prompt, userId })
+    refuseIfNotConfigured(res)
     const html = res.ok && res.text ? res.text.replace(/```html\s*/gi, '').replace(/```\s*$/g, '').trim() : ''
     if (html) return sanitizeHtml(html)
   }
@@ -141,7 +152,8 @@ ${bodyHtml}`
 
 /**
  * Translate one block into one language and store the override. Read fresh from the
- * database (the job's list may be stale); true when the block needs nothing more.
+ * database (the job's list may be stale); true when the block needs nothing more. Throws
+ * `AiNotConfiguredError` when the AI service cannot run at all (nothing is stored).
  */
 export async function translatePageBlock(blockId: number, lang: Lang, userId: number | null, db: Database): Promise<boolean> {
   const [fresh] = await db.select().from(pageBlocks).where(eq(pageBlocks.id, blockId)).limit(1)

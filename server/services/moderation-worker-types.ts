@@ -54,7 +54,8 @@ export interface ModerationCheckOutput {
 
 export interface ModerationCheckOptions {
   /**
-   * AI chưa cấu hình (`service_not_found`/`service_inactive`/`no_api_key`):
+   * AI chưa cấu hình (`service_not_found`/`service_inactive`/`no_api_key`, hoặc nhà cung cấp đang
+   * tắt — `provider_inactive`; `isAiNotConfigured`, `server/utils/ai/not-configured.ts`):
    *  - `'queue'` (mặc định — đường nhận nội dung mới): đưa vào hàng chờ `flag_only`
    *    để con người đối soát;
    *  - `'skip'` (lượt quét lại nội dung CŨ): không ghi gì, trả `aiUnavailable: true`.

@@ -50,8 +50,9 @@ const lang = (code: string, name: string, percent: number) => ({
 const STATS = { totalArticles: 340, totalBlocks: 12, totalUiKeys: 581, languages: [lang('en', 'English', 95), lang('zh', '中文', 80)] }
 const task = (over: Record<string, unknown> = {}) => ({
   active: false, phase: 'idle', currentItem: '', totalItems: 0, processedItems: 0, percent: 0, targetLangs: [],
-  startedAt: null, completedAt: null, error: null, ...over,
+  startedAt: null, completedAt: null, error: null, aiNotConfigured: null, ...over,
 })
+const OFF_SENTENCE = 'Nhà cung cấp AI "Delify Router" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.'
 const RUNNING = task({ active: true, phase: 'Dịch các bài viết...', totalItems: 10, processedItems: 3, percent: 30, targetLangs: ['en'] })
 
 function server(overrides: Record<string, Route> = {}): Responder {
@@ -153,6 +154,8 @@ describe(TAB, () => {
     ['completed', { phase: 'Hoàn tất', percent: 100, completedAt: '2026-10-28T03:00:00.000Z' }, 'success', 'Quá trình dịch toàn cục đã hoàn tất!'],
     ['cancelled', { phase: 'Đã dừng', currentItem: 'Tác vụ đã được dừng theo yêu cầu của quản trị viên.' }, 'info', 'Đã dừng tác vụ dịch toàn cục.'],
     ['failed', { phase: 'Dịch các bài viết...', error: 'ER_LOCK_WAIT_TIMEOUT' }, 'error', 'Tác vụ dịch toàn cục gặp lỗi và đã dừng giữa chừng.'],
+    // CHANGELOG § 98: a service that cannot run (its provider switched off…) — the server's sentence, not the generic one.
+    ['refused (AI not configured)', { phase: 'Đã dừng: AI chưa cấu hình', error: OFF_SENTENCE, aiNotConfigured: OFF_SENTENCE }, 'error', OFF_SENTENCE],
   ] as const) {
     it(`${outcome === 'completed' ? '' : 'FINDING: '}the poll sees the task ${outcome} — says so (${type}), stops polling, rescans`, async () => {
       let status = RUNNING

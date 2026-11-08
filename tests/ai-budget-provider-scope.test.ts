@@ -34,7 +34,7 @@ const { aiProviders, aiBudgetSettings, aiServiceConfigs } = await import('../ser
 const { checkBudget } = await import('../server/utils/ai-budget')
 const { advanceConfigGeneration } = await import('../server/utils/config-generation')
 
-const DELIFY_ROW = { provider: 'delify', baseUrl: 'https://router.delify.vn', apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 'v1', apiKeyKeyId: 'k', apiKeyLastFour: '1234' }
+const DELIFY_ROW = { provider: 'delify', baseUrl: 'https://router.delify.vn', isActive: true, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 'v1', apiKeyKeyId: 'k', apiKeyLastFour: '1234' }
 
 const db = {
   select: () => ({

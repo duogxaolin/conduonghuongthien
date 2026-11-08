@@ -19,6 +19,8 @@ const state = {
   aiCalls: 0,
   budgetAllowed: true,
   aiText: '{"translatedTitle":"Title EN","translatedExcerpt":"Excerpt EN"}',
+  /** When set, every `callAi` answers this instead of `{ ok: true, text: aiText }`. */
+  aiRefusal: null as null | { ok: false, error: string, errorMessage?: string },
 }
 
 function reset() {
@@ -29,6 +31,7 @@ function reset() {
   state.aiCalls = 0
   state.budgetAllowed = true
   state.aiText = '{"translatedTitle":"Title EN","translatedExcerpt":"Excerpt EN"}'
+  state.aiRefusal = null
 }
 
 /** Fake chainable db: select().from(t).where().limit(), update(t).set().where(), insert(t).values(). */
@@ -69,7 +72,7 @@ mock.module(new URL('../server/services/ai-gateway.ts', import.meta.url), {
   namedExports: {
     callAi: async () => {
       state.aiCalls++
-      return { ok: true, text: state.aiText }
+      return state.aiRefusal ?? { ok: true, text: state.aiText }
     },
   },
 })
@@ -200,4 +203,56 @@ test('job dịch AI gỡ thẻ HTML khỏi tiêu đề và tóm tắt đã dịc
   const excerpts = state.updates.map(u => u.set.excerpt).filter((t): t is string => typeof t === 'string')
   assert.ok(titles.length > 0 && excerpts.length > 0, 'phải ghi title và excerpt')
   for (const v of [...titles, ...excerpts]) assert.ok(!/<script|<img|onerror/i.test(v), `chưa gỡ thẻ: ${v}`)
+})
+
+// ─── AI not configured (CHANGELOG § 98) ─────────────────────────────────────
+
+const OFF = 'Nhà cung cấp AI "Delify Router" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.'
+
+test('AI chưa cấu hình (nhà cung cấp tắt) → MỘT lượt gọi, không thử lại, không chờ; job ghi failed với câu của cổng AI và báo cho nơi gọi', async () => {
+  reset()
+  state.articles.set(1, { id: 1, title: 'Tiêu đề', excerpt: 'Tóm tắt', content: '<p>Xin chào</p>' })
+  state.aiRefusal = { ok: false, error: 'provider_inactive', errorMessage: OFF }
+  const startedAt = Date.now()
+  const outcome = await svc.runTranslationWorker(1, 'en', 'English')
+  assert.equal(state.aiCalls, 1, 'no title retries, no direct title/excerpt fallbacks, no chunk calls')
+  assert.ok(Date.now() - startedAt < 1000, 'no 1.5 s / 3 s retry pauses')
+  assert.deepEqual(outcome, { aiNotConfigured: OFF })
+  assert.deepEqual(statusesWritten(), ['failed'])
+  const failed = state.updates.find(u => u.set.status === 'failed')!.set
+  assert.equal(failed.errorMessage, OFF)
+})
+
+test('AI chưa cấu hình không kèm câu (dịch vụ tắt, thiếu khoá) → cùng cách dừng, câu chung', async () => {
+  for (const error of ['service_inactive', 'no_api_key', 'service_not_found']) {
+    reset()
+    state.articles.set(1, { id: 1, title: 'Tiêu đề', excerpt: 'Tóm tắt', content: '<p>Xin chào</p>' })
+    state.aiRefusal = { ok: false, error }
+    const outcome = await svc.runTranslationWorker(1, 'en', 'English')
+    assert.equal(state.aiCalls, 1, error)
+    assert.match(String((outcome as { aiNotConfigured?: string } | null)?.aiNotConfigured), /chưa được cấu hình/, error)
+    assert.deepEqual(statusesWritten(), ['failed'], error)
+  }
+})
+
+test('một lượt chạy xong bình thường không báo gì cho nơi gọi', async () => {
+  reset()
+  state.articles.set(1, { id: 1, title: 'Tiêu đề', excerpt: 'Tóm tắt', content: '<p>Xin chào</p>' })
+  assert.equal(await svc.runTranslationWorker(1, 'en', 'English'), null)
+})
+
+test('dịch hàng loạt: AI chưa cấu hình ở bài đầu → dừng cả lượt, bài sau không chạm tới', async () => {
+  reset()
+  state.articles.set(7, { id: 7, type: 'news', title: 'Bài 7', excerpt: 'x', content: '<p>a</p>' })
+  state.aiRefusal = { ok: false, error: 'provider_inactive', errorMessage: OFF }
+  const actor = { id: 1, isSuperAdmin: true, roleId: 1, permissions: [] } as never
+  const before = svc.getBulkTranslationTaskState().startedAt
+  await svc.bulkTriggerTranslation(actor, [7, 8, 9], 'en')
+  await waitForBulkRun(before)
+  assert.equal(state.aiCalls, 1, 'articles 8 and 9 are never sent to the AI')
+  const s = svc.getBulkTranslationTaskState()
+  assert.equal(s.processed, 1)
+  assert.equal(s.aiNotConfigured, OFF)
+  assert.equal(s.active, false)
+  assert.equal(state.inserts.filter(i => i.table === articleTranslations).length, 1, 'only the first article was queued')
 })

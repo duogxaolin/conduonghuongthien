@@ -8,6 +8,7 @@
  */
 import { callAi } from './ai-gateway'
 import { fenceUntrustedContent } from '../utils/ai/untrusted-content'
+import { isAiNotConfigured } from '../utils/ai/not-configured'
 import { logWarn, logInfo, logError } from '../utils/logger'
 import { getActiveModerationRules } from './moderation-rules-cache'
 import { compileModerationRegex, createModerationRegexBudget, isRegexRuleType, testModerationRegexes, type ModerationRegexRule } from './moderation-regex'
@@ -209,17 +210,15 @@ ${fencedContent.fenced}${detectedStr}`
         }
       } else {
         // Fallback on AI error. Phân biệt hai nhóm lý do:
-        //  - AI CHƯA CẤU HÌNH (service_not_found / service_inactive / no_api_key):
-        //    admin chưa bật nhà cung cấp cho service 'moderation'. Không có AI
+        //  - AI CHƯA CẤU HÌNH (service_not_found / service_inactive / no_api_key /
+        //    provider_inactive — `isAiNotConfigured`): admin chưa bật dịch vụ 'moderation',
+        //    chưa có khoá, hoặc đã tắt nhà cung cấp của nó (CHANGELOG § 98). Không có AI
         //    domestically đối soát → đưa vào hàng đợi `pending` để con người duyệt.
         //    KHÔNG tự ẩn nội dung (chỉ `flag_only`) — ẩn khi chưa ai xem là buộc
         //    công dân phải tự chứng minh mình trong sáng.
         //  - Lỗi tạm thời (provider_error / parse_error / budget_exceeded): chỉ
         //    flag khi có critical keyword, không flood queue bằng lỗi tạm thời.
-        const aiUnavailable =
-          aiResult.error === 'service_not_found' ||
-          aiResult.error === 'service_inactive' ||
-          aiResult.error === 'no_api_key'
+        const aiUnavailable = isAiNotConfigured(aiResult.error)
 
         if (aiUnavailable && options.onAiUnavailable === 'skip') {
           return { flagged: false, action: "allow", severity: 'low', reasons: [], matchedRules: [], aiUnavailable: true }

@@ -7,8 +7,8 @@
  * Steps:
  *   1. Load `ai_service_configs` row for `serviceKey` (cached 60s).
  *   2. Check budget (spec R9).
- *   3. Load `ai_providers` row for the service's `provider` (cached 60s) and decrypt the
- *      API key.
+ *   3. Load `ai_providers` row for the service's `provider` (cached 60s); refuse when its
+ *      on/off switch is off (`provider_inactive`, CHANGELOG § 98), then decrypt the API key.
  *   4. Pick the system prompt (the caller's, else the stored one, else the service's
  *      default) and substitute `{{variables}}`.
  *   5. Check the stored base URL against the provider URL policy, then build the HTTP
@@ -48,12 +48,14 @@ import { providerSender } from './ai-gateway-send'
 import { runToolLoop } from './ai-gateway-tool-loop'
 import { runBufferedAnswer, runStreamedAnswer } from './ai-gateway-no-tools'
 import { recordAiCall, recordAiFailure } from './ai-gateway-record'
+import { AI_PROVIDER_INACTIVE } from '../utils/ai/not-configured'
 
 /**
  * Call an AI service. This is the single entry point for all AI calls (spec R10.1).
  *
  * @returns `{ ok: true, text }` on success, `{ ok: false, error }` on failure.
  *          Failure reasons: 'service_inactive', 'no_api_key', 'budget_exceeded',
+ *          'provider_inactive' (the provider's on/off switch is off — no key read, no network call),
  *          'provider_url_rejected' (stored base URL fails the provider URL policy —
  *          no network call made), 'provider_error', 'parse_error'.
  */
@@ -88,8 +90,8 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
 
 /**
  * Steps 1–5: every refusal, in order — and what each one does NOT do: no budget check before
- * the config, no key load before the budget, no decrypt without a full envelope, no DNS and
- * no request before the URL policy (`tests/ai-gateway-seams-behavior.test.ts`).
+ * the config, no key load before the budget, no decrypt for a provider switched off or without a
+ * full envelope, no DNS and no request before the URL policy (`tests/ai-gateway-seams-behavior.test.ts`).
  */
 async function prepareAiCall(db: Database, serviceKey: string, input: AiCallInput): Promise<{ refused: AiCallResult } | { call: PreparedAiCall }> {
   // 1. Load service config (spec R10.1 step 1).
@@ -115,6 +117,19 @@ async function prepareAiCall(db: Database, serviceKey: string, input: AiCallInpu
 
   // 3. Load provider and decrypt key (spec R10.1 steps 2, R10.4).
   const providerRow = await loadProvider(db, config.provider)
+  // Công tắc "Hoạt động/Tắt" của nhà cung cấp (CHANGELOG § 98): tắt ⇒ mọi dịch vụ dùng nó bị từ chối ở
+  // đây — trước khi đụng tới khoá, không DNS, không request, không hàng usage. Chỉ `true` mới cho qua.
+  if (providerRow && providerRow.isActive !== true) {
+    logWarn({ event: 'ai_gateway.provider_inactive', serviceKey, provider: config.provider })
+    const label = providerRow.label?.trim() || config.provider
+    return {
+      refused: {
+        ok: false,
+        error: AI_PROVIDER_INACTIVE,
+        errorMessage: `Nhà cung cấp AI "${label}" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.`,
+      },
+    }
+  }
   if (!providerRow || !providerRow.apiKeyCiphertext || !providerRow.apiKeyNonce || !providerRow.apiKeyAuthTag || !providerRow.apiKeyVersion || !providerRow.apiKeyKeyId) {
     logWarn({
       event: 'ai_gateway.key_unavailable',
