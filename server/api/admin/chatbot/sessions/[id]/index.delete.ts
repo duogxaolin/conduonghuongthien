@@ -1,10 +1,8 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../../utils/db'
-import { activityLogs, chatSessions, chatMessages } from '../../../../../db/schema'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { getClientIp } from '../../../../../utils/client-ip'
 import { logInfo } from '../../../../../utils/logger'
-import { readAffectedRows } from '../../../../../utils/affected-rows'
+import { findChatSessionById } from '../../../../../services/admin-chatbot-session-detail'
+import { deleteChatSessionWithAudit } from '../../../../../services/admin-chatbot-session-delete'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -15,49 +13,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Session ID is required' })
   }
 
-  const db = getDb()
-
   // Fetch session before deletion for audit trail
-  const [session] = await db.select().from(chatSessions).where(eq(chatSessions.id, sessionId)).limit(1)
+  const session = await findChatSessionById(sessionId)
 
   if (!session) {
     throw createError({ statusCode: 404, message: 'Chat session not found' })
   }
 
-  /**
-   * The deletes and the audit line commit together, or neither does. This row
-   * carries a citizen's chat transcript — a phone number, sometimes a name, and
-   * whatever they asked. Written unwrapped, a failed audit insert leaves the
-   * conversation gone with nothing recording who removed it, which is exactly
-   * the asymmetry the read side (`sessions/index.get.ts`) already guards
-   * against: viewing this list writes an audit row, so deleting from it must
-   * too. Runs on `tx`, not `db` — a `db.insert()` inside a transaction block
-   * still commits independently on the pool.
-   */
-  await db.transaction(async (tx) => {
-    // Delete messages first (foreign key constraint)
-    await tx.delete(chatMessages).where(eq(chatMessages.sessionId, sessionId))
-
-    // Delete session — counted: another delete or the retention purge may have taken it since the
-    // read above, and a second "delete" audit row for a conversation this request did not remove
-    // is a record of nothing (FINDING-R7-12, the R6-10 rule). 0 rows → 404, nothing recorded.
-    const [deleted] = await tx.delete(chatSessions).where(eq(chatSessions.id, sessionId))
-    if (readAffectedRows(deleted) !== 1) {
-      throw createError({ statusCode: 404, message: 'Chat session not found' })
-    }
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'delete',
-      resource: 'chat_sessions',
-      meta: {
-        sessionId,
-        messageCount: session.messageCount,
-        hasContact: Boolean(session.detectedPhone || session.detectedName),
-        ip: getClientIp(event),
-      },
-    })
-  })
+  // Messages, then the session (counted: 0 rows → 404, nothing recorded), then the audit row —
+  // one transaction (services/admin-chatbot-session-delete.ts).
+  await deleteChatSessionWithAudit(adminUser, sessionId, session, getClientIp(event))
 
   logInfo({
     event: 'chatbot.session_deleted',

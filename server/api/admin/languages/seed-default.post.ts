@@ -1,7 +1,6 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { seedDefaultLanguagesAndTranslations } from '../../../services/languages'
-import { getDb } from '../../../utils/db'
-import { activityLogs } from '../../../db/schema'
+import { writeLanguagesSeedDefaultAudit } from '../../../services/admin-languages-audit'
 import { logError } from '../../../utils/logger'
 
 /**
@@ -15,17 +14,8 @@ export default defineEventHandler(async (event) => {
 
   const result = await seedDefaultLanguagesAndTranslations()
 
-  const db = getDb()
   try {
-    await db.insert(activityLogs).values({
-      userId: adminUser?.id ?? null,
-      action: 'create',
-      resource: 'settings',
-      meta: {
-        operation: 'seed_default_languages_and_translations',
-        ...result,
-      },
-    })
+    await writeLanguagesSeedDefaultAudit(adminUser?.id ?? null, result)
   } catch (error) {
     logError({
       event: 'languages.seed_default_audit_failed',

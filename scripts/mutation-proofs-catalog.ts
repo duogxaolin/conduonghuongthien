@@ -240,4 +240,28 @@ export const MUTATION_PROOFS: MutationProof[] = [
     tests: ['tests/ai-gateway-seams-behavior.test.ts'],
     why: 'công tắc "Hoạt động/Tắt" của nhà cung cấp phải chặn mọi lượt gọi AI của dịch vụ dùng nó — không giải mã khoá, không request (CHANGELOG § 98)',
   },
+  {
+    id: 'audit-handler-calls-audited-service',
+    file: 'server/api/admin/users/[id].put.ts',
+    find: 'await updateUserWithAudit(adminUser, id, updateData)',
+    replace: 'await Promise.resolve()',
+    tests: ['tests/reader-audit-atomicity.test.ts'],
+    why: 'handler phải gọi đúng hàm service ghi hàng + audit; bỏ lời gọi (hay tráo sang hàm không audit) thì bảng kiểm kê audit theo nơi gọi và chốt handler đều đỏ (CHANGELOG § 100, soát độc lập)',
+  },
+  {
+    id: 'admin-translation-read-sanitize',
+    file: 'server/api/admin/articles/[id]/translations/[lang].get.ts',
+    find: 'content: translation.content == null ? null : sanitizeHtml(translation.content)',
+    replace: 'content: translation.content',
+    tests: ['tests/article-translation-read-scope-behavior.test.ts'],
+    why: '"Xem nhanh" bản dịch đưa content vào v-html — hàng cũ hay ghi ngoài app chưa lọc sẽ chạy mã trong phiên cán bộ; lọc cả lúc đọc (CHANGELOG § 101)',
+  },
+  {
+    id: 'admin-translation-list-read-sanitize',
+    file: 'server/api/admin/articles/[id]/translations/index.get.ts',
+    find: 'content: row.content == null ? null : sanitizeHtml(row.content)',
+    replace: 'content: row.content',
+    tests: ['tests/article-translation-read-scope-behavior.test.ts'],
+    why: 'danh sách bản dịch nạp content vào trình soạn TinyMCE của bản dịch — cùng hàng cũ chưa lọc; lọc cả lúc đọc (CHANGELOG § 101)',
+  },
 ]

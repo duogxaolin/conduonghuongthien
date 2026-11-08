@@ -11,11 +11,9 @@
 import { createError, defineEventHandler } from 'h3'
 import { statfs } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { eq, inArray, sql } from 'drizzle-orm'
 import { checkPermission } from '../../../utils/auth'
-import { getDb } from '../../../utils/db'
-import { mediaItems, settings } from '../../../db/schema'
-import { resolveMediaConfigWithDb } from '../../../services/media-config-service'
+import { countUploadedVideosByProvider, resolveMediaPortalConfig } from '../../../services/admin-settings-media-portal'
+import { readSettingValues } from '../../../services/admin-settings-values'
 import { defaultMediaWorkdir } from '../../../utils/media-config'
 import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
 import { execFileSync } from 'node:child_process'
@@ -45,22 +43,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
   }
 
-  const db = getDb()
-  const resolved = await resolveMediaConfigWithDb(db)
+  const resolved = await resolveMediaPortalConfig()
   const { config, sources } = resolved
   const ffmpeg = ffmpegPath()
   const diskFree = await diskFreeBytes(config.workdir)
 
-  // Đếm số video theo storage_provider — video cũ = local, video mới (khi R2
-  // bật) = r2. Chỉ đếm source='upload' (video thật), bỏ qua youtube (không lưu
-  // trên R2/local — chỉ là link).
-  const countRows = await db.select({
-    provider: mediaItems.storageProvider,
-    total: sql<number>`COUNT(*)`,
-  })
-    .from(mediaItems)
-    .where(eq(mediaItems.source, 'upload'))
-    .groupBy(mediaItems.storageProvider)
+  // Đếm số video theo storage_provider (chỉ source='upload' — youtube chỉ là link).
+  const countRows = await countUploadedVideosByProvider()
   let localCount = 0
   let r2Count = 0
   for (const row of countRows) {
@@ -83,12 +72,10 @@ export default defineEventHandler(async (event) => {
   // "đổi Account ID/Bucket mà không nhập lại Secret Key". Trả đúng giá trị đang lưu
   // thì biểu mẫu khứ hồi không đổi gì. `secretStored` cho trang biết đã có bí mật
   // (kể cả khi không giải mã được) — cùng điều kiện máy chủ dùng để đòi nhập lại.
-  const r2Rows = await db.select({ key: settings.key, value: settings.value })
-    .from(settings)
-    .where(inArray(settings.key, [
-      'media_video_r2_account_id', 'media_video_r2_access_key', 'media_video_r2_bucket',
-      'media_video_r2_public_url', 'media_video_r2_secret_key',
-    ]))
+  const r2Rows = await readSettingValues([
+    'media_video_r2_account_id', 'media_video_r2_access_key', 'media_video_r2_bucket',
+    'media_video_r2_public_url', 'media_video_r2_secret_key',
+  ])
   const storedR2 = new Map(r2Rows.map(row => [row.key, row.value ?? '']))
   const secretStored = (storedR2.get('media_video_r2_secret_key') ?? '') !== ''
   // Có bí mật = lưu trong bảng (kể cả không giải mã được), hoặc cấu hình hiệu lực

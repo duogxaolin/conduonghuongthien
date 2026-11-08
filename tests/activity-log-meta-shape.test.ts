@@ -83,7 +83,7 @@ describe('activity_logs.meta is written as an object, never a JSON string', () =
   })
 
   it('the detector catches a real writer stringified again, in every spelling', () => {
-    const file = 'server/api/admin/ai/budget/index.put.ts'
+    const file = 'server/services/admin-ai-budget.ts' // budget/index.put.ts's audit row, moved here
     const base = read(file)
     assert.equal(stringifiesAuditMeta(base), false, 'the fixed file must pass')
     const objectMeta = /meta: \{\n(\s+)type: 'budget_update',\n\s+changedFields: Object\.keys\(patch\),\n\s+\},/

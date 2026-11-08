@@ -1,10 +1,9 @@
-import { getDb } from '../../../../utils/db'
-import { aiProviders, activityLogs } from '../../../../db/schema'
+import type { aiProviders } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { encryptAiSecret } from '../../../../utils/ai/crypto'
 import { checkProviderBaseUrl } from '../../../../utils/ai/provider-url'
-import { eq } from 'drizzle-orm'
 import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
+import { createProviderWithAudit, findProviderIdByName } from '../../../../services/admin-ai-providers'
 
 /**
  * Create a new AI provider (spec R4 extension).
@@ -43,13 +42,8 @@ export default defineEventHandler(async (event) => {
     baseUrl = checked.url
   }
 
-  const db = getDb()
-
   // Check uniqueness
-  const [existing] = await db.select({ id: aiProviders.id })
-    .from(aiProviders)
-    .where(eq(aiProviders.provider, provider))
-    .limit(1)
+  const existing = await findProviderIdByName(provider)
   if (existing) {
     throw createError({ statusCode: 409, statusMessage: `Nhà cung cấp "${provider}" đã tồn tại.` })
   }
@@ -75,18 +69,8 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const result = await db.transaction(async (tx) => {
-    const [created] = await tx.insert(aiProviders).values(insert)
-    const newId = created?.insertId
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'create',
-      resource: 'ai',
-      resourceId: newId ?? null,
-      meta: { provider, hasApiKey: apiKey !== '' },
-    })
-    return newId
-  })
+  // The provider row and its audit row in one transaction (in the service).
+  const result = await createProviderWithAudit(adminUser, insert, apiKey !== '')
 
   // Cấu hình AI / prompt đổi ⇒ câu trả lời cũ không còn đúng.
   await bumpAnswerCacheVersion().catch(() => undefined)

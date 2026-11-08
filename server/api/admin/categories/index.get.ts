@@ -1,7 +1,5 @@
-import { getDb } from '../../../utils/db'
-import { categories } from '../../../db/schema'
-import { eq, asc } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { listAdminCategories } from '../../../services/admin-taxonomy-queries'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -10,14 +8,7 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const typeFilter = String(query.type || '').trim()
 
-  const db = getDb()
-
-  // Fetch all categories (with optional type filter)
-  const all = await db
-    .select()
-    .from(categories)
-    .where(typeFilter ? eq(categories.type, typeFilter) : undefined)
-    .orderBy(asc(categories.displayOrder), asc(categories.id))
+  const all = await listAdminCategories(typeFilter)
 
   // Build map for parent name lookup
   const idToName: Record<number, string> = {}

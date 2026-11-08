@@ -61,6 +61,11 @@ const db = {
   },
 }
 mock.module('../server/utils/db', { namedExports: { getDb: () => db } })
+// The answer-cache bump the handler runs after commit (its own tests: tests/chatbot-answer-cache*.test.ts):
+// counted here, not run — this fake database has no `execute`, and running it logged
+// `chatbot.answer_cache_bump_failed` once per write.
+let answerCacheBumps = 0
+mock.module('../server/services/chatbot-answer-cache', { namedExports: { bumpAnswerCacheVersion: async () => { answerCacheBumps += 1; return 1 } } })
 mock.module('../server/services/google-oauth-settings', { namedExports: { defaultCommentsEnabled: async () => false } })
 
 // Media services: the transactions live there (and have their own tests); here only the
@@ -185,6 +190,7 @@ const call = (handler: Handler, body: unknown = {}, id = '31') => handler({
 const CACHED = ['nitro:routes:_:newsbaithu.Ab12Cd34Ef.json', 'nitro:routes:_:newsbaithu_payloadjson.Zz9.json', 'nitro:routes:_:index.Qq1.json']
 beforeEach(async () => {
   events.length = 0
+  answerCacheBumps = 0
   storage = createStorage()
   storageFails = false
   for (const key of CACHED) await storage.setItem(`cache:${key}`, { value: { code: 200, body: 'cũ' } })
@@ -212,6 +218,7 @@ async function assertPurgedAfter(lastWrite: string) {
 test('create article: purge after the insert + audit commit', async () => {
   await call(handlers.create, { title: 'Một bài mới', type: 'news', status: 'published', content: '<p>x</p>' })
   await assertPurgedAfter('commit')
+  assert.equal(answerCacheBumps, 1, 'cached chatbot answers are invalidated once, after the write')
 })
 
 test('update article (archive / status / type / content): purge after commit, never inside the transaction', async () => {

@@ -1,8 +1,6 @@
-import { getDb } from '../../../utils/db'
-import { articles, users } from '../../../db/schema'
-import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { articleActionScope, articleResource } from '../../../services/articles'
+import { findAdminArticle } from '../../../services/admin-articles-queries'
 import { withPlainTextFields } from '../../../utils/decode-html-entities'
 
 export default defineEventHandler(async (event) => {
@@ -11,30 +9,9 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid article ID' })
 
-  const db = getDb()
-  const [article] = await db
-    .select({
-      id:           articles.id,
-      type:         articles.type,
-      category:     articles.category,
-      categoryId:   articles.categoryId,
-      title:        articles.title,
-      slug:         articles.slug,
-      excerpt:      articles.excerpt,
-      content:      articles.content,
-      status:       articles.status,
-      thumbnailUrl: articles.thumbnailUrl,
-      publishedAt:  articles.publishedAt,
-      createdAt:    articles.createdAt,
-      updatedAt:    articles.updatedAt,
-      authorName:   users.username,
-    })
-    .from(articles)
-    .leftJoin(users, eq(articles.authorId, users.id))
-    // Scoped to readable types: an id of another type is the same 404 as a
-    // missing id, not a 403 that confirms it exists.
-    .where(and(eq(articles.id, id), articleActionScope(adminUser, 'read')))
-    .limit(1)
+  // Scoped to readable types: an id of another type is the same 404 as a
+  // missing id, not a 403 that confirms it exists.
+  const article = await findAdminArticle(id, articleActionScope(adminUser, 'read'))
 
   if (!article) {
     throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })

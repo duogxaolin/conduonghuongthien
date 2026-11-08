@@ -1,8 +1,6 @@
 import { createError } from 'h3'
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { submissions, users } from '../../../../db/schema'
 import { listSubmissionEvents, recordSubmissionView } from '../../../../services/submission-workflow'
+import { findAdminSubmissionDetail } from '../../../../services/admin-submissions-queries'
 
 /**
  * Một đơn đăng ký kèm nhật ký xử lý của nó.
@@ -28,30 +26,7 @@ export default defineEventHandler(async (event) => {
   // dưới không phải kiểm lại.
   const { firstView } = await recordSubmissionView(event.context.adminUser, id)
 
-  const db = getDb()
-  const [row] = await db
-    .select({
-      id: submissions.id,
-      fullName: submissions.fullName,
-      phone: submissions.phone,
-      email: submissions.email,
-      address: submissions.address,
-      message: submissions.message,
-      answers: submissions.answers,
-      formTitle: submissions.formTitle,
-      status: submissions.status,
-      statusChangedAt: submissions.statusChangedAt,
-      // leftJoin để đơn do một tài khoản ĐÃ XOÁ đổi trạng thái vẫn đọc được —
-      // mất tên người thực hiện thì dòng thời gian còn lại một khoảng trống.
-      statusChangedByName: users.username,
-      firstViewedAt: submissions.firstViewedAt,
-      notifiedAt: submissions.notifiedAt,
-      createdAt: submissions.createdAt,
-    })
-    .from(submissions)
-    .leftJoin(users, eq(users.id, submissions.statusChangedBy))
-    .where(eq(submissions.id, id))
-    .limit(1)
+  const row = await findAdminSubmissionDetail(id)
 
   if (!row) throw createError({ statusCode: 404, statusMessage: 'Đơn đăng ký không tồn tại.' })
 

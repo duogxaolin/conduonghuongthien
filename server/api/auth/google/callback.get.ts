@@ -28,10 +28,6 @@
  * does not silently start sending every visitor's address to a Google image host
  * on the pages citizens actually read.
  */
-import { eq } from 'drizzle-orm'
-
-import { getDb } from '../../../utils/db'
-import { readerAccounts } from '../../../db/schema'
 import { getUsableOAuthConfig } from '../../../services/google-oauth-settings'
 import { GOOGLE_TOKEN_ENDPOINT, resolveRedirectUri } from '../../../utils/google-oauth/config'
 import { stateSigningKey, verifyState } from '../../../utils/google-oauth/state'
@@ -44,6 +40,7 @@ import { signReaderToken } from '../../../utils/auth'
 import { getClientIp } from '../../../utils/client-ip'
 import { logWarn } from '../../../utils/logger'
 import { isReservedDisplayName } from '../../../utils/display-name'
+import { createReaderAccount, findReaderBySub, refreshReaderSignIn } from '../../../services/google-oauth-callback-account'
 
 /** Bounded so a hung Google endpoint cannot hold a request open indefinitely. */
 const TOKEN_EXCHANGE_TIMEOUT_MS = 10_000
@@ -130,7 +127,6 @@ export default defineEventHandler(async (event) => {
     return sendRedirect(event, signInBlockedRedirect(returnPath, 'ip_banned'), 302)
   }
 
-  const db = getDb()
   const userAgent = (getRequestHeader(event, 'user-agent') || '').slice(0, 512) || null
   const now = new Date()
   // Tên Google gấp ra một từ dành riêng ("Admin", "Ban quản trị"…): vẫn lưu nguyên
@@ -138,16 +134,11 @@ export default defineEventHandler(async (event) => {
   // tên tự đặt (spec reader-display-names-google, D-NAMES). Không từ chối đăng nhập.
   const displayName = verdict.claims.name ?? null
   const displayNameReserved = displayName !== null && isReservedDisplayName(displayName)
+  // Written on every sign-in, new account or returning one (services/google-oauth-callback-account.ts).
+  const signIn = { email: verdict.claims.email ?? null, displayName, displayNameReserved, now, ip, userAgent }
 
-  const [existing] = await db
-    .select({
-      id:           readerAccounts.id,
-      isBanned:     readerAccounts.isBanned,
-      tokenVersion: readerAccounts.tokenVersion,
-    })
-    .from(readerAccounts)
-    .where(eq(readerAccounts.googleSub, verdict.claims.sub))
-    .limit(1)
+  // Keyed on `sub`, never on email.
+  const existing = await findReaderBySub(verdict.claims.sub)
 
   let readerId: number
   let tokenVersion: number
@@ -161,44 +152,15 @@ export default defineEventHandler(async (event) => {
       return sendRedirect(event, signInBlockedRedirect(returnPath, 'account_banned'), 302)
     }
 
-    await db
-      .update(readerAccounts)
-      .set({
-        // Refreshed on every sign-in: a reader who changed their Google display
-        // name should not keep appearing under the old one on a public page.
-        email:         verdict.claims.email ?? null,
-        displayName,
-        // Recomputed with the name: a reader who renames themselves at Google
-        // from "Admin" to a real name gets their name back on the next sign-in.
-        displayNameReserved,
-        lastSeenAt:    now,
-        lastIp:        ip,
-        lastUserAgent: userAgent,
-      })
-      .where(eq(readerAccounts.id, existing.id))
+    // Refreshes the Google profile fields (name, email, reserved-name flag) and the last-seen trail.
+    await refreshReaderSignIn(existing.id, signIn)
 
     readerId = existing.id
     tokenVersion = existing.tokenVersion
   } else {
-    const inserted = await db.insert(readerAccounts).values({
-      googleSub:     verdict.claims.sub,
-      email:         verdict.claims.email ?? null,
-      displayName,
-      displayNameReserved,
-      lastSeenAt:    now,
-      lastIp:        ip,
-      lastUserAgent: userAgent,
-    })
-
-    // `db.insert()` resolves to an ARRAY whose first element carries the header —
-    // so `inserted.insertId` is `undefined` and `Number(undefined ?? 0)` is 0.
-    // That read failed the guard below *after the row had already been written*,
-    // which is exactly the shape of the bug reported from production: the first
-    // sign-in reported an error, and the second succeeded because it took the
-    // `existing` branch (which never reads insertId). Destructuring is how every
-    // other insert site in this project reads it.
-    const [header] = inserted
-    readerId = Number(header?.insertId ?? 0)
+    // The insert id is read from the result header (destructured — reading it off the array
+    // was a production bug: the first sign-in failed after the row was written).
+    readerId = await createReaderAccount(verdict.claims.sub, signIn)
     tokenVersion = 0
 
     if (!readerId) {

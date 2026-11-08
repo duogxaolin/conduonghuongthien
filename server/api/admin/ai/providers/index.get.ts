@@ -1,7 +1,5 @@
-import { getDb } from '../../../../utils/db'
-import { aiProviders, aiModelPricing } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
-import { sql } from 'drizzle-orm'
+import { listProvidersWithModelStats } from '../../../../services/admin-ai-providers'
 
 /**
  * List all AI providers with masked keys.
@@ -11,23 +9,8 @@ export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'ai', 'read')
 
-  const db = getDb()
-  const rows = await db.select({
-    id: aiProviders.id,
-    provider: aiProviders.provider,
-    label: aiProviders.label,
-    baseUrl: aiProviders.baseUrl,
-    isActive: aiProviders.isActive,
-    apiKeyLastFour: aiProviders.apiKeyLastFour,
-    updatedAt: aiProviders.updatedAt,
-  }).from(aiProviders)
-
-  // Fetch model stats per provider
-  const modelStats = await db.select({
-    provider: aiModelPricing.provider,
-    total: sql<number>`count(*)`,
-    active: sql<number>`sum(case when ${aiModelPricing.isActive} = 1 then 1 else 0 end)`,
-  }).from(aiModelPricing).groupBy(aiModelPricing.provider)
+  // The providers, then the model stats per provider.
+  const { rows, modelStats } = await listProvidersWithModelStats()
 
   const statsMap = new Map<string, { total: number; active: number }>()
   for (const s of modelStats) {

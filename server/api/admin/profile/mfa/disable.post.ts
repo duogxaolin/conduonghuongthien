@@ -11,23 +11,17 @@
  * between the writes any more, so nothing a rollback cannot retract.
  */
 
-import { getDb } from '../../../../utils/db'
-import { activityLogs } from '../../../../db/schema'
 import { logInfo, SECURITY_EVENTS } from '../../../../utils/logger'
 import { requireCurrentPassword } from '../../../../utils/mfa/reauth'
 import {
   FACTOR_TYPES,
   FACTOR_LABELS,
-  deleteFactor,
   getFactor,
-  hasAnyActiveFactor,
-  pruneRecoveryCodesIfNoFactors,
-  revokeSessions,
   type FactorType,
 } from '../../../../utils/mfa/factors'
-import { lockAccountForMfaChange } from '../../../../utils/mfa/recovery-codes'
 import { setSessionCookie } from '../../../../utils/mfa/session'
 import { getClientIp } from '../../../../utils/client-ip'
+import { disableFactorWithAudit } from '../../../../services/admin-mfa-disable'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -47,30 +41,10 @@ export default defineEventHandler(async (event) => {
   if (!row) throw createError({ statusCode: 404, statusMessage: 'Phương thức này chưa được bật.' })
 
   const ip = getClientIp(event)
-  const db = getDb()
-  // Every read and write on `tx`: a `getDb()` read here runs on another pool
-  // connection and, on MySQL, would not see the uncommitted delete.
-  const { stillProtected, tokenVersion } = await db.transaction(async (tx) => {
-    // Serialises with enabling a factor / regenerating codes (`confirm.post.ts`) and
-    // with a second disable, so "is any factor left" is decided on settled rows.
-    await lockAccountForMfaChange(tx, admin.id)
-    if ((await deleteFactor(admin.id, factorType, tx)) === 0) {
-      throw createError({ statusCode: 404, statusMessage: 'Phương thức này chưa được bật.' })
-    }
-    // Recovery codes exist to get past a factor; with no factor left they are
-    // material with no purpose.
-    await pruneRecoveryCodesIfNoFactors(admin.id, tx)
-    const remaining = await hasAnyActiveFactor(admin.id, tx)
-    const version = await revokeSessions(admin.id, tx)
-    await tx.insert(activityLogs).values({
-      userId: admin.id,
-      action: 'update',
-      resource: 'profile_mfa',
-      resourceId: admin.id,
-      meta: { factorType, enabled: false, ip },
-    })
-    return { stillProtected: remaining, tokenVersion: version }
-  })
+  // Delete the factor (gone meanwhile → 404), prune the codes it leaves without purpose, bump the
+  // session generation and write the audit row — one transaction under the account lock
+  // (services/admin-mfa-disable.ts).
+  const { stillProtected, tokenVersion } = await disableFactorWithAudit(admin, factorType, ip)
   logInfo({ event: SECURITY_EVENTS.mfaFactorDisabled, userId: admin.id, username: admin.username, factorType, ip })
 
   // Every other session ended with the bump above; this one carries on.

@@ -7,11 +7,9 @@
  * tool rather than an audit trail.
  */
 
-import { and, desc, eq, gte, lt, sql } from 'drizzle-orm'
-import { getDb } from '../../../utils/db'
-import { activityLogs, users } from '../../../db/schema'
 import { getClientIp } from '../../../utils/client-ip'
 import { DAY_MS, vietnamDayStart } from '../../../utils/vn-day-range'
+import { auditUserHistoryRead, findHistoryTarget, listActivityHistoryPage } from '../../../services/admin-profile-history'
 
 const DEFAULT_PAGE_SIZE = 20
 const MAX_PAGE_SIZE = 100
@@ -77,54 +75,19 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Khoảng thời gian không hợp lệ: from phải trước to.' })
   }
 
-  const db = getDb()
-  const conditions = [eq(activityLogs.userId, targetId)]
-  if (from) conditions.push(gte(activityLogs.createdAt, from))
-  if (toExclusive) conditions.push(lt(activityLogs.createdAt, toExclusive))
-  const where = and(...conditions)
-
-  const [countRow] = await db
-    .select({ total: sql<number>`COUNT(*)` })
-    .from(activityLogs)
-    .where(where)
-  const total = Number(countRow?.total ?? 0)
-
-  const rows = await db
-    .select({
-      id: activityLogs.id,
-      action: activityLogs.action,
-      resource: activityLogs.resource,
-      resourceId: activityLogs.resourceId,
-      meta: activityLogs.meta,
-      createdAt: activityLogs.createdAt,
-    })
-    .from(activityLogs)
-    .where(where)
-    // Tie-broken by id so pagination is stable when rows share a timestamp.
-    .orderBy(desc(activityLogs.createdAt), desc(activityLogs.id))
-    .limit(pageSize)
-    .offset((page - 1) * pageSize)
+  // Count + one page, newest first (services/admin-profile-history.ts).
+  const { total, rows } = await listActivityHistoryPage({ targetId, from, toExclusive, page, pageSize })
 
   let targetUsername: string | null = null
   if (crossUser) {
-    const [target] = await db
-      .select({ username: users.username })
-      .from(users)
-      .where(eq(users.id, targetId))
-      .limit(1)
+    const target = await findHistoryTarget(targetId)
     if (!target) throw createError({ statusCode: 404, statusMessage: 'Người dùng không tồn tại' })
     targetUsername = target.username
 
     // The cross-user read is itself an auditable event.
-    await db.insert(activityLogs).values({
-      userId: admin.id,
-      action: 'read',
-      resource: 'user_history',
-      resourceId: targetId,
-      meta: {
-        targetUsername: target.username,
-        ip: getClientIp(event),
-      },
+    await auditUserHistoryRead(admin.id, targetId, {
+      targetUsername: target.username,
+      ip: getClientIp(event),
     })
   }
 

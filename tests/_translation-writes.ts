@@ -16,14 +16,21 @@
  *   - định danh → khai báo gần nhất theo PHẠM VI KHỐI, khởi tạo bằng object literal đạt luật; mọi tham chiếu
  *     khác chỉ được là `x.prop = …` (content thì phải lọc), đọc `x.prop`, `Object.keys/values/entries(x)`,
  *     `JSON.stringify(x)`, hoặc chính lượt ghi. Gán lại, bí danh, truyền cho hàm khác, phép gán gộp → không đạt;
+ *   - định danh là THAM SỐ của một hàm khai cấp cao nhất (payload dựng ở handler, lượt ghi dời sang service,
+ *     2026-11-08) → trong hàm, mọi tham chiếu tới tham số theo đúng luật trên; rồi MỌI lời gọi trực tiếp tới hàm
+ *     đó trong `server/**` + `scripts/**` (`tests/_call-sites.ts`) phải trao một đối số chứng minh được — chính các
+ *     luật này, trong tệp của nơi gọi, kể cả khi đối số lại là tham số của hàm gọi. Không ai gọi, tên hàm dùng
+ *     như giá trị, import namespace/động/qua alias, chuỗi nào khác nhắc tới module, re-export, hàm `export default`
+ *     hay nằm trong `server/utils` (Nitro tự import), tham số rest/có mặc định, hàm đọc `arguments` hay khai lại tên
+ *     tham số, spread trong danh sách đối số → không đạt;
  *   - `sanitizeHtml` / `sanitizeTranslationFields` phải là hàm IMPORT từ `…/sanitize-html` / `…/translation-html`
  *     và không bị khai lại trong tệp (một hàm cùng tên tự viết không chứng minh gì);
  *   - còn lại → không chứng minh được.
  * Giới hạn (nói rõ): chỉ bắt lượt ghi qua Drizzle; SQL thô có kiểm vắng mặt riêng trong test.
  */
-import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
+import { directCallSites, parse, repoSourceIndex, type SourceIndex } from './_call-sites'
 
 export const ROOT = path.resolve(import.meta.dirname, '..')
 
@@ -115,11 +122,20 @@ function resolveDeclaration(use: ts.Node, name: string): Resolved | null {
   return null
 }
 
+/** Where the prover stands: its file, the sources whose calls it may follow, and the calls followed so far. */
+interface FollowContext {
+  file?: string
+  index?: SourceIndex
+  trail?: ReadonlySet<string>
+}
+
 class Prover {
   private readonly trusted: Set<string>
+  private readonly context: FollowContext
 
-  constructor(trusted: Set<string>) {
+  constructor(trusted: Set<string>, context: FollowContext = {}) {
     this.trusted = trusted
+    this.context = context
   }
 
   private isTrustedCall(node: ts.Node | undefined, name: string): boolean {
@@ -186,6 +202,7 @@ class Prover {
   /** Biến chứa payload: khởi tạo đạt luật, và không thoát ra ngoài các cách dùng đã biết là vô hại. */
   private identifierOk(id: ts.Identifier, writeArgument: ts.Node): string | null {
     const resolved = resolveDeclaration(id, id.text)
+    if (resolved?.kind === 'parameter' && this.context.index) return this.parameterOk(id, resolved.declaration, resolved.scope, writeArgument)
     if (!resolved || resolved.kind !== 'variable') return `${id.text} is not a local variable`
     const { declaration, scope } = resolved
     if (!declaration.initializer) return `${id.text} is not declared with an initializer in an enclosing scope`
@@ -205,6 +222,62 @@ class Prover {
     }
     visit(scope)
     return problem
+  }
+
+  /**
+   * Payload là tham số của hàm `fn`: dùng trong hàm theo luật của biến cục bộ, rồi mọi nơi gọi `fn` phải trao
+   * một đối số chứng minh được (trong tệp của nơi gọi). Mỗi bước lần ngược được ghi vào `trail` — vòng lặp
+   * lời gọi không bao giờ chứng minh được gì.
+   */
+  private parameterOk(id: ts.Identifier, parameter: ts.ParameterDeclaration, fn: ts.Node, writeArgument: ts.Node): string | null {
+    const { file, index } = this.context
+    if (!file || !index) return `${id.text} is not a local variable`
+    if (!ts.isFunctionDeclaration(fn) || !fn.name || !ts.isSourceFile(fn.parent)) {
+      return `${id.text} is a parameter of something other than a top-level function — its callers cannot be listed`
+    }
+    if (parameter.dotDotDotToken || parameter.initializer) return `${id.text} is a rest or defaulted parameter`
+    let problem: string | null = null
+    const visit = (node: ts.Node) => {
+      if (problem) return
+      // `arguments[i]` reaches the parameter around its name; a second declaration of the name (`var` in a
+      // nested block is the SAME binding, `catch (x)`, `{ x }`, an inner function's `x`) hides which one a
+      // reference means — neither is proven, rather than resolved.
+      if (ts.isIdentifier(node) && node.text === 'arguments' && !(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)) {
+        problem = `${fn.name!.text} reads \`arguments\` — its parameters are reachable around their names`
+        return
+      }
+      if ((ts.isVariableDeclaration(node) || ts.isBindingElement(node) || ts.isParameter(node) || ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node))
+        && node !== parameter && node.name && ts.isIdentifier(node.name) && node.name.text === id.text) {
+        problem = `${id.text} is declared again inside ${fn.name!.text}`
+        return
+      }
+      if (ts.isIdentifier(node) && node.text === id.text && node !== parameter.name
+        && resolveDeclaration(node, id.text)?.declaration === parameter) {
+        problem = this.useOk(node, id.text, writeArgument)
+      }
+      ts.forEachChild(node, visit)
+    }
+    // The whole declaration, not only the body: another parameter's default (`alias = fields`) is a use too.
+    visit(fn)
+    if (problem) return problem
+
+    const position = fn.parameters.indexOf(parameter)
+    const step = `${file}#${fn.name.text}#${position}`
+    if (this.context.trail?.has(step)) return `the calls to ${fn.name.text} lead back to it`
+    const sites = directCallSites(index, file, fn)
+    if (typeof sites === 'string') return sites
+    if (sites.length === 0) return `${fn.name.text} is never called — nothing proves what reaches ${id.text}`
+    for (const site of sites) {
+      const where = `${path.relative(ROOT, site.file).split(path.sep).join('/')}:${site.source.getLineAndCharacterOfPosition(site.call.getStart(site.source)).line + 1}`
+      const spread = site.call.arguments.findIndex(argument => ts.isSpreadElement(argument))
+      if (spread !== -1 && spread <= position) return `${where}: a spread argument hides what reaches ${id.text}`
+      const argument = site.call.arguments[position]
+      if (!argument) return `${where}: ${fn.name.text}(…) passes no ${id.text}`
+      const caller = new Prover(trustedImports(site.source), { file: site.file, index, trail: new Set([...(this.context.trail ?? []), step]) })
+      const fromCaller = caller.argumentOk(argument)
+      if (fromCaller) return `${where} → ${fn.name.text}(${id.text}): ${fromCaller}`
+    }
+    return null
   }
 
   private useOk(use: ts.Identifier, name: string, writeArgument: ts.Node): string | null {
@@ -250,10 +323,16 @@ class Prover {
   }
 }
 
-/** Mọi lượt ghi bảng `table` (mặc định `articleTranslations`) trong một tệp nguồn. */
-export function translationWritesIn(file: string, text: string, table = 'articleTranslations'): TranslationWrite[] {
-  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-  const prover = new Prover(trustedImports(source))
+/**
+ * Mọi lượt ghi bảng `table` (mặc định `articleTranslations`) trong một tệp nguồn. `index`: các tệp có thể gọi
+ * hàm của tệp này — không có thì payload là tham số không bao giờ chứng minh được (như trước).
+ */
+export function translationWritesIn(file: string, text: string, table = 'articleTranslations', index?: SourceIndex): TranslationWrite[] {
+  return writesInSource(index?.get(file) ?? parse(file, text), file, table, index)
+}
+
+function writesInSource(source: ts.SourceFile, file: string, table: string, index?: SourceIndex): TranslationWrite[] {
+  const prover = new Prover(trustedImports(source), { file, index })
   const rel = path.relative(ROOT, file).split(path.sep).join('/')
   const writes: TranslationWrite[] = []
   const isTable = (node: ts.Expression | undefined) => Boolean(node && (
@@ -290,15 +369,11 @@ export function translationWritesIn(file: string, text: string, table = 'article
   return writes
 }
 
-function files(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) return files(full)
-    return /\.(ts|mjs)$/.test(entry.name) && !entry.name.endsWith('.d.ts') ? [full] : []
-  })
-}
+let repoIndex: SourceIndex | null = null
 
-/** Mọi lượt ghi bảng `table` (mặc định `articleTranslations`) trong `server/**`. */
+/** Mọi lượt ghi bảng `table` (mặc định `articleTranslations`) trong `server/**`; nơi gọi tìm trong `server/**` + `scripts/**`. */
 export function allTranslationWrites(table = 'articleTranslations'): TranslationWrite[] {
-  return files(path.join(ROOT, 'server')).flatMap(file => translationWritesIn(file, readFileSync(file, 'utf8'), table))
+  const index = repoIndex ??= repoSourceIndex()
+  const server = path.join(ROOT, 'server') + path.sep
+  return [...index].filter(([file]) => file.startsWith(server)).flatMap(([file, source]) => writesInSource(source, file, table, index))
 }

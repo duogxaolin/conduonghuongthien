@@ -22,8 +22,7 @@ import { createError, defineEventHandler, getRouterParam, sendStream, setRespons
 
 import { logWarn } from '../../../../utils/logger'
 import { resolveStreamTarget } from '../../../../services/media-portal'
-import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
-import { getDb } from '../../../../utils/db'
+import { resolvePublicMediaConfig } from '../../../../services/public-media-queries'
 import { streamR2Object } from '../../../../services/video-r2-sync'
 
 export default defineEventHandler(async (event) => {
@@ -36,7 +35,7 @@ export default defineEventHandler(async (event) => {
   const relativePath = getRouterParam(event, 'path')
   if (!shortId || !relativePath) throw createError({ statusCode: 404 })
 
-  const { config } = await resolveMediaConfigWithDb(getDb())
+  const { config } = await resolvePublicMediaConfig()
   let target = await resolveStreamTarget(shortId, relativePath, { config })
 
   // Link cũ dùng slug: thử slug nếu short_id tra không ra. Asset phục vụ thẳng.

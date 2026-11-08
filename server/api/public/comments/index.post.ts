@@ -24,13 +24,10 @@
  * store the comment on an item the caller may not have meant, and the row would
  * then be a permanent record of a decision nobody made.
  */
-import { and, eq } from 'drizzle-orm'
-
-import { getDb } from '../../../utils/db'
-import { articles, mediaItems } from '../../../db/schema'
 import { requireReader, touchReader } from '../../../utils/reader-auth'
 import { createComment, validateBody } from '../../../services/comments'
-import { PUBLISHED_MEDIA_STATUS } from '../../../services/media-portal'
+import { findPublishedArticleIdBySlug } from '../../../services/public-articles-queries'
+import { findPublishedMediaIdByShortId } from '../../../services/public-comments-queries'
 import { getClientIp } from '../../../utils/client-ip'
 
 export default defineEventHandler(async (event) => {
@@ -77,8 +74,9 @@ export default defineEventHandler(async (event) => {
   }
 
   /**
-   * The slug → id lookup is here rather than in the service so the service takes
-   * an identifier and stays independent of how the caller identified it.
+   * The slug → id lookup is here (its query in `public-comments-queries.ts` /
+   * `public-articles-queries.ts`) rather than inside `createComment`, so the comment
+   * service takes an identifier and stays independent of how the caller identified it.
    *
    * Both branches check the item is publicly visible before writing; the service
    * re-checks it inside `createComment` and owns the refusal messages, because
@@ -89,20 +87,12 @@ export default defineEventHandler(async (event) => {
   if (mediaKey) {
     // Media tra theo `short_id` (định danh URL công khai). `mediaKey` từ body
     // là short_id mà frontend gửi; link cũ dùng slug đã redirect 301 ở trang chi tiết.
-    const [media] = await getDb()
-      .select({ id: mediaItems.id })
-      .from(mediaItems)
-      .where(and(eq(mediaItems.shortId, mediaKey), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
-      .limit(1)
+    const media = await findPublishedMediaIdByShortId(mediaKey)
 
     if (!media) throw createError({ statusCode: 404, statusMessage: 'Video không tồn tại.' })
     target = { mediaItemId: media.id }
   } else {
-    const [article] = await getDb()
-      .select({ id: articles.id })
-      .from(articles)
-      .where(and(eq(articles.slug, articleKey), eq(articles.status, 'published')))
-      .limit(1)
+    const article = await findPublishedArticleIdBySlug(articleKey)
 
     if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
     target = { articleId: article.id }

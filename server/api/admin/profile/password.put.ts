@@ -8,9 +8,6 @@
  * therefore know it.
  */
 
-import { eq, sql } from 'drizzle-orm'
-import { getDb } from '../../../utils/db'
-import { users, activityLogs } from '../../../db/schema'
 import { hashPassword, verifyPassword } from '../../../utils/auth'
 import { passwordRejectionMessage } from '../../../utils/password-policy'
 import { logInfo, logWarn, SECURITY_EVENTS } from '../../../utils/logger'
@@ -18,6 +15,12 @@ import { peekRateLimit, recordRateLimitHit, clearRateLimit, type RateLimitRule }
 import { setSessionCookie } from '../../../utils/mfa/session'
 import { getClientIp } from '../../../utils/client-ip'
 import { rateLimitDeps } from '../../../utils/rate-limit-deps'
+import {
+  auditOwnPasswordChange,
+  findOwnPasswordRow,
+  readOwnTokenVersion,
+  updateOwnPassword,
+} from '../../../services/admin-profile-password'
 
 /** Holding a session is not licence to grind the current password. */
 const RULE: RateLimitRule = { limit: 5, windowSeconds: 15 * 60 }
@@ -43,13 +46,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 429, statusMessage: 'Quá nhiều lần nhập sai. Vui lòng thử lại sau 15 phút.' })
   }
 
-  const db = getDb()
-  // The middleware does not carry the hash, and must not.
-  const [row] = await db
-    .select({ passwordHash: users.passwordHash, username: users.username })
-    .from(users)
-    .where(eq(users.id, admin.id))
-    .limit(1)
+  // The middleware does not carry the hash, and must not. Every statement is keyed on the
+  // session's account, never on the body (services/admin-profile-password.ts).
+  const row = await findOwnPasswordRow(admin)
   if (!row) throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
 
   if (!(await verifyPassword(currentPassword, row.passwordHash))) {
@@ -68,24 +67,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Mật khẩu mới phải khác mật khẩu hiện tại.' })
   }
 
-  await db
-    .update(users)
-    .set({
-      passwordHash: await hashPassword(newPassword),
-      // Revoke every session minted under the old password.
-      tokenVersion: sql`${users.tokenVersion} + 1` as unknown as number,
-    })
-    .where(eq(users.id, admin.id))
+  // The new hash, and the session generation +1: revokes every session minted under the old password.
+  await updateOwnPassword(admin, await hashPassword(newPassword))
 
   await clearRateLimit(bucket, deps)
 
   // Re-read the bumped generation and re-issue this session's cookie, so the
   // caller is not logged out by their own successful change.
-  const [fresh] = await db
-    .select({ tokenVersion: users.tokenVersion })
-    .from(users)
-    .where(eq(users.id, admin.id))
-    .limit(1)
+  const fresh = await readOwnTokenVersion(admin)
   setSessionCookie(event, {
     id: admin.id,
     username: row.username,
@@ -96,13 +85,8 @@ export default defineEventHandler(async (event) => {
     tokenVersion: fresh?.tokenVersion ?? 0,
   })
 
-  await db.insert(activityLogs).values({
-    userId: admin.id,
-    action: 'update',
-    resource: 'profile_password',
-    resourceId: admin.id,
-    meta: { ip, userAgent: getRequestHeader(event, 'user-agent') || '' },
-  })
+  // The audit row AFTER the cookie, on the pool — deliberately not one transaction with the update.
+  await auditOwnPasswordChange(admin, { ip, userAgent: getRequestHeader(event, 'user-agent') || '' })
   logInfo({ event: SECURITY_EVENTS.passwordChanged, userId: admin.id, username: row.username, ip, self: true })
 
   return { ok: true, message: 'Đã đổi mật khẩu. Các phiên đăng nhập khác đã bị thu hồi.' }

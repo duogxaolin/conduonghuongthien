@@ -1,35 +1,13 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiServiceConfigs, aiProviders, aiModelPricing } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { DEFAULT_MODERATION_SYSTEM_PROMPT, effectiveSystemPrompt } from '../../../../utils/ai/prompt-defaults'
+import { readModerationSettingsSources } from '../../../../services/admin-ai-moderation-settings'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'ai', 'read')
 
-  const db = getDb()
-
-  const [config] = await db
-    .select()
-    .from(aiServiceConfigs)
-    .where(eq(aiServiceConfigs.serviceKey, 'moderation'))
-    .limit(1)
-
-  const activeProviders = await db
-    .select({
-      id: aiProviders.id,
-      provider: aiProviders.provider,
-      label: aiProviders.label,
-      isActive: aiProviders.isActive,
-    })
-    .from(aiProviders)
-    .where(eq(aiProviders.isActive, true))
-
-  const activePricing = await db
-    .select()
-    .from(aiModelPricing)
-    .where(eq(aiModelPricing.isActive, true))
+  // The configuration row, then the active providers (no key material), then the active models.
+  const { config, activeProviders, activePricing } = await readModerationSettingsSources()
 
   // Annotated so the page's type (derived from this handler, app/types/moderation.ts)
   // is the two modes, not the `string` an object literal widens it to.

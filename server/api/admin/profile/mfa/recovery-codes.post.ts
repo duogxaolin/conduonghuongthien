@@ -6,8 +6,6 @@
  * batch id alone, so a leaked older sheet cannot be redeemed.
  */
 
-import { getDb } from '../../../../utils/db'
-import { activityLogs } from '../../../../db/schema'
 import { logInfo } from '../../../../utils/logger'
 import { requireCurrentPassword } from '../../../../utils/mfa/reauth'
 import { issueRecoveryCodes } from '../../../../utils/mfa/recovery-codes'
@@ -17,6 +15,7 @@ import {
 } from '../../../../utils/mfa/factors'
 import { setSessionCookie } from '../../../../utils/mfa/session'
 import { getClientIp } from '../../../../utils/client-ip'
+import { auditRecoveryCodesGenerated } from '../../../../services/admin-mfa-recovery-codes-issue'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -38,7 +37,6 @@ export default defineEventHandler(async (event) => {
   // sách (`confirm.post.ts`): `utils/mfa/recovery-codes.ts`.
   const codes = await issueRecoveryCodes(admin.id)
 
-  const db = getDb()
   const tokenVersion = await revokeSessions(admin.id)
   setSessionCookie(event, {
     id: admin.id,
@@ -50,15 +48,10 @@ export default defineEventHandler(async (event) => {
     tokenVersion,
   })
 
+  // The audit row AFTER the cookie, on the pool — deliberately not one transaction with the
+  // writes above (services/admin-mfa-recovery-codes-issue.ts). Count only — never the codes.
   const ip = getClientIp(event)
-  await db.insert(activityLogs).values({
-    userId: admin.id,
-    action: 'update',
-    resource: 'profile_recovery_codes',
-    resourceId: admin.id,
-    // Count only — the codes themselves never touch the log.
-    meta: { generated: codes.length, ip },
-  })
+  await auditRecoveryCodesGenerated(admin.id, { generated: codes.length, ip })
   logInfo({ event: 'auth.mfa_recovery_codes_generated', userId: admin.id, username: admin.username, count: codes.length, ip })
 
   return {

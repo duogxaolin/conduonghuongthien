@@ -1,11 +1,10 @@
-import { getDb } from '../../../utils/db'
-import { articles, activityLogs } from '../../../db/schema'
+import type { articles } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { decodePlainTextInput } from '../../../utils/decode-html-entities'
-import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { articleActionScope } from '../../../services/articles'
+import { findArticleForUpdate, updateArticleWithAudit } from '../../../services/admin-article-write'
 import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
 import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 
@@ -14,10 +13,9 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid article ID' })
 
-  const db = getDb()
   // Scoped to types the actor can read or update: any other id is the same 404 as
   // a missing one (no oracle for which ids exist); read-only still gets the 403 below.
-  const [existingArticle] = await db.select().from(articles).where(and(eq(articles.id, id), articleActionScope(adminUser, ['read', 'update']))).limit(1)
+  const existingArticle = await findArticleForUpdate(id, articleActionScope(adminUser, ['read', 'update']))
 
   if (!existingArticle) {
     throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
@@ -71,26 +69,8 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  /**
-   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
-   *
-   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
-   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
-   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
-   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
-   * commit độc lập trên pool.
-   */
-  await db.transaction(async (tx) => {
-    await tx.update(articles).set(updateFields).where(eq(articles.id, id))
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'update',
-      resource: 'articles',
-      resourceId: id,
-      meta: { fieldsUpdated: Object.keys(updateFields) },
-    })
-  })
+  // The update and its audit row, in one transaction (services/admin-article-write.ts).
+  await updateArticleWithAudit(adminUser.id, id, updateFields)
 
   // Sau commit: lưu trữ/đổi trạng thái/đổi thể loại làm trang bài thành 404, mà Nitro
   // không bao giờ ghi đè bản 200 đã đệm bằng 404 (`server/utils/public-page-cache.ts`).

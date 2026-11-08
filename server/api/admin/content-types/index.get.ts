@@ -1,28 +1,11 @@
-import { getDb } from '../../../utils/db'
-import { contentTypes, categories, articles } from '../../../db/schema'
-import { asc, count } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { listContentTypesWithUsage } from '../../../services/admin-taxonomy-queries'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'categories', 'read')
 
-  const db = getDb()
-
-  const all = await db
-    .select()
-    .from(contentTypes)
-    .orderBy(asc(contentTypes.displayOrder), asc(contentTypes.id))
-
-  // Count categories + articles per type (by slug) for the admin usage badges
-  const catCounts = await db
-    .select({ type: categories.type, c: count() })
-    .from(categories)
-    .groupBy(categories.type)
-  const artCounts = await db
-    .select({ type: articles.type, c: count() })
-    .from(articles)
-    .groupBy(articles.type)
+  const { all, catCounts, artCounts } = await listContentTypesWithUsage()
 
   const catMap: Record<string, number> = {}
   for (const r of catCounts) catMap[r.type] = Number(r.c)

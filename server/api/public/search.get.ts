@@ -1,5 +1,4 @@
 import { finitePositive, MAX_PAGE } from '../../utils/query-number'
-import { getDb } from '../../utils/db'
 import { reportPublicReadFailure } from '../../utils/public-read-failure'
 import { plainTextField } from '../../utils/decode-html-entities'
 import { containsPattern, MAX_LIKE_QUERY_CHARS } from '../../utils/sql-like'
@@ -7,14 +6,16 @@ import {
   buildSearchCounts,
   normalizeSearchFilter,
   planSearchSlices,
-  REINTEGRATION_TYPES,
   searchSegments,
   type SearchCounts,
-  type SearchFilter,
   type SearchSlice,
 } from '../../utils/search-paging'
-import { articles, categories, chatbotKnowledge, pages } from '../../db/schema'
-import { eq, like, desc, asc, inArray, and, or, count, type SQL } from 'drizzle-orm'
+import {
+  countSearchMatches,
+  listSearchArticleRows,
+  listSearchPageRows,
+  listSearchQaRows,
+} from '../../services/public-search-queries'
 
 export interface SearchItem {
   id: string | number
@@ -83,13 +84,6 @@ const zeroCounts = (): SearchCounts => ({
   page: 0,
 })
 
-/** Lọc loại bài khi tab là một loại bài cụ thể; `all` không lọc loại. */
-function articleTypeCondition(filter: SearchFilter): SQL | undefined {
-  if (filter === 'reintegration_model') return inArray(articles.type, [...REINTEGRATION_TYPES])
-  if (filter === 'news' || filter === 'role_model' || filter === 'document' || filter === 'faq') return eq(articles.type, filter)
-  return undefined
-}
-
 /**
  * Tìm kiếm toàn cổng: bài viết → Hỏi–Đáp → trang, nối theo thứ tự đó.
  *
@@ -128,53 +122,20 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const db = getDb()
     // Một mẫu duy nhất cho cả lượt đếm lẫn lượt lấy hàng — hai bên không thể
     // lệch điều kiện với nhau.
     const pattern = containsPattern(q)
 
-    const articleMatch = and(
-      eq(articles.status, 'published'),
-      or(like(articles.title, pattern), like(articles.excerpt, pattern)),
-    )
-    const qaMatch = and(
-      eq(chatbotKnowledge.status, 'published'),
-      or(like(chatbotKnowledge.canonicalQuestion, pattern), like(chatbotKnowledge.approvedAnswer, pattern)),
-    )
-    const pageMatch = or(like(pages.title, pattern), like(pages.slug, pattern))
-
-    const [articleTypeRows, qaTotalRows, pageTotalRows] = await Promise.all([
-      db.select({ type: articles.type, total: count() }).from(articles).where(articleMatch).groupBy(articles.type),
-      db.select({ total: count() }).from(chatbotKnowledge).where(qaMatch),
-      db.select({ total: count() }).from(pages).where(pageMatch),
-    ])
+    const { articleTypeRows, qaTotalRows, pageTotalRows } = await countSearchMatches(pattern)
 
     const counts = buildSearchCounts(articleTypeRows, Number(qaTotalRows[0]?.total ?? 0), Number(pageTotalRows[0]?.total ?? 0))
     const segments = searchSegments(filter, counts)
     const total = segments.reduce((sum, segment) => sum + segment.total, 0)
     const slices = planSearchSlices(segments, offset, limit)
-    const typeCondition = articleTypeCondition(filter)
 
     const readSlice = async (slice: SearchSlice): Promise<SearchItem[]> => {
       if (slice.source === 'articles') {
-        const rows = await db
-          .select({
-            id: articles.id,
-            type: articles.type,
-            title: articles.title,
-            slug: articles.slug,
-            excerpt: articles.excerpt,
-            thumbnailUrl: articles.thumbnailUrl,
-            publishedAt: articles.publishedAt,
-            createdAt: articles.createdAt,
-            categoryName: categories.name,
-          })
-          .from(articles)
-          .leftJoin(categories, eq(articles.categoryId, categories.id))
-          .where(typeCondition ? and(articleMatch, typeCondition) : articleMatch)
-          .orderBy(desc(articles.publishedAt), desc(articles.id))
-          .limit(slice.limit)
-          .offset(slice.offset)
+        const rows = await listSearchArticleRows(pattern, filter, slice.limit, slice.offset)
         return rows.map((a) => {
           const meta = resolveArticleType(a.type)
           const dateVal = a.publishedAt || a.createdAt
@@ -197,20 +158,7 @@ export default defineEventHandler(async (event) => {
       }
 
       if (slice.source === 'qa') {
-        const rows = await db
-          .select({
-            id: chatbotKnowledge.id,
-            canonicalQuestion: chatbotKnowledge.canonicalQuestion,
-            approvedAnswer: chatbotKnowledge.approvedAnswer,
-            topic: chatbotKnowledge.topic,
-            publishedAt: chatbotKnowledge.publishedAt,
-            createdAt: chatbotKnowledge.createdAt,
-          })
-          .from(chatbotKnowledge)
-          .where(qaMatch)
-          .orderBy(desc(chatbotKnowledge.id))
-          .limit(slice.limit)
-          .offset(slice.offset)
+        const rows = await listSearchQaRows(pattern, slice.limit, slice.offset)
         return rows.map((qItem) => {
           const dateVal = qItem.publishedAt || qItem.createdAt
           return {
@@ -230,19 +178,7 @@ export default defineEventHandler(async (event) => {
         })
       }
 
-      const rows = await db
-        .select({
-          id: pages.id,
-          title: pages.title,
-          slug: pages.slug,
-          seoDescription: pages.seoDescription,
-        })
-        .from(pages)
-        .where(pageMatch)
-        // Thứ tự xác định — không có ORDER BY thì OFFSET trả hàng tuỳ ý giữa hai lượt.
-        .orderBy(asc(pages.id))
-        .limit(slice.limit)
-        .offset(slice.offset)
+      const rows = await listSearchPageRows(pattern, slice.limit, slice.offset)
       return rows.map((p) => ({
         id: `page-${p.id}`,
         kind: 'page' as const,

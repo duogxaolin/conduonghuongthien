@@ -1,10 +1,9 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiProviders, activityLogs } from '../../../../db/schema'
+import type { aiProviders } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { encryptAiSecret } from '../../../../utils/ai/crypto'
 import { checkProviderBaseUrl, normalizedProviderBaseUrl } from '../../../../utils/ai/provider-url'
 import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
+import { findProviderById, updateProviderWithAudit } from '../../../../services/admin-ai-providers'
 
 function hasStoredKey(row: typeof aiProviders.$inferSelect): boolean {
   return Boolean(row.apiKeyCiphertext)
@@ -31,10 +30,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Dữ liệu không hợp lệ.' })
   }
 
-  const db = getDb()
-
   // Load current row to check existence and preserve key if not changing.
-  const [existing] = await db.select().from(aiProviders).where(eq(aiProviders.id, id)).limit(1)
+  const existing = await findProviderById(id)
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: 'Provider không tồn tại.' })
   }
@@ -94,20 +91,8 @@ export default defineEventHandler(async (event) => {
     return { ok: true, message: 'Không có thay đổi.' }
   }
 
-  await db.transaction(async (tx) => {
-    await tx.update(aiProviders).set(patch).where(eq(aiProviders.id, id))
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'update',
-      resource: 'ai',
-      resourceId: id,
-      meta: {
-        provider: existing.provider,
-        changedFields: Object.keys(patch),
-        apiKeyChanged: apiKey !== '',
-      },
-    })
-  })
+  // The update and its audit row in one transaction (in the service).
+  await updateProviderWithAudit(adminUser, id, existing, patch, apiKey !== '')
 
   // Cấu hình AI / prompt đổi ⇒ câu trả lời cũ không còn đúng.
   await bumpAnswerCacheVersion().catch(() => undefined)

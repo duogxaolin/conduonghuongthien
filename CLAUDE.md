@@ -19,15 +19,15 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 | Số liệu | Giá trị |
 |---|---|
 | Bảng · cột (`db:drift`) | 63 · 655 |
-| Endpoint `server/api` · có `getDb()` · import `services/` | 326 · 160 · 221 |
-| Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 216 · 202 |
+| Endpoint `server/api` · có `getDb()` · import `services/` | 326 · 0 · 315 |
+| Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 220 · 202 |
 | Tệp import `rateLimitDeps` | 22 |
 | Suite `*-integration` (so matrix CI) | 22 (khớp) |
 | Dòng `default.vue` · `init.ts` · `useI18n.ts` · `useChatbot.ts` · `admin/profile.vue` | 399 · 80 · 265 · 132 · 277 |
 | i18n seed: key · hàng · fallback `vi` | 690 · 738 · 534 |
 | Page Builder: section · content · layout | 9 · 7 · 3 |
 | Mục small talk mặc định | 122 |
-| Cột URL media (`URL_REFERENCE_TARGETS`) · mục đột biến (`test:mutations`) | 27 · 27 |
+| Cột URL media (`URL_REFERENCE_TARGETS`) · mục đột biến (`test:mutations`) | 27 · 30 |
 <!-- facts:end -->
 
 ---
@@ -45,7 +45,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 - **Hộp thoại admin dùng `AdminModal.vue`**: tên dialog, bẫy Tab, chặn đóng khi `busy`, trả focus về nút mở (bảng tải lại → `data-admin-modal-opener`; không bao giờ `<body>`), dưới `ConfirmModal`. **Ô nhập trong hộp thoại: `@keydown.enter` + `isDeliberateEnter`, không `@keyup` — guard bắt buộc.** Không tự viết lớp phủ mới (`tests/admin-modal-dialog.test.ts`, miễn trong `EXEMPT_OVERLAYS` kèm lý do). Kiểm duyệt an ninh chỉ quản lý ở `/admin/ai/moderation` (`tests/admin-moderation-summary.test.ts`).
 - **Ba biên tin cậy** (`chatbot-storage.ts` / `nav-config.ts` / `analytics-noc.ts`). `nav-config.ts`: thêm field phải sửa `NavItem` + `normalizeNavItem` + test, `=== true` không `Boolean()`.
 - **Media**: Local `/public/uploads/YYYY/MM/` + R2. Ảnh video lúc phục vụ chỉ qua `onDemandThumbnails` — đừng gọi thẳng `extractThumbnailOnDemand` từ endpoint công khai. **Container**: Docker Compose, `APP_BIND` mặc định `127.0.0.1`.
-- **TinyMCE admin editor**: 2 đường init — `components/admin/TinyMceEditor.vue` (height 480) và `composables/useArticleEditorTinymce.ts` (height 700, ghim từng byte ở `tests/admin-article-editor.test.ts`). Editor **full section width** — KHÔNG giới hạn `max-w`; `content_style` có `img/iframe/video { max-width:100% }`; giới hạn ngang ảnh/video chỉ ở **render công khai** (`article/ArticleBody.vue`, `blocks/RichTextBlock.vue`). Nút `cdktvideo` (kho video) chỉ đăng ký khi có `media_portal` đọc; nút/mục `media` gốc đã gỡ (plugin giữ) — CHANGELOG § 99. `animate-fadeIn` không tồn tại — dùng `animate-fade-slide-up`.
+- **TinyMCE admin editor**: 2 đường init — `components/admin/TinyMceEditor.vue` (height 480) và `composables/useArticleEditorTinymce.ts` (height 700, ghim từng byte ở `tests/admin-article-editor.test.ts`). Editor **full section width** — KHÔNG giới hạn `max-w`; `content_style` có `img/iframe/video { max-width:100% }`; giới hạn ngang ảnh/video chỉ ở **render công khai** (`article/ArticleBody.vue`, `blocks/RichTextBlock.vue`). Nút `cdktvideo` (kho video) chỉ đăng ký khi có `media_portal` đọc; nút/mục `media` gốc đã gỡ (plugin giữ) — CHANGELOG § 99. Ảnh chèn qua `cdktimage` (nút, mục menu Chèn, ô nổi đoạn trống) mở thẳng thư viện, vào mặc định `width: 100%` (`libraryImageHtml`); không còn `image`/`quickimage` gốc; `cdktimageedit` "Sửa ảnh" mở hộp thoại ảnh — CHANGELOG § 102. `animate-fadeIn` không tồn tại — dùng `animate-fade-slide-up`.
 
 ---
 
@@ -115,16 +115,16 @@ server/utils/    deadlock-retry.ts · mysql-errors.ts · plain-text / display-na
 
 ---
 
-### Quy ước tầng dữ liệu (áp cho mã MỚI, không sửa endpoint cũ)
+### Quy ước tầng dữ liệu
 
-**Bắt buộc viết trong `server/services/**` khi:** (1) ghi hàng + `activity_logs` (phải 1 transaction), (2) nhiều lệnh ghi phải cùng thành công, (3) ≥2 nơi gọi, (4) quy tắc nghiệp vụ không diễn đạt bằng query. **Truy vấn thẳng đủ khi**: chỉ đọc hoặc ghi 1 hàng không audit và không nơi nào khác cần lại.
+**Handler (`server/api/**`) không bao giờ chạm CSDL** — không import `utils/db`, không `getDb()`/`getPool()`/`pool.query`, không mở transaction; mọi câu lệnh nằm trong `server/services/**` (`tests/api-no-direct-db.test.ts`; 160 endpoint đã dời, CHANGELOG § 100). Handler giữ: kiểm quyền, đọc input, `getClientIp`, cookie, ánh xạ `createError`, `reportPublicReadFailure`, và lời gọi SAU commit (`purgePublicPageCacheAfterWrite`, `bumpAnswerCacheVersion`, xoá cache). Một hàng ghi + `activity_logs` nằm trong MỘT hàm service, một `db.transaction`, cả hai trên `tx` (`tests/reader-audit-atomicity.test.ts` đọc theo hàm, quét cả `server/services/**`; `AUDIT_CENSUS` đếm mỗi dòng audit theo `(resource, action)` × số NƠI GỌI hàm export ghi nó — dời mã không đổi; làm rơi audit, hay bỏ/tráo lời gọi tới hàm ghi audit thì đỏ). Dời mã ≠ đổi hành vi: giữ nguyên SQL, thứ tự, phạm vi transaction và khoá.
 
 **Không tự ép kiểu kết quả truy vấn**: `db.insert()`/`pool.query()` trả **mảng** — destructure; `affectedRows` chỉ qua `readAffectedRows()`/`affectedRowsOrZero()`. Không `as {affectedRows}` / `as unknown as {insertId}`.
 
 **Đường ghi audit — 4 điều đã trả giá:**
 1. `tx.insert(activityLogs)` trong khối transaction — không `db.insert` trên pool.
 2. Xoá-rồi-log không bọc là sai phổ biến nhất (FK + JSON) — đã kiểm bằng driver thật.
-3. Ngoại lệ phải nêu tên trong test: `profile/mfa/confirm.post.ts` (và `recovery-codes`, `auth/logout`, `boost.post.ts`) cố ý không bọc vì `setSessionCookie()` giữa 2 ghi — rollback không thu hồi cookie. `tests/reader-audit-atomicity.test.ts` khoá.
+3. Ngoại lệ phải nêu tên trong test: `profile/mfa/confirm.post.ts`, `profile/mfa/recovery-codes.post.ts`, `profile/password.put.ts` cố ý không bọc vì `setSessionCookie()` nằm giữa 2 ghi — rollback không thu hồi cookie; `auth/logout` gồm hai lượt ghi best-effort (audit hỏng không được hoàn tác việc vô hiệu phiên). Bảng `COOKIE_BETWEEN_WRITES` của `tests/reader-audit-atomicity.test.ts` ghim thứ tự lời gọi trong handler và lượt ghi của từng hàm service. (`boost.post.ts` KHÔNG phải ngoại lệ — không đặt cookie, ghi + audit một transaction.)
 4. `tests/reader-audit-atomicity.test.ts` chặn `AUDITED_MUTATION_ENDPOINTS` + `AUDITED_SERVICES`, quét **cả thư mục** `server/api/admin/**` và `server/services/`, bắt cả `db.insert(activityLogs)` trên pool **sau** khi transaction đã đóng. Audit trên pool có chủ đích → `SERVICE_POOL_AUDIT_EXEMPTIONS` kèm lý do. `meta` ghi dạng object, không `JSON.stringify`.
 5. `deleteArticleById`/`setArticleStatus` (`services/articles.ts`) **chủ đích KHÔNG bọc** — guard `known exclusions are named` ở cùng test trên khoá trạng thái này, bọc lại sẽ fail test. Đó là known-exclusion được guard, **không phải gap chưa đóng**.
 
@@ -165,7 +165,7 @@ Chi tiết từng lượt → `docs/decisions/refactor-large-files.md`, CHANGELO
 ### Hạn chế đã biết
 
 - **Typecheck sạch (0 lỗi) và là cổng chặn CI**. Ghim TS ^5 (7.x thiếu `lib/tsc.js`). `globalThis.useRuntimeConfig` cần `server/plugins/runtime-config-global.ts`. `as unknown as` không dùng để đọc hình dạng — khai báo phản chiếu.
-- **Test**: kiểm văn bản mã nguồn chứng minh cấu trúc, không chứng minh hành vi (`docs/decisions/test-strategy.md`). Thêm trang công khai tĩnh dưới `app/pages` ⇒ thêm vào `SMOKE_PAGES` ở `tests/e2e/public-static-pages.ts` (hoặc `SMOKE_EXEMPT` kèm lý do) — ratchet `tests/ratchets/e2e-static-pages.test.ts` đỏ nếu quên. Plugin `render:html` so đường dẫn qua `routePath` (`server/utils/route-path.ts`), không so `event.path` thô. Bất biến "mọi đường X phải làm Y" không được kiểm bằng đọc chữ: dùng lần theo lời gọi (`tests/_cache-input-writes.ts` `handlerReaches`), sổ đăng ký bộ đệm (`tests/in-process-cache-registry.test.ts` — thêm bộ đệm cấp module ở `server/` phải khai cách làm mới), và danh mục làm hỏng có chủ đích (`npm run test:mutations`, chạy hằng tuần ở `.github/workflows/mutation-proofs.yml` — không ở PR/push; thêm bất biến trọng yếu ⇒ thêm mục vào `scripts/mutation-proofs-catalog.ts` và chạy `-- <id>` ở máy trước khi mở PR). Bất biến an ninh có test **chạy thật**: `tests/admin-auth-middleware.test.ts`, `tests/permissions-behavior.test.ts`, `tests/chatbot-honeypot-behavior.test.ts`, `tests/article-write-sanitize-behavior.test.ts`, `tests/user-management-escalation-behavior.test.ts`, `tests/admin-password-change-behavior.test.ts`, `tests/article-id-oracle-behavior.test.ts` (tra bài trong `articleActionScope`: đọc — loại được xem; ghi — được xem **hoặc** được làm thao tác đó), `tests/article-translation-read-scope-behavior.test.ts` (`requireReadableArticle`), `reader-notifications-scope-behavior`, `uploads-route-confinement-behavior`, `public-translation-sanitize-behavior`. Số đo: unit **7909 test, 7854 pass, 0 fail, 54 skip, 1 todo** (mã của `f3c311a0`, `TZ=Asia/Ho_Chi_Minh`, 2026-10-30; skip = integration khi thiếu MySQL); E2E lần cuối 116/116 (`9ee740b`); integration lần cuối 22/22 (`wave2/integration`), chưa chạy lại trên Đợt 3 → CHANGELOG § 61. `globalTimeout` 600 s — thêm lô spec thì nâng; server E2E không bao giờ đụng `./backups`.
+- **Test**: kiểm văn bản mã nguồn chứng minh cấu trúc, không chứng minh hành vi (`docs/decisions/test-strategy.md`). Thêm trang công khai tĩnh dưới `app/pages` ⇒ thêm vào `SMOKE_PAGES` ở `tests/e2e/public-static-pages.ts` (hoặc `SMOKE_EXEMPT` kèm lý do) — ratchet `tests/ratchets/e2e-static-pages.test.ts` đỏ nếu quên. Plugin `render:html` so đường dẫn qua `routePath` (`server/utils/route-path.ts`), không so `event.path` thô. Bất biến "mọi đường X phải làm Y" không được kiểm bằng đọc chữ: dùng lần theo lời gọi (`tests/_cache-input-writes.ts` `handlerReaches`), sổ đăng ký bộ đệm (`tests/in-process-cache-registry.test.ts` — thêm bộ đệm cấp module ở `server/` phải khai cách làm mới), và danh mục làm hỏng có chủ đích (`npm run test:mutations`, chạy hằng tuần ở `.github/workflows/mutation-proofs.yml` — không ở PR/push; thêm bất biến trọng yếu ⇒ thêm mục vào `scripts/mutation-proofs-catalog.ts` và chạy `-- <id>` ở máy trước khi mở PR). Bất biến an ninh có test **chạy thật**: `tests/admin-auth-middleware.test.ts`, `tests/permissions-behavior.test.ts`, `tests/chatbot-honeypot-behavior.test.ts`, `tests/article-write-sanitize-behavior.test.ts`, `tests/user-management-escalation-behavior.test.ts`, `tests/admin-password-change-behavior.test.ts`, `tests/article-id-oracle-behavior.test.ts` (tra bài trong `articleActionScope`: đọc — loại được xem; ghi — được xem **hoặc** được làm thao tác đó), `tests/article-translation-read-scope-behavior.test.ts` (`requireReadableArticle`), `reader-notifications-scope-behavior`, `uploads-route-confinement-behavior`, `public-translation-sanitize-behavior` (bản dịch ở trang quản trị cũng lọc lúc đọc — `article-translation-read-scope-behavior`). Số đo: unit **7909 test, 7854 pass, 0 fail, 54 skip, 1 todo** (mã của `f3c311a0`, `TZ=Asia/Ho_Chi_Minh`, 2026-10-30; skip = integration khi thiếu MySQL); E2E lần cuối 116/116 (`9ee740b`); integration lần cuối 22/22 (`wave2/integration`), chưa chạy lại trên Đợt 3 → CHANGELOG § 61. `globalTimeout` 600 s — thêm lô spec thì nâng; server E2E không bao giờ đụng `./backups`.
 - **Lint/Format**: `npm run lint` (`--max-warnings=0`; đo 2026-11-06: 0 error / 0 warning, trước đó 44) — số 0 được giữ bằng ratchet `tests/ratchets/lint-warnings.test.ts` (baseline `{}`, chạy ESLint một lần trên cả repo, 25–70 s, nằm trong `npm test`). `eslint-disable` mới: `vue/no-v-html` chỉ cho v-html có trong kiểm kê `tests/security-ai-editorial-html.test.ts`, ghi nguồn đã lọc trong comment (`<!-- eslint-disable-next-line vue/no-v-html -- nguồn: … -->`); luật khác phải có một dòng lý do trong comment và do người review quyết. `.claude/**` (worktree phiên song song) không bị lint. Có `npm run format` riêng. KHÔNG auto-format toàn codebase — sẽ đè diff lớn, chỉ format file chạm. Không sink lint vào `build`.
 
 ### Nợ kỹ thuật đã đóng (đừng báo lại)
@@ -175,9 +175,8 @@ Audit 2026-09 ghi 3 nợ, **tất cả đã đóng 2026-10-05** — stale info, 
 2. **`init.ts` 1302 → 73 dòng** ✅ `61fff49` (7 `schema-tables/*.ts`). **Đừng báo "init.ts phình"**.
 3. **`any` 20 vết → 0 trong production** ✅ `ca4f52e` (`UnknownError`/`CaughtError`/`Nullable<T>`/`HttpEventLike`); ~145 dòng `any` còn lại ở `tests/` là mock cố ý. **Đừng báo "còn ~20 vết any ở SFC"**.
 
-Hai hạn chế **có chủ đích, không phải nợ** (đừng đề xuất fix diện rộng):
+Một hạn chế **có chủ đích, không phải nợ** (đừng đề xuất fix diện rộng):
 - **i18n** — 30+ file public đã dùng `t()`, tất cả lang kể cả `vi` fetch DB (`server/api/public/translations/[code].get.ts`; `i18n-default-dictionary.ts` chỉ là fallback; admin giữ hardcoded). Mở rộng thêm trang là feature work, **không phải nợ kỹ thuật** — không ghi vào audit debt.
-- **Endpoint cũ gọi `getDb()` thẳng** (số: bảng số liệu) — quy ước CLAUDE.md "áp cho mã MỚI, không sửa endpoint cũ". Refactor diện rộng endpoint đang chạy ổn định rủi ro > lợi. Endpoint mới viết trong `server/services/**`.
 
 Phân biệt khi đề xuất sửa: (a) **gap chưa đóng** → fix, (b) **guarded exception** (test guard chặn) → KHÔNG fix, test sẽ đỏ, (c) **nợ đã đóng** → đừng reopen, (d) **hạn chế có chủ đích** → thiết lập ROI trước khi động.
 

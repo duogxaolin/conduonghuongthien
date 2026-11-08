@@ -1,7 +1,6 @@
 import { createError } from 'h3'
-import { getDb } from '../../../utils/db'
 import { requireResourcePermission } from '../../../utils/permissions'
-import { checkBudget } from '../../../utils/ai-budget'
+import { checkAiBudget } from '../../../services/admin-ai-calls'
 import { callAi } from '../../../services/ai-gateway'
 import { fenceUntrustedContent } from '../../../utils/ai/untrusted-content'
 import { resolveTargetLanguage, TARGET_LANGUAGE_INVALID_MESSAGE } from '../../../utils/ai/target-language'
@@ -43,10 +42,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng cung cấp văn bản hoặc bài viết cần dịch.' })
   }
 
-  const db = getDb()
-
   // 1. Check budget guard
-  const budgetResult = await checkBudget(db, 'translation_article')
+  const budgetResult = await checkAiBudget('translation_article')
   if (!budgetResult.allowed) {
     throw createError({
       statusCode: 429,

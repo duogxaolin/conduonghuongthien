@@ -1,7 +1,5 @@
-import { and, eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiModelPricing } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { listModelPricing } from '../../../../services/admin-ai-pricing'
 
 /**
  * List model pricing rows with optional filtering by provider and active status.
@@ -14,14 +12,7 @@ export default defineEventHandler(async (event) => {
   const providerFilter = typeof query.provider === 'string' && query.provider.trim() ? query.provider.trim() : null
   const activeOnly = query.activeOnly === 'true' || query.activeOnly === '1'
 
-  const db = getDb()
-  const conditions = []
-  if (providerFilter) conditions.push(eq(aiModelPricing.provider, providerFilter))
-  if (activeOnly) conditions.push(eq(aiModelPricing.isActive, true))
-
-  const rows = conditions.length > 0
-    ? await db.select().from(aiModelPricing).where(and(...conditions))
-    : await db.select().from(aiModelPricing)
+  const rows = await listModelPricing(providerFilter, activeOnly)
 
   return {
     ok: true,

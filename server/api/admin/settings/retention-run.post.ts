@@ -25,12 +25,13 @@
  * deliberate difference: there the start row is best-effort, here it is
  * fail-closed, because this job deletes data. The finish row stays best-effort —
  * the purge has committed by then, so its failure is logged and reported as
- * `auditFailed`, never as a 500 that would read "nothing happened".
+ * `auditFailed`, never as a 500 that would read "nothing happened". Both rows are
+ * written by `services/admin-settings-retention.ts`; the try/catch around each — and so
+ * which one is fail-closed — stays here.
  */
-import { getDb } from '../../../utils/db'
-import { activityLogs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { runRetentionPass } from '../../../services/retention-scheduler'
+import { writeRetentionRunResultAudit, writeRetentionRunStartAudit } from '../../../services/admin-settings-retention'
 import { logError } from '../../../utils/logger'
 
 export default defineEventHandler(async (event) => {
@@ -43,18 +44,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Cần xác nhận trước khi chạy dọn dữ liệu.' })
   }
 
-  const db = getDb()
   const outcome = await runRetentionPass({
     force: true,
     trigger: 'manual',
     beforePurge: async ({ scopes }) => {
       try {
-        await db.insert(activityLogs).values({
-          userId: admin.id,
-          action: 'delete',
-          resource: 'data_retention',
-          meta: { trigger: 'manual', phase: 'started', scopes },
-        })
+        await writeRetentionRunStartAudit(admin.id, scopes)
       } catch (error) {
         logError({ event: 'retention.manual_start_audit_failed', actorId: admin.id, error: error instanceof Error ? error.message : String(error) })
         throw createError({ statusCode: 500, statusMessage: 'Không ghi được nhật ký kiểm toán nên chưa chạy dọn dữ liệu — chưa có bản ghi nào bị xoá.' })
@@ -71,22 +66,7 @@ export default defineEventHandler(async (event) => {
 
   let auditFailed = false
   try {
-    await db.insert(activityLogs).values({
-      userId: admin.id,
-      action: 'delete',
-      resource: 'data_retention',
-      meta: {
-        trigger: 'manual',
-        phase: 'finished',
-        status: outcome.result.status,
-        tables: outcome.result.tables.map(entry => ({
-          table: entry.table,
-          deleted: entry.deleted,
-          byAge: entry.deletedByAge,
-          byRowCap: entry.deletedByRowCap,
-        })),
-      },
-    })
+    await writeRetentionRunResultAudit(admin.id, outcome.result)
   } catch (error) {
     // The run is already on record (the `started` row) and its counts are banked
     // in `data_retention_state`; what is lost is the per-table summary row.

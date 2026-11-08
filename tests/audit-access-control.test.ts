@@ -39,6 +39,11 @@ const db = {
   delete(table: unknown) { return { where: async () => { writes.push({ table, values: 'delete' }) } } },
   async transaction(fn: any) { transactions++; return fn(db) },
 }
+// A write route bumps the answer cache's version after its commit; this file's `getDb` is a stub (or the real, unconnected one), so the real bump logged an error per call. Nothing here asserts the cache: tests/chatbot-answer-cache-invalidation.test.ts owns that.
+mock.module(new URL('../server/services/chatbot-answer-cache.ts', import.meta.url), {
+  namedExports: { bumpAnswerCacheVersion: async () => 1 },
+})
+
 mock.module(new URL('../server/utils/db.ts', import.meta.url), { namedExports: { getDb: () => db } })
 
 const mediaWrites: any[] = []

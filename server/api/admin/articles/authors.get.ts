@@ -1,7 +1,5 @@
-import { getDb } from '../../../utils/db'
-import { articles, users } from '../../../db/schema'
-import { eq, count, desc, asc, isNull, and } from 'drizzle-orm'
 import { articleReadScope } from '../../../services/articles'
+import { listArticleAuthors } from '../../../services/admin-articles-queries'
 
 /**
  * Danh sách người đăng bài, để đổ vào ô lọc ở `/admin/content/articles`.
@@ -20,32 +18,9 @@ export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   const scope = articleReadScope(adminUser)
 
-  const db = getDb()
-
-  const items = await db
-    .select({
-      id:           users.id,
-      username:     users.username,
-      articleCount: count(articles.id),
-    })
-    .from(articles)
-    .innerJoin(users, eq(articles.authorId, users.id))
-    .where(scope)
-    .groupBy(users.id, users.username)
-    // Người đăng nhiều lên trước, vì đó là lựa chọn hay được dùng nhất; tên là
-    // mốc phụ để thứ tự ổn định giữa hai lượt tải khi số bài bằng nhau.
-    .orderBy(desc(count(articles.id)), asc(users.username))
-
-  /**
-   * Số bài đã mất tác giả. `articles.author_id` là `INT NULL` với
-   * `ON DELETE SET NULL`, nên xoá một tài khoản là để lại đúng nhóm này. Trả về
-   * đếm riêng để giao diện chỉ hiện tuỳ chọn "Không rõ tác giả" khi nhóm đó thật
-   * sự có bài — một lựa chọn luôn cho ra danh sách rỗng thì không nên có mặt.
-   */
-  const [{ orphanCount } = { orphanCount: 0 }] = await db
-    .select({ orphanCount: count() })
-    .from(articles)
-    .where(and(scope, isNull(articles.authorId)))
+  // Authors by article count, then the articles whose author was deleted (`ON DELETE SET NULL`) —
+  // both inside the same scope (services/admin-articles-queries.ts).
+  const { items, orphanCount } = await listArticleAuthors(scope)
 
   return {
     ok: true,

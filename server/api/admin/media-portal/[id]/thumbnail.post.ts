@@ -12,8 +12,7 @@ import { createError, defineEventHandler, readBody } from 'h3'
 
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { setMediaThumbnail } from '../../../../services/media-portal'
-import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
-import { getDb } from '../../../../utils/db'
+import { resolveAdminMediaConfig } from '../../../../services/admin-media-config'
 import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
@@ -34,11 +33,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Ảnh thư viện không hợp lệ.' })
   }
 
-  const { config } = await resolveMediaConfigWithDb(getDb())
+  const { config } = await resolveAdminMediaConfig()
 
+  // No `deps`: the service falls back to the shared handle itself (its `deps.db` default).
   const result = await setMediaThumbnail(
     { id, mediaId, actorId: adminUser.id, config },
-    { db: getDb() },
   ).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'Không đặt được thumbnail.'
     throw createError({ statusCode: 500, statusMessage: message })

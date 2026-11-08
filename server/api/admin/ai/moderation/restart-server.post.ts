@@ -1,7 +1,6 @@
 import { requireResourcePermission } from '../../../../utils/permissions'
-import { getDb } from '../../../../utils/db'
-import { activityLogs } from '../../../../db/schema'
 import { logInfo } from '../../../../utils/logger'
+import { writeServerRestartAudit } from '../../../../services/admin-ai-moderation-ops'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -16,17 +15,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Chỉ quản trị viên tối cao mới được khởi động lại máy chủ website.' })
   }
 
-  const db = getDb()
-  try {
-    await db.insert(activityLogs).values({
-      userId: adminUser?.id ?? null,
-      action: 'update',
-      resource: 'ai',
-      meta: { operation: 'restart_website_server' },
-    })
-  } catch {
-    // Non-blocking
-  }
+  // Best-effort audit row (a failed insert does not block the restart).
+  await writeServerRestartAudit(adminUser)
 
   logInfo({
     event: 'system.restart_requested',

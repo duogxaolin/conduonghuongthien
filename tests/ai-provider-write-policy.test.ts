@@ -31,10 +31,15 @@ const tx = {
   insert: (table: unknown) => ({ values: async (values: Row) => { writes.push({ op: 'insert', table: tableName(table), values }); return [{ insertId: 77 }] } }),
   update: (table: unknown) => ({ set: (values: Row) => ({ where: async () => { writes.push({ op: 'update', table: tableName(table), values }) } }) }),
 }
+let answerCacheBumps = 0
 mock.module('../server/utils/db', {
   namedExports: {
     getDb: () => ({
       ...tx,
+      // The answer-cache bump the handlers run after commit (`bumpAnswerCacheVersion`, its own tests:
+      // tests/chatbot-answer-cache*.test.ts) runs for real — it also advances the gateway's config
+      // generation, which a test below reads. Without `execute` it logged `chatbot.answer_cache_bump_failed`.
+      execute: async () => { answerCacheBumps += 1; return [] },
       select: () => ({ from: (table: unknown) => ({ where: () => ({ limit: async () => rowsFor(table) }) }) }),
       transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
     }),
@@ -64,6 +69,7 @@ const event = (adminUser: unknown, body: unknown, id = '3'): Event => ({ body, p
 
 function reset() {
   writes.length = 0
+  answerCacheBumps = 0
   providerRow = null
   chatbotRow = { id: 1, baseUrl: 'https://api.provider.example/v1', allowedHosts: ['api.provider.example'], providerPolicy: 'openai-compatible', enabled: false }
 }
@@ -102,6 +108,7 @@ test('create: a base URL outside the policy is refused with a Vietnamese reason 
     assert.equal(result?.status, 400, baseUrl)
     assert.match(result!.message, /Địa chỉ nhà cung cấp/, baseUrl)
     assert.deepEqual(writes, [], `${baseUrl}: nothing written`)
+    assert.equal(answerCacheBumps, 0, `${baseUrl}: nothing to invalidate`)
   }
 })
 
@@ -111,6 +118,7 @@ test('create: a valid base URL is stored in its normalized form, with its audit 
   const insert = writes.find(w => w.table === 'ai_providers')!
   assert.equal(insert.values.baseUrl, 'https://api.provider.example/v1')
   assert.ok(writes.some(w => w.table === 'activity_logs'))
+  assert.equal(answerCacheBumps, 1, 'cached chatbot answers are invalidated once, after the write')
 })
 
 test('create: an empty base URL is still allowed (provider configured later)', async () => {

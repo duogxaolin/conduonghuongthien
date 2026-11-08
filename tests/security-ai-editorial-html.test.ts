@@ -98,13 +98,13 @@ const V_HTML_INVENTORY: Record<string, string> = {
   'app/components/ChatMessageContent.vue :: block': 'app/utils/markdown.ts — escape toàn bộ trước khi dựng thẻ',
   // Tách khỏi ArticleDetail.vue ở wave3 4.2: `html` là `toc.html` của ArticleDetail.vue
   // (buildToc trên articles.content) — người gọi duy nhất, ghim ở test ngay dưới.
-  'app/components/article/ArticleBody.vue :: html': 'nội dung bài, sanitizeHtml lúc ghi và ở endpoint công khai (toc.html của ArticleDetail.vue)',
+  'app/components/article/ArticleBody.vue :: html': 'nội dung bài, sanitizeHtml lúc ghi; endpoint công khai chỉ lọc lúc đọc phần BẢN DỊCH, thân bài gốc chưa (CHANGELOG § 101 "Ghi lại") (toc.html của ArticleDetail.vue)',
   'app/components/admin/docs/MermaidDiagram.client.vue :: svg': 'mermaid.render (securityLevel mặc định "strict" — mermaid tự lọc SVG đầu ra)',
-  'app/components/admin/articles/ArticleQuickViewModal.vue :: quickViewData.content || \'(Chưa có nội dung)\'': 'articles.content, sanitizeHtml lúc ghi',
+  'app/components/admin/articles/ArticleQuickViewModal.vue :: quickViewData.content || \'(Chưa có nội dung)\'': 'article_translations.content, sanitizeHtml lúc ghi và lúc đọc ở server/api/admin/articles/[id]/translations/[lang].get.ts (tests/article-translation-read-scope-behavior.test.ts)',
   'app/components/blocks/ContentAsideBlock.vue :: bodyHtml': 'sanitizeBlockData lúc ghi và lúc đọc',
   'app/components/blocks/RichTextBlock.vue :: html': 'sanitizeBlockData lúc ghi và lúc đọc',
   'app/pages/admin/login.vue :: captchaSvg': 'SVG captcha do máy chủ sinh, không chứa dữ liệu người dùng',
-  'app/pages/in-bai/[slug].vue :: article.content': 'articles.content, sanitizeHtml lúc ghi và ở endpoint công khai',
+  'app/pages/in-bai/[slug].vue :: article.content': 'articles.content, sanitizeHtml lúc ghi; endpoint công khai chưa lọc thân bài gốc lúc đọc (CHANGELOG § 101 "Ghi lại")',
   'app/components/admin/articles/ArticleAIPanel.vue :: polishedPreview.content': 'đầu ra AI — sanitizeHtml ở server/api/admin/ai/editorial.post.ts (test ở trên)',
   'app/components/blocks/StatsBlock.vue :: formatValue(stat.value)': 'formatValue escape HTML',
 }

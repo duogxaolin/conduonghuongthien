@@ -57,7 +57,9 @@ test('tokens carry a version that the admin middleware enforces', () => {
 
 test('logout and password change both invalidate existing sessions', () => {
   const logout = read('server/api/admin/auth/logout.post.ts')
-  assert.match(logout, /tokenVersion:\s*sql`\$\{users\.tokenVersion\} \+ 1`/)
+  // The bump moved into a service (2026-11-08); the handler calls it, then deletes the cookie.
+  assert.match(logout, /await bumpAdminTokenVersion\(adminUser\.id\)/)
+  assert.match(read('server/services/admin-auth-logout.ts'), /tokenVersion:\s*sql`\$\{users\.tokenVersion\} \+ 1`/)
   assert.match(logout, /deleteCookie\(event, 'cdkt_admin'/)
 
   const userPut = read('server/api/admin/users/[id].put.ts')
@@ -141,7 +143,8 @@ test('visitor-supplied text is escaped before it reaches the notification email'
 })
 
 test('settings writes are allow-listed and site-wide script keys are superadmin-only', () => {
-  const settings = read('server/api/admin/settings/index.put.ts')
+  // The handler and the service holding its allowlists and per-key loop (inside the transaction).
+  const settings = read('server/api/admin/settings/index.put.ts') + read('server/services/admin-settings-general.ts')
   assert.match(settings, /ALLOWED_SETTING_KEYS/)
   assert.match(settings, /SUPERADMIN_ONLY_KEYS/)
   assert.match(settings, /tracking_custom_head/)

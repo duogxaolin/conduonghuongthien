@@ -2785,6 +2785,92 @@ Năm việc nhỏ còn lại sau § 95–§ 97 (chủ dự án duyệt làm cả
 - **Test:** `tests/editor-video-button-permission.test.ts` (5 test, cả hai trình soạn; đỏ 4/5 trên mã cũ), `tests/admin-media-library-tiles-keyboard.test.ts` (3 test; đỏ 2/3 trên mã cũ, ca còn lại là hành vi chọn một ảnh vốn đã đúng), `tests/h3-handler-server-deadline.test.ts` (handler treo hỏng đúng hạn kèm tên, `close()` vẫn trả về; bỏ hạn hoặc bỏ bước đóng kết nối đều làm test đỏ). Đã sửa `CONFIG` ghim ở `tests/admin-article-editor.test.ts` (thanh công cụ không còn `media`, có `removed_menuitems`). E2E `admin-editor-media-picker` nay chọn ảnh bằng Tab rồi Enter thay vì bấm chuột vào thẻ `div` cha.
 - Không ảnh hưởng deploy toolkit.
 
+### 100. Tầng dữ liệu — 160 endpoint không còn chạm CSDL trực tiếp (2026-11-08)
+
+Chủ dự án quyết (2026-11-08) dời toàn bộ truy vấn của `server/api/**` vào `server/services/**`. Quyết định này thay mục "Endpoint cũ gọi `getDb()` thẳng — hạn chế có chủ đích". Trước: 160/326 endpoint gọi `getDb()`/`getPool()`. Sau: 0. `tests/api-no-direct-db.test.ts` chặn quay lại; test này đỏ trên mã trước refactor.
+
+- **Chỉ dời, không đổi hành vi:** SQL, tham số, thứ tự câu lệnh, ranh giới transaction và phạm vi khoá giữ nguyên (bài học R6).
+  - **Ở lại handler:** kiểm quyền (kể cả `checkPermission()` lần hai của `articles/[id].put.ts`), đọc input, `getClientIp`, cookie, ánh xạ `createError`, `reportPublicReadFailure`, và lời gọi sau commit (`purgePublicPageCacheAfterWrite`, `bumpAnswerCacheVersion`, xoá cache trong tiến trình). Thứ tự của chúng so với lượt ghi không đổi.
+  - **Vào service:** mọi câu lệnh CSDL. `createError` nào ném TRONG transaction (để rollback) đi theo transaction. Ví dụ: 409 của `resolve`, 404 "đã biến mất", 400 "tối đa 4 bản sao lưu", và 403 của khoá chỉ-SuperAdmin trong `settings/index.put.ts`, vốn chạy giữa vòng ghi.
+- **Chia lô:** thử nghiệm (users/roles/taxonomy), ai ×2, public ×2, settings, articles, media, pages + chatbot, xác thực, còn lại. Mỗi lô tạo tệp service MỚI (`admin-*`, `public-*`, `google-oauth-callback-*`). Không thêm vào module đã có, vì nhiều test `mock.module` các module đó.
+- **Chứng minh từng byte:** mỗi lô dựng một bộ ghi vết SQL tạm (không commit) trên `tests/_sqlite-mysql-db.ts`. Bộ ghi vết chạy handler thật trên bản gốc và bản đã dời, ghi lại từng câu lệnh kèm tham số theo thứ tự, phần nằm trong transaction, phản hồi, log, dấu gọi purge/bump/cookie và trạng thái bảng cuối. Tổng cộng khoảng 1 100 kịch bản, trùng khớp hoàn toàn trừ dấu thời gian. Endpoint ghi nào trước đó chưa có test chạy thật thì được viết test hành vi trước, xanh trên bản gốc: khoảng 15 tệp test mới.
+- **Ngoại lệ "cookie giữa hai lượt ghi" cũng đã dời, giữ nguyên hình dạng:** `profile/mfa/confirm`, `recovery-codes` (POST), `profile/password`, `auth/logout`. Thứ tự vẫn là: service ghi lần 1 → handler đặt cookie → service ghi lần 2 / audit. Không thêm transaction. Bảng `COOKIE_BETWEEN_WRITES` của `tests/reader-audit-atomicity.test.ts` ghim thứ tự lời gọi trong handler và lượt ghi của từng hàm. Đặt audit lên trước cookie thì test đỏ.
+- **`boost.post.ts` không phải ngoại lệ.** Nhãn trong CLAUDE.md đã cũ: endpoint không đặt cookie nào, và cả hai đường (tức thì, rải dần) đều ghi + audit trong một transaction. Đã dời như mọi endpoint ghi khác. Đã sửa CLAUDE.md, `docs/decisions/data-layer.md` và `test-strategy.md`.
+- **Test canh được gia cố trước khi dời (theo code sang service, không nới):**
+  - `reader-audit-atomicity` (`tests/_audit-atomicity-scan.ts`, AST) đọc theo HÀM và mọi transaction, không chỉ transaction đầu của tệp. Test quét cả `server/services/**`, mục danh sách có dạng `tệp#hàm`, và đọc `activity_logs` không còn bị tính là audit.
+  - `AUDIT_CENSUS` kiểm kê 162 dòng audit theo 81 khoá `(resource, action)`, không phụ thuộc tệp. Dời mã thì vẫn xanh; làm rơi, thêm hay đổi tên một dòng audit thì đỏ. (Bản này đếm ở NƠI KHAI BÁO hàm — lỗ đã đóng ở mục "Soát độc lập" bên dưới; nay 197 dòng / 80 khoá.)
+  - Bộ chứng minh "HTML đã lọc" (`tests/_translation-writes.ts`, `tests/_call-sites.ts`) nay theo tham số của hàm service ngược về mọi nơi gọi. Bộ này từ chối tham số không lần được, import không theo được và `arguments`, có 40 ca dò, và mục đột biến `article-content-sanitize` vẫn bị bắt.
+  - Các test đọc chữ của handler được trỏ sang tệp service, kèm khẳng định handler gọi đúng hàm.
+- **Soát độc lập sau khi dời — các lỗ của test canh, đã đóng** (chỉ sửa test và hai chú thích; không đổi mã chạy):
+  - **Cao — cạnh handler → hàm service ghi audit không ai canh.** Trước khi dời, `AUDITED_MUTATION_ENDPOINTS`/`AUDITED_DELETE_ENDPOINTS` trỏ tệp handler và đòi transaction + audit ngay trong đó. Sau khi dời, mục là `service#hàm` và không gì kiểm handler còn gọi hàm đó. Bỏ `await updateUserWithAudit(…)` khỏi `users/[id].put.ts`, bỏ `await writeRetentionRunStartAudit(…)` khỏi `settings/retention-run.post.ts`, bỏ `await auditPublicCacheClear(…)` khỏi `cache-clear.post.ts`, hay tráo sang một `updateUser()` không audit — tất cả vẫn xanh (bảng kiểm kê không đổi). Đã đóng:
+    - `AUDIT_CENSUS` đếm mỗi dòng audit một lần MỖI NƠI GỌI hàm export chứa nó, trên `server/**` + `scripts/**` (tổng quát hoá cách các hàm `audit<X>` đã được đếm). Helper cục bộ đi tiếp tới hàm export chứa lần nhắc; hàm không ai gọi = 0 dòng. Tên hàm bị truyền như giá trị, import/export dưới tên khác, gọi qua namespace, khai báo trùng, hay lượt ghi audit nằm trong hàm của một giá trị (đối tượng phương thức) → báo lỗi, không đếm sai.
+    - Bảng đổi 162/81 → 197/80, chỉ vì cách đếm (từng khoá kèm lý do trong commit). Ví dụ: `settings:backup_run` 1 → 8 (`runBackup`: endpoint, lịch, pre-restore, năm bản sao lưu trước job media); `settings:update` 20 → 25 (`upsertTranslations` được gọi ở 6 nơi); đường xoá một hàng và xoá hàng loạt cùng gọi một hàm (`users`, `articles`, `media`, `pages`, `submissions`) nay tính 2; `auth:login` 1 → 2 (đăng nhập, xác minh MFA); `media:sync_storage` 1 → 0 (đường đồng bộ cũ không còn nơi gọi chạy thật).
+    - Mỗi mục của hai danh sách endpoint ghi tên handler; `directCallSites` khẳng định hàm được gọi đúng một lần, trong `export default` của đúng handler đó — dời lời gọi sang endpoint khác giữ nguyên bảng kiểm kê nhưng đỏ ở đây.
+  - **Trung bình — `SERVICE_POOL_AUDIT_EXEMPTIONS` miễn quá rộng.** Mỗi khoá miễn cả `audit-off-transaction` lẫn `audit-off-transaction-with-row-write`, nên thêm `await db.update(users)…` vào `writeServerRestartAudit` (hàm "chỉ ghi audit") vẫn xanh — 8 mục dời nguyên văn trong đợt này, cùng hình ở mọi mục khác. Đã đóng: mỗi mục ghim hình lượt ghi của hàm (`writes`), chỉ miễn đúng một luật suy từ hình đó, và hàm chỉ ghi audit không được gọi theo tên một hàm có dáng ghi. Bỏ luôn lối miễn `audit-transaction-without-row-write` cho các khoá này (không mục nào cần).
+  - **Thấp — các phép quét chỉ đọc `server/api` mất phần mã đã dời.** `article_view_daily` nay quét `server/api` + `server/services` + `server/utils`, chỉ `article-views.ts` được nêu tên kèm lý do (bỏ danh sách tay `MOVED_HANDLER_QUERY_FILES`). `console.*` trần, `Math.max(1, Number(query.page…))` và định nghĩa `finitePositive` thứ hai quét thêm `server/services`. Không có vết cũ nào.
+  - **Thấp — chú thích cũ** "kiểm transaction + audit theo TỆP" ở `admin-users-queries.ts`, `admin-roles-queries.ts`.
+- **Kiểm chứng:**
+  - Toàn bộ unit (xem dòng Kiểm chứng của commit).
+  - Typecheck 0 lỗi, lint sạch.
+  - Ratchet độ phủ chạy theo cách của CI: không thư mục nào giảm. `server/api` 81,83 → 89,19, `server/services` 91,56 → 93,01. Mọi hàm service mới đều có test chạy tới.
+- **Ghi lại, không sửa** (có từ trước, chỉ dời nguyên văn; chờ chủ dự án quyết):
+  - **An ninh — ĐÃ SỬA ở § 101 (cùng PR):** `GET /api/admin/articles/:id/translations/:lang` trả nội dung bản dịch KHÔNG lọc lúc đọc, mà `ArticleQuickViewModal` hiển thị bằng `v-html`. Trái quy tắc "lọc lúc ghi và lúc đọc"; đây là đường của lỗi § 96.
+  - **Ghi không nguyên tử:**
+    - `content-types/[id].put` đổi slug bằng ba UPDATE không transaction.
+    - `pages/[id]/draft.put` không ghi audit.
+    - Danh mục Media Portal: đếm rồi xoá tách rời; chọn slug rồi ghi tách rời, nên trùng tên đồng thời trả 500.
+    - `submissions.post`: gửi thư rồi mới đóng dấu `notified_at` (chủ đích "lưu trước").
+    - `cache-clear`: xoá cache trước rồi mới ghi audit.
+    - Bản ghi Google đăng nhập lần đầu đồng thời: người thua nhận 500.
+    - `budget` PUT chèn hàng mặc định không có `ON DUPLICATE KEY`; `budget` GET ghi hàng mặc định.
+  - **Audit:**
+    - Xoá danh mục và loại nội dung chưa bao giờ ghi audit (miễn trừ ghi "FINDING").
+    - `discardPendingFactor` không ghi audit.
+    - `restart-server` nuốt lỗi audit mà không log.
+    - Cấu hình kiểm duyệt ghi audit với `resourceId: 1` khi không có hàng.
+    - Xoá luật/nhà cung cấp không đếm số hàng bị ảnh hưởng, nên hai lượt xoá đồng thời ghi hai dòng audit.
+  - **Lỗi lộ ra ngoài:**
+    - `roles/[id].put`, `roles/[id].delete`, `users/[id]/mfa.delete` không bọc lượt ghi trong try/catch, nên câu "Failed query … params" của Drizzle đi thẳng ra phản hồi.
+    - `media-portal/[id]/thumbnail.post` trả 500 kèm nguyên văn lỗi SQL.
+  - **Khoá job:** khoá của `upload/housekeep` không nằm trong `MEDIA_JOB_LOCK_NAMES`.
+- Không ảnh hưởng deploy toolkit: không đổi `.env`, schema, migration hay container.
+
+### 101. An ninh — bản dịch bài viết được lọc cả lúc đọc ở trang quản trị (2026-11-08)
+
+- **Lỗ hổng (có từ trước, tìm ra khi dời truy vấn ở § 100):** `GET /api/admin/articles/:id/translations/:lang` trả `article_translations.content` nguyên văn. "Xem nhanh" (`ArticleQuickViewModal.vue`) đưa trường này thẳng vào `v-html`. Lượt ghi đã lọc, nhưng hàng ghi trước khi có lớp lọc, hàng còn mang dạng thoát của § 96, hay hàng ghi ngoài app vẫn nằm trong CSDL. Bấm "Xem nhanh" trên một hàng như thế là chạy mã trong phiên cán bộ. Trái quy tắc "HTML hiển thị bằng `v-html` phải qua `sanitizeHtml` lúc ghi *và* lúc đọc". Chưa thấy dấu hiệu bị khai thác.
+- **Sửa:**
+  - `translations/[lang].get.ts` trả `content` qua `sanitizeHtml`; `null` giữ `null`, để hộp hiện "(Chưa có nội dung)" như cũ.
+  - `translations/index.get.ts` (danh sách, nạp vào trình soạn bản dịch) lọc giống vậy.
+  - Lọc đặt ở handler như `public/articles/[slug].get.ts`, nên hàm service vẫn đúng bản đã dời ở § 100. Lượt ghi vốn đã lọc, nên hàng sạch trả ra y như cũ.
+- **Test:**
+  - `tests/article-translation-read-scope-behavior.test.ts` chạy handler thật trên hàng độc hại đã lưu (năm mẫu: script, `onerror`, `javascript:`, svg, `onclick`). Test đỏ trên mã cũ, xanh sau khi sửa. Nó còn kiểm markup hợp lệ trả nguyên văn và `content` rỗng vẫn là `null`.
+  - Mục đột biến `admin-translation-read-sanitize` gỡ lớp lọc thì test đó đỏ.
+  - Kiểm kê `v-html` (`tests/security-ai-editorial-html.test.ts`) và chú thích eslint của hộp nay ghi đúng nguồn: `article_translations.content`, không phải `articles.content`.
+- **Việc của người vận hành (không đổi):** lớp lọc lúc đọc chỉ che hai đường này. Hàng bẩn vẫn còn trong CSDL cho tới khi chạy `npm run db:sanitize-html` (sao lưu trước).
+- **Ghi lại, không sửa (soát độc lập tìm ra khi kiểm bản vá này; có từ trước):** thân bài GỐC không được lọc lúc đọc ở trang công khai.
+  - `GET /api/public/articles/:slug` trả `articles.content` nguyên văn ở ba chỗ: yêu cầu tiếng Việt hoặc không có `lang`; chưa có bản dịch đã xuất bản; bản dịch có `content` rỗng nên lấy lại thân bài gốc. Hai nơi hiển thị bằng `v-html`: `ArticleBody.vue` (qua `buildToc`, chỉ thêm id cho đề mục, không lọc) và trang in `in-bai/[slug].vue`. Cả hai render phía máy chủ.
+  - `npm run db:sanitize-html` chỉ sửa `article_translations` và `page_blocks`, không sửa `articles`. Một bài lưu trước § 96 vẫn mang dạng thoát đôi của `onload` cho mọi độc giả ẩn danh, trong CSP còn `'unsafe-inline'`.
+  - Chưa sửa vì lọc lúc đọc làm đổi nội dung các bài cũ đang hiển thị (thẻ `<video>`, `<iframe>` ngoài hai dạng cho phép sẽ biến mất). Nên chạy thử trên bản sao CSDL thật để xem bao nhiêu bài đổi, rồi mới gộp lọc lúc đọc cùng việc mở rộng `db:sanitize-html` sang `articles`. Hai dòng kiểm kê `v-html` ở `tests/security-ai-editorial-html.test.ts` trước đây ghi sai là có lọc lúc đọc; đã sửa cho đúng.
+- Không ảnh hưởng deploy toolkit.
+
+### 102. Trình soạn bài — nút ảnh mở thẳng thư viện, ảnh vào mặc định rộng 100%, "Sửa ảnh" hiện rõ (2026-11-08)
+
+Cả hai trình soạn TinyMCE (`useArticleEditorTinymce.ts` của trang soạn bài, `components/admin/TinyMceEditor.vue` của Page Builder).
+
+- **Trước:** nút "Insert/edit image" mặc định mở hộp thoại hỏi URL (thư viện chỉ nằm sau nút duyệt nhỏ); ô nổi trong đoạn trống có `quickimage` mở hộp chọn tệp của hệ điều hành; ảnh vào theo kích thước điểm ảnh của tệp, nên ảnh nhỏ nằm lẻ loi, ảnh lớn bị CSS ép; sửa ảnh không có chỗ bấm rõ ràng.
+- **Nay:**
+  - **Chèn ảnh** (`cdktimage`) mở thư viện ngay, ở ba chỗ: nút thanh công cụ, mục menu Chèn (`menu.insert`, thay mục "Image…"), và ô nổi trong đoạn trống (`quickbars_insert_toolbar: 'cdktimage quicktable'`, bỏ `quickimage`). Chọn xong ảnh vào tại con trỏ.
+  - **Kích thước mặc định:** `libraryImageHtml` ghi `style="width: 100%; height: auto;"` (có escape `&`, `"`, `<`, `>` trong URL và tên tệp). Nút "Chèn ảnh từ thư viện" ở thanh bên của trang soạn bài (chọn nhiều ảnh) dùng cùng hàm. Muốn cỡ khác thì dùng "Sửa ảnh": hộp thoại đọc đúng `100%`/`auto` từ style, đổi cỡ ghi lại `style` (đã thử trên TinyMCE thật).
+  - **"Sửa ảnh"** (`cdktimageedit`): có chữ, không chỉ biểu tượng. Có ở thanh công cụ (xám khi chưa chọn ảnh, bật khi nút đang chọn là `IMG`) và ở thanh nổi trên ảnh đang chọn (`quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright'`). Bấm là mở hộp thoại ảnh của TinyMCE (`mceImage`) cho ảnh đó: chữ thay thế, kích thước, chú thích, style. Menu chuột phải "Image…" giữ nguyên.
+  - Plugin `image` vẫn nạp (cấp hộp thoại); nút duyệt trong hộp thoại vẫn qua `imageFilePicker`, không đổi.
+  - Kéo-thả và dán ảnh vẫn tải lên qua `images_upload_handler` như cũ.
+- **Không đổi:** `sanitizeHtml` giữ `style` và `width`/`height` của `<img>` (đã có trong allowlist), CSP đã cho `style-src 'unsafe-inline'`, trang công khai vẫn giới hạn `img` ở `max-width: 100%`. Ảnh cũ trong bài không bị sửa. Ảnh nhỏ chèn mới sẽ phóng ra cả bề rộng cột theo ý chủ dự án (đổi lại bằng "Sửa ảnh").
+- **Test:**
+  - `tests/tinymce-image-library-buttons.test.ts` (nút, escape, bật/tắt theo vùng chọn, gỡ handler).
+  - Cấu hình ghim từng byte ở `tests/admin-article-editor.test.ts` và `tests/editor-video-button-permission.test.ts` cập nhật.
+  - E2E `tests/e2e/admin-editor-image-buttons.spec.ts` trên bản build thật: menu Chèn mở thư viện (không có hộp thoại TinyMCE), ảnh vào rộng 100%, thanh nổi "Sửa ảnh" mở hộp thoại với `100%`, nút xám khi con trỏ ở chữ.
+- Không ảnh hưởng deploy toolkit.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

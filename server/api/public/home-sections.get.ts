@@ -1,16 +1,9 @@
-import { getDb } from '../../utils/db'
 import { reportPublicReadFailure } from '../../utils/public-read-failure'
-import { homeSections } from '../../db/schema'
-import { eq, asc } from 'drizzle-orm'
+import { listVisibleHomeSections } from '../../services/public-site-queries'
 
 export default defineEventHandler(async (event) => {
   try {
-    const db = getDb()
-    const sections = await db
-      .select()
-      .from(homeSections)
-      .where(eq(homeSections.isVisible, true))
-      .orderBy(asc(homeSections.displayOrder))
+    const sections = await listVisibleHomeSections()
 
     return { ok: true, sections }
   } catch (error) {

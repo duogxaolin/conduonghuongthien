@@ -1,11 +1,10 @@
 import { finitePositive, MAX_PAGE } from '../../../utils/query-number'
-import { getDb } from '../../../utils/db'
-import { articles, users, categories } from '../../../db/schema'
+import { articles } from '../../../db/schema'
 import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
 import { likeContains } from '../../../utils/like-pattern'
-import { eq, like, desc, sql, count, isNull } from 'drizzle-orm'
-import { alias } from 'drizzle-orm/mysql-core'
+import { eq, like, sql, isNull } from 'drizzle-orm'
 import { articleReadScope } from '../../../services/articles'
+import { listAdminArticlesPage } from '../../../services/admin-articles-queries'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -35,9 +34,6 @@ export default defineEventHandler(async (event) => {
     }
     throw err
   }
-
-  const db = getDb()
-  const parentCategories = alias(categories, 'parentCategories')
 
   const conditions = [articleReadScope(adminUser, typeFilter)]
   if (search) {
@@ -74,53 +70,9 @@ export default defineEventHandler(async (event) => {
 
   const whereClause = conditions.length > 0 ? sql`${sql.join(conditions, sql` AND `)}` : undefined
 
-  const items = await db
-    .select({
-      id:           articles.id,
-      type:         articles.type,
-      category:     articles.category,
-      categoryId:       articles.categoryId,
-      categoryName:     categories.name,
-      categoryParentId: categories.parentId,
-      parentCategoryName: parentCategories.name,
-      title:        articles.title,
-      slug:         articles.slug,
-      excerpt:      articles.excerpt,
-      status:       articles.status,
-      thumbnailUrl: articles.thumbnailUrl,
-      commentsEnabled: articles.commentsEnabled,
-      publishedAt:  articles.publishedAt,
-      createdAt:    articles.createdAt,
-      updatedAt:    articles.updatedAt,
-      authorName:   users.username,
-      /**
-       * Total displayed views (real + fabricated) per row — the maintained column
-       * (wave2 design D6), equal to the sum of the article's `article_view_daily`
-       * rows. It replaced a correlated subquery per row; the real/fabricated split
-       * is in the per-article stats modal (`getArticleViewStats`), not here.
-       */
-      viewTotal:    articles.viewTotal,
-      translatedLangs: sql<string>`(
-        SELECT COALESCE(GROUP_CONCAT(DISTINCT CONCAT(\`t\`.\`lang_code\`, ':', \`t\`.\`status\`) SEPARATOR ','), '')
-        FROM \`article_translations\` \`t\`
-        WHERE \`t\`.\`article_id\` = \`articles\`.\`id\`
-      )`,
-    })
-    .from(articles)
-    .leftJoin(users, eq(articles.authorId, users.id))
-    .leftJoin(categories, eq(articles.categoryId, categories.id))
-    .leftJoin(parentCategories, eq(categories.parentId, parentCategories.id))
-    .where(whereClause)
-    // `id` breaks ties: articles imported in one second share `created_at`, and MySQL returns tied
-    // rows in any order — two pages could share or skip one (FINDING-R7-9, as R6-9).
-    .orderBy(desc(articles.createdAt), desc(articles.id))
-    .limit(perPage)
-    .offset(offset)
-
-  const [{ total } = { total: 0 }] = await db
-    .select({ total: count() })
-    .from(articles)
-    .where(whereClause)
+  // The page (view totals from the maintained `articles.view_total`, newest first, id breaking
+  // ties), then the count under the same clause — services/admin-articles-queries.ts.
+  const { items, total } = await listAdminArticlesPage(whereClause, perPage, offset)
 
   return {
     ok: true,

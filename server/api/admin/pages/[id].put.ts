@@ -1,9 +1,7 @@
-import { getDb } from '../../../utils/db'
-import { pages, activityLogs } from '../../../db/schema'
-import { uniquePageSlug } from '../../../utils/slug'
-import { eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
+import { findPageById, pickUniquePageSlug } from '../../../services/admin-pages-queries'
+import { updatePageWithAudit } from '../../../services/admin-page-write'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -12,8 +10,7 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid page ID' })
 
-  const db = getDb()
-  const [existing] = await db.select().from(pages).where(eq(pages.id, id)).limit(1)
+  const existing = await findPageById(id)
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: 'Trang không tồn tại.' })
   }
@@ -34,7 +31,7 @@ export default defineEventHandler(async (event) => {
   // Slug is locked for system pages (home/about/contact). Custom pages may rename.
   if (body.slug !== undefined && !existing.isSystem) {
     const base = String(body.slug).trim() || existing.title
-    updateFields.slug = await uniquePageSlug(db, base, id)
+    updateFields.slug = await pickUniquePageSlug(base, id)
   }
 
   if (Object.keys(updateFields).length === 0) {
@@ -42,25 +39,8 @@ export default defineEventHandler(async (event) => {
   }
 
   updateFields.updatedBy = adminUser.id
-  /**
-   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
-   *
-   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
-   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
-   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
-   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
-   * commit độc lập trên pool.
-   */
-  await db.transaction(async (tx) => {
-    await tx.update(pages).set(updateFields).where(eq(pages.id, id))
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'update',
-      resource: 'pages',
-      meta: { id, fields: Object.keys(updateFields) },
-    })
-  })
+  // The update and its audit row commit together (services/admin-page-write.ts).
+  await updatePageWithAudit(adminUser, id, updateFields)
 
   // Sau commit: tiêu đề/SEO của trang hệ thống (`/`, `/about`, `/contact`) nằm trong HTML
   // đã đệm `swr` (server/utils/public-page-cache.ts).

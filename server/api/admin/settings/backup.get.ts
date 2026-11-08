@@ -1,6 +1,5 @@
-import { getDb } from '../../../utils/db'
-import { settings } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { readAllSettingRows } from '../../../services/admin-settings-values'
 import { backupSchedulerEnabledByServer } from '../../../utils/backup-scheduler-switch'
 import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
 import { settingsSecretNeedsReentry } from '../../../utils/settings-secrets'
@@ -19,8 +18,7 @@ export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'read')
 
-  const db = getDb()
-  const rows = await db.select().from(settings)
+  const rows = await readAllSettingRows()
   const map = new Map(rows.map(r => [r.key, r.value]))
 
   // Service account JSON key (có `private_key`) — che bằng `********` cho MỌI vai

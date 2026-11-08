@@ -25,13 +25,10 @@
  * is unchanged byte for byte.
  */
 import { finitePositive } from '../../../utils/query-number'
-import { and, eq } from 'drizzle-orm'
 
-import { getDb } from '../../../utils/db'
-import { articles, mediaItems } from '../../../db/schema'
 import { optionalReader } from '../../../utils/reader-auth'
 import { COMMENT_MAX_PER_PAGE, loadCommentThread, parseCommentSource, type PublicComment } from '../../../services/comments'
-import { PUBLISHED_MEDIA_STATUS } from '../../../services/media-portal'
+import { findCommentThreadArticle, findCommentThreadMedia } from '../../../services/public-comments-queries'
 import { COMMENT_THREAD_PER_PAGE } from '../../../services/notifications'
 
 /**
@@ -117,9 +114,9 @@ export default defineEventHandler(async (event): Promise<CommentThreadResponse> 
    *
    * The flag is never shared between the two kinds: an article's
    * `comments_enabled` says nothing about a video, and reading the wrong one is
-   * how a closed video would serve an open thread. The media branch imports the
-   * published-status literal rather than spelling it here, so the definition of
-   * "publicly visible" stays in one place.
+   * how a closed video would serve an open thread. The media lookup
+   * (`public-comments-queries.ts`) imports the published-status literal rather than
+   * spelling it, so the definition of "publicly visible" stays in one place.
    */
   let itemId: number
   let commentsEnabled: boolean
@@ -127,20 +124,12 @@ export default defineEventHandler(async (event): Promise<CommentThreadResponse> 
   if (isMedia) {
     // Media giờ tra theo `short_id` (định danh URL công khai). Route param vẫn tên
     // `articleSlug` vì endpoint phục vụ cả hai loại; nhánh media dùng `short_id`.
-    const [row] = await getDb()
-      .select({ id: mediaItems.id, commentsEnabled: mediaItems.commentsEnabled })
-      .from(mediaItems)
-      .where(and(eq(mediaItems.shortId, slug), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
-      .limit(1)
+    const row = await findCommentThreadMedia(slug)
     if (!row) return emptyThread(page, perPage)
     itemId = row.id
     commentsEnabled = row.commentsEnabled
   } else {
-    const [row] = await getDb()
-      .select({ id: articles.id, commentsEnabled: articles.commentsEnabled })
-      .from(articles)
-      .where(and(eq(articles.slug, slug), eq(articles.status, 'published')))
-      .limit(1)
+    const row = await findCommentThreadArticle(slug)
     if (!row) return emptyThread(page, perPage)
     itemId = row.id
     commentsEnabled = row.commentsEnabled

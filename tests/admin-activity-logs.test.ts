@@ -26,7 +26,11 @@ import { parse } from '@vue/compiler-sfc'
 import { ADMIN_LAYOUT_FAMILY, familySource, readAppFile } from './_component-family.ts'
 
 const listSource = await readFile(new URL('../server/api/admin/activity-logs/index.get.ts', import.meta.url), 'utf8')
+// The list's query and the retention aggregate moved into services (2026-11-08); what they assert
+// follows the code: the WHERE of the list, and "no destructive statement" over handler + service.
+const listQuerySource = await readFile(new URL('../server/services/admin-activity-logs-queries.ts', import.meta.url), 'utf8')
 const retentionSource = await readFile(new URL('../server/api/admin/activity-logs/retention.get.ts', import.meta.url), 'utf8')
+  + await readFile(new URL('../server/services/admin-activity-logs-retention.ts', import.meta.url), 'utf8')
 const pageSource = await readFile(new URL('../app/pages/admin/users/activity.vue', import.meta.url), 'utf8')
 // The admin layout was split (wave3 D-SPLIT): its menu lives in `useAdminLayoutMenu`, so the
 // menu guard reads the layout's whole family (tests/_component-family.ts).
@@ -104,7 +108,7 @@ test('the page renders the log, its filters, and the retention warning', () => {
   // by tests/admin-date-filters-vn-day.test.ts under several TZs.
   assert.match(script, /\{ to: filterTo\.value \}/)
   assert.doesNotMatch(script, /T23:59:59|T00:00:00/)
-  assert.match(listSource, /lt\(activityLogs\.createdAt, toExclusive\)/)
+  assert.match(listQuerySource, /lt\(activityLogs\.createdAt, toExclusive\)/)
   assert.match(template, /v-for="item in items"/)
   assert.match(template, /retention\.purgeOverdue/)
   assert.match(template, /analytics:maintenance|retention\.command/)

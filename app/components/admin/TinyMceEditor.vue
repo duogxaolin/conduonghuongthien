@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AdminMediaUploadResult } from '~/types/admin-api'
 import type { TinyMceEditorInstance, WindowWithTinyMce } from '~/types/tinymce'
-import { imageFilePicker } from '~/utils/tinymce-image-picker'
+import { imageFilePicker, registerImageLibraryButtons } from '~/utils/tinymce-image-picker'
 import { registerVideoLibraryButton } from '~/utils/tinymce-video-picker'
 // ─── Reusable TinyMCE rich-text editor (v-model) ─────────────────────────────
 // Single source for TinyMCE in the admin. Used by the page builder's richtext
@@ -72,10 +72,12 @@ onMounted(async () => {
     ],
     toolbar: 'undo redo | blocks | bold italic underline | forecolor backcolor | ' +
       'alignleft aligncenter alignright | bullist numlist outdent indent | ' +
-      'link image cdktvideo table | removeformat | code fullscreen',
+      'link cdktimage cdktimageedit cdktvideo table | removeformat | code fullscreen',
     toolbar_mode: 'sliding',
     quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
-    quickbars_insert_toolbar: 'quickimage quicktable',
+    // Images go in from the media library (see useArticleEditorTinymce.ts) — no `quickimage` (OS file chooser).
+    quickbars_insert_toolbar: 'cdktimage quicktable',
+    quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright',
     contextmenu: 'link image table',
     automatic_uploads: true,
     paste_data_images: true,
@@ -93,6 +95,7 @@ onMounted(async () => {
     }),
     setup: (ed: TinyMceEditorInstance) => {
       editor = ed
+      registerImageLibraryButtons(ed, onPick => openPicker({ onSelect: onPick }))
       if (hasPermission('media_portal', 'read')) registerVideoLibraryButton(ed, openVideoPicker)
       ed.on('init', () => { ed.setContent(props.modelValue || '') })
       const push = () => {

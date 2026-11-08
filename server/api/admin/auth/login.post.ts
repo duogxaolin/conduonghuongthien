@@ -1,7 +1,4 @@
-import { getDb } from '../../../utils/db'
-import { users, roles } from '../../../db/schema'
 import { verifyPassword } from '../../../utils/auth'
-import { eq } from 'drizzle-orm'
 import { logInfo, logWarn, SECURITY_EVENTS } from '../../../utils/logger'
 import { completeLogin, setChallengeCookie } from '../../../utils/mfa/session'
 import { countUnusedRecoveryCodes, factorAvailability } from '../../../utils/mfa/factors'
@@ -14,6 +11,7 @@ import {
 } from '../../../utils/rate-limit-store'
 import { rateLimitDeps } from '../../../utils/rate-limit-deps'
 import { verifyCaptcha } from '../../../utils/captcha-store'
+import { findLoginAccount } from '../../../services/admin-auth-login'
 
 // Rate limiting: 5 lần sai / 15 phút theo IP thật + username, và 15 lần / 15 phút
 // theo riêng username (chặn đoán phân tán từ nhiều IP).
@@ -89,25 +87,8 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const db = getDb()
-
-  // Tìm user
-  const [user] = await db
-    .select({
-      id:           users.id,
-      username:     users.username,
-      email:        users.email,
-      passwordHash: users.passwordHash,
-      isActive:     users.isActive,
-      roleId:       users.roleId,
-      roleName:     roles.name,
-      isSystem:     roles.isSystem,
-      tokenVersion: users.tokenVersion,
-    })
-    .from(users)
-    .leftJoin(roles, eq(users.roleId, roles.id))
-    .where(eq(users.username, username))
-    .limit(1)
+  // Tìm user (services/admin-auth-login.ts)
+  const user = await findLoginAccount(username)
 
   if (!user) {
     await Promise.all([

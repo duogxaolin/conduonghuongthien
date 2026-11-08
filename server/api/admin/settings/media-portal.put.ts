@@ -10,24 +10,24 @@
  *
  * Ghi audit `update media_portal_settings` kèm giá trị trước/sau trong `meta`,
  * trong cùng transaction với lượt ghi `settings` — theo `tests/reader-audit-atomicity.test.ts`:
- * `tx.insert(activityLogs)`, không `db.insert(activityLogs)` trong khối.
+ * `tx.insert(activityLogs)`, không `db.insert(activityLogs)` trong khối
+ * (`saveMediaPortalSettingsWithAudit`, services/admin-settings-media-portal.ts).
  *
  * `workdir` và FFmpeg cố ý không cho sửa ở đây — đổi workdir cần restart volume
  * mount, đổi qua CSDL mà không restart = config đang chạy không khớp CSDL.
  */
 import { createError, defineEventHandler, readBody } from 'h3'
-import { inArray } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { videoR2RetargetViolation } from '../../../utils/settings-credential-guard'
-import { getDb } from '../../../utils/db'
-import { settings, activityLogs } from '../../../db/schema'
+import { R2_SECRET_DB_KEY_LOCAL, saveMediaPortalSettingsWithAudit } from '../../../services/admin-settings-media-portal'
+import { readSettingValues } from '../../../services/admin-settings-values'
 import {
   parseMediaBoolean,
   parseMediaInteger,
   MEDIA_BOUNDS,
 } from '../../../utils/media-config'
 import { encryptVideoR2Secret } from '../../../utils/media-r2-secret'
-import { MASKED_SECRET, isRetypedVideoSecret } from '../../../../shared/settings-credential-rules'
+import { isRetypedVideoSecret } from '../../../../shared/settings-credential-rules'
 
 type FieldSpec = {
   dbKey: string
@@ -208,19 +208,11 @@ export default defineEventHandler(async (event) => {
     normalized.push({ field, dbKey: spec.dbKey, value: validated })
   }
 
-  // R2 secret key rỗng = giữ nguyên (không xoá) — cán bộ chỉ muốn đổi bucket,
-  // không nhập lại secret. Nhớ dbKey để skip hoàn toàn, không ghi đè rỗng.
-  const R2_SECRET_DB_KEY_LOCAL = 'media_video_r2_secret_key'
-
-  const db = getDb()
-
   // Giá trị hiện tại cho audit (trước/sau) và cho quy tắc đổi đích R2 bên dưới.
   // Đọc theo KHOÁ, không theo `group`: một hàng R2 video từng được ghi với nhóm
   // khác (seed cũ, sửa tay) vẫn là giá trị đang chạy — lọc theo nhóm sẽ thấy "chưa
   // có bí mật" và để lọt lượt đổi account id không kèm bí mật.
-  const currentRows = await db.select({ key: settings.key, value: settings.value })
-    .from(settings)
-    .where(inArray(settings.key, FIELD_DB_KEYS))
+  const currentRows = await readSettingValues(FIELD_DB_KEYS)
   const current = new Map(currentRows.map(row => [row.key, row.value ?? '']))
 
   // Đổi Account ID / Bucket của R2 video mà không gõ lại Secret Key → 400, trước
@@ -236,44 +228,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: retargetViolation })
   }
 
-  /**
-   * Giá trị audit cho secret key: `********` khi có, '' khi không — không lộ
-   * envelope, và (spec admin-settings-secrets) cũng không lộ 4 ký tự cuối, vì
-   * `activity_logs` được đọc lại qua `/admin/users/activity`. Dòng audit vẫn cho
-   * biết bí mật đã đổi (khoá có mặt trong `changes`). Trường khác ghi giá trị thật.
-   */
-  function maskForAudit(dbKey: string, value: string): string {
-    if (dbKey !== R2_SECRET_DB_KEY_LOCAL) return value
-    return value ? MASKED_SECRET : ''
-  }
-
+  // Changed fields + the audit row (masked secret) in one transaction (in the service); any
+  // failure there is a 500 carrying its message, as before.
   try {
-    await db.transaction(async (tx) => {
-      const changes: Array<{ key: string, from: string, to: string }> = []
-      for (const entry of normalized) {
-        // Secret key rỗng → skip, giữ nguyên giá trị cũ.
-        if (entry.dbKey === R2_SECRET_DB_KEY_LOCAL && !entry.value) continue
-        const before = current.get(entry.dbKey) ?? ''
-        if (before === entry.value) continue
-        await tx.insert(settings).values({ key: entry.dbKey, value: entry.value, group: 'media_portal' })
-          .onDuplicateKeyUpdate({ set: { value: entry.value } })
-        changes.push({
-          key: entry.dbKey,
-          from: maskForAudit(entry.dbKey, before),
-          to:   maskForAudit(entry.dbKey, entry.value),
-        })
-      }
-
-      if (changes.length > 0) {
-        await tx.insert(activityLogs).values({
-          userId: adminUser.id ?? null,
-          action: 'update media_portal_settings',
-          resource: 'settings',
-          resourceId: null,
-          meta: { changes },
-        })
-      }
-    })
+    await saveMediaPortalSettingsWithAudit(adminUser, normalized, current)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Không lưu được cài đặt.'
     throw createError({ statusCode: 500, statusMessage: msg })

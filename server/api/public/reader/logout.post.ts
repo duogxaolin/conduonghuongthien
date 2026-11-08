@@ -22,11 +22,8 @@
  * POST, not GET: a sign-out reachable by navigation can be triggered by an image
  * tag on any other site.
  */
-import { eq, sql } from 'drizzle-orm'
-
-import { getDb } from '../../../utils/db'
-import { readerAccounts } from '../../../db/schema'
 import { clearReaderCookie, optionalReader } from '../../../utils/reader-auth'
+import { bumpReaderTokenVersion } from '../../../services/public-reader-queries'
 import { logError } from '../../../utils/logger'
 
 export default defineEventHandler(async (event) => {
@@ -35,12 +32,9 @@ export default defineEventHandler(async (event) => {
   if (reader) {
     // An increment in SQL, not `reader.tokenVersion + 1`: whatever version a
     // concurrent request just wrote, every ticket minted before this point stops
-    // matching.
+    // matching (bumpReaderTokenVersion).
     try {
-      await getDb()
-        .update(readerAccounts)
-        .set({ tokenVersion: sql`${readerAccounts.tokenVersion} + 1` })
-        .where(eq(readerAccounts.id, reader.id))
+      await bumpReaderTokenVersion(reader.id)
     } catch (error) {
       // Same stance as the admin logout: the cookie still goes, and the failure is
       // visible rather than reading as a completed sign-out.

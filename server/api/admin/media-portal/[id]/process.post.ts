@@ -16,8 +16,7 @@ import { requireResourcePermission } from '../../../../utils/permissions'
 import { processMediaItem, RENDITIONS } from '../../../../services/video-processing'
 import { enqueueMediaProcessing } from '../../../../services/media-processing-queue'
 import { logWarn } from '../../../../utils/logger'
-import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
-import { getDb } from '../../../../utils/db'
+import { resolveAdminMediaConfig } from '../../../../services/admin-media-config'
 
 // Tập tên rendition hợp lệ — trùng `RENDITIONS` trong video-processing. Chỉ nhận
 // giá trị trong tập này: một giá trị lạ (như "4K") không được suy diễn thành "bỏ
@@ -64,7 +63,7 @@ export default defineEventHandler(async (event) => {
   // bắt buộc: một promise rời tay không được bắt sẽ ném unhandled rejection và
   // hạ worker. Lỗi đã nằm trong `processingError` trên hàng — `logWarn` đây chỉ
   // cho những throw bất ngờ vượt qua phần xử lý nội bộ.
-  const { config } = await resolveMediaConfigWithDb(getDb())
+  const { config } = await resolveAdminMediaConfig()
   void processMediaItem({ mediaItemId, renditions: requestedRenditions }, { config })
     .catch((err) => {
       logWarn({

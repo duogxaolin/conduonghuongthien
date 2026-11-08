@@ -21,6 +21,7 @@ import { ARTICLE_DETAIL_FAMILY, familySource, familyStyle, familyTemplate, readA
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 const HANDLER = '../server/api/public/articles/[slug]/related.get.ts'
+const RELATED_QUERIES = '../server/services/public-article-related-queries.ts'
 const COMPONENT = '../app/components/ArticleDetail.vue'
 
 const template = (path: string) => parse(read(path), { filename: path }).descriptor.template?.content ?? ''
@@ -264,9 +265,11 @@ test('phản hồi rỗng là hàm, không phải object cấp module', () => {
 test('bài không có danh mục thì bỏ hẳn mệnh đề CASE, không thay bằng hằng số', () => {
   // `ORDER BY 1` trong MySQL là "sắp theo cột thứ nhất của SELECT" — ở đây là
   // `id` — một lượt sắp xếp sai hoàn toàn mà không có lỗi nào.
-  const handler = read(HANDLER)
-  assert.match(handler, /current\.categoryId === null\s*\n?\s*\?\s*\[\]/, 'nhánh null phải là mảng rỗng')
-  assert.match(handler, /CASE WHEN \$\{articles\.categoryId\} = \$\{current\.categoryId\}/)
+  // Truy vấn bài liên quan nằm ở service mà handler gọi.
+  const queries = read(RELATED_QUERIES)
+  assert.match(read(HANDLER), /listRelatedArticles\(current, lang\)/, 'handler không còn lấy bài liên quan qua service')
+  assert.match(queries, /current\.categoryId === null\s*\n?\s*\?\s*\[\]/, 'nhánh null phải là mảng rỗng')
+  assert.match(queries, /CASE WHEN \$\{articles\.categoryId\} = \$\{current\.categoryId\}/)
 })
 
 test('endpoint dùng hàm gộp dùng chung chứ không tự viết lại', () => {

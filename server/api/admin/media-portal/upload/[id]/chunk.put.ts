@@ -25,8 +25,7 @@ import { defineEventHandler, getQuery } from 'h3'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { receiveChunk, chunkBodyLimit } from '../../../../../services/chunked-upload'
 import { readBoundedUploadBody } from '../../../../../utils/bounded-upload-body'
-import { resolveMediaConfigWithDb } from '../../../../../services/media-config-service'
-import { getDb } from '../../../../../utils/db'
+import { resolveAdminMediaConfig } from '../../../../../services/admin-media-config'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -47,7 +46,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Phần tải lên không hợp lệ.' })
   }
 
-  const { config } = await resolveMediaConfigWithDb(getDb())
+  const { config } = await resolveAdminMediaConfig()
 
   const result = await receiveChunk({
     adminUserId: adminUser.id,

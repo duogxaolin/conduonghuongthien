@@ -9,10 +9,7 @@
  * Gated on `settings:read`: this is configuration, not the audit log, so it
  * follows the same boundary as the other settings pages.
  */
-import { intervalDays } from '../../../utils/sql-literals'
-import { sql } from 'drizzle-orm'
 import type { AnyMySqlColumn, AnyMySqlTable } from 'drizzle-orm/mysql-core'
-import { getDb } from '../../../utils/db'
 import { activityLogs, submissions, chatSessions, readerAccounts, livestreamSessions } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import {
@@ -23,6 +20,7 @@ import {
 } from '../../../services/retention-policy'
 import { loadRetentionState } from '../../../services/retention-state'
 import { DATA_RETENTION_BOUNDS } from '../../../utils/data-retention-config'
+import { countRetentionScopeRows } from '../../../services/admin-settings-retention'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -31,7 +29,6 @@ export default defineEventHandler(async (event) => {
 
   const policy = await resolveRetentionPolicy()
   const state = await loadRetentionState()
-  const db = getDb()
 
   /**
    * The column each scope is aged against. This MUST be the same column
@@ -57,15 +54,7 @@ export default defineEventHandler(async (event) => {
 
   const scopes = await Promise.all(policy.scopes.map(async (scope) => {
     const { target, timestamp } = scopeTable[scope.scope]
-    const [row] = await db
-      .select({
-        total: sql<number>`COUNT(*)`,
-        oldest: sql<string | null>`MIN(${timestamp})`,
-        overdue: scope.days > 0
-          ? sql<number>`SUM(CASE WHEN ${timestamp} < (NOW() - INTERVAL ${intervalDays(scope.days)} DAY) THEN 1 ELSE 0 END)`
-          : sql<number>`0`,
-      })
-      .from(target)
+    const row = await countRetentionScopeRows(target, timestamp, scope.days)
 
     const total = Number(row?.total ?? 0)
     const banked = state.find(entry => entry.scope === scope.scope)

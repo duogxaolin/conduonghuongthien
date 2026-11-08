@@ -1,8 +1,6 @@
-import { getDb } from '../../../utils/db'
-import { articles, users, categories } from '../../../db/schema'
-import { eq, desc, inArray } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { articleResource } from '../../../services/articles'
+import { findArticlesForBatchExport } from '../../../services/admin-articles-export'
 import { vietnamDateString } from '../../../utils/vn-day-range'
 import { ZipArchive } from 'archiver'
 import { Readable } from 'node:stream'
@@ -88,26 +86,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `Tối đa ${MAX_BATCH} bài mỗi lần tải.` })
   }
 
-  const db = getDb()
-  const rows = await db
-    .select({
-      id: articles.id,
-      type: articles.type,
-      title: articles.title,
-      slug: articles.slug,
-      excerpt: articles.excerpt,
-      content: articles.content,
-      status: articles.status,
-      categoryName: categories.name,
-      authorName: users.username,
-      publishedAt: articles.publishedAt,
-      createdAt: articles.createdAt,
-    })
-    .from(articles)
-    .leftJoin(users, eq(articles.authorId, users.id))
-    .leftJoin(categories, eq(articles.categoryId, categories.id))
-    .where(inArray(articles.id, ids))
-    .orderBy(desc(articles.createdAt))
+  const rows = await findArticlesForBatchExport(ids)
 
   // Lọc per-bài theo quyền — bỏ bài không có quyền, đếm.
   const allowed = rows.filter(r => {

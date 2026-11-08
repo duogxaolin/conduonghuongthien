@@ -2,6 +2,7 @@ import { createError } from 'h3'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { listTranslationsForArticle } from '../../../../../services/article-translations'
 import { requireReadableArticle } from '../../../../../services/articles'
+import { sanitizeHtml } from '../../../../../utils/sanitize-html'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -15,5 +16,6 @@ export default defineEventHandler(async (event) => {
   // `news:read` above only opens the route; the article's own type decides.
   await requireReadableArticle(adminUser, id)
   const translations = await listTranslationsForArticle(id)
-  return { ok: true, items: translations }
+  // The translation editor loads `content`: filter on read too, like the one-translation route.
+  return { ok: true, items: translations.map(row => ({ ...row, content: row.content == null ? null : sanitizeHtml(row.content) })) }
 })

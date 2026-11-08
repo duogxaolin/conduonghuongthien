@@ -8,7 +8,7 @@ import type { AdminMediaUploadResult } from '../types/admin-api'
 import type { ArticleEditorForm } from '../types/admin-article-editor'
 import type { MediaItem } from '../types/media'
 import type { TinyMceEditorInstance, WindowWithTinyMce } from '../types/tinymce'
-import { imageFilePicker } from '../utils/tinymce-image-picker'
+import { imageFilePicker, libraryImageHtml, registerImageLibraryButtons } from '../utils/tinymce-image-picker'
 import { registerVideoLibraryButton } from '../utils/tinymce-video-picker'
 import type { AdminMediaItem } from '../types/admin-api'
 
@@ -116,7 +116,7 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
   }
 
   const insertMediaIntoEditor = (media: MediaItem) => {
-    const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>`
+    const imgHtml = `<p>${libraryImageHtml(media)}</p>`
     if ((window as WindowWithTinyMce).tinymce) {
       const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
       if (ed) { ed.insertContent(imgHtml); return }
@@ -156,11 +156,16 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
         'bold italic underline strikethrough | forecolor backcolor | ' +
         'alignleft aligncenter alignright alignjustify | ' +
         'bullist numlist outdent indent | ' +
-        'link image cdktvideo | ' +
+        'link cdktimage cdktimageedit cdktvideo | ' +
         'table | removeformat | fullscreen code',
       toolbar_mode: 'sliding',
       quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
-      quickbars_insert_toolbar: 'quickimage quicktable',
+      // Images go in from the media library, never from TinyMCE's own "Insert image" (a URL box / the OS file
+      // chooser): `cdktimage` is the button in an empty paragraph, the Insert menu item and the toolbar button.
+      // The bar over a selected image says "Sửa ảnh" (CHANGELOG § 102).
+      quickbars_insert_toolbar: 'cdktimage quicktable',
+      quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright',
+      menu: { insert: { title: 'Insert', items: 'cdktimage link inserttable | charmap hr | anchor | insertdatetime' } },
       contextmenu: 'link image table',
       // TinyMCE's own Media dialog takes any typed URL, and the HTML filter keeps only two frame shapes, so
       // anything else vanished on save. Videos go in from the video library (`cdktvideo`); the plugin stays
@@ -184,6 +189,7 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
           .catch((err) => reject(errorMessage(err, 'Upload thất bại')))
       }),
       setup: (editor: TinyMceEditorInstance) => {
+        registerImageLibraryButtons(editor, pickImage)
         if (pickVideo) registerVideoLibraryButton(editor, pickVideo)
         editor.on('init', () => {
           tinymceReady.value = true

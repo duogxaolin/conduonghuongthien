@@ -1,7 +1,6 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { syncLanguageKeys } from '../../../services/languages'
-import { getDb } from '../../../utils/db'
-import { activityLogs } from '../../../db/schema'
+import { writeLanguageKeysSyncAudit } from '../../../services/admin-languages-audit'
 import { logError } from '../../../utils/logger'
 
 /**
@@ -15,17 +14,8 @@ export default defineEventHandler(async (event) => {
 
   const result = await syncLanguageKeys()
 
-  const db = getDb()
   try {
-    await db.insert(activityLogs).values({
-      userId: adminUser?.id ?? null,
-      action: 'update',
-      resource: 'settings',
-      meta: {
-        operation: 'sync_language_keys',
-        ...result,
-      },
-    })
+    await writeLanguageKeysSyncAudit(adminUser?.id ?? null, result)
   } catch (error) {
     logError({
       event: 'languages.sync_audit_failed',

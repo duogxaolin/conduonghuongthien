@@ -1,9 +1,7 @@
 import { createError } from 'h3'
-import { eq, inArray } from 'drizzle-orm'
-import { getDb } from '../../../utils/db'
-import { articleComments, readerAccounts } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
-import { checkBudget } from '../../../utils/ai-budget'
+import { checkAiBudget } from '../../../services/admin-ai-calls'
+import { listCommentsForAiModeration } from '../../../services/admin-comments-ai-moderate'
 import { callAi } from '../../../services/ai-gateway'
 import { fenceUntrustedContent } from '../../../utils/ai/untrusted-content'
 import { AI_NOT_CONFIGURED_STATUS, aiNotConfiguredMessage, isAiNotConfigured } from '../../../utils/ai/not-configured'
@@ -44,10 +42,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `Nội dung cần kiểm duyệt dài quá ${COMMENT_MAX_LENGTH} ký tự (giới hạn của một bình luận).` })
   }
 
-  const db = getDb()
-
   // 1. Check budget guard
-  const budgetResult = await checkBudget(db, 'moderation')
+  const budgetResult = await checkAiBudget('moderation')
   if (!budgetResult.allowed) {
     throw createError({
       statusCode: 429,
@@ -59,16 +55,7 @@ export default defineEventHandler(async (event) => {
   const itemsToModerate: Array<{ id?: number; content: string; author: string }> = []
 
   if (commentIds.length > 0) {
-    const rows = await db
-      .select({
-        id: articleComments.id,
-        body: articleComments.body,
-        displayName: readerAccounts.displayName,
-        customDisplayName: readerAccounts.customDisplayName,
-      })
-      .from(articleComments)
-      .leftJoin(readerAccounts, eq(articleComments.readerId, readerAccounts.id))
-      .where(inArray(articleComments.id, commentIds))
+    const rows = await listCommentsForAiModeration(commentIds)
 
     for (const r of rows) {
       itemsToModerate.push({

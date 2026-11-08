@@ -1,9 +1,7 @@
-import { getDb } from '../../../utils/db'
-import { contentTypes } from '../../../db/schema'
-import { uniqueContentTypeSlug } from '../../../utils/slug'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateContentType } from '../../../services/i18n-auto-translate'
 import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
+import { createContentTypeRow } from '../../../services/admin-taxonomy-queries'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -19,20 +17,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Tên thể loại không được để trống.' })
   }
 
-  const db = getDb()
-
-  // Clean, collision-safe slug — custom type dùng gạch ngang (isSystem=false).
+  // The service picks the clean, collision-safe slug from this (or from the name).
   const rawSlug = String(body?.slug || '').trim()
-  const uniqueSlug = await uniqueContentTypeSlug(db, rawSlug || name, undefined, false)
-
-  const [res] = await db.insert(contentTypes).values({
-    name,
-    slug: uniqueSlug,
-    icon,
-    description,
-    displayOrder,
-    isSystem: false,
-  })
+  const { id, slug: uniqueSlug } = await createContentTypeRow(rawSlug, { name, icon, description, displayOrder })
 
   // Non-blocking i18n auto-translate (vi gốc + AI dịch 5 lang).
   void autoTranslateContentType(adminUser, uniqueSlug, name, description).catch(() => {})
@@ -40,5 +27,5 @@ export default defineEventHandler(async (event) => {
   // After the insert: content types feed the menus and lists of the cached public pages.
   await purgePublicPageCacheAfterWrite('content_types.create')
 
-  return { ok: true, id: res.insertId, slug: uniqueSlug }
+  return { ok: true, id, slug: uniqueSlug }
 })

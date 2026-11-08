@@ -14,12 +14,10 @@
  * surveillance tool. One row per request, not per log line displayed.
  */
 
-import { and, desc, eq, gte, lt, sql } from 'drizzle-orm'
-import { getDb } from '../../../utils/db'
-import { activityLogs, users } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { getClientIp } from '../../../utils/client-ip'
 import { DAY_MS, vietnamDayStart } from '../../../utils/vn-day-range'
+import { auditActivityLogRead, listActivityLogsPage } from '../../../services/admin-activity-logs-queries'
 
 const DEFAULT_PAGE_SIZE = 25
 const MAX_PAGE_SIZE = 100
@@ -90,48 +88,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Khoảng thời gian không hợp lệ: from phải trước to.' })
   }
 
-  const db = getDb()
-  const conditions = []
-  if (userId !== null) conditions.push(eq(activityLogs.userId, userId))
-  if (action) conditions.push(eq(activityLogs.action, action))
-  if (resource) conditions.push(eq(activityLogs.resource, resource))
-  if (from) conditions.push(gte(activityLogs.createdAt, from))
-  if (toExclusive) conditions.push(lt(activityLogs.createdAt, toExclusive))
-  const where = conditions.length ? and(...conditions) : undefined
+  const { total, rows } = await listActivityLogsPage({ userId, action, resource, from, toExclusive, page, pageSize })
 
-  const [countRow] = await db.select({ total: sql<number>`COUNT(*)` }).from(activityLogs).where(where)
-  const total = Number(countRow?.total ?? 0)
-
-  const rows = await db
-    .select({
-      id: activityLogs.id,
-      userId: activityLogs.userId,
-      username: users.username,
-      action: activityLogs.action,
-      resource: activityLogs.resource,
-      resourceId: activityLogs.resourceId,
-      meta: activityLogs.meta,
-      createdAt: activityLogs.createdAt,
-    })
-    .from(activityLogs)
-    // Left join: rows survive the account being deleted, and an orphaned trail
-    // is exactly what an audit needs to keep.
-    .leftJoin(users, eq(activityLogs.userId, users.id))
-    .where(where)
-    // Tie-broken by id so pagination is stable when rows share a timestamp.
-    .orderBy(desc(activityLogs.createdAt), desc(activityLogs.id))
-    .limit(pageSize)
-    .offset((page - 1) * pageSize)
-
-  await db.insert(activityLogs).values({
-    userId: admin.id,
-    action: 'read',
-    resource: 'activity_logs',
-    resourceId: userId,
-    meta: {
-      filters: { userId, action, resource, from: query.from ?? null, to: query.to ?? null },
-      ip: getClientIp(event),
-    },
+  await auditActivityLogRead(admin.id, userId, {
+    filters: { userId, action, resource, from: query.from ?? null, to: query.to ?? null },
+    ip: getClientIp(event),
   })
 
   return {

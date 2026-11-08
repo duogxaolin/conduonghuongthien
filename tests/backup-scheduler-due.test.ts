@@ -274,6 +274,7 @@ test('.env.example documents BACKUP_SCHEDULER with its production default', () =
 
 test('the state key cannot be written through the settings API', () => {
   const put = readFileSync(new URL('../server/api/admin/settings/index.put.ts', import.meta.url), 'utf8')
+    + readFileSync(new URL('../server/services/admin-settings-general.ts', import.meta.url), 'utf8')
   assert.equal(BACKUP_SCHEDULER_STATE_KEY, 'backup_scheduler_state')
   assert.doesNotMatch(put, /backup_scheduler_state/)
 })

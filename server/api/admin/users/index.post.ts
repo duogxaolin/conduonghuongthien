@@ -1,13 +1,12 @@
-import { getDb } from '../../../utils/db'
 import { passwordRejectionMessage } from '../../../utils/password-policy'
-import { users, roles, activityLogs } from '../../../db/schema'
 import { hashPassword } from '../../../utils/auth'
 import { assertRoleAssignable, assertRoleWithinActor, requireResourcePermission } from '../../../utils/permissions'
 import { loadRolePermissions } from '../../../services/users'
 import { isValidEmail } from '../../../utils/submission-recipient'
 import { driverMessage, isDuplicateEntry } from '../../../utils/mysql-errors'
 import { logError } from '../../../utils/logger'
-import { eq } from 'drizzle-orm'
+import { findRoleSystemFlag } from '../../../services/admin-users-queries'
+import { createUserWithAudit } from '../../../services/admin-user-create'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -33,10 +32,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Email không hợp lệ' })
   }
 
-  const db = getDb()
-
   // Only a superadmin may create a user directly inside a system (superadmin) role.
-  const [targetRole] = await db.select({ isSystem: roles.isSystem }).from(roles).where(eq(roles.id, roleId)).limit(1)
+  const targetRole = await findRoleSystemFlag(roleId)
   if (!targetRole) throw createError({ statusCode: 400, statusMessage: 'Vai trò không tồn tại.' })
   assertRoleAssignable(adminUser, targetRole.isSystem)
   // …and nobody may create an account with more rights than their own.
@@ -45,36 +42,8 @@ export default defineEventHandler(async (event) => {
   const passwordHash = await hashPassword(password)
 
   try {
-    /**
-     * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
-     *
-     * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
-     * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
-     * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
-     * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
-     * commit độc lập trên pool.
-     */
-    const newUserId = await db.transaction(async (tx) => {
-      const [result] = await tx.insert(users).values({
-        username,
-        email,
-        passwordHash,
-        roleId,
-        isActive: true,
-      })
-
-      const created = result.insertId
-
-      await tx.insert(activityLogs).values({
-        userId: adminUser.id,
-        action: 'create',
-        resource: 'users',
-        resourceId: created,
-        meta: { username, roleId },
-      })
-
-      return created
-    })
+    // The account and its audit row commit together, or neither does (one transaction, in the service).
+    const newUserId = await createUserWithAudit(adminUser, { username, email, passwordHash, roleId })
 
     return { ok: true, id: newUserId }
   } catch (err: unknown) {

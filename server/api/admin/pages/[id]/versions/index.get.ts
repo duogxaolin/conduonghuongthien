@@ -1,7 +1,5 @@
-import { getDb } from '../../../../../utils/db'
-import { pageVersions } from '../../../../../db/schema'
-import { eq, desc } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../../utils/permissions'
+import { listPageVersionsMeta } from '../../../../../services/admin-page-versions'
 
 // List version metadata for a page (no heavy blocks JSON).
 export default defineEventHandler(async (event) => {
@@ -11,19 +9,7 @@ export default defineEventHandler(async (event) => {
   const pageId = Number(getRouterParam(event, 'id'))
   if (!pageId) throw createError({ statusCode: 400, statusMessage: 'Invalid page ID' })
 
-  const db = getDb()
-  const versions = await db
-    .select({
-      id: pageVersions.id,
-      kind: pageVersions.kind,
-      label: pageVersions.label,
-      createdAt: pageVersions.createdAt,
-      createdBy: pageVersions.createdBy,
-      blockCount: pageVersions.blocks,
-    })
-    .from(pageVersions)
-    .where(eq(pageVersions.pageId, pageId))
-    .orderBy(desc(pageVersions.id))
+  const versions = await listPageVersionsMeta(pageId)
 
   // Reduce blocks JSON to a count so the list payload stays small.
   const list = versions.map((v) => ({

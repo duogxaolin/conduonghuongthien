@@ -13,8 +13,7 @@ import { createError, defineEventHandler } from 'h3'
 
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { clearMediaThumbnail } from '../../../../services/media-portal'
-import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
-import { getDb } from '../../../../utils/db'
+import { resolveAdminMediaConfig } from '../../../../services/admin-media-config'
 import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
@@ -26,9 +25,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Mục media không hợp lệ.' })
   }
 
-  const { config } = await resolveMediaConfigWithDb(getDb())
+  const { config } = await resolveAdminMediaConfig()
 
-  const result = await clearMediaThumbnail({ id, actorId: adminUser.id, config }, { db: getDb() })
+  // No `deps`: the service falls back to the shared handle itself (its `deps.db` default).
+  const result = await clearMediaThumbnail({ id, actorId: adminUser.id, config })
 
   if (!result.ok) {
     const statusMessage = result.reason === 'not_found'

@@ -1,5 +1,5 @@
-import { getDb } from '../../../utils/db'
-import { media, settings, activityLogs } from '../../../db/schema'
+import { readAllSettingRows } from '../../../services/admin-settings-values'
+import { insertUploadedMediaWithAudit } from '../../../services/admin-media-upload'
 import { deleteLocalFile, uploadLocalFile } from '../../../utils/media-local'
 import { deleteR2File, uploadR2File, type R2Config } from '../../../utils/media-r2'
 import sharp from 'sharp'
@@ -149,10 +149,8 @@ export default defineEventHandler(async (event) => {
   // collision that still happens fails this upload instead of overwriting another row's file.
   const uniqueFilename = `${Date.now()}_${randomBytes(4).toString('hex')}_${safeBasename}${ext}`
 
-  const db = getDb()
-
   // Get storage setting
-  const dbSettings = await db.select().from(settings)
+  const dbSettings = await readAllSettingRows()
   const settingsMap = new Map(dbSettings.map(s => [s.key, s.value]))
   const provider = settingsMap.get('media_provider') || 'local'
 
@@ -189,46 +187,23 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Save to DB
+  // Save to DB — the `media` row and its audit row in one transaction (in the service).
   /**
-   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
-   *
-   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
-   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
-   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
-   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
-   * commit độc lập trên pool.
-   *
    * Tệp đã ghi TRƯỚC hàng (hàng lưu URL của nó), nên transaction hỏng từng để lại một tệp
    * trong thư mục công khai hay bucket mà không hàng `media` nào trỏ tới: không hiện trong
    * thư viện, không ai xoá được, vẫn được phục vụ. Nay gỡ nó trên đường ra (cố gắng hết sức
    * — lượt gỡ hỏng chỉ ghi log), và nơi gọi vẫn nhận lỗi GỐC.
    */
-  const newMediaId = await db.transaction(async (tx) => {
-    const [insertRes] = await tx.insert(media).values({
-      filename:     uniqueFilename,
-      originalName,
-      mimeType:     effectiveMime,
-      sizeBytes:    buffer.length,
-      provider,
-      url:          uploadResult.url,
-      storagePath:  uploadResult.storagePath,
-      width,
-      height,
-      uploadedBy:   adminUser.id,
-    })
-
-    const created = insertRes.insertId
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'create',
-      resource: 'media',
-      resourceId: created,
-      meta: { originalName, url: uploadResult.url, provider },
-    })
-
-    return created
+  const newMediaId = await insertUploadedMediaWithAudit(adminUser, {
+    uniqueFilename,
+    originalName,
+    effectiveMime,
+    sizeBytes: buffer.length,
+    provider,
+    url: uploadResult.url,
+    storagePath: uploadResult.storagePath,
+    width,
+    height,
   }).catch(async (error: unknown) => {
     await removeUnrecordedUpload(provider, uploadResult.storagePath, r2Config)
     throw error

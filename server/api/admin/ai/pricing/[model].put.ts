@@ -1,8 +1,7 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiModelPricing, activityLogs } from '../../../../db/schema'
+import type { aiModelPricing } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { COST_OUT_OF_RANGE_MESSAGE, isStorableCostPerMillion } from '../../../../utils/ai/pricing-cost'
+import { findPricingByModel, updatePricingWithAudit } from '../../../../services/admin-ai-pricing'
 
 /**
  * Update AI model pricing, label, and/or active status.
@@ -47,9 +46,7 @@ export default defineEventHandler(async (event) => {
     patch[field] = String(value)
   }
 
-  const db = getDb()
-
-  const [existing] = await db.select().from(aiModelPricing).where(eq(aiModelPricing.model, modelParam)).limit(1)
+  const existing = await findPricingByModel(modelParam)
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: 'Model không tồn tại.' })
   }
@@ -58,20 +55,8 @@ export default defineEventHandler(async (event) => {
     return { ok: true, message: 'Không có thay đổi.' }
   }
 
-  await db.transaction(async (tx) => {
-    await tx.update(aiModelPricing).set(patch).where(eq(aiModelPricing.model, modelParam))
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'update',
-      resource: 'ai',
-      resourceId: null,
-      meta: {
-        type: 'pricing_update',
-        model: modelParam,
-        changedFields: Object.keys(patch),
-      },
-    })
-  })
+  // The update and its audit row in one transaction (in the service).
+  await updatePricingWithAudit(adminUser, modelParam, patch)
 
   return { ok: true }
 })

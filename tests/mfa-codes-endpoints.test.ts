@@ -124,7 +124,14 @@ test('the password change resolves its target from the session, never from the b
   // Every write and read is keyed on admin.id; a userId in the body would have to
   // appear here to have any effect.
   assert.ok(!/body\?\.(userId|id)\b/.test(src), 'the body must not name an account')
-  assert.match(src, /eq\(users\.id, admin\.id\)/)
+  // The statements live in a service (2026-11-08): the handler hands each one the session's
+  // account, and every one of them is keyed on that account's id.
+  for (const call of ['findOwnPasswordRow(admin)', 'updateOwnPassword(admin,', 'readOwnTokenVersion(admin)', 'auditOwnPasswordChange(admin,']) {
+    assert.ok(src.includes(call), `the handler no longer calls ${call}`)
+  }
+  const service = read('server/services/admin-profile-password.ts')
+  assert.equal((service.match(/\.where\(eq\(users\.id, admin\.id\)\)/g) ?? []).length, 3, 'a statement is no longer keyed on the session account')
+  assert.match(service, /userId: admin\.id,/)
 })
 
 test('the password change requires the current password and the project policy', () => {
@@ -139,7 +146,7 @@ test('the password change requires the current password and the project policy',
 
 test('a successful password change revokes other sessions but keeps the caller in', () => {
   const src = read('server/api/admin/profile/password.put.ts')
-  assert.match(src, /tokenVersion: sql`\$\{users\.tokenVersion\} \+ 1`/)
+  assert.match(read('server/services/admin-profile-password.ts'), /tokenVersion: sql`\$\{users\.tokenVersion\} \+ 1`/)
   // Without re-issuing, the caller's own cookie is the first casualty of the bump.
   assert.match(src, /setSessionCookie\(event, \{/)
   assert.match(src, /tokenVersion: fresh\?\.tokenVersion \?\? 0/)
@@ -157,10 +164,15 @@ test('failed current-password attempts are rate limited through the shared store
 
 test('the password change logs the event without any password material', () => {
   const src = read('server/api/admin/profile/password.put.ts')
-  assert.match(src, /resource: 'profile_password'/)
+  const service = read('server/services/admin-profile-password.ts')
+  assert.match(service, /resource: 'profile_password'/)
+  // The audit meta is built in the handler: the IP and the user agent, nothing else.
+  assert.match(src, /auditOwnPasswordChange\(admin, \{ ip, userAgent: getRequestHeader\(event, 'user-agent'\) \|\| '' \}\)/)
+  assert.match(service, /meta: \{ ip: string, userAgent: string \}/)
   assert.match(src, /SECURITY_EVENTS\.passwordChanged/)
   for (const leak of ['currentPassword,', 'newPassword,', 'passwordHash,']) {
     assert.ok(!src.includes(`${leak} ip`), `log payload must not carry ${leak}`)
+    assert.ok(!service.includes(`${leak} ip`), `audit payload must not carry ${leak}`)
   }
   assert.ok(!/logInfo\(\{[^}]*(newPassword|passwordHash)/s.test(src), 'no secret in the log line')
 })
@@ -212,6 +224,7 @@ test('the email factor refuses to enable when SMTP is unconfigured, and ignores 
   // A late send failure must not remove a factor confirmed by another request.
   // The expiring pending row remains inactive until ownership is proved.
   assert.ok(!src.includes('db.delete(userMfaFactors)'))
+  assert.ok(!/\.delete\(/.test(read('server/services/admin-mfa-enroll.ts')), 'the enrollment write deletes nothing')
 })
 
 test('the emailed destination is masked in the response', () => {
@@ -235,7 +248,9 @@ test('disabling a factor deletes its stored material rather than flagging it', (
   assert.match(factors, /export async function deleteFactor[\s\S]*?\.delete\(userMfaFactors\)/)
   // A state flag left behind would keep the sealed secret on disk indefinitely.
   assert.ok(!/state: 'disabled'/.test(read('server/api/admin/profile/mfa/disable.post.ts')))
-  assert.match(read('server/api/admin/profile/mfa/disable.post.ts'), /deleteFactor\(/)
+  assert.ok(!/state: 'disabled'/.test(read('server/services/admin-mfa-disable.ts')))
+  assert.match(read('server/api/admin/profile/mfa/disable.post.ts'), /disableFactorWithAudit\(admin, factorType, ip\)/)
+  assert.match(read('server/services/admin-mfa-disable.ts'), /deleteFactor\(admin\.id, factorType, tx\)/)
   assert.match(factors, /export async function pruneRecoveryCodesIfNoFactors[\s\S]*?deleteAllRecoveryCodes/)
 })
 
@@ -243,14 +258,14 @@ test('disabling a factor deletes its stored material rather than flagging it', (
  *  invalidates sessions established under the old state. Turning codes off only
  *  removes material and is deliberately not in this list. */
 test('every lifecycle action that mints material bumps the session generation', () => {
-  for (const file of [
-    'server/api/admin/profile/mfa/confirm.post.ts',
-    'server/api/admin/profile/mfa/disable.post.ts',
-    'server/api/admin/profile/mfa/recovery-codes.post.ts',
-  ]) {
-    // `, tx`: `disable.post.ts` bumps the generation inside its transaction (the effect is
-    // pinned on a real request in tests/admin-mfa-disable-behavior.test.ts).
-    assert.match(read(file), /revokeSessions\(admin\.id(?:, tx)?\)/, `${file} must revoke sessions`)
+  for (const [file, revokesIn] of [
+    ['server/api/admin/profile/mfa/confirm.post.ts', 'server/api/admin/profile/mfa/confirm.post.ts'],
+    // `, tx`: `disable.post.ts` bumps the generation inside its transaction, now in its service
+    // (the effect is pinned on a real request in tests/admin-mfa-disable-behavior.test.ts).
+    ['server/api/admin/profile/mfa/disable.post.ts', 'server/services/admin-mfa-disable.ts'],
+    ['server/api/admin/profile/mfa/recovery-codes.post.ts', 'server/api/admin/profile/mfa/recovery-codes.post.ts'],
+  ] as const) {
+    assert.match(read(revokesIn), /revokeSessions\(admin\.id(?:, tx)?\)/, `${revokesIn} must revoke sessions`)
     assert.match(read(file), /setSessionCookie\(event, \{/, `${file} must keep the caller signed in`)
   }
   assert.match(
@@ -275,9 +290,12 @@ test('a regeneration deletes the previous batch outright', () => {
   const issuer = read('server/utils/mfa/recovery-codes.ts')
   assert.match(issuer, /await deleteAllRecoveryCodes\(userId, tx\)/)
   assert.match(issuer, /codeHash: await hashOneTimeCode\(normalizeRecoveryCode\(code\)\)/)
-  // Only the count reaches the audit trail — never the codes themselves.
-  assert.match(src, /meta: \{ generated: codes\.length, ip \}/)
-  assert.ok(!/meta: \{[^}]*\bcodes\b(?!\.length)/.test(src), 'the codes must never enter a log row')
+  // Only the count reaches the audit trail — never the codes themselves. The audit row is written
+  // by a service whose meta parameter can hold a number and the IP, nothing else.
+  assert.match(src, /auditRecoveryCodesGenerated\(admin\.id, \{ generated: codes\.length, ip \}\)/)
+  assert.match(read('server/services/admin-mfa-recovery-codes-issue.ts'), /meta: \{ generated: number, ip: string \}/)
+  // The audit meta is now the argument of that call (no `meta:` key left in the handler).
+  assert.ok(!/auditRecoveryCodesGenerated\([^)]*\bcodes\b(?!\.length)/.test(src), 'the codes must never enter a log row')
   assert.ok(!/logInfo\(\{[^}]*\bcodes\b(?!\.length)/.test(src), 'the codes must never enter a log line')
 })
 
@@ -363,7 +381,11 @@ test('break-glass is SuperAdmin-only, not merely users.update', () => {
 })
 
 test('break-glass clears both factors and codes, revokes the target, and logs both sides', () => {
-  const src = read('server/api/admin/users/[id]/mfa.delete.ts')
+  // The handler keeps the gate, the 404 and the security log line; its four writes moved
+  // verbatim into the service it calls (`clearUserMfaFactors`).
+  const handler = read('server/api/admin/users/[id]/mfa.delete.ts')
+  const src = read('server/services/admin-user-mfa-reset.ts')
+  assert.match(handler, /await clearUserMfaFactors\(admin, id, target, ip\)/, 'the handler no longer runs the moved writes')
   assert.match(src, /delete\(userMfaFactors\)\.where\(eq\(userMfaFactors\.userId, id\)\)/)
   assert.match(src, /delete\(userRecoveryCodes\)\.where\(eq\(userRecoveryCodes\.userId, id\)\)/)
   /**
@@ -386,8 +408,8 @@ test('break-glass clears both factors and codes, revokes the target, and logs bo
   // Two rows so the act is visible from either account's history.
   assert.match(src, /userId: admin\.id,\s*action: 'delete',\s*resource: 'user_mfa'/)
   assert.match(src, /userId: id,\s*action: 'delete',\s*resource: 'user_mfa'/)
-  assert.match(src, /SECURITY_EVENTS\.mfaFactorsCleared/)
-  assert.match(src, /statusCode: 404/, 'a missing target is a 404, not a silent success')
+  assert.match(handler, /SECURITY_EVENTS\.mfaFactorsCleared/)
+  assert.match(handler, /statusCode: 404/, 'a missing target is a 404, not a silent success')
 })
 
 // ── Middleware stage rejection ───────────────────────────────────────────────
@@ -431,7 +453,9 @@ test('the profile endpoints are ungated by RBAC because they are session-scoped'
 
 test('history reads the caller’s own rows by default', () => {
   const src = read('server/api/admin/profile/history.get.ts')
-  assert.match(src, /eq\(activityLogs\.userId, targetId\)/)
+  // The reads live in a service (2026-11-08); the handler hands it the target it decided on.
+  assert.match(src, /listActivityHistoryPage\(\{ targetId, from, toExclusive, page, pageSize \}\)/)
+  assert.match(read('server/services/admin-profile-history.ts'), /eq\(activityLogs\.userId, targetId\)/)
   // The default is the session's own id; a body/query id only narrows from there.
   assert.match(src, /let targetId = admin\.id/)
 })
@@ -440,8 +464,11 @@ test('a cross-user history read is SuperAdmin-only and logs itself', () => {
   const src = read('server/api/admin/profile/history.get.ts')
   assert.match(src, /admin\.isSuperAdmin !== true/)
   assert.match(src, /statusCode: 403/)
-  assert.match(src, /resource: 'user_history'/)
-  assert.match(src, /insert\(activityLogs\)/)
+  // The audit row is written by the service; the handler calls it on the cross-user path.
+  assert.match(src, /if \(crossUser\) \{[\s\S]*await auditUserHistoryRead\(admin\.id, targetId, \{/)
+  const service = read('server/services/admin-profile-history.ts')
+  assert.match(service, /resource: 'user_history'/)
+  assert.match(service, /insert\(activityLogs\)/)
 })
 
 test('history validates its bounds instead of scanning unbounded', () => {
@@ -451,7 +478,7 @@ test('history validates its bounds instead of scanning unbounded', () => {
   assert.match(src, /statusCode: 400/)
   assert.match(src, /không phải là ngày hợp lệ/)
   // Ordering is tie-broken so pagination cannot repeat or skip a row.
-  assert.match(src, /orderBy\(desc\(activityLogs\.createdAt\), desc\(activityLogs\.id\)\)/)
+  assert.match(read('server/services/admin-profile-history.ts'), /orderBy\(desc\(activityLogs\.createdAt\), desc\(activityLogs\.id\)\)/)
 })
 
 test('history surfaces an allowlist of meta fields, not the whole blob', () => {

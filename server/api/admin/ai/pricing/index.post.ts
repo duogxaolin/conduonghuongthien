@@ -1,8 +1,7 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiModelPricing, activityLogs } from '../../../../db/schema'
+import type { aiModelPricing } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { COST_OUT_OF_RANGE_MESSAGE, isStorableCostPerMillion } from '../../../../utils/ai/pricing-cost'
+import { createPricingWithAudit, findPricingModelName } from '../../../../services/admin-ai-pricing'
 
 /**
  * Create a new AI model pricing row (spec R7.3).
@@ -39,13 +38,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `Giá output không hợp lệ. ${COST_OUT_OF_RANGE_MESSAGE}` })
   }
 
-  const db = getDb()
-
   // Check uniqueness (model is PK)
-  const [existing] = await db.select({ model: aiModelPricing.model })
-    .from(aiModelPricing)
-    .where(eq(aiModelPricing.model, model))
-    .limit(1)
+  const existing = await findPricingModelName(model)
   if (existing) {
     throw createError({ statusCode: 409, statusMessage: `Model "${model}" đã tồn tại trong bảng giá.` })
   }
@@ -59,22 +53,8 @@ export default defineEventHandler(async (event) => {
     completionCostPerMillion: String(completionCost),
   }
 
-  await db.transaction(async (tx) => {
-    await tx.insert(aiModelPricing).values(insert)
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'create',
-      resource: 'ai',
-      resourceId: null,
-      meta: {
-        type: 'pricing_create',
-        model,
-        provider,
-        promptCostPerMillion: promptCost,
-        completionCostPerMillion: completionCost,
-      },
-    })
-  })
+  // The insert and its audit row in one transaction (in the service).
+  await createPricingWithAudit(adminUser, insert, promptCost, completionCost)
 
   return { ok: true }
 })

@@ -163,7 +163,7 @@ async function toggleStatus() {
           <!-- Content HTML -->
           <div class="flex flex-col gap-1">
             <span class="text-xs font-bold text-ink-muted uppercase tracking-wide">Nội dung chi tiết (HTML):</span>
-            <!-- eslint-disable-next-line vue/no-v-html -- nguồn: articles.content, sanitizeHtml lúc ghi (kiểm kê ở tests/security-ai-editorial-html.test.ts) -->
+            <!-- eslint-disable-next-line vue/no-v-html -- nguồn: article_translations.content, sanitizeHtml lúc ghi và lúc đọc ở translations/[lang].get.ts (kiểm kê ở tests/security-ai-editorial-html.test.ts) -->
             <div class="p-4 rounded-lg border border-line bg-surface text-xs leading-relaxed text-[#1f2937] max-h-80 overflow-y-auto font-sans" v-html="quickViewData.content || '(Chưa có nội dung)'"></div>
           </div>
         </template>

@@ -256,7 +256,7 @@ test('the manual run is a POST that needs explicit confirmation and reports a co
 test('the retention keys stay out of the generic settings form', () => {
   // Values that decide what is deleted get their own gated endpoint, not a slot
   // in the free-form key/value writer.
-  const general = source('../server/api/admin/settings/index.put.ts')
+  const general = source('../server/api/admin/settings/index.put.ts') + source('../server/services/admin-settings-general.ts')
   for (const key of Object.values(RETENTION_SETTING_KEYS)) {
     assert.doesNotMatch(general, new RegExp(key), `${key} is writable through the generic form`)
   }

@@ -22,8 +22,7 @@ import { createError, defineEventHandler, getHeader, getRouterParam, sendStream,
 
 import { logWarn } from '../../../../utils/logger'
 import { MEDIA_STREAM_MANIFEST_PATH, resolveStreamTarget } from '../../../../services/media-portal'
-import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
-import { getDb } from '../../../../utils/db'
+import { resolvePublicMediaConfig } from '../../../../services/public-media-queries'
 import { streamR2Object, streamR2ObjectRange } from '../../../../services/video-r2-sync'
 
 export default defineEventHandler(async (event) => {
@@ -40,7 +39,7 @@ export default defineEventHandler(async (event) => {
   const shortId = getRouterParam(event, 'shortId')
   if (!shortId) throw createError({ statusCode: 404 })
 
-  const { config } = await resolveMediaConfigWithDb(getDb())
+  const { config } = await resolvePublicMediaConfig()
   let target = await resolveStreamTarget(shortId, MEDIA_STREAM_MANIFEST_PATH, { config })
 
   // Link cũ dùng slug: `shortId` tra không ra → thử slug. Asset phục vụ thẳng,

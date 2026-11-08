@@ -1,9 +1,8 @@
 import { createError } from 'h3'
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiServiceConfigs, activityLogs } from '../../../../db/schema'
+import type { aiServiceConfigs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
+import { updateModerationSettingsWithAudit } from '../../../../services/admin-ai-moderation-settings'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -38,33 +37,8 @@ export default defineEventHandler(async (event) => {
 
   patch.updatedBy = adminUser.id ?? null
 
-  const db = getDb()
-
-  await db.transaction(async (tx) => {
-    const [existing] = await tx
-      .select({ id: aiServiceConfigs.id })
-      .from(aiServiceConfigs)
-      .where(eq(aiServiceConfigs.serviceKey, 'moderation'))
-      .limit(1)
-
-    if (existing) {
-      await tx
-        .update(aiServiceConfigs)
-        .set(patch)
-        .where(eq(aiServiceConfigs.id, existing.id))
-    }
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'update',
-      resource: 'ai',
-      resourceId: existing?.id ?? 1,
-      meta: {
-        type: 'update_moderation_settings',
-        changedFields: Object.keys(patch),
-      },
-    })
-  })
+  // The configuration row and its audit row in one transaction (in the service).
+  await updateModerationSettingsWithAudit(adminUser, patch)
 
     await bumpAnswerCacheVersion().catch(() => undefined)
   return { ok: true }

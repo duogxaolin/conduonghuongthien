@@ -10,12 +10,12 @@ import { layoutSource } from './_layout-parts'
 const read = (relPath: string) => readFileSync(new URL(`../${relPath}`, import.meta.url), 'utf8')
 
 test('main_logo_url được phép ghi qua endpoint cài đặt admin', () => {
-  const code = read('server/api/admin/settings/index.put.ts')
+  const code = read('server/api/admin/settings/index.put.ts') + read('server/services/admin-settings-general.ts')
   assert.match(code, /'main_logo_url'/, 'thiếu main_logo_url trong ALLOWED_SETTING_KEYS')
 })
 
 test('main_logo_url không bị khóa bởi SUPERADMIN_ONLY_KEYS', () => {
-  const code = read('server/api/admin/settings/index.put.ts')
+  const code = read('server/api/admin/settings/index.put.ts') + read('server/services/admin-settings-general.ts')
   const gated = /const SUPERADMIN_ONLY_KEYS = new Set\(\[([^\]]*)\]\)/.exec(code)?.[1] ?? ''
   assert.doesNotMatch(gated, /main_logo_url/, 'main_logo_url không chứa script nên không phải superadmin only')
 })

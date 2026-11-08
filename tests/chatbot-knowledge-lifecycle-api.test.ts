@@ -9,6 +9,11 @@ function rejectInjectedStatus(input: Record<string, unknown>) {
   if (Object.prototype.hasOwnProperty.call(input, 'status')) throw new ValidationError('status requires a lifecycle endpoint')
 }
 
+// A write route bumps the answer cache's version after its commit; this file's `getDb` is a stub (or the real, unconnected one), so the real bump logged an error per call. Nothing here asserts the cache: tests/chatbot-answer-cache-invalidation.test.ts owns that.
+mock.module(new URL('../server/services/chatbot-answer-cache.ts', import.meta.url), {
+  namedExports: { bumpAnswerCacheVersion: async () => 1 },
+})
+
 mock.module(new URL('../server/services/chatbot-knowledge.ts', import.meta.url), {
   namedExports: {
     ChatbotKnowledgeValidationError: ValidationError,

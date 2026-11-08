@@ -18,12 +18,10 @@
  * Quét đĩa + R2 có thể chậm (nghìn file), nên endpoint này tách riêng không nằm
  * trong `counts.get.ts` (trang sync cần shape nhẹ nhanh).
  */
-import { sql } from 'drizzle-orm'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { getDb } from '../../../utils/db'
-import { media } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { sumMediaBytesByProvider } from '../../../services/admin-media-library'
 import { getR2BucketSize } from '../../../utils/media-r2'
 import { loadR2Config } from '../../../services/media'
 import { logWarn } from '../../../utils/logger'
@@ -67,17 +65,8 @@ export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'media', 'read')
 
-  const db = getDb()
-
   // Tổng bytes + count theo provider từ DB.
-  const dbRows = await db
-    .select({
-      provider: media.provider,
-      count: sql<number>`COUNT(*)`,
-      bytes: sql<number>`COALESCE(SUM(${media.sizeBytes}), 0)`,
-    })
-    .from(media)
-    .groupBy(media.provider)
+  const dbRows = await sumMediaBytesByProvider()
   const localDb = dbRows.find(r => r.provider === 'local')
   const r2Db = dbRows.find(r => r.provider === 'r2')
 

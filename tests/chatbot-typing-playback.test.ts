@@ -381,9 +381,14 @@ test('the public source endpoint returns the answer it is asked for', () => {
   // The handler existed and was wired to nothing; it returned question and topic
   // but withheld `answer`, so a citation was visible and unreadable.
   const handler = read('../server/api/public/chatbot/sources.get.ts')
+  // The row is read by `findPublishedKnowledgeSource` (server/services/public-chatbot-queries.ts).
+  const queries = read('../server/services/public-chatbot-queries.ts')
+  const lookup = queries.match(/export async function findPublishedKnowledgeSource\b[\s\S]*?\n\}\n/)?.[0] ?? ''
+  assert.match(handler, /findPublishedKnowledgeSource\(id\)/, 'the handler no longer reads the row through the service')
   assert.match(handler, /answer: result\.answer/)
-  assert.match(handler, /eq\(chatbotKnowledge\.status, 'published'\)/, 'drafts must never be served publicly')
+  assert.match(lookup, /eq\(chatbotKnowledge\.status, 'published'\)/, 'drafts must never be served publicly')
   for (const secret of ['internalNotes', 'sourceInternal', 'apiKey']) {
     assert.doesNotMatch(handler, new RegExp(secret, 'i'), `${secret} must not leave the server`)
+    assert.doesNotMatch(lookup, new RegExp(secret, 'i'), `${secret} must not leave the server`)
   }
 })

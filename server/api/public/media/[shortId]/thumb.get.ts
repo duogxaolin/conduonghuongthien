@@ -22,8 +22,7 @@ import { createError, defineEventHandler, getRouterParam, sendStream, setRespons
 
 import { logWarn } from '../../../../utils/logger'
 import { resolveStreamTarget, resolveThumbnailTarget, MEDIA_STREAM_MANIFEST_PATH } from '../../../../services/media-portal'
-import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
-import { getDb } from '../../../../utils/db'
+import { resolvePublicMediaConfig } from '../../../../services/public-media-queries'
 import { streamR2Object } from '../../../../services/video-r2-sync'
 import { onDemandThumbnails } from '../../../../services/thumbnail-on-demand'
 
@@ -55,7 +54,7 @@ export default defineEventHandler(async (event) => {
   const shortId = getRouterParam(event, 'shortId')
   if (!shortId) throw createError({ statusCode: 404 })
 
-  const { config } = await resolveMediaConfigWithDb(getDb())
+  const { config } = await resolvePublicMediaConfig()
   let target = await resolveThumbnailTarget(shortId, { config })
 
   // Link cũ dùng slug: short_id tra không ra → thử slug. Asset phục vụ thẳng,
@@ -220,7 +219,7 @@ function servePlaceholder(event: H3Event) {
  */
 async function extractFallbackFrame(
   shortId: string,
-  config: Awaited<ReturnType<typeof resolveMediaConfigWithDb>>['config'],
+  config: Awaited<ReturnType<typeof resolvePublicMediaConfig>>['config'],
 ): Promise<Buffer | null> {
   let streamTarget = await resolveStreamTarget(shortId, MEDIA_STREAM_MANIFEST_PATH, { config })
   // Link cũ dùng slug: thử lại với slug nếu short_id tra không ra.

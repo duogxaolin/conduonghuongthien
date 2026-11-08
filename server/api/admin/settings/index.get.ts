@@ -1,8 +1,5 @@
-import { inArray } from 'drizzle-orm'
-
-import { getDb } from '../../../utils/db'
-import { settings } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { readSettingValues } from '../../../services/admin-settings-values'
 import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
 import { settingsSecretNeedsReentry, type SettingsSecretKey } from '../../../utils/settings-secrets'
 
@@ -10,7 +7,8 @@ import { settingsSecretNeedsReentry, type SettingsSecretKey } from '../../../uti
  * The ONLY keys `GET /api/admin/settings` returns (spec admin-settings-secrets,
  * design D1): the union of what the five pages calling it read —
  * `app/pages/admin/settings/{general,email,media-storage,media-portal,tracking}.vue`
- * — and exactly the keys `index.put.ts` accepts back.
+ * — and exactly the keys `index.put.ts` accepts back (`ALLOWED_SETTING_KEYS`, which
+ * lives with the write in `services/admin-settings-general.ts`).
  *
  * An allowlist, not a deny-list. The endpoint used to return every row of
  * `settings` and mask two names; a key added later leaked by default, and one
@@ -51,11 +49,7 @@ export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'read')
 
-  const db = getDb()
-  const rows = await db
-    .select({ key: settings.key, value: settings.value })
-    .from(settings)
-    .where(inArray(settings.key, [...SETTINGS_READ_KEYS]))
+  const rows = await readSettingValues([...SETTINGS_READ_KEYS])
   const stored = new Map(rows.map(row => [row.key, row.value]))
 
   // Built FROM the allowlist, not from the rows: the response cannot carry a key

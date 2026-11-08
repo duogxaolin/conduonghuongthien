@@ -1,8 +1,7 @@
-import { getDb } from '../../../utils/db'
-import { roles, permissions, activityLogs } from '../../../db/schema'
 import { assertAssignablePermissions, requireResourcePermission } from '../../../utils/permissions'
 import { driverMessage, isDuplicateEntry } from '../../../utils/mysql-errors'
 import { logError } from '../../../utils/logger'
+import { createRoleWithAudit } from '../../../services/admin-role-create'
 
 /** `roles.name VARCHAR(64)` / `roles.description VARCHAR(255)` — utf8mb4 counts code points. */
 const NAME_MAX = 64
@@ -40,43 +39,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `Mô tả vai trò tối đa ${DESCRIPTION_MAX} ký tự.` })
   }
 
-  const db = getDb()
-
-  /**
-   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
-   *
-   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
-   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
-   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
-   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
-   * commit độc lập trên pool.
-   */
+  // The role, its grants and its audit row commit together, or none does (one transaction, in the service).
   try {
-    const newRoleId = await db.transaction(async (tx) => {
-      const [res] = await tx.insert(roles).values({
-        name,
-        description,
-        isSystem: false,
-      })
-
-      const created = res.insertId
-
-      if (permsInput.length > 0) {
-        // Reject invalid resources and block granting permissions the actor lacks.
-        const permValues = permsInput.map(p => ({ ...p, roleId: created }))
-        await tx.insert(permissions).values(permValues)
-      }
-
-      await tx.insert(activityLogs).values({
-        userId: adminUser.id,
-        action: 'create',
-        resource: 'roles',
-        resourceId: created,
-        meta: { name },
-      })
-
-      return created
-    })
+    const newRoleId = await createRoleWithAudit(adminUser, { name, description, permsInput })
 
     return { ok: true, id: newRoleId }
   } catch (err: unknown) {

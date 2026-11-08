@@ -1,7 +1,6 @@
-import { activityLogs } from '../../../../db/schema'
-import { getDb } from '../../../../utils/db'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { listAnswerCache } from '../../../../services/chatbot-answer-cache'
+import { auditAnswerCacheListRead } from '../../../../services/admin-chatbot-answer-cache-list-audit'
 
 const DEFAULT_PAGE_SIZE = 25
 const MAX_PAGE_SIZE = 100
@@ -31,13 +30,8 @@ export default defineEventHandler(async (event) => {
 
   // Một dòng audit mỗi lượt ĐỌC, không phải mỗi hàng hiển thị (cùng khuôn với
   // `chatbot/sessions/index.get.ts`): người xem danh sách, không phải người sửa dữ liệu.
-  await getDb().insert(activityLogs).values({
-    userId: adminUser.id ?? null,
-    action: 'read',
-    resource: 'chatbot_knowledge',
-    resourceId: null,
-    meta: { type: 'answer_cache_list', page, pageSize, search, total },
-  }).catch(() => undefined)
+  // Best-effort: a failed insert is swallowed (services/admin-chatbot-answer-cache-list-audit.ts).
+  await auditAnswerCacheListRead(adminUser, { page, pageSize, search, total })
 
   return {
     ok: true,

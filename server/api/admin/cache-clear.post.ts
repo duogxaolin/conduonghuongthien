@@ -23,10 +23,9 @@
  * Ghi `activity_logs` cùng khuôn: một lượt làm mới cache không truy được về
  * người thực hiện là đúng thứ log vận hành tồn tại để ngăn.
  */
-import { getDb } from '../../utils/db'
-import { activityLogs } from '../../db/schema'
 import { requireResourcePermission } from '../../utils/permissions'
 import { purgePublicPageCache } from '../../utils/public-page-cache'
+import { auditPublicCacheClear } from '../../services/admin-cache-clear-audit'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -40,17 +39,7 @@ export default defineEventHandler(async (event) => {
 
   const cleared = await purgePublicPageCache()
 
-  const db = getDb()
-  await db.insert(activityLogs).values({
-    userId: admin.id,
-    action: 'update',
-    resource: 'settings',
-    meta: {
-      trigger: 'manual',
-      operation: 'clear_swr_cache',
-      clearedKeys: cleared,
-    },
-  })
+  await auditPublicCacheClear(admin.id, cleared)
 
   return { ok: true, cleared, message: `Đã xoá ${cleared} mục cache. Trang công khai sẽ dựng lại từ dữ liệu mới.` }
 })

@@ -1,12 +1,11 @@
-import { getDb } from '../../../utils/db'
-import { articles, users, categories } from '../../../db/schema'
+import { articles } from '../../../db/schema'
 import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
 import { articleReadScope } from '../../../services/articles'
 import { likeContains } from '../../../utils/like-pattern'
-import { eq, like, desc, sql, inArray, isNull } from 'drizzle-orm'
-import { alias } from 'drizzle-orm/mysql-core'
+import { eq, like, sql, inArray, isNull } from 'drizzle-orm'
 import { csvCell } from '../../../utils/spreadsheet-cell'
 import { vietnamDateString } from '../../../utils/vn-day-range'
+import { listArticlesForCsvExport } from '../../../services/admin-articles-export'
 
 /**
  * Xuất danh sách bài viết về file CSV (có BOM UTF-8 để Excel mở đúng tiếng Việt).
@@ -27,9 +26,6 @@ const MAX_EXPORT = 500
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   const query = getQuery(event)
-
-  const db = getDb()
-  const parentCategories = alias(categories, 'parentCategories')
 
   // Phân nhánh theo `ids` (đã chọn) hay theo filter.
   const idsParam = String(query.ids || '').trim()
@@ -85,28 +81,9 @@ export default defineEventHandler(async (event) => {
 
   const whereClause = sql.join(conditions, sql` AND `)
 
-  const items = await db
-    .select({
-      id: articles.id,
-      type: articles.type,
-      title: articles.title,
-      slug: articles.slug,
-      status: articles.status,
-      categoryName: categories.name,
-      authorName: users.username,
-      // Displayed total (real + fabricated), the maintained column (wave2 design D6).
-      viewTotal: articles.viewTotal,
-      publishedAt: articles.publishedAt,
-      createdAt: articles.createdAt,
-    })
-    .from(articles)
-    .leftJoin(users, eq(articles.authorId, users.id))
-    .leftJoin(categories, eq(articles.categoryId, categories.id))
-    .leftJoin(parentCategories, eq(categories.parentId, parentCategories.id))
-    .where(whereClause)
-    // The list's order (index.get.ts), ties included: which rows the MAX_EXPORT cut keeps is defined.
-    .orderBy(desc(articles.createdAt), desc(articles.id))
-    .limit(MAX_EXPORT)
+  // At most MAX_EXPORT rows, in the list's order (view totals from the maintained column) —
+  // services/admin-articles-export.ts.
+  const items = await listArticlesForCsvExport(whereClause, MAX_EXPORT)
 
   // Sinh CSV.
   const statusLabels: Record<string, string> = { published: 'Đã xuất bản', draft: 'Bản nháp', archived: 'Lưu trữ' }

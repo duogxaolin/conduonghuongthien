@@ -11,20 +11,17 @@
  * một trang đã tự xử lý 404 của chính nó, và một lỗi ở đây sẽ biến một bài viết
  * đọc được thành một trang lỗi. `ok: false` chỉ dành cho lượt truy vấn hỏng —
  * bề mặt phải phân biệt được "hỏng" với "không có gì liên quan".
+ *
+ * Các truy vấn (điểm neo, bài liên quan, hai lượt đọc phẳng cho chip chủ đề) nằm ở
+ * `server/services/public-article-related-queries.ts`.
  */
-import { and, asc, count, desc, eq, ne, inArray, sql } from 'drizzle-orm'
 import { defineEventHandler, getRouterParam, getQuery, getCookie } from 'h3'
-import { articles, categories, articleTranslations } from '../../../../db/schema'
-import { getDb } from '../../../../utils/db'
 import { reportPublicReadFailure } from '../../../../utils/public-read-failure'
 import { withPlainTextFields } from '../../../../utils/decode-html-entities'
 import { rollUpRelatedTopics } from '../../../../utils/related-topics'
-/**
- * Bốn thẻ khớp đúng lưới 2 cột của khung xương phía client (2 hàng chẵn). Là
- * hằng số chứ không phải tham số truy vấn: không nơi gọi nào cần một con số
- * khác, và một tham số không ai truyền chỉ là thêm một đường vào phải kiểm.
- */
-const RELATED_ARTICLE_LIMIT = 4
+import { findRelatedAnchor, listRelatedArticles, listRelatedTopicRows } from '../../../../services/public-article-related-queries'
+
+/** Số chip chủ đề tối đa (số thẻ bài liên quan: `RELATED_ARTICLE_LIMIT` ở service). */
 const RELATED_TOPIC_LIMIT = 12
 
 /**
@@ -43,99 +40,12 @@ export default defineEventHandler(async (event) => {
   const cookieLang = getCookie(event, 'cdkt_lang')?.trim().toLowerCase() || ''
   const lang = (typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : '') || cookieLang
   try {
-    const db = getDb()
-
-    // Bài đang đọc là điểm neo. `status='published'` ở đây cũng quan trọng như ở
-    // truy vấn dưới: một bản nháp không được dùng làm mỏ neo để lộ ra chủ đề và
-    // các bài lân cận của nó.
-    const [current] = await db
-      .select({ id: articles.id, type: articles.type, categoryId: articles.categoryId })
-      .from(articles)
-      .where(and(eq(articles.slug, slug), eq(articles.status, 'published')))
-      .limit(1)
+    const current = await findRelatedAnchor(slug)
 
     if (!current) return empty()
 
-    /**
-     * Cùng danh mục lên trước, sau đó lấp tiếp bằng bài cùng thể loại — một
-     * truy vấn, không phải hai lượt rồi ghép ở JS.
-     *
-     * Nhánh `categoryId === null` **phải** bỏ hẳn mệnh đề CASE, không được thay
-     * bằng một hằng số: `ORDER BY 1` trong MySQL là "sắp theo cột thứ nhất của
-     * SELECT", tức là sắp theo `id` — một lượt sắp xếp sai hoàn toàn mà không có
-     * lỗi nào.
-     */
-    const sameCategoryFirst = current.categoryId === null
-      ? []
-      : [sql`CASE WHEN ${articles.categoryId} = ${current.categoryId} THEN 0 ELSE 1 END`]
-    const order = [...sameCategoryFirst, desc(articles.publishedAt), desc(articles.createdAt)]
-
-    const relatedQuery = db
-      .select({
-        id:           articles.id,
-        title:        lang && lang !== 'vi'
-          ? sql<string>`COALESCE(NULLIF(${articleTranslations.title}, ''), ${articles.title})`
-          : articles.title,
-        slug:         articles.slug,
-        excerpt:      lang && lang !== 'vi'
-          ? sql<string>`COALESCE(NULLIF(${articleTranslations.excerpt}, ''), ${articles.excerpt})`
-          : articles.excerpt,
-        thumbnailUrl: articles.thumbnailUrl,
-        publishedAt:  articles.publishedAt,
-        createdAt:    articles.createdAt,
-        categoryName: categories.name,
-        categorySlug: categories.slug,
-      })
-      .from(articles)
-      .leftJoin(categories, eq(articles.categoryId, categories.id))
-
-    if (lang && lang !== 'vi') {
-      relatedQuery.leftJoin(
-        articleTranslations,
-        and(
-          eq(articleTranslations.articleId, articles.id),
-          eq(articleTranslations.langCode, lang),
-          inArray(articleTranslations.status, ['published', 'ai_draft', 'reviewed']),
-        ),
-      )
-    }
-
-    const relatedRows = await relatedQuery
-      .where(
-        and(
-          eq(articles.status, 'published'),
-          eq(articles.type, current.type),
-          ne(articles.id, current.id),
-        ),
-      )
-      .orderBy(...order)
-      .limit(RELATED_ARTICLE_LIMIT)
-    /**
-     * Chủ đề liên quan, đếm bằng **đúng phép đếm mà cú bấm sẽ hiện ra**.
-     *
-     * `/api/public/articles?categorySlug=` gộp danh mục con vào danh mục gốc,
-     * nên một con số chỉ đếm bài gán trực tiếp sẽ báo ít hơn danh sách mà chip
-     * đó mở ra. Gộp ở JS (hai truy vấn phẳng) thay vì self-join: rẻ hơn, và
-     * tránh luôn chuyện ONLY_FULL_GROUP_BY với cột dùng để sắp thứ tự.
-     */
-    const [categoryRows, countRows] = await Promise.all([
-      db
-        .select({
-          id:           categories.id,
-          name:         categories.name,
-          slug:         categories.slug,
-          parentId:     categories.parentId,
-          displayOrder: categories.displayOrder,
-        })
-        .from(categories)
-        .where(eq(categories.type, current.type))
-        .orderBy(asc(categories.displayOrder), asc(categories.id)),
-      db
-        .select({ categoryId: articles.categoryId, total: count() })
-        .from(articles)
-        .where(and(eq(articles.status, 'published'), eq(articles.type, current.type)))
-        .groupBy(articles.categoryId),
-    ])
+    const relatedRows = await listRelatedArticles(current, lang)
+    const { categoryRows, countRows } = await listRelatedTopicRows(current.type)
 
     const directTotals = new Map<number, number>()
     for (const row of countRows) {

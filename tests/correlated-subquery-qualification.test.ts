@@ -110,8 +110,11 @@ test('no correlated subquery relies on Drizzle qualifying a bare column', () => 
 test('the reader chat list titles conversations from the visitor\'s first question', () => {
   // The specific query the bug was found in. Pinned by shape rather than by output
   // because this file makes no database connection; the behaviour itself was
-  // verified by calling the built endpoint.
-  const source = readFileSync(new URL('api/public/reader/chats.get.ts', serverRoot), 'utf8')
+  // verified by calling the built endpoint (and since 2026-11-08 by
+  // tests/public-reader-lists-behavior.test.ts). The query of `api/public/reader/chats.get.ts`
+  // lives in its service (`listReaderChatSummaries`).
+  assert.match(readFileSync(new URL('api/public/reader/chats.get.ts', serverRoot), 'utf8'), /listReaderChatSummaries\(reader\.id\)/)
+  const source = readFileSync(new URL('services/public-reader-queries.ts', serverRoot), 'utf8')
   // The source text carries backslash-escaped backticks (`\`m\``), because the SQL
   // lives inside a template literal. Matching the rendered SQL instead of the
   // source bytes is what this pattern gets wrong if written naively.
@@ -123,23 +126,42 @@ test('the reader chat list titles conversations from the visitor\'s first questi
   assert.match(source, /\\`m\\`\.\\`role\\`\s*=\s*'user'/, 'the title would come from the assistant\'s opening line')
 })
 
+/**
+ * The files that may touch `article_view_daily`, each with why. Every other file of `server/api`,
+ * `server/services` and `server/utils` reads the maintained totals on `articles` instead.
+ *
+ * The scan used to walk `server/api` plus a hand list of the services the handlers' queries moved
+ * into (2026-11-08: no `server/api` file calls getDb() itself) — so a query moved into any OTHER
+ * service, or a new one, was out of its sight. It walks the whole tree the code moves between now.
+ */
+const VIEW_DAILY_OWNERS: Record<string, string> = {
+  'services/article-views.ts': 'the owner of the daily rows: records a view (row + totals, one transaction), reconciles the totals at startup, '
+    + 'and serves the per-article breakdown of the admin stats page (getArticleViewStats) — not a per-request list aggregate',
+}
+
 test('no API handler aggregates article_view_daily per request — view totals are read from articles', () => {
   // The "Đọc nhiều" ranking (`sort=views`), the article page, the admin list and
   // the CSV export used to sum the daily rows for every article on every request.
   // They read `articles.view_total` now; the per-article breakdown stays in
-  // server/services/article-views.ts (getArticleViewStats), outside server/api.
+  // server/services/article-views.ts (getArticleViewStats), named above.
   // Code only: the handlers' comments explain what the totals replaced.
   const code = (source: string) => source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:\\])\/\/.*$/gm, '$1')
-  const offenders = walk('api').filter(file => /article_view_daily|articleViewDaily/.test(
+  const readers = [...walk('api'), ...walk('services'), ...walk('utils')].filter(file => /article_view_daily|articleViewDaily/.test(
     code(readFileSync(new URL(file, serverRoot), 'utf8')),
   ))
-  assert.deepEqual(offenders, [], 'an API handler reads article_view_daily directly instead of the maintained totals')
+  assert.deepEqual(readers.filter(file => !VIEW_DAILY_OWNERS[file]), [],
+    'a handler, or a service / util it calls, reads article_view_daily directly instead of the maintained totals')
+  // A named owner that no longer touches the table is an exemption waiting to be reused.
+  assert.deepEqual(Object.keys(VIEW_DAILY_OWNERS).filter(file => !readers.includes(file)), [],
+    'VIEW_DAILY_OWNERS names a file that no longer touches article_view_daily — drop it')
 })
 
 test('sort=views orders by the indexed total column, not by a computed alias', () => {
-  const source = readFileSync(new URL('api/public/articles.get.ts', serverRoot), 'utf8')
+  // The list query of `api/public/articles.get.ts` lives in its service (`queryPublicArticleList`).
+  assert.match(readFileSync(new URL('api/public/articles.get.ts', serverRoot), 'utf8'), /queryPublicArticleList\(/)
+  const source = readFileSync(new URL('services/public-articles-queries.ts', serverRoot), 'utf8')
   assert.match(source, /desc\(articles\.viewTotal\)/, 'the ranking must order by articles.view_total so MySQL can use articles_status_type_views_idx')
   assert.doesNotMatch(source, /desc\(sql`view_total`\)/, 'ordering by a SELECT alias is the shape that came with the per-request subquery')
 })

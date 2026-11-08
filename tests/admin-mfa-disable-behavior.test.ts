@@ -212,3 +212,20 @@ test('without a session the gate refuses before the handler runs', async () => {
   assert.equal((await server.request('POST', '/api/admin/profile/mfa/disable', { body: { factorType: 'totp', currentPassword: PASSWORD } })).status, 401)
   assert.deepEqual(snapshot(), before)
 })
+
+test('a factor removed between the read and the delete is a 404 inside the transaction — nothing commits, no cookie', async () => {
+  // A second disable (or a SuperAdmin reset) lands after this request read the row: the delete
+  // counts 0 rows and the transaction throws 404, so the code prune, the session bump and the
+  // audit row never commit — and no "disabled" log line, no re-issued session.
+  harness.beforeNext(/^delete from `user_mfa_factors`/, () => {
+    harness.sqlite.exec(`DELETE FROM user_mfa_factors WHERE user_id = ${EDITOR.id}`)
+  })
+  const response = await disableFactor({ factorType: 'totp', currentPassword: PASSWORD })
+  assert.equal(response.status, 404)
+  // (The harness's "other writer" runs on the same SQLite connection, inside this transaction, so
+  // its delete is rolled back with it — the factor rows are not what this pins.)
+  const { codes, tokenVersions, audit } = snapshot()
+  assert.deepEqual({ codes, tokenVersions, audit }, { codes: [EDITOR.id, EDITOR.id, OTHER.id], tokenVersions: [0, 0], audit: 0 })
+  assert.equal(response.cookies.has('cdkt_admin'), false)
+  assert.ok(!infoEvents.includes('event.mfaFactorDisabled'), infoEvents.join(', '))
+})

@@ -8,24 +8,19 @@
  * nằm trên đĩa thay vì chờ tick kế tiếp.
  *
  * Khoá MySQL `cdkt:media:housekeep` (timeout 0 — không xếp hàng) để nút + bộ
- * đếm lịch + cron không xoá trùng cùng một lúc. Giữ lại như data-retention
- * "Dọn ngay": ai đến sau thấy khoá đang giữ thì trả 409 thay vì báo thành công
- * với 0 bản ghi (đọc thành "không có gì để xoá" là sai).
+ * đếm lịch + cron không xoá trùng cùng một lúc — giữ ở service
+ * `housekeepUploadsUnderLock` (admin-media-portal-uploads.ts) cùng pool và cấu hình
+ * media. Giữ lại như data-retention "Dọn ngay": ai đến sau thấy khoá đang giữ thì
+ * trả 409 thay vì báo thành công với 0 bản ghi (đọc thành "không có gì để xoá" là sai).
  *
  * Audit (`housekeep_uploads`) ghi **trong service** `housekeepUploads`, không ở
  * endpoint — service là ranh giới dữ liệu và guard `media-portal-audit` kỳ vọng
- * endpoint delegate cho service. Endpoint chỉ kiểm quyền + khoá + gọi service.
+ * endpoint delegate cho service. Endpoint chỉ kiểm quyền + xác nhận + gọi service.
  */
 import { createError, defineEventHandler, readBody } from 'h3'
 
 import { requireResourcePermission } from '../../../../utils/permissions'
-import { housekeepUploads } from '../../../../services/chunked-upload'
-import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
-import { getDb, getPool } from '../../../../utils/db'
-import { withNamedLock } from '../../../../utils/named-lock'
-
-const LOCK_NAME = 'cdkt:media:housekeep'
-const LOCK_TIMEOUT_SECONDS = 0
+import { housekeepUploadsUnderLock } from '../../../../services/admin-media-portal-uploads'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -39,20 +34,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Cần xác nhận `confirm: true` để dọn ngay.' })
   }
 
-  const pool = getPool()
-  if (!pool) {
+  // `null` = không có pool: chưa đọc gì, chưa dọn gì.
+  const outcome = await housekeepUploadsUnderLock(adminUser.id)
+  if (!outcome) {
     throw createError({ statusCode: 503, statusMessage: 'Cơ sở dữ liệu chưa sẵn sàng.' })
   }
 
-  const { config } = await resolveMediaConfigWithDb(getDb())
-
-  // `withNamedLock` trả `{ acquired: false }` khi khoá đang bị giữ (timeout 0 =
-  // không xếp hàng) thay vì throw. Đổi `acquired: false` thành 409 để nơi gọi
-  // đọc thành "đang bận" chứ không phải "không có gì để xoá".
-  const outcome = await withNamedLock(pool, LOCK_NAME, LOCK_TIMEOUT_SECONDS, async () => {
-    return await housekeepUploads({ config, adminUserId: adminUser.id })
-  })
-
+  // Đổi `acquired: false` thành 409 để nơi gọi đọc thành "đang bận" chứ không
+  // phải "không có gì để xoá".
   if (!outcome.acquired) {
     throw createError({ statusCode: 409, statusMessage: 'Một lượt dọn khác đang chạy. Thử lại sau.' })
   }

@@ -445,7 +445,7 @@ Lớp tệp sửa tay so với lượt tự động: 32; khối sửa tay: 156; 
 | `tests/transaction-tdz.test.ts` | `server/api/`, `server/services/` | 2/8 | 0 · 2 · 0 | hành vi | cấu trúc | có, 2 khối | Quét TDZ (guard CLAUDE.md). |
 | `tests/vietnamese-diacritics-clipping.test.ts` | `app/components/`, `app/components/LiveHero.vue`, `app/components/layout/DefaultHeader.vue` +2 | 3/3 | 0 · 3 · 0 | cấu trúc | cấu trúc |  | Leading chữ in hoa có dấu. |
 | `tests/view-boost-scheduler.test.ts` | `server/services/view-boost-scheduler.ts` | 1/19 | 0 · 1 · 0 | cấu trúc | cấu trúc |  | Hàm thuần không đọc đồng hồ/DB. |
-| `tests/view-totals-integrity.test.ts` | `server/`, `server/api/admin/articles/[id]/boost.post.ts`, `server/services/view-boost-scheduler.ts` | 2/7 | 0 · 2 · 0 | hành vi | cấu trúc | có, 1 khối | Kiểm kê: một nơi ghi tổng, hai đường boost qua một hàm. |
+| `tests/view-totals-integrity.test.ts` | `server/`, `server/services/admin-article-boost.ts`, `server/services/view-boost-scheduler.ts` | 2/7 | 0 · 2 · 0 | hành vi | cấu trúc | có, 1 khối | Kiểm kê: một nơi ghi tổng, hai đường boost qua một hàm. |
 
 Đọc mã nguồn chỉ để dựng/chạy nó (render template, eval, chép vào sandbox) — không khẳng định trên văn bản, không vào bảng:
 

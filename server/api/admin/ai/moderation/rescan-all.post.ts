@@ -1,9 +1,7 @@
 import { createError, setResponseStatus } from 'h3'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { startModerationRescan } from '../../../../services/moderation-rescan-job'
-import { getDb } from '../../../../utils/db'
-import { activityLogs } from '../../../../db/schema'
-import { logError } from '../../../../utils/logger'
+import { writeModerationRescanAudit } from '../../../../services/admin-ai-moderation-ops'
 
 /**
  * Bắt đầu lượt "Quét & dọn sạch nội dung cũ" ở NỀN và trả 202 ngay.
@@ -15,30 +13,15 @@ import { logError } from '../../../../utils/logger'
  *
  * Kiểm toán: một dòng lúc BẮT ĐẦU (hành động của cán bộ) và một dòng lúc XONG kèm
  * tổng kết (qua `onFinished`). Mỗi dòng là lượt ghi duy nhất của nó — không có hàng
- * nghiệp vụ nào cùng commit để bọc transaction. Ghi hỏng thì ghi log, không im lặng.
+ * nghiệp vụ nào cùng commit để bọc transaction. Ghi hỏng thì ghi log, không im lặng
+ * (`writeModerationRescanAudit`, admin-ai-moderation-ops.ts).
  */
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'ai', 'update')
   const actorId: number | null = adminUser?.id ?? null
 
-  const writeAudit = async (meta: Record<string, unknown>) => {
-    try {
-      await getDb().insert(activityLogs).values({
-        userId: actorId,
-        action: 'update',
-        resource: 'ai',
-        meta,
-      })
-    } catch (err: unknown) {
-      logError({
-        event: 'ai_moderation.rescan_audit_failed',
-        operation: meta.operation,
-        actorId,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
+  const writeAudit = (meta: Record<string, unknown>) => writeModerationRescanAudit(actorId, meta)
 
   const outcome = await startModerationRescan({
     actorId,
