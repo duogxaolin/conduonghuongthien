@@ -1,38 +1,15 @@
-import { getDb } from '../../../utils/db'
-import { articles, languages, articleTranslations } from '../../../db/schema'
-import { eq, and, sql } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { readTranslationStatsCounts } from '../../../services/admin-articles-queries'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'news', 'read')
 
-  const db = getDb()
-
-  const [totalPublished] = await db
-    .select({ total: sql<number>`count(*)` })
-    .from(articles)
-    .where(eq(articles.status, 'published'))
+  // Published articles, active non-vi languages, translations (not failed) of published articles per
+  // language, AI translations awaiting review — services/admin-articles-queries.ts.
+  const { totalPublished, activeLangs, translationCounts, aiPendingRow } = await readTranslationStatsCounts()
 
   const total = Number(totalPublished?.total) || 0
-
-  const activeLangs = await db
-    .select({ code: languages.code, name: languages.name, nativeName: languages.nativeName })
-    .from(languages)
-    .where(and(eq(languages.isActive, true), sql`${languages.code} != 'vi'`))
-
-  const translationCounts = await db
-    .select({
-      langCode: articleTranslations.langCode,
-      count: sql<number>`count(*)`,
-    })
-    .from(articleTranslations)
-    .innerJoin(articles, eq(articleTranslations.articleId, articles.id))
-    .where(and(
-      eq(articles.status, 'published'),
-      sql`${articleTranslations.status} != 'failed'`,
-    ))
-    .groupBy(articleTranslations.langCode)
 
   const countMap = new Map(translationCounts.map((c) => [c.langCode, Number(c.count) || 0]))
 
@@ -47,15 +24,7 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  // Đếm bản dịch AI chưa xuất bản (ai_draft/reviewed) — để UI hiện badge trên
-  // nút "Xuất bản toàn bộ". Bỏ qua translating/failed.
-  const [aiPendingRow] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(articleTranslations)
-    .where(and(
-      eq(articleTranslations.translatedBy, 'ai'),
-      sql`${articleTranslations.status} IN ('ai_draft','reviewed')`,
-    ))
+  // Bản dịch AI chưa xuất bản (ai_draft/reviewed) — badge trên nút "Xuất bản toàn bộ".
   const aiPendingTranslations = Number(aiPendingRow?.count) || 0
 
   return {

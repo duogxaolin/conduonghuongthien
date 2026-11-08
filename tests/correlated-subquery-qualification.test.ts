@@ -127,10 +127,14 @@ test('the reader chat list titles conversations from the visitor\'s first questi
 })
 
 /**
- * Service files holding queries moved out of the public handlers (2026-11-08: no
+ * Service files holding queries moved out of the public and admin-article handlers (2026-11-08: no
  * `server/api` file calls getDb() itself). The rule below follows the code there.
  */
 const MOVED_HANDLER_QUERY_FILES = [
+  'services/admin-article-boost.ts',
+  'services/admin-article-write.ts',
+  'services/admin-articles-export.ts',
+  'services/admin-articles-queries.ts',
   'services/public-articles-queries.ts',
   'services/public-article-related-queries.ts',
   'services/public-media-queries.ts',

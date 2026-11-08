@@ -365,8 +365,10 @@ describe('the MFA-confirm exclusion is deliberate and still correct', () => {
  *     rather than inline, so it has no local pair to wrap.
  */
 const AUDITED_MUTATION_ENDPOINTS: string[] = [
-  'server/api/admin/articles/[id].put.ts',
-  'server/api/admin/articles/index.post.ts',
+  'server/services/admin-article-write.ts#updateArticleWithAudit', // articles/[id].put.ts
+  'server/services/admin-article-write.ts#createArticleWithAudit', // articles/index.post.ts
+  // articles/[id]/boost.delete.ts: guarded by the endpoint directory scan below until its transaction moved here
+  'server/services/admin-article-boost.ts#cancelBoostWithAudit',
   'server/api/admin/media/upload.post.ts',
   'server/api/admin/pages/[id].put.ts',
   'server/api/admin/pages/[id]/versions/[versionId]/restore.post.ts',

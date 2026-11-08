@@ -1,8 +1,6 @@
-import { getDb } from '../../../../utils/db'
-import { articles, users, categories } from '../../../../db/schema'
-import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { articleActionScope, articleResource } from '../../../../services/articles'
+import { findArticleForExport } from '../../../../services/admin-articles-export'
 import { htmlToMarkdown } from '../../../../utils/html-to-markdown'
 import { vietnamDateString } from '../../../../utils/vn-day-range'
 
@@ -26,29 +24,9 @@ export default defineEventHandler(async (event) => {
 
   const format = String(getQuery(event).format || 'html').toLowerCase() === 'md' ? 'md' : 'html'
 
-  const db = getDb()
   // Scoped to the types the caller may read: an id of another type is the same 404 as
   // a missing one. Looked up by id alone it was 404 vs 403 — which ids exist (FINDING-R6-16).
-  const [row] = await db
-    .select({
-      id: articles.id,
-      type: articles.type,
-      title: articles.title,
-      slug: articles.slug,
-      excerpt: articles.excerpt,
-      content: articles.content,
-      status: articles.status,
-      thumbnailUrl: articles.thumbnailUrl,
-      publishedAt: articles.publishedAt,
-      createdAt: articles.createdAt,
-      authorName: users.username,
-      categoryName: categories.name,
-    })
-    .from(articles)
-    .leftJoin(users, eq(articles.authorId, users.id))
-    .leftJoin(categories, eq(articles.categoryId, categories.id))
-    .where(and(eq(articles.id, id), articleActionScope(adminUser, 'read')))
-    .limit(1)
+  const row = await findArticleForExport(id, articleActionScope(adminUser, 'read'))
 
   if (!row) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 

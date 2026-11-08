@@ -1,12 +1,10 @@
-import { getDb } from '../../../utils/db'
-import { articles, users, categories } from '../../../db/schema'
-import { inArray, desc, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { articleResource } from '../../../services/articles'
 import { getUsableDriveLink } from '../../../services/backup-drive-oauth'
 import { getUsableDriveOauthConfig } from '../../../services/backup-drive-oauth-config'
 import { exportArticlesToGoogle, EXPORT_GOOGLE_MAX, type ExportArticleInput } from '../../../services/article-export-google'
 import { vietnamDateString } from '../../../utils/vn-day-range'
+import { findArticlesForGoogleExport } from '../../../services/admin-articles-export'
 
 /**
  * Xuất bài viết → Google Sheets + Google Docs (tạo file Google thật trên Drive
@@ -37,26 +35,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Fetch articles + author + category + thumbnail.
-  const db = getDb()
-  const rows = await db
-    .select({
-      id: articles.id,
-      type: articles.type,
-      title: articles.title,
-      slug: articles.slug,
-      excerpt: articles.excerpt,
-      content: articles.content,
-      thumbnailUrl: articles.thumbnailUrl,
-      authorName: users.username,
-      categoryName: categories.name,
-      publishedAt: articles.publishedAt,
-      createdAt: articles.createdAt,
-    })
-    .from(articles)
-    .leftJoin(users, eq(articles.authorId, users.id))
-    .leftJoin(categories, eq(articles.categoryId, categories.id))
-    .where(inArray(articles.id, ids))
-    .orderBy(desc(articles.createdAt))
+  const rows = await findArticlesForGoogleExport(ids)
 
   // Lọc per-bài theo quyền.
   const allowed = rows.filter(r => {
