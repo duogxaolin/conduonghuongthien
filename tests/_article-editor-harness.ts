@@ -127,7 +127,21 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
     inserted: [] as string[],
     /** Toolbar buttons `setup` registered (TinyMCE leaves out a toolbar name nothing registered). */
     buttons: [] as string[],
-    ui: { registry: { addButton: (name: string) => { editor.buttons.push(name) } } },
+    /** Insert-menu items `setup` registered. */
+    menuItems: [] as string[],
+    /** What the buttons' `onAction` ran through `execCommand`. */
+    commands: [] as string[],
+    /** The node the caret/selection is on — the "Sửa ảnh" button is enabled only on an `IMG`. */
+    selectedNode: { nodeName: 'P' } as { nodeName: string },
+    ui: {
+      registry: {
+        addButton: (name: string) => { editor.buttons.push(name) },
+        addMenuItem: (name: string) => { editor.menuItems.push(name) },
+      },
+    },
+    selection: { getNode: () => editor.selectedNode },
+    off() { /* handlers are replaced, not stacked, by `on` */ },
+    execCommand(name: string) { editor.commands.push(name) },
     /** The element `init` attached this editor to. */
     box: undefined as MiniElement | undefined,
     on(event: string, handler: () => void) { handlers[event] = handler },

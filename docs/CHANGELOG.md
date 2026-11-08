@@ -2814,7 +2814,7 @@ Chủ dự án quyết (2026-11-08) dời toàn bộ truy vấn của `server/ap
   - Typecheck 0 lỗi, lint sạch.
   - Ratchet độ phủ chạy theo cách của CI: không thư mục nào giảm. `server/api` 81,83 → 89,19, `server/services` 91,56 → 93,01. Mọi hàm service mới đều có test chạy tới.
 - **Ghi lại, không sửa** (có từ trước, chỉ dời nguyên văn; chờ chủ dự án quyết):
-  - **An ninh:** `GET /api/admin/articles/:id/translations/:lang` trả nội dung bản dịch KHÔNG lọc lúc đọc, mà `ArticleQuickViewModal` hiển thị bằng `v-html`. Trái quy tắc "lọc lúc ghi và lúc đọc"; đây là đường của lỗi § 96.
+  - **An ninh — ĐÃ SỬA ở § 101 (cùng PR):** `GET /api/admin/articles/:id/translations/:lang` trả nội dung bản dịch KHÔNG lọc lúc đọc, mà `ArticleQuickViewModal` hiển thị bằng `v-html`. Trái quy tắc "lọc lúc ghi và lúc đọc"; đây là đường của lỗi § 96.
   - **Ghi không nguyên tử:**
     - `content-types/[id].put` đổi slug bằng ba UPDATE không transaction.
     - `pages/[id]/draft.put` không ghi audit.
@@ -2834,6 +2834,42 @@ Chủ dự án quyết (2026-11-08) dời toàn bộ truy vấn của `server/ap
     - `media-portal/[id]/thumbnail.post` trả 500 kèm nguyên văn lỗi SQL.
   - **Khoá job:** khoá của `upload/housekeep` không nằm trong `MEDIA_JOB_LOCK_NAMES`.
 - Không ảnh hưởng deploy toolkit: không đổi `.env`, schema, migration hay container.
+
+### 101. An ninh — bản dịch bài viết được lọc cả lúc đọc ở trang quản trị (2026-11-08)
+
+- **Lỗ hổng (có từ trước, tìm ra khi dời truy vấn ở § 100):** `GET /api/admin/articles/:id/translations/:lang` trả `article_translations.content` nguyên văn. "Xem nhanh" (`ArticleQuickViewModal.vue`) đưa trường này thẳng vào `v-html`. Lượt ghi đã lọc, nhưng hàng ghi trước khi có lớp lọc, hàng còn mang dạng thoát của § 96, hay hàng ghi ngoài app vẫn nằm trong CSDL. Bấm "Xem nhanh" trên một hàng như thế là chạy mã trong phiên cán bộ. Trái quy tắc "HTML hiển thị bằng `v-html` phải qua `sanitizeHtml` lúc ghi *và* lúc đọc". Chưa thấy dấu hiệu bị khai thác.
+- **Sửa:**
+  - `translations/[lang].get.ts` trả `content` qua `sanitizeHtml`; `null` giữ `null`, để hộp hiện "(Chưa có nội dung)" như cũ.
+  - `translations/index.get.ts` (danh sách, nạp vào trình soạn bản dịch) lọc giống vậy.
+  - Lọc đặt ở handler như `public/articles/[slug].get.ts`, nên hàm service vẫn đúng bản đã dời ở § 100. Lượt ghi vốn đã lọc, nên hàng sạch trả ra y như cũ.
+- **Test:**
+  - `tests/article-translation-read-scope-behavior.test.ts` chạy handler thật trên hàng độc hại đã lưu (năm mẫu: script, `onerror`, `javascript:`, svg, `onclick`). Test đỏ trên mã cũ, xanh sau khi sửa. Nó còn kiểm markup hợp lệ trả nguyên văn và `content` rỗng vẫn là `null`.
+  - Mục đột biến `admin-translation-read-sanitize` gỡ lớp lọc thì test đó đỏ.
+  - Kiểm kê `v-html` (`tests/security-ai-editorial-html.test.ts`) và chú thích eslint của hộp nay ghi đúng nguồn: `article_translations.content`, không phải `articles.content`.
+- **Việc của người vận hành (không đổi):** lớp lọc lúc đọc chỉ che hai đường này. Hàng bẩn vẫn còn trong CSDL cho tới khi chạy `npm run db:sanitize-html` (sao lưu trước).
+- **Ghi lại, không sửa (soát độc lập tìm ra khi kiểm bản vá này; có từ trước):** thân bài GỐC không được lọc lúc đọc ở trang công khai.
+  - `GET /api/public/articles/:slug` trả `articles.content` nguyên văn ở ba chỗ: yêu cầu tiếng Việt hoặc không có `lang`; chưa có bản dịch đã xuất bản; bản dịch có `content` rỗng nên lấy lại thân bài gốc. Hai nơi hiển thị bằng `v-html`: `ArticleBody.vue` (qua `buildToc`, chỉ thêm id cho đề mục, không lọc) và trang in `in-bai/[slug].vue`. Cả hai render phía máy chủ.
+  - `npm run db:sanitize-html` chỉ sửa `article_translations` và `page_blocks`, không sửa `articles`. Một bài lưu trước § 96 vẫn mang dạng thoát đôi của `onload` cho mọi độc giả ẩn danh, trong CSP còn `'unsafe-inline'`.
+  - Chưa sửa vì lọc lúc đọc làm đổi nội dung các bài cũ đang hiển thị (thẻ `<video>`, `<iframe>` ngoài hai dạng cho phép sẽ biến mất). Nên chạy thử trên bản sao CSDL thật để xem bao nhiêu bài đổi, rồi mới gộp lọc lúc đọc cùng việc mở rộng `db:sanitize-html` sang `articles`. Hai dòng kiểm kê `v-html` ở `tests/security-ai-editorial-html.test.ts` trước đây ghi sai là có lọc lúc đọc; đã sửa cho đúng.
+- Không ảnh hưởng deploy toolkit.
+
+### 102. Trình soạn bài — nút ảnh mở thẳng thư viện, ảnh vào mặc định rộng 100%, "Sửa ảnh" hiện rõ (2026-11-08)
+
+Cả hai trình soạn TinyMCE (`useArticleEditorTinymce.ts` của trang soạn bài, `components/admin/TinyMceEditor.vue` của Page Builder).
+
+- **Trước:** nút "Insert/edit image" mặc định mở hộp thoại hỏi URL (thư viện chỉ nằm sau nút duyệt nhỏ); ô nổi trong đoạn trống có `quickimage` mở hộp chọn tệp của hệ điều hành; ảnh vào theo kích thước điểm ảnh của tệp, nên ảnh nhỏ nằm lẻ loi, ảnh lớn bị CSS ép; sửa ảnh không có chỗ bấm rõ ràng.
+- **Nay:**
+  - **Chèn ảnh** (`cdktimage`) mở thư viện ngay, ở ba chỗ: nút thanh công cụ, mục menu Chèn (`menu.insert`, thay mục "Image…"), và ô nổi trong đoạn trống (`quickbars_insert_toolbar: 'cdktimage quicktable'`, bỏ `quickimage`). Chọn xong ảnh vào tại con trỏ.
+  - **Kích thước mặc định:** `libraryImageHtml` ghi `style="width: 100%; height: auto;"` (có escape `&`, `"`, `<`, `>` trong URL và tên tệp). Nút "Chèn ảnh từ thư viện" ở thanh bên của trang soạn bài (chọn nhiều ảnh) dùng cùng hàm. Muốn cỡ khác thì dùng "Sửa ảnh": hộp thoại đọc đúng `100%`/`auto` từ style, đổi cỡ ghi lại `style` (đã thử trên TinyMCE thật).
+  - **"Sửa ảnh"** (`cdktimageedit`): có chữ, không chỉ biểu tượng. Có ở thanh công cụ (xám khi chưa chọn ảnh, bật khi nút đang chọn là `IMG`) và ở thanh nổi trên ảnh đang chọn (`quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright'`). Bấm là mở hộp thoại ảnh của TinyMCE (`mceImage`) cho ảnh đó: chữ thay thế, kích thước, chú thích, style. Menu chuột phải "Image…" giữ nguyên.
+  - Plugin `image` vẫn nạp (cấp hộp thoại); nút duyệt trong hộp thoại vẫn qua `imageFilePicker`, không đổi.
+  - Kéo-thả và dán ảnh vẫn tải lên qua `images_upload_handler` như cũ.
+- **Không đổi:** `sanitizeHtml` giữ `style` và `width`/`height` của `<img>` (đã có trong allowlist), CSP đã cho `style-src 'unsafe-inline'`, trang công khai vẫn giới hạn `img` ở `max-width: 100%`. Ảnh cũ trong bài không bị sửa. Ảnh nhỏ chèn mới sẽ phóng ra cả bề rộng cột theo ý chủ dự án (đổi lại bằng "Sửa ảnh").
+- **Test:**
+  - `tests/tinymce-image-library-buttons.test.ts` (nút, escape, bật/tắt theo vùng chọn, gỡ handler).
+  - Cấu hình ghim từng byte ở `tests/admin-article-editor.test.ts` và `tests/editor-video-button-permission.test.ts` cập nhật.
+  - E2E `tests/e2e/admin-editor-image-buttons.spec.ts` trên bản build thật: menu Chèn mở thư viện (không có hộp thoại TinyMCE), ảnh vào rộng 100%, thanh nổi "Sửa ảnh" mở hộp thoại với `100%`, nút xám khi con trỏ ở chữ.
+- Không ảnh hưởng deploy toolkit.
 
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 

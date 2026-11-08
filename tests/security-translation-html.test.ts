@@ -14,7 +14,9 @@ import { parse } from './_call-sites'
  * khối chỉ nhìn cấp ngoài). Các test này giữ cả ba đường đã đóng, và chặn một đường
  * ghi mới bỏ sót. Lọc lúc ĐỌC ở hai endpoint công khai (`articles/[slug]`,
  * `pages/[slug]`) được kiểm bằng cách chạy handler thật trên hàng độc hại đã lưu:
- * `tests/public-translation-sanitize-behavior.test.ts`.
+ * `tests/public-translation-sanitize-behavior.test.ts`; ở hai endpoint đọc bản dịch của
+ * quản trị (`translations`, `translations/:lang` — "Xem nhanh" dùng `v-html`):
+ * `tests/article-translation-read-scope-behavior.test.ts`.
  */
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')

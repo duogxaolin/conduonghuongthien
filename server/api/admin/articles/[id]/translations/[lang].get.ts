@@ -2,6 +2,7 @@ import { createError } from 'h3'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { requireReadableArticle } from '../../../../../services/articles'
 import { findArticleTranslation } from '../../../../../services/admin-articles-queries'
+import { sanitizeHtml } from '../../../../../utils/sanitize-html'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -25,5 +26,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Bản dịch không tồn tại.' })
   }
 
-  return { ok: true, translation }
+  // "Xem nhanh" (ArticleQuickViewModal) renders `content` with v-html: filter on read as well as on
+  // write — a row stored before the write-time filter, or written outside the app, is still there.
+  return { ok: true, translation: { ...translation, content: translation.content == null ? null : sanitizeHtml(translation.content) } }
 })

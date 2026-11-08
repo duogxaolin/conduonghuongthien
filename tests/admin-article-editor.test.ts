@@ -85,8 +85,10 @@ const CONFIG = {
   plugins: ['advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
     'insertdatetime', 'media', 'table', 'wordcount', 'quickbars'],
   toolbar: 'undo redo | blocks | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | '
-    + 'bullist numlist outdent indent | link image cdktvideo | table | removeformat | fullscreen code',
-  toolbar_mode: 'sliding', quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote', quickbars_insert_toolbar: 'quickimage quicktable',
+    + 'bullist numlist outdent indent | link cdktimage cdktimageedit cdktvideo | table | removeformat | fullscreen code',
+  toolbar_mode: 'sliding', quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote', quickbars_insert_toolbar: 'cdktimage quicktable',
+  quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright',
+  menu: { insert: { title: 'Insert', items: 'cdktimage link inserttable | charmap hr | anchor | insertdatetime' } },
   contextmenu: 'link image table', removed_menuitems: 'media', image_advtab: true, image_caption: true, automatic_uploads: true, paste_data_images: true,
   paste_merge_formats: true, file_picker_types: 'image', content_style: CONTENT_STYLE,
 }
@@ -437,14 +439,14 @@ describe('article editor — AI panel and images', () => {
     assert.equal(request.multiple, true)
     assert.equal(request.onSelect, undefined)
     request.onSelectMultiple!([{ url: '/uploads/a.jpg', originalName: 'a.jpg' }, { url: '/uploads/b.jpg', originalName: 'b.jpg' }])
-    assert.deepEqual(ctx.tiny.editor.inserted, ['<p><img src="/uploads/a.jpg" alt="a.jpg" /></p>', '<p><img src="/uploads/b.jpg" alt="b.jpg" /></p>'])
+    assert.deepEqual(ctx.tiny.editor.inserted, ['<p><img src="/uploads/a.jpg" alt="a.jpg" style="width: 100%; height: auto;"></p>', '<p><img src="/uploads/b.jpg" alt="b.jpg" style="width: 100%; height: auto;"></p>'])
   })
 
   it('without an editor, a chosen image is appended to the body that is saved', async (t) => {
     const ctx = await openEditor(t, '42', { tinymceLoaded: false })
     await click(button(ctx, 'Chèn Ảnh Từ Thư Viện'))
     ctx.pickers.at(-1)!.onSelectMultiple!([{ url: '/uploads/a.jpg', originalName: 'a.jpg' }])
-    assert.equal(bodyOf((await saveNow(ctx))[0])?.content, '<p>Nội dung gốc</p>\n<p><img src="/uploads/a.jpg" alt="a.jpg" /></p>')
+    assert.equal(bodyOf((await saveNow(ctx))[0])?.content, '<p>Nội dung gốc</p>\n<p><img src="/uploads/a.jpg" alt="a.jpg" style="width: 100%; height: auto;"></p>')
   })
 
   it('thumbnail from the library; ✕ removes it', async (t) => {

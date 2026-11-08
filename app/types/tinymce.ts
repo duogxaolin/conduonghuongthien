@@ -21,12 +21,29 @@
 /** Một thực thể trình soạn thảo đã khởi tạo. */
 export interface TinyMceEditorInstance {
   on: (event: string, handler: () => void) => void
+  off: (event: string, handler: () => void) => void
   getContent: () => string
   setContent: (html: string) => void
   /** Chèn HTML tại vị trí con trỏ (dùng khi chọn ảnh từ Thư viện Media). */
   insertContent: (html: string) => void
-  /** Giao diện của TinyMCE — chỉ phần đăng ký nút trên thanh công cụ (nút "video từ kho"). */
-  ui?: { registry: { addButton: (name: string, spec: { icon: string, tooltip: string, onAction: () => void }) => void } }
+  /** Chạy một lệnh có sẵn của TinyMCE — `mceImage` mở hộp thoại ảnh cho ảnh đang chọn (nút "Sửa ảnh"). */
+  execCommand: (name: string) => void
+  /** Vùng chọn — nút "Sửa ảnh" chỉ bật khi nút đang chọn là `IMG`. */
+  selection: { getNode: () => { nodeName?: string } | null }
+  /** Giao diện của TinyMCE — chỉ phần đăng ký nút/mục menu (nút "video từ kho", nút ảnh từ thư viện, "Sửa ảnh"). */
+  ui?: {
+    registry: {
+      addButton: (name: string, spec: {
+        icon: string
+        text?: string
+        tooltip: string
+        onAction: () => void
+        /** Chạy khi nút gắn vào thanh; trả hàm gỡ. `setEnabled` tắt/bật nút. */
+        onSetup?: (api: { setEnabled: (state: boolean) => void }) => () => void
+      }) => void
+      addMenuItem?: (name: string, spec: { icon: string, text: string, onAction: () => void }) => void
+    }
+  }
   remove: () => void
   destroy: () => void
 }

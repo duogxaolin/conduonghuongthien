@@ -24,14 +24,14 @@ describe('article editor — the video-library button follows media_portal read'
   it('an account that can read the video library gets the button', async (t) => {
     const ctx = await openEditor(t, '42', { responder: article() })
     await ctx.settle()
-    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktvideo'])
+    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktimage', 'cdktimageedit', 'cdktvideo'])
   })
 
   it('an account that cannot read it does not', async (t) => {
     const ctx = await openEditor(t, '42', { responder: article(), can: noVideoLibrary })
     await ctx.settle()
     assert.equal(ctx.tiny.configs.length, 1, 'the editor still starts')
-    assert.deepEqual(ctx.tiny.editor.buttons, [])
+    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktimage', 'cdktimageedit'], 'the image buttons stay; only the video one needs media_portal')
   })
 
   it("TinyMCE's own Media dialog is off the toolbar and the Insert menu; the plugin stays", async (t) => {
@@ -57,13 +57,13 @@ describe('components/admin/TinyMceEditor.vue — the same rule', () => {
       },
     })
     const buttons: string[] = []
-    config.setup?.({ ui: { registry: { addButton: (name: string) => { buttons.push(name) } } }, on: () => {} })
+    config.setup?.({ ui: { registry: { addButton: (name: string) => { buttons.push(name) } } }, on: () => {}, off: () => {}, selection: { getNode: () => null } })
     return { buttons, config }
   }
 
   it('registered for an account that can read the video library, not for one that cannot', async () => {
-    assert.deepEqual((await buttonsFor()).buttons, ['cdktvideo'])
-    assert.deepEqual((await buttonsFor(noVideoLibrary)).buttons, [])
+    assert.deepEqual((await buttonsFor()).buttons, ['cdktimage', 'cdktimageedit', 'cdktvideo'])
+    assert.deepEqual((await buttonsFor(noVideoLibrary)).buttons, ['cdktimage', 'cdktimageedit'])
   })
 
   it("TinyMCE's own Media button is off the toolbar; the plugin stays", async () => {
