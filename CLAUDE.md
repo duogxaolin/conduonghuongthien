@@ -27,7 +27,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 | i18n seed: key · hàng · fallback `vi` | 690 · 738 · 534 |
 | Page Builder: section · content · layout | 9 · 7 · 3 |
 | Mục small talk mặc định | 122 |
-| Cột URL media (`URL_REFERENCE_TARGETS`) · mục đột biến (`test:mutations`) | 27 · 27 |
+| Cột URL media (`URL_REFERENCE_TARGETS`) · mục đột biến (`test:mutations`) | 27 · 28 |
 <!-- facts:end -->
 
 ---
@@ -117,7 +117,7 @@ server/utils/    deadlock-retry.ts · mysql-errors.ts · plain-text / display-na
 
 ### Quy ước tầng dữ liệu
 
-**Handler (`server/api/**`) không bao giờ chạm CSDL** — không import `utils/db`, không `getDb()`/`getPool()`/`pool.query`, không mở transaction; mọi câu lệnh nằm trong `server/services/**` (`tests/api-no-direct-db.test.ts`; 160 endpoint đã dời, CHANGELOG § 100). Handler giữ: kiểm quyền, đọc input, `getClientIp`, cookie, ánh xạ `createError`, `reportPublicReadFailure`, và lời gọi SAU commit (`purgePublicPageCacheAfterWrite`, `bumpAnswerCacheVersion`, xoá cache). Một hàng ghi + `activity_logs` nằm trong MỘT hàm service, một `db.transaction`, cả hai trên `tx` (`tests/reader-audit-atomicity.test.ts` đọc theo hàm, quét cả `server/services/**`; `AUDIT_CENSUS` kiểm kê mọi cặp `(resource, action)` — dời mã không đổi, làm rơi audit thì đỏ). Dời mã ≠ đổi hành vi: giữ nguyên SQL, thứ tự, phạm vi transaction và khoá.
+**Handler (`server/api/**`) không bao giờ chạm CSDL** — không import `utils/db`, không `getDb()`/`getPool()`/`pool.query`, không mở transaction; mọi câu lệnh nằm trong `server/services/**` (`tests/api-no-direct-db.test.ts`; 160 endpoint đã dời, CHANGELOG § 100). Handler giữ: kiểm quyền, đọc input, `getClientIp`, cookie, ánh xạ `createError`, `reportPublicReadFailure`, và lời gọi SAU commit (`purgePublicPageCacheAfterWrite`, `bumpAnswerCacheVersion`, xoá cache). Một hàng ghi + `activity_logs` nằm trong MỘT hàm service, một `db.transaction`, cả hai trên `tx` (`tests/reader-audit-atomicity.test.ts` đọc theo hàm, quét cả `server/services/**`; `AUDIT_CENSUS` đếm mỗi dòng audit theo `(resource, action)` × số NƠI GỌI hàm export ghi nó — dời mã không đổi; làm rơi audit, hay bỏ/tráo lời gọi tới hàm ghi audit thì đỏ). Dời mã ≠ đổi hành vi: giữ nguyên SQL, thứ tự, phạm vi transaction và khoá.
 
 **Không tự ép kiểu kết quả truy vấn**: `db.insert()`/`pool.query()` trả **mảng** — destructure; `affectedRows` chỉ qua `readAffectedRows()`/`affectedRowsOrZero()`. Không `as {affectedRows}` / `as unknown as {insertId}`.
 

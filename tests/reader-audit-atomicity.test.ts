@@ -23,14 +23,15 @@
  */
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { describe, it } from 'node:test'
 import ts from 'typescript'
 import {
-  auditCensus, auditTableReferences, auditingUnits, censusCounts, mayWriteAuditTable, scanUnits, unitProblems,
-  type Rule, type UnitFacts, type UnitProblem,
+  auditCensus, auditCensusOf, auditTableReferences, auditingUnits, censusCounts, mayWriteAuditTable, scanUnits, unitProblems,
+  type CensusResult, type Rule, type UnitFacts, type UnitProblem,
 } from './_audit-atomicity-scan'
 import { BACKUP_BARREL, backupServiceFiles, backupServiceSource } from './_backup-service-family'
+import { ROOT as CALL_SITES_ROOT, directCallSites, repoSourceIndex } from './_call-sites'
 import { commentServiceFiles } from './_comments-service-source'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
@@ -244,23 +245,27 @@ describe('the shared deletion path can join a caller transaction', () => {
  * bug in code that is currently working, and the convention recorded in CLAUDE.md
  * is what governs the ones not listed here.
  */
-const AUDITED_DELETE_ENDPOINTS: Array<{ file: string, why: string }> = [
+const AUDITED_DELETE_ENDPOINTS: Array<{ file: string, handler: string, why: string }> = [
   {
     // The transaction of roles/[id].delete.ts, moved out of the handler. Named by FUNCTION:
     // the checks below then read that function alone, whatever else the file holds.
     file: 'server/services/admin-role-delete.ts#deleteRoleWithAudit',
+    handler: 'roles/[id].delete.ts',
     why: 'a permission role is destroyed with nothing recording who removed it',
   },
   {
-    file: 'server/services/admin-user-mfa-reset.ts#clearUserMfaFactors', // the transaction of users/[id]/mfa.delete.ts
+    file: 'server/services/admin-user-mfa-reset.ts#clearUserMfaFactors',
+    handler: 'users/[id]/mfa.delete.ts',
     why: "another administrator's second factors are stripped and the override leaves no trace",
   },
   {
-    file: 'server/services/admin-page-versions.ts#deletePageVersionWithAudit', // the transaction of pages/[id]/versions/[versionId].delete.ts
+    file: 'server/services/admin-page-versions.ts#deletePageVersionWithAudit',
+    handler: 'pages/[id]/versions/[versionId].delete.ts',
     why: 'a saved backup is discarded untraceably',
   },
   {
-    file: 'server/services/admin-page-versions.ts#savePageVersionWithAudit', // the transaction of pages/[id]/versions/index.post.ts
+    file: 'server/services/admin-page-versions.ts#savePageVersionWithAudit',
+    handler: 'pages/[id]/versions/index.post.ts',
     why: 'the origin path deletes the old baseline before writing the new one — a failure between them leaves the page with no baseline at all',
   },
   // The next four were guarded by the endpoint directory scans below until their transactions
@@ -268,24 +273,29 @@ const AUDITED_DELETE_ENDPOINTS: Array<{ file: string, why: string }> = [
   // answer-cache/[key].delete.ts, answer-cache/bulk-delete.post.ts); named by FUNCTION here.
   {
     file: 'server/services/admin-chatbot-session-delete.ts#deleteChatSessionWithAudit',
+    handler: 'chatbot/sessions/[id]/index.delete.ts',
     why: "a citizen's chat transcript (phone, name, questions) disappears with nothing recording who removed it",
   },
   {
     file: 'server/services/admin-chatbot-session-delete.ts#bulkDeleteChatSessionsWithAudit',
+    handler: 'chatbot/sessions/bulk-delete.post.ts',
     why: 'up to 100 citizen conversations disappear with nothing recording who removed them',
   },
   {
     file: 'server/services/admin-chatbot-answer-cache-admin.ts#deleteCachedAnswerWithAudit',
+    handler: 'chatbot/answer-cache/[key].delete.ts',
     why: 'a cached answer the portal was replaying to citizens is dropped untraceably',
   },
   {
     file: 'server/services/admin-chatbot-answer-cache-admin.ts#bulkDeleteCachedAnswersWithAudit',
+    handler: 'chatbot/answer-cache/bulk-delete.post.ts',
     why: 'up to 200 cached answers are dropped untraceably',
   },
   // profile/mfa/recovery-codes.delete.ts: its transaction moved here (2026-11-08); the delete runs
   // through deleteAllRecoveryCodes(admin.id, tx), the audit row on the same `tx`.
   {
     file: 'server/services/admin-mfa-recovery-codes-clear.ts#clearRecoveryCodesWithAudit',
+    handler: 'profile/mfa/recovery-codes.delete.ts',
     why: "every recovery code — the last way back into a locked account — is gone with nothing recording who removed them",
   },
 ]
@@ -458,35 +468,35 @@ describe('cookie-between-writes endpoints keep their order, with no transaction 
  *   of its paths already wrote the change and the audit row in one transaction; since
  *   2026-11-08 those transactions are in admin-article-boost.ts, named below.)
  */
-const AUDITED_MUTATION_ENDPOINTS: string[] = [
-  'server/services/admin-article-write.ts#updateArticleWithAudit', // articles/[id].put.ts
-  'server/services/admin-article-write.ts#createArticleWithAudit', // articles/index.post.ts
+const AUDITED_MUTATION_ENDPOINTS: Array<{ entry: string, handler: string }> = [
+  { entry: 'server/services/admin-article-write.ts#updateArticleWithAudit', handler: 'articles/[id].put.ts' },
+  { entry: 'server/services/admin-article-write.ts#createArticleWithAudit', handler: 'articles/index.post.ts' },
   // articles/[id]/boost.delete.ts: guarded by the endpoint directory scan below until its transaction moved here
-  'server/services/admin-article-boost.ts#cancelBoostWithAudit',
+  { entry: 'server/services/admin-article-boost.ts#cancelBoostWithAudit', handler: 'articles/[id]/boost.delete.ts' },
   // articles/[id]/boost.post.ts (instant / gradual): guarded by the endpoint directory scan below until its transactions moved here
-  'server/services/admin-article-boost.ts#startInstantBoostWithAudit',
-  'server/services/admin-article-boost.ts#startGradualBoostWithAudit',
-  'server/services/admin-media-upload.ts#insertUploadedMediaWithAudit', // media/upload.post.ts
-  'server/services/admin-page-write.ts#updatePageWithAudit', // pages/[id].put.ts
-  'server/services/admin-page-versions.ts#restorePageVersionWithAudit', // pages/[id]/versions/[versionId]/restore.post.ts
-  'server/services/admin-page-write.ts#createPageWithAudit', // pages/index.post.ts
+  { entry: 'server/services/admin-article-boost.ts#startInstantBoostWithAudit', handler: 'articles/[id]/boost.post.ts' },
+  { entry: 'server/services/admin-article-boost.ts#startGradualBoostWithAudit', handler: 'articles/[id]/boost.post.ts' },
+  { entry: 'server/services/admin-media-upload.ts#insertUploadedMediaWithAudit', handler: 'media/upload.post.ts' },
+  { entry: 'server/services/admin-page-write.ts#updatePageWithAudit', handler: 'pages/[id].put.ts' },
+  { entry: 'server/services/admin-page-versions.ts#restorePageVersionWithAudit', handler: 'pages/[id]/versions/[versionId]/restore.post.ts' },
+  { entry: 'server/services/admin-page-write.ts#createPageWithAudit', handler: 'pages/index.post.ts' },
   // pages/[id]/publish.post.ts: guarded by the endpoint directory scan below until its transaction moved here
-  'server/services/admin-page-publish.ts#publishPageWithAudit',
+  { entry: 'server/services/admin-page-publish.ts#publishPageWithAudit', handler: 'pages/[id]/publish.post.ts' },
   // comments/[id]/visibility.patch.ts: guarded by the endpoint directory scan below until its transaction moved here
-  'server/services/admin-comments-visibility.ts#setCommentVisibilityWithAudit',
+  { entry: 'server/services/admin-comments-visibility.ts#setCommentVisibilityWithAudit', handler: 'comments/[id]/visibility.patch.ts' },
   // Factor, recovery codes, session generation and audit row in one transaction; the
   // cookie is written AFTER the commit, so it is no longer a cookie-between-writes
   // exception (2026-10-28 — the audit used to follow the cookie on the pool).
-  'server/services/admin-mfa-disable.ts#disableFactorWithAudit', // profile/mfa/disable.post.ts
+  { entry: 'server/services/admin-mfa-disable.ts#disableFactorWithAudit', handler: 'profile/mfa/disable.post.ts' },
   // Moved out of their handlers into services, each named by the FUNCTION holding the transaction.
-  'server/services/admin-role-create.ts#createRoleWithAudit', // roles/index.post.ts
+  { entry: 'server/services/admin-role-create.ts#createRoleWithAudit', handler: 'roles/index.post.ts' },
   // roles/[id].put.ts: guarded by the raw-delete scan below until its tx.delete(permissions) moved here
-  'server/services/admin-role-update.ts#updateRoleWithAudit',
-  'server/services/admin-settings-general.ts#saveGeneralSettingsWithAudit', // settings/index.put.ts
-  'server/services/admin-settings-navigation.ts#saveMobileMenuWithAudit', // settings/navigation/mobile.put.ts
-  'server/services/admin-settings-navigation.ts#saveNavbarMenuWithAudit', // settings/navigation/navbar.put.ts
-  'server/services/admin-user-update.ts#updateUserWithAudit', // users/[id].put.ts
-  'server/services/admin-user-create.ts#createUserWithAudit', // users/index.post.ts
+  { entry: 'server/services/admin-role-update.ts#updateRoleWithAudit', handler: 'roles/[id].put.ts' },
+  { entry: 'server/services/admin-settings-general.ts#saveGeneralSettingsWithAudit', handler: 'settings/index.put.ts' },
+  { entry: 'server/services/admin-settings-navigation.ts#saveMobileMenuWithAudit', handler: 'settings/navigation/mobile.put.ts' },
+  { entry: 'server/services/admin-settings-navigation.ts#saveNavbarMenuWithAudit', handler: 'settings/navigation/navbar.put.ts' },
+  { entry: 'server/services/admin-user-update.ts#updateUserWithAudit', handler: 'users/[id].put.ts' },
+  { entry: 'server/services/admin-user-create.ts#createUserWithAudit', handler: 'users/index.post.ts' },
 ]
 
 /** Every `.transaction(` block of `source` (brace-matched), not just the first. */
@@ -505,7 +515,7 @@ function transactionBlocks(source: string): string[] {
 }
 
 describe('admin mutation endpoints commit their write and their audit row together', () => {
-  for (const file of AUDITED_MUTATION_ENDPOINTS) {
+  for (const { entry: file } of AUDITED_MUTATION_ENDPOINTS) {
     it(`${file.replace('server/api/admin/', '')} wraps both in one transaction`, () => {
       assertEntryShape(file)
       const source = entrySource(file)
@@ -527,7 +537,7 @@ describe('admin mutation endpoints commit their write and their audit row togeth
    * (`assertEntryShape`) asks the same of every transaction on any handle name.
    */
   it('no pool-level write survives inside a transaction block', () => {
-    for (const file of AUDITED_MUTATION_ENDPOINTS) {
+    for (const { entry: file } of AUDITED_MUTATION_ENDPOINTS) {
       // Comments and string text blanked first (`normalizeSource`): a `.transaction(` or a
       // brace in prose would otherwise move the block boundaries.
       const blocks = transactionBlocks(normalizeSource(entrySource(file)))
@@ -538,6 +548,42 @@ describe('admin mutation endpoints commit their write and their audit row togeth
       }
     }
   })
+})
+
+/**
+ * The handler half of the two lists above (soát độc lập sau khi dời, 2026-11-08).
+ *
+ * Before the move these lists named HANDLER files and asked each one for its transaction and
+ * audit row. Now each entry names the service function holding them, and nothing asked whether
+ * the handler still calls it: dropping `await updateUserWithAudit(…)` from `users/[id].put.ts`,
+ * or swapping it for an unaudited `updateUser()`, stayed green. The audit census (bottom of this
+ * file) now counts audit rows per call site, which catches a dropped call; this pins WHERE the
+ * call is — the named handler's `export default`, exactly once, and nowhere else (`directCallSites`,
+ * `tests/_call-sites.ts`: every direct call in `server/**` and `scripts/**`, or the reason they
+ * cannot be listed — a re-export, a namespace import, a use by value — which fails here too).
+ * A call moved to another endpoint keeps the census and turns this red.
+ */
+describe('each audited function of the two endpoint lists is called once, by the handler it stands for', () => {
+  const index = repoSourceIndex()
+  const entries = [
+    ...AUDITED_DELETE_ENDPOINTS.map(({ file, handler }) => ({ entry: file, handler })),
+    ...AUDITED_MUTATION_ENDPOINTS,
+  ]
+  for (const { entry, handler } of entries) {
+    it(`${handler} calls ${target(entry).fn}`, () => {
+      const { file, fn } = target(entry)
+      const source = index.get(join(CALL_SITES_ROOT, file))
+      const declaration = source?.statements.find((s): s is ts.FunctionDeclaration => ts.isFunctionDeclaration(s) && s.name?.text === fn)
+      assert.ok(declaration, `${fn} is no longer a function declared at the top level of ${file}`)
+      const sites = directCallSites(index, join(CALL_SITES_ROOT, file), declaration)
+      assert.ok(typeof sites !== 'string', `${entry}: its calls cannot be listed — ${String(sites)}`)
+      assert.deepEqual(sites.map(site => relative(CALL_SITES_ROOT, site.file).split(sep).join('/')), [`server/api/admin/${handler}`],
+        `${fn} must be called exactly once, from server/api/admin/${handler} — a call dropped, moved to another endpoint or duplicated leaves the write unrecorded or recorded under the wrong request`)
+      let top: ts.Node = sites[0]!.call
+      while (!ts.isSourceFile(top.parent)) top = top.parent
+      assert.ok(ts.isExportAssignment(top), `${handler}: the call to ${fn} is not inside the handler's \`export default\``)
+    })
+  }
 })
 
 /**
@@ -1059,23 +1105,71 @@ function auditOnlyExemptionHolds(entry: string, source: string): boolean {
  * chỉ được gọi trực tiếp) không cần mục nào: bộ quét gán dòng audit của nó cho từng nơi
  * gọi, với đúng handle nơi gọi truyền vào. Mỗi mục phải miễn một hàm mà cổng quét đang
  * thật sự hỏi — mục chết làm test `… names only functions the scan flags` đỏ.
+ *
+ * Mỗi mục GHIM hình lượt ghi của hàm (`writes`, soát độc lập sau khi dời, 2026-11-08): bản
+ * trước miễn theo khoá nên một mục miễn cả `audit-off-transaction` lẫn
+ * `audit-off-transaction-with-row-write` — thêm `await db.update(users)…` vào
+ * `writeServerRestartAudit` (hàm "chỉ ghi audit") vẫn xanh. Nay mục chỉ miễn đúng một luật,
+ * suy từ hình đã ghim (chỉ `audit` → `audit-off-transaction`; có hàng → `…-with-row-write`),
+ * và chỉ khi lượt ghi của hàm (của chính nó và của helper cùng tệp nó gọi) đúng y như đã
+ * ghim — thêm, bớt, đưa lên transaction một lượt ghi đều làm mục mất hiệu lực. Hàm chỉ ghi
+ * audit còn không được gọi theo tên một hàm có dáng ghi (`WRITE_SHAPED_CALL`) — lượt ghi qua
+ * module khác bộ quét không thấy.
  */
-const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, string> = {
+interface PoolAuditExemption {
+  /**
+   * Every write the function makes — its own and those of same-file helpers it calls — in the
+   * scanner's order: `audit` for an activity_logs row, `<kind>(<table>)` for any other row; all
+   * of them off a transaction (that is what is excused).
+   */
+  writes: string[]
+  why: string
+}
+
+const writeSignature = (w: UnitFacts['writes'][number]) => `${w.audit ? 'audit' : `${w.kind}(${w.table})`}${w.onTx ? ' on tx' : ''}`
+
+/** The one rule a pinned exemption excuses: an audit with no row beside it, or an unwrapped pair. */
+const excusedRule = (exemption: PoolAuditExemption): Rule =>
+  (exemption.writes.every(w => w === 'audit') ? 'audit-off-transaction' : 'audit-off-transaction-with-row-write')
+
+/** Why `exemption` does not hold for function `fn` of `units`; `null` when it does. */
+function pinnedExemptionMismatch(units: UnitFacts[], fn: string, exemption: PoolAuditExemption): string | null {
+  const unit = units.find(u => u.name === fn)
+  if (!unit) return `${fn} is no longer declared at the top level`
+  const found = unit.writes.map(writeSignature)
+  if (JSON.stringify(found) !== JSON.stringify(exemption.writes)) {
+    return `writes ${JSON.stringify(found)}, the exemption is pinned to ${JSON.stringify(exemption.writes)}`
+  }
+  if (excusedRule(exemption) === 'audit-off-transaction') {
+    const calls: string[] = []
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && WRITE_SHAPED_CALL.test(node.expression.text)) calls.push(node.expression.text)
+      ts.forEachChild(node, visit)
+    }
+    visit(ts.createSourceFile(`${fn}.ts`, unit.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS))
+    if (calls.length > 0) return `an audit-only function calls write-shaped ${calls.join(', ')}( — a row written there is paired with this pool audit`
+  }
+  return null
+}
+
+const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, PoolAuditExemption> = {
   // `deleteArticleById`/`setArticleStatus` chủ đích không bọc — khoá bởi test
   // `known exclusions are named` ở đầu tệp này.
-  'articles.ts#deleteArticleById': 'named known exclusion (see known exclusions test)',
-  'articles.ts#setArticleStatus': 'named known exclusion (see known exclusions test)',
+  'articles.ts#deleteArticleById': { writes: ['delete(articles)', 'audit'], why: 'named known exclusion (see known exclusions test)' },
+  'articles.ts#setArticleStatus': { writes: ['update(articles)', 'audit'], why: 'named known exclusion (see known exclusions test)' },
   // Ghi lại một lượt XEM dữ liệu cá nhân người đọc (design.md D14) — chỉ một dòng audit,
   // không có hàng nghiệp vụ nào để nguyên tử cùng. Trước đây đi qua cổng theo tệp chỉ vì
   // viết `getDb().insert(…)` (không khớp `db.insert(`) — không phải vì đã được xét.
-  'readers.ts#auditReaderRead': 'audit-only insert recording a read of reader personal data; no row write to pair it with',
+  'readers.ts#auditReaderRead': { writes: ['audit'], why: 'audit-only insert recording a read of reader personal data; no row write to pair it with' },
   // `bulkTriggerTranslation` chỉ ghi MỘT dòng audit "đã yêu cầu dịch hàng loạt" rồi
   // đẩy việc sang nền; không có hàng nghiệp vụ nào được ghi cùng lúc để giữ nguyên
   // tử với nó. Các lượt ghi bản dịch xảy ra sau đó, ngoài request, trong worker
   // (`runBulkTranslation`, bộ quét thấy nó vì cùng tệp). Trước đây cùng đoạn này nằm
   // trong `article-translations.ts` (có transaction ở chỗ khác nên guard theo tệp không
   // thấy); tách tệp làm nó lộ ra, không phải mới. Chuyển từ SERVICE_EXEMPTIONS (cả tệp).
-  'article-translation-bulk.ts#bulkTriggerTranslation': 'audit-only insert for a queued background job; no row write to pair it with',
+  // Hai lượt ghi hàng trong `writes` là của `runBulkTranslation` — job nền mà hàm này hẹn bằng
+  // `setTimeout` SAU dòng audit, ngoài request; bộ quét gán chúng cho hàm vì cùng tệp.
+  'article-translation-bulk.ts#bulkTriggerTranslation': { writes: ['audit', 'update(articleTranslations)', 'insert(articleTranslations)'], why: 'audit-only insert for a queued background job; no row write to pair it with' },
   // Đồng bộ storage ghi audit TIẾN ĐỘ (mỗi đợt / tổng kết) bằng try/catch
   // best-effort — "audit hỏng không làm hỏng lượt sync đã thành công" là chủ đích.
   // Cặp hàng + thay URL + audit thật (đổi `provider`/`url` của một hàng `media`) nằm
@@ -1085,28 +1179,28 @@ const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, string> = {
   // (2026-11-06): audit tiến độ ở `media-sync-worker.ts` (hàm cục bộ `runLocked`, gán cho
   // `runSyncWorker`), audit tổng của đường cũ ở `media-sync-legacy.ts`. Chuyển từ
   // SERVICE_EXEMPTIONS (cả tệp).
-  'media-sync-worker.ts#runSyncWorker': 'progress audits are best-effort by design; the row+audit pair is transactional in media-sync-files.ts',
-  'media-sync-legacy.ts#syncMediaStorage': 'summary audit is best-effort by design; the row+audit pair is transactional in media-sync-files.ts',
+  'media-sync-worker.ts#runSyncWorker': { writes: ['audit'], why: 'progress audits are best-effort by design; the row+audit pair is transactional in media-sync-files.ts' },
+  'media-sync-legacy.ts#syncMediaStorage': { writes: ['audit'], why: 'summary audit is best-effort by design; the row+audit pair is transactional in media-sync-files.ts' },
   // Cùng hình với `media-sync-worker.ts`: job quét nền ghi audit TIẾN ĐỘ (mỗi lô / tổng kết,
   // ở hàm cục bộ `runScanWorker`) bằng try/catch best-effort. Cặp hàng `media` + audit
   // `create` của từng tệp nhập nằm trong `db.transaction` ở `media-scan-import.ts`.
   // Chuyển từ SERVICE_EXEMPTIONS (cả tệp).
-  'media-scan.ts#startScanJob': 'progress/summary audits of a background scan job are best-effort by design; the row+audit pair is transactional in media-scan-import.ts',
-  'admin-ai-moderation-ops.ts#writeModerationRescanAudit': 'moved verbatim from ai/moderation/rescan-all.post.ts: audit-only rows of a background rescan job (start; summary at finish via onFinished) — the only write of the request, no row to pair with; best-effort, a failed insert logs ai_moderation.rescan_audit_failed',
-  'admin-ai-moderation-ops.ts#writeServerRestartAudit': 'moved verbatim from ai/moderation/restart-server.post.ts: audit-only row before a SuperAdmin-requested process exit — the only write of the request, no row to pair with; best-effort, a failed insert is swallowed as in the handler, which then logs system.restart_requested',
-  'admin-ai-moderation-ops.ts#writeWorkerRestartAudit': 'moved verbatim from ai/moderation/restart-worker.post.ts: audit-only row after an in-memory reset (worker counters, rule cache) — the only write of the request, no row to pair with; best-effort, a failed insert logs ai_moderation.restart_worker_audit_failed',
-  'admin-settings-retention.ts#writeRetentionRunStartAudit': 'moved verbatim from settings/retention-run.post.ts: the audit row of a manual retention run, written under the lock before the first DELETE (beforePurge) — the purge deletes in batches on its own pool and cannot share a transaction with it; fail-closed in the handler (a failed insert logs retention.manual_start_audit_failed and the purge does not start)',
-  'admin-settings-retention.ts#writeRetentionRunResultAudit': 'moved verbatim from settings/retention-run.post.ts: the per-table summary row after a manual retention pass has committed — no row to pair with; best-effort in the handler (a failed insert logs retention.manual_result_audit_failed and answers auditFailed)',
-  'admin-cache-clear-audit.ts#auditPublicCacheClear': 'moved verbatim from cache-clear.post.ts: audit-only row after the public-page cache purge (storage, no database row) — the only write of the request, no row to pair with, the purge cannot be rolled back; a failed insert answers 500 with the cache already cleared and nothing else records who cleared it',
-  'admin-languages-audit.ts#writeLanguagesSeedDefaultAudit': 'moved verbatim from languages/seed-default.post.ts: audit row after seedDefaultLanguagesAndTranslations (languages.ts) has written its rows — not one transaction with them; best-effort in the handler (a failed insert logs languages.seed_default_audit_failed with the actor and the counts)',
-  'admin-languages-audit.ts#writeLanguageKeysSyncAudit': 'moved verbatim from languages/sync.post.ts: audit row after syncLanguageKeys (languages.ts) has written the missing keys — not one transaction with them; best-effort in the handler (a failed insert logs languages.sync_audit_failed with the actor and the counts)',
+  'media-scan.ts#startScanJob': { writes: ['audit', 'audit'], why: 'progress/summary audits of a background scan job are best-effort by design; the row+audit pair is transactional in media-scan-import.ts' },
+  'admin-ai-moderation-ops.ts#writeModerationRescanAudit': { writes: ['audit'], why: 'moved verbatim from ai/moderation/rescan-all.post.ts: audit-only rows of a background rescan job (start; summary at finish via onFinished) — the only write of the request, no row to pair with; best-effort, a failed insert logs ai_moderation.rescan_audit_failed' },
+  'admin-ai-moderation-ops.ts#writeServerRestartAudit': { writes: ['audit'], why: 'moved verbatim from ai/moderation/restart-server.post.ts: audit-only row before a SuperAdmin-requested process exit — the only write of the request, no row to pair with; best-effort, a failed insert is swallowed as in the handler, which then logs system.restart_requested' },
+  'admin-ai-moderation-ops.ts#writeWorkerRestartAudit': { writes: ['audit'], why: 'moved verbatim from ai/moderation/restart-worker.post.ts: audit-only row after an in-memory reset (worker counters, rule cache) — the only write of the request, no row to pair with; best-effort, a failed insert logs ai_moderation.restart_worker_audit_failed' },
+  'admin-settings-retention.ts#writeRetentionRunStartAudit': { writes: ['audit'], why: 'moved verbatim from settings/retention-run.post.ts: the audit row of a manual retention run, written under the lock before the first DELETE (beforePurge) — the purge deletes in batches on its own pool and cannot share a transaction with it; fail-closed in the handler (a failed insert logs retention.manual_start_audit_failed and the purge does not start)' },
+  'admin-settings-retention.ts#writeRetentionRunResultAudit': { writes: ['audit'], why: 'moved verbatim from settings/retention-run.post.ts: the per-table summary row after a manual retention pass has committed — no row to pair with; best-effort in the handler (a failed insert logs retention.manual_result_audit_failed and answers auditFailed)' },
+  'admin-cache-clear-audit.ts#auditPublicCacheClear': { writes: ['audit'], why: 'moved verbatim from cache-clear.post.ts: audit-only row after the public-page cache purge (storage, no database row) — the only write of the request, no row to pair with, the purge cannot be rolled back; a failed insert answers 500 with the cache already cleared and nothing else records who cleared it' },
+  'admin-languages-audit.ts#writeLanguagesSeedDefaultAudit': { writes: ['audit'], why: 'moved verbatim from languages/seed-default.post.ts: audit row after seedDefaultLanguagesAndTranslations (languages.ts) has written its rows — not one transaction with them; best-effort in the handler (a failed insert logs languages.seed_default_audit_failed with the actor and the counts)' },
+  'admin-languages-audit.ts#writeLanguageKeysSyncAudit': { writes: ['audit'], why: 'moved verbatim from languages/sync.post.ts: audit row after syncLanguageKeys (languages.ts) has written the missing keys — not one transaction with them; best-effort in the handler (a failed insert logs languages.sync_audit_failed with the actor and the counts)' },
   // The cookie-between-writes endpoints (COOKIE_BETWEEN_WRITES above pins the handler's order and
   // that each of these writes exactly its audit row): moved verbatim from their handlers, still on
   // the pool AFTER the session cookie, which a rollback could not retract.
-  'admin-mfa-confirm.ts#auditMfaFactorEnabled': 'moved verbatim from profile/mfa/confirm.post.ts: written after activatePendingFactor (its own transaction), revokeSessions and setSessionCookie — the cookie sits between the writes, so no transaction may span them',
-  'admin-mfa-recovery-codes-issue.ts#auditRecoveryCodesGenerated': 'moved verbatim from profile/mfa/recovery-codes.post.ts: written after issueRecoveryCodes (its own transaction), revokeSessions and setSessionCookie — the cookie sits between the writes, so no transaction may span them',
-  'admin-profile-password.ts#auditOwnPasswordChange': 'moved verbatim from profile/password.put.ts: written after updateOwnPassword, the fresh token-version read and setSessionCookie — the cookie sits between the writes, so no transaction may span them',
-  'admin-auth-logout.ts#auditAdminLogout': 'moved verbatim from auth/logout.post.ts: best-effort, in its own try/catch after bumpAdminTokenVersion (its own try/catch) — one transaction would let a failed audit roll back the token invalidation; a failed insert logs auth.logout_audit_failed',
+  'admin-mfa-confirm.ts#auditMfaFactorEnabled': { writes: ['audit'], why: 'moved verbatim from profile/mfa/confirm.post.ts: written after activatePendingFactor (its own transaction), revokeSessions and setSessionCookie — the cookie sits between the writes, so no transaction may span them' },
+  'admin-mfa-recovery-codes-issue.ts#auditRecoveryCodesGenerated': { writes: ['audit'], why: 'moved verbatim from profile/mfa/recovery-codes.post.ts: written after issueRecoveryCodes (its own transaction), revokeSessions and setSessionCookie — the cookie sits between the writes, so no transaction may span them' },
+  'admin-profile-password.ts#auditOwnPasswordChange': { writes: ['audit'], why: 'moved verbatim from profile/password.put.ts: written after updateOwnPassword, the fresh token-version read and setSessionCookie — the cookie sits between the writes, so no transaction may span them' },
+  'admin-auth-logout.ts#auditAdminLogout': { writes: ['audit'], why: 'moved verbatim from auth/logout.post.ts: best-effort, in its own try/catch after bumpAdminTokenVersion (its own try/catch) — one transaction would let a failed audit roll back the token invalidation; a failed insert logs auth.logout_audit_failed' },
 }
 
 /** The audit rules of the service layer: an audit row is written on a transaction handle. */
@@ -1134,16 +1228,38 @@ function serviceAuditOffenders(): { offenders: string[], excused: Set<string> } 
       if (ref.kind === 'unknown') offenders.push(`${entry}:${ref.line}: activityLogs used in a shape the scan cannot read as a read or a write — use it directly in .insert()/.from()/a column`)
     }
     const premise = auditOnlyExemptionHolds(entry, source) ? AUDIT_ONLY_FUNCTION_EXEMPTIONS[entry]!.fn : null
-    for (const problem of unitProblems(unitsOf(file), { auditOffTransaction: true })) {
-      if (!SERVICE_AUDIT_RULES.has(problem.rule)) continue
-      const key = `${entry}#${problem.unit}`
-      if (problem.unit === premise) continue
-      if (SERVICE_POOL_AUDIT_EXEMPTIONS[key]) {
-        excused.add(key)
+    const judged = poolAuditJudgement(entry, unitsOf(file), premise)
+    offenders.push(...judged.offenders)
+    for (const key of judged.excused) excused.add(key)
+  }
+  return { offenders, excused }
+}
+
+/**
+ * The service-layer audit rules for ONE file's functions: each flagged function is an offender
+ * unless it is the audit-only premise of `AUDIT_ONLY_FUNCTION_EXEMPTIONS`, or its
+ * `SERVICE_POOL_AUDIT_EXEMPTIONS` entry excuses exactly that rule and its writes are exactly as
+ * pinned (`pinnedExemptionMismatch`).
+ */
+function poolAuditJudgement(entry: string, units: UnitFacts[], premise: string | null): { offenders: string[], excused: string[] } {
+  const offenders: string[] = []
+  const excused: string[] = []
+  for (const problem of unitProblems(units, { auditOffTransaction: true })) {
+    if (!SERVICE_AUDIT_RULES.has(problem.rule)) continue
+    const key = `${entry}#${problem.unit}`
+    if (problem.unit === premise) continue
+    const exemption = SERVICE_POOL_AUDIT_EXEMPTIONS[key]
+    if (exemption) {
+      const mismatch = pinnedExemptionMismatch(units, problem.unit, exemption)
+      if (mismatch === null && problem.rule === excusedRule(exemption)) {
+        excused.push(key)
         continue
       }
-      offenders.push(`${key}: ${problem.detail}`)
+      offenders.push(`${key}: ${problem.detail} — its SERVICE_POOL_AUDIT_EXEMPTIONS entry excuses ${excusedRule(exemption)} `
+        + `for exactly ${JSON.stringify(exemption.writes)}${mismatch ? ` — ${mismatch}` : ''}`)
+      continue
     }
+    offenders.push(`${key}: ${problem.detail}`)
   }
   return { offenders, excused }
 }
@@ -1171,6 +1287,43 @@ describe('no service writes activity_logs outside a transaction', () => {
       [],
       'these SERVICE_POOL_AUDIT_EXEMPTIONS entries excuse nothing the scan flags — drop them',
     )
+  })
+
+  it('each SERVICE_POOL_AUDIT_EXEMPTIONS entry holds for its function exactly as pinned', () => {
+    const mismatches: string[] = []
+    for (const [key, exemption] of Object.entries(SERVICE_POOL_AUDIT_EXEMPTIONS)) {
+      const [file, fn] = key.split('#')
+      const mismatch = pinnedExemptionMismatch(unitsOf(`server/services/${file}`), fn!, exemption)
+      if (mismatch) mismatches.push(`${key}: ${mismatch}`)
+    }
+    assert.deepEqual(mismatches, [], 'một hàm được miễn đã đổi lượt ghi — mục miễn trừ chỉ che đúng hình đã ghim: '
+      + 'bọc cặp hàng + audit trong transaction, hoặc (nếu vẫn có chủ đích) ghim lại hình mới kèm lý do')
+  })
+
+  /**
+   * The review's probe (2026-11-08) and its neighbours, on the real file: each turned an
+   * audit-only exempted function into something else, and each stayed green while the
+   * exemption excused both off-transaction rules for its key.
+   */
+  it('a write added to an audit-only exempted function voids its exemption', () => {
+    const entry = 'admin-ai-moderation-ops.ts'
+    const key = `${entry}#writeServerRestartAudit`
+    const base = read(`server/services/${entry}`)
+    const opening = 'export async function writeServerRestartAudit(adminUser: { id?: number | null } | null | undefined) {\n  const db = getDb()\n'
+    assert.equal(base.split(opening).length, 2, 'writeServerRestartAudit no longer opens as the probes expect — they would test nothing')
+    const judged = (source: string) => poolAuditJudgement(entry, scanUnits(`server/services/${entry}`, source), null)
+    assert.ok(judged(base).excused.includes(key), 'the clean file must keep its exemption')
+    const mutations: Record<string, string> = {
+      'a pool row write beside the audit (the review probe)': base.replace(opening, `${opening}  await db.update(users).set({ isActive: false })\n`)
+        .replace("import { activityLogs } from '../db/schema'", "import { activityLogs, users } from '../db/schema'"),
+      'a second audit row': base.replace(opening, `${opening}  await db.insert(activityLogs).values({ action: 'update', resource: 'ai' })\n`),
+      'a row written through another module': base.replace(opening, `${opening}  await deleteUserById(1, null)\n`),
+    }
+    for (const [label, mutated] of Object.entries(mutations)) {
+      assert.notEqual(mutated, base, `${label}: the mutation did not apply`)
+      const { offenders, excused } = judged(mutated)
+      assert.ok(!excused.includes(key) && offenders.some(o => o.startsWith(`${key}:`)), `${label}: the exemption still excuses writeServerRestartAudit`)
+    }
   })
 
   it('a function-scoped audit-only exemption still holds', () => {
@@ -1563,11 +1716,12 @@ describe('per-function scans follow the code into services', () => {
     for (const file of [...walkTs('server/api'), ...walkTs('server/services')]) {
       const service = file.startsWith('server/services/')
       for (const problem of unitProblems(unitsOf(file), { auditOffTransaction: false })) {
-        if (problem.rule === 'audit-transaction-without-row-write') {
-          if (service && SERVICE_POOL_AUDIT_EXEMPTIONS[`${file.slice('server/services/'.length)}#${problem.unit}`]) continue
-        } else if (problem.rule === 'audit-off-transaction-with-row-write') {
+        // `audit-transaction-without-row-write` is excused nowhere, in either tree (2026-11-08): no
+        // SERVICE_POOL_AUDIT_EXEMPTIONS entry writes on a transaction, and each entry excuses only
+        // the one off-transaction rule its pinned writes imply.
+        if (problem.rule === 'audit-off-transaction-with-row-write') {
           if (service) continue // asked by the service-layer scan, with its function-scoped exemptions
-        } else continue
+        } else if (problem.rule !== 'audit-transaction-without-row-write') continue
         if (file.startsWith('server/api/admin/') && MUTATION_SCAN_EXEMPTIONS[file.slice('server/api/admin/'.length)]) continue
         offenders.push(`${file}#${problem.unit}: ${problem.detail}`)
       }
@@ -1592,7 +1746,7 @@ describe('per-function scans follow the code into services', () => {
     const namedEntries = [
       ...AUDITED_WRITES.map(({ file, fn }) => `${file}#${fn}`),
       ...AUDITED_DELETE_ENDPOINTS.map(({ file }) => file),
-      ...AUDITED_MUTATION_ENDPOINTS,
+      ...AUDITED_MUTATION_ENDPOINTS.map(({ entry }) => entry),
       ...AUDITED_SERVICE_FUNCTIONS,
       ...Object.keys(SERVICE_POOL_AUDIT_EXEMPTIONS).map(key => `server/services/${key}`),
       ...Object.entries(AUDIT_ONLY_FUNCTION_EXEMPTIONS).map(([file, { fn }]) => `server/services/${file}#${fn}`),
@@ -1748,47 +1902,61 @@ describe('the per-function scanner sees what the per-file scans could not', () =
 /**
  * Kiểm kê dòng audit (2026-11-08): MỌI dòng `activity_logs` mà `server/api/**`,
  * `server/services/**` và `server/utils/**` ghi, đếm theo `<resource>:<action>` — tức theo
- * điều được ghi lại, KHÔNG theo tệp hay hàm ghi nó.
+ * điều được ghi lại, KHÔNG theo tệp hay hàm ghi nó — và tính MỘT LẦN MỖI NƠI GỌI hàm chứa
+ * lượt ghi đó.
  *
  * Các cổng phía trên bắt cặp hàng + audit ghi sai chỗ và lệnh xoá mất audit, nhưng một lượt
  * INSERT/UPDATE làm rơi dòng audit trong một hàm chưa có tên ở danh sách nào thì không cổng
  * nào đỏ. Đợt dời ~150 endpoint sang service là đúng lúc chuyện đó dễ xảy ra nhất. Bảng này
- * khoá con số: dời mã giữa handler và service giữ nguyên nó; bỏ một lượt ghi audit, hay đổi
- * resource/action của nó, làm nó đỏ — kèm nơi các dòng còn lại đang được ghi.
+ * khoá con số: dời mã giữa handler và service giữ nguyên nó; bỏ một lượt ghi audit, đổi
+ * resource/action của nó, hay bỏ / tráo LỜI GỌI tới hàm ghi audit làm nó đỏ — kèm nơi các
+ * dòng còn lại đang được ghi.
  *
- * Cách đếm (`auditCensus`, `tests/_audit-atomicity-scan.ts`):
- *   - mỗi hàng của mỗi `.insert(activityLogs).values(…)` (mảng = nhiều hàng) tính một;
- *   - helper cục bộ chỉ được gọi trực tiếp (`audit(tx, actorId, 'create', …)`) tính một lần
- *     MỖI LỜI GỌI, tham số thay bằng đối số của lời gọi đó;
- *   - helper dùng chung tên `audit<X>` chỉ ghi audit (`auditReaderRead`, `auditCommentRead`)
- *     tính một lần mỗi lời gọi, ở bất kỳ tệp nào — endpoint đọc thôi gọi nó thì đỏ;
+ * Vì sao theo nơi gọi (soát độc lập sau khi dời, 2026-11-08): bản đầu đếm lượt ghi một lần ở
+ * NƠI KHAI BÁO hàm. Trước khi dời, handler tự ghi cặp hàng + audit nên tệp handler có trong
+ * danh sách; sau khi dời, mục danh sách là `server/services/x.ts#fooWithAudit` và không gì
+ * kiểm handler còn gọi nó. Xoá `await updateUserWithAudit(…)` khỏi `users/[id].put.ts`, xoá
+ * `await writeRetentionRunStartAudit(…)` khỏi `settings/retention-run.post.ts`, hay tráo
+ * handler sang một `updateUser()` không audit — cả ba vẫn xanh. Nay cả ba đỏ (ca dò bên dưới).
+ *
+ * Cách đếm (`auditCensusOf`, `tests/_audit-atomicity-scan.ts`):
+ *   - mỗi hàng của mỗi `.insert(activityLogs).values(…)` (mảng = nhiều hàng) tính một — nhân
+ *     với số NƠI GỌI hàm export chứa nó (gọi trực tiếp, ở bất kỳ tệp nào của `server/**` và
+ *     `scripts/**`). Hàm không ai gọi ghi 0 dòng. Nơi gọi nằm trong một hàm service khác vẫn
+ *     là một nơi gọi (đếm theo chữ viết, không lần tiếp ai gọi hàm đó);
+ *   - helper cục bộ (không export) tính một lần MỖI LẦN được nhắc trong tệp, đi tiếp tới hàm
+ *     export hay điểm vào chứa lần nhắc đó; gọi trực tiếp thì tham số thay bằng đối số
+ *     (`audit(tx, actorId, 'create', …)` → `…:create`);
+ *   - `export default` (handler, plugin) và câu lệnh cấp cao nhất là điểm vào: một lần;
  *   - giá trị điều kiện của các chuỗi → `a|b`; giá trị không giải được → `‹mã nguồn›` (bền
  *     khi dời nguyên văn). Hai bộ dựng hàng của chatbot → `‹tên bộ dựng›:<operation>`.
+ * Đếm theo TÊN, nên cái gì làm tên không còn đếm được thì đỏ thay vì đếm sai: hàm ghi audit
+ * được truyền như giá trị, import/export dưới tên khác, gọi qua namespace, hay khai báo lần
+ * thứ hai ở đâu đó (test "every audit-writing exported function is reached by direct calls").
  *
- * Thêm/bỏ/đổi một lượt ghi audit có chủ đích → sửa bảng này trong CÙNG commit, theo đúng số
- * "found" trong thông báo lỗi. Gộp hai lượt ghi vào một helper dùng chung → đặt tên `audit<X>`
- * để mỗi lời gọi vẫn được đếm.
+ * Thêm/bỏ/đổi một lượt ghi audit — hay một nơi gọi hàm ghi audit — có chủ đích → sửa bảng
+ * này trong CÙNG commit, theo đúng số "found" trong thông báo lỗi.
  */
 const AUDIT_CENSUS: Record<string, number> = {
   'activity_logs:read': 1,
   'ai:create': 3,
   'ai:delete': 7,
   'ai:update': 11,
-  'article_comments:delete': 1,
+  'article_comments:delete': 2,
   'articles:boost': 3,
   'articles:create': 1,
-  'articles:delete': 1,
+  'articles:delete': 2,
   'articles:update': 3,
-  'auth:login': 1,
+  'auth:login': 2,
   'auth:logout': 1,
   'backup_drive_oauth:delete': 1,
   'backup_drive_oauth:update': 3,
   'chat_sessions:delete': 2,
   'chat_sessions:read': 2,
   'chatbot_knowledge:create': 1,
-  'chatbot_knowledge:delete': 4,
+  'chatbot_knowledge:delete': 5,
   'chatbot_knowledge:read': 2,
-  'chatbot_knowledge:toggle': 1,
+  'chatbot_knowledge:toggle': 2,
   'chatbot_knowledge:update': 2,
   'comments:create': 1,
   'comments:delete': 1,
@@ -1802,23 +1970,26 @@ const AUDIT_CENSUS: Record<string, number> = {
   'livestream:update': 2,
   'media:articles_fix_thumbnails': 1,
   'media:create': 2,
-  'media:delete': 1,
+  'media:delete': 2,
   'media:repair_urls': 1,
   'media:repoint_urls': 1,
   'media:scan_uploads': 1,
   'media:scan_uploads_batch': 1,
   'media:self_heal': 1,
   'media:self_heal_default_lost': 1,
-  'media:sync_storage': 1,
+  // `media:sync_storage` (syncMediaStorage, media-sync-legacy.ts) không còn trong bảng: không mã
+  // chạy thật nào gọi đường đồng bộ cũ — chỉ barrel `media-sync.ts` và một test tích hợp.
   'media:sync_storage_batch': 1,
-  'media:update': 3,
-  'media_portal:create': 2,
+  // commitMove qua syncOneToR2/syncOneToLocal (gọi ở media-sync-legacy + media-sync-worker: 4) và
+  // repairInterruptedSyncRewrites (gọi ở media-repair, media-sync-legacy, media-sync-worker: 3).
+  'media:update': 7,
+  'media_portal:create': 3,
   'media_portal:delete': 1,
   'media_portal:housekeep_uploads': 1,
   'media_portal:publish|update': 1,
   'media_portal:update': 5,
   'pages:create': 2,
-  'pages:delete': 2,
+  'pages:delete': 3,
   'pages:update': 3,
   'profile_mfa:update': 2,
   'profile_password:update': 1,
@@ -1831,31 +2002,59 @@ const AUDIT_CENSUS: Record<string, number> = {
   'roles:create': 1,
   'roles:delete': 1,
   'roles:update': 1,
-  'settings:backup_restore': 1,
-  'settings:backup_restore_failed': 1,
-  'settings:backup_run': 1,
-  'settings:create': 4,
+  'settings:backup_restore': 2,
+  'settings:backup_restore_failed': 2,
+  // runBackup: backup/run.post.ts, lịch (backup-scheduler), bản pre-restore (backup-restore) và
+  // năm bản sao lưu trước job media (articles-thumbnail-scan, media-repair, media-repoint,
+  // media-self-heal, media-sync-worker).
+  'settings:backup_run': 8,
+  'settings:create': 5,
   'settings:delete': 4,
-  'settings:update': 20,
+  'settings:update': 25,
   'settings:update media_portal_settings': 1,
-  'submissions:delete': 1,
+  'submissions:delete': 2,
   'submissions:read': 1,
-  'submissions:update': 3,
+  'submissions:update': 4,
   'user_history:read': 1,
   'user_mfa:delete': 2,
   'users:create': 1,
-  'users:delete': 1,
+  'users:delete': 2,
   'users:update': 2,
   // Bộ dựng hàng của chatbot (server/utils/chatbot/audit.ts) đặt resource bên trong bộ dựng
   // (`CHATBOT_RESOURCES.*`), nên khoá mang tên bộ dựng; action là `operation` truyền vào.
-  '‹buildChatbotKnowledgeAudit›:archive|publish': 1,
-  '‹buildChatbotKnowledgeAudit›:create': 1,
-  '‹buildChatbotKnowledgeAudit›:delete': 1,
-  '‹buildChatbotKnowledgeAudit›:update': 1,
+  '‹buildChatbotKnowledgeAudit›:archive|publish': 4,
+  '‹buildChatbotKnowledgeAudit›:create': 2,
+  '‹buildChatbotKnowledgeAudit›:delete': 2,
+  '‹buildChatbotKnowledgeAudit›:update': 2,
   '‹buildChatbotSettingsAudit›:rotate_key|update': 1,
 }
 
 const CENSUS_ROOTS = ['server/api', 'server/services', 'server/utils']
+/** Read for CALL SITES only: the rest of the server (plugins, routes, middleware, db) and the scripts. */
+const CALLER_ROOTS = ['server', 'scripts']
+
+/** Every `.ts` / `.mjs` source under `dir` (declarations excluded). */
+function walkSources(dir: string): string[] {
+  const found: string[] = []
+  for (const entry of readdirSync(new URL(`../${dir}`, import.meta.url), { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`
+    if (entry.isDirectory()) found.push(...walkSources(path))
+    else if (/\.(?:ts|mjs)$/.test(entry.name) && !entry.name.endsWith('.d.ts')) found.push(path)
+  }
+  return found.sort()
+}
+
+let repoCensusMemo: CensusResult | undefined
+/** The census of the repo: inserts looked for in CENSUS_ROOTS, calls in all of CALLER_ROOTS. */
+function repoCensus(): CensusResult {
+  if (!repoCensusMemo) {
+    const files = CENSUS_ROOTS.flatMap(walkTs)
+    const inRoots = new Set(files)
+    const callers = CALLER_ROOTS.flatMap(walkSources).filter(file => !inRoots.has(file))
+    repoCensusMemo = auditCensusOf(files.map(file => ({ file, source: read(file) })), callers.map(file => ({ file, source: read(file) })))
+  }
+  return repoCensusMemo
+}
 
 /** The keys whose count differs, each with the sites that still write it (for the message). */
 function censusDiff(found: Record<string, number>, declared: Record<string, number>, entries: Array<{ key: string, where: string }>): string[] {
@@ -1868,19 +2067,68 @@ function censusDiff(found: Record<string, number>, declared: Record<string, numb
 
 describe('the audit census: every activity_logs row the server writes, by what it records', () => {
   it('server/api, server/services and server/utils write exactly the audited (resource, action) rows in AUDIT_CENSUS', () => {
-    const files = CENSUS_ROOTS.flatMap(walkTs).map(file => ({ file, source: read(file) }))
-    const entries = auditCensus(files)
+    const { entries } = repoCensus()
     assert.deepEqual(
       censusDiff(censusCounts(entries), AUDIT_CENSUS, entries),
       [],
       'số dòng audit theo `<resource>:<action>` đã đổi. Dời mã giữa handler và service KHÔNG bao giờ '
-      + 'đổi bảng này — nên một lượt ghi audit vừa bị BỎ, bị đổi resource/action, hoặc được thêm. '
-      + 'Có chủ đích → sửa AUDIT_CENSUS theo số "found" trong cùng commit; không → khôi phục dòng audit.',
+      + 'đổi bảng này — nên một lượt ghi audit, hay một LỜI GỌI tới hàm ghi audit, vừa bị BỎ, bị đổi '
+      + 'resource/action, hoặc được thêm. Có chủ đích → sửa AUDIT_CENSUS theo số "found" trong cùng '
+      + 'commit; không → khôi phục dòng audit / lời gọi.',
     )
+  })
+
+  it('every audit-writing exported function is reached by direct calls the census can count', () => {
+    assert.deepEqual(
+      repoCensus().problems,
+      [],
+      'bảng kiểm kê đếm lời gọi theo TÊN hàm — gọi trực tiếp bằng đúng tên đó, không truyền hàm như '
+      + 'giá trị, không import/export dưới tên khác, không gọi qua namespace, không khai báo trùng tên',
+    )
+  })
+
+  /**
+   * The review's probes (2026-11-08), on the real handler and service files: a handler that stops
+   * calling its audited service — or calls an unaudited one instead — leaves the write gone or
+   * unrecorded; the census must see it. Counted on the pair of files alone: each call site is one
+   * row, so the repo census moves by the same amount.
+   */
+  it('a handler that stops calling its audited service, or calls an unaudited one instead, drops the census', () => {
+    const probes: Array<{ service: string, handler: string, call: string, key: string }> = [
+      { service: 'server/services/admin-user-update.ts', handler: 'server/api/admin/users/[id].put.ts', call: 'await updateUserWithAudit(adminUser, id, updateData)', key: 'users:update' },
+      { service: 'server/services/admin-settings-retention.ts', handler: 'server/api/admin/settings/retention-run.post.ts', call: 'await writeRetentionRunStartAudit(admin.id, scopes)', key: 'data_retention:delete' },
+      { service: 'server/services/admin-cache-clear-audit.ts', handler: 'server/api/admin/cache-clear.post.ts', call: 'await auditPublicCacheClear(admin.id, cleared)', key: 'settings:update' },
+    ]
+    for (const { service, handler, call, key } of probes) {
+      const source = read(handler)
+      assert.equal(source.split(call).length, 2, `${handler}: \`${call}\` is not written exactly once — the probe tests nothing`)
+      const definitions = [{ file: service, source: read(service) }]
+      const before = censusCounts(auditCensus(definitions, [{ file: handler, source }]))
+      const after = censusCounts(auditCensus(definitions, [{ file: handler, source: source.replace(call, 'await Promise.resolve()') }]))
+      assert.equal((before[key] ?? 0) - (after[key] ?? 0), 1, `${handler}: dropping \`${call}\` must drop one '${key}' row`)
+    }
+
+    // The swap: the handler calls a new service that updates the user and records nothing.
+    const plain = "import { eq } from 'drizzle-orm'\nimport { getDb } from '../utils/db'\nimport { users } from '../db/schema'\n"
+      + 'export async function updateUser(id: number, data: Record<string, unknown>) {\n  await getDb().update(users).set(data).where(eq(users.id, id))\n}\n'
+    const handlerFile = 'server/api/admin/users/[id].put.ts'
+    const handler = read(handlerFile)
+    const swapped = handler
+      .replace('await updateUserWithAudit(adminUser, id, updateData)', 'await updateUser(id, updateData)')
+      .replace("import { findUserForEdit, updateUserWithAudit } from '../../../services/admin-user-update'",
+        "import { findUserForEdit } from '../../../services/admin-user-update'\nimport { updateUser } from '../../../services/admin-user-update-plain'")
+    assert.equal(swapped.includes('updateUserWithAudit'), false, 'the swap did not apply')
+    const services = [
+      { file: 'server/services/admin-user-update.ts', source: read('server/services/admin-user-update.ts') },
+      { file: 'server/services/admin-user-update-plain.ts', source: plain },
+    ]
+    assert.equal(censusCounts(auditCensus(services, [{ file: handlerFile, source: handler }]))['users:update'], 1)
+    assert.equal(censusCounts(auditCensus(services, [{ file: handlerFile, source: swapped }]))['users:update'], undefined)
   })
 
   const header = "import { activityLogs, roles } from '../db/schema'\nimport { getDb } from '../utils/db'\n"
   const countsOf = (...sources: Array<[string, string]>) => censusCounts(auditCensus(sources.map(([file, source]) => ({ file, source }))))
+  const problemsOf = (...sources: Array<[string, string]>) => auditCensusOf(sources.map(([file, source]) => ({ file, source }))).problems
 
   it('the key does not depend on where the insert lives: handler and service give the same census', () => {
     const insert = `await tx.insert(activityLogs).values({ userId: 1, action: 'delete', resource: 'roles', resourceId: id })`
@@ -1891,26 +2139,82 @@ describe('the audit census: every activity_logs row the server writes, by what i
     const service = `${header}export async function deleteRoleWithAudit(id: number) {
   await getDb().transaction(async (tx) => { await tx.delete(roles); ${insert} })
 }\n`
-    const caller = "import { deleteRoleWithAudit } from '../services/x'\nexport default defineEventHandler(async () => { await deleteRoleWithAudit(1) })\n"
+    const caller = (calls: number) => `import { deleteRoleWithAudit } from '../services/x'\nexport default defineEventHandler(async () => {${' await deleteRoleWithAudit(1);'.repeat(calls)} })\n`
     assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', handler]), { 'roles:delete': 1 })
-    assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', caller], ['server/services/x.ts', service]), { 'roles:delete': 1 })
-    assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', caller], ['server/services/x.ts', service.replace(insert, '')]), {})
+    assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', caller(1)], ['server/services/x.ts', service]), { 'roles:delete': 1 })
+    assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', caller(1)], ['server/services/x.ts', service.replace(insert, '')]), {})
+    // Once per CALL: a handler that stops calling the service records nothing; two calls, two rows.
+    assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', caller(0)], ['server/services/x.ts', service]), {})
+    assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', caller(2)], ['server/services/x.ts', service]), { 'roles:delete': 2 })
+    // A call from a file read for call sites only (a plugin, a script) counts like any other.
+    assert.deepEqual(censusCounts(auditCensus([{ file: 'server/services/x.ts', source: service }], [{ file: 'server/plugins/x.ts', source: caller(1) }])), { 'roles:delete': 1 })
   })
 
-  it('a local helper counts once per call with its arguments; a shared audit<X> helper once per call anywhere', () => {
+  it('a local helper counts once per mention with its arguments, through to the exported function and its calls', () => {
     const local = `${header}async function audit(db: Store, action: 'create' | 'delete', id: number) {
   await db.insert(activityLogs).values({ userId: 1, action, resource: 'roles', resourceId: id })
 }
 export async function create(id: number) { await getDb().transaction(async (tx) => { await tx.insert(roles); await audit(tx, 'create', id) }) }
 export async function remove(id: number, hard: boolean) { await getDb().transaction(async (tx) => { await tx.delete(roles); await audit(tx, hard ? 'delete' : 'create', id) }) }\n`
-    assert.deepEqual(countsOf(['server/services/roles.ts', local]), { 'roles:create': 1, 'roles:create|delete': 1 })
+    const handler = (creates: number, removes: number) => "import { create, remove } from '../services/roles'\nexport default defineEventHandler(async () => {"
+      + `${' await create(1);'.repeat(creates)}${' await remove(1, true);'.repeat(removes)} })\n`
+    assert.deepEqual(countsOf(['server/services/roles.ts', local], ['server/api/admin/roles/x.post.ts', handler(1, 1)]), { 'roles:create': 1, 'roles:create|delete': 1 })
+    // helper → exported function → handler, called 0, 1 and 2 times.
+    assert.deepEqual(countsOf(['server/services/roles.ts', local], ['server/api/admin/roles/x.post.ts', handler(0, 1)]), { 'roles:create|delete': 1 })
+    assert.deepEqual(countsOf(['server/services/roles.ts', local], ['server/api/admin/roles/x.post.ts', handler(2, 1)]), { 'roles:create': 2, 'roles:create|delete': 1 })
+    assert.deepEqual(countsOf(['server/services/roles.ts', local]), {}, 'exported functions nobody calls write no row')
+    // A helper passed by value (a callback) counts once per mention, its parameters unbound.
+    const byValue = `${header}async function record(action: string) { await getDb().insert(activityLogs).values({ userId: 1, action, resource: 'roles' }) }
+export default defineEventHandler(async () => { await withLock(record) })\n`
+    assert.deepEqual(countsOf(['server/api/admin/roles/y.post.ts', byValue]), { 'roles:‹action›': 1 })
+    // A helper nothing mentions writes nothing.
+    assert.deepEqual(countsOf(['server/services/dead.ts', `${header}async function record() { await getDb().insert(activityLogs).values({ action: 'read', resource: 'roles' }) }\n`]), {})
 
+    // An exported audit-only helper (`auditRoleRead`) is an exported function like any other: once per call, anywhere.
     const shared = `${header}export async function auditRoleRead(actorId: number) {
   await getDb().insert(activityLogs).values({ userId: actorId, action: 'read', resource: 'roles' })
 }\n`
     const reader = (calls: number) => `import { auditRoleRead } from '../services/roles-read'\nexport default defineEventHandler(async () => {${' await auditRoleRead(1);'.repeat(calls)} })\n`
     assert.deepEqual(countsOf(['server/services/roles-read.ts', shared], ['server/api/admin/roles/index.get.ts', reader(1)], ['server/api/admin/roles/[id].get.ts', reader(1)]), { 'roles:read': 2 })
     assert.deepEqual(countsOf(['server/services/roles-read.ts', shared], ['server/api/admin/roles/index.get.ts', reader(1)], ['server/api/admin/roles/[id].get.ts', reader(0)]), { 'roles:read': 1 })
+  })
+
+  it('a reference the call count cannot follow is reported, not counted', () => {
+    const service = `${header}export async function deleteRoleWithAudit(id: number) {
+  await getDb().transaction(async (tx) => { await tx.delete(roles); await tx.insert(activityLogs).values({ action: 'delete', resource: 'roles', resourceId: id }) })
+}\n`
+    const svc: [string, string] = ['server/services/x.ts', service]
+    const h = (body: string, importLine = "import { deleteRoleWithAudit } from '../services/x'"): [string, string] =>
+      ['server/api/admin/roles/x.delete.ts', `${importLine}\nexport default defineEventHandler(async () => { ${body} })\n`]
+    // Clean: a direct call, a type position, a re-export under the same name.
+    assert.deepEqual(problemsOf(svc, h('await deleteRoleWithAudit(1); type F = typeof deleteRoleWithAudit')), [])
+    assert.deepEqual(problemsOf(svc, ['server/services/barrel.ts', "export { deleteRoleWithAudit } from './x'\n"]), [])
+    const unfollowable: Record<string, Array<[string, string]>> = {
+      'passed by value': [svc, h('await withLock(deleteRoleWithAudit)')],
+      'stored, then called': [svc, h('const run = deleteRoleWithAudit; await run(1)')],
+      'shorthand property': [svc, h('await runAll({ deleteRoleWithAudit })')],
+      'aliased import': [svc, h('await drop(1)', "import { deleteRoleWithAudit as drop } from '../services/x'")],
+      'aliased re-export': [svc, ['server/services/barrel.ts', "export { deleteRoleWithAudit as dropRole } from './x'\n"]],
+      'aliased local export': [['server/services/x.ts', `${service.replace('export async function', 'async function')}export { deleteRoleWithAudit as dropRole }\n`], h('await dropRole(1)')],
+      'namespace call': [svc, h('await svc.deleteRoleWithAudit(1)', "import * as svc from '../services/x'")],
+      'declared again': [svc, h('const deleteRoleWithAudit = async (id: number) => id; await deleteRoleWithAudit(1)', '')],
+      'shadowed by a parameter': [svc, h('await [1].map(deleteRoleWithAudit => deleteRoleWithAudit)')],
+    }
+    for (const [shape, sources] of Object.entries(unfollowable)) {
+      assert.ok(problemsOf(...sources).length > 0, `${shape}: the census counts by name and must report this reference`)
+    }
+    // Two files writing audit rows from a function of the same name cannot be told apart by calls.
+    assert.ok(problemsOf(svc, ['server/services/y.ts', service]).some(p => p.includes('in both')))
+    // An insert inside a function held by a top-level VALUE runs when a member is called — no name count sees it.
+    const insert = "await getDb().insert(activityLogs).values({ action: 'delete', resource: 'roles' })"
+    for (const held of [`export const roleOps = {\n  async remove() { ${insert} },\n}\n`, `const job = defineTask({ async run() { ${insert} } })\n`]) {
+      assert.ok(problemsOf(['server/services/ops.ts', header + held]).some(p => p.includes('holds functions')), `not reported:\n${held}`)
+      assert.deepEqual(countsOf(['server/services/ops.ts', header + held]), {}, `counted anyway:\n${held}`)
+    }
+    // Code that runs once at load (no function around the insert) is an entry point: one row, nothing to report.
+    const atLoad = `${header}const seeded = ${insert}\n`
+    assert.deepEqual(problemsOf(['server/services/boot.ts', atLoad]), [])
+    assert.deepEqual(countsOf(['server/services/boot.ts', atLoad]), { 'roles:delete': 1 })
   })
 
   it('arrays, row builders and unresolvable values get readable keys', () => {
@@ -1923,7 +2227,8 @@ export async function many(kind: string) {
     await tx.insert(activityLogs).values({ action: kind, resource: 'roles' })
   })
 }\n`
-    assert.deepEqual(countsOf(['server/services/r.ts', rows]), {
+    const caller = "import { many } from '../services/r'\nexport default defineEventHandler(async () => { await many('x') })\n"
+    assert.deepEqual(countsOf(['server/services/r.ts', rows], ['server/api/admin/r.post.ts', caller]), {
       'roles:delete': 1, 'roles:‹kind›': 1, 'user_roles:delete': 1, '‹buildRoleAudit›:rename': 1,
     })
   })

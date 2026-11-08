@@ -182,6 +182,21 @@ function unitName(node: ts.Statement, sourceFile: ts.SourceFile): { name: string
   return { name: `<top-level:${sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1}>`, exported: false }
 }
 
+/**
+ * Local names a file exports through a list (`export { a, b as c }`, no `from`): such a function
+ * is exported exactly like `export function a`, so its callers in other files cannot be seen.
+ * Maps the local name to the name it is exported as.
+ */
+function localExportList(sourceFile: ts.SourceFile): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const statement of sourceFile.statements) {
+    if (!ts.isExportDeclaration(statement) || statement.moduleSpecifier || statement.isTypeOnly) continue
+    if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) continue
+    for (const el of statement.exportClause.elements) if (!el.isTypeOnly) out.set((el.propertyName ?? el.name).text, el.name.text)
+  }
+  return out
+}
+
 interface TxScope { id: string, param: string, start: number, end: number }
 
 interface CallSite {
@@ -236,12 +251,14 @@ export function scanUnits(fileName: string, source: string): UnitFacts[] {
   }
   const lineOf = (node: ts.Node) => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
 
+  const listed = localExportList(sourceFile)
   const units: RawUnit[] = []
   for (const statement of sourceFile.statements) {
     if (ts.isImportDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) continue
+    if (ts.isExportDeclaration(statement)) continue // `export { a }` / `export … from`: names a unit, is not one
     const { name, exported } = unitName(statement, sourceFile)
     const params = (functionOf(statement)?.parameters ?? []).map(p => (ts.isIdentifier(p.name) ? p.name.text : ''))
-    units.push({ name, exported, node: statement, params, ownWrites: [], callSites: [], mentions: new Map(), delegatedScopes: new Set() })
+    units.push({ name, exported: exported || listed.has(name), node: statement, params, ownWrites: [], callSites: [], mentions: new Map(), delegatedScopes: new Set() })
   }
   const unitNames = new Set(units.map(u => u.name))
 
@@ -520,14 +537,6 @@ export function auditingUnits(units: UnitFacts[]): string[] {
 /** One audit row a site writes: `<resource>:<action>`, plus where it was found (messages only). */
 export interface CensusEntry { key: string, where: string }
 
-/**
- * Exported audit-only helpers shared across modules (`auditReaderRead`, `auditCommentRead`):
- * named `audit<Something>`, their only writes are audit inserts. Their row is counted once per
- * CALL, wherever the call sits, instead of once at the definition — so a read endpoint that
- * stops calling one turns the census red, and moving the call to a service does not.
- */
-const SHARED_AUDIT_HELPER = /^audit[A-Z]/
-
 /** A value expression, and the parameter bindings of the function it is read in. */
 interface Env { params: Map<string, { expr: ts.Expression, env: Env }>, unit: ts.Node }
 
@@ -606,85 +615,172 @@ function auditSites(node: ts.Node, env: Env, sourceFile: ts.SourceFile, out: Arr
   visit(node)
 }
 
+/** `node` is the name being declared (function, variable, parameter, destructured binding, class…). */
+function isDeclarationName(node: ts.Identifier): boolean {
+  const parent = node.parent
+  return (ts.isFunctionDeclaration(parent) || ts.isFunctionExpression(parent) || ts.isVariableDeclaration(parent)
+    || ts.isParameter(parent) || ts.isBindingElement(parent) || ts.isClassDeclaration(parent)
+    || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent) || ts.isPropertyAssignment(parent)
+    || ts.isPropertySignature(parent) || ts.isMethodSignature(parent)) && parent.name === node
+}
+
+/** A function, method or accessor anywhere inside `node`. */
+function holdsFunction(node: ts.Node): boolean {
+  let found = false
+  const visit = (n: ts.Node): void => {
+    if (found) return
+    if (ts.isArrowFunction(n) || ts.isFunctionExpression(n) || ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n)
+      || ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n)) {
+      found = true
+      return
+    }
+    ts.forEachChild(n, visit)
+  }
+  visit(node)
+  return found
+}
+
+/** The result of {@link auditCensusOf}: the rows, and every reference the call-site count could not follow. */
+export interface CensusResult { entries: CensusEntry[], problems: string[] }
+
 /**
- * Every audit row the given files write, as `<resource>:<action>` — keyed by WHAT is recorded,
- * never by the file or function it is written from. Moving an insert between a handler and a
- * service changes nothing here; dropping one, or changing what it records, changes the count.
+ * Every audit row the server writes, as `<resource>:<action>` — keyed by WHAT is recorded, never
+ * by the file or function it is written from, and counted ONCE PER CALL SITE of the function the
+ * insert runs in. Moving an insert between a handler and a service changes nothing here; dropping
+ * one, changing what it records, or dropping (or swapping out) a CALL to a function that audits,
+ * changes the count.
  *
- *   - a judged function (exported, or reached otherwise than by direct in-file calls) counts
- *     each row of each of its audit inserts once;
- *   - a same-file helper reached only by direct calls counts once per call, with its parameters
- *     bound to that call's arguments (`audit(tx, actorId, 'create', …)` → `…:create`);
- *   - a shared `audit<Something>` helper ({@link SHARED_AUDIT_HELPER}) counts once per call in
- *     any of the files, not at its definition.
+ * Where an insert's rows are counted (`files`: where the inserts are looked for; `callers`: more
+ * files read for call sites only — plugins, routes, scripts):
+ *   - in an EXPORTED named function: once per call of that function anywhere in `files` +
+ *     `callers` — `users/[id].put.ts` calling `updateUserWithAudit(…)` is one `users:update` row;
+ *     the handler dropping that call, or calling an unaudited variant instead, drops it. A
+ *     function nothing calls writes no row: it counts 0;
+ *   - in a non-exported same-file helper: once per in-file mention, through to the exported
+ *     function or entry point that mention sits in (a direct call binds the helper's parameters
+ *     to its arguments — `audit(tx, actorId, 'create', …)` → `…:create`; a mention by value, a
+ *     callback, binds none). A helper nothing mentions counts 0;
+ *   - in an entry point — a file's `export default` (a Nitro handler, plugin, route) or a
+ *     top-level statement: once.
+ * Keys are resolved at the definition (an exported function's parameters stay unbound), so only
+ * counts move when call sites do.
+ *
+ * Fail closed ({@link CensusResult.problems}): the count is by NAME, so an audit-writing exported
+ * function referenced other than as a direct call (passed by value, aliased on import or export,
+ * reached through a namespace object, declared a second time anywhere) is reported instead of
+ * being counted wrong. `typeof f` (a type position) and import / re-export lines are not calls.
+ * So is an audit insert inside a function held by a top-level VALUE (`export const ops = {
+ * async remove() {…} }`, `const job = defineX({ run() {…} })`): it runs when a member is called,
+ * which no name count can see.
  */
-export function auditCensus(files: Array<{ file: string, source: string }>): CensusEntry[] {
+export function auditCensusOf(files: Array<{ file: string, source: string }>, callers: Array<{ file: string, source: string }> = []): CensusResult {
   const entries: CensusEntry[] = []
-  const sharedHelpers = new Map<string, string[]>() // name → keys of its row(s)
-  const parsed = files.map(({ file, source }) => ({ file, source, sourceFile: parse(file, source), units: scanUnits(file, source) }))
+  const problems: string[] = []
+  /** Exported function → where it is declared, and the rows ONE call of it writes. */
+  const perCall = new Map<string, { file: string, line: number, decl: ts.Node, rows: Array<{ key: string, line: number, via: string }> }>()
+  const parsed = files.map(({ file, source }) => ({ file, sourceFile: parse(file, source), units: scanUnits(file, source) }))
+  const lineAt = (sourceFile: ts.SourceFile, node: ts.Node) => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
 
   for (const { file, sourceFile, units } of parsed) {
-    const judged = new Set(judgedUnits(units).map(u => u.name))
     const statements = new Map<string, ts.Statement>()
     for (const statement of sourceFile.statements) {
-      if (ts.isImportDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) continue
+      if (ts.isImportDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement) || ts.isExportDeclaration(statement)) continue
       statements.set(unitName(statement, sourceFile).name, statement)
     }
+    const aliasedExports = [...localExportList(sourceFile)].filter(([local, as]) => local !== as)
     const paramsOf = (name: string) => (functionOf(statements.get(name)!)?.parameters ?? []).map(p => (ts.isIdentifier(p.name) ? p.name.text : ''))
+    /** Code that runs once, when the module loads or the route is hit: not a function anyone calls. */
+    const isEntryPoint = (name: string) => name === 'default' || name.startsWith('<top-level:')
+      || (ts.isVariableStatement(statements.get(name)!) && functionOf(statements.get(name)!) === undefined)
 
-    /** The environments a unit's code runs in: once if judged, else once per direct call reaching it. */
-    const contexts = (name: string, stack: Set<string>): Env[] => {
+    /**
+     * The environments a unit's code runs in, each with the ROOT it is reached from: an exported
+     * function or an entry point is its own root; a non-exported unit runs once per in-file
+     * mention, in each environment of the unit holding the mention. A cycle adds no root.
+     */
+    const contexts = (name: string, stack: Set<string>): Array<{ env: Env, root: string }> => {
       const node = statements.get(name)!
-      if (judged.has(name) || stack.has(name)) return [{ params: new Map(), unit: node }]
-      const out: Env[] = []
+      const unit = units.find(u => u.name === name)!
+      if (unit.exported || isEntryPoint(name)) return [{ env: { params: new Map(), unit: node }, root: name }]
+      if (stack.has(name)) return []
+      const out: Array<{ env: Env, root: string }> = []
       const params = paramsOf(name)
-      for (const caller of units.find(u => u.name === name)!.referencedBy) {
-        for (const callerEnv of contexts(caller, new Set([...stack, name]))) {
+      for (const referrer of unit.referencedBy) {
+        for (const outer of contexts(referrer, new Set([...stack, name]))) {
           const visit = (n: ts.Node): void => {
-            if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === name) {
+            if (ts.isIdentifier(n) && n.text === name && !isDeclarationName(n) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n)) {
               const bound = new Map<string, { expr: ts.Expression, env: Env }>()
-              params.forEach((param, i) => { const arg = n.arguments[i]; if (param && arg) bound.set(param, { expr: arg, env: callerEnv }) })
-              out.push({ params: bound, unit: node })
+              const call = ts.isCallExpression(n.parent) && n.parent.expression === n ? n.parent : undefined
+              if (call) params.forEach((param, i) => { const arg = call.arguments[i]; if (param && arg) bound.set(param, { expr: arg, env: outer.env }) })
+              out.push({ env: { params: bound, unit: node }, root: outer.root })
             }
             ts.forEachChild(n, visit)
           }
-          visit(statements.get(caller)!)
+          visit(statements.get(referrer)!)
         }
       }
       return out
     }
 
     for (const unit of units) {
-      const unitAudits = unit.ownWrites.filter(w => w.audit)
-      if (unitAudits.length === 0) continue
-      const shared = unit.exported && SHARED_AUDIT_HELPER.test(unit.name) && unit.ownWrites.every(w => w.audit)
-      for (const env of contexts(unit.name, new Set())) {
+      if (!unit.ownWrites.some(w => w.audit)) continue
+      for (const { env, root } of contexts(unit.name, new Set())) {
         const sites: Array<{ keys: string[], line: number }> = []
         auditSites(statements.get(unit.name)!, env, sourceFile, sites)
-        if (shared) {
-          sharedHelpers.set(unit.name, sites.flatMap(site => site.keys))
+        const via = root === unit.name ? unit.name : `${root} → ${unit.name}`
+        if (isEntryPoint(root)) {
+          const declared = statements.get(root)!
+          if (ts.isVariableStatement(declared) && holdsFunction(declared)) {
+            problems.push(`${file}: ${root} holds functions (an object of methods, a callback) that write activity_logs — `
+              + 'the census cannot tell how often they run; declare each one as a function')
+            continue
+          }
+          for (const site of sites) for (const key of site.keys) entries.push({ key, where: `${file}#${via}:${site.line}` })
           continue
         }
-        for (const site of sites) for (const key of site.keys) entries.push({ key, where: `${file}#${unit.name}:${site.line}` })
+        const known = perCall.get(root)
+        if (known && known.file !== file) {
+          problems.push(`${root} writes activity_logs in both ${known.file} and ${file} — the census counts its calls by name; rename one`)
+          continue
+        }
+        const declared = statements.get(root)!
+        const slot = known ?? { file, line: lineAt(sourceFile, declared), decl: ts.isVariableStatement(declared) ? declared.declarationList.declarations[0]! : declared, rows: [] }
+        perCall.set(root, slot)
+        for (const site of sites) for (const key of site.keys) slot.rows.push({ key, line: site.line, via })
       }
+    }
+    for (const [local, as] of aliasedExports) {
+      if (perCall.get(local)?.file === file) problems.push(`${file} exports ${local} as ${as} — the census counts its calls by name; export it under its own name`)
     }
   }
 
-  // Shared helpers: one row per call, wherever the call is.
-  for (const { file, sourceFile } of parsed) {
+  // Each call of an exported audit-writing function writes its rows once, wherever the call is.
+  for (const { file, sourceFile } of [...parsed, ...callers.map(({ file, source }) => ({ file, sourceFile: parse(file, source) }))]) {
     const visit = (n: ts.Node): void => {
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
-        const keys = sharedHelpers.get(n.expression.text)
-        if (keys) {
-          const line = sourceFile.getLineAndCharacterOfPosition(n.getStart(sourceFile)).line + 1
-          for (const key of keys) entries.push({ key, where: `${file}:${line} → ${n.expression.text}` })
+      const target = ts.isIdentifier(n) ? perCall.get(n.text) : undefined
+      if (target && ts.isIdentifier(n)) {
+        const parent = n.parent
+        const at = `${file}:${lineAt(sourceFile, n)}`
+        if (ts.isCallExpression(parent) && parent.expression === n) {
+          for (const row of target.rows) entries.push({ key: row.key, where: `${at} → ${row.via} (${target.file}:${row.line})` })
+        } else if (ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent)) {
+          if (parent.propertyName) problems.push(`${at}: ${n.text} is imported or re-exported under another name — call it by its own name`)
+        } else if (isDeclarationName(n)) {
+          if (parent !== target.decl) problems.push(`${at}: ${n.text} is declared again — the census counts its calls by name; rename one`)
+        } else if (!ts.isTypeQueryNode(parent)) {
+          problems.push(`${at}: ${n.text} is used other than as a direct call (${ts.SyntaxKind[parent.kind]}) — the census cannot count the calls it leads to`)
         }
       }
       ts.forEachChild(n, visit)
     }
     visit(sourceFile)
   }
-  return entries
+  return { entries, problems }
+}
+
+/** {@link auditCensusOf}'s rows alone — for fixtures whose references are all direct calls. */
+export function auditCensus(files: Array<{ file: string, source: string }>, callers: Array<{ file: string, source: string }> = []): CensusEntry[] {
+  return auditCensusOf(files, callers).entries
 }
 
 /** The census as `{ key: count }`, keys sorted. */

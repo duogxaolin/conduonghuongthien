@@ -99,6 +99,9 @@ test('no server route falls back to a bare console call', () => {
   }
   walk('server/api')
   walk('server/middleware')
+  // The handlers' code moved into services (2026-11-08, CHANGELOG § 100): a bare console call
+  // that moved with it is still a route's log line, outside the redaction and the alert list.
+  walk('server/services')
   assert.deepEqual(offenders, [], `unstructured logging in: ${offenders.join(', ')}`)
 })
 

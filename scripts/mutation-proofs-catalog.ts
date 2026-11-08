@@ -240,4 +240,12 @@ export const MUTATION_PROOFS: MutationProof[] = [
     tests: ['tests/ai-gateway-seams-behavior.test.ts'],
     why: 'công tắc "Hoạt động/Tắt" của nhà cung cấp phải chặn mọi lượt gọi AI của dịch vụ dùng nó — không giải mã khoá, không request (CHANGELOG § 98)',
   },
+  {
+    id: 'audit-handler-calls-audited-service',
+    file: 'server/api/admin/users/[id].put.ts',
+    find: 'await updateUserWithAudit(adminUser, id, updateData)',
+    replace: 'await Promise.resolve()',
+    tests: ['tests/reader-audit-atomicity.test.ts'],
+    why: 'handler phải gọi đúng hàm service ghi hàng + audit; bỏ lời gọi (hay tráo sang hàm không audit) thì bảng kiểm kê audit theo nơi gọi và chốt handler đều đỏ (CHANGELOG § 100, soát độc lập)',
+  },
 ]

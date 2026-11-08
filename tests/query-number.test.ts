@@ -84,9 +84,11 @@ describe('không có phép đọc số query nào bỏ qua finitePositive', () =
     return out
   }
 
+  // `server/services` từ 2026-11-08: truy vấn của handler đã dời sang service (CHANGELOG § 100), một
+  // hàm danh sách nhận nguyên đối tượng `query` mang theo cả phép kẹp biên của nó.
   it('không còn `Math.max(1, Number(query.page…))` ở đâu', () => {
     const offenders: string[] = []
-    for (const file of walk('server/api')) {
+    for (const file of [...walk('server/api'), ...walk('server/services')]) {
       const source = readFileSync(file, 'utf8')
       if (/Math\.max\(\s*1\s*,\s*Number\(\s*query\.(page|perPage|limit)/.test(source)) {
         offenders.push(file)
@@ -97,7 +99,7 @@ describe('không có phép đọc số query nào bỏ qua finitePositive', () =
   })
 
   it('chỉ còn MỘT định nghĩa finitePositive', () => {
-    const defs = [...walk('server/api'), ...walk('server/utils')]
+    const defs = [...walk('server/api'), ...walk('server/services'), ...walk('server/utils')]
       .filter(file => /function finitePositive/.test(readFileSync(file, 'utf8')))
     assert.deepEqual(defs, ['server/utils/query-number.ts'],
       'một bản sao thứ hai là chỗ thứ hai để phép kiểm này lệch đi')

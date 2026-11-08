@@ -127,36 +127,35 @@ test('the reader chat list titles conversations from the visitor\'s first questi
 })
 
 /**
- * Service files holding queries moved out of the public and admin-article handlers (2026-11-08: no
- * `server/api` file calls getDb() itself). The rule below follows the code there.
+ * The files that may touch `article_view_daily`, each with why. Every other file of `server/api`,
+ * `server/services` and `server/utils` reads the maintained totals on `articles` instead.
+ *
+ * The scan used to walk `server/api` plus a hand list of the services the handlers' queries moved
+ * into (2026-11-08: no `server/api` file calls getDb() itself) — so a query moved into any OTHER
+ * service, or a new one, was out of its sight. It walks the whole tree the code moves between now.
  */
-const MOVED_HANDLER_QUERY_FILES = [
-  'services/admin-article-boost.ts',
-  'services/admin-article-write.ts',
-  'services/admin-articles-export.ts',
-  'services/admin-articles-queries.ts',
-  'services/public-articles-queries.ts',
-  'services/public-article-related-queries.ts',
-  'services/public-media-queries.ts',
-  'services/public-pages-queries.ts',
-  'services/public-reader-queries.ts',
-  'services/public-search-queries.ts',
-  'services/public-site-queries.ts',
-]
+const VIEW_DAILY_OWNERS: Record<string, string> = {
+  'services/article-views.ts': 'the owner of the daily rows: records a view (row + totals, one transaction), reconciles the totals at startup, '
+    + 'and serves the per-article breakdown of the admin stats page (getArticleViewStats) — not a per-request list aggregate',
+}
 
 test('no API handler aggregates article_view_daily per request — view totals are read from articles', () => {
   // The "Đọc nhiều" ranking (`sort=views`), the article page, the admin list and
   // the CSV export used to sum the daily rows for every article on every request.
   // They read `articles.view_total` now; the per-article breakdown stays in
-  // server/services/article-views.ts (getArticleViewStats), outside server/api.
+  // server/services/article-views.ts (getArticleViewStats), named above.
   // Code only: the handlers' comments explain what the totals replaced.
   const code = (source: string) => source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:\\])\/\/.*$/gm, '$1')
-  const offenders = [...walk('api'), ...MOVED_HANDLER_QUERY_FILES].filter(file => /article_view_daily|articleViewDaily/.test(
+  const readers = [...walk('api'), ...walk('services'), ...walk('utils')].filter(file => /article_view_daily|articleViewDaily/.test(
     code(readFileSync(new URL(file, serverRoot), 'utf8')),
   ))
-  assert.deepEqual(offenders, [], 'an API handler reads article_view_daily directly instead of the maintained totals')
+  assert.deepEqual(readers.filter(file => !VIEW_DAILY_OWNERS[file]), [],
+    'a handler, or a service / util it calls, reads article_view_daily directly instead of the maintained totals')
+  // A named owner that no longer touches the table is an exemption waiting to be reused.
+  assert.deepEqual(Object.keys(VIEW_DAILY_OWNERS).filter(file => !readers.includes(file)), [],
+    'VIEW_DAILY_OWNERS names a file that no longer touches article_view_daily — drop it')
 })
 
 test('sort=views orders by the indexed total column, not by a computed alias', () => {

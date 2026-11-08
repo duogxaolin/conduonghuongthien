@@ -1,9 +1,10 @@
 /**
  * Read queries of the admin account endpoints (`users/index.get.ts`, and the target-role
  * lookup that `users/index.post.ts` and `users/[id].put.ts` make), moved out of the handlers
- * verbatim. The audited writes live one per file (`admin-user-create.ts`,
- * `admin-user-update.ts`, `admin-user-mfa-reset.ts`): `tests/reader-audit-atomicity.test.ts`
- * checks a transaction and its audit row per FILE.
+ * verbatim. The audited writes live in `admin-user-create.ts`, `admin-user-update.ts` and
+ * `admin-user-mfa-reset.ts`; `tests/reader-audit-atomicity.test.ts` checks each audited
+ * FUNCTION on its own (its transaction and its audit row), pins the handler that calls it, and
+ * counts its audit row once per call site.
  */
 import { desc, eq } from 'drizzle-orm'
 import { getDb } from '../utils/db'
