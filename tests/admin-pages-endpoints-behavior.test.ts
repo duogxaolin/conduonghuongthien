@@ -10,6 +10,8 @@ import test, { after, beforeEach } from 'node:test'
  *   POST   /api/admin/pages/:id/versions                      (manual backup ≤ 4 / origin baseline + audit)
  *   DELETE /api/admin/pages/:id/versions/:versionId           (non-origin version + audit)
  *   POST   /api/admin/pages/:id/versions/:versionId/restore   (version → draft + audit)
+ *   PUT    /api/admin/pages/:id/draft                         (clear path — the save path runs in
+ *                                                             security-block-link-schemes)
  *
  * Pinned as they behave today, before their statements move to `server/services` (2026-11-08):
  * the permission each needs; what is read and in which order; every write and its audit row
@@ -30,6 +32,7 @@ const h = await startAiRouteHarness({
     { method: 'post', path: '/api/admin/pages/:id/versions', handler: await load('../server/api/admin/pages/[id]/versions/index.post') },
     { method: 'delete', path: '/api/admin/pages/:id/versions/:versionId', handler: await load('../server/api/admin/pages/[id]/versions/[versionId].delete') },
     { method: 'post', path: '/api/admin/pages/:id/versions/:versionId/restore', handler: await load('../server/api/admin/pages/[id]/versions/[versionId]/restore.post') },
+    { method: 'put', path: '/api/admin/pages/:id/draft', handler: await load('../server/api/admin/pages/[id]/draft.put') },
   ],
 })
 after(() => h.server.close())
@@ -224,4 +227,26 @@ test('restoring writes the normalised version INTO THE DRAFT (live untouched), a
   assert.equal((await h.request('POST', '/api/admin/pages/1/versions/9/restore', editor)).status, 500)
   assert.deepEqual(h.harness.rows(pages).find(row => row.id === 1)!.draftBlocks, draftBefore)
   assert.equal(audits().length, 1)
+})
+
+// ─── Draft ───────────────────────────────────────────────────────────────────
+
+test('the draft: no blocks array clears it (live untouched), an array — even empty — is saved normalised; not audited, not in a transaction', async () => {
+  await seedPages()
+  const cleared = await h.request('PUT', '/api/admin/pages/2/draft', editor, {})
+  assert.deepEqual([cleared.status, cleared.body.cleared, typeof cleared.body.savedAt], [200, true, 'string'])
+  const page = h.harness.rows(pages).find(row => row.id === 2)!
+  assert.deepEqual([page.draftBlocks, page.draftUpdatedAt, page.draftUpdatedBy], [null, null, null])
+  assert.equal(h.harness.rows(pageBlocks).filter(row => row.pageId === 2).length, 2, 'the live rows are not touched')
+
+  const saved = await h.request('PUT', '/api/admin/pages/3/draft', editor, { blocks: [] })
+  assert.deepEqual([saved.status, saved.body.cleared], [200, undefined])
+  const draft = h.harness.rows(pages).find(row => row.id === 3)!
+  assert.deepEqual([draft.draftBlocks, draft.draftUpdatedBy], [[], editor.id])
+
+  assert.equal((await h.request('PUT', '/api/admin/pages/999/draft', editor, {})).status, 404)
+  assert.equal((await h.request('PUT', '/api/admin/pages/0/draft', editor, {})).status, 400)
+  assert.equal((await h.request('PUT', '/api/admin/pages/3/draft', reader, {})).status, 403)
+  assert.deepEqual(audits(), [])
+  assert.equal(h.harness.transactionsBegun, 0, 'the draft write runs on the pool, as before')
 })
