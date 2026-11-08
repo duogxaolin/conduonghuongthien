@@ -232,4 +232,12 @@ export const MUTATION_PROOFS: MutationProof[] = [
     tests: ['tests/security-sanitize-own-embed.test.ts'],
     why: 'URL tuyệt đối của khung phát phải phát ra chỉ còn đường dẫn: giữ host là giữ khung của bên ngoài',
   },
+  {
+    id: 'ai-gateway-provider-inactive-refused',
+    file: 'server/services/ai-gateway-call.ts',
+    find: 'if (providerRow && providerRow.isActive !== true) {',
+    replace: 'if (providerRow && false) {',
+    tests: ['tests/ai-gateway-seams-behavior.test.ts'],
+    why: 'công tắc "Hoạt động/Tắt" của nhà cung cấp phải chặn mọi lượt gọi AI của dịch vụ dùng nó — không giải mã khoá, không request (CHANGELOG § 98)',
+  },
 ]

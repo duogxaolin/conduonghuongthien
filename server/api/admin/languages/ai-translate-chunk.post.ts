@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import { createError } from 'h3'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { readValidated } from '../../../utils/request-body'
 import { callAi } from '../../../services/ai-gateway'
 import { requireLanguage, upsertTranslations } from '../../../services/languages'
 import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../../../utils/ai/model-translations'
+import { AI_NOT_CONFIGURED_STATUS, aiNotConfiguredMessage, isAiNotConfigured } from '../../../utils/ai/not-configured'
 
 const LANG_CODE_REQUIRED = 'Mã ngôn ngữ bắt buộc.'
 
@@ -40,6 +42,13 @@ Yêu cầu:
 ${promptLines.join('\n')}`
 
   const result = await callAi('translation_ui', { prompt, userId: adminUser?.id ?? null })
+  // AI chưa cấu hình (nhà cung cấp tắt, dịch vụ tắt, thiếu khoá — CHANGELOG § 98): mọi lô sau cũng bị từ
+  // chối y như vậy. 503 kèm câu của máy chủ — trang dừng cả lượt (`useLanguageBatchTranslate`) thay vì
+  // nhận 200 rỗng và gửi tiếp từng lô. Các lỗi khác (lỗi nhà cung cấp, hạn mức, địa chỉ bị chặn) vẫn là
+  // 200 rỗng như trước — trang không ghi gì cho lô đó và đi tiếp (chưa sửa, ngoài phạm vi § 98).
+  if (isAiNotConfigured(result.error)) {
+    throw createError({ statusCode: AI_NOT_CONFIGURED_STATUS, statusMessage: aiNotConfiguredMessage(result) })
+  }
 
   // Only text for keys that were asked for (`readModelTranslations`): a value the
   // model sent as null/an object/a number used to be stored as `String(p.value)`.

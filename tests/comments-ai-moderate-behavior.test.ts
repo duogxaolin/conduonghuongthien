@@ -216,3 +216,23 @@ test('a provider failure is a classified sentence per comment; the key is nowher
   assert.ok(!containsSecret(JSON.stringify(response.body)))
   for (const line of h.logged) assert.ok(!containsSecret(line), line)
 })
+
+test('provider switched off (CHANGELOG § 98): 503 with the gateway\'s sentence, no comment reported "safe", nothing sent, no usage row', async () => {
+  const { advanceConfigGeneration } = await import('../server/utils/config-generation')
+  await seedComment(1, 'Bình luận một', { displayName: 'Bạn đọc', customDisplayName: null })
+  await seedComment(2, 'Bình luận hai', { displayName: 'Bạn đọc', customDisplayName: null })
+  h.harness.sqlite.prepare('UPDATE ai_providers SET is_active = 0').run()
+  // The gateway keeps the provider row 60 s; the provider PUT bumps the generation — do the same here.
+  advanceConfigGeneration()
+  try {
+    const response = await moderate({ commentIds: [1, 2] })
+    assert.equal(response.status, 503, JSON.stringify(response.body))
+    assert.equal(response.body.statusMessage ?? response.body.message, 'Nhà cung cấp AI "Nhãn openai" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.')
+    assert.equal(response.body.results, undefined, 'no verdicts: an unmoderated comment is never shown as "safe"')
+    assert.deepEqual(h.network.sent, [])
+    assert.deepEqual(h.harness.rows(aiUsageLogs), [])
+  } finally {
+    // The next suite run (and any later test) gets the provider row read afresh.
+    advanceConfigGeneration()
+  }
+})

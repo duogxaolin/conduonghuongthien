@@ -58,6 +58,11 @@ export interface BulkTranslationTaskState {
   langName: string
   startedAt: string | null
   completedAt: string | null
+  /**
+   * Lượt chạy dừng vì dịch vụ AI chưa cấu hình (nhà cung cấp tắt, dịch vụ tắt, thiếu khoá — CHANGELOG § 98):
+   * câu cho cán bộ; các bài sau không được gửi. `null` ở mọi lượt khác.
+   */
+  aiNotConfigured: string | null
 }
 
 const bulkTaskState: BulkTranslationTaskState = {
@@ -70,6 +75,7 @@ const bulkTaskState: BulkTranslationTaskState = {
   langName: '',
   startedAt: null,
   completedAt: null,
+  aiNotConfigured: null,
 }
 
 export function getBulkTranslationTaskState(): BulkTranslationTaskState {
@@ -88,6 +94,7 @@ async function runBulkTranslation(
   bulkTaskState.langName = langName
   bulkTaskState.startedAt = new Date().toISOString()
   bulkTaskState.completedAt = null
+  bulkTaskState.aiNotConfigured = null
 
   try {
     for (let idx = 0; idx < articleIds.length; idx++) {
@@ -141,7 +148,12 @@ async function runBulkTranslation(
             translatedBy: 'ai',
           })
         }
-        await runTranslationWorker(articleId, langCode, langName, targetStatus)
+        const refusal = await runTranslationWorker(articleId, langCode, langName, targetStatus)
+        if (refusal) {
+          // Bài kế tiếp cũng bị từ chối y như vậy: dừng cả lượt, không gửi thêm bài nào.
+          bulkTaskState.aiNotConfigured = refusal.aiNotConfigured
+          break
+        }
       } catch (err) {
         logWarn({ event: 'translation.bulk_item_failed', articleId, langCode, error: String(err) })
       }

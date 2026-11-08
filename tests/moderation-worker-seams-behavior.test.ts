@@ -261,7 +261,7 @@ test('AI not configured with keyword hits: flag_only at the highest keyword seve
 })
 
 test("onAiUnavailable: 'skip' → the exact aiUnavailable result, no review row, no check log line", async () => {
-  for (const error of ['service_not_found', 'service_inactive', 'no_api_key']) {
+  for (const error of ['service_not_found', 'service_inactive', 'no_api_key', 'provider_inactive']) {
     const mark = reset()
     rec.ai = { ok: false, error }
     const out = await svc.checkAndModerateContent({ content: 'một câu lạ', targetType: 'comment', targetId: 23 }, { onAiUnavailable: 'skip' })
@@ -270,6 +270,19 @@ test("onAiUnavailable: 'skip' → the exact aiUnavailable result, no review row,
     assert.equal(rec.updateAttempts, 0, error)
     assert.equal(eventsSince(mark, 'ai_moderation.checked_safe').length + eventsSince(mark, 'ai_moderation.flagged').length, 0, error)
   }
+})
+
+test('provider switched off (provider_inactive) is "AI not configured": flag_only into the review queue, nothing hidden, no AI failure', async () => {
+  reset()
+  rec.ai = { ok: false, error: 'provider_inactive', errorMessage: 'Nhà cung cấp AI "Delify Router" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.' }
+  const out = await svc.checkAndModerateContent({ content: 'một câu bình thường', targetType: 'comment', targetId: 24 })
+  assert.equal(out.action, 'flag_only')
+  assert.equal(out.flagged, true)
+  assert.equal(out.hidden, false)
+  assert.equal(out.aiFailed, undefined, 'a configuration refusal is not an AI failure (the reply e-mail keys on aiFailed)')
+  assert.deepEqual(out.reasons, ['AI kiểm duyệt chưa cấu hình — cần con người đối soát nội dung'])
+  assert.equal(rec.queue.length, 1)
+  assert.equal(rec.updateAttempts, 0, 'flag_only never hides')
 })
 
 test('a target with a pending review row is not queued twice, and the skip is logged', async () => {

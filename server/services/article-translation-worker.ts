@@ -7,11 +7,12 @@ import { eq, and } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
 import { articleTranslations, articles } from '../db/schema'
 import { chunkHtml } from '../utils/html-chunker'
-import { callAi } from './ai-gateway'
+import { callAi, type AiCallResult } from './ai-gateway'
 import { checkBudget } from '../utils/ai-budget'
 import { logInfo, logWarn } from '../utils/logger'
 import { sanitizeHtml } from '../utils/sanitize-html'
 import { sanitizeTranslationFields } from '../utils/translation-html'
+import { aiNotConfiguredMessage, isAiNotConfigured } from '../utils/ai/not-configured'
 
 export const LANGUAGE_NAMES: Record<string, string> = {
   en: 'English',
@@ -115,12 +116,40 @@ export function parseTitleAndExcerpt(
 
 // ─── Translation worker ──────────────────────────────────────────────────
 
+/**
+ * Lượt dịch dừng vì dịch vụ AI không chạy được do CẤU HÌNH — nhà cung cấp đang tắt, dịch vụ tắt, thiếu
+ * khoá (`isAiNotConfigured`, CHANGELOG § 98). `aiNotConfigured` là câu cho cán bộ, đã ghi vào bản dịch.
+ * Nơi chạy theo lô (`article-translation-bulk.ts`, `universal-translation.ts`) dừng luôn: bài kế tiếp
+ * cũng bị từ chối y như vậy.
+ */
+export interface TranslationJobRefusal {
+  aiNotConfigured: string
+}
+
+/** Ghi bản dịch `failed` với câu của cổng AI và trả lời từ chối — không thử lại, không chờ. */
+async function refuseNotConfigured(
+  db: Database,
+  articleId: number,
+  langCode: string,
+  result: AiCallResult,
+  partial: { currentChunk?: number, progress?: number, content?: string } = {},
+): Promise<TranslationJobRefusal> {
+  const message = aiNotConfiguredMessage(result)
+  await updateTranslationStatus(db, articleId, langCode, { status: 'failed', errorMessage: message, ...partial })
+  logInfo({ event: 'translation.job_refused', articleId, langCode, reason: result.error })
+  return { aiNotConfigured: message }
+}
+
+/**
+ * Chạy một job dịch. Trả `TranslationJobRefusal` khi AI chưa cấu hình, `null` khi job đã kết thúc theo
+ * cách khác (xong, hoặc `failed` vì lỗi khác — trạng thái nằm ở hàng bản dịch).
+ */
 export async function runTranslationWorker(
   articleId: number,
   langCode: string,
   langName: string,
   targetStatus: 'ai_draft' | 'published' = 'ai_draft',
-) {
+): Promise<TranslationJobRefusal | null> {
   const db = getDb()
   logInfo({ event: 'translation.job_started', articleId, langCode })
   try {
@@ -131,7 +160,7 @@ export async function runTranslationWorker(
         status: 'failed',
         errorMessage: 'Bài viết không tồn tại.',
       })
-      return
+      return null
     }
 
     // Budget check
@@ -141,7 +170,7 @@ export async function runTranslationWorker(
         status: 'failed',
         errorMessage: 'Ngân sách AI đã hết.',
       })
-      return
+      return null
     }
 
     // Translate title + excerpt (single call)
@@ -172,6 +201,7 @@ ${article.excerpt ?? ''}`
           userId: null,
         })
         if (titleResult.ok && titleResult.text) break
+        if (isAiNotConfigured(titleResult.error)) return await refuseNotConfigured(db, articleId, langCode, titleResult)
         if (attempt < 3) {
           logWarn({ event: 'translation.title_retry', articleId, langCode, attempt })
           await delay(attempt * 1500)
@@ -232,7 +262,7 @@ ${article.excerpt ?? ''}`
         completedAt: new Date(),
       })
       logInfo({ event: 'translation.job_completed', articleId, langCode, totalChunks: 0 })
-      return
+      return null
     }
 
     const chunks = chunkHtml(content)
@@ -267,6 +297,13 @@ ${chunk.html}`
           userId: null,
         })
         if (chunkResult.ok && chunkResult.text) break
+        if (isAiNotConfigured(chunkResult.error)) {
+          return await refuseNotConfigured(db, articleId, langCode, chunkResult, {
+            currentChunk: i,
+            progress: 10 + Math.round((i / totalChunks) * 90),
+            content: sanitizeHtml(translatedChunks.join('')),
+          })
+        }
 
         if (attempts < MAX_RETRIES) {
           logWarn({ event: 'translation.chunk_retry', articleId, langCode, chunk: i + 1, attempt: attempts })
@@ -284,7 +321,7 @@ ${chunk.html}`
           content: sanitizeHtml(translatedChunks.join('')),
         })
         logWarn({ event: 'translation.chunk_failed_after_retries', articleId, langCode, chunk: i + 1, total: totalChunks })
-        return
+        return null
       }
 
       translatedChunks.push(chunkResult.text.trim())
@@ -324,6 +361,7 @@ ${chunk.html}`
     })
     logWarn({ event: 'translation.job_failed', articleId, langCode, error: message })
   }
+  return null
 }
 
 async function updateTranslationStatus(

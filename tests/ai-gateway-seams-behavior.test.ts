@@ -85,7 +85,7 @@ const configRow = (provider: string, extra: Row = {}): Row => ({
 })
 /** The four named providers are cached by NAME for 60 s: every test uses this exact row for them. */
 const providerRow = (provider: string, extra: Row = {}): Row => ({
-  provider, baseUrl: 'https://api.provider.example/v1',
+  provider, baseUrl: 'https://api.provider.example/v1', isActive: true,
   apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'abcd', ...extra,
 })
 const PRICING = { model: 'seam-model', promptCostPerMillion: '3', completionCostPerMillion: '15' }
@@ -243,6 +243,75 @@ test('prelude: a stored base URL outside the policy stops before DNS, with the p
     assert.equal(rec.warns[0]!.provider, name)
     assert.equal(typeof rec.warns[0]!.violation, 'string')
     assert.deepEqual(rec.usage, [])
+  })
+})
+
+// ─── The provider's on/off switch (CHANGELOG § 98) ───────────────────────────
+// Each test uses its own provider NAME: the provider row is cached per name for 60 s, and a row switched
+// off under `delify` would refuse every later test that uses `delify`.
+
+test('prelude: a provider switched off → provider_inactive naming it, after the budget, before any decrypt, DNS, request or usage row', async () => {
+  reset()
+  const name = unique('switched-off')
+  const { db, reads } = fakeDb({ config: configRow(name), provider: providerRow(name, { isActive: false, label: 'Delify Router' }) })
+  const serviceKey = unique('svc')
+  await withProvider([json({ choices: [{ message: { content: 'không được tới đây' } }] })], async (transport, seen) => {
+    const result = await callAi(serviceKey, { prompt: 'xin chào', db, transport })
+    assert.deepEqual(result, {
+      ok: false,
+      error: 'provider_inactive',
+      errorMessage: 'Nhà cung cấp AI "Delify Router" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.',
+    })
+    assert.deepEqual(rec.budgetCalls, [serviceKey], 'the budget is still checked first (the pinned order)')
+    assert.equal(reads.provider, 1)
+    assert.equal(rec.decryptCalls.length, 0, 'a switched-off provider\'s key is never decrypted')
+    assert.equal(reads.pricing, 0)
+    assert.deepEqual(seen, { requests: [], lookups: [] }, 'no DNS lookup, no request')
+    assert.deepEqual(rec.usage, [], 'a refusal before any request writes no usage row')
+    assert.deepEqual(rec.infos, [])
+    assert.deepEqual(rec.warns, [{ event: 'ai_gateway.provider_inactive', serviceKey, provider: name }])
+  })
+})
+
+test('prelude: the switch is read before the key — switched off with no key is provider_inactive, not no_api_key; no label → the provider name', async () => {
+  reset()
+  const name = unique('off-nokey')
+  const { db } = fakeDb({ config: configRow(name), provider: providerRow(name, { isActive: false, apiKeyCiphertext: null }) })
+  const result = await callAi(unique('svc'), { prompt: 'x', db })
+  assert.equal(result.error, 'provider_inactive')
+  assert.equal(result.errorMessage, `Nhà cung cấp AI "${name}" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.`)
+  assert.equal(rec.decryptCalls.length, 0)
+  assert.deepEqual(rec.warns.map(w => w.event), ['ai_gateway.provider_inactive'])
+})
+
+test('prelude: only isActive === true lets a call through — null, a missing field or 1 is refused (fail closed)', async () => {
+  for (const isActive of [null, undefined, 1, 'true']) {
+    reset()
+    const name = unique('unclear')
+    const { db } = fakeDb({ config: configRow(name), provider: providerRow(name, { isActive }) })
+    await withProvider([], async (transport, seen) => {
+      const result = await callAi(unique('svc'), { prompt: 'x', db, transport })
+      assert.equal(result.error, 'provider_inactive', String(isActive))
+      assert.deepEqual(seen, { requests: [], lookups: [] }, String(isActive))
+    })
+  }
+})
+
+test('cache: switching a provider off takes effect at the next call once the config generation advances (the provider PUT bumps it)', async () => {
+  reset()
+  const { advanceConfigGeneration } = await import('../server/utils/config-generation')
+  const name = unique('toggled')
+  const rows: { config: Row, provider: Row, pricing: Row } = { config: configRow(name), provider: providerRow(name), pricing: PRICING }
+  const { db } = fakeDb(rows)
+  const serviceKey = unique('svc')
+  await withProvider([json({ choices: [{ message: { content: 'Đáp.' } }], usage: { prompt_tokens: 5, completion_tokens: 2 } })], async (transport, seen) => {
+    assert.equal((await callAi(serviceKey, { prompt: 'x', db, transport })).ok, true, 'switched on: answered')
+    assert.equal(seen.requests.length, 1)
+    rows.provider = providerRow(name, { isActive: false })
+    advanceConfigGeneration()
+    const refused = await callAi(serviceKey, { prompt: 'x', db, transport })
+    assert.equal(refused.error, 'provider_inactive', 'the cached "on" row is not used after the bump')
+    assert.equal(seen.requests.length, 1, 'no second request')
   })
 })
 

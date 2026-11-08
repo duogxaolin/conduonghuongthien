@@ -6,6 +6,7 @@ import { requireResourcePermission } from '../../../utils/permissions'
 import { checkBudget } from '../../../utils/ai-budget'
 import { callAi } from '../../../services/ai-gateway'
 import { fenceUntrustedContent } from '../../../utils/ai/untrusted-content'
+import { AI_NOT_CONFIGURED_STATUS, aiNotConfiguredMessage, isAiNotConfigured } from '../../../utils/ai/not-configured'
 import { COMMENT_MAX_LENGTH } from '../../../services/comments-rules'
 
 interface ModerationResult {
@@ -89,6 +90,9 @@ export default defineEventHandler(async (event) => {
 
   // 3. Process moderation via AI Gateway
   const results: ModerationResult[] = []
+  // AI chưa cấu hình (nhà cung cấp tắt, dịch vụ tắt, thiếu khoá — CHANGELOG § 98): báo lỗi cho cả lượt,
+  // không bao giờ trả "an toàn" cho bình luận AI chưa hề đọc; bình luận sau cũng sẽ bị từ chối y như vậy.
+  let aiRefusal: string | null = null
 
   for (const item of itemsToModerate) {
     // Nội dung bình luận và tên người gửi do người dùng công khai viết: vào prompt chỉ
@@ -123,6 +127,10 @@ ${fencedContent.fenced}`
         },
         userId: adminUser?.id ?? null,
       })
+      if (isAiNotConfigured(aiResult.error)) {
+        aiRefusal = aiNotConfiguredMessage(aiResult)
+        break
+      }
 
       if (aiResult.ok && aiResult.text) {
         let parsed: { verdict?: string; riskLevel?: string; flags?: string[]; reason?: string } = {}
@@ -168,6 +176,8 @@ ${fencedContent.fenced}`
       })
     }
   }
+
+  if (aiRefusal) throw createError({ statusCode: AI_NOT_CONFIGURED_STATUS, statusMessage: aiRefusal })
 
   return {
     ok: true,

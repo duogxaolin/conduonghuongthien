@@ -3,9 +3,10 @@ import { reactive, ref, type Ref } from 'vue'
 // Relative paths, not `~/`: tests import this file directly, and the test loader
 // (scripts/ts-resolver.mjs) only knows `~~/`.
 import { adminFetch } from './adminFetch'
-import { errorMessage } from '../utils/errorMessage'
+import { errorMessage, errorStatus } from '../utils/errorMessage'
 import { getFlagEmoji } from '../utils/language-flags'
 import { missingTranslations } from '../utils/translation-keys'
+import { AI_NOT_CONFIGURED_STATUS } from '~~/shared/ai-not-configured'
 import type { LanguageItem, TranslateLogLine, TranslateProgress, TranslationList } from '../types/admin-languages'
 import type { useConfirm } from './useConfirm'
 import type { useToast } from './useToast'
@@ -20,7 +21,9 @@ import type { useToast } from './useToast'
  * `toast`/`confirm` are the page's own, and `reload` is its `loadData` — handed in, so this
  * file needs no Nuxt auto-import and runs as is under the tests.
  *
- * The missing keys are sent ten at a time; "Dừng lại" takes effect before the next chunk.
+ * The missing keys are sent ten at a time; "Dừng lại" takes effect before the next chunk. A 503
+ * from a chunk means the AI service cannot run at all (its provider switched off, the service off,
+ * no key — CHANGELOG § 98): the run stops there, every language, with the server's sentence.
  */
 export interface LanguageBatchTranslateDeps {
   toast: Pick<ReturnType<typeof useToast>, 'success' | 'error' | 'warning' | 'info'>
@@ -150,7 +153,15 @@ export function useLanguageBatchTranslate({ toast, confirm, languages, viTransla
               progressLog.value.unshift({ key: item.key, value: item.value, success: true })
             }
           }
-        } catch {
+        } catch (err: unknown) {
+          if (errorStatus(err) === AI_NOT_CONFIGURED_STATUS) {
+            // Every later chunk would be refused the same way: stop, and say why (the catch below toasts it).
+            stopTranslateSignal = true
+            progressStats.value.stopped = true
+            // A 503 without the server's sentence (a proxy while the app restarts) gets a neutral one.
+            progressStats.value.currentKey = errorMessage(err, 'Máy chủ tạm thời không xử lý được (503) — đã dừng lượt dịch, thử lại sau.')
+            throw err
+          }
           for (const item of chunk) {
             progressLog.value.unshift({ key: item.key, value: 'Lỗi dịch', success: false })
           }

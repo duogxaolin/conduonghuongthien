@@ -449,6 +449,18 @@ test('budget exceeded: no legacy provider call, the approved answer stands', asy
   assert.equal(result.answer, 'Câu trả lời đã duyệt cho mục 1.')
 })
 
+test('provider switched off (provider_inactive): no legacy call, the stored chatbot key never read, the approved answer stands', async () => {
+  reset({ result: { ok: false, error: 'provider_inactive' } })
+  let secretReads = 0
+  const { dependencies, calls } = harness({ configuredSecret: () => { secretReads += 1; return 'secret-key' } })
+  const result = await answerGroundedChat(eventOf('s-provider-off'), settingsOf(), ask('Thủ tục xóa án tích?'), dependencies)
+  assert.equal(gatewayCalls.length, 1)
+  assert.equal(secretReads, 0, 'the switch must not be bypassed through the key in "Cài đặt Chatbot"')
+  assert.equal(calls.legacy, 0, 'no direct provider request')
+  assert.equal(result.kind, 'curated')
+  assert.equal(result.answer, 'Câu trả lời đã duyệt cho mục 1.')
+})
+
 for (const [label, next] of [['inactive', { result: { ok: false, error: 'service_inactive' } }], ['throwing', 'throw']] as const) {
   test(`gateway ${label}: the legacy provider call answers with the same grounded prompt, inside the configured host and limits`, async () => {
     reset(next)

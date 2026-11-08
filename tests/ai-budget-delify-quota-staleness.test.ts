@@ -33,7 +33,7 @@ const { aiProviders, aiBudgetSettings } = await import('../server/db/schema')
 const { checkBudget, loadDelifyQuota } = await import('../server/utils/ai-budget')
 const { advanceConfigGeneration } = await import('../server/utils/config-generation')
 
-const KEYED = { provider: 'delify', baseUrl: 'https://router.delify.vn', apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 'v1', apiKeyKeyId: 'k', apiKeyLastFour: '1234' }
+const KEYED = { provider: 'delify', baseUrl: 'https://router.delify.vn', isActive: true, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 'v1', apiKeyKeyId: 'k', apiKeyLastFour: '1234' }
 
 const db = {
   select: () => ({
@@ -72,6 +72,24 @@ test('inside one generation the 60 s window still saves the lookup; a bump looks
 
   // Khoá mới được nhập (thao tác provider ⇒ tăng thế hệ): quota mới có hiệu lực ngay, không đợi 60 s.
   state.usage = { active: false, budgetUsd: null }
+  advanceConfigGeneration()
+  assert.equal((await loadDelifyQuota(db))?.active, false)
+  assert.equal(state.fetches, before + 1)
+})
+
+test('a Delify provider switched off is never asked for its quota — no request carrying its key (CHANGELOG § 98)', async () => {
+  // The budget check runs before the gateway reads the provider row (pinned order): without this, a call the
+  // gateway is about to refuse with `provider_inactive` would still send the stored key to Delify's usage API.
+  state.row = { ...KEYED, isActive: false }
+  state.usage = { active: false, budgetUsd: null }
+  advanceConfigGeneration()
+  const before = state.fetches
+  assert.equal(await loadDelifyQuota(db), null, 'a switched-off provider has no quota')
+  assert.equal((await checkBudget(db, 'chatbot')).allowed, true, 'the refusal is the gateway\'s (provider_inactive), not "budget exceeded"')
+  assert.equal(state.fetches, before, 'Delify was not called')
+
+  // Switched back on (the PUT bumps the generation): looked up again at once.
+  state.row = KEYED
   advanceConfigGeneration()
   assert.equal((await loadDelifyQuota(db))?.active, false)
   assert.equal(state.fetches, before + 1)

@@ -185,6 +185,24 @@ test('update: a legacy row holding a bad address can still be relabelled or swit
   assert.ok(!('baseUrl' in update.values), 'the untouched address is not rewritten')
 })
 
+test('update: switching a provider off advances the gateway\'s config generation AFTER the write — the next AI call reads the row afresh (CHANGELOG § 98)', async () => {
+  const { configGeneration } = await import('../server/utils/config-generation')
+  reset()
+  providerRow = storedProvider(true)
+  const before = configGeneration()
+  let atWrite: number | null = null
+  const realUpdate = tx.update
+  tx.update = (table: unknown) => { atWrite = configGeneration(); return realUpdate(table) }
+  try {
+    assert.deepEqual(await updateProvider(event(aiEditor, { isActive: false })), { ok: true })
+  } finally {
+    tx.update = realUpdate
+  }
+  assert.deepEqual(writes.find(w => w.table === 'ai_providers')!.values, { isActive: false })
+  assert.equal(atWrite, before, 'not bumped before the row is written')
+  assert.ok(configGeneration() > before, 'bumped after the commit: the 60 s provider cache is dropped at once')
+})
+
 // ─── PATCH /api/admin/chatbot/settings ───────────────────────────────────────
 
 test('chatbot settings: changing the destination needs a super admin, like rotating the key', async () => {

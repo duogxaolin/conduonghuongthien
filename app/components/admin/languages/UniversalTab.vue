@@ -81,7 +81,7 @@ function startUniversalPolling() {
     if (!ended?.active) {
       stopUniversalPolling()
       // Dừng không có nghĩa là xong: `completedAt` chỉ có khi xong, `error` khi hỏng giữa chừng.
-      if (ended?.error) toast.error('Tác vụ dịch toàn cục gặp lỗi và đã dừng giữa chừng.')
+      if (ended?.error) toast.error(ended.aiNotConfigured ?? 'Tác vụ dịch toàn cục gặp lỗi và đã dừng giữa chừng.')
       else if (ended?.completedAt) toast.success('Quá trình dịch toàn cục đã hoàn tất!')
       else toast.info('Đã dừng tác vụ dịch toàn cục.')
       await loadCoverage()

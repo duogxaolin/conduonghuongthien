@@ -387,6 +387,23 @@ describe('pages/admin/content/articles/index.vue', () => {
     opened.page.unmount()
   })
 
+  it('a bulk run stopped because AI is not configured (CHANGELOG § 98) says the server\'s sentence as an error — never "Đã hoàn tất"', async () => {
+    mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+    const OFF = 'Nhà cung cấp AI "Delify Router" đang tắt. Bật lại ở Quản trị › AI › Nhà cung cấp.'
+    let active = true
+    const running = { ...IDLE_STATUS, active: true, task: { ...IDLE_STATUS.task, active: true, total: 3, processed: 1, langCode: 'en', langName: 'Tiếng Anh', startedAt: '2026-10-27T01:00:00.000Z' } }
+    const refused = { ...IDLE_STATUS, task: { ...running.task, active: false, completedAt: '2026-10-27T01:00:05.000Z', aiNotConfigured: OFF } }
+    const opened = await openList(listServer({ 'GET /api/admin/articles/bulk-translate-status': () => json(active ? running : refused) }))
+    mock.timers.tick(2500)
+    await settle()
+    active = false
+    mock.timers.tick(2500)
+    await settle()
+    assert.equal(opened.lastToast('error'), OFF)
+    assert.equal(opened.lastToast('success'), undefined)
+    opened.page.unmount()
+  })
+
   it('HTML zip: GET export-batch as a blob and download it under a dated name', async () => {
     const opened = await openList()
     await tick(rowOf(opened, 'Bài 3'))

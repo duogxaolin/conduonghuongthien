@@ -8,6 +8,7 @@ import { runTranslationWorker } from './article-translations'
 import { blockNeedsTranslation, blockTranslationParts, hasBlockTranslation, translatePageBlock } from './universal-translation-blocks'
 import type { ActorLike } from '../utils/permissions'
 import { logInfo, logWarn } from '../utils/logger'
+import { AiNotConfiguredError, aiNotConfiguredMessage, isAiNotConfigured } from '../utils/ai/not-configured'
 export interface UniversalCoverageStats {
   totalArticles: number
   totalBlocks: number
@@ -35,6 +36,8 @@ export interface UniversalTaskState {
   startedAt: string | null
   completedAt: string | null
   error: string | null
+  /** A service the job uses could not run (provider switched off, service off, no key — CHANGELOG § 98): the officer's sentence, also in `error`. */
+  aiNotConfigured: string | null
 }
 
 const universalTaskState: UniversalTaskState = {
@@ -48,6 +51,7 @@ const universalTaskState: UniversalTaskState = {
   startedAt: null,
   completedAt: null,
   error: null,
+  aiNotConfigured: null,
 }
 let cancelRequested = false
 
@@ -179,9 +183,14 @@ export async function startUniversalAutoTranslate(
   universalTaskState.startedAt = new Date().toISOString()
   universalTaskState.completedAt = null
   universalTaskState.error = null
+  universalTaskState.aiNotConfigured = null
 
   // Run in background
   setTimeout(async () => {
+    // AI service → why it cannot run (CHANGELOG § 98). Refused once, its remaining work is skipped:
+    // every later chunk, block or article would be refused the same way. UI keys use `translation_ui`;
+    // blocks and articles `translation_article` — the two may sit on different providers.
+    const refused = new Map<'translation_ui' | 'translation_article', string>()
     try {
       const allLangs = await db.select().from(languages).where(and(inArray(languages.code, targetLangs), isTargetLanguage))
 
@@ -249,7 +258,7 @@ export async function startUniversalAutoTranslate(
       if (includeUi) {
         universalTaskState.phase = 'Dịch các chuỗi giao diện (UI)...'
         for (const lang of allLangs) {
-          if (cancelRequested) break
+          if (cancelRequested || refused.has('translation_ui')) break
 
           const viRows = await db.select().from(langTranslations).where(eq(langTranslations.langCode, 'vi'))
           const targetRows = await db.select().from(langTranslations).where(eq(langTranslations.langCode, lang.code))
@@ -270,6 +279,10 @@ export async function startUniversalAutoTranslate(
             const prompt = `Translate software UI strings to ${lang.name}. Return ONLY valid JSON array [${MODEL_TRANSLATION_ANSWER_FORMAT}] — n is the line's [n] number (a key can be in several groups):\n${promptLines.join('\n')}`
 
             const res = await callAi('translation_ui', { prompt, userId: actor.id ?? null })
+            if (isAiNotConfigured(res.error)) {
+              refused.set('translation_ui', aiNotConfiguredMessage(res))
+              break
+            }
             // Only text for keys in this chunk: stringifying the model's value stored
             // "null"/"undefined", and a key the model invented became a row under "general".
             const itemsToSave = res.ok && res.text ? readModelTranslations(res.text, chunk) : []
@@ -287,7 +300,7 @@ export async function startUniversalAutoTranslate(
         universalTaskState.phase = 'Dịch các khối trang tĩnh (Trang chủ, Giới thiệu, Liên hệ...)...'
 
         for (const lang of allLangs) {
-          if (cancelRequested) break
+          if (cancelRequested || refused.has('translation_article')) break
           for (const b of blocks) {
             if (cancelRequested) break
             if (!blockNeedsTranslation(b.data, lang.code)) continue // Already translated, or nothing to translate
@@ -297,6 +310,10 @@ export async function startUniversalAutoTranslate(
             try {
               await translatePageBlock(b.id, lang, actor.id ?? null, db)
             } catch (err) {
+              if (err instanceof AiNotConfiguredError) {
+                refused.set('translation_article', err.message)
+                break
+              }
               logWarn({ event: 'universal_translate.block_failed', blockId: b.id, langCode: lang.code, error: String(err) })
             }
 
@@ -307,11 +324,11 @@ export async function startUniversalAutoTranslate(
       }
 
       // ── Step 3: Translate missing published articles ───────────────────
-      if (includeArticles && !cancelRequested) {
+      if (includeArticles && !cancelRequested && !refused.has('translation_article')) {
         universalTaskState.phase = 'Dịch các bài viết...'
 
         for (const lang of allLangs) {
-          if (cancelRequested) break
+          if (cancelRequested || refused.has('translation_article')) break
           const missing = missingArticlesByLang.get(lang.code) || []
 
           for (let idx = 0; idx < missing.length; idx++) {
@@ -321,7 +338,11 @@ export async function startUniversalAutoTranslate(
             universalTaskState.currentItem = `Dịch bài viết (${idx + 1}/${missing.length}) "${art.title.slice(0, 32)}..." sang ${lang.name}`
 
             try {
-              await runTranslationWorker(art.id, lang.code, lang.name, targetStatus)
+              const outcome = await runTranslationWorker(art.id, lang.code, lang.name, targetStatus)
+              if (outcome?.aiNotConfigured) {
+                refused.set('translation_article', outcome.aiNotConfigured)
+                break
+              }
             } catch (err) {
               logWarn({ event: 'universal_translate.article_failed', articleId: art.id, langCode: lang.code, error: String(err) })
             }
@@ -338,6 +359,17 @@ export async function startUniversalAutoTranslate(
         universalTaskState.active = false
         cancelRequested = false
         logInfo({ event: 'universal_translate.cancelled' })
+        return
+      }
+
+      if (refused.size > 0) {
+        // Not "Hoàn tất": `completedAt` stays null and the tab shows this sentence as the error.
+        const notice = [...new Set(refused.values())].join(' ')
+        universalTaskState.phase = 'Đã dừng: AI chưa cấu hình'
+        universalTaskState.currentItem = notice
+        universalTaskState.error = notice
+        universalTaskState.aiNotConfigured = notice
+        logWarn({ event: 'universal_translate.ai_not_configured', services: [...refused.keys()] })
         return
       }
 

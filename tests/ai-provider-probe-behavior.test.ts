@@ -243,3 +243,11 @@ test('no key, no base URL, an unknown provider or a key that cannot be decrypted
   assert.equal((await testProvider(0)).status, 400)
   assert.deepEqual(network.sent, [])
 })
+
+test('a provider switched off can still be probed — testing before switching it on is the normal flow (CHANGELOG § 98)', async () => {
+  await harness.db.insert(aiProviders).values({ id: 1, provider: 'openai', label: 'openai', baseUrl: 'https://api.openai.example/v1', isActive: false, ...storedKey() })
+  const response = await testProvider(1)
+  assert.equal(response.status, 200)
+  assert.deepEqual(response.body, { ok: true, model: 'gpt-4o-mini' })
+  assert.equal(network.sent.length, 1)
+})

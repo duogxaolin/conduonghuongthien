@@ -574,8 +574,8 @@ async function fetchBulkTranslateStatus() {
       } else {
         stopBulkStatusPolling()
         if (wasActive && res.task.completedAt) {
-          completedBannerMsg.value = `Đã hoàn tất dịch tự động ${res.task.total} bài viết sang ${res.task.langName || res.task.langCode}!`
-          toast.success(completedBannerMsg.value)
+          completedBannerMsg.value = res.task.aiNotConfigured ? '' : `Đã hoàn tất dịch tự động ${res.task.total} bài viết sang ${res.task.langName || res.task.langCode}!`
+          if (res.task.aiNotConfigured) toast.error(res.task.aiNotConfigured); else toast.success(completedBannerMsg.value) // § 98: AI chưa cấu hình ⇒ không "hoàn tất"
           await fetchArticlesSilent()
           setTimeout(() => {
             completedBannerMsg.value = ''

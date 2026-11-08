@@ -133,7 +133,7 @@ function setup(options: { provider?: string, serviceKey?: string, pricing?: Row 
   const serviceKey = options.serviceKey ?? unique('svc')
   const rows: Record<string, Row | null> = {
     config: { serviceKey, provider, model: MODEL, isActive: true, systemPrompt: options.systemPrompt === undefined ? 'Hệ thống.' : options.systemPrompt, maxTokens: 512 },
-    provider: { provider, baseUrl: options.baseUrl ?? `https://${HOST}/v1`, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'cdef' },
+    provider: { provider, baseUrl: options.baseUrl ?? `https://${HOST}/v1`, isActive: true, apiKeyCiphertext: 'c', apiKeyNonce: 'n', apiKeyAuthTag: 't', apiKeyVersion: 1, apiKeyKeyId: 'k', apiKeyLastFour: 'cdef' },
     pricing: options.pricing === undefined ? PRICING : options.pricing,
   }
   const take = (table: unknown): unknown[] => {
