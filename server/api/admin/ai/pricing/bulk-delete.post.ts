@@ -1,7 +1,5 @@
-import { inArray } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiModelPricing, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { bulkDeletePricingWithAudit } from '../../../../services/admin-ai-pricing'
 
 /**
  * Bulk delete AI model pricing rows.
@@ -30,31 +28,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Tên model dài quá 64 ký tự.' })
   }
 
-  const db = getDb()
-
-  // The count and the audit line are what was deleted, not what was asked: the rows
-  // found are locked until the delete commits, and a name never in the list (or sent
-  // twice) is not reported as deleted.
-  const deleted = await db.transaction(async (tx) => {
-    const found = await tx.select({ model: aiModelPricing.model }).from(aiModelPricing)
-      .where(inArray(aiModelPricing.model, requested))
-      .for('update')
-    const models = found.map(row => row.model)
-    if (models.length === 0) return models
-    await tx.delete(aiModelPricing).where(inArray(aiModelPricing.model, models))
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'delete',
-      resource: 'ai',
-      resourceId: null,
-      meta: {
-        type: 'pricing_bulk_delete',
-        count: models.length,
-        models,
-      },
-    })
-    return models
-  })
+  // What was deleted, not what was asked — found, locked, deleted and audited in one
+  // transaction (in the service).
+  const deleted = await bulkDeletePricingWithAudit(adminUser, requested)
 
   return { ok: true, deleted: deleted.length }
 })

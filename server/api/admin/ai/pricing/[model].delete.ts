@@ -1,7 +1,5 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiModelPricing, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { deletePricingWithAudit, findPricingByModel } from '../../../../services/admin-ai-pricing'
 
 /**
  * Delete an AI model pricing row by model name (PK).
@@ -17,27 +15,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Model không hợp lệ.' })
   }
 
-  const db = getDb()
-
-  const [existing] = await db.select().from(aiModelPricing).where(eq(aiModelPricing.model, modelParam)).limit(1)
+  const existing = await findPricingByModel(modelParam)
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: 'Model pricing không tồn tại.' })
   }
 
-  await db.transaction(async (tx) => {
-    await tx.delete(aiModelPricing).where(eq(aiModelPricing.model, modelParam))
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'delete',
-      resource: 'ai',
-      resourceId: null,
-      meta: {
-        type: 'pricing_delete',
-        model: modelParam,
-        provider: existing.provider,
-      },
-    })
-  })
+  // The delete and its audit row in one transaction (in the service).
+  await deletePricingWithAudit(adminUser, modelParam, existing)
 
   return { ok: true }
 })

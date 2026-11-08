@@ -1,8 +1,7 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiServiceConfigs, activityLogs, chatbotSettings } from '../../../../db/schema'
+import type { aiServiceConfigs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { bumpAnswerCacheVersion } from '../../../../services/chatbot-answer-cache'
+import { findServiceConfigById, updateServiceConfigWithAudit } from '../../../../services/admin-ai-services'
 
 /** Maximum allowed values for temperature and max_tokens. */
 const MAX_TEMPERATURE = 2
@@ -48,8 +47,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Không thể thay đổi service_key hoặc service_name.' })
   }
 
-  const db = getDb()
-  const [existing] = await db.select().from(aiServiceConfigs).where(eq(aiServiceConfigs.id, id)).limit(1)
+  const existing = await findServiceConfigById(id)
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: 'Service config không tồn tại.' })
   }
@@ -86,35 +84,8 @@ export default defineEventHandler(async (event) => {
 
   patch.updatedBy = adminUser.id ?? null
 
-  await db.transaction(async (tx) => {
-    await tx.update(aiServiceConfigs).set(patch).where(eq(aiServiceConfigs.id, id))
-
-    // 2-way sync: if chatbot service is edited, mirror into chatbot_settings
-    if (existing.serviceKey === 'chatbot') {
-      const chatbotPatch: Partial<typeof chatbotSettings.$inferInsert> = {}
-      if (patch.systemPrompt !== undefined) chatbotPatch.systemPrompt = patch.systemPrompt
-      if (patch.model !== undefined) chatbotPatch.model = patch.model
-      if (patch.isActive !== undefined) chatbotPatch.mode = patch.isActive ? 'ai' : 'knowledge'
-      if (patch.provider !== undefined) {
-        chatbotPatch.providerPolicy = patch.provider === 'anthropic' ? 'anthropic' : 'openai-compatible'
-      }
-      if (Object.keys(chatbotPatch).length > 0) {
-        chatbotPatch.updatedBy = adminUser.id ?? null
-        await tx.update(chatbotSettings).set(chatbotPatch).where(eq(chatbotSettings.id, 1))
-      }
-    }
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'update',
-      resource: 'ai',
-      resourceId: id,
-      meta: {
-        service: existing.serviceKey,
-        changedFields: Object.keys(patch),
-      },
-    })
-  })
+  // The update, the chatbot_settings mirror and the audit row in one transaction (in the service).
+  await updateServiceConfigWithAudit(adminUser, id, existing, patch)
 
   // Cấu hình AI / prompt đổi ⇒ câu trả lời cũ không còn đúng.
   await bumpAnswerCacheVersion().catch(() => undefined)

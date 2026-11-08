@@ -1,12 +1,9 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../utils/db'
-import { aiProviders, aiModelPricing, aiServiceConfigs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { decryptAiSecret } from '../../../utils/ai/crypto'
 import { ChatbotOutboundError, safeProviderRequest, type SafeProviderResponse } from '../../../utils/chatbot/outbound'
 import { calculateAiCost } from '../../../utils/ai-cost'
-import { logAiUsage } from '../../../utils/ai-usage'
-import { checkBudget } from '../../../utils/ai-budget'
+import { checkAiBudget, findConfiguredServiceKey, findProviderByName, logAiCallUsage } from '../../../services/admin-ai-calls'
+import { findPricingByModel } from '../../../services/admin-ai-pricing'
 
 /**
  * `ai_usage_logs.model` and `.service_key` are VARCHAR(64). A longer value fails the
@@ -115,15 +112,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `Prompt hệ thống dài quá ${MAX_SYSTEM_PROMPT_CHARS} ký tự.` })
   }
 
-  const db = getDb()
-
   // The call is billed to `test_call` or to a configured service (the "Prompt dịch
   // vụ" tab) — never to a label the client made up. The stored spelling is kept.
   let serviceKey = DEFAULT_SERVICE_KEY
   if (requestedServiceKey !== DEFAULT_SERVICE_KEY) {
-    const [service] = await db.select({ serviceKey: aiServiceConfigs.serviceKey }).from(aiServiceConfigs)
-      .where(eq(aiServiceConfigs.serviceKey, requestedServiceKey))
-      .limit(1)
+    const service = await findConfiguredServiceKey(requestedServiceKey)
     if (!service) {
       throw createError({ statusCode: 400, statusMessage: 'Dịch vụ AI không tồn tại.' })
     }
@@ -131,7 +124,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // 0. Check quota/budget before making test call
-  const budgetResult = await checkBudget(db, 'test_call')
+  const budgetResult = await checkAiBudget('test_call')
   if (!budgetResult.allowed) {
     return {
       ok: false,
@@ -139,9 +132,7 @@ export default defineEventHandler(async (event) => {
     }
   }
   // 1. Load provider
-  const [provider] = await db.select().from(aiProviders)
-    .where(eq(aiProviders.provider, providerName))
-    .limit(1)
+  const provider = await findProviderByName(providerName)
 
   if (!provider) {
     return { ok: false, error: `Nhà cung cấp "${providerName}" không tồn tại trong hệ thống.` }
@@ -171,9 +162,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // 3. Pricing, read now so nothing touches the database between the call and its record.
-  const [pricing] = await db.select().from(aiModelPricing)
-    .where(eq(aiModelPricing.model, model))
-    .limit(1)
+  const pricing = await findPricingByModel(model)
 
   // 4. Build outbound request
   const isAnthropic = providerName === 'anthropic'
@@ -237,7 +226,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const usageBase = { serviceKey, provider: providerName, model, userId: adminUser.id ?? null }
-  const recordFailure = (executionMs: number, errorMessage: string) => logAiUsage(db, {
+  const recordFailure = (executionMs: number, errorMessage: string) => logAiCallUsage({
     ...usageBase,
     promptTokens: 0,
     completionTokens: 0,
@@ -354,7 +343,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // 11. Record usage in ai_usage_logs (tracked in call logs and billing!)
-  await logAiUsage(db, {
+  await logAiCallUsage({
     ...usageBase,
     promptTokens,
     completionTokens,

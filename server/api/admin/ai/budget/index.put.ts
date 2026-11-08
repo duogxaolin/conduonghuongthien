@@ -1,7 +1,6 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiBudgetSettings, activityLogs } from '../../../../db/schema'
+import type { aiBudgetSettings } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { updateBudgetSettingsWithAudit } from '../../../../services/admin-ai-budget'
 
 const MAX_BUDGET_VND = Number.MAX_SAFE_INTEGER
 const MAX_THRESHOLD = 100
@@ -35,27 +34,8 @@ export default defineEventHandler(async (event) => {
 
   patch.updatedBy = adminUser.id ?? null
 
-  const db = getDb()
-
-  // Ensure the row exists
-  const [existing] = await db.select().from(aiBudgetSettings).where(eq(aiBudgetSettings.id, 1)).limit(1)
-  if (!existing) {
-    await db.insert(aiBudgetSettings).values({ id: 1, monthlyBudgetVnd: 0, warningThresholdPct: 80 })
-  }
-
-  await db.transaction(async (tx) => {
-    await tx.update(aiBudgetSettings).set(patch).where(eq(aiBudgetSettings.id, 1))
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id ?? null,
-      action: 'update',
-      resource: 'ai',
-      resourceId: 1,
-      meta: {
-        type: 'budget_update',
-        changedFields: Object.keys(patch),
-      },
-    })
-  })
+  // The row ensured, then the update and its audit row in one transaction (in the service).
+  await updateBudgetSettingsWithAudit(adminUser, patch)
 
   return { ok: true }
 })

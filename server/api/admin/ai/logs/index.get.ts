@@ -1,9 +1,7 @@
-import { and, eq, gte, lt, desc, count } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { aiUsageLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { finitePositive, MAX_PAGE } from '../../../../utils/query-number'
 import { DAY_MS, vietnamDayEndExclusive, vietnamDayStart } from '../../../../utils/vn-day-range'
+import { readAiUsageLogsPage } from '../../../../services/admin-ai-usage'
 
 const NINETY_DAYS_MS = 90 * DAY_MS
 const DEFAULT_PER_PAGE = 20
@@ -32,39 +30,20 @@ export default defineEventHandler(async (event) => {
   // Excluded older than 90 days by default (spec R13.5)
   const ninetyDaysAgo = new Date(Date.now() - NINETY_DAYS_MS)
 
-  const conditions = [gte(aiUsageLogs.createdAt, ninetyDaysAgo)]
-
-  if (typeof query.serviceKey === 'string' && query.serviceKey.trim()) {
-    conditions.push(eq(aiUsageLogs.serviceKey, query.serviceKey.trim()))
-  }
-  if (typeof query.provider === 'string' && query.provider.trim()) {
-    conditions.push(eq(aiUsageLogs.provider, query.provider.trim()))
-  }
+  const serviceKey = typeof query.serviceKey === 'string' && query.serviceKey.trim() ? query.serviceKey.trim() : null
+  const provider = typeof query.provider === 'string' && query.provider.trim() ? query.provider.trim() : null
   // Dates are Vietnam calendar days, inclusive: [start 00:00 +07, day after end 00:00 +07).
   // A value that is not a real YYYY-MM-DD is ignored, as an unparsable one always was.
   const start = vietnamDayStart(query.startDate)
-  if (start) conditions.push(gte(aiUsageLogs.createdAt, start))
   const end = vietnamDayEndExclusive(query.endDate)
-  if (end) conditions.push(lt(aiUsageLogs.createdAt, end))
-  if (query.success === 'true') conditions.push(eq(aiUsageLogs.success, true))
-  if (query.success === 'false') conditions.push(eq(aiUsageLogs.success, false))
+  const success = query.success === 'true' ? true : query.success === 'false' ? false : null
 
-  const where = conditions.length > 1 ? and(...conditions) : conditions[0]!
-
-  const db = getDb()
-
-  const rows = await db
-    .select()
-    .from(aiUsageLogs)
-    .where(where)
-    .orderBy(desc(aiUsageLogs.createdAt))
-    .limit(perPage)
-    .offset(offset)
-  // Count total matching rows for pagination
-  const [countRow] = await db
-    .select({ total: count(aiUsageLogs.id) })
-    .from(aiUsageLogs)
-    .where(where)
+  // The page and the count of every matching row, under one WHERE (in the service).
+  const { rows, countRow } = await readAiUsageLogsPage(
+    { since: ninetyDaysAgo, serviceKey, provider, start, end, success },
+    perPage,
+    offset,
+  )
   const total = countRow?.total ?? 0
   return {
     ok: true,

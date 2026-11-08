@@ -1,7 +1,6 @@
 import { createError } from 'h3'
-import { getDb } from '../../../utils/db'
 import { requireResourcePermission } from '../../../utils/permissions'
-import { checkBudget } from '../../../utils/ai-budget'
+import { checkAiBudget } from '../../../services/admin-ai-calls'
 import { callAi } from '../../../services/ai-gateway'
 import { decodeHtmlEntities } from '../../../utils/decode-html-entities'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
@@ -38,10 +37,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng cung cấp nội dung hoặc tiêu đề bài viết.' })
   }
 
-  const db = getDb()
-
   // 1. Check budget guard
-  const budgetResult = await checkBudget(db, 'editorial_assistant')
+  const budgetResult = await checkAiBudget('editorial_assistant')
   if (!budgetResult.allowed) {
     throw createError({
       statusCode: 429,
