@@ -2785,6 +2785,48 @@ Năm việc nhỏ còn lại sau § 95–§ 97 (chủ dự án duyệt làm cả
 - **Test:** `tests/editor-video-button-permission.test.ts` (5 test, cả hai trình soạn; đỏ 4/5 trên mã cũ), `tests/admin-media-library-tiles-keyboard.test.ts` (3 test; đỏ 2/3 trên mã cũ, ca còn lại là hành vi chọn một ảnh vốn đã đúng), `tests/h3-handler-server-deadline.test.ts` (handler treo hỏng đúng hạn kèm tên, `close()` vẫn trả về; bỏ hạn hoặc bỏ bước đóng kết nối đều làm test đỏ). Đã sửa `CONFIG` ghim ở `tests/admin-article-editor.test.ts` (thanh công cụ không còn `media`, có `removed_menuitems`). E2E `admin-editor-media-picker` nay chọn ảnh bằng Tab rồi Enter thay vì bấm chuột vào thẻ `div` cha.
 - Không ảnh hưởng deploy toolkit.
 
+### 100. Tầng dữ liệu — 160 endpoint không còn chạm CSDL trực tiếp (2026-11-08)
+
+Chủ dự án quyết (2026-11-08) dời toàn bộ truy vấn của `server/api/**` vào `server/services/**`. Quyết định này thay mục "Endpoint cũ gọi `getDb()` thẳng — hạn chế có chủ đích". Trước: 160/326 endpoint gọi `getDb()`/`getPool()`. Sau: 0. `tests/api-no-direct-db.test.ts` chặn quay lại; test này đỏ trên mã trước refactor.
+
+- **Chỉ dời, không đổi hành vi:** SQL, tham số, thứ tự câu lệnh, ranh giới transaction và phạm vi khoá giữ nguyên (bài học R6).
+  - **Ở lại handler:** kiểm quyền (kể cả `checkPermission()` lần hai của `articles/[id].put.ts`), đọc input, `getClientIp`, cookie, ánh xạ `createError`, `reportPublicReadFailure`, và lời gọi sau commit (`purgePublicPageCacheAfterWrite`, `bumpAnswerCacheVersion`, xoá cache trong tiến trình). Thứ tự của chúng so với lượt ghi không đổi.
+  - **Vào service:** mọi câu lệnh CSDL. `createError` nào ném TRONG transaction (để rollback) đi theo transaction. Ví dụ: 409 của `resolve`, 404 "đã biến mất", 400 "tối đa 4 bản sao lưu", và 403 của khoá chỉ-SuperAdmin trong `settings/index.put.ts`, vốn chạy giữa vòng ghi.
+- **Chia lô:** thử nghiệm (users/roles/taxonomy), ai ×2, public ×2, settings, articles, media, pages + chatbot, xác thực, còn lại. Mỗi lô tạo tệp service MỚI (`admin-*`, `public-*`, `google-oauth-callback-*`). Không thêm vào module đã có, vì nhiều test `mock.module` các module đó.
+- **Chứng minh từng byte:** mỗi lô dựng một bộ ghi vết SQL tạm (không commit) trên `tests/_sqlite-mysql-db.ts`. Bộ ghi vết chạy handler thật trên bản gốc và bản đã dời, ghi lại từng câu lệnh kèm tham số theo thứ tự, phần nằm trong transaction, phản hồi, log, dấu gọi purge/bump/cookie và trạng thái bảng cuối. Tổng cộng khoảng 1 100 kịch bản, trùng khớp hoàn toàn trừ dấu thời gian. Endpoint ghi nào trước đó chưa có test chạy thật thì được viết test hành vi trước, xanh trên bản gốc: khoảng 15 tệp test mới.
+- **Ngoại lệ "cookie giữa hai lượt ghi" cũng đã dời, giữ nguyên hình dạng:** `profile/mfa/confirm`, `recovery-codes` (POST), `profile/password`, `auth/logout`. Thứ tự vẫn là: service ghi lần 1 → handler đặt cookie → service ghi lần 2 / audit. Không thêm transaction. Bảng `COOKIE_BETWEEN_WRITES` của `tests/reader-audit-atomicity.test.ts` ghim thứ tự lời gọi trong handler và lượt ghi của từng hàm. Đặt audit lên trước cookie thì test đỏ.
+- **`boost.post.ts` không phải ngoại lệ.** Nhãn trong CLAUDE.md đã cũ: endpoint không đặt cookie nào, và cả hai đường (tức thì, rải dần) đều ghi + audit trong một transaction. Đã dời như mọi endpoint ghi khác. Đã sửa CLAUDE.md, `docs/decisions/data-layer.md` và `test-strategy.md`.
+- **Test canh được gia cố trước khi dời (theo code sang service, không nới):**
+  - `reader-audit-atomicity` (`tests/_audit-atomicity-scan.ts`, AST) đọc theo HÀM và mọi transaction, không chỉ transaction đầu của tệp. Test quét cả `server/services/**`, mục danh sách có dạng `tệp#hàm`, và đọc `activity_logs` không còn bị tính là audit.
+  - `AUDIT_CENSUS` kiểm kê 162 dòng audit theo 81 khoá `(resource, action)`, không phụ thuộc tệp. Dời mã thì vẫn xanh; làm rơi, thêm hay đổi tên một dòng audit thì đỏ.
+  - Bộ chứng minh "HTML đã lọc" (`tests/_translation-writes.ts`, `tests/_call-sites.ts`) nay theo tham số của hàm service ngược về mọi nơi gọi. Bộ này từ chối tham số không lần được, import không theo được và `arguments`, có 40 ca dò, và mục đột biến `article-content-sanitize` vẫn bị bắt.
+  - Các test đọc chữ của handler được trỏ sang tệp service, kèm khẳng định handler gọi đúng hàm.
+- **Kiểm chứng:**
+  - Toàn bộ unit (xem dòng Kiểm chứng của commit).
+  - Typecheck 0 lỗi, lint sạch.
+  - Ratchet độ phủ chạy theo cách của CI: không thư mục nào giảm. `server/api` 81,83 → 89,19, `server/services` 91,56 → 93,01. Mọi hàm service mới đều có test chạy tới.
+- **Ghi lại, không sửa** (có từ trước, chỉ dời nguyên văn; chờ chủ dự án quyết):
+  - **An ninh:** `GET /api/admin/articles/:id/translations/:lang` trả nội dung bản dịch KHÔNG lọc lúc đọc, mà `ArticleQuickViewModal` hiển thị bằng `v-html`. Trái quy tắc "lọc lúc ghi và lúc đọc"; đây là đường của lỗi § 96.
+  - **Ghi không nguyên tử:**
+    - `content-types/[id].put` đổi slug bằng ba UPDATE không transaction.
+    - `pages/[id]/draft.put` không ghi audit.
+    - Danh mục Media Portal: đếm rồi xoá tách rời; chọn slug rồi ghi tách rời, nên trùng tên đồng thời trả 500.
+    - `submissions.post`: gửi thư rồi mới đóng dấu `notified_at` (chủ đích "lưu trước").
+    - `cache-clear`: xoá cache trước rồi mới ghi audit.
+    - Bản ghi Google đăng nhập lần đầu đồng thời: người thua nhận 500.
+    - `budget` PUT chèn hàng mặc định không có `ON DUPLICATE KEY`; `budget` GET ghi hàng mặc định.
+  - **Audit:**
+    - Xoá danh mục và loại nội dung chưa bao giờ ghi audit (miễn trừ ghi "FINDING").
+    - `discardPendingFactor` không ghi audit.
+    - `restart-server` nuốt lỗi audit mà không log.
+    - Cấu hình kiểm duyệt ghi audit với `resourceId: 1` khi không có hàng.
+    - Xoá luật/nhà cung cấp không đếm số hàng bị ảnh hưởng, nên hai lượt xoá đồng thời ghi hai dòng audit.
+  - **Lỗi lộ ra ngoài:**
+    - `roles/[id].put`, `roles/[id].delete`, `users/[id]/mfa.delete` không bọc lượt ghi trong try/catch, nên câu "Failed query … params" của Drizzle đi thẳng ra phản hồi.
+    - `media-portal/[id]/thumbnail.post` trả 500 kèm nguyên văn lỗi SQL.
+  - **Khoá job:** khoá của `upload/housekeep` không nằm trong `MEDIA_JOB_LOCK_NAMES`.
+- Không ảnh hưởng deploy toolkit: không đổi `.env`, schema, migration hay container.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 

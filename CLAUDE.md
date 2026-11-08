@@ -115,16 +115,16 @@ server/utils/    deadlock-retry.ts · mysql-errors.ts · plain-text / display-na
 
 ---
 
-### Quy ước tầng dữ liệu (áp cho mã MỚI, không sửa endpoint cũ)
+### Quy ước tầng dữ liệu
 
-**Bắt buộc viết trong `server/services/**` khi:** (1) ghi hàng + `activity_logs` (phải 1 transaction), (2) nhiều lệnh ghi phải cùng thành công, (3) ≥2 nơi gọi, (4) quy tắc nghiệp vụ không diễn đạt bằng query. **Truy vấn thẳng đủ khi**: chỉ đọc hoặc ghi 1 hàng không audit và không nơi nào khác cần lại.
+**Handler (`server/api/**`) không bao giờ chạm CSDL** — không import `utils/db`, không `getDb()`/`getPool()`/`pool.query`, không mở transaction; mọi câu lệnh nằm trong `server/services/**` (`tests/api-no-direct-db.test.ts`; 160 endpoint đã dời, CHANGELOG § 100). Handler giữ: kiểm quyền, đọc input, `getClientIp`, cookie, ánh xạ `createError`, `reportPublicReadFailure`, và lời gọi SAU commit (`purgePublicPageCacheAfterWrite`, `bumpAnswerCacheVersion`, xoá cache). Một hàng ghi + `activity_logs` nằm trong MỘT hàm service, một `db.transaction`, cả hai trên `tx` (`tests/reader-audit-atomicity.test.ts` đọc theo hàm, quét cả `server/services/**`; `AUDIT_CENSUS` kiểm kê mọi cặp `(resource, action)` — dời mã không đổi, làm rơi audit thì đỏ). Dời mã ≠ đổi hành vi: giữ nguyên SQL, thứ tự, phạm vi transaction và khoá.
 
 **Không tự ép kiểu kết quả truy vấn**: `db.insert()`/`pool.query()` trả **mảng** — destructure; `affectedRows` chỉ qua `readAffectedRows()`/`affectedRowsOrZero()`. Không `as {affectedRows}` / `as unknown as {insertId}`.
 
 **Đường ghi audit — 4 điều đã trả giá:**
 1. `tx.insert(activityLogs)` trong khối transaction — không `db.insert` trên pool.
 2. Xoá-rồi-log không bọc là sai phổ biến nhất (FK + JSON) — đã kiểm bằng driver thật.
-3. Ngoại lệ phải nêu tên trong test: `profile/mfa/confirm.post.ts` (và `recovery-codes`, `auth/logout`, `boost.post.ts`) cố ý không bọc vì `setSessionCookie()` giữa 2 ghi — rollback không thu hồi cookie. `tests/reader-audit-atomicity.test.ts` khoá.
+3. Ngoại lệ phải nêu tên trong test: `profile/mfa/confirm.post.ts`, `profile/mfa/recovery-codes.post.ts`, `profile/password.put.ts` cố ý không bọc vì `setSessionCookie()` nằm giữa 2 ghi — rollback không thu hồi cookie; `auth/logout` gồm hai lượt ghi best-effort (audit hỏng không được hoàn tác việc vô hiệu phiên). Bảng `COOKIE_BETWEEN_WRITES` của `tests/reader-audit-atomicity.test.ts` ghim thứ tự lời gọi trong handler và lượt ghi của từng hàm service. (`boost.post.ts` KHÔNG phải ngoại lệ — không đặt cookie, ghi + audit một transaction.)
 4. `tests/reader-audit-atomicity.test.ts` chặn `AUDITED_MUTATION_ENDPOINTS` + `AUDITED_SERVICES`, quét **cả thư mục** `server/api/admin/**` và `server/services/`, bắt cả `db.insert(activityLogs)` trên pool **sau** khi transaction đã đóng. Audit trên pool có chủ đích → `SERVICE_POOL_AUDIT_EXEMPTIONS` kèm lý do. `meta` ghi dạng object, không `JSON.stringify`.
 5. `deleteArticleById`/`setArticleStatus` (`services/articles.ts`) **chủ đích KHÔNG bọc** — guard `known exclusions are named` ở cùng test trên khoá trạng thái này, bọc lại sẽ fail test. Đó là known-exclusion được guard, **không phải gap chưa đóng**.
 
@@ -175,9 +175,8 @@ Audit 2026-09 ghi 3 nợ, **tất cả đã đóng 2026-10-05** — stale info, 
 2. **`init.ts` 1302 → 73 dòng** ✅ `61fff49` (7 `schema-tables/*.ts`). **Đừng báo "init.ts phình"**.
 3. **`any` 20 vết → 0 trong production** ✅ `ca4f52e` (`UnknownError`/`CaughtError`/`Nullable<T>`/`HttpEventLike`); ~145 dòng `any` còn lại ở `tests/` là mock cố ý. **Đừng báo "còn ~20 vết any ở SFC"**.
 
-Hai hạn chế **có chủ đích, không phải nợ** (đừng đề xuất fix diện rộng):
+Một hạn chế **có chủ đích, không phải nợ** (đừng đề xuất fix diện rộng):
 - **i18n** — 30+ file public đã dùng `t()`, tất cả lang kể cả `vi` fetch DB (`server/api/public/translations/[code].get.ts`; `i18n-default-dictionary.ts` chỉ là fallback; admin giữ hardcoded). Mở rộng thêm trang là feature work, **không phải nợ kỹ thuật** — không ghi vào audit debt.
-- **Endpoint cũ gọi `getDb()` thẳng** (số: bảng số liệu) — quy ước CLAUDE.md "áp cho mã MỚI, không sửa endpoint cũ". Refactor diện rộng endpoint đang chạy ổn định rủi ro > lợi. Endpoint mới viết trong `server/services/**`.
 
 Phân biệt khi đề xuất sửa: (a) **gap chưa đóng** → fix, (b) **guarded exception** (test guard chặn) → KHÔNG fix, test sẽ đỏ, (c) **nợ đã đóng** → đừng reopen, (d) **hạn chế có chủ đích** → thiết lập ROI trước khi động.
 
