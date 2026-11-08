@@ -19,8 +19,8 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 | Số liệu | Giá trị |
 |---|---|
 | Bảng · cột (`db:drift`) | 63 · 655 |
-| Endpoint `server/api` · có `getDb()` · import `services/` | 326 · 21 · 302 |
-| Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 219 · 202 |
+| Endpoint `server/api` · có `getDb()` · import `services/` | 326 · 10 · 306 |
+| Tệp nhắc `requireResourcePermission`: `server/` · `server/api/` | 220 · 202 |
 | Tệp import `rateLimitDeps` | 22 |
 | Suite `*-integration` (so matrix CI) | 22 (khớp) |
 | Dòng `default.vue` · `init.ts` · `useI18n.ts` · `useChatbot.ts` · `admin/profile.vue` | 399 · 80 · 265 · 132 · 277 |

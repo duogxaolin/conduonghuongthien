@@ -111,7 +111,7 @@ const STAFF_ONLY_RAW_NAME_READS: Record<string, string> = {
   'services/readers.ts#unbanReader': 'tên trong dòng audit/log của lượt bỏ chặn',
   'services/readers.ts#deleteReader': 'tên trong dòng audit/log của lượt xoá tài khoản',
   'services/readers.ts#purgeReaderComments': 'tên trong dòng audit/log của lượt xoá bình luận',
-  'api/admin/comments/ai-moderate.post.ts#default': 'tên tác giả gửi cho prompt kiểm duyệt AI — không hiển thị cho người đọc',
+  'services/admin-comments-ai-moderate.ts#listCommentsForAiModeration': 'tên tác giả gửi cho prompt kiểm duyệt AI (comments/ai-moderate.post.ts) — không hiển thị cho người đọc',
   'utils/reader-auth.ts#resolveReader': 'bộ nạp danh tính: trả cả hai cột tên + cờ cho nơi gọi (`reader/me`, bình luận, chat livestream) — chúng giải qua effectiveDisplayName',
 }
 

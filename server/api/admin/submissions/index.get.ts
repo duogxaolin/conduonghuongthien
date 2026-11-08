@@ -1,9 +1,7 @@
 import { createError } from 'h3'
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm'
-import { getDb } from '../../../utils/db'
-import { submissions, users } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { countSubmissionsByStatus } from '../../../services/submission-workflow'
+import { listAdminSubmissions } from '../../../services/admin-submissions-queries'
 import { isSubmissionStatus, type SubmissionStatus } from '../../../../shared/submission-status'
 
 /**
@@ -45,35 +43,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Bộ lọc lượt xem không hợp lệ.' })
   }
 
-  const conditions = []
-  if (statusFilter) conditions.push(eq(submissions.status, statusFilter))
-  if (viewedFilter === 'yes') conditions.push(isNotNull(submissions.firstViewedAt))
-  if (viewedFilter === 'no') conditions.push(isNull(submissions.firstViewedAt))
-
-  const db = getDb()
-  const rows = await db
-    .select({
-      id: submissions.id,
-      fullName: submissions.fullName,
-      phone: submissions.phone,
-      email: submissions.email,
-      address: submissions.address,
-      message: submissions.message,
-      answers: submissions.answers,
-      formTitle: submissions.formTitle,
-      status: submissions.status,
-      statusChangedAt: submissions.statusChangedAt,
-      // leftJoin để đơn do một tài khoản ĐÃ XOÁ đổi trạng thái vẫn đọc được — mất
-      // tên người thực hiện thì cột đó còn lại một khoảng trống không giải thích.
-      statusChangedByName: users.username,
-      firstViewedAt: submissions.firstViewedAt,
-      notifiedAt: submissions.notifiedAt,
-      createdAt: submissions.createdAt,
-    })
-    .from(submissions)
-    .leftJoin(users, eq(users.id, submissions.statusChangedBy))
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(submissions.createdAt))
+  const rows = await listAdminSubmissions(statusFilter, viewedFilter)
 
   // Số đếm lấy trên **toàn bộ** bảng, không theo bộ lọc đang áp. Dải ô tổng trả
   // lời "tồn đọng đang thế nào"; đếm theo tập đã lọc thì chọn "Đã xử lý xong" làm

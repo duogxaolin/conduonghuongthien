@@ -1,6 +1,3 @@
-import { getDb } from '../utils/db'
-import { submissions, pages, pageBlocks, settings } from '../db/schema'
-import { and, eq, inArray } from 'drizzle-orm'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
 import { escapeHtml } from '../utils/escape-html'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
@@ -8,6 +5,13 @@ import { logError, logWarn, logInfo, SECURITY_EVENTS } from '../utils/logger'
 import { getClientIp } from '../utils/client-ip'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { resolveSubmissionRecipient } from '../utils/submission-recipient'
+import {
+  getSiteEmail,
+  insertSubmission,
+  listPagePublishedTrees,
+  listVisibleFlatFormBlocks,
+  stampSubmissionNotified,
+} from '../services/public-submissions-queries'
 
 // Public, unauthenticated endpoint → rate limit by the real peer IP
 // (`x-forwarded-for` is client-controlled and therefore spoofable).
@@ -125,39 +129,20 @@ function hasPublishedTree(tree: unknown): boolean {
  * `contact_form`, nên một `support_form` (biểu mẫu ở trang chủ) có cấu hình email
  * nhận vẫn không bao giờ vào được allowlist.
  */
-async function getConfiguredRecipients(db: ReturnType<typeof getDb>): Promise<Set<string>> {
+async function getConfiguredRecipients(): Promise<Set<string>> {
   const out = new Set<string>()
   // One JSON column per page, not two: the draft tree is never needed.
-  const pageRows = await db
-    .select({ id: pages.id, published: pages.publishedBlocks })
-    .from(pages)
+  const pageRows = await listPagePublishedTrees()
   const flatPageIds: number[] = []
   for (const row of pageRows) {
     if (hasPublishedTree(row.published)) collectFromTree(row.published, out)
     else flatPageIds.push(row.id)
   }
   if (flatPageIds.length) {
-    const flat = await db
-      .select({ data: pageBlocks.data })
-      .from(pageBlocks)
-      .where(and(
-        inArray(pageBlocks.pageId, flatPageIds),
-        inArray(pageBlocks.blockType, FORM_BLOCK_TYPES),
-        eq(pageBlocks.isVisible, true),
-      ))
+    const flat = await listVisibleFlatFormBlocks(flatPageIds, FORM_BLOCK_TYPES)
     for (const b of flat) addRecipient(b.data?.recipientEmail, out)
   }
   return out
-}
-
-/** Email liên hệ của cổng (`settings.email`) — nhánh dự phòng cuối. */
-async function getSiteEmail(db: ReturnType<typeof getDb>): Promise<string> {
-  const [row] = await db
-    .select({ value: settings.value })
-    .from(settings)
-    .where(eq(settings.key, 'email'))
-    .limit(1)
-  return (row?.value || '').trim()
 }
 
 export default defineEventHandler(async (event) => {
@@ -243,8 +228,7 @@ export default defineEventHandler(async (event) => {
   // full_name and phone are NOT NULL in the schema; coerce absent values to ''
   // (never null) so the insert can never throw under MySQL STRICT mode and a
   // submission is never lost — even when the form maps no name/phone field.
-  const db = getDb()
-  const [result] = await db.insert(submissions).values({
+  const result = await insertSubmission({
     fullName: fullName || '',
     phone: phone || '',
     email: email || null,
@@ -268,8 +252,8 @@ export default defineEventHandler(async (event) => {
   let notifiedAt: Date | null = null
   try {
     const [configured, siteEmail] = await Promise.all([
-      getConfiguredRecipients(db),
-      getSiteEmail(db),
+      getConfiguredRecipients(),
+      getSiteEmail(),
     ])
     const { to, source } = resolveSubmissionRecipient(recipientEmail, configured, siteEmail)
     const config = to ? await getSmtpConfig() : null
@@ -309,7 +293,7 @@ export default defineEventHandler(async (event) => {
   // không có tư cách làm hỏng phản hồi cho người dân.
   if (notifiedAt) {
     try {
-      await db.update(submissions).set({ notifiedAt }).where(eq(submissions.id, result.insertId))
+      await stampSubmissionNotified(result.insertId, notifiedAt)
     } catch (err) {
       logError({ event: 'public.submission_notified_stamp_failed', submissionId: result.insertId, error: err })
     }

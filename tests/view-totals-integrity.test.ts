@@ -217,7 +217,8 @@ test('only article-views.ts writes the daily rows or the split totals', () => {
 })
 
 test('both boost paths deliver through addFabricatedViews', () => {
-  for (const file of ['api/admin/articles/[id]/boost.post.ts', 'services/view-boost-scheduler.ts']) {
+  // boost.post.ts's instant path moved into admin-article-boost.ts (2026-11-08); the call follows it there.
+  for (const file of ['services/admin-article-boost.ts', 'services/view-boost-scheduler.ts']) {
     const source = readFileSync(new URL(file, serverRoot), 'utf8')
     assert.match(source, /addFabricatedViews\(\{/, `${file} must deliver fabricated views through addFabricatedViews`)
   }

@@ -14,13 +14,10 @@
  * Read-only. It reports; it never purges. A purge triggered from a page load
  * would delete audit rows on a stray refresh.
  */
-import { intervalDays } from '../../../utils/sql-literals'
-import { sql } from 'drizzle-orm'
-import { getDb } from '../../../utils/db'
-import { activityLogs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { resolveRetentionPolicy } from '../../../services/retention-policy'
 import { loadRetentionState } from '../../../services/retention-state'
+import { readActivityLogRetentionCounts } from '../../../services/admin-activity-logs-retention'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -32,19 +29,8 @@ export default defineEventHandler(async (event) => {
   const retentionDays = scope?.days ?? 0
   const maxRows = scope?.maxRows ?? 0
 
-  const db = getDb()
-
-  const [row] = await db
-    .select({
-      total: sql<number>`COUNT(*)`,
-      oldest: sql<string | null>`MIN(${activityLogs.createdAt})`,
-      newest: sql<string | null>`MAX(${activityLogs.createdAt})`,
-      // 0 days means the age condition is disabled, so nothing can be overdue.
-      overdue: retentionDays > 0
-        ? sql<number>`SUM(CASE WHEN ${activityLogs.createdAt} < (NOW() - INTERVAL ${intervalDays(retentionDays)} DAY) THEN 1 ELSE 0 END)`
-        : sql<number>`0`,
-    })
-    .from(activityLogs)
+  // One aggregate SELECT (services/admin-activity-logs-retention.ts) — read-only, like this route.
+  const row = await readActivityLogRetentionCounts(retentionDays)
 
   const total = Number(row?.total ?? 0)
   const overdue = Number(row?.overdue ?? 0)

@@ -380,20 +380,26 @@ describe('the MFA-confirm exclusion is deliberate and still correct', () => {
  *     auth/logout.post.ts — each writes an HTTP cookie between the two database
  *     writes. A cookie is a side effect on the response that no rollback can
  *     retract, so wrapping would create a worse state than it fixes.
- *   • articles/[id]/boost.post.ts — audits through the shared boost service
- *     rather than inline, so it has no local pair to wrap.
+ *   (articles/[id]/boost.post.ts used to be listed here. It writes no cookie, and both
+ *   of its paths already wrote the change and the audit row in one transaction; since
+ *   2026-11-08 those transactions are in admin-article-boost.ts, named below.)
  */
 const AUDITED_MUTATION_ENDPOINTS: string[] = [
   'server/services/admin-article-write.ts#updateArticleWithAudit', // articles/[id].put.ts
   'server/services/admin-article-write.ts#createArticleWithAudit', // articles/index.post.ts
   // articles/[id]/boost.delete.ts: guarded by the endpoint directory scan below until its transaction moved here
   'server/services/admin-article-boost.ts#cancelBoostWithAudit',
+  // articles/[id]/boost.post.ts (instant / gradual): guarded by the endpoint directory scan below until its transactions moved here
+  'server/services/admin-article-boost.ts#startInstantBoostWithAudit',
+  'server/services/admin-article-boost.ts#startGradualBoostWithAudit',
   'server/services/admin-media-upload.ts#insertUploadedMediaWithAudit', // media/upload.post.ts
   'server/services/admin-page-write.ts#updatePageWithAudit', // pages/[id].put.ts
   'server/services/admin-page-versions.ts#restorePageVersionWithAudit', // pages/[id]/versions/[versionId]/restore.post.ts
   'server/services/admin-page-write.ts#createPageWithAudit', // pages/index.post.ts
   // pages/[id]/publish.post.ts: guarded by the endpoint directory scan below until its transaction moved here
   'server/services/admin-page-publish.ts#publishPageWithAudit',
+  // comments/[id]/visibility.patch.ts: guarded by the endpoint directory scan below until its transaction moved here
+  'server/services/admin-comments-visibility.ts#setCommentVisibilityWithAudit',
   // Factor, recovery codes, session generation and audit row in one transaction; the
   // cookie is written AFTER the commit, so it is no longer a cookie-between-writes
   // exception (2026-10-28 — the audit used to follow the cookie on the pool).
@@ -826,7 +832,7 @@ describe('every audited function of a named service file is checked on its own',
  * không còn hỏi chúng; các mục còn sống đã chuyển sang `SERVICE_POOL_AUDIT_EXEMPTIONS`
  * theo hàm. `article-views.ts` và `view-boost-scheduler.ts` đã bị gỡ: cả hai không còn
  * nhắc `activityLogs` (audit của lượt tăng lượt xem nằm trong transaction của
- * `articles/[id]/boost.post.ts` / `boost.delete.ts`, cùng lượt ghi qua `executor: tx`),
+ * `admin-article-boost.ts` — của `boost.post.ts` / `boost.delete.ts` —, cùng lượt ghi qua `executor: tx`),
  * nên mục miễn cả tệp chỉ còn là một lối tắt chờ được dùng.
  */
 const SERVICE_EXEMPTIONS: Record<string, string> = {
@@ -893,6 +899,10 @@ const AUDIT_ONLY_FUNCTION_EXEMPTIONS: Record<string, { fn: string, why: string }
   'admin-chatbot-answer-cache-view-audit.ts': {
     fn: 'auditAnswerCacheView', // chatbot/answer-cache/[key].get.ts
     why: 'audit-only insert recording a view of one cached answer; no row write to pair it with — best-effort (.catch), as before',
+  },
+  'admin-activity-logs-queries.ts': {
+    fn: 'auditActivityLogRead', // activity-logs/index.get.ts
+    why: "audit-only insert recording a read of every account's trail (IPs, login hours); no row write to pair it with — a failed insert fails the request, as before",
   },
 }
 
@@ -1034,6 +1044,9 @@ const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, string> = {
   'admin-ai-moderation-ops.ts#writeWorkerRestartAudit': 'moved verbatim from ai/moderation/restart-worker.post.ts: audit-only row after an in-memory reset (worker counters, rule cache) — the only write of the request, no row to pair with; best-effort, a failed insert logs ai_moderation.restart_worker_audit_failed',
   'admin-settings-retention.ts#writeRetentionRunStartAudit': 'moved verbatim from settings/retention-run.post.ts: the audit row of a manual retention run, written under the lock before the first DELETE (beforePurge) — the purge deletes in batches on its own pool and cannot share a transaction with it; fail-closed in the handler (a failed insert logs retention.manual_start_audit_failed and the purge does not start)',
   'admin-settings-retention.ts#writeRetentionRunResultAudit': 'moved verbatim from settings/retention-run.post.ts: the per-table summary row after a manual retention pass has committed — no row to pair with; best-effort in the handler (a failed insert logs retention.manual_result_audit_failed and answers auditFailed)',
+  'admin-cache-clear-audit.ts#auditPublicCacheClear': 'moved verbatim from cache-clear.post.ts: audit-only row after the public-page cache purge (storage, no database row) — the only write of the request, no row to pair with, the purge cannot be rolled back; a failed insert answers 500 with the cache already cleared and nothing else records who cleared it',
+  'admin-languages-audit.ts#writeLanguagesSeedDefaultAudit': 'moved verbatim from languages/seed-default.post.ts: audit row after seedDefaultLanguagesAndTranslations (languages.ts) has written its rows — not one transaction with them; best-effort in the handler (a failed insert logs languages.seed_default_audit_failed with the actor and the counts)',
+  'admin-languages-audit.ts#writeLanguageKeysSyncAudit': 'moved verbatim from languages/sync.post.ts: audit row after syncLanguageKeys (languages.ts) has written the missing keys — not one transaction with them; best-effort in the handler (a failed insert logs languages.sync_audit_failed with the actor and the counts)',
 }
 
 /** The audit rules of the service layer: an audit row is written on a transaction handle. */

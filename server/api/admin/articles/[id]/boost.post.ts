@@ -8,15 +8,14 @@
  *      followed by a 400 would be unattributable and uncorrectable.
  *   2. The audit row is written on the same path as the change, not after it as
  *      a best-effort call. An inflation nobody can trace back to a person is the
- *      one thing this feature must not produce.
+ *      one thing this feature must not produce. Each mode writes its change and
+ *      its audit row in one transaction (services/admin-article-boost.ts).
  */
 import { defineEventHandler, getRouterParam, readBody, createError } from 'h3'
-import { and, eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { activityLogs, articles, articleViewBoost } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { articleActionScope, articleResource } from '../../../../services/articles'
-import { addFabricatedViews, validateBoostInput } from '../../../../services/article-views'
+import { validateBoostInput } from '../../../../services/article-views'
+import { findArticleForBoostStart, startGradualBoostWithAudit, startInstantBoostWithAudit } from '../../../../services/admin-article-boost'
 
 export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
@@ -25,16 +24,11 @@ export default defineEventHandler(async (event) => {
   }
 
   const actor = event.context.adminUser
-  const db = getDb()
   // The lookup is scoped to the types the caller may read OR update — the write-path
   // scope of CLAUDE.md (`['read', <action>]`), as `[id].put.ts`: an id of a type they may
   // not touch at all is the same 404 as a missing one (no existence oracle), a type they
   // can see but not change is an honest 403 below (it was 404 — verifier L2).
-  const [article] = await db
-    .select({ id: articles.id, type: articles.type, title: articles.title })
-    .from(articles)
-    .where(and(eq(articles.id, id), articleActionScope(actor, ['read', 'update'])))
-    .limit(1)
+  const article = await findArticleForBoostStart(id, articleActionScope(actor, ['read', 'update']))
   if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 
   requireResourcePermission(actor, articleResource(article.type), 'update')
@@ -43,73 +37,17 @@ export default defineEventHandler(async (event) => {
   if (!input.ok) throw createError({ statusCode: 400, statusMessage: input.message })
 
   if (input.mode === 'instant') {
-    // The fabricated total and its audit row commit together: an inflation
-    // nobody can trace back to a person is the one thing this feature must not
-    // produce, and a fabricated count is not something a rollback can "mostly"
-    // undo — the row either carries the amount someone authorised, or it does
-    // not exist at all.
-    await db.transaction(async (tx) => {
-      await addFabricatedViews({ articleId: article.id, amount: input.amount, executor: tx })
-      await tx.insert(activityLogs).values({
-        userId: actor.id,
-        action: 'boost',
-        resource: 'articles',
-        resourceId: article.id,
-        meta: { mode: input.mode, amount: input.amount, minutes: null, title: article.title },
-      })
-    })
+    // The fabricated total and its audit row commit together (one transaction).
+    await startInstantBoostWithAudit(actor.id, article, input)
     return { ok: true, mode: input.mode, amount: input.amount }
   }
 
   const startedAt = new Date()
   const endsAt = new Date(startedAt.getTime() + input.minutes * 60_000)
 
-  // The scheduled job and its audit row commit together. The id is RETURNED from
-  // the transaction rather than read from a variable declared inside it: `const
-  // boostId = await db.transaction(...)` leaves `boostId` in its temporal dead
-  // zone for the whole callback, so referencing it in there throws at runtime —
-  // the defect that made every article-create call return 500 (see CLAUDE.md).
-  const boostId = await db.transaction(async (tx) => {
-    // One running job per article. Two overlapping schedules would both compute
-    // their own share of elapsed time and the operator would have no single figure
-    // to read progress from — the second request is refused rather than merged,
-    // because merging would change an amount the first operator authorised.
-    // Checked HERE, under the article row's lock: two requests for one article queue
-    // on the lock and the second sees the first one's job. Read before the
-    // transaction, both saw none and both inserted (FINDING-R6-14).
-    await tx.select({ id: articles.id }).from(articles).where(eq(articles.id, article.id)).for('update')
-    const [running] = await tx
-      .select({ id: articleViewBoost.id })
-      .from(articleViewBoost)
-      .where(and(eq(articleViewBoost.articleId, article.id), eq(articleViewBoost.status, 'running')))
-      .limit(1)
-    if (running) {
-      throw createError({ statusCode: 409, statusMessage: 'Bài viết đang có một lượt tăng dần chạy dở. Vui lòng huỷ lượt đó trước.' })
-    }
-
-    const [inserted] = await tx.insert(articleViewBoost).values({
-      articleId: article.id,
-      totalAmount: input.amount,
-      appliedAmount: 0,
-      durationMinutes: input.minutes,
-      startedAt,
-      endsAt,
-      status: 'running',
-      createdBy: actor.id,
-    })
-
-    await tx.insert(activityLogs).values({
-      userId: actor.id,
-      action: 'boost',
-      resource: 'articles',
-      resourceId: article.id,
-      meta: { mode: input.mode, amount: input.amount, minutes: input.minutes, title: article.title },
-    })
-
-    // Destructured above, not read off the un-destructured result: `db.insert()`
-    // resolves to an ARRAY, and `result.insertId` on it is silently `undefined`.
-    return Number(inserted.insertId)
-  })
+  // The scheduled job and its audit row commit together; a running job of this
+  // article is a 409 decided inside that transaction, under the article row's lock.
+  const boostId = await startGradualBoostWithAudit(actor.id, article, input, startedAt, endsAt)
 
   return {
     ok: true,
