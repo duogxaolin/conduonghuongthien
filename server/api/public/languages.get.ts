@@ -1,22 +1,9 @@
-import { asc, eq } from 'drizzle-orm'
-import { getDb } from '../../utils/db'
-import { languages } from '../../db/schema'
 import { reportPublicReadFailure } from '../../utils/public-read-failure'
+import { listActivePublicLanguages } from '../../services/public-site-queries'
 
 export default defineEventHandler(async (event) => {
   try {
-    const db = getDb()
-    const rows = await db
-      .select({
-        code: languages.code,
-        name: languages.name,
-        nativeName: languages.nativeName,
-        isDefault: languages.isDefault,
-        displayOrder: languages.displayOrder,
-      })
-      .from(languages)
-      .where(eq(languages.isActive, true))
-      .orderBy(asc(languages.displayOrder), asc(languages.id))
+    const rows = await listActivePublicLanguages()
 
     return { ok: true, items: rows }
   } catch (error) {

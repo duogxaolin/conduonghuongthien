@@ -110,8 +110,11 @@ test('no correlated subquery relies on Drizzle qualifying a bare column', () => 
 test('the reader chat list titles conversations from the visitor\'s first question', () => {
   // The specific query the bug was found in. Pinned by shape rather than by output
   // because this file makes no database connection; the behaviour itself was
-  // verified by calling the built endpoint.
-  const source = readFileSync(new URL('api/public/reader/chats.get.ts', serverRoot), 'utf8')
+  // verified by calling the built endpoint (and since 2026-11-08 by
+  // tests/public-reader-lists-behavior.test.ts). The query of `api/public/reader/chats.get.ts`
+  // lives in its service (`listReaderChatSummaries`).
+  assert.match(readFileSync(new URL('api/public/reader/chats.get.ts', serverRoot), 'utf8'), /listReaderChatSummaries\(reader\.id\)/)
+  const source = readFileSync(new URL('services/public-reader-queries.ts', serverRoot), 'utf8')
   // The source text carries backslash-escaped backticks (`\`m\``), because the SQL
   // lives inside a template literal. Matching the rendered SQL instead of the
   // source bytes is what this pattern gets wrong if written naively.
@@ -124,12 +127,17 @@ test('the reader chat list titles conversations from the visitor\'s first questi
 })
 
 /**
- * Service files holding queries moved out of the public article handlers (2026-11-08: no
+ * Service files holding queries moved out of the public handlers (2026-11-08: no
  * `server/api` file calls getDb() itself). The rule below follows the code there.
  */
 const MOVED_HANDLER_QUERY_FILES = [
   'services/public-articles-queries.ts',
   'services/public-article-related-queries.ts',
+  'services/public-media-queries.ts',
+  'services/public-pages-queries.ts',
+  'services/public-reader-queries.ts',
+  'services/public-search-queries.ts',
+  'services/public-site-queries.ts',
 ]
 
 test('no API handler aggregates article_view_daily per request — view totals are read from articles', () => {

@@ -1,8 +1,6 @@
 import { blankUnsafeBlockLinks, sanitizeBlockData } from '../../../utils/sanitize-html'
-import { getDb } from '../../../utils/db'
 import { reportPublicReadFailure } from '../../../utils/public-read-failure'
-import { pages, pageBlocks } from '../../../db/schema'
-import { and, eq, asc } from 'drizzle-orm'
+import { findPageBySlug, listVisiblePageBlockRows } from '../../../services/public-pages-queries'
 import type { BlockData, BlockFieldValue, BlockNode } from '../../../../shared/blocks/types'
 
 /**
@@ -147,8 +145,7 @@ export default defineEventHandler(async (event): Promise<PublicPageResponse> => 
   const cookieLang = getCookie(event, 'cdkt_lang')?.trim().toLowerCase() || ''
   const lang = (typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : '') || cookieLang
   try {
-    const db = getDb()
-    const [page] = await db.select().from(pages).where(eq(pages.slug, slug)).limit(1)
+    const page = await findPageBySlug(slug)
     if (!page) return notFound()
 
     const pageMeta = {
@@ -168,16 +165,7 @@ export default defineEventHandler(async (event): Promise<PublicPageResponse> => 
     // `displayOrder` is read for the ORDER BY but deliberately NOT returned: no
     // client code reads it (only the admin builder does), and the order it
     // encodes is already carried by the array order.
-    const rows = await db
-      .select({
-        id: pageBlocks.id,
-        blockType: pageBlocks.blockType,
-        displayOrder: pageBlocks.displayOrder,
-        data: pageBlocks.data,
-      })
-      .from(pageBlocks)
-      .where(and(eq(pageBlocks.pageId, page.id), eq(pageBlocks.isVisible, true)))
-      .orderBy(asc(pageBlocks.displayOrder), asc(pageBlocks.id))
+    const rows = await listVisiblePageBlockRows(page.id)
 
     const blocks: PublicBlockNode[] = rows.map((row) => {
       const rawData = (row.data as Record<string, unknown>) ?? {}

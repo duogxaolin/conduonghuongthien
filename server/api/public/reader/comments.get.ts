@@ -18,11 +18,9 @@
  * reader-specific response.
  */
 import { finitePositive } from '../../../utils/query-number'
-import { and, desc, eq, sql } from 'drizzle-orm'
 
-import { getDb } from '../../../utils/db'
-import { articleComments, articles } from '../../../db/schema'
 import { requireReader } from '../../../utils/reader-auth'
+import { countReaderComments, listReaderCommentRows } from '../../../services/public-reader-queries'
 
 /** Server-enforced ceiling. A client-supplied page size is a request. */
 const MAX_PER_PAGE = 20
@@ -33,43 +31,16 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
 
   const perPage = finitePositive(query.perPage, DEFAULT_PER_PAGE, MAX_PER_PAGE)
-  const db = getDb()
 
   // Chỉ hiện comment chưa ẩn — comment bị ẩn khỏi trang công khai thì cũng
   // không thuộc về "các bình luận công khai của tôi" mà reader xem ở profile.
-  const where = and(eq(articleComments.readerId, reader.id), eq(articleComments.isHidden, false))
-
-  const [countRow] = await db
-    .select({ total: sql<number>`COUNT(*)` })
-    .from(articleComments)
-    .where(where)
+  const countRow = await countReaderComments(reader.id)
 
   const total = Number(countRow?.total ?? 0)
   const totalPages = Math.max(1, Math.ceil(total / perPage))
   const page = Math.min(finitePositive(query.page, 1, 100_000), totalPages)
 
-  const rows = await db
-    .select({
-      id:           articleComments.id,
-      body:         articleComments.body,
-      createdAt:    articleComments.createdAt,
-      parentId:     articleComments.parentId,
-      articleTitle: articles.title,
-      articleSlug:  articles.slug,
-      articleStatus: articles.status,
-      commentsEnabled: articles.commentsEnabled,
-      // How many replies sit under this comment. The one-level rule means this is
-      // a count, not a tree — a reader wants to know whether the portal answered,
-      // and inlining the replies would put administrator text on a page whose
-      // whole job is showing the reader their own words.
-      replyCount: sql<number>`(SELECT COUNT(*) FROM \`article_comments\` \`r\` WHERE \`r\`.\`parent_id\` = \`article_comments\`.\`id\`)`,
-    })
-    .from(articleComments)
-    .leftJoin(articles, eq(articleComments.articleId, articles.id))
-    .where(where)
-    .orderBy(desc(articleComments.createdAt), desc(articleComments.id))
-    .limit(perPage)
-    .offset((page - 1) * perPage)
+  const rows = await listReaderCommentRows(reader.id, page, perPage)
 
   return {
     ok: true,

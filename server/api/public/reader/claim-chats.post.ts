@@ -16,11 +16,8 @@
  * belongs to somebody cannot be taken from them even if its ticket leaked, and
  * re-running the claim is harmless.
  */
-import { and, eq, inArray, isNull } from 'drizzle-orm'
-
-import { getDb } from '../../../utils/db'
-import { chatSessions } from '../../../db/schema'
 import { requireReader } from '../../../utils/reader-auth'
+import { claimChatSessionsForReader } from '../../../services/public-reader-queries'
 import { verifySessionToken } from '../../../utils/chatbot/session-token'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
 
@@ -69,31 +66,10 @@ export default defineEventHandler(async (event) => {
 
   const ids = [...verified]
 
-  /**
-   * One UPDATE with `reader_id IS NULL` in the WHERE clause, not read-then-write.
-   *
-   * The condition is what makes the "cannot be taken from someone" rule hold under
-   * two calls arriving at once: checking ownership in a SELECT first would let both
-   * see null and both write. Here the database decides, once.
-   */
-  await getDb()
-    .update(chatSessions)
-    .set({ readerId: reader.id })
-    .where(and(inArray(chatSessions.id, ids), isNull(chatSessions.readerId)))
-
-  /**
-   * Count by asking what the reader now owns among the ids they proved, rather
-   * than trusting `affectedRows`.
-   *
-   * `affectedRows` counts rows CHANGED, so a conversation this reader had already
-   * claimed on a previous visit counts as zero — and the page would say "claimed
-   * 0" while displaying the conversation immediately below. The reader's question
-   * is "are my conversations here", not "did a row change on this request".
-   */
-  const owned = await getDb()
-    .select({ id: chatSessions.id })
-    .from(chatSessions)
-    .where(and(inArray(chatSessions.id, ids), eq(chatSessions.readerId, reader.id)))
+  // One UPDATE guarded by `reader_id IS NULL` (the database decides who owns a
+  // session, once), then a count of what the reader now owns among the ids they
+  // proved — not `affectedRows`. Both explained in claimChatSessionsForReader.
+  const owned = await claimChatSessionsForReader(reader.id, ids)
 
   return { ok: true, claimed: owned.length, verified: verified.size }
 })

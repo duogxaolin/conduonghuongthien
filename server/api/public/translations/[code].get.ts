@@ -1,7 +1,5 @@
-import { getDb } from '../../../utils/db'
-import { languages } from '../../../db/schema'
-import { eq } from 'drizzle-orm'
 import { getTranslationsForPublic } from '../../../services/languages'
+import { findLanguageByCode } from '../../../services/public-site-queries'
 
 export default defineEventHandler(async (event) => {
   const code = getRouterParam(event, 'code')
@@ -9,15 +7,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Mã ngôn ngữ bắt buộc.' })
   }
 
-  const db = getDb()
-
-  const [lang] = await db.select().from(languages).where(eq(languages.code, code)).limit(1)
+  const lang = await findLanguageByCode(code)
 
   if (!lang || !lang.isActive) {
     return { ok: true, translations: {} }
   }
 
-  const translations = await getTranslationsForPublic(code, db)
+  // No handle passed: the service's default is the same shared database handle the
+  // language lookup above used.
+  const translations = await getTranslationsForPublic(code)
 
   return { ok: true, translations }
 })

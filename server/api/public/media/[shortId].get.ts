@@ -17,13 +17,11 @@
  * `/media/<short_id>`. RedirectPermanent giữ query string (`?comments=` cho
  * trang bình luận), nên một link cũ tới trang 3 của luồng bình luận vẫn mở đúng.
  */
-import { and, eq } from 'drizzle-orm'
 import { createError, defineEventHandler, getRouterParam, getQuery, sendRedirect } from 'h3'
 
-import { getDb } from '../../../utils/db'
-import { mediaItems } from '../../../db/schema'
 import { logError } from '../../../utils/logger'
-import { getPublishedMediaByShortId, PUBLISHED_MEDIA_STATUS } from '../../../services/media-portal'
+import { getPublishedMediaByShortId } from '../../../services/media-portal'
+import { findPublishedMediaShortIdBySlug } from '../../../services/public-media-queries'
 
 const NOT_FOUND_MESSAGE = 'Video không tồn tại hoặc chưa được đăng.'
 
@@ -42,11 +40,7 @@ export default defineEventHandler(async (event) => {
 
     // Không tìm thấy theo short_id → thử slug cũ (link đã phát ra trước đổi).
     // Tìm thấy → redirect 301 sang URL short_id mới, giữ query string.
-    const [legacy] = await getDb()
-      .select({ shortId: mediaItems.shortId })
-      .from(mediaItems)
-      .where(and(eq(mediaItems.slug, shortId), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
-      .limit(1)
+    const legacy = await findPublishedMediaShortIdBySlug(shortId)
 
     if (legacy) {
       const query = getQuery(event)

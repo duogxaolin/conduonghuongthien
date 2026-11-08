@@ -1,11 +1,9 @@
-import { getDb } from '../../utils/db'
-import { settings } from '../../db/schema'
 import { reportPublicReadFailure } from '../../utils/public-read-failure'
+import { listSettingRows } from '../../services/public-site-queries'
 
 export default defineEventHandler(async (event) => {
   try {
-    const db = getDb()
-    const allSettings = await db.select().from(settings)
+    const allSettings = await listSettingRows()
 
     const publicSettings: Record<string, string | null> = {}
     const allowedKeys = [
