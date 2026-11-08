@@ -123,6 +123,15 @@ test('the reader chat list titles conversations from the visitor\'s first questi
   assert.match(source, /\\`m\\`\.\\`role\\`\s*=\s*'user'/, 'the title would come from the assistant\'s opening line')
 })
 
+/**
+ * Service files holding queries moved out of the public article handlers (2026-11-08: no
+ * `server/api` file calls getDb() itself). The rule below follows the code there.
+ */
+const MOVED_HANDLER_QUERY_FILES = [
+  'services/public-articles-queries.ts',
+  'services/public-article-related-queries.ts',
+]
+
 test('no API handler aggregates article_view_daily per request — view totals are read from articles', () => {
   // The "Đọc nhiều" ranking (`sort=views`), the article page, the admin list and
   // the CSV export used to sum the daily rows for every article on every request.
@@ -132,14 +141,16 @@ test('no API handler aggregates article_view_daily per request — view totals a
   const code = (source: string) => source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:\\])\/\/.*$/gm, '$1')
-  const offenders = walk('api').filter(file => /article_view_daily|articleViewDaily/.test(
+  const offenders = [...walk('api'), ...MOVED_HANDLER_QUERY_FILES].filter(file => /article_view_daily|articleViewDaily/.test(
     code(readFileSync(new URL(file, serverRoot), 'utf8')),
   ))
   assert.deepEqual(offenders, [], 'an API handler reads article_view_daily directly instead of the maintained totals')
 })
 
 test('sort=views orders by the indexed total column, not by a computed alias', () => {
-  const source = readFileSync(new URL('api/public/articles.get.ts', serverRoot), 'utf8')
+  // The list query of `api/public/articles.get.ts` lives in its service (`queryPublicArticleList`).
+  assert.match(readFileSync(new URL('api/public/articles.get.ts', serverRoot), 'utf8'), /queryPublicArticleList\(/)
+  const source = readFileSync(new URL('services/public-articles-queries.ts', serverRoot), 'utf8')
   assert.match(source, /desc\(articles\.viewTotal\)/, 'the ranking must order by articles.view_total so MySQL can use articles_status_type_views_idx')
   assert.doesNotMatch(source, /desc\(sql`view_total`\)/, 'ordering by a SELECT alias is the shape that came with the per-request subquery')
 })

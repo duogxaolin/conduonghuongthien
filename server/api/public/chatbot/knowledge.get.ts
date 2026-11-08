@@ -1,9 +1,6 @@
-import { and, asc, count, desc, eq, like, or, sql } from 'drizzle-orm'
-import { chatbotKnowledge } from '../../../db/schema'
-import { getDb } from '../../../utils/db'
 import { reportPublicReadFailure } from '../../../utils/public-read-failure'
-import { containsPattern } from '../../../utils/sql-like'
 import { serializePublicKnowledge } from '../../../utils/chatbot/serializers'
+import { listPublishedKnowledge } from '../../../services/public-chatbot-queries'
 
 /**
  * The approved knowledge bank as a browsable list.
@@ -40,47 +37,8 @@ export default defineEventHandler(async (event) => {
   const topic = String(query.topic || '').trim().slice(0, 128)
 
   try {
-    const db = getDb()
-    const conditions = [eq(chatbotKnowledge.status, 'published')]
-    if (search) {
-      conditions.push(
-        or(
-          like(chatbotKnowledge.canonicalQuestion, containsPattern(search)),
-          like(chatbotKnowledge.approvedAnswer, containsPattern(search)),
-        )!,
-      )
-    }
-    // An unknown topic yields an empty page rather than an error: the filter comes
-    // from a URL a visitor can edit or share, and a 400 on a stale link reads as
-    // the portal being broken.
-    if (topic) conditions.push(eq(chatbotKnowledge.topic, topic))
-    const where = and(...conditions)
-
-    const rows = await db
-      .select()
-      .from(chatbotKnowledge)
-      .where(where)
-      // Matches the ordering the assistant itself uses, so the list a visitor
-      // reads and the answers they get back are in the same priority order.
-      .orderBy(desc(chatbotKnowledge.priority), asc(chatbotKnowledge.id))
-      .limit(perPage)
-      .offset((page - 1) * perPage)
-
-    const [{ total } = { total: 0 }] = await db
-      .select({ total: count() })
-      .from(chatbotKnowledge)
-      .where(where)
-
-    // Topics for the filter come from published rows only. Deriving them from the
-    // whole table would advertise a topic that has nothing published under it, so
-    // picking it would return an empty list with no explanation.
-    const topicRows = await db
-      .select({ topic: chatbotKnowledge.topic, total: count() })
-      .from(chatbotKnowledge)
-      .where(eq(chatbotKnowledge.status, 'published'))
-      .groupBy(chatbotKnowledge.topic)
-      .orderBy(desc(sql`count(*)`), asc(chatbotKnowledge.topic))
-      .limit(50)
+    // The page of published rows, their total, and the topic facet (published only).
+    const { rows, total, topicRows } = await listPublishedKnowledge({ page, perPage, search, topic })
 
     return {
       ok: true,

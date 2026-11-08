@@ -1,6 +1,4 @@
-import { eq } from 'drizzle-orm'
-import { getDb } from '../../../utils/db'
-import { submissions, settings } from '../../../db/schema'
+import { findContactEmailSetting, insertChatbotLead } from '../../../services/public-chatbot-queries'
 import { logError } from '../../../utils/logger'
 import { getSmtpConfig, sendMail } from '../../../utils/mailer'
 import { getChatbotSettings } from '../../../services/chatbot-settings'
@@ -36,21 +34,14 @@ export default defineEventHandler(async (event) => {
   if (phone && !PHONE_RE.test(phone)) throw createError({ statusCode: 400, statusMessage: 'Số điện thoại không hợp lệ.' })
   if (email && !EMAIL_RE.test(email)) throw createError({ statusCode: 400, statusMessage: 'Email không hợp lệ.' })
 
-  const db = getDb()
-  const [result] = await db.insert(submissions).values({
-    fullName: name || 'Khách (Chatbot)',
-    phone: phone || '',
-    email: email || null,
-    message: question || null,
-    formTitle: 'Chatbot – Yêu cầu hỗ trợ',
-  })
+  const id = await insertChatbotLead({ name, phone, email, question })
 
   // Notify staff (best-effort; never fail the visitor on mail issues).
   try {
     const cbSettings = await getChatbotSettings()
     let to = (cbSettings.leadCaptureEmail || '').trim()
     if (!to) {
-      const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, 'email')).limit(1)
+      const row = await findContactEmailSetting()
       to = (row?.value || '').trim()
     }
     if (to && EMAIL_RE.test(to)) {
@@ -78,5 +69,5 @@ export default defineEventHandler(async (event) => {
     logError({ event: 'chatbot.lead_email_failed', error: err })
   }
 
-  return { ok: true, id: result.insertId }
+  return { ok: true, id }
 })

@@ -1,7 +1,5 @@
-import { getDb } from '../../utils/db'
 import { reportPublicReadFailure } from '../../utils/public-read-failure'
-import { categories } from '../../db/schema'
-import { eq, asc } from 'drizzle-orm'
+import { listPublicCategories } from '../../services/public-taxonomy-queries'
 
 const CATEGORY_TRANSLATIONS: Record<string, Record<string, string>> = {
   'tin-noi-bat': {
@@ -63,21 +61,8 @@ export default defineEventHandler(async (event) => {
     const type = String(query.type || '').trim()
     const cookieLang = getCookie(event, 'cdkt_lang')?.trim().toLowerCase() || ''
     const lang = (typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : '') || cookieLang
-    const db = getDb()
 
-    const rows = await db
-      .select({
-        id:           categories.id,
-        name:         categories.name,
-        slug:         categories.slug,
-        parentId:     categories.parentId,
-        type:         categories.type,
-        description:  categories.description,
-        displayOrder: categories.displayOrder,
-      })
-      .from(categories)
-      .where(type ? eq(categories.type, type) : undefined)
-      .orderBy(asc(categories.displayOrder), asc(categories.id))
+    const rows = await listPublicCategories(type)
 
     const localizedRows = rows.map((r) => {
       const trans = lang && lang !== 'vi' ? CATEGORY_TRANSLATIONS[r.slug]?.[lang] : null

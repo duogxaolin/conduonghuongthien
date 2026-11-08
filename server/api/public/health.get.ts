@@ -19,27 +19,10 @@
  * `version` from the body and compare it from the VPS side.
  */
 import { defineEventHandler, setResponseHeader } from 'h3'
-import { getPool } from '../../utils/db'
 import { reportPublicReadFailure } from '../../utils/public-read-failure'
+import { pingDatabase } from '../../services/public-health-queries'
 
 export const HEALTH_DB_TIMEOUT_MS = 2000
-
-async function pingDatabase(timeoutMs: number): Promise<void> {
-  const pool = getPool()
-  if (!pool) throw new Error('database pool unavailable')
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`database ping timed out after ${timeoutMs} ms`)),
-      timeoutMs,
-    )
-  })
-  try {
-    await Promise.race([pool.query({ sql: 'SELECT 1', timeout: timeoutMs }), expired])
-  } finally {
-    clearTimeout(timer)
-  }
-}
 
 export default defineEventHandler(async (event) => {
   setResponseHeader(event, 'cache-control', 'no-store')

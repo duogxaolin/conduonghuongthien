@@ -1,7 +1,5 @@
-import { and, eq, inArray } from 'drizzle-orm'
-import { getDb } from '../../../utils/db'
-import { articleComments } from '../../../db/schema'
 import { optionalReader } from '../../../utils/reader-auth'
+import { listOwnCommentVisibility } from '../../../services/public-comment-checkpoint-queries'
 
 /**
  * Moderation checkpoint for the comments a reader has just posted.
@@ -32,14 +30,7 @@ export default defineEventHandler(async (event) => {
   const reader = await optionalReader(event)
   if (!reader) return { ok: true, items: [] }
 
-  const db = getDb()
-  const rows = await db
-    .select({
-      id: articleComments.id,
-      isHidden: articleComments.isHidden,
-    })
-    .from(articleComments)
-    .where(and(inArray(articleComments.id, ids), eq(articleComments.readerId, reader.id)))
+  const rows = await listOwnCommentVisibility(ids, reader.id)
 
   return {
     ok: true,

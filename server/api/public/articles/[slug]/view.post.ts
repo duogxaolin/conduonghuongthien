@@ -14,9 +14,7 @@
  * otherwise fine, and a varying status would leak whether a slug exists.
  */
 import { defineEventHandler, getRouterParam, readBody, setResponseStatus } from 'h3'
-import { and, eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { articles } from '../../../../db/schema'
+import { findPublishedArticleIdBySlug } from '../../../../services/public-articles-queries'
 import { getClientIp } from '../../../../utils/client-ip'
 import { deriveDailyVisitorToken } from '../../../../utils/analytics-collection'
 import { recordRateLimitHit, type RateLimitRule } from '../../../../utils/rate-limit-store'
@@ -65,12 +63,7 @@ export default defineEventHandler(async (event) => {
     const body = await readBody(event).catch(() => null)
     const sourceCategory = normalizeViewSource((body as { sourceCategory?: unknown } | null)?.sourceCategory)
 
-    const db = getDb()
-    const [article] = await db
-      .select({ id: articles.id })
-      .from(articles)
-      .where(and(eq(articles.slug, slug), eq(articles.status, 'published')))
-      .limit(1)
+    const article = await findPublishedArticleIdBySlug(slug)
     // Same status, same shape: an unknown slug must not be distinguishable from
     // a known one.
     if (!article) return { accepted: false }
