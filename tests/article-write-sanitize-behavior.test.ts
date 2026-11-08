@@ -32,6 +32,11 @@ mock.module('../server/utils/db', {
     }),
   },
 })
+// The answer-cache bump the handler runs after commit (its own tests: tests/chatbot-answer-cache*.test.ts):
+// counted here, not run — this fake database has no `execute`, and running it logged
+// `chatbot.answer_cache_bump_failed` once per write.
+let answerCacheBumps = 0
+mock.module('../server/services/chatbot-answer-cache', { namedExports: { bumpAnswerCacheVersion: async () => { answerCacheBumps += 1; return 1 } } })
 mock.module('../server/services/google-oauth-settings', { namedExports: { defaultCommentsEnabled: async () => false } })
 
 type Event = { body: unknown, params: Record<string, string>, context: { adminUser: unknown } }
@@ -50,7 +55,7 @@ const grant = (resource: string, ...actions: Array<'Create' | 'Read' | 'Update' 
 const editor = (permissions: unknown[], isSuperAdmin = false) => ({ id: 9, isSuperAdmin, permissions })
 const withEvent = (adminUser: unknown, body: unknown, id = '31'): Event => ({ body, params: { id }, context: { adminUser } })
 
-function reset() { written.inserts.length = 0; written.updates.length = 0; written.outsideTransaction.length = 0; existing = null }
+function reset() { written.inserts.length = 0; written.updates.length = 0; written.outsideTransaction.length = 0; existing = null; answerCacheBumps = 0 }
 async function statusOf(run: () => Promise<unknown>): Promise<number | null> {
   try { await run(); return null } catch (error) { return (error as { statusCode?: number }).statusCode ?? -1 }
 }
@@ -93,6 +98,7 @@ test('create: the article and its audit row are written inside one transaction',
   assert.equal(audit.resourceId, 4242)
   assert.equal(result.id, 4242)
   assert.deepEqual(written.outsideTransaction, [], 'nothing is written on the pool outside the transaction')
+  assert.equal(answerCacheBumps, 1, 'cached chatbot answers are invalidated once, after the write')
 })
 
 test('create: the permission needed is the one for the article TYPE', async () => {
