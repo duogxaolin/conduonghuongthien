@@ -1,11 +1,9 @@
-import { getDb } from '../../../utils/db'
-import { contentTypes, categories, articles } from '../../../db/schema'
-import { uniqueContentTypeSlug } from '../../../utils/slug'
-import { eq } from 'drizzle-orm'
+import type { contentTypes } from '../../../db/schema'
 import { bumpAnswerCacheVersion } from '../../../services/chatbot-answer-cache'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { autoTranslateContentTypeUpdate } from '../../../services/i18n-auto-translate'
 import { purgePublicPageCacheAfterWrite } from '../../../utils/public-page-cache'
+import { contentTypeSlugForUpdate, findContentTypeById, updateContentTypeAndCascadeSlug } from '../../../services/admin-taxonomy-queries'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -14,8 +12,7 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid content type ID' })
 
-  const db = getDb()
-  const [existing] = await db.select().from(contentTypes).where(eq(contentTypes.id, id)).limit(1)
+  const existing = await findContentTypeById(id)
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: 'Thể loại không tồn tại.' })
   }
@@ -35,7 +32,7 @@ export default defineEventHandler(async (event) => {
     if (existing.isSystem) {
       throw createError({ statusCode: 400, statusMessage: 'Không thể đổi định danh (slug) của thể loại hệ thống.' })
     }
-    const candidate = await uniqueContentTypeSlug(db, String(body.slug).trim(), id, !!existing.isSystem)
+    const candidate = await contentTypeSlugForUpdate(String(body.slug).trim(), id, !!existing.isSystem)
     if (candidate !== existing.slug) {
       newSlug = candidate
       updateFields.slug = candidate
@@ -46,12 +43,10 @@ export default defineEventHandler(async (event) => {
     return { ok: true, slug: existing.slug }
   }
 
-  await db.update(contentTypes).set(updateFields).where(eq(contentTypes.id, id))
+  // The type, then (on a rename) its categories and articles — three UPDATEs, no transaction.
+  await updateContentTypeAndCascadeSlug(id, updateFields, existing, newSlug)
 
-  // Cascade slug rename to referencing rows so categories/articles stay linked.
   if (newSlug) {
-    await db.update(categories).set({ type: newSlug }).where(eq(categories.type, existing.slug))
-    await db.update(articles).set({ type: newSlug }).where(eq(articles.type, existing.slug))
     // Đổi slug thể loại đổi URL bài viết mà chatbot nạp sẵn vào câu trả lời; câu đã cache
     // còn trỏ địa chỉ cũ. Tăng phiên bản sau khi cả hai UPDATE đã chạy.
     await bumpAnswerCacheVersion().catch(() => undefined)

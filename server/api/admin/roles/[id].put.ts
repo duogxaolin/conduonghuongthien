@@ -1,8 +1,8 @@
-import { getDb } from '../../../utils/db'
-import { roles, permissions, activityLogs } from '../../../db/schema'
+import type { permissions } from '../../../db/schema'
 import { assertAssignablePermissions, assertRoleWithinActor, requireResourcePermission } from '../../../utils/permissions'
 import { loadRolePermissions } from '../../../services/users'
-import { eq } from 'drizzle-orm'
+import { findRoleById } from '../../../services/admin-roles-queries'
+import { updateRoleWithAudit } from '../../../services/admin-role-update'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -12,9 +12,8 @@ export default defineEventHandler(async (event) => {
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid role ID' })
 
   const body = await readBody(event).catch(() => ({}))
-  const db = getDb()
 
-  const [existingRole] = await db.select().from(roles).where(eq(roles.id, id)).limit(1)
+  const existingRole = await findRoleById(id)
   if (!existingRole) {
     throw createError({ statusCode: 404, statusMessage: 'Vai trò không tồn tại.' })
   }
@@ -42,23 +41,8 @@ export default defineEventHandler(async (event) => {
     assertRoleWithinActor(adminUser, await loadRolePermissions(id), 'Không thể sửa quyền của vai trò có quyền cao hơn quyền của bạn.')
   }
 
-  // Validate first, then commit role metadata, grants and audit together.
-  await db.transaction(async (tx) => {
-    if (Object.keys(updateFields).length > 0) {
-      await tx.update(roles).set(updateFields).where(eq(roles.id, id))
-    }
-    if (permValues !== undefined) {
-      await tx.delete(permissions).where(eq(permissions.roleId, id))
-      if (permValues.length > 0) await tx.insert(permissions).values(permValues)
-    }
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'update',
-      resource: 'roles',
-      resourceId: id,
-    })
-  })
+  // Validate first, then commit role metadata, grants and audit together (one transaction, in the service).
+  await updateRoleWithAudit(adminUser, id, updateFields, permValues)
 
   return { ok: true }
 })

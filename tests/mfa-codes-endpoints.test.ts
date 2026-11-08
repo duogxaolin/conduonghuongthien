@@ -363,7 +363,11 @@ test('break-glass is SuperAdmin-only, not merely users.update', () => {
 })
 
 test('break-glass clears both factors and codes, revokes the target, and logs both sides', () => {
-  const src = read('server/api/admin/users/[id]/mfa.delete.ts')
+  // The handler keeps the gate, the 404 and the security log line; its four writes moved
+  // verbatim into the service it calls (`clearUserMfaFactors`).
+  const handler = read('server/api/admin/users/[id]/mfa.delete.ts')
+  const src = read('server/services/admin-user-mfa-reset.ts')
+  assert.match(handler, /await clearUserMfaFactors\(admin, id, target, ip\)/, 'the handler no longer runs the moved writes')
   assert.match(src, /delete\(userMfaFactors\)\.where\(eq\(userMfaFactors\.userId, id\)\)/)
   assert.match(src, /delete\(userRecoveryCodes\)\.where\(eq\(userRecoveryCodes\.userId, id\)\)/)
   /**
@@ -386,8 +390,8 @@ test('break-glass clears both factors and codes, revokes the target, and logs bo
   // Two rows so the act is visible from either account's history.
   assert.match(src, /userId: admin\.id,\s*action: 'delete',\s*resource: 'user_mfa'/)
   assert.match(src, /userId: id,\s*action: 'delete',\s*resource: 'user_mfa'/)
-  assert.match(src, /SECURITY_EVENTS\.mfaFactorsCleared/)
-  assert.match(src, /statusCode: 404/, 'a missing target is a 404, not a silent success')
+  assert.match(handler, /SECURITY_EVENTS\.mfaFactorsCleared/)
+  assert.match(handler, /statusCode: 404/, 'a missing target is a 404, not a silent success')
 })
 
 // ── Middleware stage rejection ───────────────────────────────────────────────

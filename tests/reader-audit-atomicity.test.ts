@@ -179,11 +179,11 @@ describe('the shared deletion path can join a caller transaction', () => {
  */
 const AUDITED_DELETE_ENDPOINTS: Array<{ file: string, why: string }> = [
   {
-    file: 'server/api/admin/roles/[id].delete.ts',
+    file: 'server/services/admin-role-delete.ts', // the transaction of roles/[id].delete.ts (moved out of the handler)
     why: 'a permission role is destroyed with nothing recording who removed it',
   },
   {
-    file: 'server/api/admin/users/[id]/mfa.delete.ts',
+    file: 'server/services/admin-user-mfa-reset.ts', // the transaction of users/[id]/mfa.delete.ts (moved out of the handler)
     why: "another administrator's second factors are stripped and the override leaves no trace",
   },
   {
@@ -283,12 +283,13 @@ const AUDITED_MUTATION_ENDPOINTS: string[] = [
   // cookie is written AFTER the commit, so it is no longer a cookie-between-writes
   // exception (2026-10-28 — the audit used to follow the cookie on the pool).
   'server/api/admin/profile/mfa/disable.post.ts',
-  'server/api/admin/roles/index.post.ts',
+  'server/services/admin-role-create.ts', // the transaction of roles/index.post.ts (moved out of the handler)
+  'server/services/admin-role-update.ts', // roles/[id].put.ts: guarded by the raw-delete scan below until its tx.delete(permissions) moved here
   'server/api/admin/settings/index.put.ts',
   'server/api/admin/settings/navigation/mobile.put.ts',
   'server/api/admin/settings/navigation/navbar.put.ts',
-  'server/api/admin/users/[id].put.ts',
-  'server/api/admin/users/index.post.ts',
+  'server/services/admin-user-update.ts', // the transaction of users/[id].put.ts (moved out of the handler)
+  'server/services/admin-user-create.ts', // the transaction of users/index.post.ts (moved out of the handler)
 ]
 
 describe('admin mutation endpoints commit their write and their audit row together', () => {
