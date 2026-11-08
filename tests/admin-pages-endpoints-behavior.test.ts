@@ -12,6 +12,9 @@ import test, { after, beforeEach } from 'node:test'
  *   POST   /api/admin/pages/:id/versions/:versionId/restore   (version → draft + audit)
  *   PUT    /api/admin/pages/:id/draft                         (clear path — the save path runs in
  *                                                             security-block-link-schemes)
+ *   POST   /api/admin/pages/:id/publish                       (the flat-row upsert, the 'auto' ring and the
+ *                                                             rollback — the tree path's link policy runs in
+ *                                                             security-block-link-schemes)
  *
  * Pinned as they behave today, before their statements move to `server/services` (2026-11-08):
  * the permission each needs; what is read and in which order; every write and its audit row
@@ -33,6 +36,7 @@ const h = await startAiRouteHarness({
     { method: 'delete', path: '/api/admin/pages/:id/versions/:versionId', handler: await load('../server/api/admin/pages/[id]/versions/[versionId].delete') },
     { method: 'post', path: '/api/admin/pages/:id/versions/:versionId/restore', handler: await load('../server/api/admin/pages/[id]/versions/[versionId]/restore.post') },
     { method: 'put', path: '/api/admin/pages/:id/draft', handler: await load('../server/api/admin/pages/[id]/draft.put') },
+    { method: 'post', path: '/api/admin/pages/:id/publish', handler: await load('../server/api/admin/pages/[id]/publish.post') },
   ],
 })
 after(() => h.server.close())
@@ -249,4 +253,49 @@ test('the draft: no blocks array clears it (live untouched), an array — even e
   assert.equal((await h.request('PUT', '/api/admin/pages/3/draft', reader, {})).status, 403)
   assert.deepEqual(audits(), [])
   assert.equal(h.harness.transactionsBegun, 0, 'the draft write runs on the pool, as before')
+})
+
+// ─── Publish ─────────────────────────────────────────────────────────────────
+
+const flatRows = (pageId: number) => h.harness.rows(pageBlocks).filter(row => row.pageId === pageId).map(row => [row.id, row.blockType, row.displayOrder, row.data])
+
+test('flat publish: rows kept by id are updated, new ones inserted, missing ones deleted; the old live rows snapshotted; draft and tree cleared', async () => {
+  await seedPages()
+  for (let n = 0; n < 5; n++) await h.harness.db.insert(pageVersions).values({ id: 100 + n, pageId: 2, kind: 'auto', label: null, blocks: [] })
+  const response = await h.request('POST', '/api/admin/pages/2/publish', editor, { blocks: [
+    { id: 11, blockType: 'richtext', data: { html: '<p>Sửa</p>' } },
+    { id: 'tmp-1', blockType: 'heading', data: { text: 'Mới' } },
+  ] })
+  assert.deepEqual([response.status, response.body.tree], [200, false])
+  const live = flatRows(2)
+  assert.deepEqual(live.map(row => row.slice(0, 3)), [[11, 'richtext', 1], [live[1]![0], 'heading', 2]], 'row 10 is gone, 11 kept its id')
+  assert.deepEqual((response.body.blocks as Array<{ id: number }>).map(block => block.id), live.map(row => row[0]))
+  const page = h.harness.rows(pages).find(row => row.id === 2)!
+  assert.deepEqual([page.publishedBlocks, page.draftBlocks, page.draftUpdatedBy], [null, null, null])
+  const autos = h.harness.rows(pageVersions).filter(row => row.pageId === 2 && row.kind === 'auto')
+  assert.deepEqual(autos.map(row => row.id).slice(0, 4), [101, 102, 103, 104], 'the ring keeps the newest five')
+  assert.deepEqual(autos.at(-1)!.blocks, [
+    { blockType: 'heading', displayOrder: 0, data: {}, isVisible: true },
+    { blockType: 'richtext', displayOrder: 1, data: { html: '<p>Hai</p>' }, isVisible: true },
+  ])
+  assert.deepEqual(audits(), [{ userId: editor.id, action: 'update', resource: 'pages', meta: { pageId: 2, action: 'publish', blockCount: 2, tree: false } }])
+})
+
+test('tree publish writes published_blocks (flat rows untouched, the old tree snapshotted); a failed audit rolls the whole publish back', async () => {
+  await seedPages()
+  const next = [{ blockType: 'section', isVisible: true, data: {}, children: [{ blockType: 'heading', isVisible: true, data: { text: 'Mới' } }] }]
+  const response = await h.request('POST', '/api/admin/pages/1/publish', editor, { blocks: next })
+  assert.deepEqual([response.status, response.body.tree], [200, true])
+  const page = h.harness.rows(pages).find(row => row.id === 1)!
+  assert.deepEqual(page.publishedBlocks, response.body.blocks)
+  assert.deepEqual(flatRows(1).map(row => row[0]), [13])
+  assert.equal(h.harness.rows(pageVersions).filter(row => row.pageId === 1 && row.kind === 'auto').length, 1)
+
+  const before = [h.harness.rows(pages), h.harness.rows(pageBlocks), h.harness.rows(pageVersions)]
+  h.harness.failNext(AUDIT)
+  assert.equal((await h.request('POST', '/api/admin/pages/2/publish', editor, { blocks: [{ id: 11, blockType: 'richtext', data: { html: '<p>x</p>' } }] })).status, 500)
+  assert.deepEqual([h.harness.rows(pages), h.harness.rows(pageBlocks), h.harness.rows(pageVersions)], before, 'nothing of the publish survives a failed audit')
+  assert.equal((await h.request('POST', '/api/admin/pages/999/publish', editor, {})).status, 404)
+  assert.equal((await h.request('POST', '/api/admin/pages/1/publish', reader, {})).status, 403)
+  assert.equal(audits().length, 1)
 })
