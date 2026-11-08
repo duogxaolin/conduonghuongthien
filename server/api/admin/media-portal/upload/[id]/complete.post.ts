@@ -25,8 +25,7 @@ import { defineEventHandler, readBody, setResponseStatus } from 'h3'
 
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { completeUpload } from '../../../../../services/chunked-upload'
-import { resolveMediaConfigWithDb } from '../../../../../services/media-config-service'
-import { getDb } from '../../../../../utils/db'
+import { resolveAdminMediaConfig } from '../../../../../services/admin-media-config'
 import { bumpAnswerCacheVersion } from '../../../../../services/chatbot-answer-cache'
 
 export default defineEventHandler(async (event) => {
@@ -42,7 +41,7 @@ export default defineEventHandler(async (event) => {
   // Nhánh thay tệp cần quyền `update` (sửa video đã có); nhánh tạo mới cần `create`.
   requireResourcePermission(adminUser, 'media_portal', replaceId ? 'update' : 'create')
 
-  const { config } = await resolveMediaConfigWithDb(getDb())
+  const { config } = await resolveAdminMediaConfig()
 
   const result = await completeUpload({
     adminUserId: adminUser.id,

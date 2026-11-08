@@ -12,18 +12,19 @@
  *
  * Quyền `media.read`.
  */
-import { getDb, getPool } from '../../../utils/db'
 import { requireResourcePermission } from '../../../utils/permissions'
-import { DuplicateReportBusyError, runMediaDuplicateReport } from '../../../services/media-duplicates'
+import { DuplicateReportBusyError } from '../../../services/media-duplicates'
+import { runSharedMediaDuplicateReport } from '../../../services/admin-media-duplicates'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'media', 'read')
 
-  const pool = getPool()
-  if (!pool) throw createError({ statusCode: 503, statusMessage: 'Cơ sở dữ liệu chưa sẵn sàng.' })
   try {
-    const report = await runMediaDuplicateReport(getDb(), pool)
+    // `null` = không có pool: chưa đọc gì. Cùng 503 như trước (ném trong `try` nhưng không phải
+    // DuplicateReportBusyError nên đi thẳng ra ngoài).
+    const report = await runSharedMediaDuplicateReport()
+    if (!report) throw createError({ statusCode: 503, statusMessage: 'Cơ sở dữ liệu chưa sẵn sàng.' })
     return { ok: true, ...report }
   } catch (err: unknown) {
     if (err instanceof DuplicateReportBusyError) throw createError({ statusCode: 409, statusMessage: err.message })

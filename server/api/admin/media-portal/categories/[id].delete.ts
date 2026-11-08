@@ -1,8 +1,6 @@
 import { createError, defineEventHandler, getRouterParam } from 'h3'
-import { count, eq } from 'drizzle-orm'
-import { getDb } from '../../../../utils/db'
-import { mediaCategories, mediaItems } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { countMediaItemsInCategory, deleteMediaCategoryRow, findMediaCategoryById } from '../../../../services/admin-media-categories'
 
 /**
  * Xoá danh mục Media Portal. RBAC: `media_portal.delete`.
@@ -19,14 +17,10 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'ID danh mục không hợp lệ.' })
 
-  const db = getDb()
-  const [existing] = await db.select().from(mediaCategories).where(eq(mediaCategories.id, id)).limit(1)
+  const existing = await findMediaCategoryById(id)
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'Danh mục không tồn tại.' })
 
-  const [{ usageCount } = { usageCount: 0 }] = await db
-    .select({ usageCount: count() })
-    .from(mediaItems)
-    .where(eq(mediaItems.categoryId, id))
+  const usageCount = await countMediaItemsInCategory(id)
   if (Number(usageCount) > 0) {
     throw createError({
       statusCode: 400,
@@ -34,6 +28,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  await db.delete(mediaCategories).where(eq(mediaCategories.id, id))
+  await deleteMediaCategoryRow(id)
   return { ok: true }
 })

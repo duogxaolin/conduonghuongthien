@@ -74,8 +74,10 @@ const fakePool = {
   }),
 }
 
+/** `null` = no pool (the database is not up): the endpoint answers 503 without reading anything. */
+const poolState = { current: fakePool as typeof fakePool | null }
 mock.module(new URL('../server/utils/db.ts', import.meta.url), {
-  namedExports: { getDb: () => fakeDb, getPool: () => fakePool },
+  namedExports: { getDb: () => fakeDb, getPool: () => poolState.current },
 })
 
 const { findMediaDuplicates, runMediaDuplicateReport, MEDIA_DUPLICATES_LOCK_NAME } = await import('../server/services/media-duplicates.ts')
@@ -226,4 +228,26 @@ test('endpoint: cần quyền media.read; trả nhóm trùng', async () => {
   lock.busyElsewhere = true
   await assert.rejects(() => handler({ context: { adminUser: mediaReader } }), (err: unknown) => (err as { statusCode?: number }).statusCode === 409)
   lock.busyElsewhere = false
+})
+
+test('endpoint: không có pool → 503, không xin khoá, không đọc gì', async () => {
+  seed()
+  const mediaReader = { id: 3, isSuperAdmin: false, permissions: [{ resource: 'media', canRead: true }] }
+  const locksBefore = lock.names.length
+  const original = fakeDb.execute
+  let executed = 0
+  fakeDb.execute = async (q) => { executed += 1; return original(q) }
+  poolState.current = null
+  try {
+    await assert.rejects(
+      () => handler({ context: { adminUser: mediaReader } }),
+      (err: unknown) => (err as { statusCode?: number, statusMessage?: string }).statusCode === 503
+        && (err as { statusMessage?: string }).statusMessage === 'Cơ sở dữ liệu chưa sẵn sàng.',
+    )
+    assert.equal(lock.names.length, locksBefore, 'a lock was asked for without a pool')
+    assert.equal(executed, 0, 'something was read without a pool')
+  } finally {
+    poolState.current = fakePool
+    fakeDb.execute = original
+  }
 })

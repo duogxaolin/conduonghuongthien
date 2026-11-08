@@ -388,7 +388,7 @@ const AUDITED_MUTATION_ENDPOINTS: string[] = [
   'server/services/admin-article-write.ts#createArticleWithAudit', // articles/index.post.ts
   // articles/[id]/boost.delete.ts: guarded by the endpoint directory scan below until its transaction moved here
   'server/services/admin-article-boost.ts#cancelBoostWithAudit',
-  'server/api/admin/media/upload.post.ts',
+  'server/services/admin-media-upload.ts#insertUploadedMediaWithAudit', // media/upload.post.ts
   'server/services/admin-page-write.ts#updatePageWithAudit', // pages/[id].put.ts
   'server/services/admin-page-versions.ts#restorePageVersionWithAudit', // pages/[id]/versions/[versionId]/restore.post.ts
   'server/services/admin-page-write.ts#createPageWithAudit', // pages/index.post.ts
@@ -1259,7 +1259,7 @@ const UNAUDITED_DELETE_EXEMPTIONS: Record<string, string> = {
   // video không phải câu hỏi nhật ký kiểm toán phải trả lời; cùng lý do endpoint
   // tạo/sửa danh mục media không audit (xem `index.post.ts`). Dữ liệu công dân
   // nằm ở `media_items`/`submissions`/`reader_accounts`, đã được guard canh.
-  'media-portal/categories/[id].delete.ts': 'media category is portal configuration, not citizen data — auditing its deletion is not an audit-log question',
+  'server/services/admin-media-categories.ts#deleteMediaCategoryRow': 'media category is portal configuration, not citizen data — auditing its deletion is not an audit-log question', // media-portal/categories/[id].delete.ts
 
   // ── server/services/** (2026-11-08), one FUNCTION each ─────────────────────────────
   // FINDING (để chủ repo quyết): cán bộ xoá một danh mục tin / một thể loại — qua tuyến

@@ -1,8 +1,6 @@
-import { getDb } from '../../../../utils/db'
-import { mediaCategories } from '../../../../db/schema'
-import { uniqueMediaCategorySlug } from '../../../../utils/slug'
-import { eq } from 'drizzle-orm'
+import type { mediaCategories } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { findMediaCategoryById, mediaCategorySlugForUpdate, updateMediaCategoryRow } from '../../../../services/admin-media-categories'
 
 /**
  * Sửa danh mục Media Portal. RBAC: `media_portal.update`.
@@ -14,8 +12,7 @@ export default defineEventHandler(async (event) => {
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'ID danh mục không hợp lệ.' })
 
-  const db = getDb()
-  const [existing] = await db.select().from(mediaCategories).where(eq(mediaCategories.id, id)).limit(1)
+  const existing = await findMediaCategoryById(id)
   if (!existing) {
     throw createError({ statusCode: 404, statusMessage: 'Danh mục không tồn tại.' })
   }
@@ -34,13 +31,13 @@ export default defineEventHandler(async (event) => {
   if (body.slug !== undefined || body.name !== undefined) {
     const rawSlug = body.slug !== undefined ? String(body.slug).trim() : ''
     const base = rawSlug || (updateFields.name as string | undefined) || existing.name
-    updateFields.slug = await uniqueMediaCategorySlug(db, base, id)
+    updateFields.slug = await mediaCategorySlugForUpdate(base, id)
   }
 
   if (Object.keys(updateFields).length === 0) {
     return { ok: true, slug: existing.slug }
   }
 
-  await db.update(mediaCategories).set(updateFields).where(eq(mediaCategories.id, id))
+  await updateMediaCategoryRow(id, updateFields)
   return { ok: true, slug: (updateFields.slug as string | undefined) ?? existing.slug }
 })

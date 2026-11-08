@@ -1,7 +1,5 @@
-import { getDb } from '../../../../utils/db'
-import { mediaCategories } from '../../../../db/schema'
-import { uniqueMediaCategorySlug } from '../../../../utils/slug'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { createMediaCategoryRow } from '../../../../services/admin-media-categories'
 
 /**
  * Tạo danh mục Media Portal. RBAC: `media_portal.create`.
@@ -23,18 +21,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Tên danh mục không được để trống.' })
   }
 
-  const db = getDb()
-
-  // Clean, collision-safe slug — dùng `media_categories` (tách khỏi `categories`).
+  // The collision-safe slug (from the sent slug, else the name) is picked in the service.
   const rawSlug = String(body?.slug || '').trim()
-  const uniqueSlug = await uniqueMediaCategorySlug(db, rawSlug || name)
+  const created = await createMediaCategoryRow(rawSlug, { name, description, displayOrder })
 
-  const [res] = await db.insert(mediaCategories).values({
-    name,
-    slug: uniqueSlug,
-    description,
-    displayOrder: Number.isFinite(displayOrder) ? Math.floor(displayOrder) : 0,
-  })
-
-  return { ok: true, id: res.insertId, slug: uniqueSlug }
+  return { ok: true, id: created.id, slug: created.slug }
 })

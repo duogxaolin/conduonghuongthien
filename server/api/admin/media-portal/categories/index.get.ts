@@ -1,7 +1,5 @@
-import { getDb } from '../../../../utils/db'
-import { mediaCategories, mediaItems } from '../../../../db/schema'
-import { asc, count, isNotNull } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { listMediaCategoriesWithUsage } from '../../../../services/admin-media-categories'
 
 /**
  * Danh sách danh mục Media Portal + số video đang dùng từng danh mục.
@@ -14,28 +12,7 @@ export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'media_portal', 'read')
 
-  const db = getDb()
-
-  // Hai lượt đọc độc lập, chạy cùng lúc: số video dùng từng danh mục không phụ
-  // thuộc thứ tự danh sách.
-  const [rows, usage] = await Promise.all([
-    db
-      .select({
-        id: mediaCategories.id,
-        name: mediaCategories.name,
-        slug: mediaCategories.slug,
-        description: mediaCategories.description,
-        displayOrder: mediaCategories.displayOrder,
-        createdAt: mediaCategories.createdAt,
-      })
-      .from(mediaCategories)
-      .orderBy(asc(mediaCategories.displayOrder), asc(mediaCategories.id)),
-    db
-      .select({ categoryId: mediaItems.categoryId, total: count() })
-      .from(mediaItems)
-      .where(isNotNull(mediaItems.categoryId)) // loại NULL — đếm video có danh mục
-      .groupBy(mediaItems.categoryId),
-  ])
+  const { rows, usage } = await listMediaCategoriesWithUsage()
 
   const usageMap = new Map<number, number>()
   for (const u of usage) {
