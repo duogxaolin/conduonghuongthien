@@ -379,9 +379,9 @@ const AUDITED_MUTATION_ENDPOINTS: string[] = [
   'server/services/admin-role-create.ts#createRoleWithAudit', // roles/index.post.ts
   // roles/[id].put.ts: guarded by the raw-delete scan below until its tx.delete(permissions) moved here
   'server/services/admin-role-update.ts#updateRoleWithAudit',
-  'server/api/admin/settings/index.put.ts',
-  'server/api/admin/settings/navigation/mobile.put.ts',
-  'server/api/admin/settings/navigation/navbar.put.ts',
+  'server/services/admin-settings-general.ts#saveGeneralSettingsWithAudit', // settings/index.put.ts
+  'server/services/admin-settings-navigation.ts#saveMobileMenuWithAudit', // settings/navigation/mobile.put.ts
+  'server/services/admin-settings-navigation.ts#saveNavbarMenuWithAudit', // settings/navigation/navbar.put.ts
   'server/services/admin-user-update.ts#updateUserWithAudit', // users/[id].put.ts
   'server/services/admin-user-create.ts#createUserWithAudit', // users/index.post.ts
 ]
@@ -991,6 +991,8 @@ const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, string> = {
   'admin-ai-moderation-ops.ts#writeModerationRescanAudit': 'moved verbatim from ai/moderation/rescan-all.post.ts: audit-only rows of a background rescan job (start; summary at finish via onFinished) — the only write of the request, no row to pair with; best-effort, a failed insert logs ai_moderation.rescan_audit_failed',
   'admin-ai-moderation-ops.ts#writeServerRestartAudit': 'moved verbatim from ai/moderation/restart-server.post.ts: audit-only row before a SuperAdmin-requested process exit — the only write of the request, no row to pair with; best-effort, a failed insert is swallowed as in the handler, which then logs system.restart_requested',
   'admin-ai-moderation-ops.ts#writeWorkerRestartAudit': 'moved verbatim from ai/moderation/restart-worker.post.ts: audit-only row after an in-memory reset (worker counters, rule cache) — the only write of the request, no row to pair with; best-effort, a failed insert logs ai_moderation.restart_worker_audit_failed',
+  'admin-settings-retention.ts#writeRetentionRunStartAudit': 'moved verbatim from settings/retention-run.post.ts: the audit row of a manual retention run, written under the lock before the first DELETE (beforePurge) — the purge deletes in batches on its own pool and cannot share a transaction with it; fail-closed in the handler (a failed insert logs retention.manual_start_audit_failed and the purge does not start)',
+  'admin-settings-retention.ts#writeRetentionRunResultAudit': 'moved verbatim from settings/retention-run.post.ts: the per-table summary row after a manual retention pass has committed — no row to pair with; best-effort in the handler (a failed insert logs retention.manual_result_audit_failed and answers auditFailed)',
 }
 
 /** The audit rules of the service layer: an audit row is written on a transaction handle. */

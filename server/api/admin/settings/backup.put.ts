@@ -11,9 +11,9 @@
  * nguyên văn. Ô nhập trên trang hiện `********` nếu đã có — gửi `********` lại =
  * giữ nguyên giá trị cũ.
  */
-import { getDb } from '../../../utils/db'
-import { settings, activityLogs } from '../../../db/schema'
 import { requireResourcePermission, requireSuperAdmin } from '../../../utils/permissions'
+import { readAllSettingRows } from '../../../services/admin-settings-values'
+import { saveBackupSettingsWithAudit } from '../../../services/admin-settings-backup'
 import { openSettingsSecret, sealSettingsSecret, SettingsSecretError } from '../../../utils/settings-secrets'
 import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
 
@@ -130,8 +130,7 @@ export default defineEventHandler(async (event) => {
   const entries: Entry[] = []
   const oldValues: Record<string, string | null> = {}
 
-  const db = getDb()
-  const existing = await db.select().from(settings)
+  const existing = await readAllSettingRows()
   const existingMap = new Map(existing.map(r => [r.key, r.value]))
 
   const isSuperAdmin = adminUser?.isSuperAdmin === true
@@ -194,19 +193,8 @@ export default defineEventHandler(async (event) => {
     return { ok: true, message: 'Không có gì để cập nhật.' }
   }
 
-  await db.transaction(async (tx) => {
-    for (const entry of entries) {
-      await tx.insert(settings).values({ key: entry.key, value: entry.value, group: 'backup' })
-        .onDuplicateKeyUpdate({ set: { value: entry.value } })
-    }
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'update',
-      resource: 'settings',
-      resourceId: null,
-      meta: { settingsGroup: 'backup', updated: entries.map(e => e.key), oldValues },
-    })
-  })
+  // The entries and their audit row, in one transaction (in the service).
+  await saveBackupSettingsWithAudit(adminUser, entries, oldValues)
 
   return { ok: true }
 })

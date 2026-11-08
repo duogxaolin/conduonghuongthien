@@ -1,13 +1,10 @@
 
-import { getDb } from '../../../../utils/db'
-import { settings, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { saveSitemapWithAudit } from '../../../../services/admin-settings-sitemap'
 
 /**
- * Lưu sitemap admin đã sửa. Cặp ghi + audit trong một transaction — tiền lệ
- * `navigation/navbar.put.ts`: `activity_logs.user_id` là FK tới `users` và `meta` là
- * cột JSON, nên viết rời có cách hỏng riêng (hàng đã xong, không còn gì ghi ai
- * đã làm). Chạy trên `tx`, không phải `db`.
+ * Lưu sitemap admin đã sửa. Cặp ghi + audit trong một transaction
+ * (`saveSitemapWithAudit`, services/admin-settings-sitemap.ts).
  *
  * Không validate XML chặt: admin có thể chỉnh tay và muốn giữ lại những thứ
  * builder không sinh (ví dụ `priority` tuỳ chỉnh, comment XML). Chỉ chặn rỗng
@@ -31,30 +28,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const now = new Date().toISOString()
-  const db = getDb()
 
-  await db.transaction(async (tx) => {
-    await tx.insert(settings).values({
-      key: 'sitemap_xml',
-      value: xml,
-      type: 'string',
-      group: 'general',
-    }).onDuplicateKeyUpdate({ set: { value: xml } })
-
-    await tx.insert(settings).values({
-      key: 'sitemap_updated_at',
-      value: now,
-      type: 'string',
-      group: 'general',
-    }).onDuplicateKeyUpdate({ set: { value: now } })
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'update',
-      resource: 'settings',
-      meta: { keysUpdated: ['sitemap_xml'], bytes: xml.length },
-    })
-  })
+  // Both rows and the audit row, in one transaction (in the service).
+  await saveSitemapWithAudit(adminUser, xml, now)
 
   return { ok: true, updatedAt: now }
 })

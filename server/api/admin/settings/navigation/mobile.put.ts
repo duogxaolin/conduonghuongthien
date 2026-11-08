@@ -1,6 +1,5 @@
-import { getDb } from '../../../../utils/db'
-import { settings, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { saveMobileMenuWithAudit } from '../../../../services/admin-settings-navigation'
 import { UnsafeLinkError, assertSafeLink } from '../../../../../shared/link-policy'
 import { purgePublicPageCacheAfterWrite } from '../../../../utils/public-page-cache'
 
@@ -78,31 +77,8 @@ export default defineEventHandler(async (event) => {
 
   const items = sanitizeMenu(body.menu as unknown[])
 
-  const db = getDb()
-  /**
-   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
-   *
-   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
-   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
-   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
-   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
-   * commit độc lập trên pool.
-   */
-  await db.transaction(async (tx) => {
-    await tx.insert(settings).values({
-      key: 'nav_menu_mobile',
-      value: JSON.stringify(items),
-      type: 'json',
-      group: 'general',
-    }).onDuplicateKeyUpdate({ set: { value: JSON.stringify(items) } })
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'update',
-      resource: 'settings',
-      meta: { keysUpdated: ['nav_menu_mobile'], itemCount: items.length },
-    })
-  })
+  // The row and its audit row commit together, or none (in the service).
+  await saveMobileMenuWithAudit(adminUser, items)
 
   // Cùng lý do với navbar.put.ts: thanh tab dưới nằm trong HTML đệm của mọi trang.
   await purgePublicPageCacheAfterWrite('settings.nav_menu_mobile')

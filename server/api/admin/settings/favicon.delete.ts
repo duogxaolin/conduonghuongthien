@@ -1,8 +1,5 @@
-import { inArray } from 'drizzle-orm'
-
-import { activityLogs, settings } from '../../../db/schema'
-import { getDb } from '../../../utils/db'
-import { FAVICON_ICO_SETTING_KEY, clearFaviconSettingCache } from '../../../utils/favicon-setting'
+import { resetFaviconWithAudit } from '../../../services/admin-settings-favicon'
+import { clearFaviconSettingCache } from '../../../utils/favicon-setting'
 import { requireResourcePermission } from '../../../utils/permissions'
 
 /**
@@ -29,29 +26,8 @@ export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'update')
 
-  const db = getDb()
-
-  /**
-   * Hai lượt xoá và dòng audit commit **cùng nhau**, hoặc không cái nào.
-   *
-   * Xoá `favicon_url` mà để `favicon_ico_url` nằm lại là thẻ `<link>` lùi về mặc
-   * định trong khi `/favicon.ico` còn phục vụ icon cũ — hai địa chỉ của cùng một
-   * cổng trả về hai logo khác nhau. Chạy trên `tx`, không phải `db`: một
-   * `db.delete()` đặt trong khối transaction vẫn commit độc lập trên pool.
-   */
-  await db.transaction(async (tx) => {
-    await tx.delete(settings).where(inArray(settings.key, ['favicon_url', FAVICON_ICO_SETTING_KEY]))
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'update',
-      resource: 'settings',
-      meta: {
-        operation: 'reset_favicon',
-        keysUpdated: ['favicon_url', FAVICON_ICO_SETTING_KEY],
-      },
-    })
-  })
+  // Both deletes and the audit row commit together, or none (in the service).
+  await resetFaviconWithAudit(adminUser)
 
   // Sau khi commit: trạng thái ngoài CSDL không tham gia được vào tính nguyên tử
   // của CSDL, nên nó đợi kết quả thay vì đoán trước.

@@ -196,7 +196,9 @@ test('the read allowlist is one exported constant: the union of the pages, the s
 
   // Read and write must agree: a key a page can save but not load (or the
   // reverse) is a form that silently shows a default over the stored value.
+  // The PUT's allowlist lives with its write, in the service (`ALLOWED_SETTING_KEYS`).
   const put = readFileSync(new URL('../server/api/admin/settings/index.put.ts', import.meta.url), 'utf8')
+    + readFileSync(new URL('../server/services/admin-settings-general.ts', import.meta.url), 'utf8')
   const writable = [.../const ALLOWED_SETTING_KEYS = new Set\(\[([\s\S]*?)\]\)/.exec(put)![1]!.matchAll(/'([a-z0-9_]+)'/g)].map(m => m[1]!)
   assert.deepEqual([...new Set(SETTINGS_READ_KEYS)].sort(), [...new Set(writable)].sort())
 })

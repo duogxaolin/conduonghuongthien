@@ -141,7 +141,8 @@ test('visitor-supplied text is escaped before it reaches the notification email'
 })
 
 test('settings writes are allow-listed and site-wide script keys are superadmin-only', () => {
-  const settings = read('server/api/admin/settings/index.put.ts')
+  // The handler and the service holding its allowlists and per-key loop (inside the transaction).
+  const settings = read('server/api/admin/settings/index.put.ts') + read('server/services/admin-settings-general.ts')
   assert.match(settings, /ALLOWED_SETTING_KEYS/)
   assert.match(settings, /SUPERADMIN_ONLY_KEYS/)
   assert.match(settings, /tracking_custom_head/)

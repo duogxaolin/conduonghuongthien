@@ -1,8 +1,5 @@
-import { inArray } from 'drizzle-orm'
-
-import { getDb } from '../../../../utils/db'
-import { settings } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { readSettingValues } from '../../../../services/admin-settings-values'
 import { publicLinkBase } from '../../../../utils/public-link-base'
 import { generateSitemap } from '../../../../utils/sitemap-builder'
 
@@ -21,20 +18,17 @@ export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'read')
 
-  const db = getDb()
   // Both rows `index.put.ts` writes. Selecting `sitemap_xml` alone left `tsRow` always
   // undefined, so "Lần lưu cuối" vanished on every reload
   // (tests/admin-sitemap-updated-at-behavior.test.ts).
-  const rows = await db
-    .select({ key: settings.key, value: settings.value })
-    .from(settings)
-    .where(inArray(settings.key, ['sitemap_xml', 'sitemap_updated_at']))
+  const rows = await readSettingValues(['sitemap_xml', 'sitemap_updated_at'])
 
   const xmlRow = rows.find((r) => r.key === 'sitemap_xml')
   const tsRow = rows.find((r) => r.key === 'sitemap_updated_at')
 
   const baseUrl = publicLinkBase(event).replace(/\/+$/, '')
-  const generated = await generateSitemap(baseUrl, db)
+  // On the shared pool: `generateSitemap`'s `db` parameter defaults to it.
+  const generated = await generateSitemap(baseUrl)
 
   return {
     ok: true,

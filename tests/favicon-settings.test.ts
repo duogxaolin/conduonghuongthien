@@ -332,12 +332,12 @@ describe('tệp favicon mặc định', () => {
  *    được. Đó đúng là hình dạng của `logo_url` hôm nay (xem mục "Ngoài phạm vi").
  */
 test('favicon_url ghi được qua endpoint cài đặt', () => {
-  const code = read('server/api/admin/settings/index.put.ts')
+  const code = read('server/api/admin/settings/index.put.ts') + read('server/services/admin-settings-general.ts')
   assert.match(code, /'favicon_url'/, 'thiếu trong ALLOWED_SETTING_KEYS → cả biểu mẫu trả 400')
 })
 
 test('favicon_url không bị xếp vào nhóm chỉ SuperAdmin', () => {
-  const code = read('server/api/admin/settings/index.put.ts')
+  const code = read('server/api/admin/settings/index.put.ts') + read('server/services/admin-settings-general.ts')
   const gated = /const SUPERADMIN_ONLY_KEYS = new Set\(\[([^\]]*)\]\)/.exec(code)?.[1] ?? ''
   assert.doesNotMatch(
     gated,

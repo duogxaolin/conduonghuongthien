@@ -1,10 +1,9 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
-import { activityLogs, settings } from '../../../db/schema'
-import { getDb } from '../../../utils/db'
+import { setFaviconWithAudit } from '../../../services/admin-settings-favicon'
 import { buildFaviconSet } from '../../../utils/favicon-image'
-import { FAVICON_ICO_SETTING_KEY, clearFaviconSettingCache } from '../../../utils/favicon-setting'
+import { clearFaviconSettingCache } from '../../../utils/favicon-setting'
 import { detectImageMime, isSharpDecodable } from '../../../utils/image-mime'
 import { requireResourcePermission } from '../../../utils/permissions'
 
@@ -114,34 +113,13 @@ export default defineEventHandler(async (event) => {
     await fs.writeFile(path.join(targetDir, file), bytes)
   }
 
-  const db = getDb()
-
-  /**
-   * Hai khoá cài đặt và dòng audit commit **cùng nhau**, hoặc không cái nào.
-   *
-   * Viết rời thì `favicon_url` mới có thể nằm cạnh `favicon_ico_url` **cũ** — thẻ
-   * `<link>` trỏ icon mới trong khi `/favicon.ico` phục vụ icon cũ, đúng kiểu lệch
-   * mà bộ đọc dùng chung ra đời để chặn. Chạy trên `tx`, không phải `db`: một
-   * `db.insert()` đặt trong khối transaction vẫn commit độc lập trên pool.
-   */
-  await db.transaction(async (tx) => {
-    for (const [key, value] of [['favicon_url', iconUrl], [FAVICON_ICO_SETTING_KEY, icoUrl]] as const) {
-      await tx.insert(settings).values({ key, value, group: 'general' })
-        .onDuplicateKeyUpdate({ set: { value } })
-    }
-
-    await tx.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'update',
-      resource: 'settings',
-      meta: {
-        operation: 'set_favicon',
-        sourceMime: mime,
-        sourceBytes: fileItem.data.length,
-        generated: written.map(item => item.file),
-        keysUpdated: ['favicon_url', FAVICON_ICO_SETTING_KEY],
-      },
-    })
+  // Both setting keys and the audit row commit together, or none (in the service).
+  await setFaviconWithAudit(adminUser, {
+    iconUrl,
+    icoUrl,
+    sourceMime: mime,
+    sourceBytes: fileItem.data.length,
+    generated: written.map(item => item.file),
   })
 
   // Sau khi commit, không phải trong transaction: trạng thái ngoài CSDL không tham
