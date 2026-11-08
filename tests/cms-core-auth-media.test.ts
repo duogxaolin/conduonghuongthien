@@ -57,7 +57,9 @@ test('tokens carry a version that the admin middleware enforces', () => {
 
 test('logout and password change both invalidate existing sessions', () => {
   const logout = read('server/api/admin/auth/logout.post.ts')
-  assert.match(logout, /tokenVersion:\s*sql`\$\{users\.tokenVersion\} \+ 1`/)
+  // The bump moved into a service (2026-11-08); the handler calls it, then deletes the cookie.
+  assert.match(logout, /await bumpAdminTokenVersion\(adminUser\.id\)/)
+  assert.match(read('server/services/admin-auth-logout.ts'), /tokenVersion:\s*sql`\$\{users\.tokenVersion\} \+ 1`/)
   assert.match(logout, /deleteCookie\(event, 'cdkt_admin'/)
 
   const userPut = read('server/api/admin/users/[id].put.ts')

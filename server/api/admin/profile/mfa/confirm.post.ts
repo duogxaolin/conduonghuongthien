@@ -6,20 +6,22 @@
  * for it to catch a typo before it becomes a login requirement.
  */
 
-import { and, eq, gt, lt, sql } from 'drizzle-orm'
-import { readAffectedRows } from '../../../../utils/affected-rows'
-import { getDb } from '../../../../utils/db'
-import { userMfaFactors, userRecoveryCodes, activityLogs } from '../../../../db/schema'
 import { verifyPassword } from '../../../../utils/auth'
 import { logInfo, SECURITY_EVENTS } from '../../../../utils/logger'
 import { isExpired, verifyOneTimeCode, EMAIL_CODE_MAX_ATTEMPTS } from '../../../../utils/mfa/codes'
 import { unsealTotpSecret } from '../../../../utils/mfa/crypto'
 import { verifyTotp } from '../../../../utils/mfa/totp'
-import { FACTOR_TYPES, FACTOR_LABELS, countUnusedRecoveryCodes, getFactor, revokeSessions, type FactorType } from '../../../../utils/mfa/factors'
+import { FACTOR_TYPES, FACTOR_LABELS, getFactor, revokeSessions, type FactorType } from '../../../../utils/mfa/factors'
 import { isCoveredByMfaPolicy, readMfaPolicy } from '../../../../utils/mfa/policy'
-import { lockAccountForMfaChange, prepareRecoveryCodes } from '../../../../utils/mfa/recovery-codes'
+import { prepareRecoveryCodes } from '../../../../utils/mfa/recovery-codes'
 import { setSessionCookie } from '../../../../utils/mfa/session'
 import { getClientIp } from '../../../../utils/client-ip'
+import {
+  activatePendingFactor,
+  auditMfaFactorEnabled,
+  countWrongPendingCode,
+  discardPendingFactor,
+} from '../../../../services/admin-mfa-confirm'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -37,19 +39,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Không có yêu cầu bật phương thức này đang chờ xác nhận.' })
   }
 
-  const db = getDb()
-  const pendingSnapshot = and(
-    eq(userMfaFactors.id, row.id),
-    eq(userMfaFactors.state, 'pending'),
-    row.pendingExpiresAt ? eq(userMfaFactors.pendingExpiresAt, row.pendingExpiresAt) : undefined,
-    row.secretCiphertext ? eq(userMfaFactors.secretCiphertext, row.secretCiphertext) : undefined,
-    row.passwordHash ? eq(userMfaFactors.passwordHash, row.passwordHash) : undefined,
-    row.pendingCodeHash ? eq(userMfaFactors.pendingCodeHash, row.pendingCodeHash) : undefined,
-  )
+  // Every write below is guarded by the pending row exactly as read here (the "pending snapshot",
+  // services/admin-mfa-confirm.ts): a concurrent re-enrollment makes it match nothing.
   // The enrollment window has lapsed: drop the pending row rather than letting a
   // stale secret sit in the database indefinitely.
   if (isExpired(row.pendingExpiresAt)) {
-    await db.delete(userMfaFactors).where(pendingSnapshot)
+    await discardPendingFactor(row)
     throw createError({ statusCode: 400, statusMessage: 'Yêu cầu đã hết hiệu lực. Vui lòng bật lại phương thức này.' })
   }
 
@@ -66,7 +61,7 @@ export default defineEventHandler(async (event) => {
       keyId: row.secretKeyId ?? undefined,
     })
     if (!opened.ok) {
-      await db.delete(userMfaFactors).where(pendingSnapshot)
+      await discardPendingFactor(row)
       throw createError({ statusCode: 500, statusMessage: 'Không đọc được secret đã lưu. Vui lòng bật lại phương thức này.' })
     }
     const result = verifyTotp(opened.secret, code)
@@ -78,14 +73,11 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'Mã đã hết hiệu lực. Vui lòng bật lại phương thức này để nhận mã mới.' })
     }
     if ((row.pendingCodeAttempts ?? 0) >= EMAIL_CODE_MAX_ATTEMPTS) {
-      await db.delete(userMfaFactors).where(pendingSnapshot)
+      await discardPendingFactor(row)
       throw createError({ statusCode: 400, statusMessage: 'Nhập sai quá nhiều lần. Vui lòng bật lại phương thức này.' })
     }
     if (!(await verifyOneTimeCode(code, row.pendingCodeHash))) {
-      await db
-        .update(userMfaFactors)
-        .set({ pendingCodeAttempts: sql`${userMfaFactors.pendingCodeAttempts} + 1` })
-        .where(and(pendingSnapshot, lt(userMfaFactors.pendingCodeAttempts, EMAIL_CODE_MAX_ATTEMPTS)))
+      await countWrongPendingCode(row)
       throw createError({ statusCode: 400, statusMessage: 'Mã xác thực không đúng. Vui lòng thử lại.' })
     }
   } else {
@@ -101,45 +93,12 @@ export default defineEventHandler(async (event) => {
   const prepared = isCoveredByMfaPolicy(mfaPolicy.policy, admin) ? await prepareRecoveryCodes(admin.id) : null
 
   /**
-   * Bật yếu tố và chèn lô mã là MỘT đơn vị (kiểm chứng độc lập 2A, W1):
-   *  - chèn mã hỏng → cả lượt hoàn tác, yếu tố vẫn `pending` để thử lại (bản trước
-   *    để lại một yếu tố đang bật mà không mã, và lượt thử lại thì báo "không có yêu
-   *    cầu đang chờ");
-   *  - khoá hàng `users` của tài khoản (`lockAccountForMfaChange`) tuần tự hoá các
-   *    lượt bật/tạo lại đồng thời: lượt sau thấy lô của lượt trước và không chèn —
-   *    một lô đang có (tờ mã đã hiện/in) KHÔNG BAO GIỜ bị thay bởi lượt bật yếu tố.
-   * Thu hồi phiên + cookie + audit đi SAU (ngoại lệ có tên ở reader-audit-atomicity:
-   * cookie nằm giữa hai lượt ghi).
+   * Bật yếu tố và chèn lô mã là MỘT đơn vị, dưới khoá hàng `users` của tài khoản
+   * (`activatePendingFactor`, services/admin-mfa-confirm.ts — 409 khi ảnh chụp pending
+   * đã đổi). Thu hồi phiên + cookie + audit đi SAU (ngoại lệ có tên ở
+   * reader-audit-atomicity: cookie nằm giữa hai lượt ghi).
    */
-  // `as`: gán trong callback — không để TS thu hẹp thành `null` sau lượt await.
-  let recoveryCodes = null as string[] | null
-  await db.transaction(async (tx) => {
-    await lockAccountForMfaChange(tx, admin.id)
-    const activated = await tx
-      .update(userMfaFactors)
-      .set({
-        state: 'active',
-        pendingExpiresAt: null,
-        pendingCodeHash: null,
-        pendingCodeExpiresAt: null,
-        pendingCodeAttempts: 0,
-        lastAcceptedStep: acceptedStep,
-        lastUsedAt: new Date(),
-      })
-      .where(and(
-        pendingSnapshot,
-        gt(userMfaFactors.pendingExpiresAt, new Date()),
-        factorType === 'email_otp' ? gt(userMfaFactors.pendingCodeExpiresAt, new Date()) : undefined,
-        factorType === 'email_otp' ? lt(userMfaFactors.pendingCodeAttempts, EMAIL_CODE_MAX_ATTEMPTS) : undefined,
-      ))
-    if (readAffectedRows(activated) !== 1) {
-      throw createError({ statusCode: 409, statusMessage: 'Yêu cầu xác thực đã thay đổi hoặc hết hạn. Vui lòng thử lại.' })
-    }
-    if (prepared && (await countUnusedRecoveryCodes(admin.id, tx)) === 0) {
-      await tx.insert(userRecoveryCodes).values(prepared.rows)
-      recoveryCodes = prepared.codes
-    }
-  })
+  const recoveryCodes = await activatePendingFactor({ admin, row, factorType, acceptedStep, prepared })
 
   // Enabling a factor revokes other live sessions, then re-issues this one.
   const tokenVersion = await revokeSessions(admin.id)
@@ -154,14 +113,8 @@ export default defineEventHandler(async (event) => {
   })
 
   const ip = getClientIp(event)
-  await db.insert(activityLogs).values({
-    userId: admin.id,
-    action: 'update',
-    resource: 'profile_mfa',
-    resourceId: admin.id,
-    // Factor type only — no secret, no code, no hash. Recovery codes: the count only.
-    meta: { factorType, enabled: true, ip, ...(recoveryCodes ? { recoveryCodesGenerated: recoveryCodes.length } : {}) },
-  })
+  // Factor type only — no secret, no code, no hash. Recovery codes: the count only.
+  await auditMfaFactorEnabled(admin.id, { factorType, enabled: true, ip, ...(recoveryCodes ? { recoveryCodesGenerated: recoveryCodes.length } : {}) })
   logInfo({ event: SECURITY_EVENTS.mfaFactorEnabled, userId: admin.id, username: admin.username, factorType, ip })
 
   return {

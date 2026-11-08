@@ -3,12 +3,11 @@
  * emailed code becomes the remaining recovery path, and the response says so.
  */
 
-import { getDb } from '../../../../utils/db'
-import { activityLogs } from '../../../../db/schema'
 import { logInfo } from '../../../../utils/logger'
 import { requireCurrentPassword } from '../../../../utils/mfa/reauth'
-import { deleteAllRecoveryCodes, usableFactorTypes } from '../../../../utils/mfa/factors'
+import { usableFactorTypes } from '../../../../utils/mfa/factors'
 import { getClientIp } from '../../../../utils/client-ip'
+import { clearRecoveryCodesWithAudit } from '../../../../services/admin-mfa-recovery-codes-clear'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -18,24 +17,11 @@ export default defineEventHandler(async (event) => {
   await requireCurrentPassword(event, admin.id, String(body?.currentPassword || ''))
 
   const ip = getClientIp(event)
-  const db = getDb()
 
-  // The deletion and its audit row commit together. Unlike the sibling
-  // enable/confirm endpoints, nothing here writes an HTTP cookie between the two
-  // — so there is no side effect a rollback could fail to retract, and no reason
-  // to leave the pair split. Recovery codes are the last way back into a locked
-  // account: if the audit insert failed after an unwrapped delete, every code
-  // would be gone with nothing recording who removed them.
-  await db.transaction(async (tx) => {
-    await deleteAllRecoveryCodes(admin.id, tx)
-    await tx.insert(activityLogs).values({
-      userId: admin.id,
-      action: 'update',
-      resource: 'profile_recovery_codes',
-      resourceId: admin.id,
-      meta: { generated: 0, cleared: true, ip },
-    })
-  })
+  // The deletion and its audit row commit together, in one transaction
+  // (services/admin-mfa-recovery-codes-clear.ts): nothing here writes an HTTP
+  // cookie between the two, so there is no reason to leave the pair split.
+  await clearRecoveryCodesWithAudit(admin, ip)
 
   // Outside the transaction because it reads `user_mfa_factors`, which this
   // transaction never touches — the codes live in `user_recovery_codes`. Pulling

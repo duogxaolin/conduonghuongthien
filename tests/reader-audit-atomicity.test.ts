@@ -282,6 +282,12 @@ const AUDITED_DELETE_ENDPOINTS: Array<{ file: string, why: string }> = [
     file: 'server/services/admin-chatbot-answer-cache-admin.ts#bulkDeleteCachedAnswersWithAudit',
     why: 'up to 200 cached answers are dropped untraceably',
   },
+  // profile/mfa/recovery-codes.delete.ts: its transaction moved here (2026-11-08); the delete runs
+  // through deleteAllRecoveryCodes(admin.id, tx), the audit row on the same `tx`.
+  {
+    file: 'server/services/admin-mfa-recovery-codes-clear.ts#clearRecoveryCodesWithAudit',
+    why: "every recovery code — the last way back into a locked account — is gone with nothing recording who removed them",
+  },
 ]
 
 describe('destructive admin endpoints commit their delete and their audit row together', () => {
@@ -335,29 +341,96 @@ function assertEntryShape(entry: string) {
   assert.deepEqual(entryProblems(entry), [], `${entry}: the per-function scan objects`)
 }
 
-describe('the MFA-confirm exclusion is deliberate and still correct', () => {
-  /**
-   * `profile/mfa/confirm.post.ts` mutates and audits WITHOUT a transaction, on
-   * purpose: it calls `setSessionCookie(event, …)` between the two, which is a
-   * side effect on the HTTP response that no rollback can retract. Wrapping it
-   * would create a worse state than the one it fixes — a session cookie already
-   * handed to the browser while the factor activation it represents was rolled
-   * back.
-   *
-   * Asserted rather than assumed: if someone later moves the cookie write out of
-   * the middle, this fails and the endpoint should join the list above.
-   */
-  it('the cookie is still issued between the mutation and the audit row', () => {
-    const source = read('server/api/admin/profile/mfa/confirm.post.ts')
-    const cookie = source.indexOf('setSessionCookie(event')
-    const audit = source.indexOf('db.insert(activityLogs)')
-    assert.ok(cookie !== -1, 'setSessionCookie is gone — re-evaluate whether this endpoint can now be wrapped')
-    assert.ok(audit !== -1, 'the audit insert is gone')
-    assert.ok(
-      cookie < audit,
-      'the cookie is no longer written between the mutation and the audit — this endpoint can and should now be wrapped in a transaction',
-    )
-  })
+/**
+ * The cookie-between-writes endpoints (2026-11-08: moved into services WITHOUT a new transaction).
+ *
+ * These endpoints write an HTTP cookie BETWEEN two database writes, on purpose: the session cookie
+ * is re-issued after the mutation and before the audit row. A cookie is a side effect on the
+ * response that no rollback can retract, so wrapping the pair in one transaction would create a
+ * worse state than the one it fixes — a cookie already handed to the browser for a change that was
+ * rolled back. `auth/logout.post.ts` has no cookie between its writes (the cookie is deleted after
+ * both); its two writes are independent best-effort statements, each in its own try/catch, and a
+ * transaction would let a failed audit roll back the token invalidation.
+ *
+ * Their DB statements moved into services; the order stayed in the handler. Asserted rather than
+ * assumed, on the handler (comments and strings blanked — prose naming the calls must not satisfy
+ * it): every step is CALLED, once, in this order, and the handler writes nothing itself. And on
+ * each function a step stands for (AST): the write is still in it — the row write (on a transaction
+ * handle where the original used one) — and the audit function writes exactly ONE row, the audit
+ * row, off any transaction. Its `SERVICE_POOL_AUDIT_EXEMPTIONS` entry excuses that and nothing
+ * else: a row write added to it, or the cookie moved out from between the calls, turns this red —
+ * and the endpoint should then be wrapped in a transaction.
+ */
+const COOKIE_BETWEEN_WRITES: Array<{ handler: string, order: string[], writes: Array<{ entry: string, shape: 'row' | 'row-on-tx' | 'audit-only' }> }> = [
+  {
+    handler: 'server/api/admin/profile/mfa/confirm.post.ts',
+    order: ['activatePendingFactor({', 'revokeSessions(admin.id)', 'setSessionCookie(event,', 'auditMfaFactorEnabled(admin.id,'],
+    writes: [
+      { entry: 'server/services/admin-mfa-confirm.ts#activatePendingFactor', shape: 'row-on-tx' },
+      { entry: 'server/utils/mfa/factors.ts#revokeSessions', shape: 'row' },
+      { entry: 'server/services/admin-mfa-confirm.ts#auditMfaFactorEnabled', shape: 'audit-only' },
+    ],
+  },
+  {
+    handler: 'server/api/admin/profile/mfa/recovery-codes.post.ts',
+    order: ['issueRecoveryCodes(admin.id)', 'revokeSessions(admin.id)', 'setSessionCookie(event,', 'auditRecoveryCodesGenerated(admin.id,'],
+    writes: [
+      { entry: 'server/utils/mfa/recovery-codes.ts#issueRecoveryCodes', shape: 'row-on-tx' },
+      { entry: 'server/utils/mfa/factors.ts#revokeSessions', shape: 'row' },
+      { entry: 'server/services/admin-mfa-recovery-codes-issue.ts#auditRecoveryCodesGenerated', shape: 'audit-only' },
+    ],
+  },
+  {
+    // Re-issues this session's cookie after bumping tokenVersion, so the caller is not logged out
+    // by their own successful password change. Found by the directory scan, which is the point of
+    // having one.
+    handler: 'server/api/admin/profile/password.put.ts',
+    order: ['updateOwnPassword(admin,', 'clearRateLimit(bucket, deps)', 'readOwnTokenVersion(admin)', 'setSessionCookie(event,', 'auditOwnPasswordChange(admin,'],
+    writes: [
+      { entry: 'server/services/admin-profile-password.ts#updateOwnPassword', shape: 'row' },
+      { entry: 'server/services/admin-profile-password.ts#auditOwnPasswordChange', shape: 'audit-only' },
+    ],
+  },
+  {
+    handler: 'server/api/admin/auth/logout.post.ts',
+    order: ['try { await bumpAdminTokenVersion(adminUser.id) } catch', 'try { await auditAdminLogout(adminUser.id,', 'deleteCookie(event,'],
+    writes: [
+      { entry: 'server/services/admin-auth-logout.ts#bumpAdminTokenVersion', shape: 'row' },
+      { entry: 'server/services/admin-auth-logout.ts#auditAdminLogout', shape: 'audit-only' },
+    ],
+  },
+]
+
+describe('cookie-between-writes endpoints keep their order, with no transaction across the cookie', () => {
+  for (const { handler, order, writes } of COOKIE_BETWEEN_WRITES) {
+    it(`${handler.replace('server/api/admin/', '')}: ${order.length} steps called once each, in order; each write still in its function`, () => {
+      const code = normalizeSource(read(handler))
+      let previous = -1
+      for (const step of order) {
+        const at = code.indexOf(step)
+        assert.ok(at !== -1, `${handler}: \`${step}\` is no longer called — re-evaluate whether this endpoint can now be wrapped in a transaction`)
+        assert.equal(code.indexOf(step, at + 1), -1, `${handler}: \`${step}\` is called more than once`)
+        assert.ok(at > previous, `${handler}: \`${step}\` now runs before the step listed ahead of it — the cookie is no longer between the writes (re-evaluate: wrap the endpoint in a transaction)`)
+        previous = at
+      }
+      assert.deepEqual(unitsOf(handler).flatMap(unit => unit.writes).map(w => `line ${w.line}`), [], `${handler} writes to the database itself again`)
+      assert.ok(!/\.transaction\(/.test(code), `${handler} opens a transaction — one spanning the cookie cannot retract it`)
+
+      for (const { entry, shape } of writes) {
+        const { file, fn } = target(entry)
+        const unit = unitNamed(file, fn!)
+        if (shape === 'audit-only') {
+          assert.deepEqual(unit.writes.map(w => ({ audit: w.audit, onTx: w.onTx })), [{ audit: true, onTx: false }],
+            `${entry} must write exactly its audit row, on the pool — its SERVICE_POOL_AUDIT_EXEMPTIONS entry excuses that and nothing else`)
+        } else {
+          const rows = unit.writes.filter(w => !w.audit)
+          assert.ok(rows.length > 0, `${entry} no longer writes the row this step stands for`)
+          assert.ok(unit.writes.every(w => !w.audit), `${entry} now also writes an audit row — the pair moved; re-evaluate this endpoint`)
+          if (shape === 'row-on-tx') assert.ok(rows.every(w => w.onTx), `${entry} writes a row off its transaction handle`)
+        }
+      }
+    })
+  }
 })
 
 
@@ -375,10 +448,11 @@ describe('the MFA-confirm exclusion is deliberate and still correct', () => {
  * `getDb()` directly also write `activity_logs`, and 39 of those wrote the pair
  * unwrapped. Nothing was watching that part of the tree.
  *
- * DELIBERATELY EXCLUDED, and asserted separately below:
+ * DELIBERATELY EXCLUDED, and asserted separately above (COOKIE_BETWEEN_WRITES):
  *   • profile/mfa/confirm.post.ts, profile/mfa/recovery-codes.post.ts,
- *     auth/logout.post.ts — each writes an HTTP cookie between the two database
- *     writes. A cookie is a side effect on the response that no rollback can
+ *     profile/password.put.ts, auth/logout.post.ts — each writes an HTTP cookie
+ *     between the two database writes (logout: two independent best-effort
+ *     writes). A cookie is a side effect on the response that no rollback can
  *     retract, so wrapping would create a worse state than it fixes.
  *   (articles/[id]/boost.post.ts used to be listed here. It writes no cookie, and both
  *   of its paths already wrote the change and the audit row in one transaction; since
@@ -403,7 +477,7 @@ const AUDITED_MUTATION_ENDPOINTS: string[] = [
   // Factor, recovery codes, session generation and audit row in one transaction; the
   // cookie is written AFTER the commit, so it is no longer a cookie-between-writes
   // exception (2026-10-28 — the audit used to follow the cookie on the pool).
-  'server/api/admin/profile/mfa/disable.post.ts',
+  'server/services/admin-mfa-disable.ts#disableFactorWithAudit', // profile/mfa/disable.post.ts
   // Moved out of their handlers into services, each named by the FUNCTION holding the transaction.
   'server/services/admin-role-create.ts#createRoleWithAudit', // roles/index.post.ts
   // roles/[id].put.ts: guarded by the raw-delete scan below until its tx.delete(permissions) moved here
@@ -466,28 +540,6 @@ describe('admin mutation endpoints commit their write and their audit row togeth
   })
 })
 
-describe('cookie-writing endpoints are excluded on purpose', () => {
-  /**
-   * Asserted rather than assumed. If the cookie write moves out from between the
-   * two database writes, these fail and the endpoint should join the list above.
-   */
-  for (const file of [
-    'server/api/admin/profile/mfa/confirm.post.ts',
-    'server/api/admin/profile/mfa/recovery-codes.post.ts',
-    'server/api/admin/auth/logout.post.ts',
-    // Re-issues this session's cookie after bumping tokenVersion, so the caller
-    // is not logged out by their own successful password change. Found by the
-    // directory scan below, which is the point of having one.
-    'server/api/admin/profile/password.put.ts',
-  ]) {
-    it(`${file.replace('server/api/admin/', '')} still writes a cookie mid-request`, () => {
-      const source = read(file)
-      assert.match(source, /setSessionCookie\(|deleteCookie\(|setCookie\(/,
-        'the cookie write is gone — re-evaluate whether this endpoint can now be wrapped in a transaction')
-    })
-  }
-})
-
 /**
  * Cùng câu hỏi, nhưng QUÉT CẢ THƯ MỤC `server/api/admin/**` thay vì đọc một danh
  * sách tên tệp.
@@ -518,15 +570,12 @@ describe('cookie-writing endpoints are excluded on purpose', () => {
  * vì một giới hạn không nêu tên sẽ được đọc thành một bảo đảm không tồn tại.
  */
 const MUTATION_SCAN_EXEMPTIONS: Record<string, string> = {
-  // Cả bốn ghi một cookie HTTP **giữa** hai lượt ghi CSDL. Cookie là tác dụng phụ
-  // lên phản hồi mà rollback không thu hồi được, nên bọc lại tạo ra trạng thái tệ
-  // hơn: trình duyệt đã cầm cookie cho một thao tác đã bị rollback. Vị trí của
-  // cookie được khẳng định riêng ở nhóm test ngay trên — dời nó đi là test đỏ và
-  // endpoint phải vào diện bọc.
-  'auth/logout.post.ts': 'writes an HTTP cookie between the two database writes',
-  'profile/mfa/confirm.post.ts': 'writes an HTTP cookie between the two database writes',
-  'profile/mfa/recovery-codes.post.ts': 'writes an HTTP cookie between the two database writes',
-  'profile/password.put.ts': 'writes an HTTP cookie between the two database writes',
+  // Trống từ 2026-11-08. Bốn mục cũ (`auth/logout.post.ts`, `profile/mfa/confirm.post.ts`,
+  // `profile/mfa/recovery-codes.post.ts`, `profile/password.put.ts` — cookie HTTP **giữa** hai
+  // lượt ghi CSDL) đã gỡ: lượt ghi của chúng dời vào service, handler không còn ghi gì để quét
+  // này hỏi. Miễn trừ đi theo mã: hàm audit trên pool của mỗi endpoint nằm ở
+  // SERVICE_POOL_AUDIT_EXEMPTIONS, và thứ tự lượt ghi → cookie → audit được khẳng định ở
+  // COOKIE_BETWEEN_WRITES phía trên — dời cookie đi là test đỏ và endpoint phải vào diện bọc.
 }
 
 /**
@@ -904,6 +953,10 @@ const AUDIT_ONLY_FUNCTION_EXEMPTIONS: Record<string, { fn: string, why: string }
     fn: 'auditActivityLogRead', // activity-logs/index.get.ts
     why: "audit-only insert recording a read of every account's trail (IPs, login hours); no row write to pair it with — a failed insert fails the request, as before",
   },
+  'admin-profile-history.ts': {
+    fn: 'auditUserHistoryRead', // profile/history.get.ts
+    why: "audit-only insert recording a SuperAdmin's read of another account's activity history; no row write to pair it with — a failed insert fails the request, as before",
+  },
 }
 
 /** Lời gọi phương thức có thể ghi CSDL, trên bất kỳ handle nào (`db`, `tx`, `conn`, `getDb()`, `pool`…). */
@@ -1047,6 +1100,13 @@ const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, string> = {
   'admin-cache-clear-audit.ts#auditPublicCacheClear': 'moved verbatim from cache-clear.post.ts: audit-only row after the public-page cache purge (storage, no database row) — the only write of the request, no row to pair with, the purge cannot be rolled back; a failed insert answers 500 with the cache already cleared and nothing else records who cleared it',
   'admin-languages-audit.ts#writeLanguagesSeedDefaultAudit': 'moved verbatim from languages/seed-default.post.ts: audit row after seedDefaultLanguagesAndTranslations (languages.ts) has written its rows — not one transaction with them; best-effort in the handler (a failed insert logs languages.seed_default_audit_failed with the actor and the counts)',
   'admin-languages-audit.ts#writeLanguageKeysSyncAudit': 'moved verbatim from languages/sync.post.ts: audit row after syncLanguageKeys (languages.ts) has written the missing keys — not one transaction with them; best-effort in the handler (a failed insert logs languages.sync_audit_failed with the actor and the counts)',
+  // The cookie-between-writes endpoints (COOKIE_BETWEEN_WRITES above pins the handler's order and
+  // that each of these writes exactly its audit row): moved verbatim from their handlers, still on
+  // the pool AFTER the session cookie, which a rollback could not retract.
+  'admin-mfa-confirm.ts#auditMfaFactorEnabled': 'moved verbatim from profile/mfa/confirm.post.ts: written after activatePendingFactor (its own transaction), revokeSessions and setSessionCookie — the cookie sits between the writes, so no transaction may span them',
+  'admin-mfa-recovery-codes-issue.ts#auditRecoveryCodesGenerated': 'moved verbatim from profile/mfa/recovery-codes.post.ts: written after issueRecoveryCodes (its own transaction), revokeSessions and setSessionCookie — the cookie sits between the writes, so no transaction may span them',
+  'admin-profile-password.ts#auditOwnPasswordChange': 'moved verbatim from profile/password.put.ts: written after updateOwnPassword, the fresh token-version read and setSessionCookie — the cookie sits between the writes, so no transaction may span them',
+  'admin-auth-logout.ts#auditAdminLogout': 'moved verbatim from auth/logout.post.ts: best-effort, in its own try/catch after bumpAdminTokenVersion (its own try/catch) — one transaction would let a failed audit roll back the token invalidation; a failed insert logs auth.logout_audit_failed',
 }
 
 /** The audit rules of the service layer: an audit row is written on a transaction handle. */
@@ -1282,6 +1342,13 @@ const UNAUDITED_DELETE_EXEMPTIONS: Record<string, string> = {
   // không chạm `activityLogs`. Miễn ở đây để bộ test giữ màu hiện tại — KHÔNG phải vì đúng.
   'server/services/categories.ts#deleteCategoryById': 'FINDING: an admin deletes a news category (single and bulk routes) and no activity_logs row records who — never audited; owner to decide',
   'server/services/content-types.ts#deleteContentTypeById': 'FINDING: an admin deletes a content type (single and bulk routes) and no activity_logs row records who — never audited; owner to decide',
+  // Moved verbatim from profile/mfa/confirm.post.ts (2026-11-08). The handler's per-function scan
+  // passed only because the same function also held the ACTIVATION's audit row — which these
+  // three refusal paths never reach: they were never audited. What goes is the caller's OWN
+  // pending, never-active enrollment (window lapsed / stored secret unreadable / emailed code
+  // missed too often), guarded by the snapshot the handler read; it protected nothing yet. No
+  // trail but the 4xx/500 answer — reported as a finding, owner to decide.
+  'server/services/admin-mfa-confirm.ts#discardPendingFactor': "FINDING (low): drops the caller's own never-active pending MFA enrollment on a refused confirmation (lapsed window, unreadable secret, emailed code missed too often) — never audited, even in the handler; owner to decide",
   // Đường xoá dùng chung (design.md D8). Nơi gọi duy nhất — `purgeReaderComments`
   // (readers.ts, AUDITED_WRITES) — truyền `tx` và ghi audit trong CHÍNH transaction đó;
   // test `deleteReaderComments has one caller …` bên dưới ghim điều đó.
@@ -1486,7 +1553,7 @@ describe('per-function scans follow the code into services', () => {
    * The row and its audit row in ONE transaction, per function:
    *   - an audit written off a transaction beside a row write (endpoints; the service layer
    *     is asked the same — and more — by `no service writes activity_logs outside a
-   *     transaction` above), exempt only by MUTATION_SCAN_EXEMPTIONS (the cookie endpoints);
+   *     transaction` above), exempt only by MUTATION_SCAN_EXEMPTIONS (empty since the cookie endpoints moved);
    *   - an audit row in a transaction that writes no row while the function writes its row
    *     elsewhere (in another transaction, or on the pool) — both trees. A transaction handed
    *     to another module's function (`addViews({ executor: tx })`) counts as writing there.

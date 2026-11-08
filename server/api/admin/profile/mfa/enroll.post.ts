@@ -4,10 +4,6 @@
  * the caller can actually satisfy it. Enrolling a factor nobody can satisfy is
  * how an administrator locks themselves out.
  */
-import { and, eq } from 'drizzle-orm'
-import { readAffectedRows } from '../../../../utils/affected-rows'
-import { getDb } from '../../../../utils/db'
-import { userMfaFactors } from '../../../../db/schema'
 import { hashPassword, verifyPassword } from '../../../../utils/auth'
 import { passwordRejectionMessage } from '../../../../utils/password-policy'
 import { isConfigured } from '../../../../utils/mailer'
@@ -17,6 +13,7 @@ import { issueEmailCode } from '../../../../utils/mfa/email-code'
 import { sealTotpSecret } from '../../../../utils/mfa/crypto'
 import { generateTotpSecret, otpauthUri } from '../../../../utils/mfa/totp'
 import { FACTOR_TYPES, getFactor, type FactorType } from '../../../../utils/mfa/factors'
+import { storePendingFactor } from '../../../../services/admin-mfa-enroll'
 
 const ISSUER = 'CDKT Admin'
 
@@ -37,22 +34,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'Phương thức này đã được bật.' })
   }
 
-  const db = getDb()
+  // Each branch stores its pending row with ONE statement, no transaction: an insert, or a
+  // replace of OUR pending row — never an active one, which a concurrent confirmation may have
+  // activated since the read above (409, services/admin-mfa-enroll.ts).
   const pendingExpiresAt = new Date(Date.now() + ENROLLMENT_TTL_MS)
-  const storePending = async (values: typeof userMfaFactors.$inferInsert) => {
-    if (!existing) {
-      await db.insert(userMfaFactors).values(values)
-      return
-    }
-    // A concurrent confirmation may have activated the row since our read.
-    // Re-enrollment must never downgrade that active protection to pending.
-    const replaced = await db.update(userMfaFactors).set(values).where(and(
-      eq(userMfaFactors.id, existing.id), eq(userMfaFactors.state, 'pending'),
-    ))
-    if (readAffectedRows(replaced) !== 1) {
-      throw createError({ statusCode: 409, statusMessage: 'Phương thức xác thực đã thay đổi. Vui lòng tải lại trang.' })
-    }
-  }
 
   // ── Authenticator app ──────────────────────────────────────────────────────
   if (factorType === 'totp') {
@@ -71,7 +56,7 @@ export default defineEventHandler(async (event) => {
       // A re-enrollment starts a fresh replay window.
       lastAcceptedStep: null,
     }
-    await storePending(values)
+    await storePendingFactor(existing, values)
 
     // The only time the secret is ever returned.
     return {
@@ -98,7 +83,7 @@ export default defineEventHandler(async (event) => {
     }
 
     const values = { userId: admin.id, factorType, state: 'pending' as const, pendingExpiresAt }
-    await storePending(values)
+    await storePendingFactor(existing, values)
     const factorId = existing?.id ?? (await getFactor(admin.id, factorType))!.id
 
     const issued = await issueEmailCode({
@@ -133,7 +118,7 @@ export default defineEventHandler(async (event) => {
     passwordHash: await hashPassword(secondPassword),
     pendingExpiresAt,
   }
-  await storePending(values)
+  await storePendingFactor(existing, values)
 
   return { ok: true, factorType, expiresAt: pendingExpiresAt }
 })
