@@ -514,3 +514,182 @@ export function unitProblems(
 export function auditingUnits(units: UnitFacts[]): string[] {
   return judgedUnits(units).filter(u => u.writes.some(w => w.audit)).map(u => u.name)
 }
+
+// ─── Census of audit rows, keyed by WHAT is recorded, not WHERE ─────────────────────────────
+
+/** One audit row a site writes: `<resource>:<action>`, plus where it was found (messages only). */
+export interface CensusEntry { key: string, where: string }
+
+/**
+ * Exported audit-only helpers shared across modules (`auditReaderRead`, `auditCommentRead`):
+ * named `audit<Something>`, their only writes are audit inserts. Their row is counted once per
+ * CALL, wherever the call sits, instead of once at the definition — so a read endpoint that
+ * stops calling one turns the census red, and moving the call to a service does not.
+ */
+const SHARED_AUDIT_HELPER = /^audit[A-Z]/
+
+/** A value expression, and the parameter bindings of the function it is read in. */
+interface Env { params: Map<string, { expr: ts.Expression, env: Env }>, unit: ts.Node }
+
+/**
+ * The literal(s) an expression stands for: a string; `a|b` for a conditional of literals;
+ * a parameter resolved through the call that bound it; a same-function `const` holding one.
+ * Anything else becomes `‹source text›` — stable when the code is moved verbatim, and
+ * readable in the census.
+ */
+function literalOf(expr: ts.Expression | undefined, env: Env, sourceFile: ts.SourceFile, depth = 0): string {
+  if (!expr) return '‹none›'
+  if (depth > 6) return `‹${squash(expr.getText(sourceFile))}›`
+  if (ts.isStringLiteralLike(expr)) return expr.text
+  if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) || ts.isSatisfiesExpression(expr)) return literalOf(expr.expression, env, sourceFile, depth + 1)
+  if (ts.isConditionalExpression(expr)) {
+    const options = new Set([
+      ...literalOf(expr.whenTrue, env, sourceFile, depth + 1).split('|'),
+      ...literalOf(expr.whenFalse, env, sourceFile, depth + 1).split('|'),
+    ])
+    return [...options].sort().join('|')
+  }
+  if (ts.isIdentifier(expr)) {
+    const bound = env.params.get(expr.text)
+    if (bound) return literalOf(bound.expr, bound.env, sourceFile, depth + 1)
+    const declared = literalBehind(expr, env.unit)
+    if (declared && (ts.isStringLiteralLike(declared) || ts.isConditionalExpression(declared))) return literalOf(declared, env, sourceFile, depth + 1)
+  }
+  return `‹${squash(expr.getText(sourceFile))}›`
+}
+
+/** The `<resource>:<action>` of each row handed to `.values(…)`. */
+function rowKeys(arg: ts.Expression | undefined, env: Env, sourceFile: ts.SourceFile): string[] {
+  if (!arg) return ['‹no values›:‹no values›']
+  if (ts.isArrayLiteralExpression(arg)) return arg.elements.flatMap(el => rowKeys(el, env, sourceFile))
+  const property = (object: ts.ObjectLiteralExpression, ...names: string[]) => {
+    for (const prop of object.properties) {
+      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && names.includes(prop.name.text)) return prop.initializer
+      if (ts.isShorthandPropertyAssignment(prop) && names.includes(prop.name.text)) return prop.name
+    }
+    return undefined
+  }
+  if (ts.isObjectLiteralExpression(arg)) {
+    return [`${literalOf(property(arg, 'resource'), env, sourceFile)}:${literalOf(property(arg, 'action'), env, sourceFile)}`]
+  }
+  // A row builder (`buildChatbotSettingsAudit({ operation: … })`): the builder names the
+  // resource, its `operation`/`action` argument the action.
+  if (ts.isCallExpression(arg) && ts.isIdentifier(arg.expression)) {
+    const [first] = arg.arguments
+    const action = first && ts.isObjectLiteralExpression(first) ? property(first, 'operation', 'action') : undefined
+    return [`‹${arg.expression.text}›:${action ? literalOf(action, env, sourceFile) : `‹${arg.expression.text}›`}`]
+  }
+  return [`‹${squash(arg.getText(sourceFile))}›:‹${squash(arg.getText(sourceFile))}›`]
+}
+
+/** Audit insert sites lexically inside `node`: the rows of each `.insert(activityLogs).values(…)` / raw INSERT. */
+function auditSites(node: ts.Node, env: Env, sourceFile: ts.SourceFile, out: Array<{ keys: string[], line: number }>): void {
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression)) {
+      const method = n.expression.name.text
+      const [first] = n.arguments
+      if (method === 'insert' && first && ts.isIdentifier(first) && first.text === AUDIT_TABLE) {
+        // Walk up the builder chain to its `.values(…)`.
+        let values: ts.CallExpression | undefined
+        for (let up: ts.Node = n; up.parent && !values; up = up.parent) {
+          const parent = up.parent
+          if (ts.isCallExpression(parent) && parent.expression === up && ts.isPropertyAccessExpression(up) && up.name.text === 'values') values = parent
+          else if (!(ts.isPropertyAccessExpression(parent) && parent.expression === up) && !(ts.isCallExpression(parent) && parent.expression === up)) break
+        }
+        out.push({ keys: rowKeys(values?.arguments[0], env, sourceFile), line: sourceFile.getLineAndCharacterOfPosition(n.getStart(sourceFile)).line + 1 })
+      } else if ((method === 'execute' || method === 'query') && rawWrite(n, env.unit)?.table === AUDIT_TABLE_SQL && rawWrite(n, env.unit)?.kind === 'insert') {
+        out.push({ keys: ['‹raw SQL›:‹raw SQL›'], line: sourceFile.getLineAndCharacterOfPosition(n.getStart(sourceFile)).line + 1 })
+      }
+    }
+    ts.forEachChild(n, visit)
+  }
+  visit(node)
+}
+
+/**
+ * Every audit row the given files write, as `<resource>:<action>` — keyed by WHAT is recorded,
+ * never by the file or function it is written from. Moving an insert between a handler and a
+ * service changes nothing here; dropping one, or changing what it records, changes the count.
+ *
+ *   - a judged function (exported, or reached otherwise than by direct in-file calls) counts
+ *     each row of each of its audit inserts once;
+ *   - a same-file helper reached only by direct calls counts once per call, with its parameters
+ *     bound to that call's arguments (`audit(tx, actorId, 'create', …)` → `…:create`);
+ *   - a shared `audit<Something>` helper ({@link SHARED_AUDIT_HELPER}) counts once per call in
+ *     any of the files, not at its definition.
+ */
+export function auditCensus(files: Array<{ file: string, source: string }>): CensusEntry[] {
+  const entries: CensusEntry[] = []
+  const sharedHelpers = new Map<string, string[]>() // name → keys of its row(s)
+  const parsed = files.map(({ file, source }) => ({ file, source, sourceFile: parse(file, source), units: scanUnits(file, source) }))
+
+  for (const { file, sourceFile, units } of parsed) {
+    const judged = new Set(judgedUnits(units).map(u => u.name))
+    const statements = new Map<string, ts.Statement>()
+    for (const statement of sourceFile.statements) {
+      if (ts.isImportDeclaration(statement) || ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) continue
+      statements.set(unitName(statement, sourceFile).name, statement)
+    }
+    const paramsOf = (name: string) => (functionOf(statements.get(name)!)?.parameters ?? []).map(p => (ts.isIdentifier(p.name) ? p.name.text : ''))
+
+    /** The environments a unit's code runs in: once if judged, else once per direct call reaching it. */
+    const contexts = (name: string, stack: Set<string>): Env[] => {
+      const node = statements.get(name)!
+      if (judged.has(name) || stack.has(name)) return [{ params: new Map(), unit: node }]
+      const out: Env[] = []
+      const params = paramsOf(name)
+      for (const caller of units.find(u => u.name === name)!.referencedBy) {
+        for (const callerEnv of contexts(caller, new Set([...stack, name]))) {
+          const visit = (n: ts.Node): void => {
+            if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === name) {
+              const bound = new Map<string, { expr: ts.Expression, env: Env }>()
+              params.forEach((param, i) => { const arg = n.arguments[i]; if (param && arg) bound.set(param, { expr: arg, env: callerEnv }) })
+              out.push({ params: bound, unit: node })
+            }
+            ts.forEachChild(n, visit)
+          }
+          visit(statements.get(caller)!)
+        }
+      }
+      return out
+    }
+
+    for (const unit of units) {
+      const unitAudits = unit.ownWrites.filter(w => w.audit)
+      if (unitAudits.length === 0) continue
+      const shared = unit.exported && SHARED_AUDIT_HELPER.test(unit.name) && unit.ownWrites.every(w => w.audit)
+      for (const env of contexts(unit.name, new Set())) {
+        const sites: Array<{ keys: string[], line: number }> = []
+        auditSites(statements.get(unit.name)!, env, sourceFile, sites)
+        if (shared) {
+          sharedHelpers.set(unit.name, sites.flatMap(site => site.keys))
+          continue
+        }
+        for (const site of sites) for (const key of site.keys) entries.push({ key, where: `${file}#${unit.name}:${site.line}` })
+      }
+    }
+  }
+
+  // Shared helpers: one row per call, wherever the call is.
+  for (const { file, sourceFile } of parsed) {
+    const visit = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+        const keys = sharedHelpers.get(n.expression.text)
+        if (keys) {
+          const line = sourceFile.getLineAndCharacterOfPosition(n.getStart(sourceFile)).line + 1
+          for (const key of keys) entries.push({ key, where: `${file}:${line} → ${n.expression.text}` })
+        }
+      }
+      ts.forEachChild(n, visit)
+    }
+    visit(sourceFile)
+  }
+  return entries
+}
+
+/** The census as `{ key: count }`, keys sorted. */
+export function censusCounts(entries: CensusEntry[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const { key } of [...entries].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))) counts[key] = (counts[key] ?? 0) + 1
+  return counts
+}

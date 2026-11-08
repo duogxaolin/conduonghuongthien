@@ -27,7 +27,7 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import ts from 'typescript'
 import {
-  auditTableReferences, auditingUnits, mayWriteAuditTable, scanUnits, unitProblems,
+  auditCensus, auditTableReferences, auditingUnits, censusCounts, mayWriteAuditTable, scanUnits, unitProblems,
   type Rule, type UnitFacts, type UnitProblem,
 } from './_audit-atomicity-scan'
 import { BACKUP_BARREL, backupServiceFiles, backupServiceSource } from './_backup-service-family'
@@ -1615,5 +1615,189 @@ describe('the per-function scanner sees what the per-file scans could not', () =
   await conn.query(statement, [new Date()])
 }\n`
     assert.deepEqual(problemsOf(raw), ['purge: delete-without-audit'])
+  })
+})
+
+/**
+ * Kiểm kê dòng audit (2026-11-08): MỌI dòng `activity_logs` mà `server/api/**`,
+ * `server/services/**` và `server/utils/**` ghi, đếm theo `<resource>:<action>` — tức theo
+ * điều được ghi lại, KHÔNG theo tệp hay hàm ghi nó.
+ *
+ * Các cổng phía trên bắt cặp hàng + audit ghi sai chỗ và lệnh xoá mất audit, nhưng một lượt
+ * INSERT/UPDATE làm rơi dòng audit trong một hàm chưa có tên ở danh sách nào thì không cổng
+ * nào đỏ. Đợt dời ~150 endpoint sang service là đúng lúc chuyện đó dễ xảy ra nhất. Bảng này
+ * khoá con số: dời mã giữa handler và service giữ nguyên nó; bỏ một lượt ghi audit, hay đổi
+ * resource/action của nó, làm nó đỏ — kèm nơi các dòng còn lại đang được ghi.
+ *
+ * Cách đếm (`auditCensus`, `tests/_audit-atomicity-scan.ts`):
+ *   - mỗi hàng của mỗi `.insert(activityLogs).values(…)` (mảng = nhiều hàng) tính một;
+ *   - helper cục bộ chỉ được gọi trực tiếp (`audit(tx, actorId, 'create', …)`) tính một lần
+ *     MỖI LỜI GỌI, tham số thay bằng đối số của lời gọi đó;
+ *   - helper dùng chung tên `audit<X>` chỉ ghi audit (`auditReaderRead`, `auditCommentRead`)
+ *     tính một lần mỗi lời gọi, ở bất kỳ tệp nào — endpoint đọc thôi gọi nó thì đỏ;
+ *   - giá trị điều kiện của các chuỗi → `a|b`; giá trị không giải được → `‹mã nguồn›` (bền
+ *     khi dời nguyên văn). Hai bộ dựng hàng của chatbot → `‹tên bộ dựng›:<operation>`.
+ *
+ * Thêm/bỏ/đổi một lượt ghi audit có chủ đích → sửa bảng này trong CÙNG commit, theo đúng số
+ * "found" trong thông báo lỗi. Gộp hai lượt ghi vào một helper dùng chung → đặt tên `audit<X>`
+ * để mỗi lời gọi vẫn được đếm.
+ */
+const AUDIT_CENSUS: Record<string, number> = {
+  'activity_logs:read': 1,
+  'ai:create': 3,
+  'ai:delete': 7,
+  'ai:update': 11,
+  'article_comments:delete': 1,
+  'articles:boost': 3,
+  'articles:create': 1,
+  'articles:delete': 1,
+  'articles:update': 3,
+  'auth:login': 1,
+  'auth:logout': 1,
+  'backup_drive_oauth:delete': 1,
+  'backup_drive_oauth:update': 3,
+  'chat_sessions:delete': 2,
+  'chat_sessions:read': 2,
+  'chatbot_knowledge:create': 1,
+  'chatbot_knowledge:delete': 4,
+  'chatbot_knowledge:read': 2,
+  'chatbot_knowledge:toggle': 1,
+  'chatbot_knowledge:update': 2,
+  'comments:create': 1,
+  'comments:delete': 1,
+  'comments:read': 1,
+  'comments:update': 1,
+  'data_retention:delete': 2,
+  'data_retention:update': 1,
+  'google_oauth_settings:update': 2,
+  'livestream:create': 1,
+  'livestream:delete': 1,
+  'livestream:update': 2,
+  'media:articles_fix_thumbnails': 1,
+  'media:create': 2,
+  'media:delete': 1,
+  'media:repair_urls': 1,
+  'media:repoint_urls': 1,
+  'media:scan_uploads': 1,
+  'media:scan_uploads_batch': 1,
+  'media:self_heal': 1,
+  'media:self_heal_default_lost': 1,
+  'media:sync_storage': 1,
+  'media:sync_storage_batch': 1,
+  'media:update': 3,
+  'media_portal:create': 2,
+  'media_portal:delete': 1,
+  'media_portal:housekeep_uploads': 1,
+  'media_portal:publish|update': 1,
+  'media_portal:update': 5,
+  'pages:create': 2,
+  'pages:delete': 2,
+  'pages:update': 3,
+  'profile_mfa:update': 2,
+  'profile_password:update': 1,
+  'profile_recovery_codes:update': 2,
+  'reader_ip_bans:create': 1,
+  'reader_ip_bans:delete': 1,
+  'readers:delete': 1,
+  'readers:read': 2,
+  'readers:update': 4,
+  'roles:create': 1,
+  'roles:delete': 1,
+  'roles:update': 1,
+  'settings:backup_restore': 1,
+  'settings:backup_restore_failed': 1,
+  'settings:backup_run': 1,
+  'settings:create': 4,
+  'settings:delete': 4,
+  'settings:update': 20,
+  'settings:update media_portal_settings': 1,
+  'submissions:delete': 1,
+  'submissions:read': 1,
+  'submissions:update': 3,
+  'user_history:read': 1,
+  'user_mfa:delete': 2,
+  'users:create': 1,
+  'users:delete': 1,
+  'users:update': 2,
+  // Bộ dựng hàng của chatbot (server/utils/chatbot/audit.ts) đặt resource bên trong bộ dựng
+  // (`CHATBOT_RESOURCES.*`), nên khoá mang tên bộ dựng; action là `operation` truyền vào.
+  '‹buildChatbotKnowledgeAudit›:archive|publish': 1,
+  '‹buildChatbotKnowledgeAudit›:create': 1,
+  '‹buildChatbotKnowledgeAudit›:delete': 1,
+  '‹buildChatbotKnowledgeAudit›:update': 1,
+  '‹buildChatbotSettingsAudit›:rotate_key|update': 1,
+}
+
+const CENSUS_ROOTS = ['server/api', 'server/services', 'server/utils']
+
+/** The keys whose count differs, each with the sites that still write it (for the message). */
+function censusDiff(found: Record<string, number>, declared: Record<string, number>, entries: Array<{ key: string, where: string }>): string[] {
+  const keys = [...new Set([...Object.keys(found), ...Object.keys(declared)])].sort()
+  return keys.filter(key => (found[key] ?? 0) !== (declared[key] ?? 0)).map((key) => {
+    const sites = entries.filter(entry => entry.key === key).map(entry => entry.where)
+    return `'${key}': declared ${declared[key] ?? 0}, found ${found[key] ?? 0}${sites.length > 0 ? ` — written at ${sites.join(', ')}` : ''}`
+  })
+}
+
+describe('the audit census: every activity_logs row the server writes, by what it records', () => {
+  it('server/api, server/services and server/utils write exactly the audited (resource, action) rows in AUDIT_CENSUS', () => {
+    const files = CENSUS_ROOTS.flatMap(walkTs).map(file => ({ file, source: read(file) }))
+    const entries = auditCensus(files)
+    assert.deepEqual(
+      censusDiff(censusCounts(entries), AUDIT_CENSUS, entries),
+      [],
+      'số dòng audit theo `<resource>:<action>` đã đổi. Dời mã giữa handler và service KHÔNG bao giờ '
+      + 'đổi bảng này — nên một lượt ghi audit vừa bị BỎ, bị đổi resource/action, hoặc được thêm. '
+      + 'Có chủ đích → sửa AUDIT_CENSUS theo số "found" trong cùng commit; không → khôi phục dòng audit.',
+    )
+  })
+
+  const header = "import { activityLogs, roles } from '../db/schema'\nimport { getDb } from '../utils/db'\n"
+  const countsOf = (...sources: Array<[string, string]>) => censusCounts(auditCensus(sources.map(([file, source]) => ({ file, source }))))
+
+  it('the key does not depend on where the insert lives: handler and service give the same census', () => {
+    const insert = `await tx.insert(activityLogs).values({ userId: 1, action: 'delete', resource: 'roles', resourceId: id })`
+    const handler = `${header}export default defineEventHandler(async (event) => {
+  const id = 1
+  await getDb().transaction(async (tx) => { await tx.delete(roles); ${insert} })
+})\n`
+    const service = `${header}export async function deleteRoleWithAudit(id: number) {
+  await getDb().transaction(async (tx) => { await tx.delete(roles); ${insert} })
+}\n`
+    const caller = "import { deleteRoleWithAudit } from '../services/x'\nexport default defineEventHandler(async () => { await deleteRoleWithAudit(1) })\n"
+    assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', handler]), { 'roles:delete': 1 })
+    assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', caller], ['server/services/x.ts', service]), { 'roles:delete': 1 })
+    assert.deepEqual(countsOf(['server/api/admin/roles/x.delete.ts', caller], ['server/services/x.ts', service.replace(insert, '')]), {})
+  })
+
+  it('a local helper counts once per call with its arguments; a shared audit<X> helper once per call anywhere', () => {
+    const local = `${header}async function audit(db: Store, action: 'create' | 'delete', id: number) {
+  await db.insert(activityLogs).values({ userId: 1, action, resource: 'roles', resourceId: id })
+}
+export async function create(id: number) { await getDb().transaction(async (tx) => { await tx.insert(roles); await audit(tx, 'create', id) }) }
+export async function remove(id: number, hard: boolean) { await getDb().transaction(async (tx) => { await tx.delete(roles); await audit(tx, hard ? 'delete' : 'create', id) }) }\n`
+    assert.deepEqual(countsOf(['server/services/roles.ts', local]), { 'roles:create': 1, 'roles:create|delete': 1 })
+
+    const shared = `${header}export async function auditRoleRead(actorId: number) {
+  await getDb().insert(activityLogs).values({ userId: actorId, action: 'read', resource: 'roles' })
+}\n`
+    const reader = (calls: number) => `import { auditRoleRead } from '../services/roles-read'\nexport default defineEventHandler(async () => {${' await auditRoleRead(1);'.repeat(calls)} })\n`
+    assert.deepEqual(countsOf(['server/services/roles-read.ts', shared], ['server/api/admin/roles/index.get.ts', reader(1)], ['server/api/admin/roles/[id].get.ts', reader(1)]), { 'roles:read': 2 })
+    assert.deepEqual(countsOf(['server/services/roles-read.ts', shared], ['server/api/admin/roles/index.get.ts', reader(1)], ['server/api/admin/roles/[id].get.ts', reader(0)]), { 'roles:read': 1 })
+  })
+
+  it('arrays, row builders and unresolvable values get readable keys', () => {
+    const rows = `${header}import { buildRoleAudit } from '../utils/role-audit'
+export async function many(kind: string) {
+  await getDb().transaction(async (tx) => {
+    await tx.insert(roles)
+    await tx.insert(activityLogs).values([{ action: 'delete', resource: 'roles' }, { action: 'delete', resource: 'user_roles' }])
+    await tx.insert(activityLogs).values(buildRoleAudit({ operation: 'rename' }))
+    await tx.insert(activityLogs).values({ action: kind, resource: 'roles' })
+  })
+}\n`
+    assert.deepEqual(countsOf(['server/services/r.ts', rows]), {
+      'roles:delete': 1, 'roles:‹kind›': 1, 'user_roles:delete': 1, '‹buildRoleAudit›:rename': 1,
+    })
   })
 })
