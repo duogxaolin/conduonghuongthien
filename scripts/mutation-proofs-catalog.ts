@@ -328,4 +328,20 @@ export const MUTATION_PROOFS: MutationProof[] = [
     tests: ['tests/tinymce-image-library-buttons.test.ts', 'tests/admin-article-editor.test.ts'],
     why: 'thiếu entity_encoding raw thì alt tiếng Việt lưu dạng &aacute; và sanitizeHtml thoát đôi nên trang công khai hiện chữ thay thế sai (CHANGELOG § 104); tệp .vue của Page Builder không đột biến được (trình chạy không đọc .vue), nó có test ghim chữ cùng tệp',
   },
+  {
+    id: 'editor-fullscreen-button-follows-plugin',
+    file: 'app/utils/tinymce-fullscreen-button.ts',
+    find: "      editor.on('FullscreenStateChanged', sync)\n",
+    replace: '',
+    tests: ['tests/tinymce-fullscreen-button.test.ts'],
+    why: 'nút "Toàn màn hình" phải nhấn theo trạng thái của plugin dù vào/ra bằng nút, menu Xem hay Ctrl+Shift+F — không tự giữ một cờ riêng (CHANGELOG § 105)',
+  },
+  {
+    id: 'editor-fullscreen-button-first-in-toolbar',
+    file: 'app/composables/useArticleEditorTinymce.ts',
+    find: "toolbar: 'cdktfullscreen | undo redo | blocks | ' +",
+    replace: "toolbar: 'undo redo | blocks | cdktfullscreen | ' +",
+    tests: ['tests/admin-article-editor.test.ts'],
+    why: 'thanh công cụ dạng trượt gập các nút cuối vào "…": nút toàn màn hình phải ở nhóm đầu để luôn thấy, danh sách (bullist/numlist) lùi về sau nhóm chèn (CHANGELOG § 105)',
+  },
 ]

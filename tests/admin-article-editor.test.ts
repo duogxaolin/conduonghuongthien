@@ -87,8 +87,8 @@ const CONFIG = {
   relative_urls: false, remove_script_host: false, convert_urls: true,
   plugins: ['advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
     'insertdatetime', 'media', 'table', 'wordcount', 'quickbars'],
-  toolbar: 'undo redo | blocks | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | '
-    + 'bullist numlist outdent indent | link cdktimage cdktimageedit cdktvideo | table | removeformat | fullscreen code',
+  toolbar: 'cdktfullscreen | undo redo | blocks | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | '
+    + 'link cdktimage cdktimageedit cdktvideo | table | removeformat | bullist numlist outdent indent | code',
   toolbar_mode: 'sliding', quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote', quickbars_insert_toolbar: 'cdktimage quicktable',
   quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright',
   menu: { insert: { title: 'Insert', items: 'cdktimage link inserttable | charmap hr | anchor | insertdatetime' } },
@@ -146,6 +146,17 @@ describe('article editor — load and TinyMCE', () => {
     assert.equal(typeof picker, 'function', 'the image dialog gets a browse button that opens the media library')
     assert.match(CONTENT_STYLE, /img \{ max-width: 100%;/)
     assert.match(CONTENT_STYLE, /iframe, video \{ max-width: 100%;/)
+  })
+
+  it('toolbar: the labelled full-screen toggle is the FIRST group (the sliding toolbar never folds it), the list buttons come after the insert group, every custom button is registered', async (t) => {
+    const ctx = await openEditor(t, '42')
+    const groups = String(ctx.tiny.configs[0]!.toolbar).split('|').map(group => group.trim().split(/\s+/))
+    assert.deepEqual(groups[0], ['cdktfullscreen'])
+    const at = (name: string) => groups.findIndex(group => group.includes(name))
+    assert.ok(at('bullist') > at('table') && at('numlist') === at('bullist') && at('outdent') === at('bullist'), 'lists after the insert group and the table')
+    assert.ok(at('bullist') > at('cdktimage'), 'lists after the image button')
+    assert.equal(at('fullscreen'), -1, 'TinyMCE\'s own icon-only fullscreen button is gone from the toolbar (the menubar entry stays)')
+    for (const name of groups.flat().filter(name => name.startsWith('cdkt'))) assert.ok(ctx.tiny.editor.buttons.includes(name), `${name} is registered`)
   })
 
   it('the editor spans the section: no max-w on it or any ancestor; its box keeps the 700px floor', async (t) => {

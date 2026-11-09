@@ -9,6 +9,7 @@ import type { ArticleEditorForm } from '../types/admin-article-editor'
 import type { MediaItem } from '../types/media'
 import type { TinyMceEditorInstance, WindowWithTinyMce } from '../types/tinymce'
 import { IMAGE_CAPTION_EDITOR_STYLE, imageFilePicker, insertLibraryImages, libraryImageHtml, registerImageLibraryButtons } from '../utils/tinymce-image-picker'
+import { registerFullscreenButton } from '../utils/tinymce-fullscreen-button'
 import { registerVideoLibraryButton } from '../utils/tinymce-video-picker'
 import type { AdminMediaItem } from '../types/admin-api'
 
@@ -151,12 +152,14 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
         'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
         'insertdatetime', 'media', 'table', 'wordcount', 'quickbars'
       ],
-      toolbar: 'undo redo | blocks | ' +
+      // `cdktfullscreen` is first so the sliding toolbar never folds it into "…"; the list buttons come after the
+      // insert group (link, image, video, table) — CHANGELOG § 105.
+      toolbar: 'cdktfullscreen | undo redo | blocks | ' +
         'bold italic underline strikethrough | forecolor backcolor | ' +
         'alignleft aligncenter alignright alignjustify | ' +
-        'bullist numlist outdent indent | ' +
         'link cdktimage cdktimageedit cdktvideo | ' +
-        'table | removeformat | fullscreen code',
+        'table | removeformat | ' +
+        'bullist numlist outdent indent | code',
       toolbar_mode: 'sliding',
       quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
       // Images go in from the media library, never from TinyMCE's own "Insert image" (a URL box / the OS file
@@ -191,6 +194,7 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
           .catch((err) => reject(errorMessage(err, 'Upload thất bại')))
       }),
       setup: (editor: TinyMceEditorInstance) => {
+        registerFullscreenButton(editor)
         registerImageLibraryButtons(editor, pickImage)
         if (pickVideo) registerVideoLibraryButton(editor, pickVideo)
         editor.on('init', () => {

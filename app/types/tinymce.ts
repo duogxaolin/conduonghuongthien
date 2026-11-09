@@ -49,8 +49,11 @@ export interface TinyMceAstNode {
 
 /** Một thực thể trình soạn thảo đã khởi tạo. */
 export interface TinyMceEditorInstance {
-  on: (event: string, handler: () => void) => void
-  off: (event: string, handler: () => void) => void
+  /** `FullscreenStateChanged` mang `state`; các sự kiện khác không cần đối số. */
+  on: (event: string, handler: (event: { state?: boolean }) => void) => void
+  off: (event: string, handler: (event: { state?: boolean }) => void) => void
+  /** Plugin đã nạp — `fullscreen.isFullscreen()` cho nút "Toàn màn hình" biết trạng thái lúc nó được vẽ. */
+  plugins?: { fullscreen?: { isFullscreen: () => boolean } }
   getContent: () => string
   setContent: (html: string) => void
   /** Chèn HTML tại vị trí con trỏ (dùng khi chọn ảnh từ Thư viện Media). */
@@ -90,6 +93,14 @@ export interface TinyMceEditorInstance {
         onSetup?: (api: { setEnabled: (state: boolean) => void }) => () => void
       }) => void
       addMenuItem?: (name: string, spec: { icon: string, text: string, onAction: () => void }) => void
+      /** Nút bật/tắt: `setActive` đặt trạng thái nhấn (nút "Toàn màn hình"). */
+      addToggleButton: (name: string, spec: {
+        icon: string
+        text?: string
+        tooltip: string
+        onAction: () => void
+        onSetup?: (api: { setEnabled: (state: boolean) => void, setActive: (state: boolean) => void }) => () => void
+      }) => void
     }
   }
   remove: () => void
