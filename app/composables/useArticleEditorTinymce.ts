@@ -11,6 +11,7 @@ import type { TinyMceEditorInstance, WindowWithTinyMce } from '../types/tinymce'
 import { IMAGE_CAPTION_EDITOR_STYLE, imageFilePicker, insertLibraryImages, libraryImageHtml, registerImageLibraryButtons } from '../utils/tinymce-image-picker'
 import { registerFullscreenButton } from '../utils/tinymce-fullscreen-button'
 import { VIDEO_EDITOR_STYLE, registerVideoLibraryButton } from '../utils/tinymce-video-picker'
+import { WEB_PAGE_EDITOR_STYLE, registerZoomControl } from '../utils/tinymce-web-page'
 import type { AdminMediaItem } from '../types/admin-api'
 
 /**
@@ -49,16 +50,10 @@ export interface ArticleEditorTinymceDeps {
 
 const TINYMCE_EDITOR_ID = 'tinymce-content-editor'
 
-// Byte for byte the string the page passed before the split — the indentation is part of it.
-const CONTENT_STYLE = `
-      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; padding: 12px; color: #1a1a1a; }
-      img { max-width: 100%; height: auto; border-radius: 8px; }
+// The article as the public page shows it: a sheet as wide as the public text column in the portal's type
+// (`WEB_PAGE_EDITOR_STYLE`, CHANGELOG § 108), then the frame and caption rules the editor adds.
+const CONTENT_STYLE = `${WEB_PAGE_EDITOR_STYLE}
       iframe, video { max-width: 100%; height: auto; }
-      pre[class*="language-"] { background: #2d2d2d; border-radius: 6px; padding: 1em; overflow-x: auto; }
-      code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; }
-      blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
-      table { border-collapse: collapse; width: 100%; }
-      table td, table th { border: 1px solid #ddd; padding: 8px; }
 ${IMAGE_CAPTION_EDITOR_STYLE}${VIDEO_EDITOR_STYLE}`
 
 export function useArticleEditorTinymce({ form, pickImage, pickVideo, save }: ArticleEditorTinymceDeps) {
@@ -148,7 +143,8 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo, save }: Ar
       promotion: false,
       branding: false,
       skin: 'oxide',
-      content_css: 'default',
+      // Inter, the portal's font (self-hosted; a 404 here just leaves the editor in the system font).
+      content_css: ['default', '/assets/fonts/inter.css'],
       relative_urls: false,
       remove_script_host: false,
       convert_urls: true,
@@ -202,6 +198,7 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo, save }: Ar
       }),
       setup: (editor: TinyMceEditorInstance) => {
         registerFullscreenButton(editor, save)
+        registerZoomControl(editor, window)
         registerImageLibraryButtons(editor, pickImage)
         if (pickVideo) registerVideoLibraryButton(editor, pickVideo)
         editor.on('init', () => {

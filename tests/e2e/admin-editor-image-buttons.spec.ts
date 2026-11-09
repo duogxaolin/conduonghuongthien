@@ -9,6 +9,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { E2E_ADMIN_USERNAME, E2E_PASSWORD_ENV } from './harness'
+import { solidPng } from './png'
 
 /** The editor, as an expression evaluated in the page (no TypeScript syntax: it runs in the browser as written). */
 const tiny = 'window.tinymce.get("tinymce-content-editor")'
@@ -25,9 +26,9 @@ async function login(page: Page) {
 
 test('image entries open the library, insert a full-width captioned image (caret in the caption, alt follows it), and "Sửa ảnh" edits the selected one', async ({ page }) => {
   await login(page)
-  const onePixelPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+  const picture = solidPng(320, 200) // a real size: a 1-px picture is capped at 1 px and its resize handles cover it
   const uploaded = await page.request.post('/api/admin/media/upload', {
-    multipart: { file: { name: `e2e-image-buttons-${Date.now()}.png`, mimeType: 'image/png', buffer: onePixelPng } },
+    multipart: { file: { name: `e2e-image-buttons-${Date.now()}.png`, mimeType: 'image/png', buffer: picture } },
   })
   expect(uploaded.status(), await uploaded.text()).toBe(200)
   const media = ((await uploaded.json()) as { media: { url: string, originalName: string } }).media

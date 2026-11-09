@@ -70,6 +70,12 @@ export interface TinyMceEditorInstance {
   }
   /** Vùng soạn thảo (thân tài liệu trong iframe). */
   getBody?: () => TinyMceDomNode | null
+  /** Tài liệu trong iframe soạn thảo (đặt `zoom` lên `documentElement`, nghe `wheel`) và khung ngoài của trình soạn (thanh trạng thái). */
+  getDoc?: () => Document
+  getContainer?: () => HTMLElement
+  /** Báo TinyMCE vị trí đã đổi: thanh nổi đang mở tính lại chỗ đứng (sau khi đổi mức phóng to). */
+  dispatch?: (name: string) => void
+  nodeChanged?: () => void
   /** Công cụ DOM của TinyMCE — chỉ phần tạo và chèn một đoạn văn trống sau ảnh có chú thích. */
   dom?: {
     create: (name: string, attrs?: Record<string, string> | null, html?: string) => TinyMceDomNode
