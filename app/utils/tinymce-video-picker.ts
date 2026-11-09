@@ -1,5 +1,6 @@
 import type { AdminMediaItem } from '../types/admin-api'
 import type { TinyMceEditorInstance } from '../types/tinymce'
+import { stepOutOfFigure } from './tinymce-image-picker'
 import { videoEmbedHtml } from './video-embed-html'
 
 /** The toolbar button's name; the toolbar strings of both editors list it next to `media`. */
@@ -24,7 +25,9 @@ export function registerVideoLibraryButton(
     onAction: () => {
       pickVideo((item) => {
         const html = videoEmbedHtml(item)
-        if (html) editor.insertContent(`<p>${html}</p>`)
+        if (!html) return
+        stepOutOfFigure(editor) // never inside a captioned image's caption (CHANGELOG § 104)
+        editor.insertContent(`<p>${html}</p>`)
       })
     },
   })

@@ -57,6 +57,8 @@ test('the toolbar button opens the library; the chosen item is inserted as a par
   const editor = {
     ui: { registry: { addButton: (name: string, spec: { icon: string, tooltip: string, onAction: () => void }) => { buttons[name] = spec } } },
     insertContent: (html: string) => { inserted.push(html) },
+    // A caret in a paragraph: the insertion needs no stepping out of a figure.
+    selection: { getNode: () => ({ nodeName: 'P', closest: () => null }) },
   } as unknown as TinyMceEditorInstance
   let chosen: ((item: AdminMediaItem) => void) | null = null
   registerVideoLibraryButton(editor, (onPick) => { chosen = onPick })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AdminMediaUploadResult } from '~/types/admin-api'
 import type { TinyMceEditorInstance, WindowWithTinyMce } from '~/types/tinymce'
-import { imageFilePicker, registerImageLibraryButtons } from '~/utils/tinymce-image-picker'
+import { IMAGE_CAPTION_EDITOR_STYLE, imageFilePicker, registerImageLibraryButtons } from '~/utils/tinymce-image-picker'
 import { registerVideoLibraryButton } from '~/utils/tinymce-video-picker'
 // ─── Reusable TinyMCE rich-text editor (v-model) ─────────────────────────────
 // Single source for TinyMCE in the admin. Used by the page builder's richtext
@@ -30,6 +30,8 @@ const editorId = `tinymce-${Math.random().toString(36).slice(2, 10)}`
 
 let editor: TinyMceEditorInstance | null = null
 let internalUpdate = false
+/** What the editor read back as the model last (after loading it, or after our own emit): the baseline of "changed". */
+let lastEmitted = ''
 
 // Load self-hosted first (instant, offline-safe, no external dependency for an
 // auth-gated admin tool); fall back to the CDN only if the local asset is missing.
@@ -79,6 +81,10 @@ onMounted(async () => {
     quickbars_insert_toolbar: 'cdktimage quicktable',
     quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright',
     contextmenu: 'link image table',
+    // The image dialog offers "Show caption" (as in the article editor); library insertions already carry one (CHANGELOG § 104).
+    image_caption: true,
+    // Raw characters, not named entities (see useArticleEditorTinymce.ts): a caption becomes the picture's alt.
+    entity_encoding: 'raw',
     automatic_uploads: true,
     paste_data_images: true,
     file_picker_types: 'image',
@@ -97,10 +103,16 @@ onMounted(async () => {
       editor = ed
       registerImageLibraryButtons(ed, onPick => openPicker({ onSelect: onPick }))
       if (hasPermission('media_portal', 'read')) registerVideoLibraryButton(ed, openVideoPicker)
-      ed.on('init', () => { ed.setContent(props.modelValue || '') })
+      // `getContent()` normalises what it was given (characters instead of named entities, an alt that follows the
+      // caption…), so a key that changes nothing — `keyup` fires on an arrow key — must not look like an edit: the
+      // model it emitted would differ from the saved block and the page would save a draft (CHANGELOG § 104).
+      ed.on('init', () => { ed.setContent(props.modelValue || ''); lastEmitted = ed.getContent() })
       const push = () => {
+        const html = ed.getContent()
+        if (html === lastEmitted) return
+        lastEmitted = html
         internalUpdate = true
-        emit('update:modelValue', ed.getContent())
+        emit('update:modelValue', html)
       }
       ed.on('input change undo redo keyup', push)
     },
@@ -111,7 +123,7 @@ onMounted(async () => {
       blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
       table { border-collapse: collapse; width: 100%; }
       table td, table th { border: 1px solid #ddd; padding: 8px; }
-    `,
+${IMAGE_CAPTION_EDITOR_STYLE}`,
   })
 })
 
@@ -119,7 +131,9 @@ onMounted(async () => {
 // caret while the user is typing (internalUpdate guards our own emits).
 watch(() => props.modelValue, (val) => {
   if (internalUpdate) { internalUpdate = false; return }
-  if (editor && val !== editor.getContent()) editor.setContent(val || '')
+  if (!editor) return
+  if (val !== editor.getContent()) editor.setContent(val || '')
+  lastEmitted = editor.getContent()
 })
 
 onBeforeUnmount(() => {

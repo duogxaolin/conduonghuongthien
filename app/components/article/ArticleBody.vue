@@ -70,6 +70,14 @@ useBrokenImageFallback(articleBodyEl)
   margin: 1.5rem 0;
 }
 
+/* Ảnh có chú thích (`<figure class="image">` do trình soạn chèn — CHANGELOG § 104). Khung ngoài lo lề; ảnh trong khung
+   không lề riêng (quy tắc `img` ở trên cộng thêm sẽ nhân đôi khoảng cách). Chú thích chưa điền (`<figcaption></figcaption>`)
+   không hiện gì. Chữ phụ `#5A6C58` — màu chữ phụ đạt tương phản của cổng. */
+.article-body :deep(figure) { margin: 1.5rem 0; }
+.article-body :deep(figure img) { display: block; margin: 0; }
+.article-body :deep(figcaption) { margin-top: 0.5rem; font-size: 0.9rem; line-height: 1.5; text-align: center; color: #5A6C58; }
+.article-body :deep(figcaption:empty) { display: none; }
+
 /* iframe YouTube nhúng trong bài viết — responsive 16:9. `src` đã được sanitizer
    rewrite sang youtube-nocookie.com và chỉ cho phép YouTube embed, nên an toàn
    cho `v-html`. `max-width: 100%` + `aspect-ratio` giữ video không tràn khung
