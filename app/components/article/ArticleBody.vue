@@ -12,7 +12,7 @@
   bài chưa tồn tại và không ảnh lỗi nào được ẩn (FINDING-D1).
 -->
 <template>
-  <div ref="articleBodyEl" class="article-body text-[1.05rem] leading-[1.7] text-ink-secondary">
+  <div ref="articleBodyEl" class="article-body text-[1.125rem] leading-[1.75] text-ink">
     <!-- eslint-disable-next-line vue/no-v-html -- content authored by C11 editors, sanitized on write and on read (public/articles/[slug].get.ts) -->
     <div v-html="html"></div>
   </div>
@@ -53,7 +53,16 @@ useBrokenImageFallback(articleBodyEl)
 .article-body :deep(h3) { font-size: 1.2rem; font-weight: 800; color: #1E251C; margin: 1.6rem 0 0.6rem; }
 .article-body :deep(h4) { font-size: 1.05rem; font-weight: 700; color: #2b352a; margin: 1.3rem 0 0.5rem; }
 
-.article-body :deep(p) { font-size: 1.05rem; line-height: 1.7; color: #4A5545; margin-bottom: 20px; }
+/* Chữ thân bài: đậm màu (`ink` #1E251C, không phải xám `ink-secondary`), 18px, giãn dòng 1.75. Bài cũ dán từ Word/trình soạn cũ
+   mang `font-family: arial` và `font-size: 14px` NGAY TRONG <span style> — thắng mọi quy tắc lớp nên cả bài hiện Arial 14px xám.
+   Cổng dùng MỘT phông (Inter) và MỘT cỡ chữ cho thân bài: font-family/font-size/line-height gõ tay trong `style` bị bỏ qua khi hiển thị
+   (màu, đậm, nghiêng, căn lề giữ nguyên). `!important` là chủ đích: chỉ nó thắng được `style` nội tuyến (CHANGELOG § 107). */
+.article-body :deep(p),
+.article-body :deep(li) { font-size: 1.125rem; line-height: 1.75; color: #1E251C; }
+.article-body :deep(p) { margin-bottom: 20px; }
+.article-body :deep([style*="font-family"]) { font-family: inherit !important; }
+.article-body :deep([style*="font-size"]),
+.article-body :deep([style*="line-height"]) { font-size: inherit !important; line-height: inherit !important; }
 .article-body :deep(blockquote) { background-color: #F8FAF7; border-left: 4px solid #4A6741; padding: 20px 24px; margin: 30px 0; font-style: italic; font-size: 1.1rem; color: #385130; }
 .article-body :deep(blockquote span) { display: block; font-size: 0.85rem; color: #7A8675; margin-top: 8px; font-weight: 700; font-style: normal; }
 
@@ -67,7 +76,10 @@ useBrokenImageFallback(articleBodyEl)
   max-width: 100%;
   height: auto;
   border-radius: 8px;
-  margin: 1.5rem 0;
+  /* Ảnh nằm GIỮA cột: ảnh cũ chỉ là <img> trần ở cỡ gốc (vd. 590 px trong cột 800 px) và đã bị dồn sang trái. Ảnh đã canh lề bằng
+     nút của trình soạn mang `float`/`margin` nội tuyến nên vẫn thắng quy tắc này. */
+  display: block;
+  margin: 1.5rem auto;
 }
 
 /* Ảnh có chú thích (`<figure class="image">` do trình soạn chèn — CHANGELOG § 104). Khung ngoài lo lề; ảnh trong khung

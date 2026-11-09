@@ -2969,6 +2969,19 @@ Bốn việc nhỏ cùng một PR (đều nối tiếp § 104–105).
 - **Chưa làm / cần biết:** chưa thử gõ tiếng Việt kiểu Telex/VNI trong chú thích; Page Builder không có nút Lưu (xem trên); ảnh đã chèn không tự đổi.
 - Không ảnh hưởng deploy toolkit.
 
+### 107. Thân bài công khai — một phông, một cỡ chữ, chữ đậm màu; ảnh trần căn giữa cột (2026-11-09)
+
+Anh gửi ảnh chụp một bài trên production: ảnh nằm lệch trái (nhỏ hơn cột) và chữ nhỏ, xám, phông Arial — "font và màu chữ quá xấu".
+
+- **Nguyên nhân (đo trên bài thật):** nội dung bài vẫn nguyên vẹn (kiểu `font-size:14px`, `font-family:arial` còn đủ — KHÔNG phải do bộ lọc § 103 bỏ mất `style`). Bài cũ dán từ Word/trình soạn cũ nên chữ nằm trong `<span style="font-family:arial; font-size:14px">`; kiểu nội tuyến thắng mọi quy tắc lớp, nên cả bài hiện Arial 14 px màu `ink-secondary` xám (#4A5545). Ảnh là `<img alt src>` trần ở cỡ gốc (590 px trong cột ~800 px) và `img` là inline, nên dồn sang trái. Anh đã nhắn "ảnh căn giữa mặc định" — § 106 mới chỉ làm cho `<figure>`, chưa làm ảnh trần (phần lớn bài cũ).
+- **Nay (`ArticleBody.vue`):**
+  - Chữ thân bài: màu `ink` (#1E251C) thay vì xám, **18 px** (trước 16,8 px), giãn dòng 1,75; `li` cùng kiểu với `p`.
+  - `font-family`, `font-size`, `line-height` gõ tay trong `style` nội tuyến **bị bỏ qua khi hiển thị** (`inherit !important` — chủ đích, chỉ `!important` mới thắng được `style` nội tuyến): cả cổng dùng MỘT phông (Inter) và MỘT cỡ chữ. Màu chữ, đậm, nghiêng, căn lề (kể cả căn đều) của bài **được giữ**. Đánh đổi: người soạn không còn đặt cỡ chữ riêng cho một đoạn trong bài (dùng tiêu đề H2–H4 thay).
+  - `img`/`video` là `display: block; margin: 1.5rem auto` — ảnh hẹp hơn cột nằm giữa cột. Ảnh đã canh lề bằng nút của trình soạn mang `float`/`margin` nội tuyến nên vẫn thắng. `RichTextBlock.vue` (khối văn bản của Page Builder) cùng quy tắc ảnh/video giữa cột; kiểu chữ khối này giữ nguyên. Trang in `/in-bai` không đổi.
+- **Đã xem trước trên chính bài trong ảnh** (chèn CSS vào trang production, chụp trước/sau): chữ Inter 18 px đen đậm, ảnh 590 px nằm giữa cột 808 px.
+- **Test:** E2E `tests/e2e/public-article-typography.spec.ts` trên bản build thật (bài kiểu cũ: ảnh 300 px trần + hai đoạn có `font-family:arial; font-size:14px`): Inter 18 px `rgb(30, 37, 28)`, căn đều giữ, màu đỏ tự chọn giữ, ảnh cách đều hai bên cột (±2 px). Trình chạy đột biến không đọc `.vue` nên không có mục đột biến; bằng chứng là ca E2E này.
+- Không ảnh hưởng deploy toolkit.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24; đóng/thêm mục Đợt 3 ở § 44–53, 2026-10-27; đóng/thêm mục ở § 54–61, 2026-10-30)
 
 
