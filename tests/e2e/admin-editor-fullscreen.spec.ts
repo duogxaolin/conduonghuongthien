@@ -1,5 +1,5 @@
 /**
- * The article editor's labelled "Toàn màn hình" toggle, on the real build with the real TinyMCE under the real admin
+ * The article editor's labelled "Phóng to" toggle, on the real build with the real TinyMCE under the real admin
  * layout (`position: fixed` is broken by any ancestor with a transform, and only a browser shows that): it is the first
  * thing on the toolbar and visible without opening "…"; full screen covers the whole viewport (nothing of the admin
  * header or sidebar on top); the media library opens ABOVE it and a real click on a picture works; the toggle follows
@@ -47,10 +47,10 @@ test('the labelled toggle is first and always visible; full screen covers the vi
   await expect(page.locator('.tox-tinymce')).toBeVisible({ timeout: 30_000 })
 
   // 1. First on the toolbar, labelled, visible without opening "…".
-  const toggle = page.locator('.tox-toolbar__primary button[aria-label^="Toàn màn hình"]')
+  const toggle = page.locator('.tox-toolbar__primary button[aria-label^="Phóng to"]')
   await expect(toggle).toBeVisible()
-  await expect(toggle).toContainText('Toàn màn hình')
-  await expect(page.locator('.tox-toolbar__primary button').first()).toHaveAttribute('aria-label', /^Toàn màn hình/)
+  await expect(toggle).toContainText('Phóng to')
+  await expect(page.locator('.tox-toolbar__primary button').first()).toHaveAttribute('aria-label', /^Phóng to/)
   await expect(toggle).toHaveAttribute('aria-pressed', 'false')
   const normal = await fullscreenClasses(page)
   expect(normal).toMatchObject({ html: false, body: false })

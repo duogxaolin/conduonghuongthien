@@ -62,7 +62,12 @@ const { hasPermission } = useAdminAuth()
 const {
   editorId, setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent, onBodyShown,
   insertMediasIntoEditor, initTinyMCE, loadTinyMCEScript,
-} = useArticleEditorTinymce({ form, pickImage: onPick => openPicker({ onSelect: onPick }), pickVideo: hasPermission('media_portal', 'read') ? openVideoPicker : null })
+} = useArticleEditorTinymce({
+  form, pickImage: onPick => openPicker({ onSelect: onPick }), pickVideo: hasPermission('media_portal', 'read') ? openVideoPicker : null,
+  // "Lưu" inside full screen (which covers the header's Save button): the same save, never twice at once.
+  // Lazy — `saving`/`handleSave` come from useArticleEditorSave below, which needs this composable's getEditorContent.
+  save: () => { if (!saving.value) void handleSave() },
+})
 
 // ─── Unsaved-changes guard: route leave here (a Nuxt auto-import), the tab close in the composable ──
 const { markSaved, confirmLeave } = useArticleEditorUnsavedGuard({ form, loading, markBodySaved, bodyChanged, confirm })

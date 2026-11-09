@@ -24,14 +24,14 @@ describe('article editor — the video-library button follows media_portal read'
   it('an account that can read the video library gets the button', async (t) => {
     const ctx = await openEditor(t, '42', { responder: article() })
     await ctx.settle()
-    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktfullscreen', 'cdktimage', 'cdktimageedit', 'cdktvideo'])
+    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktfullscreen', 'cdktsave', 'cdktimage', 'cdktimageedit', 'cdktvideo'])
   })
 
   it('an account that cannot read it does not', async (t) => {
     const ctx = await openEditor(t, '42', { responder: article(), can: noVideoLibrary })
     await ctx.settle()
     assert.equal(ctx.tiny.configs.length, 1, 'the editor still starts')
-    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktfullscreen', 'cdktimage', 'cdktimageedit'], 'the image and full-screen buttons stay; only the video one needs media_portal')
+    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktfullscreen', 'cdktsave', 'cdktimage', 'cdktimageedit'], 'the image and full-screen buttons stay; only the video one needs media_portal')
   })
 
   it("TinyMCE's own Media dialog is off the toolbar and the Insert menu; the plugin stays", async (t) => {
@@ -46,10 +46,11 @@ describe('article editor — the video-library button follows media_portal read'
 
 describe('components/admin/TinyMceEditor.vue — the same rule', () => {
   type Config = { toolbar?: string, plugins?: string[], setup?: (editor: unknown) => void }
-  async function buttonsFor(can?: (resource: string, action: string) => boolean) {
+  async function buttonsFor(can?: (resource: string, action: string) => boolean, props?: Record<string, unknown>) {
     let config: Config = {}
     await mountAdminPage('components/admin/TinyMceEditor.vue', routes({}), {
       can,
+      props,
       auto: {
         useImagePicker: () => ({ openPicker: () => {} }),
         useVideoPicker: () => ({ openVideoPicker: () => {} }),
@@ -57,13 +58,14 @@ describe('components/admin/TinyMceEditor.vue — the same rule', () => {
       },
     })
     const buttons: string[] = []
-    config.setup?.({ ui: { registry: { addButton: (name: string) => { buttons.push(name) } } }, on: () => {}, off: () => {}, selection: { getNode: () => null } })
+    const registry = { addButton: (name: string) => { buttons.push(name) }, addToggleButton: (name: string) => { buttons.push(name) } }
+    config.setup?.({ ui: { registry }, on: () => {}, off: () => {}, selection: { getNode: () => null } })
     return { buttons, config }
   }
 
   it('registered for an account that can read the video library, not for one that cannot', async () => {
-    assert.deepEqual((await buttonsFor()).buttons, ['cdktimage', 'cdktimageedit', 'cdktvideo'])
-    assert.deepEqual((await buttonsFor(noVideoLibrary)).buttons, ['cdktimage', 'cdktimageedit'])
+    assert.deepEqual((await buttonsFor()).buttons, ['cdktfullscreen', 'cdktimage', 'cdktimageedit', 'cdktvideo'])
+    assert.deepEqual((await buttonsFor(noVideoLibrary)).buttons, ['cdktfullscreen', 'cdktimage', 'cdktimageedit'])
   })
 
   it("TinyMCE's own Media button is off the toolbar; the plugin stays", async () => {

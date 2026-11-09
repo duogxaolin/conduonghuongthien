@@ -63,7 +63,8 @@ test('image entries open the library, insert a full-width captioned image (caret
 
   const html = await page.evaluate<string>(`${tiny}.getContent()`)
   expect(html).toContain(media.url)
-  expect(html).toMatch(/<figure class="image" style="width: 100%;"><img [^>]*style="width: 100%; height: auto;"/)
+  // The library's list carries the file's width, and the picture is capped at it (never enlarged — CHANGELOG § 106).
+  expect(html).toMatch(/<figure class="image" style="width: 100%; max-width: \d+px;"><img [^>]*style="width: 100%; max-width: \d+px; height: auto;"/)
 
   // The caret is in the new caption, which shows a hint while empty; typing goes straight in.
   const caption = frame.locator('body > figure.image figcaption')
@@ -104,6 +105,10 @@ test('image entries open the library, insert a full-width captioned image (caret
   await expect(fields.nth(1)).toHaveValue('Cán bộ trao quà cho hộ dân')
   await expect(fields.nth(2)).toHaveValue('100%')
   await expect(tinyDialog.getByRole('checkbox', { name: 'Show caption' })).toBeChecked()
+  // Pictures come from the library: no "Upload" tab with the OS file chooser (CHANGELOG § 106); General and Advanced stay.
+  await expect(tinyDialog.locator('.tox-dialog__body-nav-item', { hasText: 'General' })).toBeVisible()
+  await expect(tinyDialog.locator('.tox-dialog__body-nav-item', { hasText: 'Advanced' })).toBeVisible()
+  await expect(tinyDialog.locator('.tox-dialog__body-nav-item', { hasText: 'Upload' })).toHaveCount(0)
   await tinyDialog.getByRole('button', { name: 'Cancel' }).click()
   await expect(tinyDialog).toBeHidden()
 
@@ -182,6 +187,26 @@ test('the public page shows a filled caption under its picture, with the caption
   await expect(body.locator('figcaption').first()).toHaveText('Cán bộ trao quà')
   await expect(body.locator('figure').first().locator('img')).toHaveAttribute('alt', 'Cán bộ trao quà')
   await expect(body.locator('figcaption').nth(1), 'an unfilled caption shows nothing').toBeHidden()
+})
+
+test('on the public page a picture narrower than the column is not stretched and sits in the middle of the column', async ({ page }) => {
+  await login(page)
+  const url = await uploadPng(page)
+  const small = `<figure class="image" style="width: 100%; max-width: 300px;"><img src="${url}" alt="" style="width: 100%; max-width: 300px; height: auto;"><figcaption>Ảnh nhỏ</figcaption></figure>`
+  const { slug } = await createArticle(page, `<p>Đầu</p>${small}`, 'published')
+  await page.goto(`/news/${slug}`)
+  const body = page.locator('.article-body')
+  await expect(body.locator('figure')).toHaveCount(1)
+  const box = await body.evaluate((el) => {
+    const column = el.getBoundingClientRect()
+    const figure = el.querySelector('figure')!.getBoundingClientRect()
+    return { column: [column.x, column.width], figure: [figure.x, figure.width] }
+  })
+  expect(box.figure[1], 'capped at its own width, not stretched to the column').toBeLessThanOrEqual(301)
+  expect(box.column[1], 'the column is wider than the picture (otherwise nothing to check)').toBeGreaterThan(400)
+  const left = box.figure[0]! - box.column[0]!
+  const right = box.column[0]! + box.column[1]! - (box.figure[0]! + box.figure[1]!)
+  expect(Math.abs(left - right), `centred: ${left}px left, ${right}px right`).toBeLessThanOrEqual(2)
 })
 
 const figures = (page: Page) => page.evaluate<{ count: number, nested: number, srcs: string[] }>(`(() => {

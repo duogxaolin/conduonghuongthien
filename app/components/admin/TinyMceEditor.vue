@@ -2,7 +2,9 @@
 import type { AdminMediaUploadResult } from '~/types/admin-api'
 import type { TinyMceEditorInstance, WindowWithTinyMce } from '~/types/tinymce'
 import { IMAGE_CAPTION_EDITOR_STYLE, imageFilePicker, registerImageLibraryButtons } from '~/utils/tinymce-image-picker'
-import { registerVideoLibraryButton } from '~/utils/tinymce-video-picker'
+import { registerFullscreenButton } from '~/utils/tinymce-fullscreen-button'
+import { compactEditorToolbar } from '~/utils/tinymce-compact-toolbar'
+import { VIDEO_EDITOR_STYLE, registerVideoLibraryButton } from '~/utils/tinymce-video-picker'
 // ─── Reusable TinyMCE rich-text editor (v-model) ─────────────────────────────
 // Single source for TinyMCE in the admin. Used by the page builder's richtext
 // fields (PropertyPanel) so the in-builder editing experience matches the
@@ -14,9 +16,14 @@ const props = withDefaults(defineProps<{
   modelValue?: string
   height?: number
   placeholder?: string
-}>(), { modelValue: '', height: 480, placeholder: '' })
+  /**
+   * Adds "Lưu" to the toolbar, shown only in full screen (which covers the host's own Save button): it emits `save` after
+   * the model is up to date. Opt-in — the Page Builder autosaves its draft and has no Save of its own.
+   */
+  saveButton?: boolean
+}>(), { modelValue: '', height: 480, placeholder: '', saveButton: false })
 
-const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
+const emit = defineEmits<{ (e: 'update:modelValue', value: string): void, (e: 'save'): void }>()
 
 const { openPicker } = useImagePicker()
 const { openVideoPicker } = useVideoPicker()
@@ -72,9 +79,7 @@ onMounted(async () => {
       'searchreplace', 'visualblocks', 'code', 'fullscreen', 'insertdatetime',
       'media', 'table', 'wordcount', 'quickbars',
     ],
-    toolbar: 'undo redo | blocks | bold italic underline | forecolor backcolor | ' +
-      'alignleft aligncenter alignright | bullist numlist outdent indent | ' +
-      'link cdktimage cdktimageedit cdktvideo table | removeformat | code fullscreen',
+    toolbar: compactEditorToolbar(props.saveButton),
     toolbar_mode: 'sliding',
     quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
     // Images go in from the media library (see useArticleEditorTinymce.ts) — no `quickimage` (OS file chooser).
@@ -83,6 +88,8 @@ onMounted(async () => {
     contextmenu: 'link image table',
     // The image dialog offers "Show caption" (as in the article editor); library insertions already carry one (CHANGELOG § 104).
     image_caption: true,
+    // No "Upload" tab (OS file chooser): pictures come from the media library (CHANGELOG § 106).
+    image_uploadtab: false,
     // Raw characters, not named entities (see useArticleEditorTinymce.ts): a caption becomes the picture's alt.
     entity_encoding: 'raw',
     automatic_uploads: true,
@@ -101,6 +108,8 @@ onMounted(async () => {
     }),
     setup: (ed: TinyMceEditorInstance) => {
       editor = ed
+      // The model first, then the host's save: it must not save a model one input behind.
+      registerFullscreenButton(ed, props.saveButton ? () => { push(); emit('save') } : undefined)
       registerImageLibraryButtons(ed, onPick => openPicker({ onSelect: onPick }))
       if (hasPermission('media_portal', 'read')) registerVideoLibraryButton(ed, openVideoPicker)
       // `getContent()` normalises what it was given (characters instead of named entities, an alt that follows the
@@ -123,7 +132,7 @@ onMounted(async () => {
       blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
       table { border-collapse: collapse; width: 100%; }
       table td, table th { border: 1px solid #ddd; padding: 8px; }
-${IMAGE_CAPTION_EDITOR_STYLE}`,
+${IMAGE_CAPTION_EDITOR_STYLE}${VIDEO_EDITOR_STYLE}`,
   })
 })
 

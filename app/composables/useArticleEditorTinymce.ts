@@ -10,7 +10,7 @@ import type { MediaItem } from '../types/media'
 import type { TinyMceEditorInstance, WindowWithTinyMce } from '../types/tinymce'
 import { IMAGE_CAPTION_EDITOR_STYLE, imageFilePicker, insertLibraryImages, libraryImageHtml, registerImageLibraryButtons } from '../utils/tinymce-image-picker'
 import { registerFullscreenButton } from '../utils/tinymce-fullscreen-button'
-import { registerVideoLibraryButton } from '../utils/tinymce-video-picker'
+import { VIDEO_EDITOR_STYLE, registerVideoLibraryButton } from '../utils/tinymce-video-picker'
 import type { AdminMediaItem } from '../types/admin-api'
 
 /**
@@ -40,6 +40,11 @@ export interface ArticleEditorTinymceDeps {
    * the button is then not registered, and TinyMCE leaves out a toolbar name nothing registered.
    */
   pickVideo: ((onPick: (item: AdminMediaItem) => void) => void) | null
+  /**
+   * The page's save, for the "Lưu" button inside full screen (which covers the page's own button). Called lazily, at
+   * click time — the page builds its save after this composable, from this composable's `getEditorContent`.
+   */
+  save: () => void
 }
 
 const TINYMCE_EDITOR_ID = 'tinymce-content-editor'
@@ -54,9 +59,9 @@ const CONTENT_STYLE = `
       blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
       table { border-collapse: collapse; width: 100%; }
       table td, table th { border: 1px solid #ddd; padding: 8px; }
-${IMAGE_CAPTION_EDITOR_STYLE}`
+${IMAGE_CAPTION_EDITOR_STYLE}${VIDEO_EDITOR_STYLE}`
 
-export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleEditorTinymceDeps) {
+export function useArticleEditorTinymce({ form, pickImage, pickVideo, save }: ArticleEditorTinymceDeps) {
   const tinymceReady = ref(false)
   // Body baseline as TinyMCE serialises it — setContent() normalises HTML, and `form.content`
   // only follows the editor on `change`. Null until the editor's `init` takes it.
@@ -152,9 +157,9 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
         'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
         'insertdatetime', 'media', 'table', 'wordcount', 'quickbars'
       ],
-      // `cdktfullscreen` is first so the sliding toolbar never folds it into "…"; the list buttons come after the
-      // insert group (link, image, video, table) — CHANGELOG § 105.
-      toolbar: 'cdktfullscreen | undo redo | blocks | ' +
+      // `cdktfullscreen` (+ "Lưu", visible only in full screen) is first so the sliding toolbar never folds it into "…";
+      // the list buttons come after the insert group (link, image, video, table) — CHANGELOG § 105, § 106.
+      toolbar: 'cdktfullscreen cdktsave | undo redo | blocks | ' +
         'bold italic underline strikethrough | forecolor backcolor | ' +
         'alignleft aligncenter alignright alignjustify | ' +
         'link cdktimage cdktimageedit cdktvideo | ' +
@@ -175,6 +180,8 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
       removed_menuitems: 'media',
       image_advtab: true,
       image_caption: true,
+      // Pictures come from the media library (`cdktimage`, and the dialog's browse button): no "Upload" tab with the OS file chooser (CHANGELOG § 106).
+      image_uploadtab: false,
       // Raw characters, not `&aacute;`: the sanitizer re-escapes the `&` of a named entity inside an attribute value, so a
       // caption typed into `alt` would reach the public page as the literal text `C&aacute;n` (CHANGELOG § 104).
       entity_encoding: 'raw',
@@ -194,7 +201,7 @@ export function useArticleEditorTinymce({ form, pickImage, pickVideo }: ArticleE
           .catch((err) => reject(errorMessage(err, 'Upload thất bại')))
       }),
       setup: (editor: TinyMceEditorInstance) => {
-        registerFullscreenButton(editor)
+        registerFullscreenButton(editor, save)
         registerImageLibraryButtons(editor, pickImage)
         if (pickVideo) registerVideoLibraryButton(editor, pickVideo)
         editor.on('init', () => {
