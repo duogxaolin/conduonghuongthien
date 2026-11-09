@@ -4,7 +4,7 @@ import type { TinyMceEditorInstance, WindowWithTinyMce } from '~/types/tinymce'
 import { IMAGE_CAPTION_EDITOR_STYLE, imageFilePicker, registerImageLibraryButtons } from '~/utils/tinymce-image-picker'
 import { registerFullscreenButton } from '~/utils/tinymce-fullscreen-button'
 import { compactEditorToolbar } from '~/utils/tinymce-compact-toolbar'
-import { registerVideoLibraryButton } from '~/utils/tinymce-video-picker'
+import { VIDEO_EDITOR_STYLE, registerVideoLibraryButton } from '~/utils/tinymce-video-picker'
 // ─── Reusable TinyMCE rich-text editor (v-model) ─────────────────────────────
 // Single source for TinyMCE in the admin. Used by the page builder's richtext
 // fields (PropertyPanel) so the in-builder editing experience matches the
@@ -88,6 +88,8 @@ onMounted(async () => {
     contextmenu: 'link image table',
     // The image dialog offers "Show caption" (as in the article editor); library insertions already carry one (CHANGELOG § 104).
     image_caption: true,
+    // No "Upload" tab (OS file chooser): pictures come from the media library (CHANGELOG § 106).
+    image_uploadtab: false,
     // Raw characters, not named entities (see useArticleEditorTinymce.ts): a caption becomes the picture's alt.
     entity_encoding: 'raw',
     automatic_uploads: true,
@@ -130,7 +132,7 @@ onMounted(async () => {
       blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
       table { border-collapse: collapse; width: 100%; }
       table td, table th { border: 1px solid #ddd; padding: 8px; }
-${IMAGE_CAPTION_EDITOR_STYLE}`,
+${IMAGE_CAPTION_EDITOR_STYLE}${VIDEO_EDITOR_STYLE}`,
   })
 })
 

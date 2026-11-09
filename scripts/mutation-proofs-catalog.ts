@@ -392,4 +392,20 @@ export const MUTATION_PROOFS: MutationProof[] = [
     tests: ['tests/tinymce-image-library-buttons.test.ts'],
     why: 'ảnh thư viện nhỏ hơn cột chữ không được bị kéo giãn ra 100% (mờ/vỡ): hình và khung phải mang max-width bằng đúng bề rộng tệp (CHANGELOG § 106)',
   },
+  {
+    id: 'editor-article-no-upload-tab',
+    file: 'app/composables/useArticleEditorTinymce.ts',
+    find: "      image_uploadtab: false,\n",
+    replace: '',
+    tests: ['tests/video-embed-html.test.ts'],
+    why: 'hộp "Sửa ảnh" không còn tab Upload (chọn tệp từ máy) — ảnh vào từ thư viện; bỏ dòng này tab quay lại (CHANGELOG § 106); tệp .vue của Page Builder có test ghim chữ cùng tệp',
+  },
+  {
+    id: 'editor-video-frame-16-9',
+    file: 'app/utils/tinymce-video-picker.ts',
+    find: 'width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; }',
+    replace: 'width: 100%; height: auto; border: 0; }',
+    tests: ['tests/video-embed-html.test.ts', 'tests/admin-article-editor.test.ts'],
+    why: 'trong trình soạn khung video phải rộng bằng cột và 16:9 như trang công khai — thiếu aspect-ratio thì thành dải 150 px (đo trên TinyMCE 6.8.6) (CHANGELOG § 106)',
+  },
 ]

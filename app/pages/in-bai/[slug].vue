@@ -368,7 +368,7 @@ onMounted(() => {
 /* Khung video (YouTube, /media/embed): co theo cột, giữ 16:9 — width="640" của khung không tràn khổ hẹp. */
 .print-article-body :deep(iframe) { width: 100%; aspect-ratio: 16 / 9; border: 0; }
 .print-article-body :deep(figure) {
-  margin: 1.2rem 0;
+  margin: 1.2rem auto;
   text-align: center;
 }
 .print-article-body :deep(figcaption) { font-size: 0.8rem; color: #7A8675; font-style: italic; margin-top: 0.4rem; }

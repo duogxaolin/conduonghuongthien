@@ -81,7 +81,11 @@ const CONTENT_STYLE = `
 
       figure.image figcaption:empty::before { content: 'Nhập chú thích ảnh — cũng là chữ thay thế (alt) của ảnh'; color: gray; font-style: italic; }
       figure.image figcaption[data-mce-empty]::before { content: 'Nhập chú thích ảnh — cũng là chữ thay thế (alt) của ảnh'; color: gray; font-style: italic; }
+
+      .mce-preview-object { display: block; max-width: 100%; margin: 1rem 0; }
+      .mce-preview-object iframe { width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; }
 `
+
 const CONFIG = {
   selector: '#tinymce-content-editor', height: 700, menubar: true, promotion: false, branding: false, skin: 'oxide', content_css: 'default',
   relative_urls: false, remove_script_host: false, convert_urls: true,
@@ -92,7 +96,7 @@ const CONFIG = {
   toolbar_mode: 'sliding', quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote', quickbars_insert_toolbar: 'cdktimage quicktable',
   quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright',
   menu: { insert: { title: 'Insert', items: 'cdktimage link inserttable | charmap hr | anchor | insertdatetime' } },
-  contextmenu: 'link image table', removed_menuitems: 'media', image_advtab: true, image_caption: true, entity_encoding: 'raw', automatic_uploads: true, paste_data_images: true,
+  contextmenu: 'link image table', removed_menuitems: 'media', image_advtab: true, image_caption: true, image_uploadtab: false, entity_encoding: 'raw', automatic_uploads: true, paste_data_images: true,
   paste_merge_formats: true, file_picker_types: 'image', content_style: CONTENT_STYLE,
 }
 

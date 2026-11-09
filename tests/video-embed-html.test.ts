@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { isEmbeddableVideo, videoEmbedHtml, type EmbeddableVideoInput } from '../app/utils/video-embed-html.ts'
 import { registerVideoLibraryButton, VIDEO_LIBRARY_BUTTON } from '../app/utils/tinymce-video-picker.ts'
@@ -77,4 +78,16 @@ test('the toolbar button opens the library; the chosen item is inserted as a par
 
 test('an editor without a UI registry (a stand-in, or one that failed to start) is left alone', () => {
   assert.doesNotThrow(() => registerVideoLibraryButton({} as TinyMceEditorInstance, () => {}))
+})
+
+test('in the editor a video frame is the column wide and 16:9, like the public page — not the browser\'s 150-px default', async () => {
+  const { VIDEO_EDITOR_STYLE } = await import('../app/utils/tinymce-video-picker.ts')
+  assert.match(VIDEO_EDITOR_STYLE, /\.mce-preview-object iframe \{[^}]*width: 100%;[^}]*aspect-ratio: 16 \/ 9;[^}]*height: auto/)
+  assert.match(VIDEO_EDITOR_STYLE, /\.mce-preview-object \{[^}]*display: block/, 'TinyMCE\'s wrapper is an inline box that shrinks to its content')
+  assert.doesNotMatch(VIDEO_EDITOR_STYLE, /#[0-9a-fA-F]{3,8}\b/)
+  for (const file of ['../app/composables/useArticleEditorTinymce.ts', '../app/components/admin/TinyMceEditor.vue']) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+    assert.match(source, /\$\{VIDEO_EDITOR_STYLE\}/, `${file}: both editors use it`)
+    assert.match(source, /image_uploadtab: false/, `${file}: no "Upload" tab in the image dialog — pictures come from the library`)
+  }
 })

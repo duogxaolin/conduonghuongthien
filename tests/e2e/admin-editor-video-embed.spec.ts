@@ -70,6 +70,17 @@ test('toolbar button → video library → choose: the player frame is inserted,
   await library.getByRole('button', { name: new RegExp(title) }).click()
   await expect(library).toBeHidden()
 
+  // In the editor the frame is the column wide and 16:9 like the public page — not the browser's 150-px default (CHANGELOG § 106).
+  const frame = await page.evaluate(() => {
+    const ed = (window as unknown as { tinymce: { get: (id: string) => { getBody: () => HTMLElement } } }).tinymce.get('tinymce-content-editor')
+    const body = ed.getBody()
+    const iframe = body.querySelector('iframe')!.getBoundingClientRect()
+    const style = getComputedStyle(body)
+    return { width: iframe.width, height: iframe.height, inner: body.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) }
+  })
+  expect(Math.abs(frame.width - frame.inner), `the frame fills the column: ${frame.width} of ${frame.inner}`).toBeLessThanOrEqual(4)
+  expect(Math.abs(frame.height - frame.width * 9 / 16), `16:9: ${frame.width} x ${frame.height}`).toBeLessThanOrEqual(3)
+
   const html = await page.evaluate(() => (window as unknown as { tinymce: { get: (id: string) => { getContent: () => string } } }).tinymce.get('tinymce-content-editor').getContent())
   // TinyMCE makes the frame's `src` absolute on insertion (`http://<host>/media/embed/…`); the HTML filter
   // writes it back as the bare path, so the stored and the public HTML carry the relative one.
