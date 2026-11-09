@@ -57,7 +57,7 @@
           <NuxtImg :src="article.thumbnailUrl" :alt="article.title" loading="lazy" sizes="256px sm:384px" format="webp" class="print-figure-img" />
         </div>
 
-        <!-- eslint-disable-next-line vue/no-v-html -- nội dung do biên tập viên C11 soạn, đã sanitize lúc ghi -->
+        <!-- eslint-disable-next-line vue/no-v-html -- nội dung do biên tập viên C11 soạn, đã sanitize lúc ghi và lúc đọc (public/articles/[slug].get.ts) -->
         <div ref="printBodyEl" class="print-article-body" v-html="article.content"></div>
       </main>
 

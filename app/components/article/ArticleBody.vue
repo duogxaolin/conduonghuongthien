@@ -13,7 +13,7 @@
 -->
 <template>
   <div ref="articleBodyEl" class="article-body text-[1.05rem] leading-[1.7] text-ink-secondary">
-    <!-- eslint-disable-next-line vue/no-v-html -- content authored by C11 editors, sanitized on write -->
+    <!-- eslint-disable-next-line vue/no-v-html -- content authored by C11 editors, sanitized on write and on read (public/articles/[slug].get.ts) -->
     <div v-html="html"></div>
   </div>
 </template>

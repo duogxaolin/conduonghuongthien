@@ -21,7 +21,13 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại hoặc chưa xuất bản.' })
     }
     // Imported excerpts carry HTML entities (`Ng&agrave;y`); decoded here, not in the DB.
-    const article = withPlainTextFields(found)
+    // Thân bài là `v-html` ở trang bài viết và trang in: lọc lúc đọc, một lần ở đây, để cả ba lối trả về
+    // bên dưới (tiếng Việt, "chưa có bản dịch", bản dịch rỗng lùi về thân gốc) cùng nhận bản đã lọc.
+    // Hàng nhập từ trang cũ hay ghi ngoài app chưa từng qua lớp lọc lúc ghi (CHANGELOG § 103).
+    const article = {
+      ...withPlainTextFields(found),
+      content: found.content == null ? null : sanitizeHtml(found.content),
+    }
 
     // If a language is requested, check for a published translation
     if (lang && lang !== 'vi') {

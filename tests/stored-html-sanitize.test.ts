@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { planBlockFixes, planTranslationFixes } from '../server/services/stored-html-sanitize'
+import { planArticleFixes, planBlockFixes, planTranslationFixes } from '../server/services/stored-html-sanitize'
 import { sanitizeHtml } from '../server/utils/sanitize-html'
 
 /**
@@ -29,6 +29,32 @@ test('the pass is idempotent: cleaned rows produce no further fixes', () => {
   assert.deepEqual(planTranslationFixes([{ id: 2, content: first!.content }]), [])
 })
 
+test('article bodies: only a body the sanitizer really changes is planned, with the bytes it was planned from', () => {
+  const alt = '<p><img alt="" src="/a.jpg"></p>'
+  const fixes = planArticleFixes([
+    { id: 1, content: GOOD },
+    { id: 2, content: BAD },
+    { id: 3, content: null },
+    { id: 4, content: '' },
+    { id: 5, content: alt },
+  ])
+  assert.deepEqual(fixes.map(fix => fix.id), [2], 'a clean body, null, empty and an alt="" → alt-only difference are left alone')
+  assert.equal(fixes[0]!.from, BAD)
+  assert.equal(fixes[0]!.content, sanitizeHtml(BAD))
+  // The same difference PLUS a real one is still fixed.
+  assert.deepEqual(planArticleFixes([{ id: 6, content: alt + BAD }]).map(fix => fix.id), [6])
+  assert.deepEqual(planArticleFixes([{ id: 2, content: fixes[0]!.content }]), [], 'idempotent')
+})
+
+test('the articles write keeps updated_at, is guarded by the planned bytes and writes no other column', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const service = await readFile(new URL('../server/services/stored-html-sanitize.ts', import.meta.url), 'utf8')
+  const update = service.slice(service.indexOf('db.update(articles)'), service.indexOf('report.articles.written'))
+  assert.match(update, /\.set\(\{ content: sanitizeHtml\(fix\.from\), updatedAt: sql`\$\{articles\.updatedAt\}` \}\)/)
+  assert.match(update, /HEX\(\$\{articles\.content\}\) = HEX\(\$\{fix\.from\}\)/)
+  assert.match(service, /if \(apply && report\.articles\.written > 0\) await bumpAnswerCacheVersion\(\)/)
+})
+
 test('block data is fixed inside translations as well as at the top level', () => {
   const fixes = planBlockFixes([
     { id: 10, data: { html: GOOD, title: 'giữ nguyên' } },
@@ -54,7 +80,7 @@ test('the default run is a preview and only --apply writes', async () => {
   const { readFile } = await import('node:fs/promises')
   const service = await readFile(new URL('../server/services/stored-html-sanitize.ts', import.meta.url), 'utf8')
   assert.match(service, /const apply = options\.apply === true/)
-  assert.equal((service.match(/if \(apply\)/g) ?? []).length, 2, 'both tables write only under apply')
+  assert.equal((service.match(/if \(apply\)/g) ?? []).length, 3, 'all three tables write only under apply')
   const script = await readFile(new URL('../scripts/sanitize-stored-html.ts', import.meta.url), 'utf8')
   assert.match(script, /process\.argv\.includes\('--apply'\)/)
 })
