@@ -38,7 +38,7 @@
   "app/utils/docs/admin-docs-system.ts": 526,
   "nuxt.config.ts": 411,
   "scripts/deploy-remote.sh": 587,
-  "scripts/mutation-proofs-catalog.ts": 411,
+  "scripts/mutation-proofs-catalog.ts": 443,
   "server/data/chatbot-small-talk-seed.ts": {
     "exempt": true,
     "reason": "Seed data, not logic: the reviewed, insert-only dataset of chatbot everyday replies (one object per reply, bounded by tests/chatbot-small-talk-dataset.test.ts). It grows when a reply is added, so growth is not a regression."

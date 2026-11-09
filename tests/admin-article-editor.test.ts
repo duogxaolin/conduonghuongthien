@@ -26,6 +26,7 @@
  * change is allowed (`articles/[id].put.ts` checks the permission; the page shows the server's
  * sentence — tests/admin-fetch-rollout-article-editor.test.ts).
  */
+import { WEB_PAGE_EDITOR_STYLE } from '../app/utils/tinymce-web-page.ts'
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
@@ -69,15 +70,10 @@ const chips = (modal: MiniElement) => findAll(modal, el => el.tag === 'span' && 
   .map(chip => findAll(chip, el => el.tag === 'span' && el !== chip).map(textOf).join(' '))
 
 // The article config, byte for byte (CLAUDE.md: height 700, `img/iframe/video { max-width:100% }`).
-const CONTENT_STYLE = `
-      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; padding: 12px; color: #1a1a1a; }
-      img { max-width: 100%; height: auto; border-radius: 8px; }
+// The sheet and its type are WEB_PAGE_EDITOR_STYLE (compared with the public page in tests/tinymce-web-page.test.ts); what
+// the editor adds after it is pinned here byte for byte — the indentation is part of the string.
+const CONTENT_STYLE = `${WEB_PAGE_EDITOR_STYLE}
       iframe, video { max-width: 100%; height: auto; }
-      pre[class*="language-"] { background: #2d2d2d; border-radius: 6px; padding: 1em; overflow-x: auto; }
-      code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; }
-      blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
-      table { border-collapse: collapse; width: 100%; }
-      table td, table th { border: 1px solid #ddd; padding: 8px; }
 
       figure.image figcaption:empty::before { content: 'Nhập chú thích ảnh — cũng là chữ thay thế (alt) của ảnh'; color: gray; font-style: italic; }
       figure.image figcaption[data-mce-empty]::before { content: 'Nhập chú thích ảnh — cũng là chữ thay thế (alt) của ảnh'; color: gray; font-style: italic; }
@@ -85,9 +81,8 @@ const CONTENT_STYLE = `
       .mce-preview-object { display: block; max-width: 100%; margin: 1rem 0; }
       .mce-preview-object iframe { width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; }
 `
-
 const CONFIG = {
-  selector: '#tinymce-content-editor', height: 700, menubar: true, promotion: false, branding: false, skin: 'oxide', content_css: 'default',
+  selector: '#tinymce-content-editor', height: 700, menubar: true, promotion: false, branding: false, skin: 'oxide', content_css: ['default', '/assets/fonts/inter.css'],
   relative_urls: false, remove_script_host: false, convert_urls: true,
   plugins: ['advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
     'insertdatetime', 'media', 'table', 'wordcount', 'quickbars'],
@@ -148,7 +143,7 @@ describe('article editor — load and TinyMCE', () => {
     assert.equal(typeof setup, 'function')
     assert.equal(typeof upload, 'function')
     assert.equal(typeof picker, 'function', 'the image dialog gets a browse button that opens the media library')
-    assert.match(CONTENT_STYLE, /img \{ max-width: 100%;/)
+    assert.match(CONTENT_STYLE, /img, video \{ max-width: 100%;/)
     assert.match(CONTENT_STYLE, /iframe, video \{ max-width: 100%;/)
   })
 
