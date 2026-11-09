@@ -29,6 +29,10 @@ useBrokenImageFallback(bodyEl)
 .article-body :deep(video) { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 1rem 0; }
 /* Khung nhúng (YouTube, khung phát của cổng): width/height="640x360" của khung sẽ tràn khung đọc trên điện thoại. */
 .article-body :deep(iframe) { max-width: 100%; width: 100%; aspect-ratio: 16 / 9; height: auto; border: 0; border-radius: 0.75rem; margin: 1rem 0; }
+.article-body :deep(figure) { margin: 1rem 0; }
+.article-body :deep(figure img) { display: block; margin: 0; }
+.article-body :deep(figcaption) { margin-top: 0.5rem; font-size: 0.9rem; line-height: 1.5; text-align: center; color: #5A6C58; }
+.article-body :deep(figcaption:empty) { display: none; }
 .article-body :deep(blockquote) { border-left: 3px solid #7CB342; padding-left: 1rem; color: #4A5545; font-style: italic; margin: 1rem 0; }
 .article-body :deep(strong) { font-weight: 700; }
 </style>

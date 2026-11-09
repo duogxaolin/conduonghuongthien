@@ -14,11 +14,11 @@ export interface ArticleEditorMediaDeps {
   form: ArticleEditorForm
   openPicker: ReturnType<typeof useImagePicker>['openPicker']
   uploadFile: ReturnType<typeof useUpload>['uploadFile']
-  /** Into the editor at the cursor (or appended to the body without one) — `useArticleEditorTinymce`. */
-  insertMediaIntoEditor: (media: MediaItem) => void
+  /** Into the editor at the cursor — all of them in one insertion — or appended to the body without an editor (`useArticleEditorTinymce`). */
+  insertMediasIntoEditor: (medias: MediaItem[]) => void
 }
 
-export function useArticleEditorMedia({ form, openPicker, uploadFile, insertMediaIntoEditor }: ArticleEditorMediaDeps) {
+export function useArticleEditorMedia({ form, openPicker, uploadFile, insertMediasIntoEditor }: ArticleEditorMediaDeps) {
   const openMediaPicker = (target: 'thumbnail' | 'content') => {
     if (target === 'thumbnail') {
       openPicker({ onSelect: (media) => { form.thumbnailUrl = media.url } })
@@ -26,9 +26,7 @@ export function useArticleEditorMedia({ form, openPicker, uploadFile, insertMedi
       // Multiple-select: chọn nhiều ảnh cùng lúc rồi chèn hết vào editor theo thứ tự.
       openPicker({
         multiple: true,
-        onSelectMultiple: (items) => {
-          for (const media of items) insertMediaIntoEditor(media)
-        },
+        onSelectMultiple: items => insertMediasIntoEditor(items),
       })
     }
   }

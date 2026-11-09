@@ -136,6 +136,7 @@ export function fakeTinymce(options: { normalize?: (html: string) => string } = 
     ui: {
       registry: {
         addButton: (name: string) => { editor.buttons.push(name) },
+        addToggleButton: (name: string) => { editor.buttons.push(name) },
         addMenuItem: (name: string) => { editor.menuItems.push(name) },
       },
     },
