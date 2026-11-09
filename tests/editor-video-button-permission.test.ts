@@ -24,14 +24,14 @@ describe('article editor — the video-library button follows media_portal read'
   it('an account that can read the video library gets the button', async (t) => {
     const ctx = await openEditor(t, '42', { responder: article() })
     await ctx.settle()
-    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktimage', 'cdktimageedit', 'cdktvideo'])
+    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktfullscreen', 'cdktimage', 'cdktimageedit', 'cdktvideo'])
   })
 
   it('an account that cannot read it does not', async (t) => {
     const ctx = await openEditor(t, '42', { responder: article(), can: noVideoLibrary })
     await ctx.settle()
     assert.equal(ctx.tiny.configs.length, 1, 'the editor still starts')
-    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktimage', 'cdktimageedit'], 'the image buttons stay; only the video one needs media_portal')
+    assert.deepEqual(ctx.tiny.editor.buttons, ['cdktfullscreen', 'cdktimage', 'cdktimageedit'], 'the image and full-screen buttons stay; only the video one needs media_portal')
   })
 
   it("TinyMCE's own Media dialog is off the toolbar and the Insert menu; the plugin stays", async (t) => {

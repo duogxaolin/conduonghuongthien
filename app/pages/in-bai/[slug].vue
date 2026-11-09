@@ -371,12 +371,9 @@ onMounted(() => {
   margin: 1.2rem 0;
   text-align: center;
 }
-.print-article-body :deep(figcaption) {
-  font-size: 0.8rem;
-  color: #7A8675;
-  font-style: italic;
-  margin-top: 0.4rem;
-}
+.print-article-body :deep(figcaption) { font-size: 0.8rem; color: #7A8675; font-style: italic; margin-top: 0.4rem; }
+/* Chú thích chưa điền (`<figcaption></figcaption>`) không hiện gì (CHANGELOG § 104). */
+.print-article-body :deep(figcaption:empty) { display: none; }
 .print-article-body :deep(blockquote) {
   border-left: 3px solid #7CB342;
   padding-left: 1rem;

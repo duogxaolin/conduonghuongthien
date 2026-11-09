@@ -32,7 +32,7 @@
   "app/pages/admin/settings/social-links.vue": 503,
   "app/pages/admin/users/index.vue": 415,
   "app/pages/assistant.vue": 459,
-  "app/pages/in-bai/[slug].vue": 477,
+  "app/pages/in-bai/[slug].vue": 474,
   "app/pages/qa-documents.vue": 479,
   "app/pages/search.vue": 419,
   "app/utils/docs/admin-docs-system.ts": 526,

@@ -78,18 +78,21 @@ const CONTENT_STYLE = `
       blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
       table { border-collapse: collapse; width: 100%; }
       table td, table th { border: 1px solid #ddd; padding: 8px; }
-    `
+
+      figure.image figcaption:empty::before { content: 'Nhập chú thích ảnh — cũng là chữ thay thế (alt) của ảnh'; color: gray; font-style: italic; }
+      figure.image figcaption[data-mce-empty]::before { content: 'Nhập chú thích ảnh — cũng là chữ thay thế (alt) của ảnh'; color: gray; font-style: italic; }
+`
 const CONFIG = {
   selector: '#tinymce-content-editor', height: 700, menubar: true, promotion: false, branding: false, skin: 'oxide', content_css: 'default',
   relative_urls: false, remove_script_host: false, convert_urls: true,
   plugins: ['advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
     'insertdatetime', 'media', 'table', 'wordcount', 'quickbars'],
-  toolbar: 'undo redo | blocks | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | '
-    + 'bullist numlist outdent indent | link cdktimage cdktimageedit cdktvideo | table | removeformat | fullscreen code',
+  toolbar: 'cdktfullscreen | undo redo | blocks | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | '
+    + 'link cdktimage cdktimageedit cdktvideo | table | removeformat | bullist numlist outdent indent | code',
   toolbar_mode: 'sliding', quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote', quickbars_insert_toolbar: 'cdktimage quicktable',
   quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright',
   menu: { insert: { title: 'Insert', items: 'cdktimage link inserttable | charmap hr | anchor | insertdatetime' } },
-  contextmenu: 'link image table', removed_menuitems: 'media', image_advtab: true, image_caption: true, automatic_uploads: true, paste_data_images: true,
+  contextmenu: 'link image table', removed_menuitems: 'media', image_advtab: true, image_caption: true, entity_encoding: 'raw', automatic_uploads: true, paste_data_images: true,
   paste_merge_formats: true, file_picker_types: 'image', content_style: CONTENT_STYLE,
 }
 
@@ -143,6 +146,17 @@ describe('article editor — load and TinyMCE', () => {
     assert.equal(typeof picker, 'function', 'the image dialog gets a browse button that opens the media library')
     assert.match(CONTENT_STYLE, /img \{ max-width: 100%;/)
     assert.match(CONTENT_STYLE, /iframe, video \{ max-width: 100%;/)
+  })
+
+  it('toolbar: the labelled full-screen toggle is the FIRST group (the sliding toolbar never folds it), the list buttons come after the insert group, every custom button is registered', async (t) => {
+    const ctx = await openEditor(t, '42')
+    const groups = String(ctx.tiny.configs[0]!.toolbar).split('|').map(group => group.trim().split(/\s+/))
+    assert.deepEqual(groups[0], ['cdktfullscreen'])
+    const at = (name: string) => groups.findIndex(group => group.includes(name))
+    assert.ok(at('bullist') > at('table') && at('numlist') === at('bullist') && at('outdent') === at('bullist'), 'lists after the insert group and the table')
+    assert.ok(at('bullist') > at('cdktimage'), 'lists after the image button')
+    assert.equal(at('fullscreen'), -1, 'TinyMCE\'s own icon-only fullscreen button is gone from the toolbar (the menubar entry stays)')
+    for (const name of groups.flat().filter(name => name.startsWith('cdkt'))) assert.ok(ctx.tiny.editor.buttons.includes(name), `${name} is registered`)
   })
 
   it('the editor spans the section: no max-w on it or any ancestor; its box keeps the 700px floor', async (t) => {
@@ -432,21 +446,29 @@ describe('article editor — AI panel and images', () => {
     assert.equal(empty.ai.props!.getEditorContent(), '<p>Nội dung gốc</p>')
   })
 
-  it('"Chèn Ảnh Từ Thư Viện": several images, each inserted at the cursor in order', async (t) => {
+  it('"Chèn Ảnh Từ Thư Viện": several images, in order, in ONE insertion at the cursor', async (t) => {
     const ctx = await openEditor(t, '42')
     await click(button(ctx, 'Chèn Ảnh Từ Thư Viện'))
     const request = ctx.pickers.at(-1)!
     assert.equal(request.multiple, true)
     assert.equal(request.onSelect, undefined)
     request.onSelectMultiple!([{ url: '/uploads/a.jpg', originalName: 'a.jpg' }, { url: '/uploads/b.jpg', originalName: 'b.jpg' }])
-    assert.deepEqual(ctx.tiny.editor.inserted, ['<p><img src="/uploads/a.jpg" alt="a.jpg" style="width: 100%; height: auto;"></p>', '<p><img src="/uploads/b.jpg" alt="b.jpg" style="width: 100%; height: auto;"></p>'])
+    assert.deepEqual(ctx.tiny.editor.inserted, ['<figure class="image" style="width: 100%;"><img src="/uploads/a.jpg" alt="" style="width: 100%; height: auto;"><figcaption></figcaption></figure><figure class="image" style="width: 100%;"><img src="/uploads/b.jpg" alt="" style="width: 100%; height: auto;"><figcaption></figcaption></figure>'], 'both images in ONE insertion: a second insertion would replace the figure the first one left selected')
   })
 
   it('without an editor, a chosen image is appended to the body that is saved', async (t) => {
     const ctx = await openEditor(t, '42', { tinymceLoaded: false })
     await click(button(ctx, 'Chèn Ảnh Từ Thư Viện'))
     ctx.pickers.at(-1)!.onSelectMultiple!([{ url: '/uploads/a.jpg', originalName: 'a.jpg' }])
-    assert.equal(bodyOf((await saveNow(ctx))[0])?.content, '<p>Nội dung gốc</p>\n<p><img src="/uploads/a.jpg" alt="a.jpg" style="width: 100%; height: auto;"></p>')
+    assert.equal(bodyOf((await saveNow(ctx))[0])?.content, '<p>Nội dung gốc</p>\n<figure class="image" style="width: 100%;"><img src="/uploads/a.jpg" alt="" style="width: 100%; height: auto;"><figcaption></figcaption></figure>')
+  })
+
+  it('without an editor, several chosen images are all appended, in order', async (t) => {
+    const ctx = await openEditor(t, '42', { tinymceLoaded: false })
+    await click(button(ctx, 'Chèn Ảnh Từ Thư Viện'))
+    ctx.pickers.at(-1)!.onSelectMultiple!([{ url: '/uploads/a.jpg', originalName: 'a.jpg' }, { url: '/uploads/b.jpg', originalName: 'b.jpg' }])
+    const body = bodyOf((await saveNow(ctx))[0])?.content ?? ''
+    assert.ok(body.indexOf('/uploads/a.jpg') > 0 && body.indexOf('/uploads/b.jpg') > body.indexOf('/uploads/a.jpg'), body)
   })
 
   it('thumbnail from the library; ✕ removes it', async (t) => {

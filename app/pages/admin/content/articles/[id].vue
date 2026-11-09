@@ -61,7 +61,7 @@ const { hasPermission } = useAdminAuth()
 
 const {
   editorId, setEditorContent, getEditorContent, markBodySaved, bodyChanged, showLoadedContent, onBodyShown,
-  insertMediaIntoEditor, initTinyMCE, loadTinyMCEScript,
+  insertMediasIntoEditor, initTinyMCE, loadTinyMCEScript,
 } = useArticleEditorTinymce({ form, pickImage: onPick => openPicker({ onSelect: onPick }), pickVideo: hasPermission('media_portal', 'read') ? openVideoPicker : null })
 
 // ─── Unsaved-changes guard: route leave here (a Nuxt auto-import), the tab close in the composable ──
@@ -159,7 +159,7 @@ const fetchArticle = async () => {
 }
 
 const { uploading: uploadingThumb, uploadFile } = useUpload()
-const { openMediaPicker, uploadThumbnailFromInput } = useArticleEditorMedia({ form, openPicker, uploadFile, insertMediaIntoEditor })
+const { openMediaPicker, uploadThumbnailFromInput } = useArticleEditorMedia({ form, openPicker, uploadFile, insertMediasIntoEditor })
 
 onMounted(async () => {
   // The script download runs alongside the data fetch, but initTinyMCE must
