@@ -350,9 +350,9 @@ cd production
 
 ---
 
-## Dọn HTML bản dịch đã lưu trước bản vá bảo mật (làm một lần)
+## Dọn HTML đã lưu trước các bản vá bảo mật (bản dịch, khối trang, thân bài viết — làm một lần)
 
-Bản vá XSS bản dịch (PR #92) lọc HTML ở mọi đường ghi mới và lọc lại lúc đọc, nên người đọc không còn nhận script từ dữ liệu cũ. Hàng cũ vẫn nằm nguyên trong DB; lượt dọn này đưa chính dữ liệu lưu về dạng đã lọc. Sau khi CI đã deploy bản có `db:sanitize-html`:
+Bản vá XSS bản dịch (PR #92) lọc HTML ở mọi đường ghi mới và lọc lại lúc đọc; từ CHANGELOG § 103 thân bài gốc (`articles.content`) cũng được lọc lúc đọc ở trang công khai. Hàng cũ vẫn nằm nguyên trong DB; lượt dọn này đưa chính dữ liệu lưu — bản dịch, khối trang và thân bài — về dạng đã lọc. **Deploy bản có lọc lúc đọc TRƯỚC, rồi mới `--apply`** (sau đó `--apply` không đổi gì người đọc thấy). Sau khi CI đã deploy:
 
 ```bash
 cd /www/wwwroot/conduonghuongthien
@@ -361,7 +361,13 @@ docker exec -it cdkt_app npm run db:sanitize-html        # xem trước: đếm 
 docker exec -it cdkt_app npm run db:sanitize-html -- --apply   # ghi
 ```
 
-Chạy lại được nhiều lần (hàng đã sạch thì không đổi). Thay đổi thường gặp là cosmetic: `alt=""` → `alt` (tương đương trong HTML); chỉ mã độc (`<script>`, `onerror=`, `javascript:`…) bị bỏ thật.
+Chạy lại được nhiều lần (hàng đã sạch thì không đổi). Đọc kết quả xem trước (JSON một dòng):
+
+- `articles.changed` — số thân bài sẽ đổi. Trên dữ liệu dev đo được ~140 trên ~1130 bài (bài chỉ khác `alt=""` → `alt` không tính, không bị ghi lại). Con số lớn hơn nhiều là dấu hiệu cần dừng lại xem.
+- `articles.textChanged` / `textChangedIds` — bài đổi cả **chữ** người đọc thấy (không chỉ thẻ, thuộc tính, CSS); có số khác 0 thì mở các bài đó xem trước khi `--apply`. Script in thêm dòng `CHÚ Ý`.
+- Cái bị bỏ thường gặp: mã độc (`<script>`, `onerror=`, `javascript:`…), CSS dán từ Word/Tailwind (cả thuộc tính `style` dài hơn 500 ký tự bị bỏ nguyên khối — bài mất căn giữa/căn đều ở một số đoạn), thuộc tính thừa (`data-*`, `align`…), thẻ `<font>`, `<iframe>` có `src` ngoài YouTube/khung phát của cổng (bị bỏ `src`).
+- Với `--apply`: `articles.written` là số bài đã ghi; `skipped` là bài cán bộ vừa sửa giữa lúc đọc và lúc ghi (giữ nguyên bản của họ — chạy lại sẽ thấy chúng ở `changed`). Chỉ cột `content` được ghi, `updated_at` và lượt xem không đổi.
+- Việc làm tay sau đó: iframe YouTube dạng `youtube.com/watch?v=…` (CHANGELOG § 103: bài 7, 8) không bao giờ phát được — sửa `src` sang `https://www.youtube.com/embed/<id>`.
 
 ---
 
