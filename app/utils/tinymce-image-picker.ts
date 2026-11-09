@@ -32,15 +32,20 @@ const escapeAttribute = (value: string) => value
  * (an 1800-px photo is pushed to the column by CSS, a 300-px one sits small and ragged), which is what made
  * inserted images look wrong. The figure carries the width too: a figure shrinks to its content, so a small
  * picture's `width: 100%` would otherwise resolve to its own size. An officer who wants another size uses "Sửa ảnh".
- * The public pages cap `img` at the column (`max-width: 100%`), so nothing here can overflow it.
+ * The public pages cap `img` at the column (`max-width: 100%`), so nothing here can overflow it. A picture narrower than
+ * the column is NOT stretched: both the figure and the picture carry `max-width: <its own width>px` (CHANGELOG § 106).
  *
  * `alt` starts empty and FOLLOWS THE CAPTION (`registerImageCaptionAlt`): the caption is what the officer types,
  * and the same words are the picture's text alternative. An unfilled caption leaves nothing on the public page
  * (`figcaption:empty` is hidden there) and the image is then treated as decorative — the file name was never a
  * description. Values are escaped: a URL may hold `"`.
  */
-export function libraryImageHtml(media: Pick<MediaItem, 'url'>): string {
-  return `<figure class="image" style="width: 100%;"><img src="${escapeAttribute(media.url)}" alt="" style="width: 100%; height: auto;"><figcaption></figcaption></figure>`
+export function libraryImageHtml(media: Pick<MediaItem, 'url' | 'width'>): string {
+  // Never wider than the file itself: `width: 100%` alone stretches a 400-px picture to the whole column, and an
+  // enlarged picture is soft (CHANGELOG § 106). A file whose size is unknown keeps the old, uncapped style.
+  const natural = typeof media.width === 'number' && Number.isFinite(media.width) && media.width > 0 ? Math.round(media.width) : null
+  const cap = natural === null ? '' : ` max-width: ${natural}px;`
+  return `<figure class="image" style="width: 100%;${cap}"><img src="${escapeAttribute(media.url)}" alt="" style="width: 100%;${cap} height: auto;"><figcaption></figcaption></figure>`
 }
 
 /**
@@ -192,7 +197,7 @@ export function stepOutOfFigure(editor: TinyMceEditorInstance): void {
  * just wrote, so the next one would replace it (measured: three images chosen, one left). A single image also gets
  * the caret in its caption, ready to type; several do not (there is no one caption to fill).
  */
-export function insertLibraryImages(editor: TinyMceEditorInstance, medias: Array<Pick<MediaItem, 'url'>>): void {
+export function insertLibraryImages(editor: TinyMceEditorInstance, medias: Array<Pick<MediaItem, 'url' | 'width'>>): void {
   if (!medias.length) return
   stepOutOfFigure(editor)
   editor.insertContent(medias.map(libraryImageHtml).join(''))

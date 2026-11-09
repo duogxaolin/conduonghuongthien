@@ -63,7 +63,8 @@ test('image entries open the library, insert a full-width captioned image (caret
 
   const html = await page.evaluate<string>(`${tiny}.getContent()`)
   expect(html).toContain(media.url)
-  expect(html).toMatch(/<figure class="image" style="width: 100%;"><img [^>]*style="width: 100%; height: auto;"/)
+  // The library's list carries the file's width, and the picture is capped at it (never enlarged — CHANGELOG § 106).
+  expect(html).toMatch(/<figure class="image" style="width: 100%; max-width: \d+px;"><img [^>]*style="width: 100%; max-width: \d+px; height: auto;"/)
 
   // The caret is in the new caption, which shows a hint while empty; typing goes straight in.
   const caption = frame.locator('body > figure.image figcaption')

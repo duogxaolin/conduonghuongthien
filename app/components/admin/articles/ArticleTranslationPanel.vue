@@ -571,8 +571,7 @@ defineExpose({ fetchArticleTranslations, getTranslationRow, translateAllForThisA
         <div class="bg-white rounded-lg border border-line-strong overflow-hidden">
           <TinyMceEditor
             v-model="editingTranslation.content"
-            :height="450"
-            placeholder="Nhập hoặc chỉnh sửa nội dung bản dịch..."
+            :height="450" placeholder="Nhập hoặc chỉnh sửa nội dung bản dịch..." save-button @save="saveTranslationEdit"
           />
         </div>
       </div>

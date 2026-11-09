@@ -87,7 +87,7 @@ const CONFIG = {
   relative_urls: false, remove_script_host: false, convert_urls: true,
   plugins: ['advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
     'insertdatetime', 'media', 'table', 'wordcount', 'quickbars'],
-  toolbar: 'cdktfullscreen | undo redo | blocks | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | '
+  toolbar: 'cdktfullscreen cdktsave | undo redo | blocks | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | '
     + 'link cdktimage cdktimageedit cdktvideo | table | removeformat | bullist numlist outdent indent | code',
   toolbar_mode: 'sliding', quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote', quickbars_insert_toolbar: 'cdktimage quicktable',
   quickbars_image_toolbar: 'cdktimageedit | alignleft aligncenter alignright',
@@ -151,7 +151,7 @@ describe('article editor — load and TinyMCE', () => {
   it('toolbar: the labelled full-screen toggle is the FIRST group (the sliding toolbar never folds it), the list buttons come after the insert group, every custom button is registered', async (t) => {
     const ctx = await openEditor(t, '42')
     const groups = String(ctx.tiny.configs[0]!.toolbar).split('|').map(group => group.trim().split(/\s+/))
-    assert.deepEqual(groups[0], ['cdktfullscreen'])
+    assert.deepEqual(groups[0], ['cdktfullscreen', 'cdktsave'], 'the toggle, and "Lưu" for full screen (hidden by CSS otherwise)')
     const at = (name: string) => groups.findIndex(group => group.includes(name))
     assert.ok(at('bullist') > at('table') && at('numlist') === at('bullist') && at('outdent') === at('bullist'), 'lists after the insert group and the table')
     assert.ok(at('bullist') > at('cdktimage'), 'lists after the image button')

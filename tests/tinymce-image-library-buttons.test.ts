@@ -541,3 +541,12 @@ test('the Page Builder editor emits only when what the editor reads back really 
   assert.match(source, /if \(html === lastEmitted\) return/)
   assert.match(source, /lastEmitted = editor\.getContent\(\)/, 'a model change from outside moves the baseline too')
 })
+
+test('a picture is never shown wider than its own file: figure and image carry max-width = the file width; an unknown size keeps the old style', () => {
+  const html = libraryImageHtml({ url: '/uploads/a.webp', width: 420 })
+  assert.equal(html, '<figure class="image" style="width: 100%; max-width: 420px;"><img src="/uploads/a.webp" alt="" style="width: 100%; max-width: 420px; height: auto;"><figcaption></figcaption></figure>')
+  assert.equal(libraryImageHtml({ url: '/uploads/a.webp', width: 1234.6 }).includes('max-width: 1235px'), true, 'a fractional width is rounded')
+  for (const width of [null, undefined, 0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.doesNotMatch(libraryImageHtml({ url: '/uploads/a.webp', width }), /max-width/, `width ${String(width)}: no cap`)
+  }
+})

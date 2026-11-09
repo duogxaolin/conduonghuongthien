@@ -327,3 +327,10 @@
   opacity: 0.8;
 }
 }
+
+/* TinyMCE "Lưu ngay" (cdktsave) only exists to be reached from full screen, where it covers the page's own Save button;
+   outside full screen it would take toolbar width (CHANGELOG § 106). Keyed on the tooltip prefix in
+   app/utils/tinymce-fullscreen-button.ts (SAVE_TOOLTIP): TinyMCE 6.8 renders no data-mce-name. */
+.tox-tinymce:not(.tox-fullscreen) .tox-tbtn[aria-label^="Lưu ngay"] {
+  display: none;
+}
