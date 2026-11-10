@@ -234,55 +234,126 @@ test('submission workflow: first-view race, audit atomicity, cascades, and DATET
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 4b. Two officers changing the status at once: exactly ONE wins.
+    // 4b. Several officers changing the status at once.
     //     The status used to be read outside the transaction and updated by id
     //     only, so both passed the transition check against the same stale
     //     status, the second overwrote the first, and the timeline got two
     //     entries both claiming to start from `new`. The conditional UPDATE
-    //     (`AND status = <read>`) is what decides now; the loser gets a 409.
+    //     (`AND status = <read>`) is what decides now; a loser that read a stale
+    //     status gets a 409.
+    //
+    //     What this may NOT assert is "exactly one wins". A call that starts after
+    //     another has committed simply reads the NEW status and legitimately moves
+    //     it on (a closed file can be reopened), so how many succeed depends on how
+    //     the calls interleave — 1 on an idle laptop, up to all of them on a slow CI
+    //     runner (staggering the calls by 12 ms makes the old "exactly one" check
+    //     fail with 5 winners on correct code). The property that holds under EVERY
+    //     interleaving, and that the old bug broke, is a serial history:
+    //       - each success left exactly one status entry and one audit row, a
+    //         failure left none;
+    //       - read in commit order (entry id — taken after the UPDATE that holds the
+    //         row lock), every entry starts from where the previous one ended,
+    //         the first from `new`, and the last ends at the stored status;
+    //       - no entry is a transition `canTransition` forbids;
+    //       - every refusal is a 409 (lost the race) or 400 (the status it read was
+    //         already the target / not allowed from it), never a success or a 500.
+    //     Whether any loser gets a 409 in a burst is ALSO down to timing, so the 409
+    //     path is pinned separately and deterministically in 4b' below; the burst is
+    //     repeated on fresh files only to give the interleavings a chance to differ.
     // ─────────────────────────────────────────────────────────────────────────
     {
-      const raced = await seedSubmission('Phạm Văn D')
+      const { canTransition, isSubmissionStatus } = await import('../shared/submission-status')
       const targets = ['in_progress', 'rejected', 'transferred', 'resolved', 'in_progress'] as const
-      const settled = await Promise.allSettled(
-        targets.map((status) => changeSubmissionStatus(actor, raced, { status })),
-      )
-      const won = settled.filter((s) => s.status === 'fulfilled')
-      const lost = settled.filter((s): s is PromiseRejectedResult => s.status === 'rejected')
-      assert.equal(won.length, 1, `exactly one concurrent status change may win, got ${won.length}`)
-      for (const loss of lost) {
-        const err = loss.reason as { statusCode?: number; statusMessage?: string }
-        // 409 = lost the race. A 400 "already in this status" would also be a
-        // correct refusal if the winner happened to pick the same target, but
-        // never a success.
-        assert.ok(
-          err.statusCode === 409 || err.statusCode === 400,
-          `a losing concurrent change must be refused with 409/400, got ${String(err.statusCode)} ${String(err.statusMessage)}`,
+      for (let rounds = 1; rounds <= 8; rounds += 1) {
+        const raced = await seedSubmission(`Phạm Văn D${rounds}`)
+        const settled = await Promise.allSettled(
+          targets.map((status) => changeSubmissionStatus(actor, raced, { status })),
         )
+        const won = settled.filter((s): s is PromiseFulfilledResult<{ status: string }> => s.status === 'fulfilled')
+        const lost = settled.filter((s): s is PromiseRejectedResult => s.status === 'rejected')
+        assert.ok(won.length >= 1, `round ${rounds}: at least one concurrent status change must succeed`)
+        for (const loss of lost) {
+          const err = loss.reason as { statusCode?: number; statusMessage?: string }
+          assert.ok(
+            err.statusCode === 409 || err.statusCode === 400,
+            `round ${rounds}: a refused concurrent change must be 409/400, got ${String(err.statusCode)} ${String(err.statusMessage)}`,
+          )
+        }
+
+        const [row] = await db
+          .select({ status: submissions.status })
+          .from(submissions)
+          .where(eq(submissions.id, raced))
+          .limit(1)
+        const statusEvents = (await listSubmissionEvents(raced))
+          .filter((e) => e.eventType === 'status')
+          .sort((a, b) => a.id - b.id)
+        assert.equal(statusEvents.length, won.length, `round ${rounds}: ${won.length} changes succeeded but ${statusEvents.length} status entries were written`)
+
+        let from = 'new'
+        for (const e of statusEvents) {
+          assert.equal(e.fromStatus, from, `round ${rounds}: an entry must start where the previous one ended (a lost update writes two entries from the same status)`)
+          assert.ok(isSubmissionStatus(from) && isSubmissionStatus(e.toStatus), `round ${rounds}: unknown status in the timeline`)
+          assert.ok(canTransition(from, e.toStatus), `round ${rounds}: forbidden transition ${from} → ${e.toStatus} slipped through`)
+          from = e.toStatus
+        }
+        assert.equal(row!.status, from, `round ${rounds}: the stored status is not where the timeline ends`)
+        assert.deepEqual(
+          statusEvents.map((e) => e.toStatus).sort(),
+          won.map((w) => w.value.status).sort(),
+          `round ${rounds}: the statuses the winners were told they set are not the ones in the timeline`,
+        )
+
+        const audits = await db
+          .select({ id: activityLogs.id })
+          .from(activityLogs)
+          .where(and(eq(activityLogs.resource, 'submissions'), eq(activityLogs.action, 'update'), eq(activityLogs.resourceId, raced)))
+        assert.equal(audits.length, won.length, `round ${rounds}: audit rows (${audits.length}) must equal successful changes (${won.length}) — a loser left an audit row for a change that did not happen`)
       }
-      assert.ok(
-        lost.some((l) => (l.reason as { statusCode?: number }).statusCode === 409),
-        'at least one loser must have been refused by the conditional UPDATE (409)',
-      )
+    }
 
-      const winner = (won[0] as PromiseFulfilledResult<{ status: string }>).value.status
-      const [row] = await db
-        .select({ status: submissions.status })
-        .from(submissions)
-        .where(eq(submissions.id, raced))
-        .limit(1)
-      assert.equal(row!.status, winner, 'the stored status is not the one the winner was told it set')
+    // ─────────────────────────────────────────────────────────────────────────
+    // 4b'. The conditional UPDATE, deterministically (no timing involved).
+    //     A second connection changes the row and keeps it locked, uncommitted.
+    //     `changeSubmissionStatus` reads the OLD status (a snapshot read does not
+    //     wait), passes its transition check against it, and its UPDATE blocks on
+    //     the row lock. Once the other connection commits, the UPDATE re-checks
+    //     `status = <what it read>` against the committed row, matches nothing and
+    //     must refuse with 409 — writing no timeline entry and no audit row.
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      const stale = await seedSubmission('Lê Văn G')
+      const other = await mysql.createConnection({ host, port, user, password, database })
+      let blocked: Promise<unknown>
+      try {
+        await other.query('START TRANSACTION')
+        await other.query('UPDATE submissions SET status = ? WHERE id = ?', ['resolved', stale])
+        blocked = changeSubmissionStatus(actor, stale, { status: 'in_progress' })
+        blocked.catch(() => {}) // asserted below; never left unhandled while we wait
+        // Wait until its UPDATE is parked on our lock (so it has already read `new`).
+        const deadline = Date.now() + 15_000
+        for (;;) {
+          const [waiting] = await other.query("SELECT COUNT(*) AS n FROM information_schema.innodb_trx WHERE trx_state = 'LOCK WAIT'")
+          if (Number((waiting as Array<{ n: number | string }>)[0]!.n) > 0) break
+          assert.ok(Date.now() < deadline, 'the status change never reached the row lock: the stale-read setup did not happen')
+          // Not tighter: polling information_schema.innodb_trx every few ms starves the very UPDATE we are waiting for.
+          await new Promise((resolve) => setTimeout(resolve, 200))
+        }
+        await other.query('COMMIT')
+      } finally {
+        await other.end()
+      }
+      await assert.rejects(blocked, (err: { statusCode?: number }) => err.statusCode === 409, 'a change decided on a stale status must lose with 409')
 
-      const statusEvents = (await listSubmissionEvents(raced)).filter((e) => e.eventType === 'status')
-      assert.equal(statusEvents.length, 1, `the race wrote ${statusEvents.length} status entries, expected 1`)
-      assert.equal(statusEvents[0]!.fromStatus, 'new', 'the timeline "from" status must be the real prior status')
-      assert.equal(statusEvents[0]!.toStatus, winner)
-
-      const audits = await db
+      const [row] = await db.select({ status: submissions.status }).from(submissions).where(eq(submissions.id, stale)).limit(1)
+      assert.equal(row!.status, 'resolved', 'the loser must not have overwritten the committed status')
+      const staleEvents = (await listSubmissionEvents(stale)).filter((e) => e.eventType === 'status')
+      assert.equal(staleEvents.length, 0, 'a refused change must not write a timeline entry')
+      const staleAudits = await db
         .select({ id: activityLogs.id })
         .from(activityLogs)
-        .where(and(eq(activityLogs.resource, 'submissions'), eq(activityLogs.action, 'update'), eq(activityLogs.resourceId, raced)))
-      assert.equal(audits.length, 1, 'a loser left an audit row for a change that did not happen')
+        .where(and(eq(activityLogs.resource, 'submissions'), eq(activityLogs.action, 'update'), eq(activityLogs.resourceId, stale)))
+      assert.equal(staleAudits.length, 0, 'a refused change must not leave an audit row')
     }
 
     // ─────────────────────────────────────────────────────────────────────────
